@@ -62,8 +62,8 @@ import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/leg
 // ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
-async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page): Promise<void> {
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible', timeout: BOOT_MS });
 }
@@ -485,7 +485,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // When every audio module is promoted this case has no subject BY DESIGN —
     // a NAMED skip carrying the reason, never a silent pass (#1864).
     test.skip(AUDIO_OPERABLE_FIXTURE.kind === 'migration-complete', AUDIO_OPERABLE_FIXTURE.why);
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: NODE, type: fixtureType(AUDIO_OPERABLE_FIXTURE), position: { x: 460, y: 240 } },
     ]);
@@ -651,7 +651,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // seeded rack, which is a borrowed subject, not a derived one.
     test.skip(PLACEHOLDER_SUBJECT.pool.length < 2, placeholderPoolShortfall(2));
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ BOTH SUBJECTS ARE NOW DROPPED, AND THE SEEDED RACK IS NOT COUNTED ON.
     // This used to drop ONE and rely on the default rack for the other, with a
@@ -718,7 +718,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     ).toBeNull();
     test.skip(PLACEHOLDER_SUBJECT.pool.length < 1, placeholderPoolShortfall(1));
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ THE THIRD MEMBER IS DERIVED, AND IT USED TO BE THE LITERAL `delay`
     // (#2295). The three drops exist to put BOTH lane kinds in ONE column — the
@@ -787,7 +787,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // palette drop lands in the correct NARROWED column via the pitch-aware
     // hit-test, (b) the rendered column pitch is ~SHELL_COLUMN_W, and (c) tiles don't
     // overlap (clean gutter).
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
 
     // Anchor each spawn INSIDE the narrow band of columns 1..3 (X selects the
@@ -878,7 +878,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     ).toBeNull();
     test.skip(PLACEHOLDER_SUBJECT.pool.length < 1, placeholderPoolShortfall(1));
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ THE PLACEHOLDER IS DROPPED, NOT BORROWED (#2295). Both drops here are
     // promoted, so the assertion below was being satisfied by whatever
@@ -967,7 +967,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     ).toBeNull();
     test.skip(PLACEHOLDER_SUBJECT.kind === 'migration-complete', PLACEHOLDER_SUBJECT.why);
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ THE LONGEST-NAMED CANDIDATE, not the alphabetical pick the sibling test
     // uses, because THE NAME IS THIS TEST'S SUBJECT: the reported bug was a long
@@ -1084,18 +1084,6 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
       expect(m!.badgeTop, `${m!.id}: badge sits on a row BELOW the name`).toBeGreaterThan(m!.nameTop + 8);
     }
   });
-
-  test('preview OFF (default) is a strict no-op: the legacy card renders in the lane', async ({ page }) => {
-    await gotoWorkflow(page, { shell: false });
-    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
-
-    const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
-    await expect(laneNode).toHaveCount(1);
-    // The REAL card + its controls render in the lane, exactly as today.
-    await expect(laneNode.locator('[data-testid="control-base"]')).toBeVisible();
-    // …and NO placeholder is emitted.
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-  });
 });
 
 // ─── P0.3b ?shell=1 bug fixes (video-zone inset · lane-snap · expand button) ──
@@ -1167,7 +1155,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // jack rail straddled the line + collided with the lane-number badges. The shell
   // render override now insets them DOWN, fully inside the darker video area.
   test('video-zone tiles sit INSIDE the video area (below COLUMN_BASELINE_Y)', async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     for (const id of VZONE_IDS) {
       await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
@@ -1188,7 +1176,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // far right of the lane ("off-lane"). The persisted X now uses the active pitch,
   // so persisted + rendered both equal the tight column centre, flush-stacked.
   test('a lane drop persists + renders at the tight column centre, flush-stacked, no invalid state', async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
       await dropInShellColumn(page, t, 1);
@@ -1246,7 +1234,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     // a fader was a requirement borrowed from a different test. Sharing one
     // fixture meant the strictest leg's predicates silenced this one too.
     test.skip(AUDIO_PLACEHOLDER_FIXTURE.kind === 'migration-complete', AUDIO_PLACEHOLDER_FIXTURE.why);
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: NODE, type: fixtureType(AUDIO_PLACEHOLDER_FIXTURE), position: { x: 460, y: 240 } },
     ]);
@@ -1295,7 +1283,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // Pick an unpromoted subject BY PORT COUNT and re-derive those numbers.
   // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms.
   test.fixme('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     const tile = page.locator(
       '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell-placeholder"]',
     );
@@ -1377,7 +1365,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // tier boundary (0.30 / 0.52 / 0.95) plus the owner's repro range, normalizes
   // by zoom, and asserts every relative pair is identical within 2 flow px.
   test('zoom is a geometric NO-OP on SCREEN: tiles hold position vs lane lines, badges, the video band, and each other', async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     for (const id of VZONE_IDS) {
       await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
@@ -1513,7 +1501,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     // vca is MIGRATED as of P1 batch 1 — the lane tile is the curated
     // ModuleShell, which carries the SAME PatchPanel lane-rail contract the
     // placeholder does (all 4 dots, no overflow, EXPAND inside the tile).
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
     const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);
     await expect(tile).toBeVisible();
@@ -1577,7 +1565,7 @@ test.describe('LANE HEADROOM: the band grows with the fullest stack (?shell=1)',
   // LOST WHILE PARKED: the lane stacking geometry — headroom above the top tile, a single shared band top, and badges that are not clipped; the layout invariants that keep a 4-module stack readable.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
 
     // Lane 1 = the FULLEST lane (4 uniform tiles); lane 2 = a 1-tile lane (its

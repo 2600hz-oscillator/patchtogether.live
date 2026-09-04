@@ -64,8 +64,8 @@ const colPos = (ch: number, shell: boolean) => ({
   y: COLUMN_BASELINE_Y - 40,
 });
 
-async function gotoWorkflow(page: Page, shell: boolean): Promise<void> {
-  await page.goto(shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page, _shell: boolean): Promise<void> {
+  await page.goto('/rack');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await page.waitForFunction(
     () => {
@@ -155,11 +155,9 @@ async function spawnIntoLane(page: Page, ch: number, shell: boolean): Promise<st
 }
 
 test.describe('workflow spawn-camera reveal: adds never scroll the viewport wildly', () => {
-  // ⚠ The LEGACY renderer arm of this parity table died with the card fleet
-  // (S2 legacy-removal manifest; the flip-rack-rear-view precedent). The
-  // helpers keep their `shell` parameter because the geometry constants are
-  // imported either way — S5 simplifies when the legacy pitch leaves the
-  // product.
+  // The helpers still take a `shell` flag because the RACKLINE geometry
+  // constants are only meaningful next to the wider tile they replaced; the
+  // flag and its dead branches retire together in the vocabulary sweep.
   for (const shell of [true]) {
     const label = 'mode=workflow&shell=1';
 

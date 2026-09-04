@@ -46,8 +46,8 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
-async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page): Promise<void> {
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -91,7 +91,7 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
   // LOST WHILE PARKED: the migration seam itself — that a MIGRATED module renders its curated ModuleShell face in-lane rather than the un-migrated placeholder, and that the dock exposes its declared pages.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('adsr renders its SHELL face in-lane (not the placeholder) + the dock shows its pages', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
 
     const laneNode = page.locator('.svelte-flow__node[data-id="env"]');
@@ -191,17 +191,4 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
   // Its subject was a dock sidebar panel; `face.sidebar` is deleted
   // platform-wide, so there is no element left to assert on. See
   // ModuleFaceHero in graph/types.ts for the ruling set.
-
-  test('preview OFF stays a strict no-op for a MIGRATED module: the legacy card renders in the lane', async ({ page }) => {
-    await gotoWorkflow(page, { shell: false });
-    await spawnPatch(page, [{ id: 'env', type: 'adsr', position: { x: 460, y: 240 } }]);
-
-    const laneNode = page.locator('.svelte-flow__node[data-id="env"]');
-    await expect(laneNode).toHaveCount(1);
-    // The REAL legacy card + its controls render in the lane, exactly as today…
-    await expect(laneNode.locator('[data-testid="control-attack"]')).toBeVisible();
-    // …and NEITHER shell surface is emitted (no shell, no placeholder).
-    await expect(laneNode.locator('[data-testid="module-shell"]')).toHaveCount(0);
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-  });
 });

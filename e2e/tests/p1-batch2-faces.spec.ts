@@ -93,8 +93,8 @@ const BATCH2 = [
 
 const NODE = 'b2';
 
-async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page): Promise<void> {
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -102,7 +102,7 @@ async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void>
 test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', () => {
   for (const { type, pages, holes, laneParam } of BATCH2) {
     test(`${type}: curated shell in the lane, ${pages.length} dock pages, ${holes}-hole rear field`, async ({ page }) => {
-      await gotoWorkflow(page, { shell: true });
+      await gotoWorkflow(page);
       await spawnPatch(page, [{ id: NODE, type, position: { x: 460, y: 240 } }]);
 
       const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
@@ -164,23 +164,4 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       await expect(faceplate.locator('[data-testid="face-page"]')).toHaveCount(pages.length);
     });
   }
-
-  test('preview OFF (default) stays a strict no-op for the batch-2 types', async ({ page }) => {
-    await gotoWorkflow(page, { shell: false });
-    await spawnPatch(page, [
-      { id: 'off-dx7', type: 'dx7', position: { x: 200, y: 240 } },
-      { id: 'off-ss', type: 'sixstrum', position: { x: 1100, y: 240 } },
-    ]);
-
-    for (const id of ['off-dx7', 'off-ss']) {
-      const laneNode = page.locator(`.svelte-flow__node[data-id="${id}"]`);
-      await expect(laneNode).toHaveCount(1);
-      // The REAL card renders in the lane, exactly as before the promotion…
-      await expect(laneNode.locator('.mod-card, .card, .moog-panel').first()).toBeVisible();
-      await expect(laneNode.locator('[data-testid^="control-"]').first()).toBeVisible();
-      // …and NEITHER shell surface is emitted.
-      await expect(laneNode.locator('[data-testid="module-shell"]')).toHaveCount(0);
-      await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    }
-  });
 });
