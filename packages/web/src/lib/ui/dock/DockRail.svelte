@@ -35,8 +35,9 @@
     pinned: boolean;
     /** #1739 — mount the PROMOTED FACEPLATE for this occupant instead of its
      *  verbatim legacy card. Canvas evaluates `dockRailRendersFace` (which is
-     *  `shellFaces && pinned && migrated`) so the rule, its `?shell=legacy`
-     *  arm and its pinned-only scope live in ONE pure, tested place. */
+     *  `shellFaces && migrated`) so the rule and its `?shell=legacy` arm live
+     *  in ONE pure, tested place. Pinned and user-docked occupants are treated
+     *  alike since the 2026-09-03 owner P0. */
     face: boolean;
   }
 

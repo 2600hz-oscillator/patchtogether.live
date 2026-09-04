@@ -31,9 +31,16 @@
 //
 //   * PIXELS. No VRT baseline captures the pinned bottom drawer (grep
 //     `dock-zone-bottom` under `e2e/vrt/` → zero hits), before or after.
-//   * The `?shell=legacy` arm — that is the three specs named above.
-//   * A USER-DOCKED promoted module, which deliberately still renders its
-//     legacy card (`dockRailRendersFace` requires `pinned`).
+//   * The `?shell=legacy` arm — that is the three specs named above, plus the
+//     second case in the user-docked describe at the bottom of this file.
+//   ⚠ * A USER-DOCKED promoted module WAS ON THIS LIST, phrased as
+//     "deliberately still renders its legacy card (`dockRailRendersFace`
+//     requires `pinned`)" — and that entry is the 2026-09-03 owner P0, written
+//     down a fortnight before it was reported. A SCOPE NOTE IN A BLIND-SPOT
+//     LIST IS STILL A BLIND SPOT: nothing in the repo could go red on it, so
+//     when the owner docked a promoted CAMERA and got the pre-promotion card
+//     back, every gate was green. Covered now — see the `a USER-DOCKED promoted
+//     module renders its FACE in the rail` describe at the end of this file.
 //   * The three affordances the promoted FACE has never carried on any surface
 //     — the SECTIONED drill-down menu, in-card rename, and the card's compact
 //     toggle. Measured and filed as #1762, not silently absorbed: this spec
@@ -1034,6 +1041,114 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
     });
     await slot22.locator('[role="slider"]').dblclick();
     await expect.poll(() => readParam(page, 'adsr-1', 'attack')).not.toBe(0.9);
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE USER-DOCKED RAIL OCCUPANT — the 2026-09-03 owner P0's second half.
+//
+// This file's own header listed "A USER-DOCKED promoted module, which
+// deliberately still renders its legacy card" as a thing it structurally could
+// not see, and named `dockRailRendersFace requires pinned` as the reason. That
+// was true, it was written as a scope note rather than a gap, and it is exactly
+// what shipped: the owner docked a CAMERA and got `CameraInputCard` back — old
+// chrome, the card's own device dropdown, "streaming" lamp, Pause / Mirror /
+// Fit:Fill, GAIN slider — on the default shell. *"dev is also still using
+// legacy card in top camera area … ALSO WRONG."*
+//
+// ⚠ A DOCUMENTED BLIND SPOT IS STILL A BLIND SPOT. Nothing in the repo could
+// fail on this: `workflow-dock.spec.ts` docks `mixer` and asserts `.mod-card`,
+// but it drives `/rack?shell=legacy`, so it asserts the legacy arm and would
+// have passed just as well with the default shell completely broken. This case
+// is the same gesture on the DEFAULT shell, which is the only place the bug
+// lives.
+//
+// ⚠ THE SUBJECT IS `mixer`, NOT `cameraInput`, AND THAT IS ITSELF A FINDING.
+// `cameraInput` is not in `DOCKABLE_TYPES`, so the camera the owner reported can
+// never take a rail slot at all — its "top camera area" is the topbar's 📷
+// CAMERA MANAGER (`CameraSurface.svelte`), a host that is not a `DockCardHost`
+// and mounts the verbatim card by design, because for a `hiddenCard` camera it
+// is the module's ONLY mount and therefore the sole owner of getUserMedia. That
+// surface is recorded in `legacy-fallback.ts` and is NOT fixed here. What IS
+// fixed here is the same class on the rail, which `mixer` exercises: the old
+// rule's own note named it ("`workflow-dock.spec.ts` docks `mixer` and asserts
+// `.mod-card`") as the thing widening would move, and it does not — that spec
+// drives `?shell=legacy`.
+test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the rail', () => {
+  test('docking a migrated module mounts ModuleShell in the rail, never its legacy card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await gotoWorkflow(page);
+
+    await spawnPatch(page, [{ id: 'dock-mix', type: 'mixer', position: { x: 300, y: 200 } }]);
+
+    // PRECONDITION, ASSERTED RATHER THAN ASSUMED: the lane already paints the
+    // face. Without this the test could pass on a demoted module by rendering
+    // nothing anywhere, and "the rail has no legacy card" would be vacuous.
+    const laneShell = page.locator('.svelte-flow__node[data-id="dock-mix"] [data-testid="module-shell"]');
+    await expect(laneShell, 'the lane paints the promoted face before we dock it').toBeVisible({
+      timeout: BOOT_MS,
+    });
+
+    // The real dock action, through the same function the node context menu
+    // calls (`__dock.dock` → `Canvas.dockNode`).
+    await page.evaluate(() => {
+      (globalThis as unknown as { __dock: { dock: (id: string, zone: string) => void } }).__dock.dock(
+        'dock-mix',
+        'top',
+      );
+    });
+
+    const railCard = page.locator('[data-dock-card="dock-mix"]');
+    await expect(railCard, 'the docked node takes a rail slot').toBeVisible({ timeout: BOOT_MS });
+
+    // ── THE ASSERTION THE DEFECT FAILS ───────────────────────────────────
+    const railShell = railCard.locator('[data-testid="module-shell"]');
+    await expect(railShell, 'the rail occupant mounts the FACE').toBeVisible();
+    await expect(railShell).toHaveAttribute('data-shell-type', 'mixer');
+    // `view='drawer'`, not `'lane'` — a shell that fell back to the lane view
+    // would still be "a module-shell" while painting a fraction of the face.
+    await expect(railShell).toHaveAttribute('data-shell-view', 'drawer');
+    // …and the pre-promotion instrument is GONE from this host. This is the
+    // owner's literal report, and it is the leg that was `.toHaveCount(1)` in
+    // spirit before the fix.
+    await expect(
+      railCard.locator('.mod-card, .moog-panel'),
+      'the verbatim legacy card must not be mounted in the rail',
+    ).toHaveCount(0);
+
+    // The canvas side is unchanged: docking still swaps the lane to the STUB,
+    // so this is not "the face leaked onto both surfaces".
+    await expect(page.locator('[data-testid="dock-stub"][data-stub-node="dock-mix"]')).toBeVisible();
+
+    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('`?shell=legacy` still docks to the VERBATIM CARD — the escape hatch is not collateral', async ({ page }) => {
+    // The negative half, and the reason the rule keeps its `shellFaces` term.
+    // Without this leg the fix above would be indistinguishable from deleting
+    // the legacy arm outright, which is a different (owner-gated) change.
+    const errors = collectErrors(page);
+    await page.goto('/rack?shell=legacy');
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
+    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+
+    await spawnPatch(page, [{ id: 'dock-mix-legacy', type: 'mixer', position: { x: 300, y: 200 } }]);
+    await page.evaluate(() => {
+      (globalThis as unknown as { __dock: { dock: (id: string, zone: string) => void } }).__dock.dock(
+        'dock-mix-legacy',
+        'top',
+      );
+    });
+
+    const railCard = page.locator('[data-dock-card="dock-mix-legacy"]');
+    await expect(railCard).toBeVisible({ timeout: BOOT_MS });
+    await expect(
+      railCard.locator('.mod-card, .moog-panel'),
+      '?shell=legacy means verbatim legacy cards, in the rail too',
+    ).toHaveCount(1);
+    await expect(railCard.locator('[data-testid="module-shell"]')).toHaveCount(0);
 
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });

@@ -94,11 +94,11 @@ describe('electraControl face — the promotion', () => {
   // from the legacy card to the faceplate; before it, `migrated` was false and
   // the drawer painted the card forever.
   it('the pinned DRAWER now renders the face — the whole point of the promotion', () => {
-    expect(dockRailRendersFace({ shellFaces: true, pinned: true, migrated: migrated(ELECTRA_CONTROL_TYPE) })).toBe(true);
+    expect(dockRailRendersFace({ shellFaces: true, migrated: migrated(ELECTRA_CONTROL_TYPE) })).toBe(true);
     // …and the `?shell=legacy` escape hatch still gets the verbatim card, which
     // is what keeps `electra-control.spec.ts` meaningful rather than merely
     // passing.
-    expect(dockRailRendersFace({ shellFaces: false, pinned: true, migrated: true })).toBe(false);
+    expect(dockRailRendersFace({ shellFaces: false, migrated: true })).toBe(false);
   });
 });
 

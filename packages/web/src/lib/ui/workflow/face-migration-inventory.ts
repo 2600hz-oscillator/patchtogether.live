@@ -1300,9 +1300,9 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
       '⚠ THIS IS A LANE-TIER CHANGE, OWNER-APPROVED 2026-08-31 (owner-decisions item 10): the ' +
       'free-growing 360–760 px inline panel becomes a 192×180 tile plus one Expand click, on the ' +
       'electraControl / semantic-zoom precedent — the refusal this entry used to justify was ' +
-      'measured BEFORE `tileBody` existed (#2242). A USER-DOCKED node\'s rail occupant still ' +
-      'mounts the verbatim card (dockRailRendersFace requires `pinned`), where it stays ' +
-      'DYNAMIC_SIZED. ⚠ EVERY PROXIED KNOB IN THE BODY PASSES AN EXPLICIT testid — Knob.svelte ' +
+      'measured BEFORE `tileBody` existed (#2242). A USER-DOCKED node\'s rail occupant renders ' +
+      'the FACE too since the 2026-09-03 owner P0 removed the `pinned` term from ' +
+      'dockRailRendersFace. ⚠ EVERY PROXIED KNOB IN THE BODY PASSES AN EXPLICIT testid — Knob.svelte ' +
       'emits control-<paramId> whenever the MIDI-learn key is passed, and faces-parity asserts ' +
       'exact multiset equality against params: [] — and for the same reason the body does NOT ' +
       'reuse the card\'s control-surface-* testid vocabulary (every one of those matches the ' +
