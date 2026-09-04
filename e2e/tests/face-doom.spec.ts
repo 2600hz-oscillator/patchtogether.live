@@ -65,8 +65,8 @@ const NODE = 'fd1';
 const SURFACE = 'doom-face-surface';
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. `?shell=legacy` is precisely the surface
-  // promotion does not change, and every OTHER doom spec boots that one.
+  // Plain /rack — the DEFAULT shell, which is now the only rack the DOOM suite
+  // knows: every doom spec drives the faceplate.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

@@ -100,24 +100,21 @@ async function fieldAdvance(page: Page, field: 'pumpRuns' | 'gametic', minAdvanc
 }
 
 /**
- * ⚠ RE-POINTED BY THE FACE PROMOTION (2026-09-02), and it is the ONE DOOM spec
- * that had to move — the recorderbox precedent, verbatim: a spec that LOCATED
- * THE CARD must find the FACE.
+ * ⚠ RE-POINTED BY THE FACE PROMOTION (2026-09-02) — the recorderbox precedent,
+ * verbatim: a spec that LOCATED THE CARD must find the FACE. It was the FIRST
+ * doom spec to move because the whole regression it guards (#1590) is about
+ * what happens when the DOCK unmounts the surface; the rest of the suite
+ * followed it onto the faceplate in the DOOM sub-slice of the legacy removal.
  *
- * Every other DOOM spec pins `?shell=legacy` in its own `goto` and is untouched
- * by this promotion. This one drives `/rack?seed=none` — the DEFAULT shell — on
- * purpose, because the whole regression it guards (#1590) is about what happens
- * when the DOCK unmounts the surface. `migrated('doom')` makes that dock full
- * view mount `<ModuleShell>` + the faceplate body instead of `DoomCard.svelte`,
- * so `doom-card` resolves to nothing here and the spec would fail at its FIRST
- * locator rather than testing anything.
+ * `migrated('doom')` makes the dock full view mount `<ModuleShell>` + the
+ * faceplate body, so a `doom-card` locator resolves to nothing and a spec
+ * carrying one would fail at its FIRST locator rather than testing anything.
  *
- * THE CHANGE IS THE TESTID AND NOTHING ELSE. Both surfaces are the same
- * component — `doom/DoomSurface.svelte`, mounted with `variant="card"` by the
- * legacy card and `variant="face"` by the body — so the load overlay, the
- * `.overlay` clear, `__doomCards`, `faceplate-collapse` and every probe field
- * below are byte-identical on both. No wait, no budget, no assertion and no
- * threshold in this file moves.
+ * THE CHANGE WAS THE TESTID AND NOTHING ELSE. `doom/DoomSurface.svelte` is ONE
+ * component mounted with `variant="face"` by the body — so the load overlay,
+ * the `.overlay` clear, `__doomCards`, `faceplate-collapse` and every probe
+ * field below read exactly as they always did. No wait, no budget, no assertion
+ * and no threshold in this file moves.
  */
 const SURFACE = 'doom-face-surface';
 

@@ -81,6 +81,21 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressUntilInLevel, waitTics } from './_doom-helpers';
 
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the `__doomCards` hook, the keyboard
+ *  capture and the "Click to load DOOM" gesture, so the faceplate has to be
+ *  open before the WAD can be booted or a key can reach the marine. */
+const SURFACE = 'doom-face-surface';
+
+/** Open a node's dock faceplate through the app's own hook. The dock boot is
+ *  SEQUENTIAL — it does not overlap the page load — so this is a real wait. */
+async function openDoomFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
 
 
 /** Probe DOOM-WASM presence. Skip cleanly when the optional asset is
@@ -195,7 +210,7 @@ test.describe('DOOM audio: A-L / A-R reach a downstream SCOPE, above the old −
     page,
   }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const hasWasm = await doomWasmPresent(page);
@@ -274,15 +289,16 @@ test.describe('DOOM audio: A-L / A-R reach a downstream SCOPE, above the old −
       ).toBeLessThan(0.001);
     }
 
-    const card = page.locator('[data-testid="doom-card"]');
-    await expect(card, 'DOOM card mounts').toHaveCount(1);
+    await openDoomFace(page, doomId);
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
+    await expect(card, 'DOOM surface mounts').toHaveCount(1);
     const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
     await expect(loadBtn).toBeVisible();
     await loadBtn.click();
     await expect(card.locator('.overlay'), 'load overlay clears').toHaveCount(0, {
       timeout: 30_000,
     });
-    await card.click(); // focus/latch the card so DOOM consumes our keys
+    await card.click(); // focus/latch the surface so DOOM consumes our keys
 
     // BASIC GAME NAV: walk the title sequence into E1M1 by keyboard. Presses
     // until the marine exists rather than four presses on a wall-clock cadence

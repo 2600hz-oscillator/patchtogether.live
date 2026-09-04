@@ -119,7 +119,7 @@ async function boot(
     out.push({ ctx, page, ...s });
   }
   for (const p of out) {
-    await p.page.goto('/rack?shell=legacy&seed=none');
+    await p.page.goto('/rack?seed=none');
     await p.page.waitForLoadState('networkidle');
     await p.page.waitForFunction(
       () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -161,7 +161,27 @@ async function assetsPresent(page: Page): Promise<boolean> {
   });
 }
 
+/**
+ * Bring THIS peer's DOOM faceplate up and wait for its `__doomCards` hook.
+ *
+ * ⚠ THE HOOK IS INSTALLED BY THE SURFACE, AND THE SURFACE IS THE DOCK
+ * FACEPLATE. `doom/DoomSurface.svelte` adopts the node session — the awareness
+ * observers, the lockstep pump, the keyboard capture and this hook — in its
+ * `onMount`, and on the default shell that component is the module's
+ * `fullViewBody`: it exists only while the pane is open. So opening the pane is
+ * this peer JOINING THE ROOM, not test decoration, and every peer whose state
+ * this file reads has to do it. (The card mounted the same component, so
+ * everything the hook exposes is byte-identical either way.)
+ *
+ * The wait below is unchanged: `timeout` still bounds the hook's arrival, and
+ * the pane-mount wait is its own, separate ceiling.
+ */
 async function cardHookReady(page: Page, id: string, timeout = 15000): Promise<void> {
+  await page.evaluate(
+    (nid) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(nid),
+    id,
+  );
+  await expect(page.getByTestId('doom-face-surface')).toBeVisible({ timeout: 20_000 });
   await page.waitForFunction(
     (nid) => !!(globalThis as unknown as { __doomCards?: Record<string, unknown> }).__doomCards?.[nid],
     id,

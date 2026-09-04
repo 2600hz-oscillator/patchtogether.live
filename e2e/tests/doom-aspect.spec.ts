@@ -30,7 +30,28 @@
 // path: shader + FBO + VideoOut blit + canvas pixel read.
 
 import { test, expect } from './_fixtures';
+import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the blit and the "Click to load DOOM"
+ *  gesture, so the faceplate has to be open before the WAD can be booted. */
+const SURFACE = 'doom-face-surface';
+
+/** The VIDEO OUT sink's own picture: the dock faceplate's 2-D copy of the
+ *  engine framebuffer, aspect-fitted with the same `fitRect` maths the sink has
+ *  always used. This is where the engine's letterbox bars are observable. */
+const OUT_CANVAS = 'canvas[data-testid="videoout-face-canvas"]';
+
+/** Open a node's dock faceplate through the app's own hook. Two panes may be
+ *  open at once (`MAX_FULLVIEW_PANES`), which is exactly what this spec needs:
+ *  DOOM's surface to boot the WAD, and VIDEO OUT's picture to sample. */
+async function openFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+}
 
 test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', () => {
   // Cold WASM init + 4 MB WAD fetch is ~10–20 s on CI; matches doom-wasm
@@ -45,7 +66,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Pre-flight: WASM + WAD on the dev server. Skip clean if missing —
@@ -68,7 +89,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       return;
     }
 
-    // Wire DOOM → VideoOut. The VideoOut card aspect-fits the 4:3 engine FBO
+    // Wire DOOM → VideoOut. The VideoOut surface aspect-fits the 4:3 engine FBO
     // into its canvas, so the engine's letterbox bars carry through to the
     // canvas (within the fitted 4:3 region).
     await spawnPatch(
@@ -88,13 +109,15 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       ],
     );
 
-    const doomCard = page.locator('[data-testid="doom-card"]');
-    await expect(doomCard, 'DOOM card mounts').toHaveCount(1);
-    const outCanvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    await openFace(page, 'v-doom');
+    const doomCard = page.locator(`[data-testid="${SURFACE}"]`);
+    await expect(doomCard, 'DOOM surface mounts').toHaveCount(1);
+    await openFace(page, 'v-out');
+    const outCanvas = page.locator(OUT_CANVAS);
     await expect(outCanvas, 'VideoOut canvas mounts').toHaveCount(1);
 
     // Click the load-overlay button to kick off the WASM + WAD load. The
-    // overlay sits over the DOOM canvas; clearing it transitions the card
+    // overlay sits over the DOOM canvas; clearing it transitions the surface
     // into the rAF blit loop that drives the engine FBO every frame.
     const loadBtn = doomCard.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
     await expect(loadBtn, 'load-overlay button visible').toBeVisible();
@@ -109,11 +132,11 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
     // static for ~2 s before the demo lump replays.
     await page.waitForTimeout(2500);
 
-    // The VideoOut card's canvas can have ANY aspect ratio (it's a free-resize
-    // card). The card aspect-fits the 4:3 engine FBO into the canvas — so when
+    // The VideoOut surface's canvas can have ANY aspect ratio (it resizes with
+    // the pane). It aspect-fits the 4:3 engine FBO into the canvas — so when
     // the canvas is WIDER than 4:3, there are additional side bars from the
-    // card's fitRect, and when TALLER than 4:3 there are additional top/bottom
-    // bars. Either way, INSIDE the fitted 4:3 region the engine's DOOM
+    // surface's fitRect, and when TALLER than 4:3 there are additional
+    // top/bottom bars. Either way, INSIDE the fitted 4:3 region the engine's DOOM
     // letterbox shows up as horizontal black bars (top + bottom of the FBO).
     //
     // The test sampling is therefore done in 3 steps:
@@ -132,7 +155,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       const H = c.height;
       const img = ctx.getImageData(0, 0, W, H);
 
-      // Engine FBO is 4:3. fitRect mirrors VideoOutCard.svelte's logic.
+      // Engine FBO is 4:3. fitRect mirrors VideoOutBody.svelte's logic.
       const srcAspect = 4 / 3;
       const dstAspect = W / H;
       let fitX: number, fitY: number, fitW: number, fitH: number;
@@ -274,8 +297,10 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       ],
     );
 
-    const doomCard = page.locator('[data-testid="doom-card"]');
-    const outCanvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    await openFace(page, 'v-doom');
+    const doomCard = page.locator(`[data-testid="${SURFACE}"]`);
+    await openFace(page, 'v-out');
+    const outCanvas = page.locator(OUT_CANVAS);
     await expect(doomCard).toHaveCount(1);
     await expect(outCanvas).toHaveCount(1);
 
@@ -286,7 +311,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
     await page.waitForTimeout(2500);
 
     // Sample 5 points inside the active gameplay band. We first compute
-    // the 4:3 fit-rect (matches VideoOutCard.fitRect), then sample 5
+    // the 4:3 fit-rect (matches VideoOutBody.fitRect), then sample 5
     // points well inside the inner active band — the 5 points are placed
     // within fitX..fitX+fitW horizontally and fitY+0.3*fitH..fitY+0.7*fitH
     // vertically (i.e. well inside the engine's ~8.3% top/bottom bars).
