@@ -179,6 +179,69 @@ export function snapshotAudioHealth(ctx: unknown): AudioHealthSnapshot {
 }
 
 /**
+ * The DELTA between two snapshots — "did the device starve DURING this?".
+ *
+ * ⚠ WHY A DELTA HELPER EXISTS AT ALL. Every counter on `AudioHealthSnapshot` is
+ * CUMULATIVE SINCE CONTEXT CREATION, so a bare `underrunEvents > 0` assertion
+ * around a workflow is answering a different question: it fails on a dropout
+ * from four hours ago and passes a workflow that added ten. Snapshot before,
+ * snapshot after, diff — that is the only shape that means "this workflow was
+ * clean".
+ *
+ * ⚠ AND IT IS VACUOUS ON HEADLESS CI. `e2e/tests/audio-health-readout.spec.ts`
+ * measured this runner: a NULL AUDIO SINK where "an underrun literally cannot
+ * occur". A green delta from a headless lane is NOT evidence of device-level
+ * continuity — it is evidence that the lane cannot fail. Use it on a machine
+ * with a real output device, and pair it with the graph-continuity probe
+ * (continuity-probe.ts), which is the leg that CAN go red headless. Neither one
+ * substitutes for the other, and saying which leg produced a green result is
+ * part of reporting it.
+ *
+ * `supported: false` on either side yields `supported: false`: "we could not
+ * see" must not read as "nothing happened".
+ */
+export interface AudioHealthDelta {
+  /** False when either snapshot came from a browser without playbackStats. */
+  readonly supported: boolean;
+  /** Starvation events that occurred BETWEEN the two snapshots. */
+  readonly underrunEvents: number;
+  /** Starved time between the two snapshots, SECONDS. */
+  readonly underrunSec: number;
+  /** Output time between the two snapshots, SECONDS. */
+  readonly totalSec: number;
+}
+
+/** The delta a browser without `playbackStats` gets — never a clean zero. */
+export const UNSUPPORTED_AUDIO_HEALTH_DELTA: AudioHealthDelta = Object.freeze({
+  supported: false,
+  underrunEvents: 0,
+  underrunSec: 0,
+  totalSec: 0,
+});
+
+/**
+ * `after − before`, clamped at zero. PURE.
+ *
+ * Clamped because the counters are only monotonic within ONE AudioContext: a
+ * context that was torn down and rebuilt mid-workflow restarts them at 0, and a
+ * NEGATIVE underrun count is a nonsense number that would read as "better than
+ * clean". Zero is the honest floor. (A context swap is itself worth reporting,
+ * but it is not this function's job to guess at one.)
+ */
+export function diffAudioHealth(
+  before: AudioHealthSnapshot,
+  after: AudioHealthSnapshot,
+): AudioHealthDelta {
+  if (!before.supported || !after.supported) return UNSUPPORTED_AUDIO_HEALTH_DELTA;
+  return {
+    supported: true,
+    underrunEvents: Math.max(0, after.underrunEvents - before.underrunEvents),
+    underrunSec: Math.max(0, after.underrunSec - before.underrunSec),
+    totalSec: Math.max(0, after.totalSec - before.totalSec),
+  };
+}
+
+/**
  * The footer strings. Kept next to the numbers so the UI cannot invent its own
  * rounding, and so the "—" path is testable without mounting a component.
  *

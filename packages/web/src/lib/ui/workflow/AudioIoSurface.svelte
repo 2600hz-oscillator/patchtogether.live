@@ -70,8 +70,8 @@
     audioIn: ModuleNode | null;
     audioOut: ModuleNode | null;
     /** Does each column render its PROMOTED FACEPLATE instead of the verbatim
-     *  legacy card? This is `dockRailRendersFace({ shellFaces, pinned: true,
-     *  migrated })` — evaluated by Canvas and INJECTED, exactly like
+     *  legacy card? This is `dockRailRendersFace({ shellFaces, migrated })`
+     *  — evaluated by Canvas and INJECTED, exactly like
      *  `DockCardHost.face` in the dock rails. This panel deliberately re-derives
      *  neither `?shell=legacy` nor `migrated()`: the whole reason that rule is
      *  pure and injected is that ONE component reads those, and the patch rows
