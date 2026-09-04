@@ -94,9 +94,79 @@ verbatim card because `dockRailRendersFace` required `pinned` while Canvas passe
 conflict in a file being rewritten underneath. It is done AFTER that fold, on the
 post-fix text, on the coordinator's signal.
 
+## ⚠ S4a MOVED A DEV SEAM'S BEHAVIOUR AND NO GATE COULD REPORT IT
+
+`laneRenderKind` stopped consulting `migrated`, which silently changed what the
+forced-placeholder seam DID. Four specs were built on that seam and all four
+went red at once — and none of them said so, because the e2e lane had not run
+since. (Two pushes that day produced no CI run at all.) The lesson is not
+"remember to run e2e": it is that **deleting an arm of a switch changes every
+seam that injected an answer into it**, and those seams are exactly the code
+with no product caller to notice.
+
+Worth pairing with the second-order finding below, which is the same shape one
+level down: the deletion did not only break tests, it broke the PRODUCT in a
+place only those tests looked at.
+
+## ⚠ THE DELETION LEFT A LIVE DEFECT, AND THE ONLY GATE WAS POINTED AWAY FROM IT
+
+`data-dock-card` / `data-dock-card-frame` were emitted ONLY by `DockFullView`'s
+second branch, so they were a property of the CONTENT rather than of the DOCK.
+`Canvas.cardRectFor` and `PickupCable` both resolve them and both fall back to
+`.svelte-flow__node[data-id]` — which a CANVAS-HIDDEN node does not have.
+
+Measured, both directions, on the built preview:
+
+* with the anchors: the ghost cable renders, path has geometry;
+* without them: **the `pickup-cable` element is not found at all.**
+
+So on `main` today you can flip the built-in clip player's pane (Tab), click a
+back jack, and nothing attaches to your cursor. The picker loses the same rect
+and opens at the raw cursor instead of the pane edge — the owner's "patch to is
+a mess in terms of where the menu spawns", by a second route.
+
+The anchors now sit on the pane's own frame (attributes on elements it already
+had — no wrapper, so measured geometry is unchanged). Regression test:
+`workflow-rear-card.spec.ts` → "a CANVAS-HIDDEN occupant renders a pickup ghost
+from its rear card". Its subject MUST be a node with no canvas element; the
+existing carry-seam test uses a spawned `adsr` and therefore resolves the first
+selector and never reaches the fallback.
+
+## ⚠ THE DERIVED LEGACY-FALLBACK FIXTURE POOLS ARE STRUCTURALLY DEAD
+
+`e2e/tests/_face-fixtures.ts` derives four pools — `AUDIO_PLACEHOLDER_FIXTURE`,
+`AUDIO_OPERABLE_FIXTURE`, `VIDEO_FIXTURE`, `VIDEO_SINK_FIXTURE` — each meaning
+"an un-migrated module whose legacy card does X". Their fitness predicates READ
+CARD SOURCE (`mountsAFader` opens `${cardComponentName(type)}.svelte`), and the
+cards are gone, so every predicate now accepts nothing.
+
+⚠ AND THE FIXTURE'S OWN ANTI-VACUITY GUARD IS WHAT REPORTED IT, correctly and
+loudly: it separates "migration complete" from "the predicate broke" by asking
+whether the predicate accepts ANY module in the whole population, promoted or
+not. It says *"THE FITNESS PREDICATE ACCEPTS NOTHING IN THE ENTIRE domain=audio
+POPULATION (121 modules) … FIX THE PREDICATE, do not re-point the fixture."*
+That guard is the reason this surfaced as a named failure instead of a suite of
+silent skips. The honest answer is neither of its two arms: the predicates
+cannot be fixed and the fixtures cannot be re-pointed, because the population
+they select from no longer exists. They die with the cards.
+
+Consumers needing a per-leg disposition: `workflow-dock-ux.spec.ts` (2 legs +
+1 health test), `workflow-shell.spec.ts` (health tests + several legs),
+`workflow-shell-video.spec.ts` (`VIDEO_SINK_FIXTURE` + health).
+
 ## Remaining in S5
 
-* `ModuleShellPlaceholder.svelte` — unreachable since S4a; CSS + model consumers.
-* The 29 re-pointed VRT scenes' baselines — one scoped `task vrt:commit`.
+* ~~`ModuleShellPlaceholder.svelte`~~ — DONE, and it took the forced-placeholder
+  seam, `DockFullView`'s second branch and three of its props with it. Four
+  specs re-pointed; one dock regression found, fixed and gated.
+* The derived legacy-fallback fixture pools (above) — the last structural
+  dependency on the card fleet inside the e2e suite.
+* The `module-shell-placeholder` testid still named in ~25 specs. Most are
+  `toHaveCount(0)` — now trivially true, and monuments of exactly the kind
+  ruling 2 forbids. Sweep them with the fixture work, not before: several sit
+  in the same legs.
+* The re-pointed VRT baselines — one scoped `task vrt:commit`. NOTE the count
+  is no longer 29: `workflow-dock-patch` re-points to the pinned MIXMSTRS
+  drawer and its picture changes deliberately.
 * `camera-input.ts`'s 8 hits, after the fold.
 * THEN the attest, on whatever `task webgl:attest:check` reports at that point.
