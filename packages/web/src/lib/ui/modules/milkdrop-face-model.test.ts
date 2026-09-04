@@ -23,8 +23,8 @@ import {
 } from '$lib/ui/workflow/shell-control-kind';
 import { curatedFace, dockFacePlan } from '$lib/ui/workflow/curated-face';
 import { dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
-import { hasVideoSurface } from '/ui/workflow/module-shell-model';
-import { shellCellFor } from '/ui/workflow/shell-cells';
+import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
+import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEF_SRC = resolve(HERE, '../../video/modules/milkdrop.ts');
