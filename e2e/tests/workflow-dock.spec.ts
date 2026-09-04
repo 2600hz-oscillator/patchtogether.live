@@ -1,6 +1,6 @@
 // e2e/tests/workflow-dock.spec.ts
 //
-// WORKFLOW MODE P2.5a — the DOCKING CORE on /rack?shell=legacy:
+// WORKFLOW MODE P2.5a — the DOCKING CORE on /rack:
 //
 //   * THE SPIKE (gated PatchPanel): a REAL module card renders in a dock
 //     rail OUTSIDE the SvelteFlow provider — zero pageerrors, functional
@@ -19,7 +19,7 @@
 //   * Dawless unchanged: no rails, no dock menu entries, PatchPanel's
 //     canvas handle stack intact.
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving plain /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Docking is LOCAL
 // state (never in the Y.Doc), so no multi-context spec here (the tagged
 // multi-user dock spec is P2.5b's, per the owner's attest answer).
@@ -34,7 +34,7 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 //
 // This file bounds its boot waits with `BOOT_MS` — 30 000 on CI, IDENTICAL to
 // the 30 000 default budget they were running inside. 2 sites, 1.00x, and the
-// legacy-card handle test declares BOOT_MS + 10 000 = 40 000 ms in it.
+// lane-node handle test declares BOOT_MS + 10 000 = 40 000 ms in it.
 //
 // An inner bound at or above the budget that CONTAINS it can never come true:
 // the outer clock kills the test first, so a legible `element not found` is
@@ -76,23 +76,28 @@ async function answerWidthChooser(page: Page, mode: 'left' | 'right' | 'both'): 
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Right-click a canvas node (on its TITLE — the card body is full of
+/** Right-click a canvas node (on its KIND row — the tile body is full of
  *  knobs/faders whose own contextmenu handlers would win) and pick a
- *  context-menu entry by testid. Dock STUBS have no .title; their whole
+ *  context-menu entry by testid. Dock STUBS have no kind row; their whole
  *  face is a neutral surface, so fall back to the node element. */
 async function nodeMenuPick(page: Page, nodeId: string, entryTestId: string): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
-  const title = node.locator('.title');
-  if ((await title.count()) > 0) {
-    await title.first().click({ button: 'right' });
-  } else {
-    await node.click({ button: 'right' });
-  }
+  // ⚠ TWO DIFFERENT OCCUPANTS, AND THE TARGET IS NOT THE SAME ON BOTH.
+  //  * an UNDOCKED node is a shell tile: right-clicking its BODY lands on a
+  //    control and opens THAT control's menu, which carries no dock entries —
+  //    so the click "works" and the entry lookup is what fails, which reads
+  //    like the dock feature is gone. The NAME row is a rename button, so the
+  //    KIND row is the module-menu target.
+  //  * a DOCKED node is the `dock-stub` face, which has no kind row at all;
+  //    the stub itself is the target (that is where `ctx-undock` lives).
+  const kind = node.locator('.tile-kind');
+  const target = (await kind.count()) > 0 ? kind.first() : node;
+  await target.click({ button: 'right' });
   await page.getByTestId(entryTestId).click();
 }
 
@@ -158,12 +163,15 @@ test.describe('P2.5a docking core (workflow racks)', () => {
     await stub.click();
     await expect(rail.locator('[data-dock-card="mm"]')).toHaveClass(/dock-flash/);
 
-    // Undock from the stub's context menu → the full card returns at the
-    // dock-time position (single-user path writes node.position).
+    // Undock from the stub's context menu → the module's own surface returns
+    // at the dock-time position (single-user path writes node.position).
     await nodeMenuPick(page, 'mm', 'ctx-undock');
     await expect(page.locator('[data-dock-card="mm"]')).toHaveCount(0);
     await expect(page.locator('.svelte-flow__node[data-id="mm"] [data-testid="dock-stub"]')).toHaveCount(0);
-    await expect(page.locator('.svelte-flow__node[data-id="mm"] [data-testid="matrixmix-card"]')).toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node[data-id="mm"] [data-testid="module-shell"]'),
+      'undocking puts the module back on the canvas, not a stub and not nothing',
+    ).toBeVisible();
     const pos = await page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { position: { x: number; y: number } }> } };
       return w.__patch.nodes['mm']?.position;
@@ -382,10 +390,10 @@ test.describe('P2.5b pan cable tail (workflow racks)', () => {
 // PatchPanel handle stack (5 handles on a mixer), because the gate is
 // provider-presence and canvas cards are inside the provider — is kept below
 // against the real shell, where it is now the only place it can be true.
-test.describe('canvas cards keep their full PatchPanel handle stack', () => {
-  test('a legacy-card lane node mounts every handle and offers the dock menu', async ({ page }) => {
+test.describe('canvas nodes keep their full PatchPanel handle stack', () => {
+  test('a lane node mounts every handle and offers the dock menu', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await canvasPane(page).waitFor({ state: 'visible' });
 
@@ -396,9 +404,10 @@ test.describe('canvas cards keep their full PatchPanel handle stack', () => {
     // Dock entries EXIST now (they were workflow-only, and everything is the
     // shell) — the inverse of what this block used to assert, which is exactly
     // why it could not simply be re-pointed.
-    // Right-click the card TITLE, matching nodeMenuPick above — a right-click
-    // on the node BODY lands on a control and opens that control's menu.
-    await node.locator('.title').first().click({ button: 'right' });
+    // Right-click the tile's KIND row, matching nodeMenuPick above — a
+    // right-click on the node BODY lands on a control and opens that control's
+    // menu, and the NAME row is a rename button.
+    await node.locator('.tile-kind').first().click({ button: 'right' });
     await expect(page.locator('.ctx-menu')).toBeVisible();
     await expect(page.getByTestId('ctx-dock-top')).toBeVisible();
     await page.keyboard.press('Escape');
