@@ -12,6 +12,7 @@ import {
   clipLaneLiveGain,
   clipLaneNormalConnected,
   coerceClipLaneMon,
+  coerceClipLanePlayingEdge,
   type ClipLaneMonMode,
 } from './clip-lane-return';
 
@@ -97,5 +98,33 @@ describe('clipLaneNormalConnected — a hardware normal, broken by a jack', () =
     // heuristic the stereo policy bans by name. On hardware, inserting a jack
     // into a silent module still breaks the normal; so does it here.
     expect(clipLaneNormalConnected(true)).toBe(false);
+  });
+});
+
+describe('coerceClipLanePlayingEdge — the cross-module boundary', () => {
+  it('passes a well-formed edge through unchanged', () => {
+    expect(coerceClipLanePlayingEdge({ lane: 3, playing: true, atTime: 1.25 })).toEqual({
+      lane: 3,
+      playing: true,
+      atTime: 1.25,
+    });
+    expect(coerceClipLanePlayingEdge({ lane: 0, playing: false, atTime: 0 })).toEqual({
+      lane: 0,
+      playing: false,
+      atTime: 0,
+    });
+  });
+
+  it('drops everything that could put NaN (or worse) onto an AudioParam', () => {
+    expect(coerceClipLanePlayingEdge(null)).toBeNull();
+    expect(coerceClipLanePlayingEdge('edge')).toBeNull();
+    expect(coerceClipLanePlayingEdge({})).toBeNull();
+    expect(coerceClipLanePlayingEdge({ lane: 1.5, playing: true, atTime: 1 })).toBeNull();
+    expect(coerceClipLanePlayingEdge({ lane: -1, playing: true, atTime: 1 })).toBeNull();
+    expect(coerceClipLanePlayingEdge({ lane: 1, playing: 1, atTime: 1 })).toBeNull();
+    expect(coerceClipLanePlayingEdge({ lane: 1, playing: true, atTime: NaN })).toBeNull();
+    expect(coerceClipLanePlayingEdge({ lane: 1, playing: true, atTime: Infinity })).toBeNull();
+    // A renamed field is a DROPPED edge, never a half-read one.
+    expect(coerceClipLanePlayingEdge({ lane: 1, isPlaying: true, atTime: 1 })).toBeNull();
   });
 });

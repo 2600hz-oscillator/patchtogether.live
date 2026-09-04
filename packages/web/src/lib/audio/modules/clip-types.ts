@@ -963,8 +963,27 @@ export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'o
  *  ⚠ THE PRECEDENCE IS LOAD-BEARING AND IT IS NOT ALPHABETICAL. QUEUED WINS
  *  OVER PLAYING: a pad whose lane has a pending launch — or a pending STOP —
  *  reads `queued` even while it is still sounding, which is what makes the
- *  blink mean "a change is coming" rather than "something is happening". */
-export type ClipPadState = 'empty' | 'loaded' | 'queued' | 'playing';
+ *  blink mean "a change is coming" rather than "something is happening".
+ *  RECORD STATES WIN OVER QUEUED: a pad reserved by an armed take
+ *  (`rec-armed`, a hollow ring) or holding a live one (`rec-active`, filled
+ *  red — the `stopping` countdown phase paints here too until slice 6 adds
+ *  its own rung) is the take's picture first, whatever else the lane queues. */
+export type ClipPadState = 'empty' | 'loaded' | 'queued' | 'playing' | 'rec-armed' | 'rec-active';
+
+/** Lane L's live audio clip-record arm state, SHAPE-CHECKED — `audioRec` is
+ *  synced transient data another peer wrote, so the projection guards the
+ *  fields it reads rather than trusting the sender's spelling. PURE. */
+export function audioRecState(
+  data: ClipPlayerData | undefined,
+  lane: number,
+): AudioRecState | null {
+  const raw = data?.audioRec?.[String(lane)];
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as AudioRecState;
+  if (r.phase !== 'armed' && r.phase !== 'recording' && r.phase !== 'stopping') return null;
+  if (typeof r.slot !== 'number' || !Number.isInteger(r.slot)) return null;
+  return r;
+}
 
 /** How the pad at flat `index` paints, FROM STORED DATA ALONE.
  *
@@ -975,6 +994,8 @@ export type ClipPadState = 'empty' | 'loaded' | 'queued' | 'playing';
 export function clipPadState(data: ClipPlayerData | undefined, index: number): ClipPadState {
   const lane = laneOf(index);
   const slot = slotOf(index);
+  const rec = audioRecState(data, lane);
+  if (rec && rec.slot === slot) return rec.phase === 'armed' ? 'rec-armed' : 'rec-active';
   const playing = lanePlaying(data, lane);
   const queued = laneQueued(data, lane);
   if (queued === slot) return 'queued';
