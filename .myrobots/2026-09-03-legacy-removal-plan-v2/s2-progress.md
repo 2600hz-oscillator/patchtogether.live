@@ -488,3 +488,36 @@ strictFace population. Kept.
 * The DOOM collab legs ran cross-context sync for real, but with `DATABASE_URL`
   unset — in-memory snapshot store, no Postgres. Anything DB-backed in them is
   unexercised locally.
+
+## Branch health at `85bc9b25d2` (session close of 2026-09-04)
+
+| gate | result |
+|---|---|
+| `task typecheck` | PASS (4138 files, 0 errors, 0 warnings) |
+| `task test` — dsp | 69 files / 1260 tests |
+| `task test` — server | 14 files / 159 tests |
+| `task test` — web | **973 passed, 1 skipped** / 19430 passed, 6 skipped |
+| `task test` — art | 1 file / 16 tests |
+| `task test` — scripts (48 files) | 654 passed |
+| **total** | **~21,500 unit tests, ZERO failures** |
+
+⚠ **THE FIRST RUN OF THAT SUITE REPORTED 3 FAILURES AND THEY WERE MINE, not the
+branch's.** `cofefve-face-model.test.ts:276` and two others timed out while three
+Playwright suites were running concurrently on the same machine; `cofefve` passes
+alone in 2.9 s. Re-run with nothing else running: green. A successor measuring this
+branch should not run vitest and playwright at once and then believe the result —
+and should not write the run off as flake either, which is the other wrong turn.
+
+## ⚠ THE BRANCH HAS NO CI SIGNAL AT ALL, AND CANNOT GET ONE WITHOUT A PR
+
+`.github/workflows/ci.yml` triggers on "every push to main and every PR targeting
+main". `gh run list --branch feat/legacy-removal` returns `[]` — 96 commits in and
+nothing has ever run. So "green in CI" is not a thing that can be checked
+incrementally here: it arrives all at once, on the first PR, against a branch whose
+e2e lane has been re-binned by the whole inversion.
+
+That interacts badly with the cost-artifact loop (S5 step 1 is "push the branch; let
+full CI run"), and it is worth the owner deciding deliberately rather than
+discovering: the choice is a DRAFT PR opened early to get signal while the remaining
+slices land, or one PR at the end that has never been exercised by CI before the day
+it is reviewed. No PR has been opened — that call is the owner's.
