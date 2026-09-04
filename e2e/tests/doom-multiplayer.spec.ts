@@ -23,6 +23,27 @@ import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
 import { SYNC_BUDGET_MS } from './_collab-helpers';
 
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It carries the identity badges, the runtime, the
+ *  `__doomCards` hook and the "Click to load DOOM" gesture, so each peer opens
+ *  its own faceplate before anything about it can be read. */
+const SURFACE = 'doom-face-surface';
+
+/** THIS node's LANE tile — how a peer observes that the node has SYNCED to it,
+ *  before its own faceplate exists. */
+const laneTile = (nodeId: string): string =>
+  `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`;
+
+/** Open a node's dock faceplate through the app's own hook. The dock boot is
+ *  SEQUENTIAL — it does not overlap the page load — so this is a real wait. */
+async function openDoomFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
+
 interface DoomPair {
   pageHost: Page;
   pageSpec: Page;
@@ -66,7 +87,7 @@ async function openDoomPair(browser: Browser): Promise<DoomPair> {
   const pageSpec = await ctxSpec.newPage();
 
   for (const p of [pageHost, pageSpec]) {
-    await p.goto('/rack?shell=legacy&seed=none');
+    await p.goto('/rack?seed=none');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(() =>
       typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -108,15 +129,16 @@ async function openDoomPair(browser: Browser): Promise<DoomPair> {
   };
 }
 
-/** Spawn one DOOM node on the page + return its id. Also kicks the
- *  load overlay click + waits up to 20s for the runtime to report
+/** Spawn one DOOM node on the page, open its faceplate + return its id. Also
+ *  kicks the load overlay click + waits up to 20s for the runtime to report
  *  `loaded === true`. Returns null on load timeout (caller skips). */
 async function spawnAndLoadDoom(page: Page, nodeId = 'sut'): Promise<boolean> {
   const nodes: SpawnNode[] = [
     { id: nodeId, type: 'doom', position: { x: 60, y: 60 }, domain: 'video' },
   ];
   await spawnPatch(page, nodes, []);
-  const card = page.locator('[data-testid="doom-card"]');
+  await openDoomFace(page, nodeId);
+  const card = page.locator(`[data-testid="${SURFACE}"]`);
   await card.locator('button.overlay', { hasText: /Click to load DOOM/i }).click();
   try {
     await page.waitForFunction(
@@ -173,10 +195,11 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
         test.skip(true, 'DOOM runtime failed to load on host within 20s');
         return;
       }
-      await pair.pageSpec.locator('[data-testid="doom-card"]').waitFor({ timeout: 5000 });
+      await pair.pageSpec.locator(laneTile('sut')).waitFor({ timeout: 5000 });
+      await openDoomFace(pair.pageSpec, 'sut');
       // Spec page initially shows SPEC badge.
       await expect(
-        pair.pageSpec.locator('[data-testid="doom-card"] .spec-badge'),
+        pair.pageSpec.locator(`[data-testid="${SURFACE}"] .spec-badge`),
         'spectator should show SPEC badge',
       ).toBeVisible({ timeout: 3000 });
 
@@ -184,10 +207,20 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
       // re-elect: with only spec left, it becomes host.
       await pair.pageHost.context().close();
 
+      // ⚠ THE HOST FACT LIVES ON THE SURFACE'S ACCESSIBLE NAME, NOT ON A BADGE,
+      // and that is deliberate rather than a gap: `showHostBadge` is
+      // `isHost && (variant === 'card' || memberIds.length > 1)`, so the
+      // faceplate suppresses the word on a SOLO rack — which is exactly the
+      // rack this leg produces, because the promotion happens by the only other
+      // member LEAVING. DoomSurface's `surfaceLabel` carries the same fact
+      // unconditionally ("the face's un-painted prose", its own words), so this
+      // asserts the PROMOTION rather than the chrome that used to announce it.
       await expect(
-        pair.pageSpec.locator('[data-testid="doom-card"] .host-badge'),
+        pair.pageSpec.getByTestId(SURFACE),
         'spec should be promoted to HOST after original host departs',
-      ).toBeVisible({ timeout: SYNC_BUDGET_MS });
+      ).toHaveAttribute('aria-label', /You are the host for this rack/, {
+        timeout: SYNC_BUDGET_MS,
+      });
     } finally {
       await pair.close();
     }

@@ -2,7 +2,7 @@
 //
 // E2E coverage for the per-monster-type kill + per-player death gates
 // added in feat/doom-per-type-death-gates. Each new gate output is the
-// same shape as the existing evt_kill / evt_door / evt_gun_pN ports:
+// same shape as the existing evt_kill / evt_door / evt_gun_pN gate ports:
 // 10 ms pulse, subscribePulse-compatible, routed through the cross-domain
 // audio bridge. We drive them via the same `extras.forcePulse(port)` test
 // hook as video-audio-cvgate-coverage.spec.ts (no in-game-kill flake) and
@@ -131,7 +131,7 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse â
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
 
       const present = await doomWasmPresent(page);
@@ -160,7 +160,10 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse â
         ],
       );
 
-      await page.locator('.svelte-flow__node-scope').first()
+      // Shell-agnostic node locator: xyflow stamps the wrapper class from the
+      // EMITTED node type, which is `moduleShell` for every lane node, so a
+      // per-type class matches nothing. `:has` keeps the wrapper semantics.
+      await page.locator('.svelte-flow__node:has([data-shell-type="scope"])').first()
         .waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(400);
 

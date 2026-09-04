@@ -13,7 +13,7 @@
 // E2E coverage for the 2026-05-29 DOOM controls overhaul (PR
 // fix/doom-controls-comprehensive). Six fixes, six tests:
 //
-//   1. gamepad-card-labels-match: assert button-LED labels render the
+//   1. gamepad-labels-match: assert button-LED labels render the
 //      same glyphs as the output port labels (no LB/⬅ mismatch).
 //   2. cv-input-drives-player: LFO → DOOM.p1_up moves the player.
 //   3. keyboard-disabled-when-cv-patched: with CV patched, keyboard
@@ -48,6 +48,32 @@ import {
  *  unit. See _doom-helpers.ts. */
 const CONTROL_TICS = 25;
 
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the `__doomCards` hook, the keyboard
+ *  capture and the "Click to load DOOM" gesture, so the faceplate has to be
+ *  open before the WAD can be booted or a key can reach the marine. */
+const SURFACE = 'doom-face-surface';
+
+/** The module's lane tile — where the shell ranks `audioGain` / `fillMode` as
+ *  cells, and the surface a test needs when it is only checking that the node
+ *  materialised. */
+const DOOM_TILE = '[data-testid="module-shell"][data-shell-type="doom"]';
+
+/** Open a node's dock faceplate through the app's own hook. */
+async function openFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+}
+
+/** Open the DOOM faceplate and wait for its surface — the dock boot is
+ *  SEQUENTIAL (it does not overlap the page load), so this is a real wait. */
+async function openDoomFace(page: Page, nodeId: string): Promise<void> {
+  await openFace(page, nodeId);
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
+
 async function assetsMissing(page: Page): Promise<string | null> {
   const wasm = await page.request.get('/doom/doom.js');
   if (!wasm.ok()) {
@@ -70,8 +96,9 @@ async function bootDoom(page: Page): Promise<void> {
   await spawnPatch(page, [
     { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
   ]);
-  const card = page.locator('[data-testid="doom-card"]');
-  await expect(card, 'DOOM card mounts').toHaveCount(1);
+  await openDoomFace(page, 'v-doom');
+  const card = page.locator(`[data-testid="${SURFACE}"]`);
+  await expect(card, 'DOOM surface mounts').toHaveCount(1);
   const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
   await expect(loadBtn).toBeVisible();
   await loadBtn.click();
@@ -124,19 +151,22 @@ async function waitForLevel(page: Page): Promise<void> {
 }
 
 // ----------------------------------------------------------------- #1
-test.describe('GAMEPAD card — button-LED labels match output port labels (#1)', () => {
+test.describe('GAMEPAD — button-LED labels match output port labels (#1)', () => {
   test('button LEDs render the SAME glyphs as the port label table', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'g', type: 'gamepad', position: { x: 100, y: 100 }, domain: 'audio' },
     ]);
 
-    const card = page.locator('[data-testid="gamepad-card"]');
+    // The remap board is the module's faceplate body, in the dock full view.
+    await openFace(page, 'g');
+    const card = page.getByTestId('gamepad-body-g');
     await expect(card).toHaveCount(1);
 
-    // The card is a 12-button row in the same order as BUTTON_LED_IDS in
-    // GamepadCard.svelte: lb, rb, a, b, x, y, du, dd, dl, dr, start, back.
-    // After fix #1 the LEDs use GAMEPAD_OUTPUTS[id].label (the chevron set
-    // for d-pad, LB/RB/A/B/X/Y for face/shoulder, STA/SEL for start/back).
+    // The board's `.buttons` row is 12 LEDs in the same order as
+    // BUTTON_LED_IDS in GamepadMappingBody.svelte: lb, rb, a, b, x, y, du,
+    // dd, dl, dr, start, back. After fix #1 the LEDs use
+    // GAMEPAD_OUTPUTS[id].label (the chevron set for d-pad, LB/RB/A/B/X/Y for
+    // face/shoulder, STA/SEL for start/back).
     //
     // AUTO-RETRYING toHaveText, never a one-shot allInnerTexts() (#1616):
     // xyflow's NodeWrapper renders a freshly-attached node `visibility:hidden`
@@ -148,9 +178,9 @@ test.describe('GAMEPAD card — button-LED labels match output port labels (#1)'
     // labels), so a one-shot read landing in that window saw 12 EMPTY strings
     // while toHaveCount(1) passed — presence gates none of this. `useInnerText`
     // keeps the subject the VISIBLE rendered glyphs; the retry loop waits for
-    // the LEDs' first paint instead of judging the half-born card (the same
+    // the LEDs' first paint instead of judging the half-born board (the same
     // wait-for-boot-before-judging shape as #1620/#1621).
-    await expect(card.locator('.btn-led')).toHaveText(
+    await expect(card.locator('.buttons .led')).toHaveText(
       ['LB', 'RB', 'A', 'B', 'X', 'Y', '⬆', '⬇', '⬅', '⮕', 'STA', 'SEL'],
       { useInnerText: true },
     );
@@ -162,7 +192,7 @@ test.describe('CV input drives the player (single-player) (#2)', () => {
   test.setTimeout(180_000);
   test('LFO → DOOM.p1_up makes the marine move (player.y changes over time)', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     const skip = await assetsMissing(page);
     if (skip) { test.skip(true, skip); return; }
@@ -184,7 +214,8 @@ test.describe('CV input drives the player (single-player) (#2)', () => {
       ],
     );
 
-    const card = page.locator('[data-testid="doom-card"]');
+    await openDoomFace(page, 'v-doom');
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
     await expect(card).toHaveCount(1);
     const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
     await expect(loadBtn).toBeVisible();
@@ -244,7 +275,7 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
   test.setTimeout(180_000);
   test('with CV patched, keyboard ArrowUp produces no additional motion', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     const skip = await assetsMissing(page);
     if (skip) { test.skip(true, skip); return; }
@@ -272,7 +303,8 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
       ],
     );
 
-    const card = page.locator('[data-testid="doom-card"]');
+    await openDoomFace(page, 'v-doom');
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
     await expect(card).toHaveCount(1);
     const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
     await expect(loadBtn).toBeVisible();
@@ -282,13 +314,13 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
     await waitForLevel(page);
 
     // Check the runtime reports keyboard-inert == true after a CV gate is
-    // patched. This is the same flag the card's $effect drives via
+    // patched. This is the same flag the surface's $effect drives via
     // extras.setKeyboardInert(cvGatePatched), which closes the keyboard at
     // the runtime boundary even if the JS claim gate is bypassed.
     //
-    // ⚠ POLLED, not read once. `cvGatePatched` is a Svelte derived and the card
-    // re-pushes it into the runtime on its rAF; the engine reconciler may
-    // materialize the doom node a beat AFTER the edge syncs (DoomCard.svelte
+    // ⚠ POLLED, not read once. `cvGatePatched` is a Svelte derived and the
+    // surface re-pushes it into the runtime on its rAF; the engine reconciler
+    // may materialize the doom node a beat AFTER the edge syncs (DoomSurface
     // says so in as many words). A single read is therefore a race against
     // frame ordering, which is exactly the class of flake this file is being
     // de-flaked for — state readiness gets an auto-retrying expect.
@@ -312,7 +344,7 @@ test.describe('Keyboard goes inert when CV is patched (#3)', () => {
           message:
             'runtime never reported keyboard-inert=true while a CV gate was patched on ' +
             'the SP DOOM node (SP fallback: own slot is null but CV-patched is still ' +
-            'true). The card never called extras.setKeyboardInert(true) — bug #3.',
+            'true). The surface never called extras.setKeyboardInert(true) — bug #3.',
         },
       )
       .toBe(true);
@@ -368,15 +400,15 @@ test.describe('ESC + ENTER CV gate inputs (#4)', () => {
 // ----------------------------------------------------------------- #5
 test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
   test.setTimeout(180_000);
-  test('pressing q with the card focused injects KEY_ESCAPE (opens menu)', async ({ page }) => {
+  test('pressing q with the faceplate focused injects KEY_ESCAPE (opens menu)', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     const skip = await assetsMissing(page);
     if (skip) { test.skip(true, skip); return; }
 
     await bootDoom(page);
-    const card = page.locator('[data-testid="doom-card"]');
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
     await card.click();
     await waitForLevel(page);
 
@@ -388,7 +420,7 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
     // of heldKeyboardKeys. A successful q→ESC routes through pushDoomKey
     // (NOT setKeyForKeyboardCode), so heldKeyboardKeys stays empty — but
     // the runtime's KEY_ESCAPE assertion goes through. We assert via a
-    // direct dgpt_set_key recorder hook the card has installed... or, more
+    // direct dgpt_set_key recorder hook the surface has installed... or, more
     // simply, snapshot getGameState() before + after the q-press and
     // assert the engine processed the menu request.
     const beforeState = await page.evaluate(() => {
@@ -444,29 +476,30 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
 });
 
 // ----------------------------------------------------------------- #7
-test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI) (#7)', () => {
-  test('Volume knob renders + drives params.audioGain via the setParam path', async ({ page }) => {
+test.describe('DOOM GAIN control writes params.audioGain (the −42 dB fix UI) (#7)', () => {
+  test('Gain knob renders + drives params.audioGain via the setParam path', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
-    // No WASM/WAD needed — the Volume control is plain card UI bound to the
-    // audioGain param (default 1, range 0..2). The engine forwards the value
+    // No WASM/WAD needed — the GAIN control is a ranked faceplate cell bound to
+    // the audioGain param (default 1, range 0..2). The engine forwards the value
     // to the PCM worklet on change (a fixed makeup gain there does the loudness
-    // lift; this knob trims on top). We assert the card → param write path.
+    // lift; this knob trims on top). We assert the control → param write path.
     await spawnPatch(page, [
       { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
 
-    const card = page.locator('[data-testid="doom-card"]');
-    await expect(card, 'DOOM card mounts').toHaveCount(1);
+    const card = page.locator(DOOM_TILE);
+    await expect(card, 'DOOM tile mounts').toHaveCount(1);
 
-    // The Volume control is a standard Knob (role="slider", aria-label="Volume")
-    // inside the OUTPUT-FIT row.
-    const volume = card.locator('[data-testid="doom-volume"]');
-    await expect(volume, 'Volume control renders on the card').toHaveCount(1);
-    const knob = volume.locator('[role="slider"][aria-label="Volume"]');
-    await expect(knob, 'Volume knob (aria slider) renders').toHaveCount(1);
+    // The GAIN control is a standard Knob (role="slider", aria-label="Gain" —
+    // the label comes from the def's own `audioGain` param, which is where the
+    // faceplate reads it) in the shell's ranked `audioGain` cell.
+    const volume = card.locator('[data-cell-key="audioGain"]');
+    await expect(volume, 'Gain control renders on the faceplate').toHaveCount(1);
+    const knob = volume.locator('[role="slider"][aria-label="Gain"]');
+    await expect(knob, 'Gain knob (aria slider) renders').toHaveCount(1);
 
     // audioGain starts at its default of 1.
     const before = await page.evaluate(() => {
@@ -503,7 +536,7 @@ test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI)
         {
           timeout: 10_000,
           message:
-            'dragging the Volume knob down never wrote params.audioGain — the knob ' +
+            'dragging the Gain knob down never wrote params.audioGain — the knob ' +
             "isn't wired to the audioGain param's setter.",
         },
       )
@@ -516,12 +549,12 @@ test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI)
       return w.__patch.nodes['v-doom']?.params?.audioGain ?? 1;
     });
     // The drag must have changed audioGain (downward → strictly lower), and it
-    // stays within the param's [0,2] range. This proves card → setParam →
+    // stays within the param's [0,2] range. This proves control → setParam →
     // patch.nodes[id].params.audioGain (the same path the engine's setParam
     // watches + forwards to the worklet).
     expect(
       after,
-      `dragging the Volume knob down must lower params.audioGain ` +
+      `dragging the Gain knob down must lower params.audioGain ` +
         `(was ${before}, now ${after}). If unchanged, the knob isn't wired to ` +
         `the audioGain param's setter.`,
     ).toBeLessThan(before);
@@ -534,7 +567,7 @@ test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI)
 test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV bridge) (#6)', () => {
   test('forcePulse(evt_kill) increments SCOREBOARD score downstream', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // No WASM required for this one — we use the forcePulse test hook

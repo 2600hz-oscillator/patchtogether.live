@@ -18,9 +18,9 @@
 // key_menu_decscreen.
 //
 // The fix lives in two places:
-//   1. DoomCard.svelte — window-level capture-phase keydown/keyup, fires
-//      BEFORE SvelteFlow's document-level node-keyboard-move handler. This
-//      keeps the arrow keys from sliding the card on the canvas.
+//   1. doom/DoomSurface.svelte — window-level capture-phase keydown/keyup,
+//      fires BEFORE SvelteFlow's document-level node-keyboard-move handler.
+//      This keeps the arrow keys from sliding the node on the canvas.
 //   2. doomgeneric_patchtogether.c — encode the full 8-bit doomkey in the low
 //      byte (not low 7 bits) of the key-queue entry. This keeps the arrow keys
 //      from being mis-decoded as KEY_MINUS inside the WASM.
@@ -75,6 +75,29 @@ import {
 
 const NODE = 'v-doom';
 
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the `__doomCards` hook, the keyboard
+ *  capture and the "Click to load DOOM" gesture, so the faceplate has to be
+ *  open before the WAD can be booted or a key can reach the marine. */
+const SURFACE = 'doom-face-surface';
+
+/** THIS node's LANE tile. Scoped to the node wrapper on purpose: with a
+ *  faceplate open there are TWO `module-shell` elements for the same node (the
+ *  lane tile and the dock tile), and only the lane one is the SvelteFlow node
+ *  whose selection the arrow keys would steal. */
+const LANE_TILE = `.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`;
+
+/** Open the DOOM faceplate through the app's own hook and wait for its surface
+ *  — the dock boot is SEQUENTIAL (it does not overlap the page load), so this
+ *  is a real wait rather than a formality. */
+async function openDoomFace(page: Page): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    NODE,
+  );
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
+
 /** How many GAME TICS a no-input control leg observes. Tics, never ms: the
  *  claim is "the marine did not move while the sim ran", and the sim's clock is
  *  the only honest unit for "while the sim ran". 25 tics is a hair over the
@@ -96,7 +119,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
   test('arrow keys move the player in-game, and nothing moves without them', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const skip = await assetsMissing(page);
@@ -109,8 +132,9 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
       { id: NODE, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
 
-    const card = page.locator('[data-testid="doom-card"]');
-    await expect(card, 'DOOM card mounts').toHaveCount(1);
+    await openDoomFace(page);
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
+    await expect(card, 'DOOM surface mounts').toHaveCount(1);
 
     // Boot the runtime via the "Click to load DOOM" overlay button.
     const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
@@ -120,12 +144,19 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
       timeout: 30_000,
     });
 
-    // Click to select + focus the card (SF marks it .selected; the card's
-    // onclick handler calls cardEl.focus()).
+    // TWO gestures, because on the shell they land on two different surfaces
+    // and the test needs both. Clicking the LANE TILE selects the SvelteFlow
+    // node (SF marks it .selected) — that is what arms the hazard the
+    // "the node did not move on canvas" assertions below are about, since SF's
+    // keyboard-move handler only fires for a SELECTED node. Clicking the
+    // FACEPLATE then latches keyboard control (its onclick calls cardEl.focus()
+    // + latchKeyboard()). The tile grip is used rather than the tile body so
+    // the gesture cannot land on a ranked control and write a param.
+    await page.locator(LANE_TILE).locator('.tile-kind').click();
     await card.click();
     await expect(
       page.locator('.svelte-flow__node[data-id="v-doom"].selected'),
-      'card becomes the selected SF node after click',
+      'the lane tile becomes the selected SF node after click',
     ).toHaveCount(1);
 
     // ── BASIC GAME NAV: keyboard walks the title sequence into E1M1 ─────────
@@ -208,7 +239,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
 
     expect(
       await readTransform(nodeWrapper),
-      `card moved on canvas during ArrowUp (was ${transformBefore}). SvelteFlow ` +
+      `the node moved on canvas during ArrowUp (was ${transformBefore}). SvelteFlow ` +
         `stole the arrow key instead of DOOM consuming it.`,
     ).toBe(transformBefore);
     expect(
@@ -283,7 +314,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
       } finally {
         await page.keyboard.up(key);
       }
-      expect(await readTransform(wrapper), `card moved on canvas during ${key}`).toBe(tBefore);
+      expect(await readTransform(wrapper), `the node moved on canvas during ${key}`).toBe(tBefore);
       expect(await readTransform(vp), `canvas zoom changed during ${key}`).toBe(vBefore);
       return delta;
     }
@@ -303,7 +334,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
     page,
   }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const skip = await assetsMissing(page);
@@ -315,8 +346,9 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
     await spawnPatch(page, [
       { id: NODE, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    const card = page.locator('[data-testid="doom-card"]');
-    await expect(card, 'DOOM card mounts').toHaveCount(1);
+    await openDoomFace(page);
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
+    await expect(card, 'DOOM surface mounts').toHaveCount(1);
 
     const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
     await expect(loadBtn).toBeVisible();
@@ -335,7 +367,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
       return s;
     }
 
-    // SIMULATE SYNC CHURN: blur the focused card + strip the SF `.selected`
+    // SIMULATE SYNC CHURN: blur the focused surface + strip the SF `.selected`
     // class, exactly what a multiplayer re-render does. Pre-fix this killed
     // capture; the latch must keep it alive.
     await page.evaluate(() => {
@@ -382,7 +414,20 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
     }
 
     // ── Escape = explicit release. A fresh press must NOT move the player ───
+    //
+    // ⚠ ESCAPE DOES TWO THINGS ON THE SHELL, and the second one is the dock's,
+    // not DOOM's: the surface's capture handler unlatches the keyboard and
+    // deliberately lets the event through (`do NOT preventDefault, so normal
+    // Esc behaviour still works`), and Canvas's own window handler then closes
+    // the open full view. The faceplate is where the surface lives, so the
+    // press that hands the keyboard back also takes the game pane down with it
+    // — and the `__doomCards` hook every reader below goes through with it.
+    // Re-opening the pane restores the reader; it does not re-latch anything
+    // (re-engaging keyboard control needs a fresh CLICK), which is exactly the
+    // state the assertions below are about.
     await page.keyboard.press('Escape');
+    await expect(page.getByTestId(SURFACE)).toHaveCount(0, { timeout: 15_000 });
+    await openDoomFace(page);
 
     // Let residual momentum from the forward burst decay BEFORE measuring the
     // post-release press. The latched ArrowUp built up momentum; DOOM friction

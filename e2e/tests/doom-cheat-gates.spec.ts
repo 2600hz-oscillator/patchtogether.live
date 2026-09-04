@@ -2,7 +2,7 @@
 //
 // LIVE end-to-end coverage for the DOOM IDDQD / IDKFA cheat gate inputs.
 //
-// Each cheat is a gate input on the DOOM card. A rising edge synthesises the
+// Each cheat is a gate input on the DOOM module. A rising edge synthesises the
 // 5-character lowercase ASCII keypress sequence ('iddqd' / 'idkfa') into the
 // WASM key queue at 50 ms per char (10 ms key-down, 40 ms gap). DOOM's
 // `m_cheat.c::cht_CheckCheat` parser sniffs `event_t.data2` on every keydown
@@ -25,6 +25,12 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+
+/** The module's lane tile on the shell. This spec drives the cheat gates
+ *  through the ENGINE (`extras`), never through control DOM, so the tile is
+ *  exactly what it needs: proof that the DOOM node materialised and rendered
+ *  before a param is written at it. */
+const DOOM_TILE = '[data-testid="module-shell"][data-shell-type="doom"]';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -134,7 +140,7 @@ async function readLastCheat(page: Page, nodeId: string): Promise<string | null>
 test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-char keypress sequence', () => {
   test('rising edge on iddqd_in injects the IDDQD god-mode cheat within ~500ms', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const hasWasm = await doomWasmPresent(page);
@@ -150,7 +156,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
     await spawnPatch(page, [
       { id: doomId, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    await page.locator('[data-card-type="doom"]').first()
+    await page.locator(DOOM_TILE).first()
       .waitFor({ state: 'visible', timeout: 10_000 });
 
     // Boot DOOM + start a single-player game so a consoleplayer mobj exists.
@@ -213,7 +219,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
 
   test('rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat within ~500ms', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const hasWasm = await doomWasmPresent(page);
@@ -229,7 +235,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
     await spawnPatch(page, [
       { id: doomId, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    await page.locator('[data-card-type="doom"]').first()
+    await page.locator(DOOM_TILE).first()
       .waitFor({ state: 'visible', timeout: 10_000 });
 
     await expect.poll(
@@ -277,7 +283,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
 
   test('holding the iddqd gate HIGH does NOT re-trigger; lowering + raising re-fires', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // This is a structural test — runs even without WASM (the rising-edge
@@ -289,7 +295,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
     await spawnPatch(page, [
       { id: doomId, type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
-    await page.locator('[data-card-type="doom"]').first()
+    await page.locator(DOOM_TILE).first()
       .waitFor({ state: 'visible', timeout: 10_000 });
 
     // First rising edge: iddqd fires.
