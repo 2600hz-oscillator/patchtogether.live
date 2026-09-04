@@ -1,0 +1,6 @@
+[submodule "apps/helpers/es9"]
+	path = apps/helpers/es9
+	url = https://github.com/2600hz-oscillator/patchtogether-es9.git
+[submodule "apps/helpers/nativeapps"]
+	path = apps/helpers/nativeapps
+	url = https://github.com/2600hz-oscillator/patchtogether-nativeapps.git

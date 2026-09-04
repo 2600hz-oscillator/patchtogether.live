@@ -1568,3 +1568,66 @@ tasks:
     cmds:
       - rm -rf node_modules packages/*/node_modules art/node_modules e2e/node_modules
       - rm -f package-lock.json
+
+  # ---------------- native shell (apps/desktop + apps/helpers) ----------------
+  # P0/P2 of the native-shell program (.myrobots/2026-09-04-native-shell-plan/).
+  # apps/desktop is a STANDALONE npm package (own lockfile, not a root
+  # workspace) so web CI installs and the shared root lockfile stay untouched.
+
+  helpers:build:
+    desc: |
+      Build all three native helpers — es9-bridge + vst-bridge (Swift, the
+      apps/helpers submodules) and the in-tree pt-ptz (C). macOS only.
+    cmds:
+      - git submodule update --init apps/helpers/es9 apps/helpers/nativeapps
+      - swift build -c release --package-path apps/helpers/es9
+      - swift build -c release --package-path apps/helpers/nativeapps
+      - make -C tools/pt-ptz
+
+  desktop:install:
+    desc: Install apps/desktop deps (standalone package — run once per checkout).
+    dir: apps/desktop
+    cmds:
+      - npm install
+
+  desktop:build:web:
+    desc: |
+      Build the web bundle the Electron shell serves (adapter-static +
+      fallback.html SPA shell). VITE_E2E_HOOKS=1 is baked — this is the
+      Tier-A TEST bundle the harness drives, NOT a shipping artifact
+      (the hook-free desktop prod build lands with distribution/P7).
+    cmds:
+      - npm run build -w {{.DSP}}
+      - PT_DESKTOP_BUILD=1 VITE_E2E_HOOKS=1 npm run build -w {{.WEB}}
+
+  desktop:dev:
+    desc: Boot the shell against the built desktop web bundle (run task desktop:build:web first).
+    dir: apps/desktop
+    cmds:
+      - npm run start
+
+  desktop:e2e:
+    desc: |
+      Shell e2e harness (PH skeleton) — the GATING-light lane's required
+      subset as a LOCAL task: built shell boots, /rack paints, AudioContext
+      running gesture-free, zero pageerrors/extra windows. The CI job comes
+      later with its own owner sign-off checkpoint. Needs desktop:install +
+      desktop:build:web once first.
+    # LANE ANCHOR for scripts/package-workspace-membership.test.ts:
+    # apps/desktop is deliberately NOT an npm workspace (see the gate's
+    # INDEPENDENT_PACKAGES entry), and THIS task is the lane that runs its
+    # tests. Canonical entry: apps/desktop/e2e/boot.spec.ts — playwright.config
+    # testDir ./e2e globs it plus every sibling spec, so new specs join the
+    # lane without editing this file; renaming the boot spec reddens the gate.
+    dir: apps/desktop
+    cmds:
+      - npm run e2e
+
+  desktop:e2e:one:
+    desc: |
+      One desktop-harness spec by filter (usage: task desktop:e2e:one -- supervision).
+      REPEAT=N via: npx playwright test <filter> --repeat-each=N inside apps/desktop.
+    dir: apps/desktop
+    cmds:
+      - npm run build
+      - npx playwright test {{.CLI_ARGS}}
