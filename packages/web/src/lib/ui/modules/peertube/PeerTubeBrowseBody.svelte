@@ -152,7 +152,15 @@
   });
 </script>
 
-<div class="pt-browse-body" data-testid="peertube-face-body" data-stream-state={streamState}>
+<!-- State attributes ride the body root (the archivist/varispeed face-body
+     pattern): `data-has-selection` is the same `uuid !== null` fact the card
+     stamps, kept on both surfaces so neither can drift silently. -->
+<div
+  class="pt-browse-body"
+  data-testid="peertube-face-body"
+  data-stream-state={streamState}
+  data-has-selection={uuid !== null}
+>
   <div
     class="preview-wrap"
     data-testid="peertube-face-preview"

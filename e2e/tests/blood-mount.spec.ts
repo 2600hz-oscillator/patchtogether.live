@@ -41,7 +41,7 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   const bloodId = 'blood-mount-smoke';
@@ -51,35 +51,47 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
     [],
   );
 
-  // The card mounts (we're the lone host of a single-user rack, so the
-  // ownerOnly gate is satisfied).
-  const card = page.locator('[data-card-type="blood"]').first();
-  await card.waitFor({ state: 'visible', timeout: 10_000 });
-  await expect(page.getByTestId('blood-card')).toBeVisible();
+  // The faceplate mounts (we're the lone host of a single-user rack, so the
+  // ownerOnly gate is satisfied). The game screen is `fullViewBody` — dock
+  // only — so open the pane; boot state rides `data-blood-status` on the face
+  // frame (idle/loading/error/ready).
+  await expect(
+    page.locator(`.svelte-flow__node[data-id="${bloodId}"] [data-testid="module-shell"]`),
+  ).toBeVisible({ timeout: 10_000 });
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    bloodId,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${bloodId}"]`);
+  await expect(pane.getByTestId('blood-screen-body')).toBeVisible({ timeout: 60_000 });
 
-  // The card auto-boots from the bundled shareware on mount. It must reach a
-  // DEFINITE terminal state — either the running state (engine booted) or an
-  // engine error (e.g. the renderer/heap-sensitive Build init on CI's software
-  // renderer). What we forbid is a stuck "loading" or a thrown page error.
+  // The body auto-boots from the bundled shareware on mount. It must reach a
+  // DEFINITE terminal state — either ready (engine booted), an engine error
+  // (e.g. the renderer/heap-sensitive Build init on CI's software renderer),
+  // or idle (no engine node yet). What we forbid is a stuck "loading" or a
+  // thrown page error.
   await expect
     .poll(
-      async () => {
-        const ready = await page.getByTestId('blood-ready').isVisible().catch(() => false);
-        const error = await page.getByTestId('blood-error').isVisible().catch(() => false);
-        const idle = await page.getByTestId('blood-load').isVisible().catch(() => false);
-        return ready || error || idle;
-      },
+      async () =>
+        (await pane.getByTestId('blood-face-frame').getAttribute('data-blood-status')) ?? 'gone',
       // The cold-boot bound (see header): BOOT_MS scales for the CI renderer;
       // the wait exits the instant a terminal state paints.
       { timeout: BOOT_MS * 2 },
     )
-    .toBe(true);
+    .toMatch(/^(ready|error|idle)$/);
 
   // Because the shareware data IS bundled + served, the "bundled data couldn't
   // load" prompt must NOT be the outcome. (If it ever shows, the bundle/LFS
   // checkout is broken — which is exactly what we want this assert to catch.)
-  const dataMissing = await page
-    .getByTestId('blood-data-missing')
+  const dataMissing = await pane
+    .getByTestId('blood-face-data-missing')
     .isVisible()
     .catch(() => false);
   expect(dataMissing, 'bundled shareware should load — the data-missing prompt must not show').toBe(
@@ -103,7 +115,8 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
   //     FROZEN (no cursor pulse / animation, dead game tics). The fix
   //     (CLOCK_MONOTONIC) makes the idle menu animate, so the framebuffer
   //     changes over time with NO input.
-  const booted = await page.getByTestId('blood-ready').isVisible().catch(() => false);
+  const booted =
+    (await pane.getByTestId('blood-face-frame').getAttribute('data-blood-status')) === 'ready';
   // The render probe reads the runtime via the __engine test hook (VITE_E2E_HOOKS,
   // same as the DOOM specs). If hooks are stripped (e.g. a prod-preview run) there
   // is nothing to read — skip rather than false-fail.
