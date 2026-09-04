@@ -149,15 +149,14 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
   test('real 3-source chain: ACIDWARP×3 → VIDEOCUBE → non-black STRUCTURED morph on video_out', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, videoNodes(), videoEdges());
 
-    // DOM structure — the card + its preview + the OUTPUT sink render.
-    await expect(page.locator('.svelte-flow__node-videocube'), 'card visible').toBeVisible();
-    await expect(page.locator('[data-testid="videocube-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="videocube-preview"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    // DOM structure — the shell tile + the OUTPUT sink render (the card's
+    // preview died with the card; the pixel reads below are engine-FBO).
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videocube"])'), 'tile visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Fill all 3 rings; the default SMOOTH combine of 3 distinct sources is a
     // non-black, STRUCTURED occupancy morph.
@@ -178,37 +177,41 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     await page.addInitScript(() => {
       (globalThis as unknown as { __videoEngineFreezeRender?: boolean }).__videoEngineFreezeRender = true;
     });
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'vc', type: 'videocube', position: { x: 420, y: 120 }, domain: 'video' }], []);
-    await expect(page.locator('[data-testid="videocube-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videocube"])')).toHaveCount(1);
 
-    // The 3u/hp4 card is taller than the viewport, so its bottom pad (VIEW) sits
-    // off-screen where pointer events can't land. Zoom the SvelteFlow pane out
-    // (wheel over the pane centre = SvelteFlow zoomOnScroll) so every pad is on
-    // screen; the fractional drag math is zoom-independent (it uses each pad's
-    // own rendered rect).
-    const pane = canvasPane(page);
-    const pbox = await pane.boundingBox();
-    if (pbox) {
-      for (let i = 0; i < 2; i++) {
-        await page.mouse.move(pbox.x + pbox.width / 2, pbox.y + pbox.height / 2);
-        await page.mouse.wheel(0, 400);
-        await page.waitForTimeout(200); // d3-zoom transform settle
-      }
-    }
+    // The three pads are DOCK-ONLY on the shell (tabbed face: slice / view /
+    // reader pages); open the pane once — each dragPad selects its tab. The
+    // card-era zoom-out dance died with the card.
+    await page.waitForFunction(
+      () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'vc',
+    );
+    const vcPane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="vc"]');
+    await vcPane.locator('[data-testid="videocube-output-body"]').waitFor({ state: 'visible', timeout: 60_000 });
 
     const params = () => page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
       return w.__patch.nodes['vc']?.params ?? {};
     });
 
-    // Drag a pad from its centre to a fractional target (fx,fy ∈ [0,1]) + release.
-    const dragPad = async (testid: string, fx: number, fy: number): Promise<void> => {
-      const pad = page.locator(`[data-testid="${testid}-pad"]`);
+    // Drag a pad from its centre to a fractional target (fx,fy ∈ [0,1]) +
+    // release. On the shell a pad's testid is `control-<xParamId>` (XyPad's
+    // derivation) and it lives on a faceplate TAB — select it first.
+    const dragPad = async (tab: string, xParamId: string, fx: number, fy: number): Promise<void> => {
+      await vcPane.locator(`[data-testid="faceplate-tab-${tab}"]`).click();
+      const pad = vcPane.locator(`[data-testid="control-${xParamId}"]`);
+      await pad.scrollIntoViewIfNeeded();
       await expect(pad).toBeVisible();
       const box = await pad.boundingBox();
-      expect(box, `${testid} bounding box`).not.toBeNull();
+      expect(box, `control-${xParamId} bounding box`).not.toBeNull();
       if (!box) return;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
@@ -218,18 +221,18 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
 
     // VIEW pad — x=view_rot_x (−π..π), y=view_rot_y (−π..π). Top-RIGHT ⇒ both high
     // (x maps →, y is flipped so UP = +y).
-    await dragPad('videocube-view-joystick', 0.92, 0.08);
+    await dragPad('view', 'view_rot_x', 0.92, 0.08);
     await expect.poll(async () => (await params()).view_rot_x ?? 0, { timeout: 4000 }).toBeGreaterThan(2);
     await expect.poll(async () => (await params()).view_rot_y ?? 0).toBeGreaterThan(2);
 
     // slice ROT pad — x=slice_rx, y=slice_ry (−π..π). Bottom-LEFT ⇒ both low.
-    await dragPad('videocube-slice-rot-joystick', 0.08, 0.92);
+    await dragPad('slice', 'slice_rx', 0.08, 0.92);
     await expect.poll(async () => (await params()).slice_rx ?? 0).toBeLessThan(-2);
     await expect.poll(async () => (await params()).slice_ry ?? 0).toBeLessThan(-2);
 
     // SCAN/SPREAD pad — x=scan (0..1), y=spread (0..1). Bottom-RIGHT ⇒ scan high,
     // spread low (bottom = min on the flipped y axis).
-    await dragPad('videocube-scan-spread-joystick', 0.95, 0.95);
+    await dragPad('reader', 'scan', 0.95, 0.95);
     await expect.poll(async () => (await params()).scan ?? 0).toBeGreaterThan(0.8);
     await expect.poll(async () => (await params()).spread ?? 1).toBeLessThan(0.2);
   });
@@ -237,7 +240,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
   test('the render is LIVE — MORPH, the orbit VIEW camera, and slice Y each change the volume', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // A mid-connect blend so MORPH FC has a wide A↔C span to move.
     await spawnPatch(page, videoNodes({ connect: 0.4, morph_fc: 0 }), videoEdges());
@@ -305,7 +308,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -365,7 +368,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
   test('slice-viz jacks: per-port gating, slice_view/reader/Y·rot response, triptych divergence, depth occupancy', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Moving sources (speed 1) so the reader modes (SMOOTH trailing vs MORPH
@@ -526,7 +529,7 @@ test.describe('VIDEOCUBE — video isomorph of the audio CUBE', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
