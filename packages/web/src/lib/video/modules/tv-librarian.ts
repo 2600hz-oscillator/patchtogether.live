@@ -208,7 +208,7 @@ export const tvLibrarianDef: VideoModuleDef = {
   // no-user-control.ts) and it is also the TRUE one.
   //
   // ⚠ IT IS NOT COSMETIC BEYOND THE FACEPLATE, and the PR body says so:
-  // `group-controls.ts` drops a `noUserControl` param from
+  // `exposable-controls.ts` drops a `noUserControl` param from
   // `listExposableControls` and `push-card-schema.ts` drops it from the Push 2
   // card. tvLibrarian has no explicit `PUSH_CARD_CONTROLS` entry, so its push
   // card is resolved from the live def and re-ranks itself from three params to

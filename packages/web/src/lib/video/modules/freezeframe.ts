@@ -841,7 +841,7 @@ export const freezeframeDef: VideoModuleDef = {
     { id: 'quant_b',    label: 'QUANT B',    defaultValue: DEFAULTS.quant_b,    min: 0, max: 1, curve: 'linear' },
     { id: 'quant_luma', label: 'QUANT LUMA', defaultValue: DEFAULTS.quant_luma, min: 0, max: 1, curve: 'linear' },
     // PHOSPHOR DECAY. `curve: 'discrete', min 0, max 1` is the repo's canonical
-    // switch shape (looksLikeToggle, $lib/graph/group-controls) — the card
+    // switch shape (looksLikeToggle, $lib/graph/exposable-controls) — the card
     // renders these with <Toggle>, the Push generic tier demotes them below the
     // continuous params, and the auto-expose bar agrees with both.
     { id: 'decay',        label: 'DECAY',      defaultValue: DEFAULTS.decay,        min: 0, max: 1, curve: 'discrete' },

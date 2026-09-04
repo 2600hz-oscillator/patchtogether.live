@@ -388,7 +388,7 @@ export const videoVarispeedDef: VideoModuleDef = {
   // its OWN input port's `paramTarget`, which makes `'cv-port'` the only legal
   // writer (`'internal'` is RED at no-user-control.ts) and also the true one.
   //
-  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `group-controls.ts` drops a
+  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `exposable-controls.ts` drops a
   // `noUserControl` param from `listExposableControls` and `push-card-schema`
   // drops it from the Push 2 card, which re-ranks itself from twelve params to
   // three — an improvement (raw gate levels and a V/oct cache had no business

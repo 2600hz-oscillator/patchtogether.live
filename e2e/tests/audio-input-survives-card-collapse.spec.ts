@@ -256,49 +256,43 @@ test('LEG A — a live input survives its DOCK PANE being collapsed (the face bo
   await assertDeletingTheNodeReleasesIt(page);
 });
 
-test('LEG B — a live input survives having NO mounted surface at all (folded into a group)', async ({
+test('LEG B — a live input survives having NO mounted surface at all (canvas-hidden)', async ({
   page,
 }) => {
   await bootWithAudioIn(page);
   await arrangeStreaming(page);
 
-  // ── ACT: fold the node into a COLLAPSED GROUP.
+  // ── ACT: take the node OFF THE CANVAS entirely (`data.hiddenCard`).
   //
-  // ⚠ THIS IS THE ONLY ROUTE TO ZERO SURFACES ON A FACED MODULE, AND IT WAS
-  // ARRIVED AT BY ELIMINATION RATHER THAN BY PREFERENCE — the finding is
-  // reported to the owner with this PR. On a promoted module the lane tile's
-  // `ModuleShell` (and therefore its `tileBody`) is UNCONDITIONAL, so collapsing
-  // the dock pane leaves a surface mounted (that is LEG A). Docking would give a
-  // `dockStub` lane and a rail that can snap-collapse to a strip, but `audioIn`
-  // is not in `DOCKABLE_TYPES`, so no dock gesture is offered for it at all. And
-  // the pinned `pinned-audioIn` is canvas-hidden with its 🎧 tray mounted for the
-  // life of the page. A node folded into a collapsed group is the remaining
-  // case: `Canvas`'s own dock sweep calls it out — such a node "has no canvas
-  // presence to stub" — while it is STILL IN THE GRAPH, so
+  // ⚠ THIS IS THE ONLY REMAINING ROUTE TO ZERO SURFACES ON A FACED MODULE, AND
+  // IT WAS ARRIVED AT BY ELIMINATION RATHER THAN BY PREFERENCE. On a promoted
+  // module the lane tile's `ModuleShell` (and therefore its `tileBody`) is
+  // UNCONDITIONAL, so collapsing the dock pane leaves a surface mounted (that is
+  // LEG A). Docking would give a `dockStub` lane and a rail that can
+  // snap-collapse to a strip, but `audioIn` is not in `DOCKABLE_TYPES`, so no
+  // dock gesture is offered for it at all. And the pinned `pinned-audioIn` is
+  // canvas-hidden with its 🎧 tray mounted for the life of the page. A
+  // canvas-hidden USER-SPAWNED node is the remaining case: `isCanvasHiddenNode`
+  // drops it from `flowNodes` while it is STILL IN THE GRAPH, so
   // `nodeAudioInput.sweep(liveIds)` must keep its entry.
   //
-  // Driven as the Create-Group modal commits it (the shape
-  // `grouping-phase1.spec.ts` established): one `group` node, and
-  // `data.parentGroupId` on the child. No ports are exposed because this node
-  // has no cables — the group's port surface is not what is under test.
+  // ⚠ RE-POINTED, NOT WEAKENED. The ACT used to fold the node into a COLLAPSED
+  // GROUP (the shape `grouping-phase1.spec.ts` established). The GROUP! module
+  // is deleted, and the group was only ever the mechanism — the subject is
+  // "in the graph, zero surfaces mounted". `data.hiddenCard`
+  // ($lib/graph/hidden-card.ts, a KEEP file precisely because saved patches
+  // carry it) reaches the identical state through the path the product still
+  // ships, so this drives a live mechanism rather than a retired one.
   await page.evaluate((n) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, Record<string, unknown>> };
       __ydoc: { transact: (fn: () => void) => void };
     };
     w.__ydoc.transact(() => {
-      w.__patch.nodes['g-ain'] = {
-        id: 'g-ain',
-        type: 'group',
-        domain: 'meta',
-        position: { x: 480, y: 420 },
-        params: {},
-        data: { childIds: [n], exposedPorts: [] },
-      };
       const child = w.__patch.nodes[n];
       if (child) {
         if (!child.data) child.data = {};
-        (child.data as Record<string, unknown>).parentGroupId = 'g-ain';
+        (child.data as Record<string, unknown>).hiddenCard = true;
       }
     });
   }, NODE);
@@ -306,9 +300,6 @@ test('LEG B — a live input survives having NO mounted surface at all (folded i
   // THE INSTRUMENT CHECK, and it is what stops this leg going quiet the way the
   // pre-promotion ACT would have: the node is gone from the canvas entirely, and
   // NOTHING belonging to it is mounted anywhere in the document.
-  await expect(page.locator('[data-testid="group-card"][data-node-id="g-ain"]')).toBeVisible({
-    timeout: BOOT_MS,
-  });
   await expect(
     page.locator(`.svelte-flow__node[data-id="${NODE}"]`),
     'a folded child must have no canvas presence — if it still has a tile, the ACT did nothing',
@@ -355,8 +346,7 @@ test('LEG B — a live input survives having NO mounted surface at all (folded i
     };
     w.__ydoc.transact(() => {
       const child = w.__patch.nodes[n];
-      if (child?.data) delete (child.data as Record<string, unknown>).parentGroupId;
-      delete w.__patch.nodes['g-ain'];
+      if (child?.data) delete (child.data as Record<string, unknown>).hiddenCard;
     });
   }, NODE);
 

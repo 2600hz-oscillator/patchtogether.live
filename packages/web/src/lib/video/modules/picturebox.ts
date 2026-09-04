@@ -250,7 +250,7 @@ export const pictureboxDef: VideoModuleDef = {
   // one does. Both of these have a matching input above.
   //
   // ⚠ THIS IS A BEHAVIOUR CHANGE BEYOND THE FACEPLATE, and both directions are
-  // improvements: `group-controls.listExposableControls` stops auto-exposing
+  // improvements: `exposable-controls.listExposableControls` stops auto-exposing
   // these two on a collapsed GROUP's instrument bar, and `push-card-schema`
   // stops ranking them for a Push 2 encoder. Neither surface should ever have
   // offered a raw gate cache as a knob.

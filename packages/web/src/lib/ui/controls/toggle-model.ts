@@ -4,9 +4,9 @@
 // A toggle is a discrete param with min=0 max=1 (kickdrum HARD, and the
 // checkbox cards). `looksLikeToggle` — the detector a card uses to pick Toggle
 // over Knob — is re-exported from the ONE canonical definition in
-// graph/group-controls so the auto-expose bar and the primitive agree.
+// graph/exposable-controls so the auto-expose bar and the primitive agree.
 
-export { looksLikeToggle } from '$lib/graph/group-controls';
+export { looksLikeToggle } from '$lib/graph/exposable-controls';
 
 /** A value at/above this reads as ON. Matches the drum-card convention
  *  (`hard >= 0.5`). */

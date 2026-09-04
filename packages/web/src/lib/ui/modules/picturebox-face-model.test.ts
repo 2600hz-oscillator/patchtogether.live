@@ -41,7 +41,7 @@ import {
   pushCardParams,
   type PushCardDefLike,
 } from '$lib/control/push2/push-card-schema';
-import { listExposableControls } from '$lib/graph/group-controls';
+import { listExposableControls } from '$lib/graph/exposable-controls';
 
 const def = pictureboxDef as unknown as FaceDefLike & { type: string };
 

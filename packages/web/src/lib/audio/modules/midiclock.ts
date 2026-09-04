@@ -115,7 +115,7 @@ export function divisorLabel(d: ClockDivisor): string {
  * validator, and has been since the module shipped.
  *
  * What one declaration buys, none of it needing further work: clip automation,
- * MIDI learn, group exposure (`group-controls.ts`), a Push 2 card where there
+ * MIDI learn, group exposure (`exposable-controls.ts`), a Push 2 card where there
  * was none, and — the one that is a bug fix — UNDO, because `setNodeParam` is
  * the origin-tagged seam and the card's `writeData` never was.
  *
