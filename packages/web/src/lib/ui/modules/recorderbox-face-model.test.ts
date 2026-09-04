@@ -53,7 +53,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(HERE, 'recorderbox');
 const FULL_VIEW_BODY = resolve(EXT_DIR, 'RecorderboxCaptureBody.svelte');
 const TILE_BODY = resolve(EXT_DIR, 'RecorderboxTileBody.svelte');
-const CARD = resolve(HERE, 'RecorderboxCard.svelte');
 const SEAM = resolve(HERE, 'recorderbox-transport.ts');
 
 const readRaw = (p: string): string => readFileSync(p, 'utf8');
@@ -74,12 +73,17 @@ const readRaw = (p: string): string => readFileSync(p, 'utf8');
  */
 const read = (p: string): string => stripSourceComments(readRaw(p));
 
-/** The three surfaces that can operate this module, by the name a failure
- *  message should print. Derived from the files, not from a list of claims. */
+/** The surfaces that can operate this module, by the name a failure message
+ *  should print. Derived from the files, not from a list of claims.
+ *
+ *  ⚠ THE LEGACY CARD WAS A THIRD ENTRY. It mattered here more than on most
+ *  modules — `data.recording` is Y.Doc-synced, so a surface that re-inlined a
+ *  start rather than driving the shared reconciler would have raced the others
+ *  through the document. With one fewer surface the race has one fewer party;
+ *  the rule that every surviving surface drives the SHARED seam is unchanged. */
 const SURFACES: readonly { name: string; path: string }[] = [
   { name: 'fullViewBody (RecorderboxCaptureBody)', path: FULL_VIEW_BODY },
   { name: 'tileBody (RecorderboxTileBody)', path: TILE_BODY },
-  { name: 'legacy card (RecorderboxCard)', path: CARD },
 ];
 
 const LANE_TIERS = ['mini', 'compact', 'full'] as const;
@@ -211,7 +215,7 @@ describe('recorderbox face — NO CARD IS MOUNTED, which is what the seam is for
     expect(NON_SHELL_LANE_TYPES.has('recorderbox')).toBe(false);
   });
 
-  it('ALL THREE surfaces drive the SHARED reconciler — none re-inlines a start', () => {
+  it('EVERY surface drives the SHARED reconciler — none re-inlines a start', () => {
     // ⚠ THE STOP-2 PIN. `data.recording` is Y.Doc-synced, so the reactor also
     // handles a rack-mate's press and a patch loaded with `recording: true`.
     // Re-writing the start call at a surface would drop both paths while every

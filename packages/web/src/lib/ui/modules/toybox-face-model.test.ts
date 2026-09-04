@@ -44,11 +44,6 @@ import {
 } from '$lib/ui/workflow/dom-source-modules';
 import { NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
 import { EXTRAS_PRODUCER_TYPES } from '$lib/ui/media/extras-producers';
-import {
-  MIGRATION_BLOCKERS,
-  inventoryEntry,
-  migrationBlockers,
-} from '$lib/ui/workflow/face-migration-inventory';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string): string => readFileSync(resolve(HERE, rel), 'utf8');
@@ -152,20 +147,21 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
     expect(EXTRAS_PRODUCER_TYPES.has('toybox')).toBe(true);
   });
 
-  it('the inventory entry is generic-face and names no blocker', () => {
-    const entry = inventoryEntry('toybox');
-    expect(entry?.disposition).toBe('generic-face');
-    expect(migrationBlockers(entry!)).toEqual([]);
-  });
-
-  it('and toybox was the LAST citer, so the blocker registry is now empty', () => {
-    // ⚠ When this was written it added "NOT a claim that #1511 shipped" and
-    // pinned the headless union non-empty beside it. legacy-removal S1.5
-    // finished the extractions, so BOTH facts now hold: nothing is waiting AND
-    // the capability genuinely shipped (every former member is node-owned and
-    // the host is deleted).
-    expect(Object.keys(MIGRATION_BLOCKERS)).toEqual([]);
-  });
+  // ⚠ TWO INVENTORY LEGS STOOD HERE AND THEY READ THE MIGRATION INVENTORY.
+  // "the inventory entry is generic-face and names no blocker"
+  // (`inventoryEntry('toybox')` / `migrationBlockers`) and "toybox was the LAST
+  // citer, so the blocker registry is now empty"
+  // (`Object.keys(MIGRATION_BLOCKERS)`). The second one was the interesting
+  // half: it recorded that nothing was waiting on a capability AND that the
+  // capability had genuinely shipped.
+  //
+  // `face-migration-inventory` is MIGRATION machinery — it exists to say which
+  // modules still need a face — and it retires with the fleet it was counting.
+  // What survives is not a smaller version of that claim but a stronger one, and
+  // it is already asserted at the top of this file: toybox is in STRICT_FACES,
+  // which is what actually swaps the surfaces. A module cannot be promoted and
+  // blocked at the same time once there is no un-promoted surface to fall back
+  // to.
 });
 
 describe('⚠ ONE CONSOLE — the no-drift property, pinned in both directions', () => {

@@ -79,7 +79,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripSourceComments } from '$lib/source-guards/strip-source-comments';
-import { conventionalCardName } from '$lib/ui/modules-card-map';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
@@ -116,29 +115,31 @@ function read(p: string): string {
   return readFileSync(p, 'utf8');
 }
 
-/**
- * The def's legacy card source, resolved the way the app resolves it —
- * `def.card` if declared, otherwise `PascalCase(type) + 'Card'`
- * (`conventionalCardName`). Derived rather than mapped by hand, so a renamed
- * card cannot leave this gate quietly pointing at nothing.
- */
-function cardSource(def: DefLike): string | null {
-  const name = def.card ?? conventionalCardName(def.type);
-  const file = resolve(MODULES_DIR, `${name}.svelte`);
-  return existsSync(file) ? read(file) : null;
-}
-
-/** Every registered def whose legacy card mounts the hide-controls monitor.
- *  THE POPULATION IS READ OFF THE TREE — there is no roster to go stale. */
-function cardsWithMonitor(): string[] {
-  return allDefs()
-    .filter((d) => {
-      const src = cardSource(d);
-      return src != null && stripSourceComments(src).includes(KEY);
-    })
-    .map((d) => d.type)
-    .sort();
-}
+// ⚠ THE INVERSE HALF OF THIS GATE RETIRES WITH THE LEGACY FLEET, and it is
+// worth writing down rather than quietly deleting, because it was the half that
+// caught the NEXT promotion rather than the current one.
+//
+// It resolved each def's legacy card (`def.card` or `PascalCase(type) + 'Card'`)
+// and derived the population that mounts `hideControls` off the TREE — no
+// roster to go stale. Three legs rested on it:
+//
+//   * "a FACED module whose card mounts hideControls declares `monitor`" — the
+//     #1865 shape: promotion stops BOTH surfaces rendering the card, so the
+//     affordance is deleted by the very change meant to keep it, invisibly,
+//     because it is not a ParamDef.
+//   * "every exemption still names a faced module whose card mounts the
+//     monitor" — the anchoring on NO_MONITOR_MODE, which is EMPTY today.
+//   * "the card resolver DISCRIMINATES" — its own instrument control, with
+//     ruttetra as the positive case and adsr as the negative.
+//
+// ⚠ THE CLAIM IS NOT WEAKENED, IT IS FINISHED. That leg was a MIGRATION check:
+// its subject is "an affordance a card has and a face does not yet", and it can
+// only fire while an un-migrated card exists to compare against. With the fleet
+// gone there is no before-state left to lose an affordance from — every module
+// IS its face. NAMED, so nobody reads its absence as an oversight: the
+// migration-era comparison has no successor, and what remains is the FORWARD
+// direction (a declared monitor must be reachable and the shell must really
+// suppress on it), which is what protects the affordance from here on.
 
 /** The component file a `shell-extension.ts` names for its fullViewBody slot.
  *  `import.meta.glob` is LAZY, so the component object is unreachable from a
@@ -173,11 +174,9 @@ const NO_MONITOR_MODE: readonly { type: string; why: string }[] = [];
 
 describe('#2009 — MONITOR MODE survives promotion', () => {
   it('has a subject at all (vacuity control)', () => {
-    // Three separate ways this file could be green while measuring nothing: no
-    // card mounts the key, no def declares `monitor`, or the card resolver
-    // silently resolves nothing. All three fail HERE rather than letting the
-    // sweeps below pass over an empty set.
-    expect(cardsWithMonitor().length, 'cards mounting `hideControls`').toBeGreaterThan(0);
+    // The way this file could be green while measuring nothing: no def declares
+    // `monitor`, so every sweep below iterates an empty set. It fails HERE
+    // rather than letting them pass over one.
     expect(defsDeclaringMonitor().length, 'defs declaring `face.monitor`').toBeGreaterThan(0);
   });
 
@@ -217,25 +216,6 @@ describe('#2009 — MONITOR MODE survives promotion', () => {
         '(`faceMonitorPlan`); the module owns the BUTTON, on its own `fullViewBody`, over the same ' +
         `\`${KEY}\` key the legacy card uses — a different key silently forgets every monitor a ` +
         'player already had open.',
-    ).toEqual([]);
-  });
-
-  // ── INVERSE: the half #1865 asked for, and the one that catches the NEXT
-  //    promotion rather than this one ───────────────────────────────────────
-  it('a FACED module whose card mounts hideControls declares `monitor`', () => {
-    const exempt = new Set(NO_MONITOR_MODE.map((e) => e.type));
-    const byType = new Map(allDefs().map((d) => [d.type, d]));
-    const offenders = cardsWithMonitor()
-      .filter((t) => STRICT_FACES.has(t) && !exempt.has(t))
-      .filter((t) => !byType.get(t)?.face?.monitor);
-    expect(
-      offenders,
-      'a promoted module\'s legacy card mounts the hide-controls MONITOR, and its face does not ' +
-        'declare one. `migrated(type)` stops BOTH surfaces rendering that card, so the affordance ' +
-        'is deleted by the promotion meant to keep it — the #1865 shape, invisible to every ' +
-        'def-reading gate because it is not a ParamDef. Declare `face.monitor` (with an ' +
-        'extension whose fullViewBody carries the toggle), or add a NAMED entry to ' +
-        'NO_MONITOR_MODE with the argument for dropping it.',
     ).toEqual([]);
   });
 
@@ -286,14 +266,15 @@ describe('#2009 — MONITOR MODE survives promotion', () => {
   });
 
   // ── The exemption list is ANCHORED, not a bucket ─────────────────────────
-  it('every exemption still names a faced module whose card mounts the monitor', () => {
-    const live = new Set(cardsWithMonitor().filter((t) => STRICT_FACES.has(t)));
-    const dead = NO_MONITOR_MODE.filter((e) => !live.has(e.type)).map((e) => e.type);
-    expect(
-      dead,
-      'an exemption naming a module that is no longer faced, or whose card no longer mounts the ' +
-        'monitor, is stale — delete it, or it quietly pre-approves whatever takes that name next.',
-    ).toEqual([]);
+  it('every exemption still names a faced module', () => {
+    // ⚠ THE SECOND HALF OF THIS ANCHOR read the card ("…whose card mounts the
+    // monitor"), which is what made an exemption impossible to leave behind
+    // after the affordance moved. The list is EMPTY and stays anchored on the
+    // half that survives: an exemption for something that is not a faced module
+    // quietly pre-approves whatever takes that name next.
+    const faced = NO_MONITOR_MODE.filter((e) => !STRICT_FACES.has(e.type)).map((e) => e.type);
+    expect(faced, 'an exemption naming a module that is not faced is stale — delete it')
+      .toEqual([]);
   });
 
   it('every exemption carries a real reason', () => {
@@ -302,20 +283,20 @@ describe('#2009 — MONITOR MODE survives promotion', () => {
   });
 
   // ── The instrument's own negative controls ───────────────────────────────
-  it('the card resolver DISCRIMINATES — it is not matching everything or nothing', () => {
-    // The population is derived, so a broken path would report an empty set
+  it('the DECLARATION sweep DISCRIMINATES — it is not matching everything or nothing', () => {
+    // The population is derived, so a broken predicate would report an empty set
     // (silently green above) or every module (silently green too, since most
-    // are un-faced). Both directions are pinned against the real tree.
-    const withMonitor = new Set(cardsWithMonitor());
+    // declare no monitor). Both directions are pinned against the real tree.
+    //
+    // ⚠ THIS USED TO BE THE CARD RESOLVER'S control, with ruttetra as the
+    // positive case and adsr as the negative. The resolver retired with the
+    // fleet; the same two modules make the same point about the DECLARATION,
+    // which is the surviving subject.
+    const withMonitor = new Set(defsDeclaringMonitor().map((d) => d.type));
     const all = allDefs().map((d) => d.type);
-    expect(withMonitor.size, 'not everything mounts the monitor').toBeLessThan(all.length);
-    // `ruttetra` is the worked case and its card demonstrably mounts the key.
-    expect(withMonitor.has('ruttetra'), 'positive control: ruttetra\'s card mounts it').toBe(true);
-    // `adsr` is an audio module with an ordinary card and no picture at all.
-    expect(withMonitor.has('adsr'), 'negative control: adsr\'s card does not').toBe(false);
-    // A type that resolves to no card file at all yields null rather than
-    // throwing or matching.
-    expect(cardSource({ type: 'definitelyNotAModule' })).toBeNull();
+    expect(withMonitor.size, 'not everything declares a monitor').toBeLessThan(all.length);
+    expect(withMonitor.has('ruttetra'), 'positive control: ruttetra declares one').toBe(true);
+    expect(withMonitor.has('adsr'), 'negative control: adsr does not').toBe(false);
   });
 
   it('the fullViewBody resolver DISCRIMINATES (negative control)', () => {

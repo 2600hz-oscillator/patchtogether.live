@@ -184,15 +184,25 @@ describe('chromaconsole face — AUTO-DETECT has ONE implementation', () => {
     expect(src).toMatch(/matchPortByHint\(CHROMA_CONSOLE, ports\)/);
   });
 
-  it('⚠ AND THE CARD CALLS THE SEAM RATHER THAN MATCHING AGAIN', () => {
+  it('⚠ AND NO SURFACE MATCHES AGAIN — the seam is the only matcher', () => {
     // The regression this file exists to prevent: a future edit "inlines the
-    // little helper back into the card for clarity" and the two surfaces start
-    // choosing different ports again, with nothing red anywhere.
-    const card = SRC('../modules/ChromaconsoleCard.svelte');
-    expect(card, 'the card delegates').toMatch(/chromaconsoleAutoSelectPort\(a\)/);
+    // little helper back into the surface for clarity" and two callers start
+    // choosing different ports, with nothing red anywhere. The legacy card was
+    // the second caller and was read here by name; the shell cells are the
+    // caller now, and the deny is made of the surviving surfaces instead.
+    // The seam is BOTH the matcher and the only caller of itself: the connect
+    // action inside `chromaconsole-cell-actions.ts` auto-selects through the
+    // same function, so a second implementation would have to appear as a
+    // second `portHints.some(` somewhere in the module's own sources.
+    const seam = SRC('../modules/chromaconsole-cell-actions.ts');
+    expect(seam, 'the connect action auto-selects through the shared helper')
+      .toMatch(/chromaconsoleAutoSelectPort\(api\)/);
+    const matches = [...seam.matchAll(/portHints\.some\(/g)].length;
+    expect(matches, 'the hint match has exactly ONE implementation').toBeLessThanOrEqual(1);
+    const cells = SRC('./shell-cells.ts');
     expect(
-      /portHints\.some\(/.test(card),
-      'the card no longer re-implements the hint match',
+      /portHints\.some\(/.test(cells),
+      'the shell cells must not re-implement the hint match',
     ).toBe(false);
   });
 

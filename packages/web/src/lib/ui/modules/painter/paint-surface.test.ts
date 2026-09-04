@@ -235,22 +235,19 @@ describe('paint-surface — the readback helpers never throw', () => {
 
 describe('paint-surface — the no-drift property is STRUCTURAL', () => {
   const bodyCode = stripSourceComments(read('./PainterEditorBody.svelte'));
-  const cardCode = stripSourceComments(read('../PainterCard.svelte'));
 
-  it('BOTH surfaces import the seam — neither owns a copy of the arithmetic', () => {
+  it('the surface imports the seam — it owns no copy of the arithmetic', () => {
     expect(bodyCode, 'the face body').toMatch(/from '\.\/paint-surface'/);
-    expect(cardCode, 'the legacy card').toMatch(/from '\.\/painter\/paint-surface'/);
     for (const fn of ['strokeOpFor', 'shapeOpFor', 'fillOpFor', 'textOpFor', 'pointerToCanvas']) {
       expect(bodyCode, `the body uses ${fn}`).toContain(fn);
-      expect(cardCode, `the card uses ${fn}`).toContain(fn);
     }
   });
 
-  it('NEITHER surface re-types the op literals the seam builds', () => {
+  it('it does not re-type the op literals the seam builds', () => {
     // The offence this replaces: `commitOp({ kind: 'stroke', tool: ..., ... })`
     // written out in a component. It compiles, it syncs, and it is one edit away
     // from disagreeing with the other surface.
-    for (const [where, code] of [['body', bodyCode], ['card', cardCode]] as const) {
+    for (const [where, code] of [['body', bodyCode] as const]) {
       expect(code, `${where} builds a stroke op by hand`).not.toMatch(/kind:\s*'stroke'/);
       expect(code, `${where} builds a shape op by hand`).not.toMatch(/kind:\s*'shape'/);
       expect(code, `${where} builds a fill op by hand`).not.toMatch(/kind:\s*'fill'/);
@@ -258,30 +255,29 @@ describe('paint-surface — the no-drift property is STRUCTURAL', () => {
     }
   });
 
-  it('NEITHER surface re-types the SIZE range — it comes from the model', () => {
+  it('it does not re-type the SIZE range — it comes from the model', () => {
     // `card-range-source` holds this at the source for PARAM controls; SIZE is
     // not a param (painter declares none), so the same rule is held here: a
     // surface that widened the range would emit ops the model then clamps.
-    for (const [where, code] of [['body', bodyCode], ['card', cardCode]] as const) {
+    for (const [where, code] of [['body', bodyCode] as const]) {
       expect(code, `${where} binds min from MIN_BRUSH`).toMatch(/min=\{MIN_BRUSH\}/);
       expect(code, `${where} binds max from MAX_BRUSH`).toMatch(/max=\{MAX_BRUSH\}/);
     }
     expect(MIN_BRUSH).toBeLessThan(MAX_BRUSH);
   });
 
-  it('BOTH surfaces replay through the ONE node-lifetime replay', () => {
+  it('it replays through the ONE node-lifetime replay', () => {
     // Three replays of one log would be three chances to disagree about what a
     // saved rack looks like. `replayPaintOps` is the producer's own function.
     expect(bodyCode).toContain('replayPaintOps');
-    expect(cardCode).toContain('replayPaintOps');
   });
 
-  it('NEITHER surface reverts the node to the placeholder on teardown', () => {
+  it('it does not revert the node to the placeholder on teardown', () => {
     // ⚠ THE #1720 BUG, SPELLED OUT SO IT CANNOT COME BACK BY REFLEX.
     // `setPaintCanvas(null)` looks like correct cleanup and is the exact
     // regression: it drops the node to a blank white page. Handing the binding
     // back is `release()`, which makes the registry re-push its own replay.
-    for (const [where, code] of [['body', bodyCode], ['card', cardCode]] as const) {
+    for (const [where, code] of [['body', bodyCode] as const]) {
       expect(code, `${where} nulls the paint canvas on teardown`)
         .not.toMatch(/setPaintCanvas\(\s*null\s*\)/);
       expect(code, `${where} releases the lease instead`).toMatch(/\.release\(\)/);

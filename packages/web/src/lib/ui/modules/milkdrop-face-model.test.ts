@@ -145,15 +145,15 @@ describe('milkdrop face — the picture, and where it comes from', () => {
     expect(milkdropDef.face?.extension).toBe('milkdrop');
   });
 
-  it('the monitor box is ONE constant, BOTH surfaces read it, and it is out of the basis', () => {
+  it('the monitor box is ONE constant, the surface reads it, and it is out of the basis', () => {
     expect(MILKDROP_MONITOR_BOX.defW).toBeGreaterThanOrEqual(MILKDROP_MONITOR_BOX.minW);
     expect(MILKDROP_MONITOR_BOX.defH).toBeGreaterThanOrEqual(MILKDROP_MONITOR_BOX.minH);
-    const card = readFileSync(resolve(HERE, 'MilkdropCard.svelte'), 'utf8');
+    // ⚠ THIS SAID 'BOTH surfaces', and the hazard it guarded was DIVERGENCE:
+    // two writers of the same persisted `resizedWidth`/`resizedHeight` keys,
+    // each self-consistent and invisible at runtime (the backdraft class). With
+    // one writer that hazard is unspellable; the half that can still go wrong
+    // is that the body READS the shared box rather than re-typing its floors.
     const body = readFileSync(resolve(HERE, 'milkdrop/MilkdropOutputBody.svelte'), 'utf8');
-    expect(
-      /import\s*\{\s*MILKDROP_MONITOR_BOX\s*\}\s*from\s*'\.\/milkdrop\/monitor-box'/.test(card),
-      'the legacy card READS the shared box',
-    ).toBe(true);
     expect(
       /import\s*\{\s*MILKDROP_MONITOR_BOX\s*\}\s*from\s*'\.\/monitor-box'/.test(body),
       'and so does the faced dock body',
@@ -206,10 +206,16 @@ describe('milkdrop face — two bands, and no VRT scene behind them', () => {
 
   it('NO hero, NO readout — the preset NAME is the picker\'s option label instead', () => {
     expect(milkdropDef.face?.hero).toBeUndefined();
-    // The card prints a live name/index line; the 2026-08-19 rulings deleted
-    // that shape. Assert the card still HAS it (so this is a real migration,
-    // not a claim about nothing) — the faceplate's home for it is the selector.
-    const card = readFileSync(resolve(HERE, 'MilkdropCard.svelte'), 'utf8');
-    expect(card.includes('data-testid="milkdrop-preset"'), 'the card readout still exists').toBe(true);
+    // ⚠ THE PREMISE HALF READ THE CARD. It printed a live name/index line
+    // (`data-testid="milkdrop-preset"`), and asserting the card still HAD it was
+    // what made this a real migration rather than a claim about nothing. The
+    // faceplate's home for that name is the SELECTOR's option label, which is
+    // what is asserted instead — a roster whose entries carry the preset names
+    // is the readout, in a place the ruling permits.
+    const select = shellCellFor(
+      'milkdrop',
+      { kind: 'family', key: 'milkdrop-preset-select-{n}' } as never,
+    ) as { kind?: string } | null;
+    expect(select?.kind, 'the preset picker is a selector cell').toBe('selector');
   });
 });

@@ -23,7 +23,8 @@
 // clause below greps the card to keep it reading the def's roster.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BLINK_MODE_OPTIONS,
@@ -33,9 +34,6 @@ import {
   wavesculptDef,
 } from './wavesculpt';
 
-const CARD = fileURLToPath(
-  new URL('../../ui/modules/WavesculptCard.svelte', import.meta.url),
-);
 
 /** The def's authored control prose, keyed by param id. */
 const controls = (wavesculptDef.docs?.controls ?? {}) as Record<string, string>;
@@ -161,25 +159,48 @@ describe('wavesculpt mode rosters — the roster and the DOC prose cannot drift'
   });
 });
 
-describe('wavesculpt mode rosters — the CARD reads the def, not a private copy', () => {
-  const src = readFileSync(CARD, 'utf8');
-
-  it('imports the rosters', () => {
-    expect(
-      /BLINK_MODE_OPTIONS/.test(src) && /VIDEO_MODE_OPTIONS/.test(src) && /FX_TYPE_OPTIONS/.test(src),
-      'WavesculptCard must render its mode captions from the def rosters — a private array is a ' +
-        'second source of truth for a vocabulary (the FilterCard `const MODES` divergence)',
-    ).toBe(true);
+describe('wavesculpt mode rosters — NO surface keeps a private copy', () => {
+  // ⚠ THIS READ THE CARD, and what it asserted was that `WavesculptCard.svelte`
+  // IMPORTED the def's rosters rather than carrying its own three-entry array —
+  // the exact shape that was there being
+  // `const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED COMMUNITY']`,
+  // i.e. the FilterCard `const MODES` divergence.
+  //
+  // The card was the only IMPORTER: the surviving renderer is the shell's
+  // segmented cell, which derives its captions from the ParamDef's `options`
+  // generically, so no surface names the rosters at all. The positive half
+  // ("the surface imports them") therefore has no subject; the NEGATIVE half is
+  // the one that mattered and it is kept, widened from one file to every
+  // module-owned surface.
+  it('no module surface declares its own mode-name array', () => {
+    const dir = fileURLToPath(new URL('../../ui/modules/', import.meta.url));
+    const PRIVATE_ARRAY = /const\s+([A-Z_]*MODE[A-Z_]*NAMES)\s*=/g;
+    const offenders: string[] = [];
+    let scanned = 0;
+    const visit = (rel: string, abs: string): void => {
+      scanned++;
+      for (const m of readFileSync(abs, 'utf8').matchAll(PRIVATE_ARRAY)) {
+        offenders.push(`${rel}: ${m[1]}`);
+      }
+    };
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        for (const inner of readdirSync(join(dir, entry.name))) {
+          if (inner.endsWith('.svelte')) visit(`${entry.name}/${inner}`, join(dir, entry.name, inner));
+        }
+        continue;
+      }
+      if (entry.name.endsWith('.svelte')) visit(entry.name, join(dir, entry.name));
+    }
+    expect(scanned, 'the surface walk resolved no .svelte files').toBeGreaterThan(0);
+    expect(offenders, 'a private mode-name array is the divergence these rosters remove')
+      .toEqual([]);
   });
 
-  it('no longer carries its own mode-name array', () => {
-    // The exact shape that was there: `const BLINK_MODE_NAMES = ['', 'SCOPES
-    // TRIAL', 'REALITY BASED COMMUNITY']`.
-    const privateArrays = [...src.matchAll(/const\s+([A-Z_]*MODE[A-Z_]*NAMES)\s*=/g)].map(
-      (m) => m[1],
-    );
-    expect(privateArrays, 'a private mode-name array is the divergence this roster removes').toEqual(
-      [],
-    );
+  it('and the def really carries the rosters, so this is one home rather than none', () => {
+    for (const roster of [BLINK_MODE_OPTIONS, VIDEO_MODE_OPTIONS, FX_TYPE_OPTIONS]) {
+      expect(roster.length, 'a roster must not be empty').toBeGreaterThan(0);
+      for (const o of roster) expect(typeof o.label, 'every option is named').toBe('string');
+    }
   });
 });

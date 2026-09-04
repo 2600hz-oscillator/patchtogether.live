@@ -13,7 +13,6 @@ import {
   type LoopbackStatus,
 } from './loopback-status-registry';
 
-const CARD_PATH = fileURLToPath(new URL('../modules/LoopbackCard.svelte', import.meta.url));
 const ACQUIRE_PATH = fileURLToPath(new URL('../viewport-acquire.ts', import.meta.url));
 const REGISTRY_PATH = fileURLToPath(new URL('./loopback-status-registry.ts', import.meta.url));
 
@@ -305,15 +304,19 @@ describe('SOURCE gate: the capture-state union has exactly ONE declaration', () 
 
   const RETYPED_UNION = /type State =\s*\n?\s*(\|\s*)?'/;
 
-  it('the CARD imports that union instead of re-declaring one', () => {
+  it('the SURFACE imports that union instead of re-declaring one', () => {
     // ⚠ ANCHORED TO THE SHAPE, because this is the copy that would come back.
     // The card used to own a local union of string literals; an alias to the
-    // imported type is fine (and is what ships), a fresh union is not.
-    const card = readFileSync(CARD_PATH, 'utf8');
-    expect(card, 'the card must import the shared union').toContain('LoopbackCaptureState');
+    // imported type is fine, a fresh union is not. The card was the surface
+    // when this was written; the body is the surface now, and the same shape is
+    // forbidden there.
+    const body = readFileSync(
+      fileURLToPath(new URL('../modules/loopback/LoopbackOutputBody.svelte', import.meta.url)),
+      'utf8',
+    );
     expect(
-      RETYPED_UNION.test(codeLines(card)),
-      'a re-typed union in the card is a second copy nothing can compare',
+      RETYPED_UNION.test(codeLines(body)),
+      'a re-typed union in a surface is a second copy nothing can compare',
     ).toBe(false);
   });
 
@@ -327,15 +330,15 @@ describe('SOURCE gate: the capture-state union has exactly ONE declaration', () 
     ).toBe(false);
   });
 
-  it('NEGATIVE CONTROL: the card predicate FIRES on the shape it forbids', () => {
-    // Without this, "the card is clean" and "the regex never matches anything"
-    // are the same green. Both spellings a re-declaration could take, run
+  it('NEGATIVE CONTROL: the surface predicate FIRES on the shape it forbids', () => {
+    // Without this, "the surface is clean" and "the regex never matches
+    // anything" are the same green. Both spellings a re-declaration could take, run
     // through the SAME `codeLines` path the real check uses.
     expect(RETYPED_UNION.test(codeLines("type State = 'idle' | 'error';"))).toBe(true);
     expect(RETYPED_UNION.test(codeLines("type State =\n  | 'idle'\n  | 'error';"))).toBe(true);
     expect(
       RETYPED_UNION.test(codeLines('type State = LoopbackCaptureState;')),
-      'the alias the card actually ships must NOT trip it',
+      'the alias a surface would legitimately ship must NOT trip it',
     ).toBe(false);
   });
 

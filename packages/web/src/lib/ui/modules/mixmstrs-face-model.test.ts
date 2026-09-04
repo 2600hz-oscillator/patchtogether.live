@@ -40,7 +40,6 @@ import {
 import { consoleGridCols } from '$lib/ui/workflow/console-grid';
 import { FACE_TIER_CAPS, laneOrder } from '$lib/ui/workflow/curated-face';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
-import { controlTags, OPERATIONAL_FIELDS } from './card-def-agreement';
 import { isChannelScoped } from './mixmstrs-face-model';
 
 const FACE = mixmstrsDef.face!;
