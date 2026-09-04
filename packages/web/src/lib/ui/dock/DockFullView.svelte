@@ -15,6 +15,32 @@
   //     PickupCable / cardRectOf + the patch menu keep working.
   //   * migrated → <ModuleShell view="dock-full"> (effTier 'dock').
   //
+  // ── BOTH BRANCHES CARRY THE DOCK ANCHORS, AND ONLY ONE USED TO ─────────────
+  // `data-dock-card` / `data-dock-card-frame` are how `Canvas.cardRectFor` and
+  // `PickupCable` find the on-screen rectangle of a module whose canvas
+  // presence is a stub — or nothing at all. Both resolve
+  // `[data-dock-card="…"] [data-dock-card-frame]` and then fall back to
+  // `.svelte-flow__node[data-id]`.
+  //
+  // ⚠ THE FACED BRANCH EMITTED NEITHER, so a faced pane fell straight through
+  // to the canvas-node fallback — and a CANVAS-HIDDEN occupant does not have
+  // one. `isCanvasHiddenNode` nodes (the pinned singletons: the built-in clip
+  // player, the audio-I/O and MIDI-DIN surfaces) have no stub, no handles and
+  // no `.svelte-flow__node` at all, so BOTH lookups missed and:
+  //
+  //   * `PickupCable` returned the EMPTY PATH — flip the pane (Tab), click a
+  //     back jack, and nothing attaches to the cursor. No ghost cable at all.
+  //     Its own dock fallback exists verbatim for this case and could not
+  //     reach it.
+  //   * `cardRectFor` returned null, so the patch picker opened at the raw
+  //     cursor instead of the pane edge — the owner-reported "patch to is a
+  //     mess in terms of where the menu spawns", by a second route.
+  //
+  // The anchors now sit on the PANE'S OWN FRAME for a faced occupant, which is
+  // what `cardRectFor`'s own comment always claimed the contract was. They are
+  // attributes on elements the frame already had — no wrapper element — so the
+  // dock's measured geometry is unchanged.
+  //
   // PLAIN-MOUNT SAFETY (verbatim from DockCardHost): the card is the SAME
   // component the canvas mounts, fed the same `{ id, data: { node } }`. PatchPanel
   // self-gates outside the provider (guarded useStore): no <Handle> stack mounts
@@ -230,6 +256,9 @@
   data-testid="dock-full-view"
   data-fullview-node={node.id}
   data-flipped={flipped && def ? 'true' : 'false'}
+  data-dock-card={migrated ? node.id : undefined}
+  data-dock-type={migrated ? node.type : undefined}
+  data-dock-full={migrated ? 'true' : undefined}
 >
   <!-- OCCUPANT SWAP = REMOUNT ({#key node.id}): opening module B while A is
        expanded must tear A's subtree down and mount B's fresh — never morph
@@ -248,7 +277,27 @@
          bar scrolled sideways with the content and the ✕ sat past the pane's
          right edge — invisible in BOTH the front and the flipped rear state
          (the owner screenshot: clipped "REA…" chip, no close anywhere). -->
-    <div class={`faceplate ${domain}`} data-fullview-domain={domain}>
+    <!-- `data-dock-card-frame` — THE MEASURED RECTANGLE FOR A FACED OCCUPANT.
+         `Canvas.cardRectFor` and `PickupCable` edge-align the patch picker and
+         the ghost cable to `[data-dock-card] [data-dock-card-frame]`, falling
+         back to `.svelte-flow__node[data-id]`. A faced pane emitted NEITHER,
+         and a CANVAS-HIDDEN occupant has no canvas node to fall back to — see
+         the header. This is the frame the user reads as "the module", so it is
+         the right rectangle to align to.
+
+         ⚠ GATED ON `migrated`, and that gate is load-bearing rather than
+         tidiness. The un-migrated branch below already emits its own
+         `data-dock-card` / `data-dock-card-frame` pair around the verbatim
+         card, and `cardRectFor` uses `querySelector` — FIRST IN DOCUMENT
+         ORDER. An ungated attribute here would sit on an ANCESTOR of that
+         pair and win, silently moving every legacy occupant's anchor from its
+         card frame to the whole pane. Emitting these only on the branch that
+         lacks them leaves the legacy path bit-for-bit unchanged. -->
+    <div
+      class={`faceplate ${domain}`}
+      data-fullview-domain={domain}
+      data-dock-card-frame={migrated ? '' : undefined}
+    >
       <span class="spine" aria-hidden="true"></span>
 
       <div class="faceplate-grip" data-testid="faceplate-grip" aria-hidden="true"></div>

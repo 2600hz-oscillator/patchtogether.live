@@ -822,6 +822,98 @@ function pickLegacyDockType(): LegacyDockPick {
 
 const LEGACY_DOCK = pickLegacyDockType();
 
+// ── (5b) A CANVAS-HIDDEN OCCUPANT'S PICKUP STILL DRAWS A GHOST ─────────────
+//
+// THE DEFECT THIS GUARDS, which SHIPPED and was invisible: `PickupCable`
+// anchors its ghost to `.svelte-flow__node[data-id]`, and falls back to
+// `[data-dock-card] [data-dock-card-frame]` for — in its own words — "a PINNED
+// drawer/panel card [that] has NO canvas element at all (no stub, no handles),
+// so a pickup started from its port rows / back jacks rendered no ghost".
+//
+// Those dock anchors were emitted ONLY by `DockFullView`'s un-migrated branch,
+// so a FACED occupant's pane carried neither — and a canvas-hidden node has no
+// `.svelte-flow__node` to fall back to. Both lookups missed and the ghost path
+// came back as the empty string: flip the built-in clip player's pane (Tab),
+// click a back jack, and NOTHING attaches to your cursor. `Canvas.cardRectFor`
+// lost the same rect, which is the owner-reported "patch to is a mess in terms
+// of where the menu spawns" arriving by a second route.
+//
+// ⚠ THE EXISTING CARRY-SEAM CASE CANNOT SEE IT, and that is why this is a
+// separate test rather than one more assertion there. Its subject is a spawned
+// `adsr` — a CANVAS node — so `PickupCable` resolves the FIRST selector and
+// never reaches the fallback at all. The bug exists only where a node has no
+// canvas element, so the subject has to be one that has none, or the new case
+// simply repeats the old blind spot.
+//
+// `pinned-clipplayer` is that node: canvas-hidden by `isCanvasHiddenNode`, a
+// shipped always-on singleton, and the very occupant the fallback's own
+// comment describes.
+test('a CANVAS-HIDDEN occupant renders a pickup ghost from its rear card (dock-frame anchor)', async ({
+  page,
+}) => {
+  await gotoWorkflow(page);
+  // Wait for the workflow ensure to have written the pinned clip player — the
+  // NODE, not a paint, so this cannot race the seeder.
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as {
+        __patch?: { nodes: Record<string, { data?: { pinned?: boolean } } | undefined> };
+      };
+      return w.__patch?.nodes['pinned-clipplayer']?.data?.pinned === true;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+
+  // THE PRECONDITION, ASSERTED RATHER THAN ASSUMED: it really has no canvas
+  // element. Without this the test would still pass against a node that simply
+  // resolved the ordinary canvas anchor, proving nothing about the fallback
+  // this case exists to guard.
+  await expect(
+    page.locator('.svelte-flow__node[data-id="pinned-clipplayer"]'),
+    'the pinned clip player must be CANVAS-HIDDEN — if it has a canvas node, PickupCable resolves '
+      + 'that and this test says nothing about the dock-frame fallback',
+  ).toHaveCount(0);
+
+  await openFullView(page, 'pinned-clipplayer');
+  // …and the pane must carry the anchor the fallback looks for.
+  await expect(
+    paneOf(page, 'pinned-clipplayer').locator('[data-dock-card-frame]'),
+    'the dock pane must expose [data-dock-card-frame] — it is the ONLY rectangle PickupCable and '
+      + 'Canvas.cardRectFor can find for an occupant with no canvas element',
+  ).not.toHaveCount(0);
+
+  await pressFlipKey(page);
+  await expect(rearCard(page)).toBeVisible();
+
+  // Pick up one of the clip player's own outputs from its back jacks.
+  await rearJack(page, 'gate1', 'output').click();
+  expect((await pickup(page)).mode, 'the back-jack click began a carry').toBe('pickup');
+
+  // THE ASSERTION: the ghost renders. It can only be drawn from the pane's dock
+  // frame, because there is no canvas node to hang it from.
+  await page.mouse.move(640, 320);
+  await page.mouse.move(660, 340);
+  await expect(
+    page.getByTestId('pickup-cable'),
+    'a carry from a canvas-hidden occupant must still draw its ghost cable — nothing here is the '
+      + '"no ghost at all" defect PickupCable\'s dock-frame fallback exists to prevent',
+  ).toBeVisible();
+
+  // …and it is a REAL path, not a mounted-but-empty <path d="">. The empty
+  // string is exactly what a missed anchor produces, and an element that exists
+  // with no geometry is the shape `toBeVisible` alone would wave through.
+  const d = await page.getByTestId('pickup-cable').locator('path').first().getAttribute('d');
+  expect(
+    d?.length ?? 0,
+    `the ghost path must have geometry (d=${JSON.stringify(d)}) — an empty d is the anchor lookup `
+      + 'returning nothing, which paints as a mounted element with no line',
+  ).toBeGreaterThan(0);
+
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await pickup(page)).mode).toBe('idle');
+});
+
 // ── (6) A CARD THAT CONSUMED THE FLIP KEY MUST NOT ALSO FLIP (#1790) ───────
 //
 // The flip key is BARE TAB (#1629), claimed on `window`. A sequencer's GATE
