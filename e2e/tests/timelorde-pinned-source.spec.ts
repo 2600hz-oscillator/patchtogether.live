@@ -182,10 +182,10 @@ async function sampleVideoOut(page: Page, nodeId: string, frames: number): Promi
 
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS * 2 });
 
-for (const shell of ['default', 'legacy'] as const) {
-  const query = shell === 'legacy' ? '?shell=legacy' : '';
+{
+  const query = '';
 
-  test.describe(`timelorde — the PINNED producer needs NO card [${shell} shell]`, () => {
+  test.describe('timelorde — the PINNED producer needs NO mounted surface', () => {
     test('the auto-spawned pinned singleton is canvas-hidden and hosted NOWHERE', async ({ page }) => {
       await bootRack(page, query);
 
@@ -229,19 +229,11 @@ for (const shell of ['default', 'legacy'] as const) {
           };
         });
       });
-      if (shell === 'legacy') {
-        await expect(
-          page.locator('.mod-card.timelorde-card'),
-          'POSITIVE CONTROL: an ordinary canvas timelorde renders a card under ?shell=legacy, so ' +
-            'the zero-counts above are a reading rather than a page that failed to render',
-        ).toHaveCount(1, { timeout: BOOT_MS });
-      } else {
-        await expect(
-          page.locator(`.svelte-flow__node[data-id="probe-timelorde"] [data-testid="module-shell"]`),
-          'POSITIVE CONTROL: an ordinary canvas timelorde renders its FACE under the default ' +
-            'shell, so the zero-counts above are a reading rather than a dead page',
-        ).toHaveCount(1, { timeout: BOOT_MS });
-      }
+      await expect(
+        page.locator(`.svelte-flow__node[data-id="probe-timelorde"] [data-testid="module-shell"]`),
+        'POSITIVE CONTROL: an ordinary canvas timelorde renders its FACE, so the zero-counts ' +
+          'above are a reading rather than a dead page',
+      ).toHaveCount(1, { timeout: BOOT_MS });
     });
 
     test('THE POINT: video_out carries a real, MOVING picture with no card anywhere', async ({ page }) => {

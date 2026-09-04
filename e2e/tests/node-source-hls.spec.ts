@@ -291,45 +291,4 @@ test.describe('the HLS tuners: the source belongs to the NODE (#1511)', () => {
     await expectNoCardAndNoHost(page, 'pt-node', 'peertube-card');
     expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   });
-
-  test('under ?shell=legacy the REAL card adopts the SAME element — one owner, not two @video', async ({ page }) => {
-    test.setTimeout(120_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-
-    await installMocks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
-    await spawnPatch(page, [{ id: 'tv-legacy', type: 'tvLibrarian', domain: 'video' }], [], {
-      mountTimeout: 30_000,
-    });
-
-    // Here the card IS in the lane, which is the opposite of the two tests
-    // above — and the point: adoption is a DOM re-parent of the node's ONE
-    // element, never a second one. Two live <video>s for one node is the hazard
-    // `nodeMedia`'s owner-checked transfer exists to make impossible, and it is
-    // the hazard a controller could reintroduce one level up.
-    await expect(page.getByTestId('tv-librarian-card')).toBeVisible({ timeout: 30_000 });
-    await expect
-      .poll(async () => (await mediaState(page, 'tv-video')).length, {
-        message: 'the card and the controller each minted an element for one node',
-        timeout: 15_000,
-      })
-      .toBe(1);
-    const adopted = await mediaState(page, 'tv-video');
-    expect(adopted[0]!.where, 'the card adopted the element out of the parking area').toBe('lane');
-    // ...and the ENGINE still holds it. An adoption that re-created the element
-    // would leave the engine pointing at a detached one.
-    //
-    // ⚠ POLLED, NOT READ ONCE. The attach races the engine's async `addNode` and
-    // retries at 100 ms; a bare read here is a test of who won that race on this
-    // machine, which is exactly the class of assertion that passes locally and
-    // fails on a loaded runner.
-    await expect
-      .poll(() => engineHasElement(page, 'tv-legacy'), {
-        message: 'the engine does not hold the adopted element — adoption re-created it instead of re-parenting it',
-        timeout: 15_000,
-      })
-      .toBe(true);
-    expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
-  });
 });
