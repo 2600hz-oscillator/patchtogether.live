@@ -570,3 +570,75 @@ wrong" — so the citations are only repairable by the type leaving the REGISTRY
 The specs are back; they die WITH the type, in one commit.
 
 The safety test and `exposable-controls.ts` were KEPT — both stand alone.
+
+---
+
+# S4 LANDMINES — found by the pre-stage and group lanes, NOT in the brief
+
+Both delegated lanes finished. Between them they surfaced five things the fleet
+deletion will hit that the brief's S4 list does not name. A successor should
+treat these as part of the removal commit, not as discoveries.
+
+1. **⚠ `packages/web/src/lib/ui/card-control-ranges.test.ts` (188 lines) MUST be
+   deleted with `card-range-source.test.ts`, and the brief omits it.** All four
+   of its claims read `BackdraftCard` source. It **will red the fleet commit**.
+   A ModuleShell-wide replacement would go red today (ToyboxConsole and the
+   shell carry legitimate numeric-literal props on `node.data`-backed controls)
+   and would be a new gate besides — so it retires, it is not re-pointed.
+
+2. **⚠ `e2e/tests/collapse-keeps-playing.spec.ts:201` derives its "real player"
+   population by `readdirSync`-ing the CARD DIRECTORY** and grepping each card
+   for `-file-input` + `-play-btn`. After the fleet dies it resolves nothing,
+   measures zero modules, and PASSES — the vacuous-`all()` shape, inside an e2e
+   nobody re-reads. It needs a min-population guard or a new derivation.
+
+3. **The brief's "~19 face-model tests that readFileSync their card" was low by
+   3x — the real number was 63.** All 63 are reworked. Post-change, 16 files
+   still MENTION a card filename and none READS one (11 prose, 2 ledger key
+   strings, 1 synthetic hash filename, 1 path-splitter fixture, 2 deliberate
+   `!endsWith('Card.svelte')` filters that match nothing once the fleet is gone).
+
+4. **98 of 137 declared `controlFamily.testidPrefix` values live ONLY in a card**
+   — `bluebox-key-*` was the visible corner of the whole population. Reworking
+   the declarations cannot fix it: `ModuleShell` stamps
+   `shell-cell-${familyId}` from an interpolation, so a shell-rendered family
+   has no source literal to find. Resolved by teaching the lint to accept
+   either arm (98 card-only + 41 also-in-a-surviving-surface = all 139 ranked
+   families resolve to a live shell cell), counting both independently and
+   asserting both non-empty.
+
+5. **`card-flow-store-guard`'s vacuity guard could not survive as written.**
+   MEASURED: **zero** surviving module surfaces import anything from
+   `@xyflow/svelte` — which is exactly the state the gate exists to hold, so
+   "some card imports from xyflow" goes false at the moment the gate succeeds.
+   Liveness now rests on `card-kit.ts` and `PatchPanel.svelte` (the latter was
+   outside the old glob and nothing said so).
+
+## Owner decisions now outstanding from the group slice
+
+* **`db/schema/003_saved_groups.sql` is RESTORED, and the table is ORPHANED.**
+  The lane deleted it, then put it back: the migration series is append-only and
+  this repo's precedent for retiring a DB object (`006_drop_rackspace_mode.sql`)
+  is explicitly "NON-DESTRUCTIVE TO ROWS ON PURPOSE". Dropping `saved_groups`
+  destroys any user's saved library — an irreversible ops action, not a code
+  change. Runbook + architecture diagram record the orphan. **Owner's call.**
+* **`vizPassthrough` retirement is blocked on DOOM.** `DoomSurface.svelte` emits
+  the matching `data-viz-passthrough` attribute, so retiring it while excluding
+  DOOM would leave exactly one module emitting an attribute nothing reads —
+  worse than not starting. Recorded INERT at all three declaration sites.
+* **`doom-face-model.test.ts` still reads `DoomCard.svelte`**, and
+  `card-media-lifetime`'s `EXTRAS_OWNERS` now carries a `doom` row because
+  `doom/DoomSurface.svelte` is on the extras channel. The verdict used is that
+  file's own, recorded verbatim when DoomCard left — no new DOOM decision — but
+  the DOOM owner should confirm it.
+* **`cable-leg-groups.ts` was a FALSE POSITIVE** in the group starting list: it
+  is stereo CABLE-LEG grouping with two live non-group importers. Not deleted.
+
+## Group slice, as landed
+
+`NON_SHELL_LANE_TYPES` is now **`{ 'cadillac' }`**. 44 files deleted / 9,050 LoC
+in that slice; `Canvas.svelte` lost ~860 lines in one block. The safety fixture
+was proven in a REAL BROWSER at the final commit: 5 nodes loaded, 2 edges, the
+group and sticky dropped with `module type not registered in this build`, both
+their cables dropped as `edge references a dropped node`, a user-visible "could
+not be loaded" notice in the DOM, and ZERO pageerror/console errors.
