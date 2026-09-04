@@ -24,9 +24,22 @@
   // Handshake (same-origin, opener ↔ popup):
   //   1. On mount we postMessage `present:ready` to the opener.
   //   2. The opener finds our <canvas> (data-testid=present-canvas), gets its
-  //      2D context, and starts drawing the source canvas into it each frame.
+  //      2D context, and installs `window.__presentFrame` here.
+  //   3. Our rAF pulls that function every frame (#2235 — the SINK owns the
+  //      clock) and READS WHAT IT RETURNS. A frame that painted no source
+  //      pixels, or a frame function that has vanished, is reported on screen
+  //      instead of leaving the last good frame up forever. See
+  //      $lib/ui/modules/present-link for the state machine and why every
+  //      threshold is counted in SINK FRAMES rather than milliseconds.
 
   import { onMount, onDestroy } from 'svelte';
+  import {
+    type PresentLinkMonitor,
+    type PresentLinkState,
+    type PresentPullSample,
+    createPresentLinkMonitor,
+  } from '$lib/ui/modules/present-link';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   let canvasEl = $state<HTMLCanvasElement | null>(null);
   let pullRaf: number | null = null;
@@ -34,6 +47,25 @@
   let isFs = $state(false);
   // A fullscreen retry loop is in flight (plain state — nothing renders it).
   let fsLoopActive = false;
+
+  // ── THE LINK MONITOR ──────────────────────────────────────────────────────
+  // The sink used to own ONLY the clock: it called `window.__presentFrame?.()`
+  // and never learned anything back. So the two states a performer most needs
+  // told apart — "my source is drawing" and "my source is gone" — looked
+  // identical from here, and the visible result of the second was a FROZEN LAST
+  // FRAME: bright, plausible, and wrong, on a wall, in front of an audience.
+  //
+  // The opener now returns a per-frame status (PresentPullStatus). This derives
+  // link health from it in SINK FRAMES — no wall clock, because the projector's
+  // frame rate is whatever the venue's hardware says it is.
+  // Unarmed until mount proves this sink was opened BY something: a /present
+  // tab a human opened by hand has no source to lose, and telling its viewer
+  // the link is lost would be a lie about a link that never existed.
+  let link: PresentLinkMonitor = createPresentLinkMonitor({ armed: false });
+  let linkState = $state<PresentLinkState>('waiting');
+  /** Which (node, display) this sink serves, from `?slot=`. Shown in the
+   *  disconnect notice so a four-projector rig knows WHICH one dropped. */
+  let slot = $state('');
 
   /** Size the canvas backing store to the viewport (× DPR for crisp output).
    *  The opener reads canvas.width/height to compute the letterbox fit, so this
@@ -208,12 +240,47 @@
    */
   function pullFrames(): void {
     pullRaf = requestAnimationFrame(pullFrames);
-    const opener = window as Window & { __presentFrame?: () => void };
+    const host = window as Window & {
+      __presentFrame?: () => { painted?: number; errors?: number } | void;
+    };
+    let sample: PresentPullSample = { sourcePresent: false };
     try {
-      opener.__presentFrame?.();
+      const frame = host.__presentFrame;
+      if (typeof frame === 'function') {
+        const status = frame();
+        sample = {
+          sourcePresent: true,
+          painted: status?.painted,
+          errors: status?.errors,
+        };
+      }
     } catch {
-      /* the opener is mid-teardown — skip this frame, keep the loop alive */
+      // The opener is mid-teardown — skip this frame, keep the loop alive. It
+      // counts as a MISSING source, not a healthy one: a throwing frame
+      // function is exactly the case that used to leave a frozen picture up.
+      sample = { sourcePresent: false };
     }
+    const next = link.tick(sample);
+    // Assigning the same value is a no-op in Svelte 5, so the projector does no
+    // reactive work per frame — only on an actual state change.
+    linkState = next;
+    publishStats();
+  }
+
+  /** Receiver-side counters for the continuity gate, under the SAME gate as
+   *  every other Playwright hook. They are diagnostics, never the assertion:
+   *  the gate reads PIXELS off this canvas and uses these to say WHY. */
+  function publishStats(): void {
+    if (!testHooksEnabled()) return;
+    (window as unknown as { __presentStats?: unknown }).__presentStats = {
+      state: link.state,
+      ticks: link.ticks,
+      painted: link.painted,
+      errors: link.errors,
+      ticksSincePaint: link.ticksSincePaint,
+      everPainted: link.everPainted,
+      slot,
+    };
   }
 
   function onFsChange(): void {
@@ -257,6 +324,18 @@
   }
 
   onMount(() => {
+    // `?slot=` is the sink's identity, written by startPresent. It is what lets
+    // a native shell's window-open handler tell an output slot's sink from a
+    // patch's restored projector — they are otherwise the same URL, the same
+    // window name and the same feature string.
+    try {
+      slot = new URL(window.location.href).searchParams.get('slot') ?? '';
+    } catch {
+      slot = '';
+    }
+    // ARM only when something opened us. `window.opener` is the honest test:
+    // every projector session has one, and a hand-opened /present tab does not.
+    link = createPresentLinkMonitor({ armed: window.opener != null });
     sizeCanvas();
     window.addEventListener('resize', onResize);
     document.addEventListener('fullscreenchange', onFsChange);
@@ -296,10 +375,26 @@
   <title>present</title>
 </svelte:head>
 
-<div class="present-root" data-testid="present-root">
+<div
+  class="present-root"
+  data-testid="present-root"
+  data-link-state={linkState}
+  data-slot={slot}
+>
   <canvas bind:this={canvasEl} class="present-canvas" data-testid="present-canvas"></canvas>
   {#if !isFs}
     <div class="fs-hint" data-testid="present-fs-hint">⛶ click anywhere for full screen</div>
+  {/if}
+  <!-- THE PROJECTOR SAYS WHEN IT IS DEAD. Without this, a lost or stalled link
+       shows the LAST GOOD FRAME forever — a picture that looks alive to the room
+       and to the operator across the venue, which is strictly worse than a
+       closed window. A corner strip rather than a full-screen takeover: if the
+       link recovers, the show was never covered up. -->
+  {#if linkState === 'lost' || linkState === 'stalled'}
+    <div class="link-notice" data-testid="present-link-notice" role="status" aria-live="polite">
+      {linkState === 'lost' ? 'SOURCE DISCONNECTED' : 'NO PICTURE FROM SOURCE'}
+      {#if slot}<span class="slot">· {slot}</span>{/if}
+    </div>
   {/if}
 </div>
 
@@ -348,5 +443,24 @@
   @keyframes fs-hint-pulse {
     0%, 100% { opacity: 0.55; }
     50% { opacity: 1; }
+  }
+  /* Bottom-left, deliberately NOT centred and NOT full-bleed: it must be
+     unmissable to anyone looking for it and must not become the show. */
+  .link-notice {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    padding: 8px 14px;
+    font: 600 15px/1.2 ui-monospace, monospace;
+    letter-spacing: 0.08em;
+    color: #ffd9d9;
+    background: rgba(60, 8, 8, 0.86);
+    border: 1px solid rgba(255, 120, 120, 0.6);
+    border-radius: 6px;
+    pointer-events: none;
+  }
+  .link-notice .slot {
+    opacity: 0.75;
+    font-weight: 400;
   }
 </style>

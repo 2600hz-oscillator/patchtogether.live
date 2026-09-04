@@ -20,9 +20,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   createNodePresentRegistry,
+  displayUnresolvedAdvisory,
   type PresentEngine,
 } from './node-present-registry.svelte';
+import { presentSlotKey } from './present-bindings';
 import type { PresentSession, StartPresentArgs } from './present-window';
+
+/** Every open in these tests NAMES a display, so it must carry a resolvable
+ *  rect — a null one is a refusal, not a default (see `openOne`). */
+const RECT = { left: 1920, top: 0, width: 2560, height: 1440 } as const;
 
 function fakeSession(): PresentSession & { stop: ReturnType<typeof vi.fn> } {
   let closed = false;
@@ -72,7 +78,7 @@ function harness(opts: { blocked?: boolean } = {}) {
   });
   const eng = fakeEngine();
   const open = (nodeId: string, screenId: string) =>
-    reg.present(nodeId, screenId, { engine: eng.engine, rect: null });
+    reg.present(nodeId, screenId, { engine: eng.engine, rect: RECT });
   return { reg, start, started, sessions, ...eng, open };
 }
 
@@ -103,6 +109,82 @@ describe('node-present registry — sessions are keyed to the NODE', () => {
     expect(h.reg.presentingCount('bd')).toBe(0);
     expect(h.reg.presentingNodeIds()).toEqual([]);
     expect(h.leasedIds()).toEqual([]);
+  });
+
+  it('carries a SLOT so a native shell can tell this sink from any other', () => {
+    // Without it main sees `window.open('/present', '_blank', '<geometry>')` for
+    // an output slot's sink and for an old patch's restored projector — same
+    // URL, same window name, same feature shape, no way to route one and deny
+    // the other.
+    const h = harness();
+    h.open('bd', 's1');
+    expect(h.started[0]!.slot).toBe(presentSlotKey('bd', 's1'));
+  });
+});
+
+describe('node-present registry — an unresolvable display is REFUSED, not relocated', () => {
+  // ⚠ THE BEHAVIOUR THIS REPLACES IS THE BUG. `computePopupFeatures(null)` opens
+  // a 1280×720 window at (100,100) — the operator's PRIMARY screen. So a
+  // performer whose projector went away got the output on their own laptop,
+  // silently, mid-set. Every call into this registry names a display, so a null
+  // rect can only mean that display is unresolvable.
+  const nullRect = (h: ReturnType<typeof harness>, node = 'bd', screen = 's1') =>
+    h.reg.present(node, screen, { engine: h.engine, rect: null });
+
+  it('opens NOTHING and reports the refusal', () => {
+    const h = harness();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(nullRect(h)).toBe(false);
+    expect(h.start, 'no window.open at all — not even a default-placed one').not.toHaveBeenCalled();
+    expect(h.reg.presentingNodeIds()).toEqual([]);
+    expect(h.leasedIds(), 'and no stranded pull root').toEqual([]);
+    expect(h.reg.refusedPlacements()).toBe(1);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('the advisory says it was NOT moved to the primary display', () => {
+    // The wording is the product here: "it did not open" is not actionable on a
+    // stage, and the console is where this class is debugged from (the
+    // projector's own devtools are unreachable on a second display).
+    const line = displayUnresolvedAdvisory('bd', 'DELL U2720Q|2560x1440|@2|ext');
+    expect(line).toContain('bd');
+    expect(line).toContain('DELL U2720Q');
+    expect(line).toMatch(/NOT moved to your primary display/);
+  });
+
+  it('a LIVE projector on that display is left running rather than replaced by nothing', () => {
+    // A stale picture the operator can still see beats killing it to open
+    // nothing: the refusal must not be a teardown.
+    const h = harness();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    h.open('bd', 's1');
+    expect(nullRect(h)).toBe(false);
+    expect(h.sessions[0]!.stop).not.toHaveBeenCalled();
+    expect(h.reg.isPresenting('bd')).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('POSITIVE CONTROL: the SAME call with a resolvable rect does open', () => {
+    // Otherwise "refuses everything" passes the three assertions above, and
+    // that is its own outage.
+    const h = harness();
+    expect(h.open('bd', 's1')).toBe(true);
+    expect(h.reg.refusedPlacements()).toBe(0);
+    expect(h.started[0]!.rect).toEqual(RECT);
+  });
+
+  it('presentAll refuses only the unresolvable displays', () => {
+    const h = harness();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const opened = h.reg.presentAll('bd', ['good', 'gone'], {
+      engine: h.engine,
+      rectFor: (id) => (id === 'good' ? RECT : null),
+    });
+    expect(opened).toBe(1);
+    expect(h.reg.presentingPairs()).toEqual([{ nodeId: 'bd', screenId: 'good' }]);
+    expect(h.reg.refusedPlacements()).toBe(1);
+    warn.mockRestore();
   });
 });
 
@@ -136,7 +218,7 @@ describe('node-present registry — the BLIT SOURCE is the engine, not a card', 
       blitOutputToDrawingBuffer: () => { throw new Error('GL context lost'); },
     } as PresentEngine;
     // Re-present with the throwing engine so the entry holds it.
-    h.reg.present('bd', 's1', { engine: boom, rect: null });
+    h.reg.present('bd', 's1', { engine: boom, rect: RECT });
     expect(() => h.started.at(-1)!.prepare!()).not.toThrow();
   });
 });
@@ -223,7 +305,7 @@ describe('node-present registry — teardown is GRAPH lifetime, and only that', 
       clearInterval: () => { pollFn = null; },
     });
     const eng = fakeEngine();
-    reg.present('bd', 's1', { engine: eng.engine, rect: null });
+    reg.present('bd', 's1', { engine: eng.engine, rect: RECT });
     expect(eng.leasedIds()).toEqual(['bd']);
     sessions[0]!.stop(); // the user hit the OS window button
     expect(pollFn).not.toBeNull();
