@@ -85,7 +85,7 @@ async function setBpm(page: Page, bpm: number): Promise<void> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await waitForPins(page);
 }

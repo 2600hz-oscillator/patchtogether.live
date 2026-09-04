@@ -102,7 +102,7 @@ async function setupInstrumentWithExposedOutput(page: Page): Promise<{
   groupId: string;
   exposedOutId: string;
 }> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   // Three real-engine modules: LFO + FILTER (will be grouped) + AUDIOOUT
   // (external — the cable target).
