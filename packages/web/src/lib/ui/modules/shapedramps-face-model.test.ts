@@ -22,7 +22,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shapedrampsDef } from '$lib/video/modules/shapedramps';
 import { curatedFace, dockFacePlan, type FaceDefLike } from '$lib/ui/workflow/curated-face';
-import { declaredParamCells, momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
+import { declaredParamCells, momentaryParamIds, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
 import { hasVideoSurface, laneGlyphFor } from '$lib/ui/workflow/module-shell-model';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 
@@ -38,7 +38,6 @@ function param(id: string) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_SRC = resolve(HERE, '../../video/modules/shapedramps.ts');
-const CARD_SRC = resolve(HERE, 'ShapedrampsCard.svelte');
 const BODY_SRC = resolve(HERE, 'shapedramps/ShapedrampsOutputBody.svelte');
 
 describe('shapedramps face — promoted, and the tile shows the module', () => {
@@ -114,22 +113,28 @@ describe('shapedramps face — the ranking is by what moves the picture', () => 
 });
 
 describe('shapedramps face — the two declarations it deliberately does NOT make', () => {
-  // ⚠ CLAIM 1. Every control on the card is a `<NeonFader>`, so "declare the
-  // primitive the card established" read literally would put `fader` on all
-  // eight. The fleet does the opposite, and `shell-control-kind.ts` records why
-  // (23 faced modules rank 121 fader-drawn params as knobs; converting them is
-  // an owner ruling with a measured lane cost). This pins the choice so that
-  // reversing it is a deliberate edit rather than a drift.
-  it('declares NO paramCells, while its card draws EVERY control as a fader', () => {
-    expect([...declaredParamCells(def).keys()]).toEqual([]);
-    const card = readFileSync(CARD_SRC, 'utf8');
-    const faders = card.match(/<NeonFader\b/g) ?? [];
-    expect(
-      faders.length,
-      'the premise of the decision: this card really does draw every param as a fader, so the '
-        + 'absence of paramCells is a judgement about the FLEET convention and not about this card',
-    ).toBe(shapedrampsDef.params.length);
-    expect(card).not.toMatch(/<Knob\b/);
+  // ⚠ CLAIM 1. Every control on the legacy card was a `<NeonFader>`, so
+  // "declare the primitive the card established" read literally would have put
+  // `fader` on all eight. The fleet does the opposite, and
+  // `shell-control-kind.ts` records why (23 faced modules rank 121 fader-drawn
+  // params as knobs; converting them is an owner ruling with a measured lane
+  // cost). This pins the choice so that reversing it is a deliberate edit
+  // rather than a drift.
+  //
+  // ⚠ THE PREMISE USED TO BE RE-MEASURED OFF THE CARD SOURCE — "this card
+  // really does draw every param as a fader" — and that half is now history,
+  // recorded rather than asserted, because the card it read is gone. What is
+  // asserted instead is the CONSEQUENCE, which is the half that can still go
+  // wrong: with no declaration the dock resolves the fleet default for every
+  // one of these params, and a stray `paramCells` entry would surface here as a
+  // fader rather than as a silent string nobody reads.
+  it('declares NO paramCells, so every control resolves the FLEET default', () => {
+    const cells = declaredParamCells(def);
+    expect([...cells.keys()]).toEqual([]);
+    for (const p of shapedrampsDef.params) {
+      expect(paramCellKind(p, new Set(), 'dock', cells), `${p.id} must not be a fader`)
+        .not.toBe('fader');
+    }
   });
 
   // ⚠ CLAIM 2. `h_shape`/`v_shape` look like 4-position selectors and are not.
