@@ -13,14 +13,14 @@ what's left. Each group below maps to one PR.
 ## Existing coverage we build on
 
 - `e2e/tests/io-spec-consistency.spec.ts` — THE registry-wide card sweep.
-  One spawn per module, then six assertion groups over that one card:
+  One spawn per module, then six assertion groups over that one tile:
   strict equivalence between `AudioModuleDef.inputs/outputs` and the
   rendered Svelte Flow Handle ids (plus a per-port pinpoint message),
-  handle count, card identity, bounding box, control bounds, and no
+  handle count, tile identity, bounding box, control bounds, and no
   console/page errors. Absorbed `modules.spec.ts`,
-  `per-module-per-port-handles.spec.ts` and the registry half of
-  `card-control-overflow.spec.ts` in #1861 — those three were paying a
-  full page load each to read a different property of the same card.
+  `per-module-per-port-handles.spec.ts` and the registry half of the
+  control-overflow sweep in #1861 — those three were paying a full page
+  load each to read a different property of the same node.
 - `e2e/tests/voice-chain.spec.ts` — Sequencer -> AnalogVCO + ADSR ->
   VCA -> Scope -> Out, with a sounding-step assertion. Already covers
   the canonical signal-flow integration.

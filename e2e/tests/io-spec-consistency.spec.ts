@@ -1,20 +1,27 @@
 // e2e/tests/io-spec-consistency.spec.ts
 //
-// THE registry-wide SOLO-SPAWN card sweep. One page load + one module spawn
+// THE registry-wide SOLO-SPAWN tile sweep. One page load + one module spawn
 // per registered module, then SIX assertion groups read different properties
-// of that one rendered card.
+// of that one rendered tile.
 //
 // ── WHY THE FILE KEPT ITS NAME ─────────────────────────────────────────────
 // Four specs used to spawn all 196 modules independently and then read
-// different DOM properties of the same card. MEASURED on CI
+// different DOM properties of the same node. MEASURED on CI
 // (e2e/e2e-timings.generated.json): io-spec-consistency 1051.3 CPU-s, modules
-// 795.4, per-module-per-port-handles 682.2, card-control-overflow 672.3 =
-// 3201 CPU-s, of which three quarters was duplicated page loads. #1861 folded
-// them into this file. The NAME stays because ~15 sites across README.md,
+// 795.4, per-module-per-port-handles 682.2, control-overflow 672.3 = 3201
+// CPU-s, of which three quarters was duplicated page loads. #1861 folded them
+// into this file. The NAME stays because ~15 sites across README.md,
 // docs/testing, MODULE-COVERAGE-PLAN.md and module source comments cite this
 // spec BY NAME as the coverage backing a claim; renaming it would silently
 // un-cite all of them. Read the describe titles, not the filename, for what
 // this file now asserts.
+//
+// ⚠ EVERY LOCATOR ADDRESSES THE NODE BY ID (`SUT`), NEVER BY A PER-TYPE NODE
+// CLASS. xyflow stamps the wrapper class from the EMITTED node type and every
+// lane node emits `moduleShell`, so `.svelte-flow__node-<type>` matches
+// nothing — and a sweep reading an empty handle set would pass its per-port
+// assertions vacuously. Group B's `toHaveCount(expectedHandles)` against a
+// non-zero def total is the anti-vacuity guard that makes that impossible.
 //
 // ── THE SIX GROUPS, AND WHERE EACH CAME FROM ───────────────────────────────
 //   A. HANDLE IDS == DEF PORT IDS, as sorted-array EQUALITY in both
@@ -27,22 +34,31 @@
 //      that doubles as the "all handles have rendered" settle before A reads
 //      their ids (this spec's original wait; also modules.spec.ts's
 //      handle-count assertion, which the same expectation subsumes).
-//   C. CARD IDENTITY — the editable name button reads /^<TYPE>(\d+)?$/, or
-//      for the two cards without one (sticky/group) the def's label appears
-//      as text (from modules.spec.ts).
-//   D. CARD HAS A REAL BOX — visible, >50×50 (from modules.spec.ts; catches
-//      the silent DOM-only mount).
-//   E. CONTROLS FIT THE CARD — no in-flow control past the right/bottom edge
-//      and no horizontal content overflow (from card-control-overflow.spec.ts;
-//      the instrument now lives in _card-overflow.ts and is shared with that
-//      spec's surviving BACKDRAFT per-TV-mode cases).
+//   C. TILE IDENTITY — the editable name label reads /^<TYPE>(\d+)?$/, with a
+//      def-label substring fallback for a surface that renders its own chrome
+//      without ModuleTitle (from modules.spec.ts).
+//   D. THE TILE HAS A REAL BOX — visible, >50×50 (from modules.spec.ts;
+//      catches the silent DOM-only mount).
+//   E. CONTROLS FIT THE TILE — no in-flow control past the right/bottom edge
+//      and no horizontal content overflow (the instrument lives in
+//      _card-overflow.ts and is shared with freezeframe-screen-toggle).
 //   F. NO CONSOLE / PAGE ERRORS across the whole spawn (from modules.spec.ts),
 //      asserted LAST — see the live-render window below.
 //
+// ⚠ GROUP E's SUBJECT CHANGED SIZE, NOT KIND. It used to bound controls
+// against a box each module authored for itself; every tile is now the same
+// RACKLINE box, so the same instrument now asks whether a declared cell ladder
+// fits the uniform tile. It is kept rather than folded into
+// faceplate-platform.spec.ts's per-cell geometry gate because the two sweep
+// DIFFERENT populations — this one every REGISTERED module at spawn, that one
+// every strictFace type — and those sets are only equal once the promotion is
+// complete for all of them.
+//
 // ── THE ONE THING THAT IS NOT A PURE MERGE: THE VIDEO RENDER FREEZE ────────
-// Three of the four old specs set `__videoEngineFreezeRender` for video cards
-// (the per-frame GL draw is brutally slow on CI's SwiftShader renderer, and
-// groups A–E are DOM/layout-only, so freezing changes nothing they observe).
+// Three of the four old specs set `__videoEngineFreezeRender` for video
+// modules (the per-frame GL draw is brutally slow on CI's SwiftShader
+// renderer, and groups A–D are DOM/layout-only, so freezing changes nothing
+// they observe).
 // modules.spec.ts did NOT freeze — so its console-error window (F) covered
 // LIVE per-frame draws, which a frozen page cannot see.
 //
@@ -64,6 +80,11 @@ import { REGISTRY, type RegistryModule } from './_registry';
 import { driverFor } from './_drivers';
 import { waitFrames } from '../_helpers/frames';
 import { EXEMPT_CONTROL_OVERFLOW, assertControlsFitCard } from './_card-overflow';
+
+/** The one node every test in this sweep spawns. Every locator addresses it by
+ *  THIS id rather than by a per-type node class: xyflow stamps the wrapper
+ *  class from the EMITTED node type, and every lane node emits `moduleShell`. */
+const SUT = 'sut';
 
 // ────────── Module-level skips (the WHOLE sweep) ──────────
 //
@@ -331,8 +352,14 @@ async function unfreezeAndDraw(page: Page): Promise<LiveDrawProof> {
   );
 }
 
-/** Partition the card's rendered handles into inputs (target) vs outputs
+/** Partition the node's rendered handles into inputs (target) vs outputs
  *  (source) in ONE round trip.
+ *
+ *  ⚠ ADDRESSED BY NODE ID, never by a per-type node class. xyflow stamps the
+ *  wrapper class from the EMITTED node type, and every lane node emits
+ *  `moduleShell` — so `.svelte-flow__node-<type>` matches nothing and this
+ *  sweep would read an empty handle set for every module while its per-port
+ *  assertions all passed vacuously.
  *
  *  SOME modules (sequencer, score) declare an input AND an output with the SAME
  *  id ("clock" for both) — `[data-handleid="clock"]` matches BOTH, so we can't
@@ -345,10 +372,10 @@ async function unfreezeAndDraw(page: Page): Promise<LiveDrawProof> {
  *  against modules.spec.ts's 4.06 s/test for MORE assertions. */
 async function readHandleIds(
   page: Page,
-  cardClass: string,
+  nodeId: string,
 ): Promise<{ inputs: string[]; outputs: string[] }> {
   return await page
-    .locator(`.${cardClass}`)
+    .locator(`.svelte-flow__node[data-id="${nodeId}"]`)
     .locator('.svelte-flow__handle')
     .evaluateAll((els) => {
       const inputs: string[] = [];
@@ -366,7 +393,7 @@ async function readHandleIds(
 
 test.describe.configure({ mode: 'parallel' });
 
-test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
+test.describe('I/O spec consistency: def <-> rendered tile handles', () => {
   test('seed: registry manifest is non-empty + every non-meta module has ≥1 port', () => {
     expect(REGISTRY.length, 'manifest contains modules').toBeGreaterThan(0);
     // Meta-domain modules (sticky, group) intentionally have zero
@@ -388,7 +415,7 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
 function declareSweep(mod: RegistryModule): void {
   const expectedHandles = mod.inputs.length + mod.outputs.length;
   const title =
-    `module ${mod.type}: handles match def (${expectedHandles}) + renders + controls fit + no console errors`;
+    `module ${mod.type}: handles match def (${expectedHandles}) + renders + no console errors`;
 
   const skipReason = SKIP_DEF_VS_UI[mod.type];
   if (skipReason) {
@@ -428,11 +455,11 @@ function declareSweep(mod: RegistryModule): void {
   if (overflowExempt) {
     // Known pre-existing overflow debt. The module still appears in the report
     // as documented debt, and the anchor test below keeps the key honest.
-    // ⚠ Because this is `test.fixme`, the card is NEVER MEASURED for overflow —
-    // see the stated-scope note on the anchor test: an exempt card that has
+    // ⚠ Because this is `test.fixme`, the tile is NEVER MEASURED for overflow —
+    // see the stated-scope note on the anchor test: an exempt surface that has
     // since been reflowed stays exempt silently.
     test.fixme(
-      `module ${mod.type}: controls fit within the card [EXEMPT: ${overflowExempt}]`,
+      `module ${mod.type}: controls fit within the tile [EXEMPT: ${overflowExempt}]`,
       () => { /* see EXEMPT_CONTROL_OVERFLOW in _card-overflow.ts */ },
     );
   }
@@ -456,13 +483,13 @@ function declareSweep(mod: RegistryModule): void {
     // consolidation. Group F un-freezes below so it keeps observing real draws.
     if (isVideo) await freezeVideoRender(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
 
     await spawnPatch(
       page,
       [
         {
-          id: 'sut',
+          id: SUT,
           type: mod.type,
           position: { x: 400, y: 60 },
           domain: mod.domain,
@@ -473,11 +500,10 @@ function declareSweep(mod: RegistryModule): void {
       isHeavy ? { mountTimeout: HEAVY_MOUNT_TIMEOUT } : undefined,
     );
 
-    const cardClass = `svelte-flow__node-${mod.type}`;
-    const card = page.locator(`.${cardClass}`);
+    const node = page.locator(`.svelte-flow__node[data-id="${SUT}"]`);
 
-    // ── GROUP D (part 1): the card mounted and is visible ──
-    await expect(card, `${mod.type} card visible`).toBeVisible(
+    // ── GROUP D (part 1): the surface mounted and is visible ──
+    await expect(node, `${mod.type} node visible`).toBeVisible(
       isHeavy ? { timeout: HEAVY_MOUNT_TIMEOUT } : undefined,
     );
 
@@ -487,12 +513,12 @@ function declareSweep(mod: RegistryModule): void {
     // Settling on the def's port total is deterministic and only costs time for
     // slow cards.
     await expect(
-      card.locator('.svelte-flow__handle'),
+      node.locator('.svelte-flow__handle'),
       `${mod.type}: all ${expectedHandles} handles rendered before reading ids`,
     ).toHaveCount(expectedHandles, { timeout: HANDLE_SETTLE_TIMEOUT });
 
     // ── GROUP A: handle ids == def port ids ──
-    const { inputs: handleInputs, outputs: handleOutputs } = await readHandleIds(page, cardClass);
+    const { inputs: handleInputs, outputs: handleOutputs } = await readHandleIds(page, SUT);
     const renderedInputs = new Set(handleInputs);
     const renderedOutputs = new Set(handleOutputs);
 
@@ -525,42 +551,35 @@ function declareSweep(mod: RegistryModule): void {
       `${mod.type}: rendered output handle ids match def`,
     ).toEqual(mod.outputs.map((p) => p.id).sort());
 
-    // ── GROUP C: the card says which module it is ──
+    // ── GROUP C: the tile says which module it is ──
     if (runSmoke) {
-      // Title-text assertion: nearly every card now hosts the editable
-      // name button (see ModuleNameLabel.svelte). The default auto-assigned
-      // name for the first instance is the BARE uppercased type prefix
-      // (e.g. "WAVESCULPT"); subsequent instances get "<TYPE>2", "<TYPE>3",
-      // ... — see the bare-prefix policy in $lib/multiplayer/module-naming.ts.
-      // Use a regex so the test stays valid regardless of how many instances
-      // spawned earlier in the same browser context, AND so per-card chrome
-      // (punctuation in `mod.label` like "MIDI-CV-BUDDY" or "NUMPAD+") doesn't
-      // drift this.
-      //
-      // A couple of meta-domain cards (sticky, group) intentionally render
-      // their own chrome without ModuleTitle (sticky has a static "STICKY"
-      // badge + freeform textarea; group has its own rename UX via
-      // `data.label`). For those, fall back to the legacy `mod.label`
-      // substring check.
-      const nameButton = card.locator('[data-testid="name-label-button"]');
-      if (await nameButton.count() > 0) {
+      // Title-text assertion: the tile hosts the editable name button (see
+      // ModuleNameLabel.svelte). The default auto-assigned name for the first
+      // instance is the BARE uppercased type prefix (e.g. "WAVESCULPT");
+      // subsequent instances get "<TYPE>2", "<TYPE>3", ... — see the
+      // bare-prefix policy in $lib/multiplayer/module-naming.ts. Use a regex so
+      // the test stays valid regardless of how many instances spawned earlier
+      // in the same browser context, AND so punctuation in `mod.label` like
+      // "MIDI-CV-BUDDY" or "NUMPAD+" doesn't drift this.
+      const nameLabel = node.locator('[data-testid="tile-name-label"]');
+      if (await nameLabel.count() > 0) {
         const prefix = mod.type.toUpperCase();
         const namePattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)?$`);
-        await expect(nameButton, `${mod.type} name matches /<TYPE>(\\d+)?/`).toHaveText(namePattern);
+        await expect(nameLabel, `${mod.type} name matches /<TYPE>(\\d+)?/`).toHaveText(namePattern);
       } else {
-        await expect(card, `${mod.type} contains def label`).toContainText(mod.label, {
+        await expect(node, `${mod.type} contains def label`).toContainText(mod.label, {
           ignoreCase: true,
         });
       }
 
       // ── GROUP D (part 2): non-zero rect (catches the silent DOM-only mount) ──
-      const box = await card.boundingBox();
+      const box = await node.boundingBox();
       expect(box, `${mod.type} bounding box`).toBeTruthy();
-      expect(box!.width, `${mod.type} card width`).toBeGreaterThan(50);
-      expect(box!.height, `${mod.type} card height`).toBeGreaterThan(50);
+      expect(box!.width, `${mod.type} tile width`).toBeGreaterThan(50);
+      expect(box!.height, `${mod.type} tile height`).toBeGreaterThan(50);
     }
 
-    // ── GROUP E: controls fit within the card ──
+    // ── GROUP E: controls fit within the tile ──
     if (!overflowExempt) {
       await assertControlsFitCard(page, mod.type, mod.type);
     }
@@ -618,7 +637,7 @@ function declareSweep(mod: RegistryModule): void {
 // which would hide six results behind one. We want sequencing, not a cascade.
 //
 // This is a scheduling fix, not a budget change — no timeout was raised.
-test.describe('module card sweep (parallel)', () => {
+test.describe('module tile sweep (parallel)', () => {
   test.describe.configure({ mode: 'parallel' });
   for (const mod of REGISTRY) {
     if (HEAVY_RENDER.has(mod.type)) continue;
@@ -626,7 +645,7 @@ test.describe('module card sweep (parallel)', () => {
   }
 });
 
-test.describe('module card sweep — HEAVY WebGL (one at a time)', () => {
+test.describe('module tile sweep — HEAVY WebGL (one at a time)', () => {
   test.describe.configure({ mode: 'default' });
   for (const mod of REGISTRY) {
     if (!HEAVY_RENDER.has(mod.type)) continue;

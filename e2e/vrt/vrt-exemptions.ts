@@ -1604,12 +1604,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // Functional coverage meanwhile: backdraft.test.ts + backdraft-tv.test.ts
   // (PCU/model) + backdraft.spec.ts (feedback render / freeze / spatial
   // transform / pixelate / mirror / clk-override / faders) +
-  // backdraft-pure-tv.spec.ts + the three TV-mode cases in
-  // card-control-overflow.spec.ts (card layout in every mode) + the card-size
-  // and hidden-surface geometry in backdraft-full-output.spec.ts.
+  // backdraft-pure-tv.spec.ts + the size and hidden-surface geometry in
+  // backdraft-full-output.spec.ts.
+  //
+  // ⚠ THE PER-TV-MODE LAYOUT CASES ARE GONE, and this citation no longer
+  // claims them. They measured whether controls that mount only in a non-default
+  // TV MODE fit a per-module layout box. The tile has no per-module box, and
+  // its cell ladder comes from the def's declared `face.controls` roster, which
+  // is not mode-conditional — so the shape those cases existed to catch cannot
+  // arise on this surface. The uniform-tile bound is the registry sweep in
+  // io-spec-consistency.spec.ts.
   // FOLLOW-UP: promote into MODULES + capture darwin/linux baselines via
   // vrt-update.yml.
-  backdraft: 'BOTH original reasons are gone — the card is a fixed 4hp×3u tier (corner-resize retired) and its in-rack feedback DISPLAY was removed, so the faceplate carries no non-deterministic region (the <canvas> survives only as the 0×0, never-painted output surface for Full Frame / Full Screen / Present). What still blocks promotion is purely mechanical: no darwin/linux baseline PNGs, which is the vrt-update.yml drain-then-dispatch dance on two platforms and a separate PR\'s CI budget. Coverage meanwhile: backdraft.test.ts + backdraft-tv.test.ts + backdraft.spec.ts + backdraft-pure-tv.spec.ts + the three TV-mode card-control-overflow cases + the card-size and hidden-surface geometry in backdraft-full-output.spec.ts.',
+  backdraft: 'BOTH original reasons are gone — the card is a fixed 4hp×3u tier (corner-resize retired) and its in-rack feedback DISPLAY was removed, so the faceplate carries no non-deterministic region (the <canvas> survives only as the 0×0, never-painted output surface for Full Frame / Full Screen / Present). What still blocks promotion is purely mechanical: no darwin/linux baseline PNGs, which is the vrt-update.yml drain-then-dispatch dance on two platforms and a separate PR\'s CI budget. Coverage meanwhile: backdraft.test.ts + backdraft-tv.test.ts + backdraft.spec.ts + backdraft-pure-tv.spec.ts + the size and hidden-surface geometry in backdraft-full-output.spec.ts.',
   // SPIROGRAPHS is intentionally NOT exempt: its live drifting/bouncing OUT
   // preview canvas is MASKED in VRT_MODULE_MASKS above, and the deterministic
   // card chrome (COUNT fader + 1/2/3 spiro selector + IN/OUT toggle + chroma

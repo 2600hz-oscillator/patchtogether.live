@@ -31,7 +31,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const RACK = '/rack?shell=legacy&seed=none';
+const RACK = '/rack?seed=none';
 
 /** Two VIDEO modules, far enough apart that nothing overlaps at rest — the
  *  first overlap in each test is the one the test itself creates. */
