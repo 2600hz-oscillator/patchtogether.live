@@ -51,6 +51,10 @@ test('shell boots, /rack paints, audio runs gesture-free, zero errors', async ()
       // Plain window: native-fullscreen transitions are not this family's
       // subject and stall on some runners.
       PT_DESKTOP_WINDOWED: '1',
+      // Helper supervision is supervision.spec.ts's subject, not boot's —
+      // keep the boot proof isolated from whatever helper binaries this
+      // machine does or does not have.
+      PT_HELPERS: 'off',
     },
   });
 

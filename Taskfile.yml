@@ -1616,3 +1616,12 @@ tasks:
     dir: apps/desktop
     cmds:
       - npm run e2e
+
+  desktop:e2e:one:
+    desc: |
+      One desktop-harness spec by filter (usage: task desktop:e2e:one -- supervision).
+      REPEAT=N via: npx playwright test <filter> --repeat-each=N inside apps/desktop.
+    dir: apps/desktop
+    cmds:
+      - npm run build
+      - npx playwright test {{.CLI_ARGS}}

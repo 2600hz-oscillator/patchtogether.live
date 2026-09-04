@@ -17,6 +17,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain, powerSaveBlocker, session, d
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { startStaticServer } from './server';
+import { HelperSupervisor, type HelperSpec, type HelperStatus } from './supervisor';
 
 const DEFAULT_PORT = 9409;
 
@@ -34,6 +35,85 @@ function resolveWebRoot(): string {
   if (fromEnv) return path.resolve(fromEnv);
   if (app.isPackaged) return path.join(process.resourcesPath, 'web');
   return path.resolve(__dirname, '../../../packages/web/build');
+}
+
+// ---- Helper supervision (P3) ------------------------------------------------
+// One supervisor per native helper, living HERE in main: a renderer crash
+// (`render-process-gone`) reloads the window while helpers keep running.
+// Binary resolution is injectable per helper (PT_HELPER_<ID>_BIN/_ARGS/_PORT),
+// so the harness drives the SAME state machine with the Node stubs on any OS.
+// PT_HELPERS=off disables the layer for specs it is not the subject of.
+
+const supervisors: HelperSupervisor[] = [];
+
+function helperEnv(id: string, key: string): string | undefined {
+  return process.env[`PT_HELPER_${id.toUpperCase()}_${key}`];
+}
+
+function resolveHelperBinary(id: string, unpackagedRel: string): string {
+  const fromEnv = helperEnv(id, 'BIN');
+  if (fromEnv) return path.resolve(fromEnv);
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'helpers', path.basename(unpackagedRel))
+    : path.resolve(__dirname, '../../..', unpackagedRel);
+  // A missing path is fine: the supervisor reports 'stopped' with the detail
+  // instead of spawning — the pre-flight status row shows exactly that.
+}
+
+function helperSpecs(): HelperSpec[] {
+  const tuning = {
+    backoffBaseMs: Number(process.env.PT_HELPER_BACKOFF_BASE_MS ?? 300),
+    backoffMaxMs: Number(process.env.PT_HELPER_BACKOFF_MAX_MS ?? 10_000),
+    stableResetMs: Number(process.env.PT_HELPER_STABLE_RESET_MS ?? 10_000),
+    healthTimeoutMs: Number(process.env.PT_HELPER_HEALTH_TIMEOUT_MS ?? 10_000),
+  };
+  const argsOf = (id: string, dflt: string[]): string[] => {
+    const raw = helperEnv(id, 'ARGS');
+    return raw ? raw.split(/\s+/).filter(Boolean) : dflt;
+  };
+  const portOf = (id: string, dflt: number | null): number | null => {
+    const raw = helperEnv(id, 'PORT');
+    if (raw === undefined) return dflt;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : dflt;
+  };
+  return [
+    {
+      id: 'es9',
+      binary: resolveHelperBinary('es9', 'apps/helpers/es9/.build/release/es9-bridge'),
+      args: argsOf('es9', []),
+      port: portOf('es9', 9209),
+      ...tuning,
+    },
+    {
+      id: 'vst',
+      binary: resolveHelperBinary('vst', 'apps/helpers/nativeapps/.build/release/vst-bridge'),
+      args: argsOf('vst', []),
+      port: portOf('vst', 9309),
+      ...tuning,
+    },
+    {
+      // pt-ptz has no socket: health = process alive in this slice (its
+      // virtual-CoreMIDI-port probe is a later, macOS-only leg).
+      id: 'ptz',
+      binary: resolveHelperBinary('ptz', 'tools/pt-ptz/pt-ptz'),
+      args: argsOf('ptz', []),
+      port: portOf('ptz', null),
+      ...tuning,
+    },
+  ];
+}
+
+function startSupervisors(win: BrowserWindow): void {
+  if (process.env.PT_HELPERS === 'off') return;
+  for (const spec of helperSpecs()) {
+    const sup = new HelperSupervisor(spec);
+    supervisors.push(sup);
+    sup.onStatus((status: HelperStatus) => {
+      if (!win.isDestroyed()) win.webContents.send('pt:helper-status-changed', status);
+    });
+    sup.start();
+  }
 }
 
 function installPermissionGrants(): void {
@@ -151,6 +231,22 @@ async function boot(): Promise<void> {
   installMenu(win);
   ipcMain.handle('pt:quit', () => app.quit());
 
+  // Helper status feed for ptNative.helperStatus (the future pre-flight UI's
+  // rows). `get` returns current + bounded history so a late subscriber (or
+  // the harness) never misses a transition; live changes push over IPC.
+  ipcMain.handle('pt:helper-status', () => ({
+    current: supervisors.map((s) => s.status()),
+    history: supervisors.flatMap((s) => s.history),
+  }));
+  startSupervisors(win);
+
+  // Renderer death: reload the WINDOW; supervisors, helpers, and the loopback
+  // server live in main and are untouched (brief P3 task 4).
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[shell] renderer gone (${details.reason}) — reloading`);
+    if (!win.isDestroyed()) win.webContents.reload();
+  });
+
   // window.open from the loopback origin is ALLOWED — P4's present/output
   // design rests on same-origin opener→popup DOM access through this handler
   // (the captureStream fallback rendered BLACK on real dual-monitor hardware).
@@ -165,5 +261,12 @@ async function boot(): Promise<void> {
     app.quit();
   });
 }
+
+// A dead shell must never orphan helpers: stop every supervisor (SIGTERM,
+// SIGKILL escalation) on the way out. The stubs additionally exit when their
+// piped stdin closes, so even a hard shell death reaps them.
+app.on('will-quit', () => {
+  for (const sup of supervisors) sup.stop();
+});
 
 app.whenReady().then(boot);
