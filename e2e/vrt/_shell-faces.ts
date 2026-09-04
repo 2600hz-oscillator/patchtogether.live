@@ -175,7 +175,26 @@ export const FACES = [
   // auto-orbit, a spinning plane) makes this the first face tile that genuinely
   // animates, and it would flake rather than fail. Re-derive with
   // vrt-face-audio-probe before assuming a passing scene proves stillness.
-  { type: 'cube', pages: 6 },
+  {
+    type: 'cube',
+    pages: 6,
+    // ⚠ DOCK DELETED 2026-09-04, OWNER INSTRUCTION ("delete face-cube-dock vrt
+    // entirely now"). Same shape as mirrorpool's compact drop above: the scene
+    // did not reproduce against its own baseline boot-to-boot — a 152 px AA
+    // wobble on the scope trace, with the SAME code and the SAME baseline green
+    // the boot before and 5/5 on main. Placement was disproven (the bot commit
+    // touched one unrelated PNG). It is the fleet nondeterminism class, not a
+    // pixel regression.
+    //
+    // ⚠ AND THE STILLNESS ARGUMENT ABOVE NEVER COVERED IT. That reasoning is
+    // about the ENGINE — no clock, skipped draws, no posted slice on a
+    // suspended graph. The thing that wobbled is the DOCK BODY's scope trace.
+    // The comment is kept because it is still true and still load-bearing for
+    // the compact tile, but do not read it as having gated this scene.
+    //
+    // The COMPACT scene is unaffected and still gates the face.
+    scenes: ['compact'],
+  },
   // FACE BATCH 4 (2026-08-10) — the granular texture processor. Three bands:
   // the ring (which the hero promotes BOTH the buffer panel and POSITION out
   // of, leaving FREEZE — so the band survives and the count stays 3), the
@@ -723,6 +742,13 @@ export const FACES = [
   // which is the outcome a per-scene field is supposed to have; the alternative
   // — one shared height raised three times — is measured right here to move
   // every existing dock baseline through layout.
+  //
+  // ⚠ AND ONE OF THEM HAS SINCE GIVEN IT BACK, which is the other half of the
+  // same argument: `clipplayer` became a TAB-RAILED face (owner P0, 2026-09-04),
+  // a railed face renders ONE band, and its pane fell back under the shared
+  // 1400 — so the field was DELETED from that entry rather than left at a number
+  // that used to be true. A per-scene override is only honest while the scene
+  // still needs it.
   //
   // ⚠ FIVE BANDS SINCE THE CLIP-RECORD BAND LANDED, WHICH MAKES `foldHeight` A
   // MEASUREMENT THAT NEEDS RE-TAKING. The 2048 was sized against a 1623 px pane
@@ -5878,30 +5904,30 @@ export const FACES = [
   // `clipplayer-face-model.test.ts`.
   {
     type: 'clipplayer',
-    // FOUR bands: session (the launch grid, promoted into the hero, plus the
-    // scene repeats that keep the band non-empty), channels, editor, playback.
-    // `DOCK_TAB_MIN_BANDS` is 7 and nothing is padded toward it — on a launcher
-    // a tab rail would render one band at a time, which is fatal for the one
-    // thing the surface is for (comparing eight lanes).
+    // FOUR bands: session (the launch grid + the scene repeats its rows are),
+    // channels, editor, playback. Unpadded — nothing is invented to reach
+    // `DOCK_TAB_MIN_BANDS`.
     pages: 4,
-    // ⚠ THE SECOND ENTRY EVER TO DECLARE `foldHeight`, and it was MEASURED
-    // rather than guessed: the first capture attempt failed with the harness's
-    // own number — "the unfolded pane starts at y=-102 in a 1400 px viewport …
-    // (pane is 1436 CSS px tall)". The pane is the deck body plus a 261 px
-    // launch grid plus four bands, one of which holds the note editor.
-    //
-    // 1792 gives 356 px of headroom, on mixmstrs' argument one row up: raising
-    // the SHARED `FOLD_VIEWPORT.height` is NOT a no-op — the measurement on
-    // `foldViewportFor` records that every face's diff moved at a different
-    // height — so a scene that needs more room takes it per-scene and leaves
-    // every other committed baseline untouched.
-    //
-    // ⚠ AND 1436 IS NOT A DESIGN COMPLAINT. The dock pane SCROLLS; the harness
-    // unfolds it only so the capture contains the whole faceplate rather than
-    // the window. The one place height IS capped is the note editor's roll,
-    // which scrolls inside its own 260 px box precisely so a 128-step clip
-    // cannot grow the plate without bound.
-    foldHeight: 1792,
+    // ⚠ RAILED BY DECLARATION, THREE BANDS UNDER THE THRESHOLD, AND THE REASON
+    // IS NOT DENSITY. Owner P0, 2026-09-04: "we do NOT want the clip viewer
+    // always visible. we want to see it when we double click on a grid cell, at
+    // which point, we do not see the grid." The launcher and the piano roll are
+    // the legacy card's two mutually exclusive `cardView` branches, and band
+    // hiding is the only mechanism that reproduces them. The face also lost its
+    // `face.hero` in the same change, because a hero is painted ABOVE every tab
+    // panel and therefore cannot be hidden. `dock-tabs-model.test.ts` carries
+    // the instruction verbatim; `shell-faces-roster.test.ts` joins this flag to
+    // the live def in both directions.
+    tabbedOptIn: true,
+    // ⚠ NO `foldHeight` ANY MORE, AND THE DELETION IS THE POINT RATHER THAN
+    // TIDYING. This entry used to carry 1792, measured off a capture that failed
+    // with the harness's own number — "the unfolded pane starts at y=-102 in a
+    // 1400 px viewport … (pane is 1436 CSS px tall)" — because the pane was the
+    // deck body plus a 261 px launch grid plus ALL FOUR bands stacked. A railed
+    // face renders ONE band, so three of the four (including the 260 px note
+    // roll) are no longer in the pane at all and the shared 1400 fits it with
+    // room to spare. Leaving 1792 behind would have been a number that was true
+    // when it was written and is now just a bigger window than the scene needs.
   },
 
   // ── TOYBOX — the FOUR-LAYER COMPOSITOR, and the last face in the programme

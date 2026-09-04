@@ -43,6 +43,7 @@ import { delayDef } from '$lib/audio/modules/delay';
 import { scalerDef } from '$lib/audio/modules/scaler';
 import { moog907aDef } from '$lib/audio/modules/moog907a';
 import { moog914Def } from '$lib/audio/modules/moog914';
+import { moog904aDef } from '$lib/audio/modules/moog904a';
 
 const SR = 48000;
 const N = 4096;
@@ -398,6 +399,257 @@ describe("'native-stereo' — the claim is MEASURED, not read off the source", (
       expect(Math.sign(L), `${def.type}: L and R were mixed together`).not.toBe(Math.sign(R));
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 'mono-fanout' — ONE instance, fanned. The SIGNAL proof.
+// ---------------------------------------------------------------------------
+//
+// ⚠ WHY THIS IS 25 SPAWNS AND NOT ONE. The behaviour being fixed was a COIN
+// FLIP, so a single green render proves nothing: the pre-fix graph passed a
+// "> floor" check on roughly 99.7 % of spawns. The measurement is therefore a
+// SPREAD ACROSS MANY SPAWNS — the same shape the original defect measurement
+// took — and the assertion is that the spread COLLAPSES, not that one draw
+// cleared a bar.
+//
+// ⚠ AND THE NEGATIVE CONTROL IS THE OLD GRAPH ITSELF, LIVE. `moog904aDef`
+// re-typed as `filter` still dispatches to the 'dual-mono' branch (the ledger
+// decides, not the factory), so the control builds the EXACT pre-fix topology
+// out of the EXACT shipping factory and requires the scatter to come back. If
+// it ever stops scattering, the entropy is gone from the DSP and the describe
+// above has stopped proving anything.
+//
+// This is also the end-to-end assertion the `moog904a.audio` emit park gave up
+// (.myrobots/2026-08-18-flake-park-coverage-lost.md): shipping factory → real
+// AudioWorkletNode → the engine's wrapper → a real render → a mono down-mix.
+describe("'mono-fanout' — the phase lottery is GONE (25 spawns)", () => {
+  const SPAWNS = 25;
+  const FANOUT_SR = 48000;
+  /** 1.5 s: long enough for the ladder to bootstrap out of its ~3e-6 dither
+   *  floor and SETTLE, so the tail is the limit cycle and not the ramp. */
+  const FANOUT_N = Math.round(FANOUT_SR * 1.5);
+  /** The e2e emit sweep's floor — the bar the park existed under. */
+  const EMIT_FLOOR = 0.005;
+  /**
+   * ⚠ THE RESIDUAL, NAMED RATHER THAN ROUNDED AWAY. Building the ladder once
+   * does NOT make the level bit-identical ACROSS spawns, and pretending it did
+   * would be a false claim in a comment: the dither is still `Math.random()`
+   * inside the one instance, so the limit cycle settles with a slightly
+   * different amplitude each render. Measured over these 25 spawns the whole
+   * cross-spawn spread is ~7e-7 — about 124 dB below the signal, ~1.4 million
+   * times smaller than the 1.0143 the two-instance graph produced, and four
+   * orders of magnitude below the emit floor it used to fall through.
+   *
+   * What IS exact is the thing the class buys: L and R are the SAME SAMPLES,
+   * so the analyser's down-mix reads the true single-channel level every time.
+   * That is asserted at 0 tolerance below; this constant covers only the
+   * spawn-to-spawn jitter of the DSP itself, which no graph change can remove.
+   */
+  const LEVEL_JITTER = 1e-5;
+
+  /** The per-port driver's operating point: self-oscillating, mid band. */
+  const RINGING = {
+    id: 'p', type: 'moog904a', domain: 'audio', position: { x: 0, y: 0 },
+    params: { regeneration: 1, range: 2, cutoff: 800 },
+  } as unknown as ModuleNode;
+
+  /**
+   * One spawn, rendered through the ENGINE SEAM with the SHIPPING worklet.
+   *
+   * `monoPeak` is what an `AnalyserNode` sees — every level surface in the app
+   * (the faceplate `live-audio` glyph, the legacy card's VuMeter) is a bare
+   * analyser tap, and an analyser MONO-DOWN-MIXES. That is the quantity the
+   * defect moved; the per-channel peaks never moved at all.
+   */
+  async function spawn(def: AudioModuleDef) {
+    const ctx = new OfflineAudioContext(2, FANOUT_N, FANOUT_SR);
+    const handle = await materializeAudioHandle(ctx as unknown as AudioContext, def, RINGING);
+    const dout = handle.outputs.get('audio')!;
+    dout.node.connect(ctx.destination as unknown as AudioNode, dout.output, 0);
+    const out = await ctx.startRendering();
+    const L = out.getChannelData(0);
+    const R = out.getChannelData(1);
+    const from = Math.round(FANOUT_N * 0.75); // the settled tail
+    let legPeak = 0;
+    let monoPeak = 0;
+    let maxChannelDiff = 0;
+    for (let i = from; i < FANOUT_N; i++) {
+      legPeak = Math.max(legPeak, Math.abs(L[i]!), Math.abs(R[i]!));
+      monoPeak = Math.max(monoPeak, Math.abs((L[i]! + R[i]!) / 2));
+      maxChannelDiff = Math.max(maxChannelDiff, Math.abs(L[i]! - R[i]!));
+    }
+    return { legPeak, monoPeak, maxChannelDiff };
+  }
+
+  const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs);
+
+  /** The pre-fix graph: the SAME factory, re-typed onto the 'dual-mono' class. */
+  const asDualMono = { ...moog904aDef, type: 'filter' } as AudioModuleDef;
+
+  it('every spawn reads the SAME level, and it is the TRUE single-channel level', async () => {
+    const mono: number[] = [];
+    const legs: number[] = [];
+    let worstChannelDiff = 0;
+    for (let k = 0; k < SPAWNS; k++) {
+      const s = await spawn(moog904aDef as AudioModuleDef);
+      mono.push(s.monoPeak);
+      legs.push(s.legPeak);
+      worstChannelDiff = Math.max(worstChannelDiff, s.maxChannelDiff);
+    }
+
+    // (1) The two channels are the SAME SIGNAL, sample for sample. This is the
+    //     property the class buys, and it is bit-exact because both merger
+    //     inputs are fed by ONE node — not "close", identical.
+    expect(worstChannelDiff, 'L and R are not the same signal — the fan is not '
+      + 'reaching both merger inputs from one instance').toBe(0);
+
+    // (2) …so the analyser's down-mix reads the TRUE level, on EVERY spawn.
+    //     DERIVED, not pinned: the mono sum must EQUAL the single-channel peak
+    //     it came from. That stays honest if the ladder's own level ever moves
+    //     for a real reason, where a pinned 1.0622 would just go red.
+    expect(mono, 'the mono down-mix does not equal the single-channel level — '
+      + 'the two channels are not the same signal').toEqual(legs);
+
+    // (3) …and it is the SAME level spawn after spawn. The pre-fix graph spread
+    //     1.0143 here (see the negative control); what is left is the DSP's own
+    //     ~7e-7 jitter, which no graph change can remove — see LEVEL_JITTER.
+    expect(spread(mono), 'the mono down-mix still scatters across spawns: '
+      + `${Math.min(...mono).toFixed(4)} … ${Math.max(...mono).toFixed(4)}`)
+      .toBeLessThan(LEVEL_JITTER);
+
+    // (4) NON-VACUITY: it is a real, ringing signal, far above the e2e emit
+    //     floor the park was taken out under. A SILENT module would satisfy
+    //     (1), (2) and (3) perfectly — that is the shape this repo keeps
+    //     shipping, so the floor is asserted rather than assumed.
+    expect(Math.min(...mono), 'the ladder is not self-oscillating — (1)-(3) all '
+      + 'pass on silence').toBeGreaterThan(EMIT_FLOOR * 100);
+  }, 120_000);
+
+  it('NEGATIVE CONTROL: the OLD graph still scatters — same factory, two instances', async () => {
+    // Builds the pre-fix topology out of the shipping factory by dispatching it
+    // through the 'dual-mono' branch. If this goes green the guard above is
+    // measuring nothing.
+    const mono: number[] = [];
+    const legs: number[] = [];
+    for (let k = 0; k < SPAWNS; k++) {
+      const s = await spawn(asDualMono);
+      mono.push(s.monoPeak);
+      legs.push(s.legPeak);
+    }
+
+    // The per-channel level is STABLE either way, to the same LEVEL_JITTER the
+    // fixed graph shows — that is what made this defect invisible to anything
+    // that did not down-mix, and it is why "the module is loud enough" was
+    // never the question.
+    expect(spread(legs), 'the per-channel level was never the unstable quantity')
+      .toBeLessThan(LEVEL_JITTER);
+
+    // …and the mono down-mix scatters over most of the available range,
+    // because the two rings share a frequency and have independent phase.
+    expect(
+      spread(mono),
+      'two independently-dithered ladders no longer decorrelate. Either the DSP '
+      + 'lost its Math.random() dither (in which case moog904a should move back '
+      + "to 'dual-mono' and this control should be deleted), or the wrapper "
+      + 'stopped building two instances — and the guard above is now vacuous.',
+    ).toBeGreaterThan(0.25);
+    // The defect, stated as the thing a player saw: at least one spawn painted
+    // the meter at under HALF the level the module was actually emitting.
+    expect(Math.min(...mono)).toBeLessThan(legs[0]! * 0.5);
+  }, 120_000);
+});
+
+describe("'mono-fanout' — the LEVEL is honest, and the legs are why", () => {
+  // The trap this describe exists for: a mono-fanout module has ONE instance,
+  // so "it has no side to place a cable on, drop the legs" reads as an obvious
+  // simplification. It is wrong, and the failure is a LEVEL, not a width —
+  // which is exactly the kind that gets waved through. Web Audio SUMS two
+  // connections into one input, and a stereo→mono patch is written as TWO
+  // CABLES (planAudioCommit), so a bare down-mix receives L+R where every other
+  // mono path in the app applies (L+R)/2. Into a tanh ladder that is up to 6 dB
+  // of extra drive.
+  //
+  // The synthetic DSP is typed 'moog904a' so `materializeAudioHandle` takes the
+  // REAL mono-fanout branch — the ledger dispatches, not the factory.
+  const fanoutDef = (gain: number) => monoModuleDef(gain, 'moog904a');
+
+  const stereoSrcDef = {
+    type: 'clouds', domain: 'audio', inputs: [],
+    outputs: [{ id: 'out_l', type: 'audio' }, { id: 'out_r', type: 'audio' }],
+  } as unknown as StereoDef;
+
+  async function renderFanoutLegs(
+    legValues: Record<string, number>,
+    placement: 'on' | 'off' = 'on',
+  ) {
+    const ctx = new OfflineAudioContext(2, N, SR);
+    const handle = await materializeAudioHandle(
+      ctx as unknown as AudioContext, fanoutDef(0.5), NODE,
+    );
+    const legs = legInputsFor(handle, 'audio');
+    expect(legs, 'the mono-fanout handle exposes no leg inputs').toBeTruthy();
+    for (const [portId, value] of Object.entries(legValues)) {
+      const side = placement === 'off' ? null : legChannelOfEdge(
+        { id: 'e', source: { nodeId: 's', portId }, target: { nodeId: 'd', portId: 'audio' } } as never,
+        (nodeId) => (nodeId === 's' ? stereoSrcDef : undefined),
+      );
+      const target = resolveDualMonoInput(legs!, side);
+      const src = constSource(ctx, [value]);
+      (src as unknown as AudioNode).connect(target.node, 0, target.input);
+      src.start(0);
+      if (side) legs!.noteLeg(side, +1);
+    }
+    const dout = handle.outputs.get('audio')!;
+    dout.node.connect(ctx.destination as unknown as AudioNode, dout.output, 0);
+    const out = await ctx.startRendering();
+    return { L: out.getChannelData(0)[PROBE]!, R: out.getChannelData(1)[PROBE]! };
+  }
+
+  it('⚠ a MONO patch does not move — still equal and NON-ZERO', async () => {
+    // Non-negotiable, and the reason the front-end is not just a bare down-mix:
+    // `upmix` duplicates the single channel and the down-mix averages the
+    // duplicate back to itself, so a mono cable comes out untouched.
+    const { L, R } = await renderThroughSeam(fanoutDef(0.5), [0.8]);
+    expect(Math.abs(L), 'left is silent').toBeGreaterThan(0.01);
+    expect(Math.abs(R), 'RIGHT IS SILENT — the fan is not reaching merger input 1')
+      .toBeGreaterThan(0.01);
+    expect(L).toBeCloseTo(0.4, 6); // 0.8 × 0.5, unchanged by the round trip
+    expect(R).toBe(L); // the SAME node feeds both merger inputs — bit-exact
+  });
+
+  it('a 2-channel stream on ONE cable is AVERAGED, and comes out on both', async () => {
+    const { L, R } = await renderThroughSeam(fanoutDef(0.5), [0.8, -0.4]);
+    // (0.8 + −0.4) / 2 × 0.5. The image is deliberately collapsed (owner
+    // ruling); what must NOT happen is the LEVEL moving.
+    expect(L).toBeCloseTo(0.1, 6);
+    expect(R).toBe(L);
+  });
+
+  it('TWO CABLES from a stereo pair average to the SAME value as one 2ch cable', async () => {
+    const { L, R } = await renderFanoutLegs({ out_l: 0.8, out_r: -0.4 });
+    expect(L, 'the two legs SUMMED instead of averaging — the DSP is being driven '
+      + 'twice as hard as the identical signal on one 2-channel cable')
+      .toBeCloseTo(0.1, 6);
+    expect(R).toBe(L);
+  });
+
+  it('NEGATIVE CONTROL: with placement OFF the same patch runs 2× HOT', async () => {
+    // Both cables land on the mono bus and Web Audio sums them: (0.8 + −0.4)
+    // × 0.5 = 0.2, double the 0.1 above. This is the exact defect that dropping
+    // the legs would ship, reproduced on demand. If it ever stops showing the
+    // doubling, the test above proves nothing.
+    const { L } = await renderFanoutLegs({ out_l: 0.8, out_r: -0.4 }, 'off');
+    expect(L).toBeCloseTo(0.2, 6);
+  });
+
+  it('a LONE leg still reaches BOTH channels (the merger zero-fill trap)', async () => {
+    const lone = await renderFanoutLegs({ out_l: 0.8 });
+    expect(Math.abs(lone.L), 'a lone left leg is silent').toBeGreaterThan(0.01);
+    expect(lone.R).toBe(lone.L);
+    const loneR = await renderFanoutLegs({ out_r: 0.8 });
+    expect(Math.abs(loneR.L), 'a lone RIGHT leg is silent on the left').toBeGreaterThan(0.01);
+    expect(loneR.R).toBe(loneR.L);
+  });
 });
 
 describe('dual-mono — the COST, measured', () => {

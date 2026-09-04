@@ -75,7 +75,7 @@ foxy             sum
 gibribbon        video-domain
 milkdrop         video-domain
 moog902          deferred
-moog904a         dual-mono
+moog904a         mono-fanout
 moog904b         dual-mono
 moog904c         dual-mono
 moog905          dual-mono
@@ -258,8 +258,17 @@ describe('dual-mono ledger — the gate STATES what it cannot see', () => {
   it('scope is declared and matches the classes actually used', () => {
     expect(SCOPE.population).toBe('defs with exactly one audio-typed input port, ANY domain');
     expect([...SCOPE.classes].sort()).toEqual(
-      ['deferred', 'dual-mono', 'native-stereo', 'sum', 'video-domain'],
+      ['deferred', 'dual-mono', 'mono-fanout', 'native-stereo', 'sum', 'video-domain'],
     );
+  });
+
+  it("states WHY 'mono-fanout' keeps its leg inputs despite having one instance", () => {
+    // The tempting simplification (one instance ⇒ no sides ⇒ no legs) doubles
+    // the level of every stereo→mono patch, because Web Audio sums two
+    // connections to one input. The reason is written down so it is not
+    // re-derived wrongly.
+    expect(SCOPE.monoFanoutLegs).toMatch(/KEEPS leg inputs/);
+    expect(SCOPE.monoFanoutLegs).toMatch(/summing/);
   });
 
   it('names the paths that BYPASS the engine seam entirely', () => {
@@ -322,6 +331,20 @@ describe('dual-mono ledger — NEGATIVE CONTROL (every leg can go red)', () => {
     const defs = allDefs().map((d) => (d.type === 'moog905' ? { ...d, outputs: [] } : d));
     expect(auditDualMonoLedger(defs).shapeMismatch.map((p) => p.problem))
       .toContain('no audio output — two instances cannot be merged back into a pair');
+  });
+
+  it("a 'mono-fanout' module that grows a NON-AUDIO output is caught", () => {
+    // The fan goes through a ChannelMerger, which carries audio — a cv/gate/
+    // video output would be silently dropped from the rebuilt handle. Same
+    // shape obligation as 'dual-mono', for a different reason.
+    const defs = allDefs().map((d) => (d.type === 'moog904a'
+      ? { ...d, outputs: [...(d.outputs ?? []), port('env', 'cv')] as never }
+      : d));
+    const problems = auditDualMonoLedger(defs).shapeMismatch;
+    expect(problems.map((p) => p.type)).toContain('moog904a');
+    expect(problems.find((p) => p.type === 'moog904a')!.problem).toMatch(/ChannelMerger carries audio/);
+    // …and the unperturbed tree is clean, so the leg is a real check.
+    expect(auditDualMonoLedger(allDefs()).shapeMismatch).toEqual([]);
   });
 
   it("a 'sum' module whose only audio input is a PARAM target is caught", () => {

@@ -1217,11 +1217,21 @@ export const FACE_MIGRATION_INVENTORY: readonly FaceMigrationEntry[] = [
     note:
       'PROMOTED — the LAST module card to leave NON_SHELL_LANE_TYPES, which now holds only ' +
       'organizational chrome and a roaming sprite. SIX PF-14 PANEL CELLS carry the instrument: ' +
-      'the 8x8 LAUNCH GRID (ranked first through `face.hero.cell`, the kria route — a panel is ' +
-      'refused at a lane tier, so PF-22 dropping the hero from `laneOrder` is what makes rank 1 ' +
-      'legal at all), the PIANO ROLL, and four EIGHT-WIDE rows (mono/poly, clock rate, ' +
+      'the 8x8 LAUNCH GRID, the PIANO ROLL, and four EIGHT-WIDE rows (mono/poly, clock rate, ' +
       'automation arm, scene repeats) that paint all eight lanes at once because comparing the ' +
-      'eight lanes is what a launcher is looked at for. The transport, both recorders, the ' +
+      'eight lanes is what a launcher is looked at for. ⚠ IT IS A TAB-RAILED FACE WITH NO ' +
+      '`face.hero`, on the owner\'s 2026-09-04 P0. This note used to say the grid ranked first ' +
+      '"through `face.hero.cell`, the kria route"; that shipped and was rejected — "we do NOT ' +
+      'want the clip viewer always visible. we want to see it when we double click on a grid ' +
+      'cell, at which point, we do not see the grid. this needs to work exactly the way the ' +
+      'legacy card did". The launcher and the piano roll are the card\'s two mutually exclusive ' +
+      '`cardView` branches; band hiding (`face.tabbed`) is the only mechanism that reproduces ' +
+      'them, and a hero is painted ABOVE every tab panel and therefore cannot be hidden. So the ' +
+      'grid is an ordinary panel ranked EIGHTH — past the six-cell plate, which is what a panel ' +
+      'needs once no hero promotion excuses it — on the `session` page, and `session` is ' +
+      '`pages[0]` and therefore the default view. Double-clicking a pad selects the clip AND ' +
+      'opens the editor page, through the node-keyed `face-tab-request` seam. The transport, ' +
+      'both recorders, the ' +
       'clip-undo stack, the per-lane mute/stop deck, the monome bind, the arranger pop-out and ' +
       'the automation lamps are a `control-grid` fullViewBody; a `tileBody` gives the 192px lane ' +
       'tile a strip of the eight lanes\' live state plus a panic STOP, which is the per-node ' +

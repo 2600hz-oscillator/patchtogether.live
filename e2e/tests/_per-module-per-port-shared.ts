@@ -406,45 +406,31 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // the slice→waveform→audio path is covered by the mandelbulb factory unit
   // tests (slice-on wiring posts a setWave) + the mandelbulb-osc worklet test.
   'mandelbulb.audio_out': 'silent until the SLICE toggle is ON (default off); covered by mandelbulb.test.ts (factory slice-on wiring) + mandelbulb-osc.test.ts',
-  // ── ⚠ MOOG 904A audio — PARKED AGAINST AN OPEN PRODUCT QUESTION, not against
-  // the test. This is the PARK side of fix-or-park (#1847), and it is a park
-  // rather than a driver change because re-pointing the driver at an upstream
-  // source is precisely what would make the defect unobservable.
+  // ── ⚠ MOOG 904A audio — UN-PARKED 2026-09-04. The entry that stood here was
+  // the PARK side of fix-or-park (#1847), held against an OPEN PRODUCT
+  // QUESTION rather than against the test: `moog904a` was `cls: 'dual-mono'`,
+  // so the engine built the ladder TWICE and each instance bootstrapped its
+  // self-oscillation from its OWN `Math.random()` thermal dither. The two rings
+  // shared a frequency and had independent phase, and this sweep's sink is
+  // SCOPE — a bare AnalyserNode, which MONO-DOWN-MIXES — so the emit check read
+  // A·|cos(Δφ/2)| for a fresh Δφ every spawn: a coin flip, red on ≈0.3 %.
   //
-  // WHAT THE ASSERTION ACTUALLY MEASURES TODAY. `moog904a` is `cls: 'dual-mono'`
-  // (dual-mono.ts), so the ENGINE builds the ladder TWICE — one instance per
-  // channel behind an up-mix + splitter, recombined by a merger. Each instance
-  // bootstraps its self-oscillation from its OWN per-sample `Math.random()`
-  // thermal dither (moog904a.ts); it is the only module in the population
-  // carrying a random source. The two rings therefore share a frequency
-  // (deterministic in fc/sr — measured 2684–2695 Hz) and have an INDEPENDENT,
-  // arbitrary phase. The sweep's sink is SCOPE, whose tap is a bare
-  // AnalyserNode, and an analyser MONO-DOWN-MIXES its input. So the emit check
-  // reads A·|cos(Δφ/2)| for a fresh Δφ on every spawn: a coin flip, not a
-  // measurement.
+  // The owner ruled on the product question (option a, 2026-09-04): build the
+  // ladder ONCE and fan it to both merger inputs. moog904a is now
+  // `cls: 'mono-fanout'` in dual-mono.ts, so L and R are the same samples and
+  // the down-mix reads the true level. Re-measured through the engine seam with
+  // the shipping worklet at this driver's exact operating point (regen 1,
+  // range 2, cutoff 800), 25 spawns: the mono sum was 0.0449 … 1.0592 before
+  // and is 1.0622 ± 7e-7 after — 212× the floor, on every spawn.
   //
-  // MEASURED — 25 offline spawns at the driver's operating point (fc = 800 ×
-  // range 2, regen 1): a single leg is 1.0622 EVERY run, bit stable; the mono
-  // sum ranges 0.0246 … 1.0521. The 0.005 floor is 0.47 % of A, so the test
-  // reds on ≈0.3 % of spawns. CI's sighting (maxPeak=0.0014, 168 samples across
-  // the full 5014 ms bound, with params and the edge confirmed landed) is that
-  // draw, further out on the same tail.
-  //
-  // THE OPEN QUESTION IS THE OWNER'S AND IS NOT ANSWERED HERE. That mono sum is
-  // not a test artifact: the faceplate's live-audio glyph and the legacy
-  // VuMeter are both default analyser taps, so a self-oscillating 904A — the
-  // module's headline behaviour — paints a randomly-scaled meter while it is
-  // audibly ringing, and dual-mono's own premise (the DSP is a deterministic
-  // function of (input, params), so two instances fed one mono signal ARE that
-  // signal twice) does not hold for this one module.
-  //
-  // NOT re-pointed at a noise source, which would be green and blind: with a
-  // common mono input the forced response survives the down-mix at full
-  // amplitude and the assertion then passes at regeneration=0 too (measured
-  // 0.29, 58× the floor) — i.e. it would stop asserting the self-oscillation it
-  // exists for. Coverage lost is recorded in
-  // .myrobots/2026-08-18-flake-park-coverage-lost.md.
-  'moog904a.audio': 'PARKED (#1847, park side) against an OPEN PRODUCT QUESTION: dual-mono builds the ladder TWICE and each instance seeds its self-oscillation from its OWN Math.random() dither, so the SCOPE analyser reads the mono sum A·|cos(Δφ/2)| of two independently-phased sines — single leg 1.0622 bit-stable, mono sum 0.0246…1.0521 over 25 spawns, under the 0.005 floor on ≈0.3 %. Re-pointing the driver at a mono source would pass at regeneration=0 and stop observing it. Ladder core pinned by moog-ladder-dsp.test.ts + moog904a.test.ts; handle-presence still pins the port',
+  // ⚠ IF THIS PORT EVER FLAKES AGAIN, THE DRIVER IS NOT THE PLACE TO LOOK, and
+  // in particular DO NOT re-point it at an upstream noise source. A common mono
+  // input makes the forced response common-mode, so it survives the down-mix at
+  // full amplitude and the assertion then passes with the resonance completely
+  // dead (measured 0.29 at regeneration=0, 58× the floor) — i.e. it would stop
+  // asserting the self-oscillation it exists for. The spread itself is measured
+  // permanently in art/scenarios/stereo-dual-mono, with the pre-fix graph kept
+  // alive there as the negative control.
   // (VIDEOCUBE is now WHOLE-MODULE exempt in EXEMPT_OUTPUT_EMIT_MODULES above —
   // its 8 outputs incl. the 6 slice-viz jacks are covered by videocube.spec.ts;
   // the former per-port 'videocube.audio_out' entry folded into that.)
@@ -734,9 +720,9 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   // Black at default params on both shells — see EXEMPT_OUTPUT_EMIT.
   'mandleblot.color_out',
   'midiLane.note_gate', 'midiLane.poly',
-  // moog904a's ONLY output — so this entry parks the whole emit test for the
-  // module ("all outputs exempt"). Park, not a fix: see EXEMPT_OUTPUT_EMIT.
-  'moog904a.audio',
+  // ('moog904a.audio' was here until 2026-09-04. It parked the module's ONLY
+  // output, so it parked the whole emit case. UN-PARKED by the mono-fanout fix
+  // — the reason is written out where the map entry stood.)
   'moogCp3.minus_six', 'moogCp3.plus_twelve',
   'nibbles.death', 'nibbles.dir_change', 'nibbles.gated', 'nibbles.length_cv',
   'nibbles.pellet',
@@ -1310,13 +1296,10 @@ export const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
       // upstream. Without the driver it would be silent at default
       // regeneration=0.
       //
-      // ⚠ AS OF THE 904A PARK, membership here no longer buys an emit
-      // assertion: `moog904a.audio` is its only output and it is in
-      // EXEMPT_OUTPUT_EMIT, so the emit sweep skips the module entirely. The
-      // entry stays because the classification is still TRUE and is what keeps
-      // the module off the effect-shape auto-skip when the park is lifted —
-      // and because the driver's params still set up the input-drive dim. Read
-      // it as "not an effect", not as "its output is asserted".
+      // ⚠ The 904A park is LIFTED (2026-09-04), so membership here buys a real
+      // emit assertion again: `moog904a.audio` is out of EXEMPT_OUTPUT_EMIT and
+      // this entry is what keeps the module off the effect-shape auto-skip, so
+      // the sweep drives regeneration=1 and asserts the ladder actually rings.
       'moog904a',
       // ANALOG VCO — self-running oscillator: saw/square/triangle/sine/morph
       // ring at C4 with no upstream and `sync` (sync_out) pulses once per

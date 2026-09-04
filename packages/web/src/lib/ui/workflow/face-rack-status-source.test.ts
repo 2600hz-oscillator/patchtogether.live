@@ -943,8 +943,16 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
       + 'already owns. ⚠ Unlike cameraInput this body needs no status registry, because promotion '
       + 'does not park a live card off-screen — the MIDI handler is installed engine-side through '
       + 'an identity-scoped claim in the factory, so there is no second owner. Every measurement '
-      + 'goes through `StatusLed` into `aria-label`/`title`; the only text nodes are option NAMES, '
-      + 'control captions, and an ERROR that is absent whenever nothing is wrong.',
+      + 'goes through `StatusLed` into `aria-label`/`title`; the only text nodes at REST are '
+      + 'option NAMES, control captions (`Device`, `debug`), and an ERROR that is absent whenever '
+      + 'nothing is wrong. ⚠ The `debug` toggle opens a RUNNING TAIL of raw MIDI traffic on the '
+      + 'bound input — timestamped hex + decoded name per row, ring-bounded, with pause/clear — '
+      + 'under the trails MON licence: a MEASUREMENT painted only while a player holds the panel '
+      + 'open, absent at rest, engine-tapped only while open (`tapMidi` is a single nullable slot, '
+      + 'so a closed panel costs the per-message path one short-circuited null check), and never '
+      + 'touching the Y.Doc. It exists because "doesn\'t read start" has two identical-looking '
+      + 'causes — nothing arriving on the bound port versus arriving-and-dropped — and only a '
+      + 'byte-level tail can separate a cable problem from a code problem in the field.',
   },
 
   // ── PTZCAM — the THIRD status body, the SECOND binder, and the first whose

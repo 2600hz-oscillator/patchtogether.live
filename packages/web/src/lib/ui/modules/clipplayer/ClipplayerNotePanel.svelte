@@ -16,6 +16,12 @@
   // editor to your clip mid-edit; the card's own spec calls the equivalent
   // card-local state "a personal authoring lens".
   //
+  // ⚠ THE SAME DOUBLE-CLICK ALSO NAVIGATES HERE. This band is the `editor` page
+  // of a TABBED face (owner P0, 2026-09-04), so it is HIDDEN while the grid is
+  // showing and the grid is hidden while it is — the legacy card's mutually
+  // exclusive `cardView` branches, restored. `requestFaceTab` in the launch
+  // panel is the seam; the SESSION tab is the way back.
+  //
   // ⚠ NO RESTING DERIVED TEXT (the 2026-08-17/19 rulings). The card painted
   // `L1·S1`, the clip's root note name and a `c3–c7` range span as bare
   // readouts; those are values, not controls, so they move to the accessible
@@ -127,16 +133,21 @@
    * The clip the roll draws. An EMPTY slot draws a DEFAULT clip's grid rather
    * than a placeholder, and the first edit creates it for real.
    *
-   * ⚠ THIS IS THE FACE'S ONE BEHAVIOURAL DIFFERENCE FROM THE CARD, AND IT IS
-   * FORCED BY THE FACEPLATE'S SHAPE. On the card the editor is a VIEW you
-   * navigate into by double-clicking a pad, and that gesture creates the clip
-   * on the way in — so the editor never sees an empty slot. A faceplate has no
-   * views: this band is on screen from the moment the dock opens, pointed at
-   * whatever the launch grid last selected, which on a fresh player is an empty
-   * slot 1. The two honest options were a blank band or a live one; a launcher
-   * whose editor is blank until you go and click somewhere else is the worse
-   * surface, and drawing a real grid you can write into is exactly what
-   * double-clicking the pad would have given you.
+   * ⚠ THE FACE DOES HAVE VIEWS AGAIN (owner P0, 2026-09-04), SO THIS IS NO
+   * LONGER A DIFFERENCE FROM THE CARD — BUT IT IS STILL THE RIGHT DEFAULT, for
+   * a reason the card never had. On the card the ONLY way into the editor is a
+   * double-click on a pad, and that gesture creates the clip on the way in, so
+   * the editor never sees an empty slot. On the face there is a SECOND way in:
+   * the tab rail, which the card's GRID/CLIP strip is the ancestor of and which
+   * performs no `ensureClip`. Opening the EDITOR tab directly therefore CAN land
+   * on an empty slot, and the two honest options are a blank band or a live one.
+   * Drawing a real grid you can write into is exactly what double-clicking the
+   * pad would have given you, so that is what it draws.
+   *
+   * ⚠ AND IT STILL MUST NOT BE THE FIRST PAGE. `face.pages[0]` is the default
+   * tab; `session` holds it, so a freshly opened faceplate shows the GRID and
+   * this roll is not on screen at all until you ask for it. That is the whole
+   * of the owner's report ("we do NOT want the clip viewer always visible").
    *
    * ⚠ IT WRITES NOTHING ON MOUNT. `ensureClipplayerClip` runs on the first
    * EDIT, never in a `$derived` and never in an `$effect` — a band that

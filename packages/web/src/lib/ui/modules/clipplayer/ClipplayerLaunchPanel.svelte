@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ClipplayerLaunchPanel — the clip player's HERO: the 8×8 launch grid.
+  // ClipplayerLaunchPanel — the clip player's SESSION view: the 8×8 launch grid.
   //
   // COLUMNS ARE THE 8 INSTRUMENT LANES, ROWS ARE THE 8 CLIP SLOTS (the scenes),
   // which is the transposed-Launchpad / Ableton-Session convention the card and
@@ -9,8 +9,15 @@
   // in its own face: the grid IS the module, everything a player plays lives in
   // `node.data`, and the only two controls the PARAM system knows about here are
   // global playback settings. A launcher whose faceplate paints seven knobs and
-  // no pads is not a launcher. It ranks through `face.hero.cell`, which is what
-  // makes a panel reachable at rank 1 at all (PF-22 `laneOrder`).
+  // no pads is not a launcher.
+  //
+  // ⚠ IT IS THE FIRST BAND OF A TABBED FACE, NOT A `face.hero`, AND THAT IS THE
+  // OWNER'S 2026-09-04 P0. A hero is promoted OUT of its band and painted above
+  // every tab panel, so a hero grid cannot be hidden — and the whole instruction
+  // was "when we double click on a grid cell … we do not see the grid". This
+  // panel is therefore an ordinary rank-8 panel on the `session` page, which is
+  // the face's FIRST page and so its default tab: what a freshly opened
+  // faceplate paints is unchanged. See the def's face block.
   //
   // ⚠ THE PAD GEOMETRY IS PIXEL-FROZEN, AND IT IS NOT A STYLE CHOICE. 28×28 with
   // a 3 px gap, and the scene column is `position: absolute` OUTSIDE the row's
@@ -41,6 +48,7 @@
     clipplayerSelectClip,
     clipplayerSetNowSticky,
   } from './clipplayer-face-selection.svelte';
+  import { requestFaceTab } from '$lib/ui/workflow/face-tab-request.svelte';
   import ClipplayerClipMenu from './ClipplayerClipMenu.svelte';
 
   interface Props {
@@ -97,6 +105,24 @@
       launchClipplayerPad(nodeId, index, now);
     }, 220);
   }
+  /**
+   * DOUBLE-CLICK = OPEN THIS CLIP IN THE EDITOR, and "open" means NAVIGATE —
+   * the third line is the P0 the two before it were missing.
+   *
+   * ⚠ SELECTING WITHOUT NAVIGATING IS THE DEFECT THE OWNER REPORTED (2026-09-04:
+   * "we do NOT want the clip viewer always visible. we want to see it when we
+   * double click on a grid cell, at which point, we do not see the grid").
+   * `ensureClip` + `select` are the card's first two statements; its third is
+   * `cardView = 'clip'`, and the face had no equivalent because it had no views
+   * — the grid and the piano roll were two bands of one scrolling column, both
+   * on screen always. `face.tabbed` gives the face the card's views back, and
+   * this call is the card's third statement in the face's vocabulary.
+   *
+   * ⚠ THE PAGE ID IS THE `face.pages` ID, not a testid and not a label. It is
+   * resolved against the LIVE tab roster by `activeDockTab`, which falls back to
+   * the first tab if it no longer exists — so a re-paged face degrades to the
+   * grid rather than to a blank plate.
+   */
   function onPadDblClick(index: number) {
     if (clickTimer) {
       clearTimeout(clickTimer);
@@ -104,6 +130,7 @@
     }
     ensureClipplayerClip(nodeId, index);
     clipplayerSelectClip(nodeId, index);
+    requestFaceTab(nodeId, 'editor');
   }
   $effect(() => () => {
     if (clickTimer) clearTimeout(clickTimer);

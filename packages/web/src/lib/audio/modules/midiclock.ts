@@ -241,6 +241,20 @@ export interface MidiclockApi {
   setDivisor(d: ClockDivisor): void;
   getState(): MidiclockCardState;
   subscribe(cb: (s: MidiclockCardState) => void): () => void;
+  /**
+   * Debug tap on the RAW inbound stream of the bound input — every message the
+   * port delivers, BEFORE the System Real-Time filter, so channel-voice
+   * traffic (notes, CCs) is visible too. That ordering is the diagnostic
+   * point: "the port carries traffic but none of it is transport" and "the
+   * port carries nothing" are different failures and must not look alike.
+   *
+   * ⚠ SINGLE SLOT, ZERO COST WHEN EMPTY. One nullable callback; with no tap
+   * installed the handler pays one short-circuited optional call per message
+   * and allocates nothing (`f?.(arg)` does not evaluate its argument when `f`
+   * is null). The device body installs it only while its tail panel is open —
+   * an always-on listener is exactly what this seam exists to avoid.
+   */
+  tapMidi(cb: (ev: { atMs: number; bytes: number[] }) => void): () => void;
 }
 
 // ---------------- The FACE ----------------
@@ -410,6 +424,8 @@ export const midiclockDef: AudioModuleDef = {
     let tickCounter = 0;
     let ticksReceived = 0;
     let running = false;
+    /** The debug tail's tap — null except while a debug panel is open. */
+    let midiTap: ((ev: { atMs: number; bytes: number[] }) => void) | null = null;
 
     function snapshotState(): MidiclockCardState {
       const devices: MidiclockCardState['devices'] = [];
@@ -458,6 +474,12 @@ export const midiclockDef: AudioModuleDef = {
     function handleMidiMessage(ev: MidiEventLike): void {
       const data = ev.data;
       if (data.length < 1) return;
+      // The debug tail sees EVERY message on the bound port, ahead of the
+      // realtime filter below — see `tapMidi`'s contract for why. The bytes
+      // are copied here (not in the tail) because the browser may recycle the
+      // event's Uint8Array after dispatch; the copy happens only with a tap
+      // installed (optional-call short-circuit skips the argument entirely).
+      midiTap?.({ atMs: ev.timeStamp, bytes: Array.from(data) });
       const status = data[0]!;
       // Only System Real-Time messages drive this module. Channel-voice
       // events (note on/off, pitch-bend, CC) are MIDI-CV-BUDDY's concern.
@@ -613,6 +635,12 @@ export const midiclockDef: AudioModuleDef = {
           if (subscriber === cb) subscriber = null;
         };
       },
+      tapMidi(cb) {
+        midiTap = cb;
+        return () => {
+          if (midiTap === cb) midiTap = null;
+        };
+      },
     };
 
     return {
@@ -647,6 +675,7 @@ export const midiclockDef: AudioModuleDef = {
           access = null;
         }
         subscriber = null;
+        midiTap = null;
         try { clockSrc.stop(); } catch { /* */ }
         try { runSrc.stop();   } catch { /* */ }
         try { startSrc.stop(); } catch { /* */ }

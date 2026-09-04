@@ -10,13 +10,21 @@
   // status block. None of them is a ParamDef and none is a family that could
   // carry an honest operability probe.
   //
-  // ⚠ THE FOUR VIEW BUTTONS OF THE CARD'S CONTROL STRIP ARE NOT REPRODUCED, AND
-  // NOTHING IS LOST WITH THEM. On the card, keys/buttons 2–5 SWITCH which of
-  // grid / clip / arranger / control you are looking at, because a 336 px tile
-  // can only hold one at a time. The faceplate holds the launch grid (the
-  // hero), the note editor (a band) and this deck AT ONCE, so there is no
-  // selection left to make. Buttons 1 (transport), 6 (undo), 7 (redo) and the
-  // shift-equivalent all survive, and so does the keyboard claim on those.
+  // ⚠ THE FOUR VIEW BUTTONS OF THE CARD'S CONTROL STRIP ARE THE FACE'S TAB
+  // RAIL. This comment used to read "ARE NOT REPRODUCED, AND NOTHING IS LOST
+  // WITH THEM", on the reasoning that the faceplate holds the launch grid, the
+  // note editor and this deck AT ONCE so there is no selection left to make.
+  // ⚠ THAT WAS THE OWNER'S 2026-09-04 P0, verbatim: "we do NOT want the clip
+  // viewer always visible. we want to see it when we double click on a grid
+  // cell, at which point, we do not see the grid." The selection is real, the
+  // card was right to make it, and it now lives where a faceplate makes
+  // selections — `face.tabbed`, painted by the dock pane as the rail
+  // (session / channels / editor / playback).
+  //
+  // Buttons 1 (transport), 6 (undo), 7 (redo) and the shift-equivalent are
+  // still HERE, because those are gestures rather than views — and this deck
+  // stays on screen across every tab, exactly as the card's strip sits above
+  // every `cardView` branch rather than inside one.
   //
   // ⚠ THREE READOUTS BECOME LAMPS, per the 2026-08-17/19 rulings. The per-lane
   // ASSIGNED-MODULE count chips, the MAX track-cap badge and the automation

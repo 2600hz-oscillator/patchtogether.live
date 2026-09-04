@@ -146,6 +146,29 @@ const WIDE_FACE = 'dx7';
 const paneFor = (page: Page, id: string) =>
   page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
 
+/**
+ * Open the CLIP PLAYER pane's `playback` page — where `snh` lives.
+ *
+ * ⚠ WHY THIS EXISTS. This file uses `control-snh` as its "a real control in the
+ * clip pane is live" witness, and the clip player's face became TAB RAILED on
+ * 2026-09-04 (owner P0 — the launch grid and the piano roll are two VIEWS, so a
+ * double-clicked pad REPLACES the grid; `face.tabbed` is what hides a band).
+ * `snh` is on the fourth of the four pages, so the witness is in the DOM and
+ * out of view until its page is asked for.
+ *
+ * The tab click is not scaffolding around the assertion, it is part of it: a
+ * pane that could not switch page fails HERE, on the chip, instead of
+ * confusingly on the control.
+ */
+async function openClipPlaybackPage(page: Page, id: string): Promise<void> {
+  const tab = paneFor(page, id).getByTestId('faceplate-tab-playback');
+  await tab.click();
+  await expect(tab, 'the clip pane switches to its playback page').toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+}
+
 /** Spawn one migrated module and return its shell tile + EXPAND pill.
  *  spawnPatch WIPES the rack, so the workflow ensure re-spawns the pinned
  *  trio — re-wait for it before any hotkey (the keymap is inert until the
@@ -275,6 +298,9 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     // `role="switch"`, whose state attribute is `aria-checked`. Not a
     // workaround: `aria-pressed` belongs to a toggle button and `aria-checked`
     // to a switch, so the faceplate is the more correct of the two.
+    // …and its page has to be OPEN — this face is tab-railed (see
+    // `openClipPlaybackPage`), which is itself a second interaction in the pane.
+    await openClipPlaybackPage(page, CLIP_ID);
     const snh = paneFor(page, CLIP_ID).getByTestId('control-snh');
     await expect(snh).toBeVisible();
     const before = await snh.getAttribute('aria-checked');
@@ -621,6 +647,18 @@ test.describe('full-view SPLIT: two panes, one drawer occupant (?shell=1)', () =
     const modFace = paneFor(page, 'm1').getByTestId('dock-full-view');
     await expect(clipFace).toHaveAttribute('data-flipped', 'false');
 
+    // ⚠ OPEN `snh`'s PAGE BEFORE THE FLIP, and the POSITIVE CONTROL is the
+    // reason rather than tidiness. This leg's claim is "the FRONT controls go
+    // away while flipped and come back after"; on a tab-railed face (this one,
+    // since 2026-09-04) `control-snh` is hidden by its own rail until its page
+    // is asked for, so a `toBeHidden` taken without this line would have been
+    // green for the wrong reason and told us nothing about the flip at all.
+    await openClipPlaybackPage(page, CLIP_ID);
+    await expect(
+      paneFor(page, CLIP_ID).getByTestId('control-snh'),
+      'POSITIVE CONTROL: the front control is on screen BEFORE the flip',
+    ).toBeVisible();
+
     await pressFlipKey(page);
     await expect(drawer).toHaveAttribute('data-fullview-flipped', 'true');
     // BOTH panes flipped — including the clip player.
@@ -668,7 +706,9 @@ test.describe('bottom-drawer occupancy: preview-off M/E drawer + the same C pane
     await expect(fullView).toHaveAttribute('data-pane-count', '1');
     await expect(paneFor(page, CLIP_ID)).toBeVisible();
     await expect(drawer).toHaveCount(0);
-    // …and its real controls are live in the pane.
+    // …and its real controls are live in the pane, one rail click away (this
+    // face is tab-railed — see `openClipPlaybackPage`).
+    await openClipPlaybackPage(page, CLIP_ID);
     await expect(paneFor(page, CLIP_ID).getByTestId('control-snh')).toBeVisible();
 
     // C again closes it.
