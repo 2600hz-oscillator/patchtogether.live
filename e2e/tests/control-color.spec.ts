@@ -5,8 +5,9 @@
 //   1. spawn an ADSR + a Control Surface; bind ADSR.attack onto the surface.
 //   2. right-click the ADSR title → "Assign control color" → pick a swatch.
 //      → data.controlColor is set on the SOURCE module (not the surface).
-//   3. the SOURCE card shows the colour dot; the SURFACE stripe above the
-//      proxied knob renders that colour (LIVE passthrough read of the source).
+//   3. the SURFACE's lane tile swatch AND its dock-board stripe render that
+//      colour (LIVE passthrough reads of the source; the card's colour dot
+//      died with the card — the shell's at-a-glance receipt is the swatch).
 //   4. change the colour → the stripe updates (no stale copy).
 //   5. "Reset to default" clears data.controlColor.
 //   6. the colour is NEVER copied onto the surface binding/data (passthrough).
@@ -41,8 +42,27 @@ async function bg(page: Page, selector: string): Promise<string> {
   );
 }
 
+/** Right-click the ADSR tile's module-menu target (`.tile-kind` — the shell's
+ *  context target; the card's `.title` died with it). */
+async function openAdsrMenu(page: Page) {
+  await page.locator('.svelte-flow__node[data-id="adsr-1"] .tile-kind').click({ button: 'right' });
+  const menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/** The SURFACE lane tile's per-module swatch fill (the live passthrough colour
+ *  read, no dock needed). */
+async function swatchFill(page: Page): Promise<string> {
+  return (
+    (await page
+      .locator('[data-testid="cs-tile-swatch-cs-1-adsr-1"]')
+      .getAttribute('fill')) ?? ''
+  );
+}
+
 async function setup(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 700, y: 80 }, domain: 'meta' },
@@ -66,18 +86,13 @@ async function setup(page: Page) {
 test('assign a control colour on a module → surface stripe reflects it (passthrough)', async ({ page }) => {
   await setup(page);
 
-  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
-  await expect(surface).toBeVisible();
-  const stripe = surface.locator('[data-testid="control-surface-stripe-adsr-1-attack"]');
-  await expect(stripe).toBeVisible();
+  // The surface's LANE tile (the board is dock-only; the tile's swatch strip
+  // is the at-a-glance colour read).
+  await expect(page.locator('[data-testid="cs-tile-cs-1"]')).toBeVisible();
 
-  // Right-click the ADSR's TITLE (control-free) → the Module-actions menu.
-  const adsr = page.locator('.svelte-flow__node-adsr').first();
-  await adsr.locator('.title').click({ button: 'right' });
-  const menu = page.locator('[role="menu"][aria-label="Module actions"]');
-  await expect(menu).toBeVisible();
-
-  // Open the "Assign control color" submenu, pick the red swatch (F45C51).
+  // Right-click the ADSR tile → the Module-actions menu (shared across
+  // surfaces), assign the red swatch (F45C51).
+  const menu = await openAdsrMenu(page);
   await menu.locator('[data-testid="ctx-assign-control-color"]').click();
   const panel = menu.locator('[data-testid="ctx-color-panel"]');
   await expect(panel).toBeVisible();
@@ -86,12 +101,28 @@ test('assign a control colour on a module → surface stripe reflects it (passth
   // The colour is stored on the SOURCE module (its single home).
   await expect.poll(async () => await sourceControlColor(page, 'adsr-1')).toBe('F45C51');
 
-  // The SURFACE stripe (a LIVE passthrough read of the source) now renders red.
-  await expect.poll(async () => await bg(page, '[data-testid="control-surface-stripe-adsr-1-attack"]'))
-    .toBe('rgb(244, 92, 81)');
+  // The SURFACE lane swatch (a LIVE passthrough read of the source) renders red.
+  await expect.poll(async () => await swatchFill(page)).toBe('#F45C51');
 
-  // The SOURCE card shows the colour dot.
-  await expect(adsr.locator('[data-testid="control-color-dot"]')).toBeVisible();
+  // And the dock BOARD's per-knob stripe renders the same colour (the second
+  // passthrough surface — the one above the proxied knob).
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'cs-1',
+  );
+  const board = page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="cs-1"]')
+    .getByTestId('cs-board');
+  await expect(board).toBeVisible({ timeout: 60_000 });
+  await expect.poll(async () => await bg(page, '[data-testid="cs-board-stripe-adsr-1-attack"]'))
+    .toBe('rgb(244, 92, 81)');
 
   // PASSTHROUGH proof: the surface binding holds NO colour copy.
   expect(await surfaceBindings(page, 'cs-1')).toEqual([{ moduleId: 'adsr-1', paramId: 'attack' }]);
@@ -99,43 +130,35 @@ test('assign a control colour on a module → surface stripe reflects it (passth
 
 test('changing the colour updates the stripe live; reset clears it', async ({ page }) => {
   await setup(page);
-  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
-  const adsr = page.locator('.svelte-flow__node-adsr').first();
 
-  // First assignment → teal (03A598).
-  await adsr.locator('.title').click({ button: 'right' });
-  let menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  // First assignment → teal (03A598). All reads at the LANE swatch (the dock
+  // overlay would block the tile right-clicks, so this leg never opens it).
+  let menu = await openAdsrMenu(page);
   await menu.locator('[data-testid="ctx-assign-control-color"]').click();
   await menu.locator('[data-testid="ctx-color-swatch-03A598"]').click();
   await expect.poll(async () => await sourceControlColor(page, 'adsr-1')).toBe('03A598');
-  await expect.poll(async () => await bg(page, '[data-testid="control-surface-stripe-adsr-1-attack"]'))
-    .toBe('rgb(3, 165, 152)');
+  await expect.poll(async () => await swatchFill(page)).toBe('#03A598');
 
-  // Re-assign → blue (529DEC). The stripe re-resolves; no stale value.
-  await adsr.locator('.title').click({ button: 'right' });
-  menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  // Re-assign → blue (529DEC). The swatch re-resolves; no stale value.
+  menu = await openAdsrMenu(page);
   await menu.locator('[data-testid="ctx-assign-control-color"]').click();
   await menu.locator('[data-testid="ctx-color-swatch-529DEC"]').click();
   await expect.poll(async () => await sourceControlColor(page, 'adsr-1')).toBe('529DEC');
-  await expect.poll(async () => await bg(page, '[data-testid="control-surface-stripe-adsr-1-attack"]'))
-    .toBe('rgb(82, 157, 236)');
+  await expect.poll(async () => await swatchFill(page)).toBe('#529DEC');
 
-  // Reset to default → data.controlColor cleared (reverts to the auto default).
-  await adsr.locator('.title').click({ button: 'right' });
-  menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  // Reset to default → data.controlColor cleared (reverts to the auto default);
+  // the swatch leaves the explicit blue for the resolved default.
+  menu = await openAdsrMenu(page);
   await menu.locator('[data-testid="ctx-assign-control-color"]').click();
   await menu.locator('[data-testid="ctx-color-reset"]').click();
   await expect.poll(async () => await sourceControlColor(page, 'adsr-1')).toBeNull();
-  // The dot disappears once no explicit colour is set.
-  await expect(adsr.locator('[data-testid="control-color-dot"]')).toHaveCount(0);
+  await expect.poll(async () => await swatchFill(page)).not.toBe('#529DEC');
 });
 
 test('custom hex picker shows a 565 preview + applies the quantized colour', async ({ page }) => {
   await setup(page);
-  const adsr = page.locator('.svelte-flow__node-adsr').first();
 
-  await adsr.locator('.title').click({ button: 'right' });
-  const menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  const menu = await openAdsrMenu(page);
   await menu.locator('[data-testid="ctx-assign-control-color"]').click();
 
   // Drive the native colour input to a value, then Apply. The applied colour is
