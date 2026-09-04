@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
 import {
   bindingsFromPairs,
+  clearPresentBindings,
+  decideRestore,
+  parsePresentSlotKey,
+  presentAuthority,
+  presentSlotKey,
   canDescribeBindings,
   mayPersist,
   planRestore,
@@ -247,5 +252,135 @@ describe('readPresentBindingsFromUpdate', () => {
 
   it('returns [] rather than throwing on a corrupt update', () => {
     expect(readPresentBindingsFromUpdate('bm90LWEteWpzLXVwZGF0ZQ==')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WHO OWNS DISPLAY PLACEMENT
+// ---------------------------------------------------------------------------
+//
+// ⚠ THE COLLISION THIS RULE EXISTS FOR. Two placement surfaces already exist:
+// `settings.presentBindings`, which rides the SHARED doc into every save,
+// .ptperf zip and peer sync and which Canvas restores automatically on three
+// paths; and the native shell's display map, which is local and per-machine.
+// Leave both live and an old patch reopens its legacy projectors while the shell
+// creates its own sinks — same monitors, two window classes, opposite lifetimes,
+// one of them swept on the next patch load. The rule below is absolute rather
+// than a merge, and the tests come in pairs so "always defer" and "never defer"
+// both go red.
+
+describe('present authority — the shell and the patch cannot both place windows', () => {
+  const saved: PresentBinding[] = [{ nodeId: 'out', screen: WISE_LUCK }];
+
+  it('the browser answers PATCH; the shell answers SHELL', () => {
+    expect(presentAuthority(false)).toBe('patch');
+    expect(presentAuthority(true)).toBe('shell');
+  });
+
+  it('under the shell nothing is opened here, whatever the doc says', () => {
+    const d = decideRestore({ native: true, saved, live: RIG });
+    expect(d.action).toBe('defer-to-shell');
+    expect(d.armWrite, 'and the write-back never arms, so the key stops growing back').toBe(false);
+  });
+
+  it('under the shell the doc copy is MIGRATED OUT exactly once', () => {
+    // Not merged, not partially honoured, and not left in place to travel to
+    // the next machine in a save file.
+    expect(decideRestore({ native: true, saved, live: RIG }).migrateOut).toBe(true);
+    expect(
+      decideRestore({ native: true, saved: [], live: RIG }).migrateOut,
+      'nothing to migrate once it is gone — the clear is not re-run every load',
+    ).toBe(false);
+  });
+
+  it('a shell with NO displays resolved still defers — it does not fall back to the patch', () => {
+    // "Restore them anyway if the shell has nothing yet" is how you get two
+    // windows on one projector.
+    expect(decideRestore({ native: true, saved, live: [] }).action).toBe('defer-to-shell');
+  });
+
+  it('POSITIVE CONTROL: the SAME inputs in a browser DO restore', () => {
+    // Otherwise "defer always" passes every assertion above and silently kills
+    // the browser feature.
+    const d = decideRestore({ native: false, saved, live: RIG });
+    expect(d.action).toBe('restore');
+    expect(d.migrateOut).toBe(false);
+  });
+});
+
+describe('present authority — an absent monitor is never answered with the primary one', () => {
+  const saved: PresentBinding[] = [{ nodeId: 'out', screen: WISE_LUCK }];
+
+  it('declines, keeps the bindings, and SAYS it did not relocate anything', () => {
+    // A performer who loses a projector must be told, not quietly shown their
+    // laptop screen. The reason string is the telling.
+    const d = decideRestore({ native: false, saved, live: live(RETINA) });
+    expect(d.action).toBe('decline');
+    expect(d.migrateOut, 'a rig mismatch must not destroy the bindings').toBe(false);
+    expect(d.armWrite, 'nor arm a write that would overwrite them with []').toBe(false);
+    expect(d.reason).toMatch(/not attached/);
+    expect(d.reason).toMatch(/primary display/);
+  });
+
+  it('no display list at all is a decline, not a restore onto nothing', () => {
+    const d = decideRestore({ native: false, saved, live: [] });
+    expect(d.action).toBe('decline');
+    expect(d.armWrite).toBe(false);
+  });
+
+  it('nothing saved arms the write — the first save of a rig must be possible', () => {
+    const d = decideRestore({ native: false, saved: [], live: RIG });
+    expect(d.action).toBe('decline');
+    expect(d.armWrite).toBe(true);
+  });
+});
+
+describe('present slot keys — the discriminator the shell routes on', () => {
+  it('round-trips a (node, display) pair', () => {
+    const key = presentSlotKey('out', 'Wise Luck|1280x720|@1|ext');
+    expect(parsePresentSlotKey(key)).toEqual({
+      nodeId: 'out',
+      screenId: 'Wise Luck|1280x720|@1|ext',
+    });
+  });
+
+  it('is stable for the same pair, and distinct across pairs', () => {
+    expect(presentSlotKey('a', 's')).toBe(presentSlotKey('a', 's'));
+    expect(presentSlotKey('a', 's')).not.toBe(presentSlotKey('b', 's'));
+    expect(presentSlotKey('a', 's1')).not.toBe(presentSlotKey('a', 's2'));
+  });
+
+  it('the separator is not a character a screen id contains', () => {
+    // Screen ids are fingerprints built from `|`, `@`, `#` and `x`
+    // (screen-identity.screenKey). A separator drawn from that set would split
+    // in the wrong place and route a projector to the wrong display.
+    const id = 'Built-in Retina Display|1512x982|@2|int#1';
+    expect(parsePresentSlotKey(presentSlotKey('n', id))?.screenId).toBe(id);
+  });
+
+  it('rejects a slot that is not one, rather than guessing', () => {
+    expect(parsePresentSlotKey('')).toBeNull();
+    expect(parsePresentSlotKey('nodeonly')).toBeNull();
+    expect(parsePresentSlotKey('::screen')).toBeNull();
+    expect(parsePresentSlotKey('node::')).toBeNull();
+  });
+});
+
+describe('clearPresentBindings — the migration removes the key, not its contents', () => {
+  it('deletes the key so it stops riding saves and peer syncs', () => {
+    // `[]` and absent read the same through readPresentBindings, but only one
+    // of them stops the document claiming to own display placement.
+    const doc = new Y.Doc();
+    writePresentBindings(doc, [{ nodeId: 'out', screen: WISE_LUCK }]);
+    expect(doc.getMap('settings').has('presentBindings')).toBe(true);
+    clearPresentBindings(doc);
+    expect(doc.getMap('settings').has('presentBindings')).toBe(false);
+    expect(readPresentBindings(doc)).toEqual([]);
+  });
+
+  it('is a no-op on a doc that never had one', () => {
+    const doc = new Y.Doc();
+    expect(() => clearPresentBindings(doc)).not.toThrow();
+    expect(readPresentBindings(doc)).toEqual([]);
   });
 });

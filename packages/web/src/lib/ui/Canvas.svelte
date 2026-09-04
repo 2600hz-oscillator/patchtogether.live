@@ -244,16 +244,18 @@
   import { backdraftPanic } from '$lib/ui/modules/backdraft/panic';
   import {
     bindingsFromPairs,
+    clearPresentBindings,
+    decideRestore,
     mayPersist,
     planRestore,
     readPresentBindings,
-    rigMatchesSaved,
     writePresentBindings,
     type LiveScreen,
     canDescribeBindings,
     readPresentBindingsFromUpdate,
     type PresentBinding,
   } from '$lib/ui/modules/present-bindings';
+  import { nativeAvailable } from '$lib/platform/native';
   import { getElectraAutoReconnect } from '$lib/ui/modules/electra-auto-reconnect';
   import { ELECTRA_CONTROL_TYPE } from '$lib/graph/electra-control';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
@@ -1336,9 +1338,16 @@
   // PRESENT RESTORE (#2230). A patch saved with outputs on external displays
   // reopens them, when those displays are still attached.
   //
-  // Automatic, but gated on rigMatchesSaved: the bindings ride the SHARED doc,
-  // so a rack-mate opening the same patch must not get projector windows thrown
-  // onto their monitors. A partial or foreign rig resolves nothing.
+  // Automatic, but gated on rigMatchesSaved (inside decideRestore): the
+  // bindings ride the SHARED doc, so a rack-mate opening the same patch must not
+  // get projector windows thrown onto their monitors. A partial or foreign rig
+  // resolves nothing — and specifically does NOT relocate anything onto this
+  // machine's primary display.
+  //
+  // ⚠ AND THE PATCH IS NOT ALWAYS THE AUTHORITY. Under the native shell the
+  // display map is the shell's, local and per-machine; this path defers to it
+  // and migrates the document's copy out exactly once. See `decideRestore` /
+  // `presentAuthority` in present-bindings for why the two cannot both be live.
   //
   // ⚠ RUNS PER LOAD, NOT PER MOUNT. A once-per-Canvas-mount latch is wrong:
   // "new rack, then load a performance" fires the mount pass against the EMPTY
@@ -1387,20 +1396,23 @@
     await presentScreens.loadScreens();
     const saved = fromEnvelope ?? readPresentBindings(ydoc);
     const live = liveScreens();
+    // ONE RULE, ONE PLACE. Which authority owns display placement, whether this
+    // load may open anything, and whether the write-back may arm are all the
+    // same question — `decideRestore` answers it as a pure function so the
+    // native branch is testable before any shell exists to run it.
+    //
     // ALWAYS trace, including the do-nothing paths. A silent early return makes
     // "no line in the console" mean both "old build" and "new build, nothing to
     // do", which is precisely the distinction anyone debugging this needs.
-    if (saved.length === 0) {
-      presentWriteArmed = true;
-      trace(`present restore: nothing saved — write armed (${live.length} display(s) known)`);
-      return;
-    }
-    if (live.length === 0) {
-      trace('present restore: no display list — window-management not granted for this origin; bindings kept');
-      return;
-    }
-    if (!rigMatchesSaved(saved, live)) {
-      trace(`present restore: saved rig (${saved.length} display(s)) not attached — bindings kept`);
+    const decision = decideRestore({ native: nativeAvailable(), saved, live });
+    if (decision.action !== 'restore') {
+      // MIGRATE ONCE, then stop being a second opinion. Under the shell the
+      // patch's copy is not merged, not partially honoured and not left in
+      // place to travel to the next machine in a save file: it is removed from
+      // the shared doc, and the shell's display map is the only answer.
+      if (decision.migrateOut) clearPresentBindings(ydoc, LOCAL_ORIGIN);
+      presentWriteArmed = decision.armWrite;
+      trace(decision.reason);
       return;
     }
     const video = resolveVideoEngine(engine);
@@ -1465,6 +1477,10 @@
   $effect(() => {
     const pairs = nodePresent.presentingPairs();
     if (!presentWriteArmed) return;
+    // ⚠ THE SHELL BRANCH NEVER ARMS — this is belt-and-braces for a rig that
+    // becomes native mid-session. Writing here under the shell would rebuild
+    // the very key `decideRestore` just migrated out, one projector at a time.
+    if (nativeAvailable()) return;
     const live = liveScreens();
     if (!canDescribeBindings(pairs, live)) return;
     const next = bindingsFromPairs(pairs, live);

@@ -37,8 +37,40 @@
 // Chromium-only in practice (the placement relies on the Window Management API
 // the caller already gates on), but the window.open + blit core is portable; on
 // a single screen the caller simply never offers the item.
+//
+// ── WHAT A PROJECTOR SURVIVES, AND WHAT IT DOES NOT ────────────────────────
+//
+// Stated here because it was previously stated NOWHERE, and a desktop-shell
+// plan then promised the opposite ("a renderer crash costs a reload, not a rig
+// teardown"). The mechanism below cannot deliver that, and saying so is
+// cheaper than a projector that lies:
+//
+//   SURVIVES  the presenting CARD unmounting (the registry owns the session),
+//             the node's view collapsing/re-expanding, the opener window
+//             losing focus (the SINK owns the frame clock, #2235), an engine
+//             resolution change (`source` is a getter), a transient draw
+//             error, and the operator pressing Esc out of fullscreen.
+//
+//   DOES NOT   the opener RELOADING or NAVIGATING — `pagehide` deliberately
+//   SURVIVE    closes every projector (node-present-registry), because the
+//              alternative is a window nothing can drive.
+//              The opener RENDERER DYING — a same-origin `window.open` child
+//              with an opener relationship shares its parent's process, so the
+//              sink document dies with it. Under Electron `setWindowOpenHandler`
+//              does not change that; `outlivesOpener` defaults false, and a
+//              window that DID outlive its opener would be worse: nothing in
+//              this file can re-adopt an existing sink, so it would sit frozen
+//              on its last frame, bright and wrong, on a wall.
+//
+// The guarantee is therefore "a projector outlives every VIEW, and dies with
+// its RENDERER". Making it survive a renderer death needs sink windows created
+// independently of the renderer PLUS a reconnectable transport and a re-adopt
+// entry point here — none of which exist, and two of which are out of this
+// module's reach. Until they do, the sink is told when its source stops, so a
+// dead link reads as dead instead of as a frozen picture (see PresentPullStatus).
 
 import type { ScreenRect } from './use-fullscreen.svelte';
+import { presentBlitSevered } from './present-blit-sever';
 
 /** The operator-facing advisory for a projector that opened WINDOWED because
  *  the browser denies gesture-less (automatic) fullscreen. One copyable line
@@ -59,8 +91,15 @@ export function automaticFullscreenBlockedAdvisory(): string {
   );
 }
 
-/** Default popup size when no target-screen rect is known (we still open a
- *  reasonably-large window; the user can move it manually). */
+/** Default popup size when NO TARGET DISPLAY WAS NAMED (we still open a
+ *  reasonably-large window; the user can move it manually).
+ *
+ *  ⚠ THIS IS NOT A FALLBACK FOR A DISPLAY THAT COULD NOT BE RESOLVED. (100,100)
+ *  is on the operator's PRIMARY screen — their laptop, mid-set — so using it
+ *  when a performer asked for a projector that is no longer attached silently
+ *  answers a question nobody asked. The caller that names a display
+ *  (node-present-registry) REFUSES to open rather than reaching this default;
+ *  see `openOne`'s placement refusal. */
 const DEFAULT_POPUP = { left: 100, top: 100, width: 1280, height: 720 } as const;
 
 /** Build the `features` string for window.open from a target screen's
@@ -93,9 +132,46 @@ export interface PresentSession {
 /** Minimal structural typing of a same-origin popup Window we touch. */
 type PresentPopup = Window;
 
+/** What one blit frame actually DID. Only `painted` means source pixels reached
+ *  the sink canvas; `blank` is the unconditional black-fill on its own. */
+export type PresentFrameOutcome = 'painted' | 'blank' | 'error';
+
+/**
+ * The value `__presentFrame()` hands back to the SINK on every pull.
+ *
+ * ⚠ THIS IS THE ONLY RECEIVER-SIDE TRUTH ABOUT THE LINK, and it exists because
+ * the protocol previously had none. The pull function returned `void`, so a
+ * sink that pulled perfectly while the opener painted nothing looked EXACTLY
+ * like a healthy one: `popupDriving` and `lastPullAt` are set BEFORE the draw
+ * and outside its try/catch, which is right for the watchdog's actual job
+ * (reclaim the clock from a sink that stopped pulling) and useless as evidence
+ * that a picture exists. A black projector — null source, 1×1 source, a lost GL
+ * context swallowed by the frame's bare catch — kept that signal green forever.
+ *
+ * The counters are MONOTONIC so the sink can derive staleness in ITS OWN
+ * FRAMES, with no wall clock: `painted` not advancing across N of the sink's
+ * pulls is a stalled link, whatever the frame rate.
+ */
+export interface PresentPullStatus {
+  /** Bumped if this shape changes. A sink from an older build ignores the
+   *  return value entirely and still drives the loop — the protocol is
+   *  additive on purpose. */
+  readonly protocol: 1;
+  readonly outcome: PresentFrameOutcome;
+  /** Frames in which real source pixels were drawn into the sink canvas. */
+  readonly painted: number;
+  /** Frames whose draw threw. Previously swallowed leaving no trace at all. */
+  readonly errors: number;
+  /** Which (node, display) this link serves, so a venue with four projectors
+   *  can tell WHICH one lost its source. Empty when the caller named none. */
+  readonly slot: string;
+}
+
 /** The sink pulls frames through this, installed by the opener. Same-origin, so
  *  the call executes in the OPENER's realm on the SINK's frame clock. */
-type PresentPopupWithPull = Window & { __presentFrame?: () => void };
+type PresentPopupWithPull = Window & {
+  __presentFrame?: () => PresentPullStatus | void;
+};
 
 /** Anything the blit loop can read a frame out of: an HTMLCanvasElement, or the
  *  VideoEngine's OffscreenCanvas. Both are CanvasImageSource with real dims. */
@@ -119,8 +195,25 @@ export interface StartPresentArgs {
    *  the node it wants into a shared drawing buffer. */
   prepare?: () => void;
   /** Working-area rect of the target display (from the fullscreen controller's
-   *  getScreenRect); null falls back to a default-sized popup. */
+   *  getScreenRect); null falls back to a default-sized popup.
+   *
+   *  ⚠ A NULL RECT MUST MEAN "NO DISPLAY WAS NAMED", never "the named display
+   *  could not be resolved" — see DEFAULT_POPUP. Callers that name a display
+   *  refuse before they get here. */
   rect: ScreenRect | null;
+  /**
+   * Opaque identity for this sink, carried as `?slot=` on the sink URL.
+   *
+   * ⚠ WITHOUT THIS THE SHELL CANNOT TELL ITS OWN OUTPUT WINDOWS APART FROM A
+   * PATCH'S. Every projector this module has ever opened was
+   * `window.open('/present', '_blank', '<left/top/width/height>')` — same URL,
+   * same window name, same feature shape — so an Electron
+   * `setWindowOpenHandler` has no discriminator at all between "output slot 2's
+   * sink" and "an old patch's restored projector", and cannot route one to its
+   * mapped display while denying the other. The token is deliberately opaque to
+   * this module: `presentSlotKey` in present-bindings owns its shape.
+   */
+  slot?: string;
   // ---- Injection seams (tests stub these; prod uses the real DOM) ----
   /** Defaults to window.open. */
   openWindow?: (url: string, target: string, features: string) => Window | null;
@@ -132,6 +225,15 @@ export interface StartPresentArgs {
   caf?: (handle: number) => void;
 }
 
+/** Append the sink's identity to its route. Pure + exported so the shape the
+ *  shell's window-open handler has to match is unit-pinned, not folded into a
+ *  string concat inside startPresent. An empty slot leaves the URL untouched,
+ *  so every existing caller and every cached `/present` keeps working. */
+export function sinkUrl(url: string, slot: string): string {
+  if (!slot) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}slot=${encodeURIComponent(slot)}`;
+}
+
 /** Open a present popup on the target display and start blitting the canvas
  *  into it. Returns a PresentSession (track it on the card so delete / "stop
  *  presenting" can tear it down), or null if the popup couldn't open (blocked)
@@ -141,11 +243,12 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
   const { source, prepare, rect } = args;
   const openWindow = args.openWindow ?? ((u, t, f) => window.open(u, t, f));
   const url = args.url ?? '/present';
+  const slot = args.slot ?? '';
   const raf = args.raf ?? ((cb: FrameRequestCallback) => requestAnimationFrame(cb));
   const caf = args.caf ?? ((h: number) => cancelAnimationFrame(h));
 
   const features = computePopupFeatures(rect);
-  const opened = openWindow(url, '_blank', features) as PresentPopup | null;
+  const opened = openWindow(sinkUrl(url, slot), '_blank', features) as PresentPopup | null;
   if (!opened) return null; // popup blocked — nothing started.
   // Non-null binding so the nested closures (handshake/beginBlit/watchdog) see
   // a non-nullable popup without re-narrowing.
@@ -157,6 +260,11 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
   // pulling; the opener's own loop then stops drawing and only supervises.
   let popupDriving = false;
   let lastPullAt = 0;
+  // Monotonic, session-scoped, and reported to the SINK on every pull — the
+  // receiver-side evidence that a picture exists (see PresentPullStatus).
+  let paintedFrames = 0;
+  let errorFrames = 0;
+  let drawErrorWarned = false;
   let rafId: number | null = null;
   let watchdog: ReturnType<typeof setInterval> | null = null;
   let findTimer: ReturnType<typeof setInterval> | null = null;
@@ -327,15 +435,21 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
    * stops. A projector that goes black because two clocks disagreed would be
    * worse than the bug this fixes. */
   function runLoop(dst: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
-    const drawFrame = () => {
-      if (closed) return;
+    const drawFrame = (): PresentFrameOutcome => {
+      if (closed) return 'blank';
       try {
         // Let the caller render what it wants into the source first (the
         // registry blits ITS node's output into the shared engine buffer here),
         // then read it in the SAME synchronous block — a WebGL drawing buffer is
         // only guaranteed to hold that content until the frame ends.
         prepare?.();
-        const src = source();
+        // FORCED-FAILURE HOOK, not a feature: `presentBlitSevered()` is a
+        // committed, env-gated way to cut this one link so a continuity gate can
+        // be shown to go RED. It reads `false` in every build that does not set
+        // the test-hooks flag. Severing the SOURCE (not `prepare`) is
+        // deliberate — the engine keeps rendering, so what the control proves is
+        // that the probe follows the BLIT and not something upstream of it.
+        const src = presentBlitSevered() ? null : source();
         const dw = dst.width;
         const dh = dst.height;
         const sw = src ? src.width || 1 : 1;
@@ -347,18 +461,46 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
         // the very first frames before the engine has rendered).
         if (src && sw > 1 && sh > 1 && fit.w > 0 && fit.h > 0) {
           ctx.drawImage(src, fit.x, fit.y, fit.w, fit.h);
+          return 'painted';
         }
+        // BLACK-FILL ONLY. This is a legitimate state for the first frames of a
+        // cold engine and a fatal one thereafter, and nothing downstream could
+        // previously tell the two apart — which is the whole reason this
+        // function returns a value now.
+        return 'blank';
       } catch {
         // A transient draw error (e.g. popup mid-teardown) must not kill the
-        // loop's ability to be cancelled — just skip this frame.
+        // loop's ability to be cancelled — just skip this frame. It is COUNTED
+        // rather than only swallowed: a lost GL context that the pipeline is
+        // designed to absorb used to be indistinguishable from a good frame.
+        return 'error';
       }
+    };
+
+    /** One frame + the receiver-side bookkeeping that makes it observable. */
+    const tick = (): PresentPullStatus => {
+      const outcome = drawFrame();
+      if (outcome === 'painted') paintedFrames++;
+      else if (outcome === 'error') {
+        errorFrames++;
+        if (!drawErrorWarned) {
+          drawErrorWarned = true;
+          // ONCE per session — enough to diagnose, never enough to bury the
+          // rest of the console under a per-frame throw.
+          console.warn(
+            `[present] a projector frame threw and was skipped${slot ? ` (slot ${slot})` : ''};` +
+              ' the sink now reports its link as stalled rather than showing a frozen picture.',
+          );
+        }
+      }
+      return { protocol: 1, outcome, painted: paintedFrames, errors: errorFrames, slot };
     };
 
     try {
       (popup as PresentPopupWithPull).__presentFrame = () => {
         popupDriving = true;
         lastPullAt = Date.now();
-        drawFrame();
+        return tick();
       };
     } catch {
       /* popup navigated away mid-install — the opener fallback below covers it */
@@ -366,7 +508,7 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
 
     const frame = () => {
       if (closed) return;
-      if (!popupDriving) drawFrame();
+      if (!popupDriving) tick();
       rafId = raf(frame);
     };
     rafId = raf(frame);
