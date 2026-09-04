@@ -709,8 +709,8 @@ test('a CANVAS-HIDDEN occupant renders a pickup ghost from its rear card (dock-f
   page,
 }) => {
   await gotoWorkflow(page);
-  // The workflow ensure writes the pinned clip player; wait for the node
-  // itself rather than for a paint, so this cannot race the seeder.
+  // Wait for the workflow ensure to have written the pinned clip player — the
+  // NODE, not a paint, so this cannot race the seeder.
   await page.waitForFunction(
     () => {
       const w = globalThis as unknown as {
@@ -722,17 +722,18 @@ test('a CANVAS-HIDDEN occupant renders a pickup ghost from its rear card (dock-f
     { timeout: 15_000 },
   );
 
-  // THE PRECONDITION, ASSERTED: it really has no canvas element. Without this
-  // the test would still pass against a node that simply resolved the ordinary
-  // canvas anchor, proving nothing about the fallback.
+  // THE PRECONDITION, ASSERTED RATHER THAN ASSUMED: it really has no canvas
+  // element. Without this the test would still pass against a node that simply
+  // resolved the ordinary canvas anchor, proving nothing about the fallback
+  // this case exists to guard.
   await expect(
     page.locator('.svelte-flow__node[data-id="pinned-clipplayer"]'),
     'the pinned clip player must be CANVAS-HIDDEN — if it has a canvas node, PickupCable resolves '
-      + 'that and this test says nothing about the dock-frame fallback it is here to guard',
+      + 'that and this test says nothing about the dock-frame fallback',
   ).toHaveCount(0);
 
   await openFullView(page, 'pinned-clipplayer');
-  // …and the pane must carry the anchors the fallback looks for.
+  // …and the pane must carry the anchor the fallback looks for.
   await expect(
     paneOf(page, 'pinned-clipplayer').locator('[data-dock-card-frame]'),
     'the dock pane must expose [data-dock-card-frame] — it is the ONLY rectangle PickupCable and '
@@ -746,19 +747,19 @@ test('a CANVAS-HIDDEN occupant renders a pickup ghost from its rear card (dock-f
   await rearJack(page, 'gate1', 'output').click();
   expect((await pickup(page)).mode, 'the back-jack click began a carry').toBe('pickup');
 
-  // THE ASSERTION: the ghost renders. It is drawn from the pane's dock frame,
-  // because there is no canvas node to hang it from.
+  // THE ASSERTION: the ghost renders. It can only be drawn from the pane's dock
+  // frame, because there is no canvas node to hang it from.
   await page.mouse.move(640, 320);
   await page.mouse.move(660, 340);
   await expect(
     page.getByTestId('pickup-cable'),
-    'a carry from a canvas-hidden occupant must still draw its ghost cable — an empty path here '
-      + 'is the "no ghost at all" defect PickupCable\'s dock-frame fallback exists to prevent',
+    'a carry from a canvas-hidden occupant must still draw its ghost cable — nothing here is the '
+      + '"no ghost at all" defect PickupCable\'s dock-frame fallback exists to prevent',
   ).toBeVisible();
 
-  // …and it is a REAL path, not a mounted-but-empty <path d="">. That empty
-  // string is exactly what the missing-anchor bug produced, and an element
-  // that exists with no geometry is the shape `toBeVisible` can miss.
+  // …and it is a REAL path, not a mounted-but-empty <path d="">. The empty
+  // string is exactly what a missed anchor produces, and an element that exists
+  // with no geometry is the shape `toBeVisible` alone would wave through.
   const d = await page.getByTestId('pickup-cable').locator('path').first().getAttribute('d');
   expect(
     d?.length ?? 0,
