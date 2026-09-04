@@ -252,9 +252,16 @@
 </script>
 
 <div class="bb-output" bind:this={rootEl} data-testid="bentbox-output-body">
+  <!-- `.fullscreen` + the fs-wrap testid: the state-machine surface its
+       videoOut / backdraft siblings' wraps already carry (`class:fullscreen`
+       on the fullscreen TARGET, which this wrap is — fs.setTarget(wrapEl)).
+       Parity, not a new idea: the class is how the state stays observable
+       whether or not the OS actually granted fullscreen. -->
   <div
     class="preview-wrap"
+    class:fullscreen={fs.isFullscreen}
     bind:this={wrapEl}
+    data-testid="bentbox-face-fs-wrap"
     data-preview-collapsed={previewCollapsed ? 'true' : 'false'}
     style={previewCollapsed ? undefined : `width:${boxW}px;max-width:100%;`}
   >
