@@ -322,6 +322,88 @@ describe('dual-mono wrapper — the handle contract', () => {
   });
 });
 
+describe("'mono-fanout' class — ONE instance, output FANNED to BOTH channels", () => {
+  // moog904a. The topology half of the fix; the SIGNAL half (the phase spread
+  // collapsing) is measured in art/scenarios/stereo-dual-mono, which is the only
+  // lane with real Web Audio and a real worklet.
+  const def = fakeDef('moog904a',
+    [{ id: 'audio', type: 'audio' }, { id: 'cutoff_cv', type: 'cv' }],
+    [{ id: 'audio', type: 'audio' }]);
+
+  it('calls the factory exactly ONCE — the whole point of the class', async () => {
+    // TWO instances is the defect: each seeds its self-oscillation from its own
+    // Math.random() dither, so the two channels are different signals and every
+    // analyser tap in the app reads a random fraction of the true level.
+    await materializeAudioHandle(makeCtx(), def, NODE);
+    expect(factoryCalls).toBe(1);
+  });
+
+  it('the ONE instance feeds BOTH merger inputs (Δφ = 0 by construction)', async () => {
+    const handle = await materializeAudioHandle(makeCtx(), def, NODE);
+    const merger = (handle.outputs.get('audio')!.node as unknown as FakeNode).__tag;
+    expect(merger).toBe('merger2');
+    // Both merger inputs are fed BY THE SAME NODE — that identity is the fix.
+    expect(conns('moog904a#0').filter((c) => c.to === merger).map((c) => c.input).sort())
+      .toEqual([0, 1]);
+  });
+
+  it('the engine-facing input reaches the instance through a 1ch SPEAKERS down-mix', async () => {
+    const handle = await materializeAudioHandle(makeCtx(), def, NODE);
+    const entry = handle.inputs.get('audio')!;
+    const start = (entry.node as unknown as FakeNode).__tag;
+    // Walk the graph rather than counting hops (the buildDualMono precedent).
+    const path = reaches(start, 'moog904a#0');
+    expect(path, `${start} does not reach the instance`).not.toBeNull();
+    // The stage that actually feeds the instance must be the DOWN-MIX. Found
+    // structurally, so a reordering cannot silently pass.
+    const feeder = log.find((c) => c.to === 'moog904a#0')!;
+    expect(feeder, 'nothing feeds the instance').toBeDefined();
+    const down = recordedNode(feeder.from);
+    expect([down.channelCount, down.channelCountMode, down.channelInterpretation],
+      'the stage feeding the DSP is not the (L+R)/2 down-mix — a stereo→mono '
+      + 'patch would arrive summed, 6 dB hot').toEqual([1, 'explicit', 'speakers']);
+  });
+
+  it('builds NO splitter — one instance means nothing to split TO', async () => {
+    await materializeAudioHandle(makeCtx(), def, NODE);
+    expect(created.filter((t) => t.startsWith('splitter'))).toEqual([]);
+  });
+
+  it('⚠ KEEPS the leg inputs — so two cables AVERAGE instead of summing', async () => {
+    // SCOPE.monoFanoutLegs. One instance has no side to protect, but Web Audio
+    // sums two connections to one input, so without legs a stereo→mono patch
+    // would feed the DSP L+R rather than (L+R)/2.
+    const handle = await materializeAudioHandle(makeCtx(), def, NODE);
+    const legs = legInputsFor(handle, 'audio');
+    expect(legs, 'a mono-fanout handle exposes no leg inputs — a stereo source\'s '
+      + 'two cables would land on one node and SUM').toBeTruthy();
+    expect(legs!.counts()).toEqual({ left: 0, right: 0 });
+    // …and both legs really do reach the instance.
+    for (const side of ['left', 'right'] as const) {
+      const tag = (legs![side].node as unknown as FakeNode).__tag;
+      expect(reaches(tag, 'moog904a#0'), `the ${side} leg does not reach the DSP`)
+        .not.toBeNull();
+    }
+  });
+
+  it('a NON-audio input goes straight to the instance (nothing to fan)', async () => {
+    const handle = await materializeAudioHandle(makeCtx(), def, NODE);
+    expect((handle.inputs.get('cutoff_cv')!.node as unknown as FakeNode).__tag)
+      .toBe('moog904a#0');
+  });
+
+  it('dispose tears down the instance AND the scaffolding', async () => {
+    const handle = await materializeAudioHandle(makeCtx(), def, NODE);
+    handle.dispose();
+    expect(disposals).toEqual(['moog904a#0']);
+    const disconnected = new Set(log.filter((c) => c.to === '<disconnected>').map((c) => c.from));
+    for (const tag of ['gain0', 'gain1', 'gain2', 'gain3', 'gain4', 'gain5', 'gain6', 'gain7']) {
+      expect(disconnected, `${tag} leaked`).toContain(tag);
+    }
+    expect(disconnected, 'the merger leaked').toContain('merger2');
+  });
+});
+
 describe("'sum' class — one instance, audio input DOWN-MIXED", () => {
   const def = fakeDef('featurecv', [{ id: 'in', type: 'audio' }],
     [{ id: 'loud', type: 'cv' }]);
