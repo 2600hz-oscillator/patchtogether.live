@@ -55,7 +55,6 @@ const read = (rel: string): string => readFileSync(resolve(HERE, rel), 'utf8');
 
 const def = toyboxDef as unknown as FaceDefLike & { type: string };
 
-const cardSource = read('ToyboxCard.svelte');
 const consoleSource = read('toybox/ToyboxConsole.svelte');
 const bodySource = read('toybox/ToyboxConsoleBody.svelte');
 const extSource = read('toybox/shell-extension.ts');
@@ -63,7 +62,6 @@ const extSource = read('toybox/shell-extension.ts');
 // Comment-stripped views. Every "the source does NOT contain X" leg below reads
 // one of these, because this module's files are heavily commented and several of
 // those comments quote the very strings being refused.
-const cardCode = stripSourceComments(cardSource);
 const consoleCode = stripSourceComments(consoleSource);
 const bodyCode = stripSourceComments(bodySource);
 
@@ -136,7 +134,6 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
     // This is the mechanical reason for the membership above, and it is what
     // `dom-source-modules.test.ts` derives the set from. Both files, because
     // the console is where the call would now live.
-    expect(cardCode).not.toContain('attachExternalSource');
     expect(consoleCode).not.toContain('attachExternalSource');
     expect(consoleCode).toContain('attachLayerVideo');
   });
@@ -171,34 +168,26 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
   });
 });
 
-describe('⚠ ONE CONSOLE, TWO MOUNTS — the no-drift property, pinned in both directions', () => {
-  it('the CARD and the BODY import the SAME console component', () => {
-    expect(cardCode).toContain("from './toybox/ToyboxConsole.svelte'");
+describe('⚠ ONE CONSOLE — the no-drift property, pinned in both directions', () => {
+  // ⚠ THIS DESCRIBE WAS "ONE CONSOLE, TWO MOUNTS" AND THE SECOND MOUNT IS GONE.
+  // The card was a ~120-line frame around `ToyboxConsole`, and three legs here
+  // read it: that it imported the shared console, that it mounted it with
+  // `layout="card"`, and that it had grown back none of the five zones' own
+  // controls. All three were guarding ONE property — the console is not forked
+  // — and the surviving half of that property is asserted on the body below.
+  //
+  // ⚠ `ToyboxConsoleLayout` STILL DECLARES 'card', and this file is deliberately
+  // NOT the place that changes: the layout union is the console's own prop
+  // contract, and retiring the 'card' arm is a product edit for the removal
+  // commit, not a test rewrite. The leg below reads it as-is so that whichever
+  // way it goes, the test states what the console really offers.
+  it('the BODY imports the SAME console component', () => {
     expect(bodyCode).toContain("from './ToyboxConsole.svelte'");
   });
 
-  it('each host mounts it with its OWN layout, and only those two exist', () => {
-    expect(cardCode).toMatch(/<ToyboxConsole[^>]*layout="card"/s);
+  it('the host mounts it with its OWN layout, out of the console-declared set', () => {
     expect(bodyCode).toMatch(/<ToyboxConsole[^>]*layout="face"/s);
-    expect(consoleCode).toContain("type ToyboxConsoleLayout = 'card' | 'face'");
-  });
-
-  it('the CARD owns NO control — every affordance moved, none was copied', () => {
-    // A representative control from each of the five zones. If any of these
-    // comes back into the card file, the console has been forked.
-    for (const marker of [
-      'toybox-canvas',
-      'toybox-preset-select',
-      'toybox-layer-tabs',
-      'toybox-kind-select',
-      'toybox-graph-svg',
-      'toybox-cv-rows',
-    ]) {
-      expect(cardCode, `${marker} is back in the card — the console has been forked`)
-        .not.toContain(marker);
-    }
-    // …and it calls no graph mutator of its own.
-    expect(cardCode).not.toContain('$lib/graph/toybox-');
+    expect(consoleCode).toMatch(/type ToyboxConsoleLayout = [^\n;]*'face'/);
   });
 
   it('the BODY owns NO control either — it is a host plus the SCREEN switch', () => {
@@ -216,35 +205,44 @@ describe('⚠ ONE CONSOLE, TWO MOUNTS — the no-drift property, pinned in both 
     expect(bodyCode).not.toContain('$lib/graph/toybox-');
   });
 
-  it('EVERY zone is a snippet rendered by BOTH layouts — a zone cannot be host-specific', () => {
+  it('EVERY zone is a snippet rendered by EVERY layout — a zone cannot be host-specific', () => {
     // The structural guarantee behind "capability parity". A zone rendered in
-    // one branch and not the other would be an affordance the promotion
+    // one layout branch and not another would be an affordance the promotion
     // deleted, and this is the leg that says so by name.
+    //
+    // ⚠ THE RENDER COUNT IS DERIVED FROM THE LAYOUT UNION, not typed as `2`.
+    // The literal used to mean "card and face"; deriving it means the leg keeps
+    // meaning "every layout the console declares" whichever arms the union has
+    // when the removal commit is done with it.
+    const layouts = /type ToyboxConsoleLayout = ([^\n;]*)/.exec(consoleCode)?.[1] ?? '';
+    const layoutCount = (layouts.match(/'/g) ?? []).length / 2;
+    expect(layoutCount, 'the console must declare at least one layout').toBeGreaterThan(0);
     const zones = ['screenZone', 'presetZone', 'layerZone', 'combineZone', 'cvZone'];
     for (const z of zones) {
       expect(consoleCode, `${z} is not defined as a snippet`).toContain(`{#snippet ${z}()}`);
       const renders = consoleCode.split(`{@render ${z}()}`).length - 1;
-      expect(renders, `${z} is rendered ${renders}×; it must be rendered by BOTH layouts`).toBe(2);
+      expect(
+        renders,
+        `${z} is rendered ${renders}×; it must be rendered by all ${layoutCount} layout(s)`,
+      ).toBe(layoutCount);
     }
   });
 
-  it('the CARD frame keeps only what is outside the console’s subtree', () => {
-    // Svelte scopes CSS per component, so a rule left behind whose element
-    // moved stops applying SILENTLY. These four are the only rules whose
-    // subject is the card's own frame.
-    expect(cardSource).toContain('.mod-card {');
-    expect(cardSource).toContain('.stripe {');
-    expect(cardSource).toContain(':global(.svelte-flow__node:hover) .mod-card');
-    // …and the pairs that would die if split are all on the console's side.
+  // ⚠ 'the CARD frame keeps only what is outside the console's subtree' STOOD
+  // HERE. Svelte scopes CSS per component, so a rule left behind whose element
+  // moved stops applying SILENTLY, and that leg read the card's four
+  // frame-scoped rules and denied the console's four. The card frame is gone,
+  // so only the positive half has a subject — kept below, because a rule that
+  // travelled the wrong way is still silent.
+  it('the rules whose subject lives in the console are ON the console', () => {
     for (const rule of [
       '.cable-hit:hover + .cable',
       '.graph-wrap {',
       '.input-picker .filename',
       '.preset-section .sync-hint',
     ]) {
-      expect(consoleSource, `${rule} was left behind in the card — its subject moved`).toContain(rule);
-      expect(cardCode, `${rule} is in the card, whose subtree no longer contains its subject`)
-        .not.toContain(rule);
+      expect(consoleSource, `${rule} is not on the component whose subtree holds its subject`)
+        .toContain(rule);
     }
   });
 });
