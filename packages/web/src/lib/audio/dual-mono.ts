@@ -68,8 +68,72 @@ export type DualMonoClass =
    * Two instances behind an up-mix + `ChannelSplitter(2)`, recombined by a
    * `ChannelMerger(2)`. The DSP genuinely collapses a stereo stream to one
    * channel today, so duplicating it is the only way to keep both.
+   *
+   * ⚠ THIS CLASS ASSUMES THE DSP IS A DETERMINISTIC FUNCTION OF
+   * (input, params). That is what makes "two instances fed one mono signal"
+   * equal to "that signal on two channels". A DSP carrying its own entropy
+   * belongs in 'mono-fanout' instead — see the measurement there.
    */
   | 'dual-mono'
+  /**
+   * ⚠ DECLARES DUAL-MONO, BUT IS ACTUALLY MONO. ONE instance, its audio input
+   * DOWN-MIXED to (L+R)/2, and its single output FANNED to BOTH inputs of the
+   * `ChannelMerger`. The module still emits a 2-channel stream at the same
+   * per-channel level, so nothing downstream moves — but the two channels are
+   * now the SAME SIGNAL BY CONSTRUCTION rather than by hope.
+   *
+   * ⚠⚠ DO NOT "SIMPLIFY" A MEMBER BACK TO 'dual-mono'. This class exists
+   * because dual-mono rests on a premise that is FALSE for these modules:
+   *
+   *     dual-mono's premise — the DSP is a deterministic function of
+   *     (input, params), so two instances fed one mono signal ARE that signal
+   *     on two channels.
+   *
+   * A DSP that carries its OWN ENTROPY breaks that premise, and it breaks it in
+   * the way this repo keeps getting bitten by: INVISIBLY ON A SCOPE, LOUDLY ON
+   * EVERY METER. An `AnalyserNode` mono-down-mixes its input, and every level
+   * surface in the app is a bare analyser tap — the faceplate `live-audio`
+   * glyph and the legacy card's `createLevelTap` VuMeter both. Two
+   * same-amplitude sines with an arbitrary relative phase Δφ down-mix to
+   * A·|cos(Δφ/2)|: a fresh draw on every spawn, not a measurement.
+   *
+   * MEASURED — moog904a self-oscillating (regeneration 1, range 2, cutoff 800),
+   * 25 spawns rendered through THIS seam with the SHIPPING worklet
+   * (art/scenarios/stereo-dual-mono/dual-mono-signal.test.ts, which re-measures
+   * it on every ART lane rather than trusting this comment):
+   *
+   *     single leg            1.0622   every spawn, bit stable
+   *     mono sum, built TWICE 0.0449 … 1.0592   (spread 1.0143)
+   *     mono sum, built ONCE  1.0622   every spawn (spread 7.2e-7)
+   *
+   * The residual 7e-7 is the DSP's OWN spawn-to-spawn jitter — the dither is
+   * still `Math.random()` inside the one instance — and no graph change removes
+   * it. What IS exact is that L and R are the same samples.
+   *
+   * So ~30 % of spawns painted the meter at under half the true level while the
+   * module was audibly ringing, and ~0.3 % read as near-silence — which is also
+   * what parked `EXEMPT_OUTPUT_EMIT['moog904a.audio']` until this landed.
+   * Owner ruling 2026-09-04, option (a): build it once and fan it.
+   *
+   * ⚠ THE COST, STATED RATHER THAN BURIED: a genuinely stereo signal patched
+   * into one of these is COLLAPSED to its down-mix, where 'dual-mono' would
+   * have filtered L and R separately. That is the deliberate trade — it is what
+   * the real hardware mono unit does, and the thing it replaces was not a
+   * stereo image either, it was two DECORRELATED channels. The cheaper-looking
+   * alternative (share one dither stream between two instances) was ruled out:
+   * it edits the DSP, and a DSP edit on this path costs an ART re-pin.
+   *
+   * ⚠ MEMBERSHIP IS A PROPERTY OF THE DSP, NOT A PREFERENCE. A module belongs
+   * here only if its DSP carries a random source. Swept 2026-09-04 across
+   * `packages/dsp/src/**` for `Math.random` / `getRandomValues`: of the seven
+   * modules classed 'dual-mono', ONLY moog904a has one (destroy / filter /
+   * reverb are Faust with no noise primitive; moog904b / moog904c / moog905 and
+   * moog904a's own shared libs — moog-ladder-dsp, wavetable-osc — are clean).
+   * The other DSP files that DO carry entropy back modules outside this
+   * population entirely, where building twice never happens. If you are adding
+   * a member here, re-run that sweep first.
+   */
+  | 'mono-fanout'
   /**
    * UNTOUCHED, because the module's audio path is built from native Web Audio
    * nodes (Gain / Delay / Biquad), which are per-channel by construction: a
@@ -145,11 +209,6 @@ export const DUAL_MONO_LEDGER: ReadonlyMap<string, DualMonoEntry> = new Map<stri
       + 'cross-feedback; genuine stereo DSP for reverb/delay is the deferred '
       + 'option C in plan §0b, per-module and with owner ears.',
   }],
-  ['moog904a', {
-    cls: 'dual-mono',
-    why: 'AudioWorkletNode declared `outputChannelCount: [1]` — the ladder DSP emits '
-      + 'exactly one channel however many arrive.',
-  }],
   ['moog904b', {
     cls: 'dual-mono',
     why: 'AudioWorkletNode declared `outputChannelCount: [1]`.',
@@ -161,6 +220,24 @@ export const DUAL_MONO_LEDGER: ReadonlyMap<string, DualMonoEntry> = new Map<stri
   ['moog905', {
     cls: 'dual-mono',
     why: 'AudioWorkletNode declared `outputChannelCount: [1]`.',
+  }],
+
+  // ── mono-fanout: declares dual-mono, but the DSP is NOT deterministic ─────
+  ['moog904a', {
+    cls: 'mono-fanout',
+    why: 'AudioWorkletNode declared `outputChannelCount: [1]`, so it reads as dual-mono '
+      + '— but the ladder bootstraps its self-oscillation from its OWN per-sample '
+      + '`Math.random()` thermal dither (moog904a.ts), the ONLY random source in the '
+      + 'one-audio-input population. Two instances therefore share a frequency and have '
+      + 'INDEPENDENT phase, and every meter in the app is an AnalyserNode, which '
+      + 'mono-down-mixes: A·|cos(Δφ/2)|, a fresh draw per spawn. Measured through this '
+      + 'seam on the shipping worklet at regen 1 / range 2 / cutoff 800, 25 spawns — '
+      + 'single leg 1.0622 bit-stable; built TWICE the mono sum ranged 0.0449…1.0592, '
+      + 'built ONCE it is 1.0622 ± 7e-7 every spawn. Built once and fanned per the ruling '
+      + 'of 2026-09-04 (option a): Δφ = 0 by construction, the meter reads the true '
+      + 'level, and the module behaves like the real hardware mono 904A. ⚠ Do NOT '
+      + 'reclassify to `dual-mono` to "restore stereo" — that restores DECORRELATION, '
+      + 'not an image; and do NOT touch the dither, which costs an ART re-pin.',
   }],
 
   // ── native-stereo: already channel-transparent, at 1× cost ────────────────
@@ -366,7 +443,8 @@ export function auditDualMonoLedger(defs: readonly DualMonoDefLike[]): LedgerAud
 
   const shapeMismatch: ShapeMismatch[] = [];
   const byClass = {
-    'dual-mono': [], 'native-stereo': [], sum: [], deferred: [], 'video-domain': [],
+    'dual-mono': [], 'mono-fanout': [], 'native-stereo': [], sum: [], deferred: [],
+    'video-domain': [],
   } as Record<DualMonoClass, string[]>;
 
   for (const type of population) {
@@ -404,13 +482,30 @@ export function auditDualMonoLedger(defs: readonly DualMonoDefLike[]): LedgerAud
             + "so \"which instance wins\" is undefined; classify 'sum' or 'deferred'" });
       }
     }
-    if (entry.cls === 'sum') {
+    // 'mono-fanout' carries BOTH shape obligations, because it is both halves:
+    // the OUTPUT side still goes through a ChannelMerger (so every output must
+    // be audio, exactly as for 'dual-mono'), and the INPUT side interposes the
+    // 'sum' down-mix (so the audio input must not resolve to an AudioParam).
+    if (entry.cls === 'mono-fanout') {
+      if (audioOuts.length === 0) {
+        shapeMismatch.push({ type, cls: entry.cls,
+          problem: 'no audio output — there is nothing to fan into a merger; the class '
+            + "would be the 'sum' down-mix wearing another name" });
+      }
+      if (outs.length !== audioOuts.length) {
+        const other = outs.filter((p) => p.type !== 'audio').map((p) => `${p.id}:${p.type}`);
+        shapeMismatch.push({ type, cls: entry.cls,
+          problem: `non-audio output(s) ${other.join(', ')} — a ChannelMerger carries audio, `
+            + "so these would be dropped from the handle; classify 'sum' or 'deferred'" });
+      }
+    }
+    if (entry.cls === 'sum' || entry.cls === 'mono-fanout') {
       const summable = audioPorts(def.inputs).filter((p) => !p.paramTarget);
       if (summable.length === 0) {
         shapeMismatch.push({ type, cls: entry.cls,
           problem: 'its one audio input declares a paramTarget, so the engine connects it '
             + 'to an AudioParam and the down-mix stage can never be interposed — the '
-            + "'sum' class would be a no-op label" });
+            + `'${entry.cls}' class would be a no-op label` });
       }
     }
   }
@@ -476,13 +571,37 @@ export const SCOPE = {
    * `read()` is single-instance and there is no defined answer for two. So a
    * 'dual-mono' handle is FORBIDDEN from declaring `read` / `write` /
    * `videoSources`, checked at materialization AND by a source grep in the
-   * gate. None of the seven declares one today; if one ever does, both go red
+   * gate. None of the six declares one today; if one ever does, both go red
    * and force a per-key decision instead of silently metering the left channel.
    * (`setParam` / `scheduleParam` / `readParam` are well defined and DO fan
    * out — the two instances are param-identical by construction.)
+   *
+   * ⚠ THE BAN IS SCOPED TO 'dual-mono' AND MUST STAY THAT WAY. 'mono-fanout'
+   * builds ONE instance, so `read` has exactly one defined answer and passes
+   * straight through the handle — the same reason 'sum' and 'native-stereo' are
+   * unrestricted. Widening the ban to every wrapped class would forbid a key
+   * that is well defined.
    */
   readPolicy: 'dual-mono handles may not declare read/write/videoSources',
-  classes: ['dual-mono', 'native-stereo', 'sum', 'deferred', 'video-domain'] as const,
+  /**
+   * ⚠ 'mono-fanout' KEEPS THE LEGS, AND THE REASON IS LEVEL, NOT WIDTH. It has
+   * one instance, so it has no stereo image to protect — but leg placement is
+   * also what stops Web Audio SUMMING the two cables a stereo→mono patch
+   * writes. Without legs the DSP would receive L+R instead of (L+R)/2: up to
+   * 6 dB hot into DSP that is nonlinear by design. So the two cables land on
+   * separate legs, become a real 2-channel stream, and ONE down-mix averages
+   * them — the same answer every other mono path in the app gives.
+   *
+   * ⚠ It was built without legs first, on the reasoning that one instance has
+   * nothing to side. That is true and it is the wrong conclusion; the note
+   * stays so the next person does not re-derive it and re-introduce the
+   * doubling.
+   */
+  monoFanoutLegs: 'mono-fanout KEEPS leg inputs — not for width (there is one '
+    + 'instance) but so a stereo source\'s two cables AVERAGE instead of summing 6 dB hot',
+  classes: [
+    'dual-mono', 'mono-fanout', 'native-stereo', 'sum', 'deferred', 'video-domain',
+  ] as const,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -581,8 +700,118 @@ export async function materializeAudioHandle(
   const cls = dualMonoClassOf(String(def.type));
   const factory = def.factory as AudioModuleFactory;
   if (cls === 'dual-mono') return buildDualMono(ctx, def, node, factory);
+  if (cls === 'mono-fanout') return buildMonoFanout(ctx, def, node, factory);
   if (cls === 'sum') return buildSummedInputs(ctx, def, node, factory);
   return factory(ctx, node);
+}
+
+/** Everything `buildStereoInputFrontEnd` hands back. */
+interface StereoInputFrontEnd {
+  /** The 2-CHANNEL node carrying whatever arrived, however it arrived. */
+  tail: AudioNode;
+  /** What the engine's default `inputs` entry points at — the mono bus. */
+  mono: AudioInputRef;
+  /** The sided entries + the normals, for `LEG_INPUTS`. */
+  legs: DualMonoLegInputs;
+}
+
+/**
+ * THE INPUT FRONT-END, shared by 'dual-mono' and 'mono-fanout'.
+ *
+ * TWO ways a stereo signal can arrive, and they need different plumbing:
+ *
+ *   (1) as a 2-CHANNEL STREAM on one cable — what a dual-mono module emits,
+ *       so this is what CHAINS. Goes to `monoBus`, and `upmix` makes it 2ch
+ *       (duplicating a 1-channel mono patch, passing 2 channels through).
+ *   (2) as TWO SEPARATE CABLES from a stereo source's out_l/out_r — what the
+ *       PR-3 commit planner writes. Web Audio SUMS two connections to one
+ *       input, so these must land on DIFFERENT nodes. For 'dual-mono' that is
+ *       because the stereo image would otherwise die at the first mono module;
+ *       for 'mono-fanout' the image is going away regardless, but the LEVEL
+ *       still must not double — a summed L+R hits a tanh ladder 6 dB hot,
+ *       where (L+R)/2 is the down-mix every other mono path in the app applies.
+ *       `AudioEngine.addEdge` places them via `legInputsFor`.
+ *
+ * Both paths sum into `stereoSum`, which is 2-channel by then either way.
+ *
+ *       legL ──────────────────► legMerger.0 ──┐
+ *         └──normalLR(gain)────► legMerger.1   │
+ *       legR ──────────────────► legMerger.1   ├─► stereoSum ─► (the consumer)
+ *         └──normalRL(gain)────► legMerger.0   │
+ *       monoBus ─► upmix ──────────────────────┘
+ *
+ * ⚠ NODE CREATION ORDER IS LOAD-BEARING FOR THE TOPOLOGY TEST, which recovers
+ * the two normals by tag (`gain4` / `gain5`). Adding a gain above them moves
+ * what those assertions read; the test would still pass while checking the
+ * wrong node. Append, do not insert.
+ */
+function buildStereoInputFrontEnd(
+  ctx: AudioContext,
+  scaffold: Scaffold,
+): StereoInputFrontEnd {
+  const monoBus = ctx.createGain();
+  const upmix = ctx.createGain();
+  // ⚠⚠ THE MONO-PATCH GUARD. 'speakers' DUPLICATES a 1-channel stream to both
+  // channels; 'discrete' (the ChannelSplitter default, and what we would get by
+  // omitting this stage) ZERO-FILLS channel 1 and makes every mono patch
+  // left-only. Do not "simplify" this away. See the header.
+  upmix.channelCount = 2;
+  upmix.channelCountMode = 'explicit';
+  upmix.channelInterpretation = 'speakers';
+
+  // ⚠ A ChannelMerger has the SAME zero-fill hazard in a different costume: an
+  // unconnected merger input renders as silence, so a lone leg would give
+  // signal-on-L / silence-on-R exactly like a discrete up-mix. These two gains
+  // are the MONO NORMAL that closes it — the Web Audio spelling of the
+  // `inputs[1]?.[0] ?? inputs[0]?.[0]` fallback the DSP layer already uses
+  // (see mono-normal-scan.ts). Each is OPEN (1) by default and closed by the
+  // engine only once the opposite leg genuinely exists, so the failure
+  // direction is duplication, never silence.
+  const legL = ctx.createGain();
+  const legR = ctx.createGain();
+  const legMerger = ctx.createChannelMerger(2);
+  const normalLR = ctx.createGain();
+  const normalRL = ctx.createGain();
+  normalLR.gain.value = 1;
+  normalRL.gain.value = 1;
+  legL.connect(legMerger, 0, 0);
+  legR.connect(legMerger, 0, 1);
+  legL.connect(normalLR);
+  normalLR.connect(legMerger, 0, 1);
+  legR.connect(normalRL);
+  normalRL.connect(legMerger, 0, 0);
+
+  const stereoSum = ctx.createGain();
+  stereoSum.channelCount = 2;
+  stereoSum.channelCountMode = 'explicit';
+  stereoSum.channelInterpretation = 'speakers';
+
+  monoBus.connect(upmix);
+  upmix.connect(stereoSum);
+  legMerger.connect(stereoSum);
+  scaffold.nodes.push(
+    monoBus, upmix, legL, legR, legMerger, normalLR, normalRL, stereoSum,
+  );
+
+  let leftLegs = 0;
+  let rightLegs = 0;
+  return {
+    tail: stereoSum,
+    mono: { node: monoBus, input: 0 },
+    legs: {
+      mono: { node: monoBus, input: 0 },
+      left: { node: legL, input: 0 },
+      right: { node: legR, input: 0 },
+      noteLeg(side, delta) {
+        if (side === 'left') leftLegs = Math.max(0, leftLegs + delta);
+        else rightLegs = Math.max(0, rightLegs + delta);
+        // Open the normal only while the opposite side is genuinely absent.
+        normalLR.gain.value = rightLegs === 0 ? 1 : 0;
+        normalRL.gain.value = leftLegs === 0 ? 1 : 0;
+      },
+      counts: () => ({ left: leftLegs, right: rightLegs }),
+    },
+  };
 }
 
 /**
@@ -640,92 +869,18 @@ async function buildDualMono(
     );
   }
 
-  // TWO ways a stereo signal can arrive, and they need different plumbing:
-  //
-  //   (1) as a 2-CHANNEL STREAM on one cable — what a dual-mono module emits,
-  //       so this is what CHAINS. Goes to `monoBus`, and `upmix` makes it 2ch
-  //       (duplicating a 1-channel mono patch, passing 2 channels through).
-  //   (2) as TWO SEPARATE CABLES from a stereo source's out_l/out_r — what the
-  //       PR-3 commit planner writes. Web Audio SUMS two connections to one
-  //       input, so these must land on DIFFERENT nodes or the stereo is
-  //       destroyed at the first mono module, which is the whole point of
-  //       dual-mono. `AudioEngine.addEdge` places them via `legInputsFor`.
-  //
-  // Both paths sum into `stereoSum`, which is 2-channel by then either way.
-  //
-  //       legL ──────────────────► legMerger.0 ──┐
-  //         └──normalLR(gain)────► legMerger.1   │
-  //       legR ──────────────────► legMerger.1   ├─► stereoSum ─► splitter
-  //         └──normalRL(gain)────► legMerger.0   │        ch0 → A ─► merger.0
-  //       monoBus ─► upmix ──────────────────────┘        ch1 → B ─► merger.1
-  const monoBus = ctx.createGain();
-  const upmix = ctx.createGain();
-  // ⚠⚠ THE MONO-PATCH GUARD. 'speakers' DUPLICATES a 1-channel stream to both
-  // channels; 'discrete' (the ChannelSplitter default, and what we would get by
-  // omitting this stage) ZERO-FILLS channel 1 and makes every mono patch
-  // left-only. Do not "simplify" this away. See the header.
-  upmix.channelCount = 2;
-  upmix.channelCountMode = 'explicit';
-  upmix.channelInterpretation = 'speakers';
-
-  // ⚠ A ChannelMerger has the SAME zero-fill hazard in a different costume: an
-  // unconnected merger input renders as silence, so a lone leg would give
-  // signal-on-L / silence-on-R exactly like a discrete up-mix. These two gains
-  // are the MONO NORMAL that closes it — the Web Audio spelling of the
-  // `inputs[1]?.[0] ?? inputs[0]?.[0]` fallback the DSP layer already uses
-  // (see mono-normal-scan.ts). Each is OPEN (1) by default and closed by the
-  // engine only once the opposite leg genuinely exists, so the failure
-  // direction is duplication, never silence.
-  const legL = ctx.createGain();
-  const legR = ctx.createGain();
-  const legMerger = ctx.createChannelMerger(2);
-  const normalLR = ctx.createGain();
-  const normalRL = ctx.createGain();
-  normalLR.gain.value = 1;
-  normalRL.gain.value = 1;
-  legL.connect(legMerger, 0, 0);
-  legR.connect(legMerger, 0, 1);
-  legL.connect(normalLR);
-  normalLR.connect(legMerger, 0, 1);
-  legR.connect(normalRL);
-  normalRL.connect(legMerger, 0, 0);
-
-  const stereoSum = ctx.createGain();
-  stereoSum.channelCount = 2;
-  stereoSum.channelCountMode = 'explicit';
-  stereoSum.channelInterpretation = 'speakers';
-
+  const front = buildStereoInputFrontEnd(ctx, scaffold);
   const splitter = ctx.createChannelSplitter(2);
-  monoBus.connect(upmix);
-  upmix.connect(stereoSum);
-  legMerger.connect(stereoSum);
-  stereoSum.connect(splitter);
+  front.tail.connect(splitter);
   splitter.connect(aAudio.node, 0, aAudio.input);
   splitter.connect(bAudio.node, 1, bAudio.input);
-  scaffold.nodes.push(
-    monoBus, upmix, legL, legR, legMerger, normalLR, normalRL, stereoSum, splitter,
-  );
+  scaffold.nodes.push(splitter);
 
   // The DEFAULT entry is the MONO bus. Every caller that does not know about
   // legs — the cross-domain bridges, `getInputNode`, any future consumer — gets
   // byte-identical behaviour to before leg placement existed.
-  inputs.set(audioInId, { node: monoBus, input: 0 });
-
-  let leftLegs = 0;
-  let rightLegs = 0;
-  const legs: DualMonoLegInputs = {
-    mono: { node: monoBus, input: 0 },
-    left: { node: legL, input: 0 },
-    right: { node: legR, input: 0 },
-    noteLeg(side, delta) {
-      if (side === 'left') leftLegs = Math.max(0, leftLegs + delta);
-      else rightLegs = Math.max(0, rightLegs + delta);
-      // Open the normal only while the opposite side is genuinely absent.
-      normalLR.gain.value = rightLegs === 0 ? 1 : 0;
-      normalRL.gain.value = leftLegs === 0 ? 1 : 0;
-    },
-    counts: () => ({ left: leftLegs, right: rightLegs }),
-  };
+  inputs.set(audioInId, front.mono);
+  const legs = front.legs;
 
   // ---- every other input: fan to both --------------------------------------
   for (const port of def.inputs) {
@@ -795,6 +950,109 @@ async function buildDualMono(
     },
   };
   LEG_INPUTS.set(handle, new Map([[audioInId, legs]]));
+  return handle;
+}
+
+/**
+ * ONE instance, DOWN-MIXED in and FANNED out — the 'mono-fanout' class.
+ *
+ *   the SHARED front-end ─► down(1ch, EXPLICIT, SPEAKERS) ─► the ONE instance
+ *                                                                  │
+ *                                                    merger.0 ◄─────┤
+ *                                                    merger.1 ◄─────┘
+ *
+ * Read the 'mono-fanout' doc-comment on `DualMonoClass` before changing
+ * anything here; the measurement that forced this shape is written down there.
+ * The short version: these modules' DSP carries its OWN entropy, so building it
+ * twice does not give two copies of one signal — it gives two DIFFERENT signals
+ * at the same frequency, and every meter in the app (an `AnalyserNode`, which
+ * mono-down-mixes) then reads A·|cos(Δφ/2)| for an arbitrary Δφ.
+ *
+ * ⚠ IT KEEPS THE FULL LEG FRONT-END EVEN THOUGH IT HAS ONE INSTANCE, and that
+ * is a LEVEL decision, not a stereo one. A stereo source patched here is
+ * collapsed either way — but the commit planner writes a stereo→mono patch as
+ * TWO CABLES, and Web Audio SUMS two connections to one input. Landing both on
+ * a bare down-mix would feed the DSP L+R instead of (L+R)/2, i.e. up to 6 dB
+ * hot into a tanh ladder that distorts when driven. Through the front-end the
+ * two cables land on separate legs, become a real 2-channel stream, and the
+ * down-mix then averages them like every other mono path in the app. A single
+ * mono cable is untouched: `upmix` duplicates it and the down-mix averages the
+ * duplicate back to itself.
+ *
+ * ⚠ THE FAN IS THE POINT, AND IT IS NOT DECORATION. Emitting the instance's
+ * single output directly would ALSO make L == R once something downstream
+ * up-mixed it — but only once something did. Going through the merger keeps the
+ * port a 2-channel stream with the SAME per-channel level 'dual-mono' produced,
+ * so the class changes WHICH SIGNAL each channel carries and nothing else. Do
+ * not "simplify" it to a bare passthrough: that hands the next module a
+ * 1-channel stream where the ledger's chaining case promises 2.
+ */
+async function buildMonoFanout(
+  ctx: AudioContext,
+  def: AudioModuleDef,
+  node: ModuleNode,
+  factory: AudioModuleFactory,
+): Promise<AudioDomainNodeHandle> {
+  const audioIns = audioPorts(def.inputs);
+  if (audioIns.length !== 1) {
+    throw new Error(
+      `mono-fanout ${def.type}: expected exactly 1 audio input, found ${audioIns.length} `
+      + `(${audioIns.map((p) => p.id).join(', ')}). The ledger and the def disagree.`,
+    );
+  }
+  const audioInId = audioIns[0]!.id;
+
+  const inner = await factory(ctx, node);
+  const innerAudio = inner.inputs.get(audioInId);
+  if (!innerAudio) {
+    inner.dispose();
+    throw new Error(`mono-fanout ${def.type}: handle has no input '${audioInId}'`);
+  }
+  if (innerAudio.param) {
+    inner.dispose();
+    throw new Error(
+      `mono-fanout ${def.type}: audio input '${audioInId}' resolves to an AudioParam, which `
+      + 'cannot have the down-mix interposed in front of it. Reclassify.',
+    );
+  }
+
+  const scaffold: Scaffold = { nodes: [], sources: [] };
+  const inputs = new Map(inner.inputs);
+
+  // ---- the audio input: the shared front-end, then the down-mix -------------
+  const front = buildStereoInputFrontEnd(ctx, scaffold);
+  const down = ctx.createGain();
+  down.channelCount = 1;
+  down.channelCountMode = 'explicit';
+  down.channelInterpretation = 'speakers';
+  front.tail.connect(down);
+  down.connect(innerAudio.node, 0, innerAudio.input);
+  scaffold.nodes.push(down);
+  inputs.set(audioInId, front.mono);
+
+  // Every OTHER input is left exactly as the factory returned it — there is one
+  // instance, so there is nothing to fan and no CV re-emitter to build.
+
+  // ---- outputs: ONE source, BOTH merger inputs ------------------------------
+  // Δφ = 0 by construction: the two channels are literally the same node.
+  const outputs = new Map(inner.outputs);
+  for (const port of def.outputs ?? []) {
+    const out = inner.outputs.get(port.id);
+    if (!out) continue;
+    const merger = ctx.createChannelMerger(2);
+    out.node.connect(merger, out.output, 0);
+    out.node.connect(merger, out.output, 1);
+    scaffold.nodes.push(merger);
+    outputs.set(port.id, { node: merger, output: 0 });
+  }
+
+  const handle: AudioDomainNodeHandle = {
+    ...inner,
+    inputs,
+    outputs,
+    dispose() { teardown(scaffold); inner.dispose(); },
+  };
+  LEG_INPUTS.set(handle, new Map([[audioInId, front.legs]]));
   return handle;
 }
 

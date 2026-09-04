@@ -61,7 +61,32 @@
 // bottom is the real singleton the cards use through createPresent.
 
 import { startPresent, type PresentSession, type StartPresentArgs } from './present-window';
+import { presentSlotKey } from './present-bindings';
 import type { ScreenRect } from './use-fullscreen.svelte';
+
+/**
+ * The advisory for a projector that was REFUSED because its display could not
+ * be resolved.
+ *
+ * ⚠ THE ALTERNATIVE IS THE BUG. `computePopupFeatures(null)` falls back to a
+ * 1280×720 window at (100,100) — which is the operator's PRIMARY display. So a
+ * performer whose projector is unplugged, whose display id has changed under
+ * them, or whose browser reports a screen without `availWidth`, used to get
+ * their OWN LAPTOP SCREEN filled with the output, silently, mid-set. Nothing
+ * about that is recoverable in the moment and nothing about it was announced.
+ *
+ * Refusing is the correct half. Saying so is the other half, and the console is
+ * where this failure class is actually debugged from — the projector's own
+ * devtools are impractical on a second display, exactly as
+ * `automaticFullscreenBlockedAdvisory` already argues.
+ */
+export function displayUnresolvedAdvisory(nodeId: string, screenId: string): string {
+  return (
+    `Present refused for "${nodeId}": the display it asked for (${screenId}) could not be ` +
+    'resolved, so no projector was opened. It was NOT moved to your primary display — ' +
+    'reconnect the monitor (or pick the display again from the output menu) and present again.'
+  );
+}
 
 /** The slice of VideoEngine a projector needs: render one node into the shared
  *  drawing buffer, read that buffer, and pin the node as a pull root. */
@@ -77,7 +102,11 @@ export interface OpenPresentArgs {
    *  card — unlike the card's own context handle. */
   engine: PresentEngine;
   /** Working-area rect of the target display (the card's fullscreen controller
-   *  resolves it); null falls back to a default-sized popup. */
+   *  resolves it).
+   *
+   *  ⚠ NULL IS A REFUSAL, NOT A DEFAULT. Every call here names a display, so an
+   *  unresolvable rect means that display is gone — and the popup default lands
+   *  on the operator's PRIMARY screen. See `openOne`. */
   rect: ScreenRect | null;
 }
 
@@ -110,6 +139,10 @@ export interface NodePresentRegistry {
   sweep(liveNodeIds: Iterable<string>): void;
   /** Close everything (page teardown / tests). */
   disposeAll(): void;
+  /** How many opens were REFUSED because the named display was unresolvable —
+   *  the "we declined to move it to your primary screen" count, distinct from
+   *  a popup-blocker refusal. */
+  refusedPlacements(): number;
 }
 
 interface NodeEntry {
@@ -142,6 +175,10 @@ export function createNodePresentRegistry(
   // round trip this registry exists to survive.
   let version = $state(0);
   let poll: unknown = null;
+  // Projectors refused because their display could not be resolved. Counted so
+  // a caller (and a test) can tell "the popup blocker ate it" from "we declined
+  // to put it on the wrong monitor" — both return false from `present()`.
+  let refusals = 0;
 
   /** Prune sessions whose popup the user closed via the OS window button, and
    *  drop the lease of any node left with none. */
@@ -185,6 +222,20 @@ export function createNodePresentRegistry(
 
   /** Open (or replace) one display's popup. Returns true if a popup opened. */
   function openOne(nodeId: string, screenId: string, engine: PresentEngine, rect: ScreenRect | null): boolean {
+    // ⚠ PLACEMENT REFUSAL — BEFORE anything is torn down or created.
+    //
+    // Every call into this registry NAMES a display. A null rect therefore does
+    // not mean "no preference", it means "the display you named is not
+    // resolvable" — and `startPresent`'s null-rect fallback puts the window at
+    // (100,100) on the PRIMARY screen. A performer who loses a projector must be
+    // told, never quietly shown their laptop. Refuse, say why, leave the
+    // existing session (if any) running: a stale picture the operator can still
+    // see beats a live one on the wrong monitor plus nothing on the right one.
+    if (!rect) {
+      refusals++;
+      console.warn('[present]', displayUnresolvedAdvisory(nodeId, screenId));
+      return false;
+    }
     const entry = entryFor(nodeId, engine);
     const existing = entry.sessions.get(screenId);
     if (existing) {
@@ -192,6 +243,9 @@ export function createNodePresentRegistry(
       entry.sessions.delete(screenId);
     }
     const session = start({
+      // The sink's identity, so a native shell's window-open handler can tell
+      // this projector from any other /present window. Opaque here by design.
+      slot: presentSlotKey(nodeId, screenId),
       // THE SOURCE IS THE ENGINE, NOT A CARD ELEMENT. `prepare` renders THIS
       // node's output into the shared drawing buffer immediately before the
       // read, which is what makes N simultaneous projectors on N different
@@ -308,6 +362,9 @@ export function createNodePresentRegistry(
     },
     disposeAll() {
       for (const nodeId of [...nodes.keys()]) stop(nodeId);
+    },
+    refusedPlacements() {
+      return refusals;
     },
   };
 }

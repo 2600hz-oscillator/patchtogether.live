@@ -766,7 +766,13 @@ export const SKIP_BUDGET = [
       'scope-tuner.spec.ts',
       'score.spec.ts',
       'shapegen-clock.spec.ts',
-      'stereo-mono-normal.spec.ts',
+      // stereo-mono-normal.spec.ts LEFT THIS GROUP 2026-09-04 — its only parked
+      // row (charlottesEchos) was un-parked on a real root cause: `installProbe`
+      // read `getOutputNode` the frame after `spawnPatch`, and a WORKLET-backed
+      // module's node does not exist until `addModule` settles, so the probe
+      // threw on null and printed as a broken module. Corroborated by the seam
+      // reaching a SECOND worklet SUT (`vstFx`, run 33903601247) on a PR whose
+      // diff never touched packages/web. The probe now waits for both ports.
       'voice-pitch-accuracy.spec.ts',
     ],
     reason: /FLAKE-PARK #1847/,

@@ -1038,21 +1038,26 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // it would be silent at the default regeneration=0 and would need an
   // upstream source like any other filter.
   //
-  // ⚠ THIS NO LONGER FEEDS AN EMIT ASSERTION. `moog904a.audio` is PARKED in
-  // EXEMPT_OUTPUT_EMIT: the engine's dual-mono wrapper builds this ladder
-  // TWICE and each instance seeds its oscillation from its own Math.random()
-  // dither, so the SCOPE analyser's mono down-mix reads the sum of two
-  // independently-phased sines and the level is a fresh draw each spawn
-  // (0.0246 … 1.0521 over 25 measured spawns). That is an open PRODUCT
-  // question, not a driver bug — read the park entry before changing anything
-  // here. In particular, DO NOT add an upstream noise source to "fix" it: a
-  // common mono input makes the response common-mode, and the assertion then
-  // passes with the resonance dead (regeneration=0 measures 0.29, 58× the
-  // floor), i.e. it would stop asserting self-oscillation at all. The params
-  // stay because the input-drive dimension still uses them.
+  // ⚠ THIS DRIVER FED A COIN FLIP UNTIL 2026-09-04, and the history stays
+  // because the obvious repair is the wrong one. The engine's dual-mono wrapper
+  // used to build this ladder TWICE, and each instance seeded its oscillation
+  // from its own Math.random() dither — so the SCOPE analyser's mono down-mix
+  // read the sum of two independently-phased sines and the level was a fresh
+  // draw each spawn (0.0449 … 1.0592 over 25 measured spawns, against a
+  // bit-stable single-channel 1.0622). `moog904a.audio` was PARKED in
+  // EXEMPT_OUTPUT_EMIT against that. The owner's fix landed in the ENGINE — the
+  // module is now `cls: 'mono-fanout'`, built ONCE and fanned to both merger
+  // inputs — so the port is un-parked and these params carry a live emit
+  // assertion again (re-measured 1.0622 ± 7e-7, 212× the floor, every spawn).
+  //
+  // ⚠ DO NOT add an upstream noise source here if it ever flakes again. A
+  // common mono input makes the response common-mode, so it survives the
+  // down-mix at full amplitude and the assertion then passes with the resonance
+  // completely dead (regeneration=0 measures 0.29, 58× the floor) — i.e. it
+  // would stop asserting the self-oscillation it exists for.
   moog904a: {
     params: { regeneration: 1, range: 2, cutoff: 800 },
-    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates. The emit assertion on `audio` is PARKED (dual-mono phase lottery) — see EXEMPT_OUTPUT_EMIT',
+    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates. Un-parked 2026-09-04 by the mono-fanout fix; do NOT drive it from a noise source, which passes with the resonance dead',
   },
   // ───── LUSH GARDEN — a GENERATOR despite its optional video input ─────
   //
