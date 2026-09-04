@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
 import { planShards, median, loadTimings, loadContention } from './e2e-shard-plan.mjs';
 // @ts-expect-error — plain .mjs with JSDoc types, no declaration file
-import { scanContention, MEDIA_MARKERS } from './e2e-contention-scan.mjs';
+import { scanContention, MEDIA_MARKERS, AUDIO_MARKERS } from './e2e-contention-scan.mjs';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,32 +86,48 @@ describe('contention classes are SPREAD, not packed', () => {
     expect(contention['camera-input.spec.ts']).toBe('media');
   });
 
-  it('no shard gets a disproportionate share of one class', () => {
+  it('the audio class is derived and non-empty (not vacuous)', () => {
+    // Anchored to NAMES: the two recovered audible-RMS flakes the class was
+    // added for. Their assertion depends on a REAL-TIME render window reading
+    // non-silence, and co-scheduled audio graphs starve each other into
+    // 0.0000 reads that no amount of cost balance prevents.
+    expect(contention['workflow-master-transport.spec.ts']).toBe('audio');
+    expect(contention['snh-hold.spec.ts']).toBe('audio');
+  });
+
+  it('no shard gets a disproportionate share of ANY class', () => {
     // WHY THIS EXISTS: cost balancing implicitly assumes specs are INDEPENDENT.
     // They are not. LPT packs expensive specs together precisely BECAUSE they
     // are expensive, which put camera-input on a shard with five other media
     // specs and failed it 3/3 (`{present: true, tracks: []}` — the element
     // outliving its stream under concurrent decode). Cost spread was perfect
     // and the lane was still red, so this property cannot be expressed as cost.
+    // The audio class rides the same guarantee: an audible-RMS window sampled
+    // beside three other live audio graphs reads silence for reasons that are
+    // not the spec's.
     const { groups } = planShards(files, timings, SHARDS, contention);
-    const perShard = groups.map(
-      (g: string[]) => g.filter((f) => contention[f] === 'media').length,
-    );
-    const total = files.filter((f) => contention[f] === 'media').length;
-    // EXACTLY the round-robin ideal, with no slack. Measured: pure LPT gives
-    // [0,3,3,2,3,2,4,4,0,1] — max 4, and two shards get NONE — while spreading
-    // gives [3,3,2,2,2,2,2,2,2,2]. A `+1` of slack here would admit the LPT
-    // arrangement and this guard would not discriminate; I wrote it that way
-    // first and the negative control caught it.
-    const ceiling = Math.ceil(total / SHARDS);
-    expect(
-      Math.max(...perShard),
-      `media specs per shard ${JSON.stringify(perShard)} — packing them re-creates the contention that reddened a required lane`,
-    ).toBeLessThanOrEqual(ceiling);
-    // And no shard may be starved of the class while another carries a pile:
-    // pure LPT left two shards with ZERO, which is the same imbalance seen from
-    // the other side.
-    expect(Math.max(...perShard) - Math.min(...perShard)).toBeLessThanOrEqual(1);
+    const classes = [...new Set(Object.values(contention))].sort();
+    expect(classes).toEqual(['audio', 'media']); // derived, and both present
+    for (const cls of classes) {
+      const perShard = groups.map(
+        (g: string[]) => g.filter((f) => contention[f] === cls).length,
+      );
+      const total = files.filter((f) => contention[f] === cls).length;
+      // EXACTLY the round-robin ideal, with no slack. Measured: pure LPT gives
+      // [0,3,3,2,3,2,4,4,0,1] — max 4, and two shards get NONE — while spreading
+      // gives [3,3,2,2,2,2,2,2,2,2]. A `+1` of slack here would admit the LPT
+      // arrangement and this guard would not discriminate; I wrote it that way
+      // first and the negative control caught it.
+      const ceiling = Math.ceil(total / SHARDS);
+      expect(
+        Math.max(...perShard),
+        `'${cls}' specs per shard ${JSON.stringify(perShard)} — packing them re-creates the contention that reddened a required lane`,
+      ).toBeLessThanOrEqual(ceiling);
+      // And no shard may be starved of the class while another carries a pile:
+      // pure LPT left two shards with ZERO, which is the same imbalance seen from
+      // the other side.
+      expect(Math.max(...perShard) - Math.min(...perShard), `'${cls}' starvation bound`).toBeLessThanOrEqual(1);
+    }
   });
 
   it('spreading does not cost the balance it was added to protect', () => {
@@ -195,6 +211,24 @@ describe('contention is DERIVED AT PLAN TIME, never a committed snapshot (#1600)
     expect(map['live-glyphs.spec.ts']).toBe('media');
     // …and the spec whose median-scheduling failure produced this issue.
     expect(map['layers-survive-card-collapse.spec.ts']).toBe('media');
+    // The audio class's own war stories: the two recovered audible-RMS flakes
+    // (a master-transport RMS floor, a held-V/oct min-over-window) whose
+    // observation windows read silence under co-scheduled audio graphs.
+    expect(map['workflow-master-transport.spec.ts']).toBe('audio');
+    expect(map['snh-hold.spec.ts']).toBe('audio');
+  });
+
+  it("a spec matching BOTH classes is 'media' — precedence is deliberate, not last-writer", () => {
+    // Media's fake-capture-device fight is the class that reddened a required
+    // lane 3/3; reclassifying its members would reshuffle the spread that
+    // protects them, and the media round-robin already spreads their audio
+    // graphs as a side effect.
+    const map = scanContention();
+    for (const f of ['push2-clip-launch.spec.ts', 'workflow-media.spec.ts']) {
+      const src = readFileSync(join(SPEC_DIR, f), 'utf8');
+      if (!AUDIO_MARKERS.some((m: string) => src.includes(m))) continue; // marker drifted — precedence shown by the other file
+      expect(map[f], `${f} carries markers of BOTH classes and must stay 'media'`).toBe('media');
+    }
   });
 
   it('does NOT classify DOM-only specs — over-breadth displaces the cost packing', () => {
@@ -210,5 +244,12 @@ describe('contention is DERIVED AT PLAN TIME, never a committed snapshot (#1600)
     expect(MEDIA_MARKERS).toContain('getUserMedia');
     const src = readFileSync(join(SPEC_DIR, 'camera-input.spec.ts'), 'utf8');
     expect(MEDIA_MARKERS.some((m: string) => src.includes(m))).toBe(true);
+    // Same control for audio: the shared window-read helper IS the audible
+    // assertion seam, and both war-story specs must match the marker set.
+    expect(AUDIO_MARKERS).toContain('readScopePeakOverWindow');
+    for (const f of ['workflow-master-transport.spec.ts', 'snh-hold.spec.ts']) {
+      const s = readFileSync(join(SPEC_DIR, f), 'utf8');
+      expect(AUDIO_MARKERS.some((m: string) => s.includes(m)), `${f} matches AUDIO_MARKERS`).toBe(true);
+    }
   });
 });

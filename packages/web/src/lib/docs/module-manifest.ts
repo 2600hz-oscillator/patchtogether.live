@@ -1044,6 +1044,12 @@ function synthesizeFromBuildHelper(
       params.push({ id: `comp${ch}`, label: `${ch}Cm`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_send1`, label: `${ch}S1`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ch${ch}_send2`, label: `${ch}S2`, defaultValue: 0, min: 0, max: 1, curve: 'linear' });
+      // Clip recording: the per-channel ARM and its launcher-return MONITOR
+      // mode. ⚠ The MON default is 2 (clip-auto), NOT 0 — this manifest carries
+      // defaults, so getting it wrong would document a different module than
+      // the one that ships.
+      params.push({ id: `ch${ch}_rec`, label: `${ch}Rc`, defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+      params.push({ id: `ch${ch}_mon`, label: `${ch}Mn`, defaultValue: 2, min: 0, max: 2, curve: 'discrete' });
     }
     params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
     // Pre/post-fader select per SEND BUS, then the two RETURN strips. Mirrors
@@ -1054,6 +1060,9 @@ function synthesizeFromBuildHelper(
     // what failed when only the def side was edited.
     params.push({ id: 'send1Pre', label: 'S1Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
     params.push({ id: 'send2Pre', label: 'S2Pre', defaultValue: 0, min: 0, max: 1, curve: 'discrete' });
+    // The two BUS-SCOPED clip-record controls.
+    params.push({ id: 'recTap', label: 'Tap', defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    params.push({ id: 'recQuality', label: 'Qual', defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
     for (const r of [1, 2]) {
       params.push({ id: `ret${r}_volume`, label: `R${r}V`, defaultValue: 1, min: 0, max: 1, curve: 'linear' });
       params.push({ id: `ret${r}_low`, label: `R${r}Lo`, defaultValue: 0, min: -12, max: 12, curve: 'linear', units: 'dB' });
@@ -1307,14 +1316,20 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     }
   }
 
-  // clipplayer's outputs are computed (8 lanes × pitch/gate/vel) — the literal
-  // extractor sees none, so synthesize the 24 per-lane ports here.
+  // clipplayer's outputs are computed (8 lanes × pitch/gate/vel + the slice-5
+  // audio clip pairs) — the literal extractor sees none, so synthesize the 40
+  // per-lane ports here. Kept in lock-step with the def by
+  // module-manifest.test.ts's "manifest input/output ids match def" sweep.
   if (out.outputs.length === 0 && out.type === 'clipplayer') {
     const outs: ManifestPort[] = [];
     for (let i = 1; i <= 8; i++) {
       outs.push({ id: `pitch${i}`, type: 'polyPitchGate' });
       outs.push({ id: `gate${i}`, type: 'gate' });
       outs.push({ id: `vel${i}`, type: 'cv' });
+    }
+    for (let i = 1; i <= 8; i++) {
+      outs.push({ id: `audio${i}L`, type: 'audio' });
+      outs.push({ id: `audio${i}R`, type: 'audio' });
     }
     out.outputs = outs;
   }
@@ -1472,6 +1487,13 @@ export function buildModuleManifest(
       // suffix rule above.)
       if (file === 'clip-record-capture.ts') return false;
       if (file === 'clip-record-machine.ts') return false;
+      // The clip-recorder WORKLET WIRING — the graph/port seam that connects
+      // the eight-input capture worklet to mixmstrs' tap rosters and pumps
+      // chunks into the clip media store. Not a ModuleDef (the recorder is a
+      // seam between mixmstrs and clipplayer, not a patchable module); it
+      // lives HERE because mono-normal-not-defeated's factory derivation
+      // resolves factories from the module dirs.
+      if (file === 'clip-recorder-node.ts') return false;
       if (file === 'clip-lane-phase.ts') return false;
       if (file === 'clip-reconcile.ts') return false;
       // CLIPPLAYER's shared COPY BUFFER — the one typed clipboard the card's

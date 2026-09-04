@@ -109,12 +109,14 @@ const E2E_SPEC = fileURLToPath(
 // found in the source, and the found-set must contain nothing unpinned. Add a
 // row when you add a mono normal.
 //
-// 13 entries. The shipped gate pinned 7 — see the header for the six it could
-// not see.
+// (The historical note stands without a hand-typed count — it was already one
+// behind the list: the shipped gate pinned 7 and could not see six of the
+// originals; see the header. The list itself is the truth.)
 // ---------------------------------------------------------------------------
 
 const KNOWN_MONO_NORMALS: readonly string[] = [
   'charlottes-echos.ts:input:1',
+  'clip-recorder.ts:channel:1',         // clip capture tap: R channel ← L channel (recorderbox-capture's rule)
   'clouds.ts:input:1',
   'cofefve.ts:input:1',
   'recorderbox-capture.ts:channel:1',   // capture tap: R channel ← L channel

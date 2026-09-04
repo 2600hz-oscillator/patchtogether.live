@@ -243,7 +243,17 @@ test('every 8-wide row shares ONE column ruler — column N is channel N everywh
     'dynamics',
     'sends',
   ]);
-  expect(offRuler, 'and exactly this band is laid out side-by-side instead').toEqual(['returns']);
+  // ⚠ TWO BANDS ARE OFF THE RULER NOW, FOR DIFFERENT REASONS, and both are
+  // deliberate. `returns` is side-by-side (`clusterFlow: 'row'`). `record` is
+  // all SEGMENTED cells, which are far wider than knobs because their width is
+  // set by their option labels: putting it on the shared ruler was measured and
+  // took the face from ONE column pitch to FOUR (168.2 / 161.2 / 161.1 / 111.6
+  // CSS px), which is the #1825 defect itself. A record row cannot share the
+  // fader pitch without destroying it for the three bands that depend on it.
+  expect(offRuler, 'and exactly these bands are laid out off the ruler instead').toEqual([
+    'record',
+    'returns',
+  ]);
   // …and the off-ruler band really is the side-by-side one, read off the DOM
   // rather than inferred from its absence: a band that fell off the ruler for
   // some OTHER reason would satisfy the two clauses above and be a bug.

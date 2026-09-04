@@ -64,12 +64,15 @@ export function clipplayerSelectedClip(nodeId: string): number {
  *  than clamped: a clamp would silently open a DIFFERENT clip than the one the
  *  caller named, which on a launcher is an edit landing in the wrong lane.
  *
- * ⚠ THE BOUND IS THE FLAT-KEY DOMAIN (`lane*SCENE_STRIDE + slot`, stride 64),
- * NEVER the visible 8×8 `CLIP_COUNT`. Every pad outside lane 0 has a flat
- * index ≥ 64, so a CLIP_COUNT guard silently rejected ALL of them — the pad
- * dblclick created the clip and the editor stayed on lane 0. The legacy card
- * had its own selection path, so only the promoted face could show it
- * (found by the S2 legacy-removal e2e inversion, custom-scale per-lane leg). */
+ * ⚠ THE BOUND IS THE STRIDE-64 KEY SPACE (`CLIP_LANES * SCENE_STRIDE`), NOT
+ * `CLIP_COUNT`. A flat clip index is `clipIndex(slot, lane) = lane * 64 + slot`
+ * (clip-types.ts, schema v2), so every visible pad OFF lane 1 already sits at
+ * 64 or above — lane 8 slot 8 is 455. This guard shipped checking `CLIP_COUNT`
+ * (the visible 8×8 = 64, a PAD count, not a key ceiling), which silently
+ * swallowed the selection for 56 of the 64 pads: the launch panel's
+ * double-click created the clip and then this early-return dropped the select,
+ * so the editor band stayed bound to whatever it last showed — the owner's
+ * "changing clips in the grid doesn't update what clip I am editing below". */
 export function clipplayerSelectClip(nodeId: string, index: number): void {
   if (!Number.isInteger(index) || index < 0 || index >= CLIP_LANES * SCENE_STRIDE) return;
   selection.set(nodeId, index);

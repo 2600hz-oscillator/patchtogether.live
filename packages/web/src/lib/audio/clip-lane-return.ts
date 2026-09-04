@@ -108,6 +108,23 @@ export interface ClipLanePlayingEdge {
   atTime: number;
 }
 
+/** Coerce a raw cross-module value to a `ClipLanePlayingEdge`, or null.
+ *
+ *  The edge crosses a module boundary (clipplayer publishes it through the
+ *  engine's `write` seam; mixmstrs consumes it), so the consumer validates at
+ *  the boundary rather than trusting the sender's spelling — a renamed field
+ *  must become a dropped edge here, never a `NaN` scheduled onto an AudioParam
+ *  (`setTargetAtTime(NaN, …)` throws inside the mixer's write handler). PURE. */
+export function coerceClipLanePlayingEdge(v: unknown): ClipLanePlayingEdge | null {
+  if (!v || typeof v !== 'object') return null;
+  const e = v as Record<string, unknown>;
+  const lane = e.lane;
+  if (typeof lane !== 'number' || !Number.isInteger(lane) || lane < 0) return null;
+  if (typeof e.playing !== 'boolean') return null;
+  if (typeof e.atTime !== 'number' || !Number.isFinite(e.atTime)) return null;
+  return { lane, playing: e.playing, atTime: e.atTime };
+}
+
 /** The gain the LIVE branch of channel N should hold, given the channel's MON
  *  mode and whether that lane's clip is currently playing.
  *

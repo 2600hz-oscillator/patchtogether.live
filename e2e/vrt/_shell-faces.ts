@@ -700,10 +700,11 @@ export const FACES = [
   // `attenumix.outputs[0]` is a direct out, and mixmstrs is on the right side of
   // it. Asserted, with the port named, in mixmstrs-face-model.test.ts.
   //
-  // ⚠ AND THE METER IS DELIBERATELY NOT THE PER-CHANNEL VU. `read('levels')` is
-  // a mono-sum tap (`mixmstrs.dsp:349-356`) measured to read 0.0000e+0 on an
-  // anti-phase channel that masterL and masterR each carry at rms 0.184216.
-  // Nothing in this scene paints it.
+  // ⚠ AND THE METER IS DELIBERATELY NOT THE PER-CHANNEL VU. Nothing in this
+  // scene paints `read('levels')`. (Historically it also COULD not serve: the
+  // tap was a mono sum that read 0.0000e+0 on an anti-phase channel. Slice 3b
+  // split the taps to stereo and the reading is honest now — the face simply
+  // still declines a per-channel VU, a design choice, not a constraint.)
   //
   // Deterministic on a silent rack like every sibling: a mixer contains no
   // generator, so with nothing patched masterL is bit-exactly zero.
@@ -722,9 +723,19 @@ export const FACES = [
   // which is the outcome a per-scene field is supposed to have; the alternative
   // — one shared height raised three times — is measured right here to move
   // every existing dock baseline through layout.
+  //
+  // ⚠ FIVE BANDS SINCE THE CLIP-RECORD BAND LANDED, WHICH MAKES `foldHeight` A
+  // MEASUREMENT THAT NEEDS RE-TAKING. The 2048 was sized against a 1623 px pane
+  // with 425 px of headroom; the new `record` band is 16 SEGMENTED cells (every
+  // one of its params declares an `options` roster, and a segmented cell is
+  // width-class `wide`, so the band cannot pack into a shared row and takes its
+  // own). If it eats that headroom the scene frames short — and a short frame
+  // is wrong in a way a GREEN run will not say. It is left at 2048 on purpose:
+  // Linux CI authors the single baseline set, so a height guessed on a macOS
+  // box would be a second unverified number stacked on the first.
   {
     type: 'mixmstrs',
-    pages: 4,
+    pages: 5,
     foldHeight: 2048,
   },
   // THE FACEPLATE QUEUE · Q14 — quad slew + 4→1 sequential switch. `pages: 2`

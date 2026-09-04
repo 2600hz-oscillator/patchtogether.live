@@ -14,7 +14,7 @@ re-download).
 
 ## For developers — place `DOOM1.WAD` in this directory
 
-Drop a copy of the shareware `DOOM1.WAD` (4_207_046 bytes, SHA-1
+Drop a copy of the shareware `DOOM1.WAD` (4_196_020 bytes, SHA-1
 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`) at:
 
 ```
@@ -29,20 +29,28 @@ your local copy won't accidentally land it in version control.
 The file is freely redistributable under id Software's original shareware
 license. Convenient sources:
 
-- Slitaz package mirror (verified 200 OK + correct SHA-1 2026-05; this is
-  what CI pulls from in `.github/workflows/ci.yml`):
-  <https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad>
+- Doomworld shareware zip (one member, `DOOM1.WAD`; verified 200 OK +
+  correct SHA-1 2026-09-03; this is what CI pulls from in
+  `.github/workflows/ci.yml`):
+  <https://www.doomworld.com/3ddownloads/ports/shareware_doom_iwad.zip>
 - The DOOM Wiki shareware page links to additional mirrors:
   <https://doomwiki.org/wiki/Shareware>
 
-Note: the doomgeneric upstream raw URL (`github.com/ozkl/doomgeneric/raw/master/doom1.wad`)
-used to host the file but currently 404s.
+Note on dead ex-mirrors: the doomgeneric upstream raw URL
+(`github.com/ozkl/doomgeneric/raw/master/doom1.wad`) used to host the file
+but 404s, and the slitaz mirror this doc previously recommended
+(`distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad`) 404s as of
+2026-09 too — CI only survived it on the `doom-wad-shareware-v1` cache key.
+Always verify the SHA-1 after any fetch; the digest above is the identity of
+the file, the mirror is just transport.
 
 `curl` one-liner (paste at the repo root):
 
 ```bash
-curl -L -o packages/web/static/doom/DOOM1.WAD \
-  https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+curl -L -o /tmp/shareware_doom_iwad.zip \
+  https://www.doomworld.com/3ddownloads/ports/shareware_doom_iwad.zip \
+  && unzip -o -j /tmp/shareware_doom_iwad.zip DOOM1.WAD \
+       -d packages/web/static/doom/
 ```
 
 Verify with `shasum -a 1 packages/web/static/doom/DOOM1.WAD` —

@@ -2,11 +2,13 @@
 //
 // AUDIO PROFILE for MIXMSTRS (8-channel stereo mixer + EQ/comp + 2 stereo aux
 // sends) — backfill batch 6, Faust-in-Node harness (spec §5). MIXMSTRS is the
-// batch's harness STRESS TEST: a 20-input / 14-output Faust module
+// batch's harness STRESS TEST: a 20-input / 22-output Faust module
 // (packages/dsp/src/mixmstrs.dsp) rendered headless in one pass. Faust I/O
 // order is the process() signature: inputs 0,1=ch1 L/R, 2,3=ch2 L/R, … 14,15=ch8
 // L/R, 16,17=return1 L/R, 18,19=return2 L/R; outputs 0,1=master L/R, 2,3=send1
-// L/R, 4,5=send2 L/R, 6..13=per-channel meter taps (NOT patchable ports).
+// L/R, 4,5=send2 L/R, 6..21=per-channel STEREO post-fader taps (NOT patchable
+// ports — the VU legs and the clip recorder's POST FADER source;
+// rec-tap-points.test.ts covers them).
 //
 // Category: STEREO MIXER + AUX SENDS, driven so the ROUTING is provable:
 //   ch1 (L=R) = C4 saw @ vol 0.8, routed to SEND 1 (ch1_send1 = 0.7)
@@ -48,8 +50,8 @@ async function renderProfile(): Promise<Record<string, Float32Array>> {
       // EQ flat + comps bypassed are the defaults, set explicitly for clarity.
       ch1_compEnable: 0, ch2_compEnable: 0,
     },
-    // Faust output index order — capture the 6 patchable ports; the 8 trailing
-    // meter taps are dropped.
+    // Faust output index order — capture the 6 patchable ports; the 16
+    // trailing tap legs are dropped.
     outputs: ['masterL', 'masterR', 'send1L', 'send1R', 'send2L', 'send2R'],
   });
 }
@@ -70,7 +72,7 @@ function goertzel(buf: Float32Array, s: number, e: number, freqHz: number): numb
   return (2 / N) * Math.sqrt(re * re + im * im);
 }
 
-describe('ART mixmstrs / audio profile (16-in/12-out stereo mixer routing via the Faust-in-Node harness)', () => {
+describe('ART mixmstrs / audio profile (20-in/22-out stereo mixer routing via the Faust-in-Node harness)', () => {
   it('routes both tones to master, ch1 to send1 only, ch2 to send2 only', async () => {
     const n = Math.round(SR * DURATION_S);
     const b = await renderProfile();

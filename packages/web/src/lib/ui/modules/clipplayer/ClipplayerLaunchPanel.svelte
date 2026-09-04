@@ -302,8 +302,24 @@
       opacity: 0.45;
     }
   }
+  /* AUDIO CLIP-RECORD states (shared clipPadState vocabulary, spec §4.9) —
+     the same pictures the legacy card paints: rec-armed = hollow ring in the
+     lane colour, slow pulse ("reserved, not yet content"); rec-active =
+     filled RED (the product's record colour) while the take captures. */
+  .pad.rec-armed {
+    background: transparent;
+    border-color: var(--lane-color);
+    box-shadow: inset 0 0 0 1px var(--lane-color);
+    animation: clipplayer-pad-blink 1.2s steps(2, end) infinite;
+  }
+  .pad.rec-active {
+    background: #ff3b30;
+    border-color: #ff3b30;
+    box-shadow: 0 0 6px rgb(255 59 48 / 0.7);
+  }
   @media (prefers-reduced-motion: reduce) {
-    .pad.queued {
+    .pad.queued,
+    .pad.rec-armed {
       animation: none;
       opacity: 0.7;
     }

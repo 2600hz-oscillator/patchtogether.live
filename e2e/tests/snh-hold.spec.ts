@@ -21,8 +21,18 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, seedKriaGate } from './_helpers';
+import { AUDIO_READY_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
+// The 2026-08-31 census caught this file's recovered-flake shape a second
+// time AFTER #2310's anchoring fix: waitForNoteEstablished's then-flat 15 s
+// cap expiring under co-scheduled audio graphs (item 18 — sibling of
+// workflow-master-transport's item 14). The wait below now caps at
+// AUDIO_READY_MS, so the whole test needs the slow-runner budget too: at the
+// default 30 s, a CI note-wait that legitimately used its 30 s cap would be
+// killed by the TEST budget instead — trading a named failure for an opaque
+// timeout.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 /** Read SCOPE's most-recent ch1 analyser sample (live CV at the input). */
 async function readScopeCh1(page: Page, scopeNodeId: string): Promise<number | null> {
@@ -91,7 +101,12 @@ async function ch1MinMaxOverWindow(
 async function waitForNoteEstablished(page: Page, scopeNodeId: string): Promise<void> {
   await expect
     .poll(async () => (await readScopeCh1(page, scopeNodeId)) ?? 0, {
-      timeout: 15_000,
+      // AUDIO_READY_MS, not a flat 15 s: this is a BOUND on an anchored wait
+      // (see boot-budget.ts), and the census caught the flat version expiring
+      // under co-scheduled audio on a re-binned shard (item 18) — the note
+      // arrived, later than the cap assumed, exactly the geometry the #2310
+      // anchoring fix closed for the fixed-sleep version of this bug.
+      timeout: AUDIO_READY_MS,
       message:
         'the gated note must reach the SCOPE input before a min-over-window opens — ' +
         'ch1 never left 0, so the clock/graph/bridge never delivered a gated step',

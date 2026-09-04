@@ -213,7 +213,10 @@ test.describe('CV BUDDY face — the measurements are PRESENT and UNPAINTED', ()
     // UNPAINTED but PRESENT: the state as a word and the measurement as a
     // sentence. This is the half that proves the ruling cost no information.
     await expect(late).toHaveAttribute('aria-label', /^LATE off/);
-    await expect(late).toHaveAttribute('title', /No late clock pulses/);
+    // In a real browser the cv-clock WORKLET drives the jacks, so the healthy
+    // sentence is the worklet-driver one (cv-buddy-status-model.ts) — kept
+    // current while parked so un-parking is not booby-trapped by stale text.
+    await expect(late).toHaveAttribute('title', /No main-thread stalls/);
     await expect(late).toHaveAttribute('title', /xruns on the ES-9 card/);
 
     // The picture is dark at rest, and it is a picture: the state reaches the

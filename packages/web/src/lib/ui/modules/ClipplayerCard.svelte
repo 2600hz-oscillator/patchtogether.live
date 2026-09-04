@@ -1455,11 +1455,20 @@
   );
 
   const inputs = portsFromDef(clipplayerDef.inputs, { stop_all: 'STOP ALL', reset: 'RESET' });
-  const outputs: PortDescriptor[] = Array.from({ length: CLIP_LANES }, (_, i) => [
-    { id: `pitch${i + 1}`, label: `PITCH ${i + 1}`, cable: 'polyPitchGate' },
-    { id: `gate${i + 1}`, label: `GATE ${i + 1}`, cable: 'gate' },
-    { id: `vel${i + 1}`, label: `VEL ${i + 1}`, cable: 'cv' },
-  ]).flat();
+  const outputs: PortDescriptor[] = [
+    ...Array.from({ length: CLIP_LANES }, (_, i) => [
+      { id: `pitch${i + 1}`, label: `PITCH ${i + 1}`, cable: 'polyPitchGate' },
+      { id: `gate${i + 1}`, label: `GATE ${i + 1}`, cable: 'gate' },
+      { id: `vel${i + 1}`, label: `VEL ${i + 1}`, cable: 'cv' },
+    ]).flat(),
+    // AUDIO CLIP playback (slice 5) — the per-lane stereo take outputs. A
+    // hand-picked list silently drops a port the def declares (the
+    // mixmstrs-sections lesson), so these join the moment the def does.
+    ...Array.from({ length: CLIP_LANES }, (_, i) => [
+      { id: `audio${i + 1}L`, label: `AUD ${i + 1} L`, cable: 'audio' },
+      { id: `audio${i + 1}R`, label: `AUD ${i + 1} R`, cable: 'audio' },
+    ]).flat(),
+  ];
 </script>
 
 <!-- role="application" + tabindex + onclick→focus: the card OWNS computer keys
@@ -2704,6 +2713,21 @@
   .pad.cd-yellow.cd-on { background: #d9c000; box-shadow: 0 0 6px #d9c000; }
   .pad.cd-red { background: #7a1010; box-shadow: none; }
   .pad.cd-red.cd-on { background: #ff2a2a; box-shadow: 0 0 6px #ff2a2a; }
+  /* AUDIO CLIP-RECORD states (the shared clipPadState vocabulary, spec §4.9):
+     rec-armed = a hollow ring in the lane colour, slow pulse — "reserved, not
+     yet content"; rec-active = filled RED (this product's record colour, the
+     RecorderboxCard #ff3b30) with a soft glow — the take is capturing NOW. */
+  .pad.rec-armed {
+    background: #0b0d12;
+    border-color: var(--lane-color);
+    box-shadow: inset 0 0 0 1px var(--lane-color);
+    animation: blink 1.2s steps(2) infinite;
+  }
+  .pad.rec-active {
+    background: #ff3b30;
+    border-color: #ff3b30;
+    box-shadow: 0 0 6px rgba(255, 59, 48, 0.7);
+  }
   .pad { position: relative; }
   /* AUTOMATION-CARRIER dot: a subtle teal fleck on clips that carry recorded
      automation (the envelope belongs to the clip — carriers stay visible). */
