@@ -137,6 +137,40 @@
 </script>
 
 <div class="camera-output" data-testid="cameraInput-output-body">
+  <!-- ⚠ THE SOURCE CONTROLS COME FIRST, ABOVE THE PICTURE, AND THE ORDER IS THE
+       WHOLE FIX (owner P0, 2026-09-03: the CAMERA dock faceplate has "no device
+       dropdown and no capture lamp").
+
+       They used to sit at the END of this body, after a FIXED 480×360 canvas
+       and the local-only hint. `.dock-faceplate` is correctly bounded
+       (`max-height: min(60vh, 680px)`) and `.faceplate-scroll` is a real
+       scroller — so nothing was clipped and nothing threw. What happened
+       instead is that at 1280×720 (Playwright's `Desktop Chrome`, and roughly
+       any laptop) the scroller shows 352 px of 648 px of content, and the
+       picker row landed at document y≈789: 138 px below the scroller's visible
+       bottom AND 69 px below the browser window. The player sees a band headed
+       SOURCES and a picture, and the only route to `getUserMedia` this shell
+       has is somewhere off the bottom of a scroll region inside a dock drawer.
+
+       ⚠ AND THIS IS THE THIRD TIME THE SAME CLASS HAS SHIPPED. #2148 promoted
+       the face and left the picker reachable only in the dock full view; #2242
+       gave the lane tile its own copy; this one is the dock full view's copy
+       being pushed off the bottom of its own surface. The invariant is not
+       "the controls exist on this surface" — it is "the controls are ABOVE the
+       picture", because the picture is the one element here whose height is
+       fixed and large. Anything appended after it inherits this bug.
+
+       ⚠ WHY NOT SHRINK THE CANVAS INSTEAD: a viewport-relative cap would make
+       a VRT-baselined face's appearance a function of the capture viewport,
+       and it would still leave the ordering that produced the defect. The
+       param bands below stay scroll-reachable — that is the ordinary faceplate
+       contract for tall content — but the ACQUIRE gesture may not be, because
+       a source with no reachable way to start it is a dead module.
+
+       The error / rebind prose travels with them: it is the text that tells a
+       player what to DO about the state the lamp is reporting. -->
+  <CameraSourceControls {nodeId} testidPrefix="cameraInput-face" />
+
   <div class="preview-wrap" data-preview-collapsed={previewCollapsed ? 'true' : 'false'}>
     {#if !previewCollapsed}
       <canvas
@@ -169,8 +203,6 @@
       Local only — others won't see your camera stream
     </p>
   {/if}
-
-  <CameraSourceControls {nodeId} testidPrefix="cameraInput-face" />
 </div>
 
 <style>

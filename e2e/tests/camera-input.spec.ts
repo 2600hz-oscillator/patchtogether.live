@@ -435,6 +435,9 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     const dock = page.locator('[data-testid="dock-full-view"]');
     await expect(dock).toHaveCount(1, { timeout: 20_000 });
     const select = dock.locator('[data-testid="cameraInput-face-device-select"]');
+    // ⚠ THIS LINE IS THE ONE THAT WAS GREEN WHILE DEV WAS BROKEN — kept, and
+    // no longer the whole claim. See the ON-SCREEN describe at the end of this
+    // file for what `toBeVisible()` cannot see and what replaces it.
     await expect(select, 'device picker usable on the faceplate').toBeVisible({ timeout: 15_000 });
     await page.waitForFunction(
       () => {
@@ -668,5 +671,170 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
       .toEqual(['live']);
     await expect(camLane.locator('[data-testid="camera-status"]'))
       .toHaveAttribute('data-state', 'streaming', { timeout: 20_000 });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE CONTROLS ARE ON SCREEN — the 2026-09-03 owner P0, and the reason the
+// assertion above could not see it. @camera-integration
+//
+// OWNER REPORT: the CAMERAINPUT dock faceplate showed the band headed SOURCES
+// and the live preview, and *"no device dropdown and no capture lamp"*.
+//
+// ⚠ WHY THE SHIPPED ASSERTION WAS GREEN, WHICH IS THE FINDING RATHER THAN THE
+// FIX. Fifteen lines up this file already does
+// `await expect(select, 'device picker usable on the faceplate').toBeVisible()`
+// against this exact testid, in this exact host, and it passed on every run
+// while the owner could not reach the control. Playwright's `toBeVisible()` is
+// `display`/`visibility`/`opacity` plus a non-empty bounding box. It has NO
+// viewport requirement and NO scroll-position requirement: an element at
+// document y=789 in a 720 px window is "visible" to it, and so is one 138 px
+// below the bottom of the scroll container it lives in. (`.click()` would have
+// auto-scrolled and passed too, for the same reason — the auto-scroll is the
+// thing that hides it.)
+//
+// MEASURED on `origin/main` at Playwright's own `Desktop Chrome` viewport
+// (1280×720 — the configuration this file already runs in):
+//   .dock-faceplate   max-height min(60vh,680px) → 424 px, correctly bounded
+//   .faceplate-scroll clientH 352, scrollH 648    → 296 px below the fold
+//   .camera-output    a FIXED 480×360 canvas, then the local-only hint, then
+//                     the picker row LAST → picker at y≈789, window is 720
+// Nothing was clipped, nothing threw, no chunk failed to load. The controls
+// were simply rendered past the bottom of the surface that carries them.
+//
+// SO THE ASSERTION IS THE PRODUCT'S OWN QUESTION, NOT THE DOM'S: is the control
+// inside the viewport, inside the visible box of every scrolling ancestor, and
+// does a hit test at its centre land on the control itself? That is what a
+// player means by "the dropdown is there", and it is the smallest predicate
+// that could have gone red.
+//
+// ⚠ AND IT CARRIES ITS OWN POSITIVE CONTROL, in-test, against the REAL
+// pre-fix DOM: the case re-appends the picker row to the end of `.camera-output`
+// — byte-for-byte the order this body shipped with — and asserts the SAME
+// predicate reports it off-screen, then restores it. A gate that cannot be made
+// to fail on the defect it names is a gate nobody has tested.
+
+/** Where a control actually is, as a player would judge it. */
+async function onScreenReport(page: import('@playwright/test').Page, testid: string) {
+  return page.evaluate((id) => {
+    const el = document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+    if (!el) return { present: false as const };
+    const b = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Every scrolling/clipping ancestor must also SHOW it — a control below the
+    // fold of an inner scroller is exactly as unreachable as one below the
+    // window, and it is the case the owner hit.
+    let clippedBy: string | null = null;
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (!/(auto|scroll|hidden)/.test(cs.overflowY) && !/(auto|scroll|hidden)/.test(cs.overflowX)) continue;
+      const pb = p.getBoundingClientRect();
+      if (b.bottom > pb.bottom + 0.5 || b.top < pb.top - 0.5 || b.right > pb.right + 0.5 || b.left < pb.left - 0.5) {
+        clippedBy = p.getAttribute('data-testid') ?? p.className?.toString().slice(0, 48) ?? p.tagName;
+        break;
+      }
+    }
+    const cx = b.left + b.width / 2;
+    const cy = b.top + b.height / 2;
+    const inViewport = b.top >= 0 && b.left >= 0 && b.bottom <= vh && b.right <= vw && b.width > 0 && b.height > 0;
+    const hit = inViewport ? document.elementFromPoint(cx, cy) : null;
+    return {
+      present: true as const,
+      rect: { top: Math.round(b.top), bottom: Math.round(b.bottom) },
+      viewport: { w: vw, h: vh },
+      inViewport,
+      clippedBy,
+      hitsItself: !!hit && (hit === el || el.contains(hit)),
+    };
+  }, testid);
+}
+
+test.describe('CAMERA faceplate — the SOURCE controls are ON SCREEN @camera-integration', () => {
+  test('the dock faceplate paints the picker, the lamp and ACQUIRE inside the surface a player is looking at', async ({
+    page,
+    errorWatch,
+  }) => {
+    test.setTimeout(90_000);
+
+    await page.goto('/rack');
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
+    await spawnPatch(page, [
+      { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video', params: { enabled: 1 } },
+    ]);
+
+    // ── THE LANE TILE FIRST — the surface a player normally MEETS the module
+    //    on, and the one nothing in this repo asserted before today. #2242 put
+    //    the picker here precisely because the dock-only version was the first
+    //    occurrence of this bug class; there was no gate on it.
+    const laneShell = page.locator('.svelte-flow__node[data-id="v-cam"] [data-testid="module-shell"]').first();
+    await expect(laneShell, 'the promoted CAMERA paints a faceplate tile').toBeVisible({ timeout: 15_000 });
+    for (const id of ['cameraInput-tile-lamp', 'cameraInput-tile-device-select', 'cameraInput-tile-request-access']) {
+      const r = await onScreenReport(page, id);
+      expect(r.present, `${id} must exist on the lane tile`).toBe(true);
+      expect(r, `${id} must be inside the lane tile a player is looking at`).toMatchObject({
+        inViewport: true,
+        clippedBy: null,
+      });
+    }
+
+    // ── THE DOCK FACEPLATE — the owner's screenshot.
+    await page.evaluate(() => {
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView('v-cam');
+    });
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 20_000 });
+    await expect(page.getByTestId('cameraInput-output-body')).toBeVisible({ timeout: 15_000 });
+
+    for (const id of ['cameraInput-face-lamp', 'cameraInput-face-device-select', 'cameraInput-face-request-access']) {
+      const r = await onScreenReport(page, id);
+      expect(r.present, `${id} must exist on the dock faceplate`).toBe(true);
+      expect(
+        r,
+        `${id} must be ON SCREEN on the dock faceplate — this is the owner P0, and `
+          + `toBeVisible() passes for all three of "below the window", "below an inner `
+          + `scroller's fold" and "under the footer"`,
+      ).toMatchObject({ inViewport: true, clippedBy: null, hitsItself: true });
+    }
+
+    // ── POSITIVE CONTROL: rebuild the pre-fix DOM and prove this goes RED ──
+    //
+    // `.picker-row` back at the END of `.camera-output`, after the fixed 480×360
+    // canvas and the local-only hint — the exact order the body shipped with
+    // until this PR. If the assertions above can pass in that arrangement, they
+    // are not measuring what they claim to.
+    const moved = await page.evaluate(() => {
+      const body = document.querySelector('[data-testid="cameraInput-output-body"]');
+      const row = document.querySelector('[data-testid="cameraInput-face-device-select"]')?.parentElement;
+      if (!body || !row || row.parentElement !== body) return false;
+      body.appendChild(row); // re-append = move to last child
+      return body.lastElementChild === row;
+    });
+    expect(moved, 'the positive control must actually rebuild the pre-fix order').toBe(true);
+
+    const control = await onScreenReport(page, 'cameraInput-face-device-select');
+    expect(control.present).toBe(true);
+    // The instrument the OLD assertion used still says "visible" in this exact
+    // arrangement — asserted, so the finding is pinned rather than narrated.
+    await expect(
+      page.locator('[data-testid="dock-full-view"] [data-testid="cameraInput-face-device-select"]'),
+      'toBeVisible() cannot see this defect — that is why it shipped',
+    ).toBeVisible();
+    expect(
+      control.present && (!control.inViewport || control.clippedBy !== null || !control.hitsItself),
+      `the pre-fix order must FAIL the on-screen check, else this gate is decorative `
+        + `(got ${JSON.stringify(control)})`,
+    ).toBe(true);
+
+    // Restore, and re-assert — so a later reader can see the check is not
+    // one-way and the page is left in the shipped state.
+    await page.evaluate(() => {
+      const body = document.querySelector('[data-testid="cameraInput-output-body"]');
+      const row = document.querySelector('[data-testid="cameraInput-face-device-select"]')?.parentElement;
+      if (body && row) body.insertBefore(row, body.firstElementChild);
+    });
+    const restored = await onScreenReport(page, 'cameraInput-face-device-select');
+    expect(restored).toMatchObject({ inViewport: true, clippedBy: null, hitsItself: true });
+
+    errorWatch.assertClean();
   });
 });

@@ -84,13 +84,16 @@ describe('controlSurface face — the promotion', () => {
     expect(NON_SHELL_LANE_TYPES.has('sticky'), 'a real member remains').toBe(true);
   });
 
-  // ⚠ THE USER-DOCKED RESIDUAL, PINNED rather than discovered in review:
-  // controlSurface is NOT a pinned singleton, so `dockRailRendersFace` is false
-  // for it and a user-docked node's rail occupant stays the VERBATIM legacy
-  // card — which carries its own prune `$effect` and its own lock button, so no
-  // reachable surface is prune-less or lock-less.
-  it('a user-docked node keeps the legacy card in the dock rail (not pinned)', () => {
-    expect(dockRailRendersFace({ shellFaces: true, pinned: false, migrated: migrated(CONTROL_SURFACE_TYPE) })).toBe(false);
+  // ⚠ THE USER-DOCKED RESIDUAL IS GONE (owner P0, 2026-09-03). This leg used to
+  // assert `.toBe(false)` — controlSurface is not a pinned singleton, so the
+  // rail kept the VERBATIM legacy card — and cited that card's own prune
+  // `$effect` and lock button as the reason nothing was lost. What the
+  // reasoning missed is that the rail then painted a DIFFERENT INSTRUMENT from
+  // the lane, for the same node, on the default shell. The rail renders the
+  // face now: the prune side effect lives on the `tileBody` (node-on-canvas
+  // lifetime) and the LOCK is a ranked cell, so both survive the swap.
+  it('a user-docked node renders the FACE in the dock rail', () => {
+    expect(dockRailRendersFace({ shellFaces: true, migrated: migrated(CONTROL_SURFACE_TYPE) })).toBe(true);
     // …and the `?shell=legacy` escape hatch still gets the verbatim card, which
     // is what keeps `control-surface.spec.ts` meaningful rather than merely
     // passing.

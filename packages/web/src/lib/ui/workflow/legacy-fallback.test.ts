@@ -291,18 +291,25 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
   });
 });
 
-describe('dockRailRendersFace — the pinned tray shows the PROMOTED face (#1739)', () => {
+describe('dockRailRendersFace — EVERY rail occupant shows the PROMOTED face (#1739, widened by the 2026-09-03 P0)', () => {
   // The OWNER RULING behind it: *"the `m` key tray view needs to show the new
   // card and not the old one"*. Before this the rule did not exist at all —
   // `DockCardHost` resolved `nodeTypes[type]` with no migration input, so the
   // one always-on surface in the app kept painting a legacy card after its
   // module was promoted.
   //
-  // Three inputs, all REQUIRED, so the truth table is DERIVED rather than
-  // hand-listed: exactly the all-true row may render the face.
-  const FLAGS = ['shellFaces', 'pinned', 'migrated'] as const;
+  // ⚠ AND IT SHIPPED SCOPED TO `pinned`, WHICH THE OWNER THEN HIT AS A P0:
+  // *"dev is also still using legacy card in top camera area … ALSO WRONG"*.
+  // `Canvas.railCards` passes `pinned: false` for every USER-DOCKED node, so
+  // docking a promoted module on the default shell put its pre-promotion card
+  // back on screen. The term is gone; see `legacy-fallback.ts`'s header for why
+  // "its face is reachable elsewhere" was never a reason.
+  //
+  // TWO inputs, both REQUIRED, so the truth table is DERIVED rather than
+  // hand-listed: exactly the all-true row renders the face.
+  const FLAGS = ['shellFaces', 'migrated'] as const;
 
-  it('the face renders IFF shellFaces AND pinned AND migrated — the whole truth table', () => {
+  it('the face renders IFF shellFaces AND migrated — the whole truth table', () => {
     const rows: string[] = [];
     for (let mask = 0; mask < 1 << FLAGS.length; mask++) {
       const input = Object.fromEntries(
@@ -318,29 +325,30 @@ describe('dockRailRendersFace — the pinned tray shows the PROMOTED face (#1739
     expect(rows.filter((r) => r.endsWith('false'))).toHaveLength((1 << FLAGS.length) - 1);
   });
 
-  it('`?shell=legacy` keeps the tray on the LEGACY card — and that is why the three shipped drawer specs cannot see this change', () => {
+  it('`?shell=legacy` keeps the rail on the LEGACY card — and that is why the three shipped drawer specs cannot see this change', () => {
     // `workflow-dock.spec.ts` (masterL out, ch1L in) and `workflow-mode.spec.ts`
     // ("the pinned card renders IN FULL") all drive `/rack?shell=legacy`. They
     // pass unchanged across the promotion — and would pass just as well if the
-    // tray were completely broken on the default shell. The default-shell
+    // rail were completely broken on the default shell. The default-shell
     // coverage is `e2e/tests/workflow-drawer-face.spec.ts`.
-    expect(dockRailRendersFace({ shellFaces: false, pinned: true, migrated: true })).toBe(false);
+    expect(dockRailRendersFace({ shellFaces: false, migrated: true })).toBe(false);
   });
 
-  it('a USER-DOCKED promoted module keeps its legacy card — the scope is pinned-only, on purpose', () => {
-    // A docked entry still has a lane DockStubCard AND a route to DockFullView,
-    // so its face is already reachable; the pinned occupant is canvas-hidden and
-    // has neither. Widening this would flip every user-docked promoted module
-    // at once — `workflow-dock.spec.ts` docks `mixer` and asserts `.mod-card`,
-    // and `workflow-dock-composite` VRT docks `vca`. Both are promoted.
-    expect(dockRailRendersFace({ shellFaces: true, pinned: false, migrated: true })).toBe(false);
+  it('⚠ THE P0 LEG: a USER-DOCKED promoted module renders its FACE, not its card', () => {
+    // This assertion is the inverse of the one it replaces. It used to read
+    // `.toBe(false)` with a comment explaining why that was deliberate — the
+    // shape of a decision recorded as an invariant, which is what kept the
+    // defect green. `Canvas.railCards` still passes the same inputs; only the
+    // rule moved.
+    expect(dockRailRendersFace({ shellFaces: true, migrated: true })).toBe(true);
+    // …and an UN-migrated docked module still gets its card, which is the whole
+    // reason the rule is not simply `shellFaces`.
+    expect(dockRailRendersFace({ shellFaces: true, migrated: false })).toBe(false);
   });
 
   it('ANCHORED to the live roster: the drawer occupants this rule can currently reach', () => {
-    // The pinned M/E occupants are the only nodes the `pinned` arm can ever see
-    // (`c` opens a full-view PANE, not the rail). Derived from the shipped spec
-    // list rather than named here, so adding a fourth pinned module cannot make
-    // this clause quietly stale.
+    // Derived from the shipped spec list rather than named here, so adding a
+    // fourth pinned module cannot make this clause quietly stale.
     const resolveDef = (t: string) =>
       getModuleDef(t as ModuleType) ??
       getVideoModuleDef(t as ModuleType) ??
@@ -352,12 +360,21 @@ describe('dockRailRendersFace — the pinned tray shows the PROMOTED face (#1739
       // Whatever the roster is, the rule agrees with STRICT_FACES for it — in
       // BOTH directions, so a promotion or a demotion moves this by itself.
       expect(
-        dockRailRendersFace({ shellFaces: true, pinned: true, migrated: migrated(type) }),
-        `${type}: tray face must track STRICT_FACES membership`,
+        dockRailRendersFace({ shellFaces: true, migrated: migrated(type) }),
+        `${type}: rail face must track STRICT_FACES membership`,
       ).toBe(migrated(type));
     }
     // …and the population is not degenerate: mixmstrs is promoted, so at least
     // one occupant genuinely takes the face branch today.
     expect(migrated('mixmstrs'), 'mixmstrs is the promotion this rule was written for').toBe(true);
+  });
+
+  it('cameraInput — the module the P0 was reported on — takes the face branch when docked', () => {
+    // The owner docked a CAMERA and got `CameraInputCard` back: old chrome, the
+    // card's own device dropdown, "streaming" lamp, Pause / Mirror / Fit:Fill
+    // and the GAIN slider. cameraInput is promoted, so the ONLY thing that
+    // produced that was the `pinned` term.
+    expect(migrated('cameraInput'), 'cameraInput is promoted — the premise of this leg').toBe(true);
+    expect(dockRailRendersFace({ shellFaces: true, migrated: migrated('cameraInput') })).toBe(true);
   });
 });

@@ -2317,15 +2317,18 @@
     for (const { nodeId } of dockStore.entriesFor(zone)) {
       const node = snapshot.nodes.find((n) => n.id === nodeId);
       if (!node) continue;
-      // A USER-DOCKED entry keeps its verbatim legacy card: it still has a lane
-      // DockStubCard and a route to DockFullView, so its face is already
-      // reachable — see dockRailRendersFace's header for why `pinned` is part
-      // of the rule and what widening it would move.
+      // ⚠ A USER-DOCKED ENTRY GETS ITS FACE TOO (owner P0, 2026-09-03). This
+      // line used to pass `pinned: false` into a rule that required `pinned`,
+      // so docking a PROMOTED module on the default shell swapped it back to
+      // its verbatim legacy card — the pre-promotion instrument, in the one
+      // place the player had just chosen to keep it. `pinned` stays on the
+      // SPEC (the rail reads it for its own chrome); it is simply no longer an
+      // input to the render decision.
       out.push({
         node,
         title: dockDisplayName(node),
         pinned: false,
-        face: dockRailRendersFace({ shellFaces, pinned: false, migrated: laneMigrated(node.type) }),
+        face: dockRailRendersFace({ shellFaces, migrated: laneMigrated(node.type) }),
       });
     }
     return out;
@@ -2965,17 +2968,17 @@
     // owns its own full-width <DockFullView> faceplate below the bottom rail
     // (P0.3b re-spec); this list holds only the pinned occupant + docked entries.
     if (dockedBottomNode && dockedBottomSpec) {
-      // #1739 — THE PINNED OCCUPANT IS THE ONE THAT GETS ITS FACE. The tray is
-      // its ONLY surface (canvas-hidden ⇒ no lane tile, no EXPAND pill, no
-      // route to DockFullView), so without this the `m` key was the one place
-      // in the app where a promoted module still painted its legacy card.
+      // #1739 — THE PINNED OCCUPANT GETS ITS FACE. The tray is its ONLY surface
+      // (canvas-hidden ⇒ no lane tile, no EXPAND pill, no route to
+      // DockFullView), so without this the `m` key was the one place in the app
+      // where a promoted module still painted its legacy card. Since the
+      // 2026-09-03 P0 the docked entries below get theirs on the same rule.
       out.push({
         node: dockedBottomNode,
         title: dockedBottomSpec.label,
         pinned: true,
         face: dockRailRendersFace({
           shellFaces,
-          pinned: true,
           migrated: laneMigrated(dockedBottomNode.type),
         }),
       });
@@ -3003,23 +3006,17 @@
   // ── THE 🎧 PANEL IS A DOCK RAIL TOO, AND IT NEVER ASKED (#1739's third
   //    caller) ──────────────────────────────────────────────────────────────
   //
-  // `dockRailRendersFace`'s header states the argument for the pinned occupant
-  // exactly: *"a PINNED occupant is canvas-hidden (`isCanvasHiddenNode`), so it
-  // has NO lane tile, NO EXPAND pill and no route to `DockFullView`. The tray is
-  // its ONLY surface, and it is therefore the only place its face can appear."*
-  //
-  // `pinned-audioIn` / `pinned-audioOut` are exactly that shape — canvas-hidden
-  // singletons whose one surface is `AudioIoSurface`'s two `DockCardHost`
-  // mounts — and that component passed six props and no `face`, so the host's
-  // `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
-  // The rule existed, was correct, and had a caller that did not call it.
+  // `pinned-audioIn` / `pinned-audioOut` are canvas-hidden singletons whose one
+  // surface is `AudioIoSurface`'s two `DockCardHost` mounts — and that
+  // component passed six props and no `face`, so the host's `face = false`
+  // default won and it mounted `nodeTypes[type]` unconditionally. The rule
+  // existed, was correct, and had a caller that did not call it.
   //
   // ⚠ EVALUATED HERE, INJECTED, NEVER RE-DERIVED IN THE PANEL. `shellFaces` and
   // `migrated()` are read in ONE place on purpose (see `DockCardHost`'s `face`
   // prop doc); a second reader inside `AudioIoSurface` is the
   // two-derivations-of-one-fact class this file's own patch rows were rewritten
-  // to remove. `pinned: true` is a literal because that is what these two nodes
-  // ARE — `workflow-pins.ts` spawns them as the always-on pair.
+  // to remove.
   //
   // ⚠ BOTH ARMS ARE FALSE TODAY (neither type is migrated), and that is the
   // point rather than a caveat: this is the leg that MOVES the day either module
@@ -3030,7 +3027,6 @@
     !!workflowAudioInNode &&
       dockRailRendersFace({
         shellFaces,
-        pinned: true,
         migrated: laneMigrated(workflowAudioInNode.type),
       }),
   );
@@ -3038,7 +3034,6 @@
     !!workflowAudioOutNode &&
       dockRailRendersFace({
         shellFaces,
-        pinned: true,
         migrated: laneMigrated(workflowAudioOutNode.type),
       }),
   );
