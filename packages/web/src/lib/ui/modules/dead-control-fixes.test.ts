@@ -24,44 +24,28 @@
 //
 // The filter half is a BEHAVIOUR test against the real Y.Doc + UndoManager —
 // undo granularity is a property of the real store and a mock cannot see it.
-// The analogVco half is necessarily a SOURCE assertion, because there is no
-// Svelte component harness in this repo and a literal in markup has no runtime
-// representation to probe. That is the same reason `module-docs-lint`'s
-// controlFamilies→testid check is a grep.
+//
+// ⚠ BOTH HALVES USED TO CARRY A CARD-SOURCE LEG BESIDE THEM, and neither does
+// now. That is not a retreat: each defect was a CARD disagreeing with the def,
+// and with one surface left there is no second party to the disagreement. The
+// shell renders these params from the ParamDef and writes them through
+// `shellParamWrite`, so "a literal range in markup" and "a bare proxy
+// assignment" have no module-local place to live. What is kept is the half that
+// still has a subject — the def's own declaration, the face's ranking of it,
+// and the real undo behaviour.
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
 import { setNodeParam } from '$lib/graph/mutate';
 import { analogVcoDef } from '$lib/audio/modules/analog-vco';
 import { filterDef } from '$lib/audio/modules/filter';
 import type { ModuleNode } from '$lib/graph/types';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const cardSource = (file: string): string => readFileSync(join(HERE, file), 'utf8');
-
-/**
- * The card's source with COMMENTS REMOVED — block, line and HTML.
- *
- * Load-bearing, and it caught itself: both fixed cards now carry a comment
- * QUOTING the defect (`min={0}`, `patch.nodes[id].params.mode = m`) so the next
- * reader knows what not to reintroduce, and a raw scan flagged those sentences
- * as the bug. A guard that cannot tell code from prose would make documenting a
- * fix impossible — the pressure would be to delete the explanation, which is
- * the opposite of what should happen.
- */
-const cardCode = (file: string): string =>
-  cardSource(file)
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-    .replace(/<!--[\s\S]*?-->/g, ' ');
 
 // ── 1 · analogVco: the negative half is reachable ───────────────────────────
 
-describe('analogVco — bipolar modulation depth is reachable from the card', () => {
-  it('the DEF declares FM and PM bipolar (the fact the card must not narrow)', () => {
+describe('analogVco — bipolar modulation depth is reachable from the faceplate', () => {
+  it('the DEF declares FM and PM bipolar (the fact no surface may narrow)', () => {
     for (const id of ['fmAmount', 'pmAmount']) {
       const p = analogVcoDef.params.find((q) => q.id === id)!;
       expect(p.min, `${id}.min — inverted depth is a shipped feature`).toBeLessThan(0);
@@ -69,26 +53,24 @@ describe('analogVco — bipolar modulation depth is reachable from the card', ()
     }
   });
 
-  it('the CARD passes no literal range prop — every one comes from the def', () => {
-    // The narrow, card-scoped form of the repo's "a range comes from ONE
-    // place" rule. `min={0} max={1}` on `fmAmount` is what shipped, and it
-    // read as perfectly ordinary markup next to five neighbours that agreed
-    // with their def by coincidence.
-    const src = cardCode('AnalogVcoCard.svelte');
-    const offenders = [...src.matchAll(/\b(min|max|defaultValue)=\{-?[\d.]+\}/g)]
-      .map((m) => m[0]);
-    expect(
-      offenders.join(', '),
-      'AnalogVcoCard re-types a range the def already declares — bind it through spec()',
-    ).toBe('');
-  });
-
-  it('the card threads every fader through the def-reading spec() helper', () => {
-    // The positive half: "no literals" would also pass on a card with no
-    // faders at all. Six params, six spreads.
-    const src = cardSource('AnalogVcoCard.svelte');
-    for (const p of analogVcoDef.params) {
-      expect(src, `AnalogVcoCard must bind ${p.id} to the def`).toContain(`spec('${p.id}')`);
+  it('the FACE ranks both, so the def bounds are what a player actually gets', () => {
+    // ⚠ TWO CARD-SOURCE LEGS STOOD HERE AND BOTH ARE UNSPELLABLE NOW, which is
+    // a stronger outcome than either of them. They read `AnalogVcoCard.svelte`
+    // and asserted (a) no `min={0}`-style literal range prop and (b) every fader
+    // threaded through the def-reading `spec()` helper — the narrow, card-scoped
+    // form of "a range comes from ONE place". The card was the only surface that
+    // could restate a bound; with it gone the shell renders these params from
+    // the ParamDef itself, so there is no second number to drift.
+    //
+    // What replaces them is the reachability half, which is what the ORIGINAL
+    // DEFECT actually cost the player: the negative travel existed in the model
+    // and had no control. A param the face never ranks has no control either, so
+    // the bipolar assertion above is only meaningful while both params are on
+    // the faceplate. That is asserted here rather than assumed.
+    const ranked = new Set(analogVcoDef.face?.order ?? []);
+    for (const id of ['fmAmount', 'pmAmount']) {
+      expect(ranked.has(id), `${id} must be ranked on the face or its bipolar range is dead`)
+        .toBe(true);
     }
   });
 });
@@ -149,11 +131,12 @@ describe('filter — MODE lands on the undo stack like every other control', () 
     expect(patch.nodes[NID]!.params.mode, 'undo returns to the previous mode').toBe(0);
   });
 
-  it('the CARD commits through the shared setter, not a bare assignment', () => {
-    const src = cardCode('FilterCard.svelte');
-    expect(src).toContain("set('mode')");
-    // The exact shipped line, in any spacing, must be gone.
-    expect(src).not.toMatch(/\bt\.params\.mode\s*=/);
-    expect(src).not.toMatch(/patch\.nodes\[[^\]]+\]\.params\.mode\s*=/);
-  });
+  // ⚠ THE CARD-SOURCE LEG IS GONE AND THE BEHAVIOUR LEG ABOVE IS THE WHOLE
+  // CLAIM. It read `FilterCard.svelte` for `set('mode')` and for the absence of
+  // the exact shipped bare-proxy line. That was always the weaker of the pair:
+  // the leg above drives the REAL Y.Doc + UndoManager and fails if MODE lands
+  // untagged, whatever the source spelling. The surviving surface writes through
+  // `shellParamWrite`, one seam for every cell, and `mutate.guard.test.ts` holds
+  // the raw-write rule across the tree — so a bare proxy assignment has no
+  // module-local place left to hide.
 });
