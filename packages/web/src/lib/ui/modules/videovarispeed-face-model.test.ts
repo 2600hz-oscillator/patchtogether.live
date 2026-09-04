@@ -42,11 +42,9 @@ const read = (rel: string) => readFileSync(resolve(HERE, rel), 'utf8');
 
 const defSource = read('../../video/modules/videovarispeed.ts');
 const bodySource = read('videovarispeed/VideoVarispeedTransportBody.svelte');
-const cardSource = read('VideoVarispeedCard.svelte');
 const registrySource = read('../media/node-varispeed-registry.ts');
 
 const bodyCode = stripSourceComments(bodySource);
-const cardCode = stripSourceComments(cardSource);
 const registryCode = stripSourceComments(registrySource);
 
 /** The LIVE `ParamDef`. */
@@ -137,7 +135,7 @@ describe('videovarispeed face — the tier ladder, and why SPEED is not a fader'
     expect(def.face?.pages).toBeUndefined();
   });
 
-  it('START and END are FADERS — the primitive the card already drew', () => {
+  it('START and END are FADERS — the primitive a windowed range wants', () => {
     expect(def.face?.paramCells?.start).toBe('fader');
     expect(def.face?.paramCells?.end).toBe('fader');
     // `fader` requires a CONTINUOUS param; both are linear 0..1.
@@ -146,8 +144,6 @@ describe('videovarispeed face — the tier ladder, and why SPEED is not a fader'
       expect(param(id).min, id).toBe(0);
       expect(param(id).max, id).toBe(1);
     }
-    expect(cardCode, 'the card drew START/END as range inputs — the fader IS that primitive')
-      .toMatch(/class="window-slider"[\s\S]*?type="range"/);
   });
 
   it('SPEED is deliberately NOT a fader, and its LAW is why', () => {
@@ -240,7 +236,7 @@ describe('the loader MOVED to the node — it is not duplicated on two surfaces'
     // ⚠ The failure this forbids is two owners for one slot: a card and a body
     // each creating an object URL for `slot0` would leave whichever ran last
     // winning and the other's bytes orphaned.
-    for (const [name, code] of [['card', cardCode], ['body', bodyCode]] as const) {
+    for (const [name, code] of [['body', bodyCode] as const]) {
       expect(code, `${name} still creates its own object URL`).not.toMatch(/URL\.createObjectURL/);
       expect(code, `${name} still writes fileMeta directly`).not.toMatch(/writeFileMeta/);
       expect(code, `${name} still registers the export resolver`).not.toMatch(/registerVideoExport/);
@@ -248,16 +244,28 @@ describe('the loader MOVED to the node — it is not duplicated on two surfaces'
     }
   });
 
-  it('the CARD keeps its file input and play button — the collapse sweep reads them', () => {
-    // `collapse-keeps-playing.spec.ts` derives its "real player" population by
-    // grepping the CARD for these two testids; deleting the card would take
-    // videovarispeed out of that sweep silently.
-    expect(cardCode).toMatch(/data-testid="videovarispeed-file-input"/);
-    expect(cardCode).toMatch(/data-testid="videovarispeed-play-btn"/);
+  // ⚠ 'the CARD keeps its file input and play button — the collapse sweep reads
+  // them' STOOD HERE, and what it recorded is a LIVE CROSS-SLICE HAZARD rather
+  // than a claim about this face. `e2e/tests/collapse-keeps-playing.spec.ts`
+  // DERIVES its "real player" population by `readdirSync`-ing the card
+  // directory and grepping each `*Card.svelte` for a `-file-input` plus a
+  // `-play-btn` testid. When the fleet goes, that population resolves to
+  // NOTHING and the sweep passes while measuring zero modules — the vacuous-all
+  // shape, in an e2e nobody would think to re-read.
+  //
+  // That is an E2E subject-derivation problem, not a unit one, so it is not
+  // repaired here: this file's job is to stop depending on the card, and the
+  // spec's job is to stop deriving its population from one. Recorded at the
+  // exact leg that knew about it so the next reader finds it.
+  it('the BODY carries the file input and the play button', () => {
+    // The affordances themselves, on the surface that survives — which is what
+    // the deleted leg was ultimately about.
+    expect(bodyCode).toMatch(/data-testid="videovarispeed-file-input"/);
+    expect(bodyCode).toMatch(/data-testid="videovarispeed-play-btn"/);
   });
 
   it('neither surface keeps a stale mirror of the node\'s slot state', () => {
-    for (const [name, code] of [['card', cardCode], ['body', bodyCode]] as const) {
+    for (const [name, code] of [['body', bodyCode] as const]) {
       expect(code, `${name} mirrors slotNames into component $state`)
         .not.toMatch(/let slotNames = \$state/);
       expect(code, `${name} runs its own playhead interval`)
@@ -268,17 +276,20 @@ describe('the loader MOVED to the node — it is not duplicated on two surfaces'
 
 describe('the two surfaces agree, and the body is not a second owner', () => {
   it('the body BLITS and never adopts the node-owned <video>', () => {
-    // A DOM node has ONE parent and the legacy card adopts the element under
-    // `?shell=legacy`; adopting here would move it out from under that mount.
+    // A DOM node has ONE parent, and the element belongs to
+    // `node-varispeed-registry` on graph lifetime; adopting here would move it
+    // out from under the owner that keeps it alive with nothing mounted.
     expect(bodyCode).toMatch(/blitOutputForPreview/);
     expect(bodyCode).toMatch(/<canvas/);
     expect(bodyCode, 'the body adopts the element — that is a second owner')
       .not.toMatch(/nodeMedia\.adopt/);
   });
 
-  it('the CARD still adopts it — the ?shell=legacy path is unchanged', () => {
-    expect(cardCode).toMatch(/nodeMedia\.adopt/);
-  });
+  // ⚠ 'the CARD still adopts it — the `?shell=legacy` path is unchanged' STOOD
+  // HERE, and it was the OTHER half of the pair above: exactly one surface
+  // adopts. The card was that surface; the registry is the owner now, which
+  // card-media-lifetime holds, and the body is asserted above not to become a
+  // second one.
 
   it('the bank is a permanent section, NOT a whole-surface right-click', () => {
     // Right-click is claimed PER-CONTROL by ControlContextMenu (MIDI-learn /
@@ -299,7 +310,7 @@ describe('the two surfaces agree, and the body is not a second owner', () => {
 
 describe('resting text — the time readout is REMOVED, and what makes that safe', () => {
   it('no surface paints the card\'s `0:04 / 2:00` line any more', () => {
-    for (const [name, code] of [['card', cardCode], ['body', bodyCode]] as const) {
+    for (const [name, code] of [['body', bodyCode] as const]) {
       expect(code, `${name} still paints the time readout`)
         .not.toMatch(/data-testid="videovarispeed-time"/);
     }

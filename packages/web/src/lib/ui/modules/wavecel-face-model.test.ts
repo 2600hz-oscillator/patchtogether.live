@@ -26,7 +26,6 @@
 // derivation has no home on the plate. It is recorded here so the coverage
 // lapse is visible rather than silent.
 
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { wavecelDef } from '$lib/audio/modules/wavecel';
 import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyph-live';
@@ -45,11 +44,6 @@ const FACE = wavecelDef.face!;
  *  rather than the private registry object — so these assertions exercise the
  *  same lookup ModuleShell performs, not a shape beside it. */
 const cell = (key: string) => shellCellFor('wavecel', { kind: 'family', key } as never);
-/** The card source — the control-loss ground truth STOP 2 reads. */
-const CARD = readFileSync(
-  new URL('./WavecelCard.svelte', import.meta.url),
-  'utf8',
-);
 
 describe('wavecel — promoted, complete, and three honest pages', () => {
   it('is in STRICT_FACES, which is what actually swaps the surfaces', () => {
@@ -107,21 +101,21 @@ describe('wavecel — CLAIM 1: `envelope` was available and was DECLINED', () =>
 });
 
 describe('wavecel — CLAIM 2: the viz toggle is a VIEW preference, not module state', () => {
-  it('the CARD holds it in component $state — the line the estimate turned on', () => {
-    // ⚠ ANCHORED TO THE CARD SOURCE. The inventory said "viz toggle → toggle",
-    // which would have made this module the first adopter of the data-backed
-    // `toggle` shell cell. That reading came from the "persists across page
-    // reloads + multiplayer" comment sitting two lines below — which is about
-    // `wavetableSource`. If this assertion ever fails, the premise moved and
-    // the cell choice must be re-decided rather than inherited.
-    expect(CARD).toMatch(/let vizMode = \$state<'scope' \| '3d'>\('3d'\)/);
-  });
-
-  it('NEGATIVE CONTROL: the card does NOT persist the view mode anywhere', () => {
-    // The other half of the same claim: if the card ever starts writing a view
-    // key to node.data, the "private preference" argument is gone.
-    expect(CARD).not.toMatch(/vizMode\s*=\s*[^;]*node\.data/);
-    expect(CARD).not.toMatch(/data\.vizMode/);
+  // ⚠ THIS CLAIM WAS ANCHORED TO THE CARD SOURCE, and both of its legs read it.
+  // The inventory said "viz toggle → toggle", which would have made wavecel the
+  // first adopter of the DATA-BACKED `toggle` shell cell; the estimate turned on
+  // a single line — the card holding `vizMode` in component `$state` rather
+  // than on `node.data`. (The "persists across page reloads + multiplayer"
+  // comment two lines below it is about `wavetableSource`, not the view.)
+  //
+  // The card is gone, so the SOURCE half of that pair is unspellable. The
+  // CONCLUSION it supported is not: the view mode is a PANEL, never the
+  // data-backed `toggle` cell the inventory proposed, and the two legs below
+  // assert that at the resolver — which is where a re-decision would actually
+  // show up. It is not a param either, so it cannot be ranked as one.
+  it('the view mode is NO param — a preference that became a ParamDef is module state', () => {
+    expect(wavecelDef.params.some((p) => /viz/i.test(p.id))).toBe(false);
+    expect(Object.keys(wavecelDef.face?.paramCells ?? {}).some((k) => /viz/i.test(k))).toBe(false);
   });
 
   it('so it is NOT a `toggle` shell cell — wavecel adopts none', () => {
@@ -150,14 +144,16 @@ describe('wavecel — CLAIM 3: every way of ACQUIRING a wavetable survives promo
     expect(cell('wavecel-wav-input-{n}')?.kind).toBe('file');
   });
 
-  it('ANCHORED: each maps to a testid the CARD actually carries', () => {
-    // Deny-by-default in the honest direction — the cells are named after
-    // declared families, and a family whose testid left the card would mean
-    // the face is modelled on a control that no longer exists.
-    for (const f of wavecelDef.controlFamilies ?? []) {
-      expect(CARD, `${f.id} testid missing from the card`).toContain(f.testidPrefix);
-    }
-  });
+  // ⚠ 'ANCHORED: each maps to a testid the CARD actually carries' STOOD HERE.
+  // Its point was deny-by-default in the honest direction: the cells are named
+  // after declared families, and a family whose testid had left the card would
+  // mean the face was modelled on a control that no longer existed. The card
+  // was where a family's members were emitted; the shell renders a family
+  // GENERICALLY as `shell-cell-<familyId>`, so there is no per-family literal
+  // in surface source to anchor on. `module-docs-lint` now asks the same
+  // question of the resolver instead — every declared family must resolve to a
+  // live shell cell — which is exactly what the leg below asserts for wavecel's
+  // own four, one module ahead of the fleet-wide gate.
 
   it('and every declared family is BACKED by a registered cell', () => {
     for (const f of wavecelDef.controlFamilies ?? []) {
