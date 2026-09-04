@@ -28,7 +28,7 @@
 // SwiftShader and runs in the parallel sharded matrix (no real-GPU attest).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock, openToyboxFaceTab } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 type PatchGlobal = {
@@ -45,16 +45,6 @@ type PatchGlobal = {
     >;
   };
 };
-
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(0px, 0px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** Read node.data back from the live patch. */
 async function readData(page: Page) {
@@ -89,16 +79,16 @@ test.describe('TOYBOX presets (Phase 6)', () => {
     // page.goto below.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
+    // The preset dropdown lives on the faceplate presets tab.
+    await openToyboxFaceTab(page, 'presets');
 
     // The dropdown is populated from the static manifest (the SOURCE OF TRUTH).
     // Derive the expected option count from the manifest itself so the assertion

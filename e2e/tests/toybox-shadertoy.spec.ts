@@ -21,7 +21,7 @@
 // `ci-swiftshader-video-e2e-timeouts` discipline.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 
 type STGlobal = {
   __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -39,7 +39,7 @@ type VideoEngineLike = {
 /** Sample the preview canvas: total lit pixels + a coarse colour signature. */
 async function sampleCanvas(page: Page): Promise<{ lit: number; total: number; sig: string }> {
   return page.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+    const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
     if (!canvas) return { lit: 0, total: 0, sig: '' };
     const c2d = canvas.getContext('2d');
     if (!c2d) return { lit: 0, total: 0, sig: '' };
@@ -58,15 +58,14 @@ async function sampleCanvas(page: Page): Promise<{ lit: number; total: number; s
 }
 
 async function spawnToybox(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-toybox').first();
-  await card.waitFor({ state: 'visible', timeout: 10_000 });
+  await openToyboxDock(page);
 }
 
 test.describe('TOYBOX Shadertoy runtime @webgl-serial', () => {
@@ -113,7 +112,7 @@ test.describe('TOYBOX Shadertoy runtime @webgl-serial', () => {
       () => {
         const w = globalThis as unknown as STGlobal;
         w.__toyboxFreeze?.(2.0);
-        const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+        const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
         const d = c?.getContext('2d')?.getImageData(0, 0, c.width, c.height).data;
         if (!d) return false;
         let lit = 0;
@@ -160,7 +159,7 @@ test.describe('TOYBOX Shadertoy runtime @webgl-serial', () => {
       () => {
         const w = globalThis as unknown as STGlobal;
         w.__toyboxFreeze?.(2.0);
-        const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+        const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
         const d = c?.getContext('2d')?.getImageData(0, 0, c.width, c.height).data;
         if (!d) return false;
         let lit = 0;

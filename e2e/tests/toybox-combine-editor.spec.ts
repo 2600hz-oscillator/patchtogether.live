@@ -2,8 +2,9 @@
 //
 // TOYBOX Phase 4 — the bespoke SVG combine-graph editor.
 //
-// Spawns a TOYBOX with two DISTINCT lit layers, opens the in-card node editor,
-// and drives it through the UI:
+// Spawns a TOYBOX with two DISTINCT lit layers, opens the console's combine
+// editor (the dock full view's combine tab on the default shell), and drives
+// it through the UI:
 //   1. add an op node (the ADD · map button),
 //   2. wire it (click an output port dot, then an input port dot),
 //   3. wire it into OUTPUT,
@@ -14,12 +15,12 @@
 //       the output produces a measurably different composite (the editor edits
 //       the LIVE combine graph, not just data).
 //
-// Determinism: we pin iTime via window.__toyboxFreeze and sample the on-card
+// Determinism: we pin iTime via window.__toyboxFreeze and sample the console
 // preview canvas average colour (the same canvas the VRT freezes), so the
 // "output changed" assertion is a stable numeric delta, not a flaky pixel diff.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from './_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from './_helpers';
 
 type PatchGlobal = {
   __patch: {
@@ -31,24 +32,6 @@ type PatchGlobal = {
   __ydoc: { transact: (fn: () => void) => void };
   __toyboxFreeze?: (t?: number) => void;
 };
-
-/**
- * Pin the Svelte Flow viewport to scale 1 at the origin and pan the spawned
- * card UP so its (tall, editor-open) body clears the fixed bottombar footer,
- * which otherwise intercepts pointer events on the lower controls. Mirrors the
- * VRT spec's viewport pin.
- */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    // Pan up so the card top sits near the very top of the canvas; the editor
-    // section + SVG then fall in the visible upper region above the footer.
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** Seed two layers with bright, DISTINCT solid shaders (so a reroute is
  *  visible) + an empty combine so the editor seeds the default graph. */
@@ -79,7 +62,9 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     ({ time }) => {
       const g = globalThis as unknown as PatchGlobal;
       g.__toyboxFreeze?.(time);
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const c = document.querySelector(
+        '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+      ) as HTMLCanvasElement | null;
       if (!c) return false;
       const ctx = c.getContext('2d');
       if (!ctx) return false;
@@ -99,7 +84,9 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
   );
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   return page.evaluate(() => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const c = document.querySelector(
+      '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+    ) as HTMLCanvasElement;
     const ctx = c.getContext('2d')!;
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     let r = 0, g = 0, b = 0, n = 0;
@@ -265,7 +252,7 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -273,9 +260,7 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
       [],
     );
 
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     await seedTwoLayers(page);
 
@@ -418,15 +403,14 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
     await seedTwoLayers(page);
 
     await ensureCombineOpen(page);

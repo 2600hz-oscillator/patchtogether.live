@@ -17,11 +17,11 @@
 // node.data.combine (the edge swap) AND a measurable composite change.
 //
 // CI robustness mirrors toybox-combine-editor.spec.ts: test.setTimeout(60s),
-// pinViewport, seedTwoLayers, clickEd(force+noWaitAfter), expect.poll for the
+// seedTwoLayers, clickEd(force+noWaitAfter), expect.poll for the
 // async Yjs → reactive settle on node.data reads.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from './_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from './_helpers';
 
 type CombineNode = { id: string; kind: string };
 type CombineEdge = { id: string; from: string; to: string; toPort: string };
@@ -36,15 +36,6 @@ type PatchGlobal = {
   __toyboxFreeze?: (t?: number) => void;
 };
 
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** Seed two bright DISTINCT layers + clear the combine so the first editor touch
  *  seeds the default graph (matches the combine-editor spec). */
@@ -215,15 +206,14 @@ const menu = (page: Page) => page.locator('[data-testid="toybox-node-menu"]');
  *  seed (the seed only exists AFTER the first mutation). Returns once the src/op/
  *  out testids exist. */
 async function setup(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
     [],
   );
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-  await pinViewport(page);
+  await openToyboxDock(page);
   await seedTwoLayers(page);
   await ensureCombineOpen(page);
   await expect(page.locator('[data-testid="toybox-graph-svg"]')).toBeVisible();

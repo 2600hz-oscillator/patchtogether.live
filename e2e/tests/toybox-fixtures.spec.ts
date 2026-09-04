@@ -78,7 +78,9 @@ test('@webgl-smoke fixture pack registers through the REAL seam and composites t
   // are the same bytes — determinism is a property of the pack, asserted.
   const sample = () =>
     page.evaluate(() => {
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+      const c = document.querySelector(
+        '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+      ) as HTMLCanvasElement;
       const { data } = c.getContext('2d')!.getImageData(
         Math.round(c.width / 2),
         Math.round(c.height / 2),

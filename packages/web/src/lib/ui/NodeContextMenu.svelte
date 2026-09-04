@@ -251,16 +251,21 @@
 
   // Window-level Escape handler — context menus traditionally don't take focus,
   // and the user expects Esc to dismiss regardless of where focus actually sits.
+  // ⚠ CAPTURE + stopPropagation: Canvas's dock-close Escape listener is a
+  // PLAIN window listener by design ("capture-phase ESC consumers win first").
+  // A plain listener here let one Esc press dismiss this menu AND close the
+  // whole dock full view underneath it (the ToyboxNodeMenu class, same seam).
   $effect(() => {
     if (!open) return;
     const onWindowKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onclose();
       }
     };
-    window.addEventListener('keydown', onWindowKeydown);
-    return () => window.removeEventListener('keydown', onWindowKeydown);
+    window.addEventListener('keydown', onWindowKeydown, true);
+    return () => window.removeEventListener('keydown', onWindowKeydown, true);
   });
 
   function pickDelete() {

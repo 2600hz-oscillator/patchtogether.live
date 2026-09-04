@@ -41,7 +41,7 @@
 // deterministic, bounded-step pixel read instead of a wall-clock-sampling grind.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 // The REAL persisted shapes, imported from the app (#1499) — the previous
@@ -66,17 +66,6 @@ type PatchGlobal = {
   };
   __ydoc: { transact: (fn: () => void) => void };
 };
-
-/** Pin the viewport at scale 1 so the canvas DOM box is stable. */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -8px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** Seed layer 0 = OBJ sphere (matcap-only to start, spin 0 for determinism),
  *  layer 1 = a bright cos-gradient shader. The combine OUTPUT shows layer 0 (the
@@ -149,7 +138,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
         __toyboxPrevSig?: string;
       };
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -169,7 +158,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     { timeout: 15_000 },
   );
   return page.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const c2d = canvas.getContext('2d')!;
     const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
     let r = 0, gg = 0, b = 0, n = 0;
@@ -210,16 +199,14 @@ test.describe('TOYBOX LAYER INPUT (feedback-tap source)', () => {
     // frame.time), so every frozen-frame render + pixel read below is byte-identical.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     await seedObjAndShader(page);
 

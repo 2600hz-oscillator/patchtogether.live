@@ -1,10 +1,11 @@
 // e2e/tests/toybox-cv-section.spec.ts
 //
-// TOYBOX 3-column card + the 6-input CV/MOD section UI. Proves:
-//   - the 3-column layout renders (LEFT preview/editor | CENTER combine | RIGHT
-//     CV section),
+// TOYBOX console + the 6-input CV/MOD section UI. Proves:
+//   - the faceplate console structure renders (screen zone | persistent layer
+//     band | tab rail, cv-mod the default pane — the card's 3-COLUMN layout
+//     died with the card; the cv section IS the default tab's content),
 //   - all 6 always-on scope canvases (toybox-cv-scope-cvN) render,
-//   - routing through the in-card target/param selects persists to cvRoutes,
+//   - routing through the console's target/param selects persists to cvRoutes,
 //   - an UNPATCHED routed port shows an idle scope (always-on) + the badge
 //     reads '—' (idle); a patched cv source flips the badge to CV.
 //
@@ -12,7 +13,7 @@
 // toybox-cv-routing.spec.ts; the attenuverter math in toybox-cv-math.test.ts.)
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 
 type PatchGlobal = {
   __patch: {
@@ -21,16 +22,6 @@ type PatchGlobal = {
   };
   __ydoc: { transact: (fn: () => void) => void };
 };
-
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 async function seedShaderLayer(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -50,32 +41,32 @@ async function seedShaderLayer(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 }
 
-test.describe('TOYBOX 3-column card + CV/MOD section', () => {
+test.describe('TOYBOX console + CV/MOD section', () => {
   test.setTimeout(90_000);
 
-  test('renders 3 columns, all 6 inline scopes, and routes a port via the selects', async ({ page }) => {
+  test('renders the console zones, all 6 inline scopes, and routes a port via the selects', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
     await seedShaderLayer(page);
 
-    // 3-column body.
-    await expect(page.locator('[data-testid="toybox-cols"]')).toBeVisible();
-    await expect(page.locator('[data-testid="toybox-col-left"]')).toBeVisible();
-    await expect(page.locator('[data-testid="toybox-col-center"]')).toBeVisible();
-    await expect(page.locator('[data-testid="toybox-col-right"]')).toBeVisible();
+    // Console structure: screen + persistent layer band + tab rail, with the
+    // cv-mod pane as the DEFAULT tab (the card's toybox-cols 3-column body
+    // died with the card; see the manifest row).
+    await expect(page.locator('[data-testid="toybox-face-console"]')).toBeVisible();
+    await expect(page.locator('[data-testid="toybox-face-layer-band"]')).toBeVisible();
+    await expect(page.locator('[data-testid="toybox-face-pane"]')).toHaveAttribute('data-tab', 'cv');
 
-    // The CV section lives in the RIGHT column + defaults OPEN.
+    // The CV section is the default pane's content.
     await page.locator('[data-testid="toybox-cv-rows"]').waitFor({ state: 'visible', timeout: 5_000 });
 
     // All 6 always-on inline scope canvases render.

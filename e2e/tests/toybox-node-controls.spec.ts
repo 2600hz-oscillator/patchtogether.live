@@ -43,7 +43,7 @@
 // it runs in the normal parallel e2e shards.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from './_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 type GNode = { id: string; kind: string; layer?: number; x: number; y: number; params?: Record<string, number> };
@@ -87,40 +87,16 @@ const PORTS: Record<OpKind, number> = {
   exquisite: 4,
 };
 
-const CANVAS = '[data-testid="toybox-canvas"]';
+const CANVAS = '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]';
 
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
-/** Pan the svelte-flow viewport so `locator` sits near the visible centre.
- *  A tall card (feedback has 14 knobs) pushes lower controls BELOW the browser
- *  viewport, and svelte-flow positions content via a CSS transform — so
- *  Playwright's scrollIntoView/hover can't reach them (a real user pans the
- *  canvas). We do the same: nudge the viewport transform by the element's offset
- *  from a target point, so every knob can be hovered + dragged. */
-async function panToElement(page: Page, locator: ReturnType<Page['locator']>): Promise<void> {
-  const box = await locator.boundingBox();
-  if (!box) return;
-  const TARGET = { x: 360, y: 320 };
-  const cur = await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    const m = (vp?.style.transform ?? '').match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
-    return m ? { x: parseFloat(m[1]!), y: parseFloat(m[2]!) } : { x: 8, y: -24 };
-  });
-  const nx = cur.x + (TARGET.x - (box.x + box.width / 2));
-  const ny = cur.y + (TARGET.y - (box.y + box.height / 2));
-  await page.evaluate(({ x, y }) => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (vp) vp.style.transform = `translate(${x}px, ${y}px) scale(1)`;
-  }, { x: nx, y: ny });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+/** Bring `locator` into view inside the DOCK pane. The card-era version panned
+ *  the svelte-flow viewport transform (knobs lived inside the lane canvas);
+ *  the console now mounts in the dock full view, whose pane is an ordinary
+ *  scroll container — so plain scrollIntoView is the real user gesture and the
+ *  viewport transform is a no-op for dock content. */
+async function panToElement(_page: Page, locator: ReturnType<Page['locator']>): Promise<void> {
+  await locator.scrollIntoViewIfNeeded();
 }
 
 function sources(): GNode[] {
@@ -214,11 +190,10 @@ async function boot(page: Page): Promise<string[]> {
   // calls the spec drives via __toyboxFreeze are unaffected, so every render /
   // ring-alloc / canvas-visible assertion below still holds.
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-  await pinViewport(page);
+  await openToyboxDock(page);
   await ensureCombineOpen(page);
   await expect(page.locator('[data-testid="toybox-graph-svg"]')).toBeVisible();
   return errors;

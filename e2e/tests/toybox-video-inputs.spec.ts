@@ -42,7 +42,7 @@
 // (≥90s per the ci-swiftshader-video-e2e-timeouts discipline).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { spawnPatch, openToyboxDock, type SpawnNode, type SpawnEdge } from './_helpers';
 
 type VideoLayer = {
   kind: string;
@@ -59,17 +59,6 @@ type PatchGlobal = {
   __ydoc: { transact: (fn: () => void) => void };
   __toyboxFreeze?: (t?: number) => void;
 };
-
-/** Pin the viewport at scale 1 so the canvas DOM box is stable. */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -8px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** A combine graph whose OUTPUT passes layer 0 straight through (fade amount 0). */
 function passLayer0Combine(): unknown {
@@ -142,7 +131,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     ({ time }) => {
       const g = globalThis as unknown as PatchGlobal;
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -168,7 +157,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     const avg = await page.evaluate(({ time }) => {
       const g = globalThis as unknown as PatchGlobal;
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+      const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
       const c2d = canvas.getContext('2d')!;
       const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
       let r = 0, gg = 0, b = 0, n = 0;
@@ -206,7 +195,7 @@ async function resume(page: Page): Promise<void> {
 
 /** Spawn TOYBOX + an ACIDWARP video source patched into `port`. */
 async function spawnWithFeed(page: Page, port: 'inA' | 'inB'): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   const nodes: SpawnNode[] = [
     { id: 'tb', type: 'toybox', position: { x: 360, y: 40 }, domain: 'video' },
@@ -222,9 +211,7 @@ async function spawnWithFeed(page: Page, port: 'inA' | 'inB'): Promise<void> {
     },
   ];
   await spawnPatch(page, nodes, edges);
-  const card = page.locator('.svelte-flow__node-toybox').first();
-  await card.waitFor({ state: 'visible', timeout: 10_000 });
-  await pinViewport(page);
+  await openToyboxDock(page);
 }
 
 test.describe('TOYBOX video inputs (VID A / VID B) — patched-feed layer source', () => {
