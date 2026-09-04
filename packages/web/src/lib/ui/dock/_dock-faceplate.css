@@ -456,10 +456,3 @@
   font-size: 10px;
   text-transform: none;
 }
-
-/* legacy-card mount host: the module's verbatim *Card.svelte at NATIVE scale. */
-.dock-faceplate .editor .fp-card-mount {
-  position: relative;
-  width: max-content;
-  max-width: 100%;
-}

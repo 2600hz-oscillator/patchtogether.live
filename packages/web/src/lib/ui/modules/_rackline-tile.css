@@ -1,12 +1,11 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * RACKLINE lane-tile vocabulary — the SHARED partial (P0.3b re-spec).
+ * RACKLINE lane-tile vocabulary — the shared partial.
  *
  * The owner-approved compact `.mod` tile (scratchpad/ux-proposal-b.html:95-149),
  * ported VERBATIM (colours mapped onto the app's --cable-* / --ink-faint /
- * --tile-border / --jackrail-bg tokens). Both <ModuleShell> (migrated) and
- * <ModuleShellPlaceholder> (un-migrated) put `rl-tile` on their root and consume
- * these classes, so the lane face is IDENTICAL BY CONSTRUCTION — a real RACKLINE
- * tile, never a stub. The styled `.jacks` rail is rendered by PatchPanel's
+ * --tile-border / --jackrail-bg tokens). <ModuleShell> puts `rl-tile` on its
+ * root and consumes these classes, so every lane face is a real RACKLINE tile
+ * by construction. The styled `.jacks` rail is rendered by PatchPanel's
  * lane-rail variant (a descendant of `.rl-tile`), honouring the
  * "new modules use PatchPanel" standard while matching the mock look.
  *

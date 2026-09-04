@@ -220,15 +220,10 @@
   // entry per module; the three entries below are the whole map now, and none of
   // them is a module def. A new module does not register a node component at all
   // — it declares a `face`, and `ModuleShell` renders it.
-  // P0.3b — the legacy-fallback MIGRATION bridge: a pure derivation deciding
-  // which node component a module renders as in its workflow lane (legacy card /
-  // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
-  // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
+  // The lane-render derivation: which node component a module renders as in its
+  // workflow lane — its own roaming surface, the faceplate tile, or the dock
+  // stub that stands in for it while it is docked.
   import { laneRenderKind, emittedTypeFor, isLaneNative, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
-  import { migrated } from '$lib/ui/workflow/strict-faces';
-  // TEST SEAM (#2068): force a PROMOTED type back onto the un-migrated render
-  // path. Dev/VITE_E2E_HOOKS builds only — see `laneMigrated` below.
-  import { forcedUnmigrated, installForcedPlaceholderHook } from '$lib/dev/forced-placeholder.svelte';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
@@ -382,12 +377,10 @@
   import DockRail from '$lib/ui/dock/DockRail.svelte';
   import type { NodeTypes } from '@xyflow/svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
-  // P0.3b — the workflow-shell lane components: the curated skeleton (migrated
-  // modules) + the uniform placeholder (un-migrated). Registered as node types
-  // alongside dockStub; emitted only under the `?shell=1` preview.
+  // The workflow lane tile: one faceplate component every module renders as,
+  // registered as a node type alongside dockStub.
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
-  import ModuleShellPlaceholder from '$lib/ui/modules/ModuleShellPlaceholder.svelte';
-  // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
+  // The bottom-drawer EXPANDED full-view faceplate (its own
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
   // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
@@ -502,43 +495,6 @@
     rackspaceId = undefined,
     scratchSeeded = undefined,
   }: Props = $props();
-
-  /** THE ONE UI SWITCH. Faceplates in the lane are the DEFAULT and need no
-   *  querystring; `?shell=legacy` is the single escape hatch, rendering each
-   *  module's verbatim *Card.svelte inside the same shell.
-   *
-   *  This was `shellPreview`, an opt-in `?shell=1` preview. The preview became
-   *  the product, so the flag INVERTED: the default arm is now the new look and
-   *  the flag selects the old one. Anything other than exactly `legacy` (including a
-   *  stale `?shell=1` bookmark) resolves to faceplates. */
-
-  /**
-   * STRICT_FACES membership AS THE RENDER PATH MUST READ IT — the single
-   * promotion question this component asks, everywhere it asks it.
-   *
-   * It is `migrated(type)` in every build a user can reach. The second term is
-   * the FORCED-PLACEHOLDER TEST SEAM (#2068): under DEV / `VITE_E2E_HOOKS=1` a
-   * spec may name types that must render through the UN-MIGRATED path even
-   * though they are promoted, so a test whose subject is that path (the graph
-   * MIDI dispatch fallback, the dock's verbatim-card branch) keeps a subject
-   * after the last un-promoted module is gone. `forcedUnmigrated` re-reads the
-   * same gate and constant-folds to `false` in a production build, so this is
-   * `migrated(type)` there by construction — see
-   * `$lib/dev/forced-placeholder.svelte.ts` for both ends of the guard.
-   *
-   * ⚠ CANVAS IS THE ONE EVALUATION SITE and that is load-bearing here.
-   * `DockFullView`, `DockCardHost` and `AudioIoSurface` all take an INJECTED
-   * `migrated` boolean rather than calling `migrated()` themselves (see
-   * `dockRailRendersFace`'s header), so routing every read through this helper
-   * makes a forced type indistinguishable from an un-promoted one on EVERY
-   * surface at once — the lane tile, the dock full view, the rail tray and the
-   * 🎧 panel. A seam that moved only the lane would leave the dock painting a
-   * faceplate with no legacy card to drive, which is the half of the subject
-   * these specs actually need.
-   */
-  function laneMigrated(type: string): boolean {
-    return migrated(type) && !forcedUnmigrated(type);
-  }
 
   /** `?seed=none` — A TEST-ONLY EMPTY RACK. Suppresses the four one-shot
    *  SEEDERS below (the pinned M/E/C + surface singletons, the default
@@ -724,12 +680,6 @@
   // this body's top level would latch a stale value instead of re-installing.
   if (testHooksEnabled()) {
     onMount(() => {
-      // #2068 — `__forceUnmigrated(types)`: render those types through the
-      // UN-MIGRATED lane/dock path (see `laneMigrated`). Installed here rather
-      // than in the module body so it shares this block's one gate, and it
-      // drains `__forceUnmigratedPending` so an `addInitScript` write placed
-      // before boot is honoured too.
-      installForcedPlaceholderHook();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -8798,9 +8748,6 @@
           <div class="dock-fullview-pane" data-testid="dock-fullview-pane" data-pane-node={fv.node.id}>
             <DockFullView
               node={fv.node}
-              nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-              rackSize={rackSizeByType[fv.node.type]}
-              migrated={laneMigrated(fv.node.type)}
               title={fv.title}
               onClose={() => dockStore.closeFullView(fv.node.id)}
               onCollapse={() => dockStore.closeFullView(fv.node.id)}

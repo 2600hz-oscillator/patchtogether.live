@@ -156,9 +156,8 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
-/* P0.3b RACKLINE lane tiles (ModuleShell / ModuleShellPlaceholder). Their roots
- * are deliberately NOT .mod-card/.card/.moog-panel, so they need their own
- * sizing rule.
+/* RACKLINE lane tiles (ModuleShell). Their roots are deliberately NOT
+ * .mod-card/.card/.moog-panel, so they need their own sizing rule.
  *
  * ⚠ That root choice used to be justified here as "so rear-view never
  * mirrors/hides them". It no longer is, and the claim was removed rather than
@@ -167,7 +166,7 @@
  * Nothing about cable traceability turned on it; the rear view has always kept
  * cables painted on the edge layer, which is a separate surface from the card.
  *
- * UNIFORM WIDTH (re-spec): every shell/placeholder tile is the SAME `--shell-tile-w`
+ * UNIFORM WIDTH (re-spec): every shell tile is the SAME `--shell-tile-w`
  * (192px, the mock's uniform tile) — NO LONGER keyed to the module's per-module
  * `--rack-hp` (which made recorderbox/synesthesia/tidyvco render at different
  * widths). The owner "same-size all modules HORIZONTALLY" premise. Canvas's
@@ -193,8 +192,8 @@
  * Pinning the OUTER box here is load-bearing: the content swap must NEVER resize
  * the measured node — at ANY tier — so the channel-column stack math never
  * recomputes / thrashes on zoom (§3.1 / §9). */
-.svelte-flow__node > :is(.module-shell, .module-shell-placeholder),
-.svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder) {
+.svelte-flow__node > .module-shell,
+.svelte-flow__node > * > .module-shell {
   box-sizing: border-box;
   width: var(--shell-tile-w, 192px);
   height: var(--shell-tile-h, 180px);
@@ -340,12 +339,12 @@
   visibility: hidden;
   pointer-events: none;
 }
-/* RACKLINE LANE TILES — ModuleShell + ModuleShellPlaceholder (#1605).
+/* RACKLINE LANE TILES — ModuleShell (#1605).
  *
  * The tile root is `.module-shell.rl-tile`, deliberately NOT one of the three
  * legacy card roots, so the rule above never reached it and the shell rack did
  * not flip at all: `rearView` toggled, the Flip control read aria-pressed=true,
- * and the screen did not change. Both tile components render PatchPanel
+ * and the screen did not change. The tile renders PatchPanel
  * (lane-rail) — which has ALWAYS put a live `.card-back-panel` in the tile — so
  * the rear face exists and only the reveal was missing.
  *
