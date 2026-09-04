@@ -266,6 +266,31 @@ export const RESERVED_PINNED_IDS: ReadonlySet<string> = new Set(
  * `data.name`, `data.workflowDefaultWired` and every other per-node key are
  * DELIBERATELY not canonicalised — they are legitimate user state, and a repair
  * that flattened them would be a hardening that breaks legitimate use.
+ *
+ * ── ⚠ THE `pinned` LEG IS SCOPED TO presence:'pinned' SPECS ────────────────
+ * `type`/`domain` are canonicalised for EVERY reserved id: they are the two
+ * fields `identityChanged` reads (audio/reconciler.ts), so they ARE the
+ * device-session defence, and both session holders (`pinned-audioIn`,
+ * `pinned-audioOut`) are presence:'pinned' and keep the full guard.
+ *
+ * `data.pinned` is NOT canonicalised for a presence:'type' spec, because there
+ * an UN-PINNED occupant is legitimate BY THE SPEC'S OWN DEFINITION —
+ * presence:'type' means "any node of this type satisfies the invariant, pinned
+ * or not". `pinned-timelorde` is the only one today, and an un-pinned canvas
+ * TIMELORDE is exactly what a rack IMPORTED FROM A SAVED PATCH has: the
+ * presence:'type' rule spawns no pinned instance when a canvas one already
+ * exists. Re-pinning it flips `isCanvasHiddenNode`, so a node the player can
+ * see and drag silently vanishes from the canvas — a hardening that breaks
+ * legitimate use, which is the one thing this repair must never do. (Caught by
+ * vrt `face-timelorde-compact`, whose subject IS that adopted un-pinned node.)
+ *
+ * ⚠ AND THE NARROWING COSTS NOTHING IN TEARDOWN TERMS. `identityChanged`
+ * compares `type` and `domain` ONLY, so a `pinned` drift never reaches
+ * `engine.removeNode` and never touches a device session. What the `pinned` leg
+ * closes is the SECOND-ORDER exposure — `isPinnedNode` gates Clear/Backspace,
+ * so an un-pinned node becomes deletable by a later user action — and that is
+ * still closed everywhere it is coherent to close it. Both claims are proved
+ * against the real reconciler in workflow-pins-ydoc.test.ts, not asserted here.
  */
 export function planPinnedIdentityRepairs(
   nodes: ReadonlyArray<PinnedIdentityNodeLike | null | undefined>,
@@ -281,7 +306,9 @@ export function planPinnedIdentityRepairs(
     const fields: Array<'type' | 'domain' | 'pinned'> = [];
     if (node.type !== spec.type) fields.push('type');
     if (node.domain !== spec.domain) fields.push('domain');
-    if (node.data?.pinned !== true) fields.push('pinned');
+    // See the header: a presence:'type' spec is SATISFIED by an unpinned node,
+    // so un-pinning one is a legitimate player-reachable state, not an attack.
+    if (spec.presence !== 'type' && node.data?.pinned !== true) fields.push('pinned');
     if (fields.length > 0) out.push({ id: spec.id, type: spec.type, domain: spec.domain, fields });
   }
   return out;

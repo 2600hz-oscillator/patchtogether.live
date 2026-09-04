@@ -61,10 +61,12 @@ function runEnsure(peer: Peer): number {
     for (const r of repairs) {
       const node = peer.patch.nodes[r.id];
       if (!node) continue;
-      if (node.type !== r.type) node.type = r.type;
-      if (node.domain !== r.domain) node.domain = r.domain as ModuleNode['domain'];
-      if (!node.data) node.data = {};
-      if ((node.data as Record<string, unknown>).pinned !== true) {
+      // Mirrors Canvas exactly: write ONLY the fields the planner named, so the
+      // presence:'type' exemption cannot be overridden by the applier.
+      if (r.fields.includes('type')) node.type = r.type;
+      if (r.fields.includes('domain')) node.domain = r.domain as ModuleNode['domain'];
+      if (r.fields.includes('pinned')) {
+        if (!node.data) node.data = {};
         (node.data as Record<string, unknown>).pinned = true;
       }
       wrote++;
@@ -561,5 +563,80 @@ describe('hostile peer vs. a reserved slot', () => {
     expect(runEnsure(a)).toBe(0); // nothing to repair, nothing to spawn
     expect(a.patch.nodes['pinned-mixmstrs']!.type).toBe('mixmstrs'); // untouched
     expect(a.patch.nodes['evil-mixer']!.type).toBe('mixmstrs'); // not our business
+  });
+});
+
+// ── THE NARROWING, PROVED RATHER THAN ASSERTED ────────────────────────────
+//
+// workflow-pins.ts's header makes two claims about scoping the `pinned` leg to
+// presence:'pinned' specs. Both are checked here against the REAL reconciler,
+// because both are the kind of claim that is easy to state and easy to be wrong
+// about.
+
+describe('the pinned-flag leg — scope and cost', () => {
+  it('a `pinned` drift causes NO engine teardown (identityChanged reads type/domain ONLY)', async () => {
+    // The claim that lets the leg be narrowed safely: re-pinning, or failing to
+    // re-pin, can never cost a device session. If this went red, the exemption
+    // for presence:'type' would be giving away a session guard.
+    const a = makePeer();
+    const bus = createSnapshotBus({ patch: a.patch as never, ydoc: a.doc });
+    const pe = new PatchEngine();
+    const eng = new SessionEngine();
+    pe.registerDomain(eng);
+    const handle = attachReconciler(pe, { bus });
+    try {
+      runEnsure(a);
+      await flushReconciler(eng);
+      expect(eng.live.has('pinned-audioOut')).toBe(true);
+
+      const before = eng.ops.length;
+      // Flip ONLY the flag — no type, no domain.
+      a.doc.transact(() => {
+        (a.patch.nodes['pinned-audioOut']!.data as Record<string, unknown>).pinned = false;
+      });
+      await flushReconciler(eng);
+      expect(eng.ops.slice(before)).toEqual([]); // no removeNode, no addNode
+      expect(eng.live.has('pinned-audioOut')).toBe(true);
+
+      // ...and the repair puts the flag back, still without a teardown.
+      const beforeRepair = eng.ops.length;
+      expect(runEnsure(a)).toBe(1);
+      await flushReconciler(eng);
+      expect((a.patch.nodes['pinned-audioOut']!.data as Record<string, unknown>).pinned).toBe(true);
+      expect(eng.ops.slice(beforeRepair)).toEqual([]);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('an UN-PINNED timelorde SURVIVES the ensure — the imported-rack state', () => {
+    // presence:'type' is satisfied by an unpinned node, so this is what a rack
+    // loaded from a saved patch looks like. The ensure must neither re-pin it
+    // (which would hide it from the canvas) nor spawn a competing clock.
+    const a = makePeer();
+    runEnsure(a);
+    a.doc.transact(() => {
+      (a.patch.nodes['pinned-timelorde']!.data as Record<string, unknown>).pinned = false;
+    });
+    for (let i = 0; i < 5; i++) expect(runEnsure(a)).toBe(0);
+    expect((a.patch.nodes['pinned-timelorde']!.data as Record<string, unknown>).pinned).toBe(false);
+    // ...and no second clock appeared: maxInstances=1 means a competitor would
+    // be a worse bug than the one being avoided.
+    const timelordes = Object.values(a.patch.nodes).filter((n) => n?.type === 'timelorde');
+    expect(timelordes).toHaveLength(1);
+  });
+
+  it('an un-pinned timelorde that is ALSO retyped is still repaired back to timelorde', () => {
+    const a = makePeer();
+    runEnsure(a);
+    a.doc.transact(() => {
+      const n = a.patch.nodes['pinned-timelorde']!;
+      (n.data as Record<string, unknown>).pinned = false;
+      n.type = 'scope';
+    });
+    expect(runEnsure(a)).toBe(1);
+    expect(a.patch.nodes['pinned-timelorde']!.type).toBe('timelorde');
+    // The flag is left as the user/import had it — only identity was restored.
+    expect((a.patch.nodes['pinned-timelorde']!.data as Record<string, unknown>).pinned).toBe(false);
   });
 });

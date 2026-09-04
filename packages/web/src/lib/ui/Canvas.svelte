@@ -1727,13 +1727,21 @@
       for (const r of repairs) {
         const node = patch.nodes[r.id];
         if (!node) continue; // raced a delete — the spawn pass re-creates it
+        // ⚠ WRITE ONLY WHAT THE PLANNER NAMED. The applier used to canonicalise
+        // all three fields on any repair, which silently overrode the planner's
+        // presence:'type' exemption: a retyped-AND-unpinned TIMELORDE got
+        // re-pinned as a side effect of its type repair, and a re-pinned node is
+        // canvas-hidden. Honouring `fields` keeps the decision in ONE place —
+        // the pure planner — instead of half here.
+        //
         // IN PLACE: never delete + re-add (that would be a second teardown),
         // and never touch params/position/data.name — those are user state.
-        if (node.type !== r.type) node.type = r.type;
-        if (node.domain !== r.domain) node.domain = r.domain;
-        if (!node.data) node.data = {} as Record<string, unknown>;
-        const d = node.data as Record<string, unknown>;
-        if (d.pinned !== true) d.pinned = true;
+        if (r.fields.includes('type')) node.type = r.type;
+        if (r.fields.includes('domain')) node.domain = r.domain;
+        if (r.fields.includes('pinned')) {
+          if (!node.data) node.data = {} as Record<string, unknown>;
+          (node.data as Record<string, unknown>).pinned = true;
+        }
       }
       for (const spec of missing) {
         if (patch.nodes[spec.id]) continue; // in-transact re-check

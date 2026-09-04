@@ -235,6 +235,70 @@ describe('planPinnedIdentityRepairs — hostile-peer defence of the reserved ids
     ]);
   });
 
+  // ── ⚠ THE presence:'type' EXEMPTION ──────────────────────────────────────
+  // The first draft canonicalised `pinned` for EVERY reserved id, and broke a
+  // real player-reachable state. vrt `face-timelorde-compact` adopts the pinned
+  // TIMELORDE by UN-PINNING it — `isCanvasHiddenNode` is `pinned || hiddenCard`
+  // and the flowNodes derivation skips those, so a pinned node has no canvas
+  // tile to capture at all. Re-pinning made the node vanish: xyflow reported
+  // '(unmeasured)' for 900 frames.
+  //
+  // That is not a test artefact. presence:'type' means "any node of this type
+  // satisfies the invariant, pinned or not", so an un-pinned canvas TIMELORDE
+  // is exactly what a rack IMPORTED FROM A SAVED PATCH has. A hardening that
+  // breaks legitimate use is a regression, so the flag leg is scoped. These pin
+  // the narrowing so it cannot be widened back without re-reading the reason.
+
+  it('presence:"type" — an UN-PINNED occupant is legitimate, never repaired', () => {
+    const nodes = canonicalNodes();
+    nodes.find((n) => n.id === 'pinned-timelorde')!.data!.pinned = false;
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([]);
+  });
+
+  it('presence:"type" — an occupant with NO data bag is still not repaired', () => {
+    const nodes = canonicalNodes();
+    nodes.find((n) => n.id === 'pinned-timelorde')!.data = null;
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([]);
+  });
+
+  it('⚠ but presence:"type" STILL defends type and domain — the session leg', () => {
+    // The exemption is scoped to the FLAG. `identityChanged` reads type/domain,
+    // so relaxing those would give away the whole finding.
+    const nodes = canonicalNodes();
+    const t = nodes.find((n) => n.id === 'pinned-timelorde')!;
+    t.type = 'scope';
+    t.data!.pinned = false; // un-pinned AND retyped — only the retype is repaired
+    expect(planPinnedIdentityRepairs(nodes)).toEqual([
+      { id: 'pinned-timelorde', type: 'timelorde', domain: 'audio', fields: ['type'] },
+    ]);
+  });
+
+  it('the exemption applies to presence:"type" ONLY — every other spec keeps it', () => {
+    // Derived from the table rather than hand-listed, so a future presence:'type'
+    // spec is covered and a future presence:'pinned' one cannot quietly opt out.
+    for (const spec of ALL_WORKFLOW_PINNED) {
+      const nodes = canonicalNodes();
+      nodes.find((n) => n.id === spec.id)!.data!.pinned = false;
+      const plan = planPinnedIdentityRepairs(nodes);
+      if (spec.presence === 'type') {
+        expect(plan, `${spec.id} is presence:'type' — unpinning is legitimate`).toEqual([]);
+      } else {
+        expect(plan.map((r) => [r.id, r.fields]), `${spec.id} must still be re-pinned`).toEqual([
+          [spec.id, ['pinned']],
+        ]);
+      }
+    }
+  });
+
+  it('the DEVICE-SESSION holders are presence:"pinned", so they keep the full guard', () => {
+    // The exemption would be dangerous if it ever covered these two. Asserted
+    // against the table, so a future presence change reddens HERE rather than
+    // silently widening the exemption to a node that holds hardware.
+    for (const id of ['pinned-audioIn', 'pinned-audioOut']) {
+      expect(ALL_WORKFLOW_PINNED.find((s) => s.id === id)?.presence ?? 'pinned').toBe('pinned');
+    }
+  });
+
   it('ATTACK: data wiped entirely → repair (no throw on a null data bag)', () => {
     const nodes = canonicalNodes();
     nodes.find((n) => n.id === 'pinned-clipplayer')!.data = null;
