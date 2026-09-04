@@ -209,11 +209,11 @@
            element itself and no wrapper, so it stays the only child of
            `.screen-wrap` and this box is unchanged.
 
-           ⚠ `vizPassthrough` STAYS FALSE HERE. `data-viz-passthrough` is how
-           GroupCard FINDS a canvas to portal-hoist, and the group now mounts its
-           OWN ScopeTraceSurface rather than this whole card — so emitting the
-           marker here would give a collapsed group two candidate canvases for
-           one node and let it hoist the wrong one. -->
+           (This mount used to pass `vizPassthrough={false}` explicitly, because
+           `data-viz-passthrough` was how GroupCard found a canvas to
+           portal-hoist and emitting it here would have given a collapsed group
+           two candidate canvases for one node. The prop is gone with the
+           module.) -->
       <ScopeTraceSurface nodeId={id} width={320} height={300} />
     </div>
 

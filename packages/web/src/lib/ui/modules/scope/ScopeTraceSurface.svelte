@@ -2,8 +2,10 @@
   // packages/web/src/lib/ui/modules/scope/ScopeTraceSurface.svelte
   //
   // THE scope trace, extracted from `ScopeCard.svelte` so every surface that
-  // shows one paints the SAME picture from the SAME code — the legacy card, the
-  // dock faceplate body, and `GroupCard`'s viz-passthrough mount.
+  // shows one paints the SAME picture from the SAME code — the legacy card and
+  // the dock faceplate body. (There was a THIRD host, `GroupCard`'s
+  // viz-passthrough mount, and it is what forced the extraction; it went with
+  // the GROUP! module.)
   //
   // ⚠ WHY IT EXISTS, and it is not "three copies were untidy". The card and
   // `ScopeScreenBody` each carried their own `vrtSeed` / `seededSnapshot` /
@@ -12,9 +14,14 @@
   // silently. The third consumer is what forced the issue: `GroupCard` mounted
   // the whole REAL `ScopeCard` (hidden, `display:none`) purely to get a live
   // `<canvas data-viz-passthrough>` it could portal into a collapsed group's
-  // body. That edge is the last thing tying an ORGANIZATIONAL container to a
-  // module card, and the legacy fleet is being deleted — so the group needs
-  // something that is not a card to mount.
+  // body — the last edge tying an ORGANIZATIONAL container to a module card,
+  // which is why the group needed something that was not a card to mount.
+  //
+  // ⚠ THAT CONSUMER NO LONGER EXISTS (GROUP! deleted, 2026-09-04), AND THE FILE
+  // STAYS ANYWAY. Two hosts still share it, and "two copies pasted from each
+  // other" is exactly the condition this extraction removed. The
+  // `vizPassthrough` PROP is gone with its only `true` caller, so this surface
+  // no longer emits `data-viz-passthrough` at all.
   //
   // ⚠ IT PAINTS; IT PRODUCES NOTHING. The cvCombined push that used to ride this
   // loop belongs to the NODE now (`$lib/ui/media/frame-producers` —
@@ -27,10 +34,11 @@
   // from.
   //
   // ⚠ AND DO NOT SPELL THE SEAM CALL-SHAPED IN A COMMENT ANYWHERE IN A CARD'S
-  // SUBTREE — this file is in three of them. The producer gate matches its seam
-  // regexes against RAW source and strips no comments, so a call-shaped mention
-  // here enrols `scope` (through `ScopeCard`) AND `group` (through `GroupCard`,
-  // which has no engine state at all) into `CARD_PRODUCER_LANE_TYPES`.
+  // SUBTREE. The producer gate matches its seam regexes against RAW source and
+  // strips no comments, so a call-shaped mention here enrols `scope` (through
+  // `ScopeCard`) into `CARD_PRODUCER_LANE_TYPES`. (It used to enrol `group`
+  // too, through `GroupCard` — a container with no engine state at all — which
+  // is the sharpest version of why this rule exists.)
   //
   // ⚠ IT RENDERS EXACTLY ONE ELEMENT — the <canvas>, with no wrapper. The card
   // mounts it as the only child of `.screen-wrap` and that layout is VRT-pinned,
@@ -60,12 +68,6 @@
     /** `data-testid` on the canvas — each host names its own. */
     testid?: string;
     /**
-     * Emit `data-viz-passthrough="scope"` so a containing `GroupCard` can find
-     * this canvas and portal-hoist it into the group body while the group is
-     * collapsed (module-grouping Phase 3B + `scopeDef.vizPassthrough`).
-     */
-    vizPassthrough?: boolean;
-    /**
      * The tuning graticule `drawScope` annotates the trace with — note letter
      * and cents. Only the faceplate body supplies it; the card's readout row is
      * a separate DOM element (see its own comments).
@@ -77,15 +79,15 @@
     width = 320,
     height = 300,
     testid = 'scope-canvas',
-    vizPassthrough = false,
     tuning = null,
   }: Props = $props();
 
   const engineCtx = useEngine();
 
-  // Read from the STORE, not from a `data.node` prop. `GroupCard` mounts this
-  // for a CHILD node it synthesizes props for, and the headless/producer paths
-  // have no NodeProps at all; one lookup answers for every host. The draw loop
+  // Read from the STORE, not from a `data.node` prop. The headless/producer
+  // paths have no NodeProps at all (and `GroupCard`, while it existed, mounted
+  // this for a CHILD node it synthesized props for); one lookup answers for
+  // every host. The draw loop
   // reads it imperatively, so an identity-stale SyncedStore proxy still yields
   // live values (`yjs-proxy-stable-identity-defeats-derived`).
   let node = $derived(patch.nodes[nodeId] as ModuleNode | undefined);
@@ -202,5 +204,4 @@
   {height}
   data-testid={testid}
   data-node-id={nodeId}
-  data-viz-passthrough={vizPassthrough ? 'scope' : undefined}
 ></canvas>

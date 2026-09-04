@@ -70,9 +70,11 @@ export interface VideoModuleDef {
   /**
    * Module-grouping Phase 3A: see {@link AudioModuleDef#vizPassthrough}.
    * When set, this module renders an on-card visualization that can be
-   * portaled into the parent GroupCard. No video modules opt in yet — the
-   * flag exists here so cross-domain GroupCard projection can treat audio
-   * + video viz uniformly when future video modules adopt it.
+   * portaled into the parent GroupCard. No video module ever opted in.
+   *
+   * ⚠ INERT — see the note on {@link AudioModuleDef#vizPassthrough}. The
+   * GroupCard projection this mirrored for is deleted, so the cross-domain
+   * uniformity it was reserved for has no consumer to be uniform with.
    */
   vizPassthrough?: boolean;
   /** Palette classification — see {@link PaletteCategory}. Omitted =
