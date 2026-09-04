@@ -137,26 +137,6 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   // (`setNodeParam(id, key, v)`), but each also changes undo/sync SEMANTICS for
   // a shipped control, so they are drained deliberately rather than in bulk
   // under a gate PR. FilterCard was drained in the PR that widened this guard.
-  'ui/modules/AcidwarpCard.svelte': {
-    keys: ['scene', 'freeze', 'paletteType'],
-    kind: 'debt',
-    why: 'card button writes — user gesture, should be undoable + synced',
-  },
-  'ui/modules/ChromaCard.svelte': {
-    keys: ['tintR', 'tintG', 'tintB'],
-    kind: 'debt',
-    why: 'colour-picker write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/ChromakeyCard.svelte': {
-    keys: ['keyR', 'keyG', 'keyB'],
-    kind: 'debt',
-    why: 'colour-picker write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/CloudsCard.svelte': {
-    keys: ['freeze'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
   // ⚠ `ui/modules/DoomCard.svelte` WAS HERE AND IS PAID (2026-09-02, with the
   // doom face). Its entry read *"card control writes — user gesture, should be
   // undoable + synced"* over `fillMode` and `audioGain`, and the payment is the
@@ -218,46 +198,6 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   // so its card is not being touched in this wave. Its `why` used to point here
   // ("see JoystickCard"); it now carries the mechanism itself, because a
   // cross-reference to a deleted entry is worse than no cross-reference.
-  'ui/modules/LumakeyCard.svelte': {
-    keys: ['invert'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/MarblesCard.svelte': {
-    keys: ['t_model', 'scale'],
-    kind: 'debt',
-    why: 'card button writes — user gesture, should be undoable + synced',
-  },
-  'ui/modules/Moog902VcaCard.svelte': {
-    keys: ['mode'],
-    kind: 'debt',
-    why: 'panel switch write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/Moog904aVcfCard.svelte': {
-    keys: ['range'],
-    kind: 'debt',
-    why: 'panel switch write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/Moog904bVcfCard.svelte': {
-    keys: ['range'],
-    kind: 'debt',
-    why: 'panel switch write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/Moog921VcoCard.svelte': {
-    keys: ['sync'],
-    kind: 'debt',
-    why: 'panel switch write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/Moog921aCard.svelte': {
-    keys: ['freqRange'],
-    kind: 'debt',
-    why: 'panel switch write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/Moog921bCard.svelte': {
-    keys: ['syncMode'],
-    kind: 'debt',
-    why: 'panel switch write — user gesture, should be undoable + synced',
-  },
   // ⚠ `Moog956Card.svelte` PAID AND REMOVED 2026-09-02, in the promotion PR.
   // The entry read: "ribbon controller — performance gesture; needs the
   // transient-first treatment, not a bare store write", keys `pos` + `gate`.
@@ -282,36 +222,6 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   // FOREVER describing a path nobody can walk. That is the stale-scoping shape
   // this ledger's anchoring exists to catch, and the owner ruling is explicit:
   // never ledger payable debt, fix it in one sweep.
-  'ui/modules/QuadralogicalCard.svelte': {
-    keys: ['pos_x', 'pos_y'],
-    kind: 'debt',
-    why: 'XY pad drag — per-frame-ish, but it persists; needs the transient-first treatment (createDragCommit, as JoystickCard now does). Held: quadralogical is face-queue Q27 and gated.',
-  },
-  'ui/modules/SamsloopCard.svelte': {
-    keys: ['start', 'end', 'mode'],
-    kind: 'debt',
-    why: 'start/end are load-derived (sanctionable); `mode` is a card button — triage as one when drained',
-  },
-  'ui/modules/ShapegenCard.svelte': {
-    keys: ['solids'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/ShapesCard.svelte': {
-    keys: ['shape', 'tile'],
-    kind: 'debt',
-    why: 'card button writes — user gesture, should be undoable + synced',
-  },
-  'ui/modules/TempestCard.svelte': {
-    keys: ['shape'],
-    kind: 'debt',
-    why: 'card button write — user gesture, should be undoable + synced',
-  },
-  'ui/modules/WavesculptCard.svelte': {
-    keys: ['pos_x', 'pos_y', 'zoom', 'rot'],
-    kind: 'debt',
-    why: 'viewport/joystick drags — need the transient-first treatment (cv-modulation-live-store-write-storm)',
-  },
   'ui/modules/dx7-patch-actions.ts': {
     keys: ['algorithm', 'feedback'],
     kind: 'debt',

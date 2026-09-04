@@ -19,7 +19,7 @@
 // the comment on each says which edit.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import '$lib/audio/modules';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
@@ -207,12 +207,31 @@ describe('chromaconsole face — AUTO-DETECT has ONE implementation', () => {
   });
 
   it('⚠ AND THE SLOT NAME HAS ONE IMPLEMENTATION TOO', () => {
-    // The card's `knobLabel` and the body's chip caption must be the same
-    // arithmetic: a hand-copy is how a qualified label ("amount · character")
-    // starts being shortened one way on one surface and another way on the
-    // other.
-    const card = SRC('../modules/ChromaconsoleCard.svelte');
-    expect(card).toMatch(/const knobLabel = chromaconsoleSlotName;/);
+    // The claim is unchanged — one arithmetic for the slot caption, because a
+    // hand-copy is how a qualified label ("amount · character") starts being
+    // shortened one way on one surface and another way on the other. What moved
+    // is which surfaces there are to disagree.
+    //
+    // ⚠ IT NAMED THE CARD'S `knobLabel`, AND THE CARD IS GONE. Reading a deleted
+    // file is an ENOENT, not a green — but the shape to avoid is the one next
+    // door: a `.not.toMatch` against an absent file passes for free. So this is
+    // stated POSITIVELY against the model that owns the arithmetic, plus a deny
+    // over the surviving surfaces.
+    const model = SRC('../modules/chromaconsole/chromaconsole-status-model.ts');
+    expect(model, 'the slot caption is computed in ONE exported place')
+      .toMatch(/export function chromaconsoleSlotName\(/);
+    expect(model, '…and the status rows are built from it rather than re-deriving')
+      .toMatch(/name: chromaconsoleSlotName\(/);
+    // …and there is exactly ONE definition of it in the module's sources, which
+    // is the claim a second surface would break. Counted over the DIRECTORY
+    // rather than grepped out of one file: the card was named here by hand, and
+    // a name is what stops being checkable when the file goes.
+    const dir = resolve(__dirname, '../modules/chromaconsole');
+    const defs = readdirSync(dir)
+      .filter((f) => !f.endsWith('.test.ts'))
+      .map((f) => readFileSync(resolve(dir, f), 'utf8'))
+      .reduce((n, src) => n + [...src.matchAll(/function chromaconsoleSlotName\(/g)].length, 0);
+    expect(defs, 'the slot caption must have exactly one implementation').toBe(1);
   });
 });
 

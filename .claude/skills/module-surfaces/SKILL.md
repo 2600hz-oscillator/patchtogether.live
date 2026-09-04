@@ -7,8 +7,10 @@ description: Build or review module faces, ModuleShell extensions, bespoke surfa
 
 ## Establish the real state
 
-1. Read the module def/factory, its legacy card/body line by line, its tests, and
-   `docs/design/face-migration.generated.md`.
+1. Read the module def/factory, its face + extension bodies line by line, and
+   its tests. (The generated face-migration inventory is gone: it tracked the
+   card→face migration, which is finished — every module has a face and there is
+   no card to migrate FROM. `STRICT_FACES` is the promoted set.)
 2. If an active `.myrobots/` spec/mock package exists, read it as design
    evidence and re-verify every claim against the current tree. Do not delete or
    mark it consumed before the surface ships.

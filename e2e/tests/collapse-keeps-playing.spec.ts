@@ -52,6 +52,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join, relative } from 'node:path';
 import { spawnPatch } from './_helpers';
 // ⚠ THE PROMOTION SET, imported (the `_face-fixtures.ts` precedent — pure data,
 // no registry read). A FACED member's dock pane mounts a ModuleShell body that
@@ -185,28 +186,54 @@ function videoSourceTypes(): string[] {
 
 const TYPES = videoSourceTypes();
 
-/** A subject is a REAL PLAYER iff its card offers both a local-file input and a
- *  transport play button — the same pair the per-test enrolment checks at
- *  runtime, read here from the card SOURCE so the population is knowable
- *  without spawning anything. */
+/** A subject is a REAL PLAYER iff its SURFACE offers both a local-file input and
+ *  a transport play button — the same pair the per-test enrolment checks at
+ *  runtime, read here from source so the population is knowable without spawning
+ *  anything.
+ *
+ *  ⚠ IT READ THE CARD DIRECTORY, AND THAT WOULD NOW MEASURE ZERO. The old
+ *  version scanned `packages/web/src/lib/ui/modules/` for `<Type>Card.svelte`
+ *  and grepped each file for the two testids. With the fleet deleted that scan
+ *  finds no cards, every subject resolves "not a player", and the per-type legs
+ *  below — which are guarded by `realPlayerTypes().includes(type)` — would stop
+ *  asserting anything while still reporting green. The population floor at the
+ *  bottom of this file is what makes that a RED instead of a silent shrink, and
+ *  it is the reason the derivation is re-pointed rather than deleted.
+ *
+ *  It now walks the surviving surface tree RECURSIVELY, because that is where
+ *  the testids live: `videobox/VideoboxScreenBody.svelte` and
+ *  `videovarispeed/VideoVarispeedTransportBody.svelte` are one directory down,
+ *  and a flat scan would reproduce the same zero. The type→file mapping is a
+ *  case-insensitive PREFIX match on the directory name or the component
+ *  basename, for the reason the old comment gave and which has not changed:
+ *  `videovarispeed`'s component is `VideoVarispeed…` with an inner capital the
+ *  type id does not carry, so a rebuilt filename passes on case-insensitive
+ *  macOS and returns "not a player" on LINUX CI. */
 function realPlayerTypes(): string[] {
-  const cardDir = fileURLToPath(new URL('../../packages/web/src/lib/ui/modules/', import.meta.url));
-  // ⚠ RESOLVED BY A CASE-INSENSITIVE DIRECTORY SCAN, NOT BY REBUILDING THE
-  // FILENAME. `PascalCase(type) + 'Card.svelte'` gets `videovarispeed` wrong —
-  // the file is `VideoVarispeedCard.svelte`, with an inner capital the type id
-  // does not carry. macOS resolves that anyway because its filesystem is
-  // case-INsensitive, so a hand-built name passes locally and returns "not a
-  // player" on LINUX CI — where this sweep's population would then silently
-  // shrink, which is the exact failure this whole guard exists to prevent.
-  const entries = readdirSync(cardDir).filter((f) => f.endsWith('Card.svelte'));
+  const uiRoot = fileURLToPath(new URL('../../packages/web/src/lib/ui/modules/', import.meta.url));
+  const svelteFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, ent.name);
+      if (ent.isDirectory()) walk(full);
+      else if (ent.name.endsWith('.svelte')) svelteFiles.push(full);
+    }
+  };
+  walk(uiRoot);
   return TYPES.filter((type) => {
-    const want = `${type}card.svelte`.toLowerCase();
-    const file = entries.find((f) => f.toLowerCase() === want);
-    if (!file) return false;
-    const src = readFileSync(new URL(file, `file://${cardDir}`), 'utf8');
-    return (
-      /data-testid="[\w-]*-file-input"/.test(src) && /data-testid="[\w-]*-play-btn"/.test(src)
-    );
+    const want = type.toLowerCase();
+    const mine = svelteFiles.filter((f) => {
+      const rel = relative(uiRoot, f).toLowerCase();
+      const dir = rel.includes('/') ? rel.slice(0, rel.indexOf('/')) : '';
+      const base = rel.slice(rel.lastIndexOf('/') + 1).replace('.svelte', '');
+      return dir === want || base.startsWith(want);
+    });
+    return mine.some((f) => {
+      const src = readFileSync(f, 'utf8');
+      return (
+        /data-testid="[\w-]*-file-input"/.test(src) && /data-testid="[\w-]*-play-btn"/.test(src)
+      );
+    });
   });
 }
 

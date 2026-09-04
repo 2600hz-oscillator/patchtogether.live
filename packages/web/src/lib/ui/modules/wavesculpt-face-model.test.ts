@@ -35,7 +35,6 @@ const FAMILY_IDS = (wavesculptDef.controlFamilies ?? []).map((f) => f.id);
 
 const cell = (key: string) => shellCellFor('wavesculpt', { kind: 'family', key } as never);
 
-const CARD = readFileSync(new URL('./WavesculptCard.svelte', import.meta.url), 'utf8');
 const BODY = readFileSync(
   new URL('./wavesculpt/WavesculptOutputBody.svelte', import.meta.url),
   'utf8',

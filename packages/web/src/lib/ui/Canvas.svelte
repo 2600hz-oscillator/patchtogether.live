@@ -215,11 +215,11 @@
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules';
   // Module cards are resolved GLOB-DRIVEN from $lib/ui/modules/*Card.svelte
-  // via $lib/ui/modules-card-map — no hand-maintained per-card import list
-  // (that append-edit was a top cross-PR conflict source). A new module just
-  // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
-  // convention, or declaring `card` on its def) and is picked up automatically.
-  import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  // ⚠ THE GLOB-DRIVEN CARD MAP IS GONE. `buildNodeTypes()` resolved every
+  // registered def to its `XyzCard.svelte` and handed SvelteFlow a `nodeTypes`
+  // entry per module; the three entries below are the whole map now, and none of
+  // them is a module def. A new module does not register a node component at all
+  // — it declares a `face`, and `ModuleShell` renders it.
   // P0.3b — the legacy-fallback MIGRATION bridge: a pure derivation deciding
   // which node component a module renders as in its workflow lane (legacy card /
   // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
@@ -378,6 +378,7 @@
   // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
   // dock store.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
+  import type { NodeTypes } from '@xyflow/svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
   // P0.3b — the workflow-shell lane components: the curated skeleton (migrated
   // modules) + the uniform placeholder (un-migrated). Registered as node types
@@ -607,29 +608,16 @@
   // module needs no edit here. Built once at module scope (the registries
   // self-register on the barrel imports above, so the lists are populated).
   const nodeTypes = {
-    ...buildNodeTypes([
-      ...listModuleDefs(),
-      ...listVideoModuleDefs(),
-      ...listMetaModuleDefs(),
-    ]),
-    // DOCKING P2.5a: the canvas-side stub a docked module's card swaps to
-    // (same node id — cables stay attached). NOT a module def: it never
-    // enters the registries, the card-map glob, or the VRT/per-port sweeps
-    // (dock-by-default OFF is a hard invariant — nothing docks without a
-    // user gesture).
-    dockStub: DockStubCard as unknown as ReturnType<typeof buildNodeTypes>[string],
-    // P0.3b: the workflow-shell lane node types the legacy-fallback bridge
-    // emits under the `?shell=1` preview — the curated skeleton for MIGRATED
-    // modules + the uniform placeholder for UN-MIGRATED ones. Like dockStub,
-    // NOT module defs (never enter the registries / card-map glob / sweeps).
-    moduleShell: ModuleShell as unknown as ReturnType<typeof buildNodeTypes>[string],
-    moduleShellPlaceholder: ModuleShellPlaceholder as unknown as ReturnType<typeof buildNodeTypes>[string],
+    // DOCKING P2.5a: the canvas-side stub a docked module swaps to (same node
+    // id — cables stay attached). NOT a module def: it never enters the
+    // registries or the VRT/per-port sweeps (dock-by-default OFF is a hard
+    // invariant — nothing docks without a user gesture).
+    dockStub: DockStubCard as unknown as NodeTypes[string],
+    // The lane faceplate. `emittedTypeFor` resolves every non-docked module to
+    // this one component; the per-module entries the card-map glob used to add
+    // are gone with the cards.
+    moduleShell: ModuleShell as unknown as NodeTypes[string],
   };
-
-  /** The set of module TYPES that resolve to a real card (the glob-built map,
-   *  minus the non-def helpers above). The legacy-fallback bridge only swaps a
-   *  type that HAS a card — a defless/special node keeps its current render. */
-  const cardTypeSet = new Set(Object.keys(nodeTypes));
 
   // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
   // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline

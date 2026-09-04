@@ -48,7 +48,6 @@ const REGISTRY_FILES = [
   'packages/web/src/lib/ui/Canvas.svelte',
   'packages/web/src/lib/ui/module-categories.ts',
   'packages/web/src/lib/docs/module-manifest.ts',
-  'packages/web/src/lib/ui/modules-card-map.test.ts',
 ] as const;
 
 /**
@@ -119,11 +118,9 @@ const {
   CANVAS_PATH,
   MODULE_CATEGORIES_PATH,
   MANIFEST_PATH,
-  CARD_MAP_TEST_PATH,
   audioModulePath,
   videoModulePath,
   metaModulePath,
-  cardPath,
   moduleTestPath,
 } = __test_internals;
 
@@ -164,18 +161,20 @@ describe('parseArgs', () => {
     expect(a.scaffold?.category).toBe('utility');
   });
 
-  it('parses --from / --label / --category / --no-card', () => {
+  // ⚠ `--no-card` IS GONE WITH THE THING IT SKIPPED. The scaffolder no longer
+  // writes a `<Type>Card.svelte`, so a flag to suppress one has nothing to
+  // suppress — and asserting it now THROWS is the stronger statement.
+  it('parses --from / --label / --category', () => {
     const a = parseArgs([
       TEST_TYPE_A, 'audio',
       '--from', 'resofilter',
       '--label', 'COMPRESSOR',
       '--category', 'Effects',
-      '--no-card',
     ]);
     expect(a.scaffold?.fromType).toBe('resofilter');
     expect(a.scaffold?.label).toBe('COMPRESSOR');
     expect(a.scaffold?.category).toBe('Effects');
-    expect(a.scaffold?.noCard).toBe(true);
+    expect(() => parseArgs([TEST_TYPE_A, 'audio', '--no-card'])).toThrow(/unknown flag/);
   });
 
   it('rejects unknown flags', () => {
@@ -201,19 +200,16 @@ describe('scaffold — happy path (audio)', () => {
       label: 'MYTESTMOD',
       category: 'Effects',
       fromType: null,
-      noCard: false,
       noTypecheck: true,
     });
 
     // 1) module def + 2) card + 3) test (3 files created)
     expect(res.filesCreated).toContain(audioModulePath(TEST_TYPE_A));
-    expect(res.filesCreated).toContain(cardPath(toPascal(TEST_TYPE_A)));
     expect(res.filesCreated).toContain(moduleTestPath('audio', TEST_TYPE_A));
 
     // Edits limited to the 3 still-hand-maintained lists: manifest prose,
     // VRT exemptions, the card-map test enumeration.
     expect(res.filesEdited).toContain(MANIFEST_PATH);
-    expect(res.filesEdited).toContain(CARD_MAP_TEST_PATH);
 
     // The four conflict-prone shared files are NOT edited anymore.
     expect(res.filesEdited).not.toContain(REGISTRY_PATHS.audio);
@@ -241,9 +237,9 @@ describe('scaffold — happy path (audio)', () => {
     expect(readFileSync(CANVAS_PATH, 'utf8')).not.toContain(`${toPascal(TEST_TYPE_A)}Card from`);
     expect(readFileSync(MODULE_CATEGORIES_PATH, 'utf8')).not.toContain(`${toCamel(TEST_TYPE_A)}:`);
 
-    // Card-map test enumeration now includes the new type.
-    const cardMap = readFileSync(CARD_MAP_TEST_PATH, 'utf8');
-    expect(cardMap).toContain(`'${toCamel(TEST_TYPE_A)}', // [new-module:${TEST_TYPE_A}]`);
+    // ⚠ NO CARD FILE AND NO CARD-MAP LINE. Both used to be asserted here; the
+    // scaffolder writes neither, because there is no card renderer and no map.
+    expect(res.filesCreated.some((f) => f.endsWith('Card.svelte')), 'no card is scaffolded').toBe(false);
 
     // Sanity: manifest has a DESCRIPTIONS entry (real, not the fallback
     // placeholder).
@@ -268,7 +264,6 @@ describe('scaffold — happy path (--from resofilter)', () => {
       label: 'CLONEPROBE',
       category: 'Effects',
       fromType: 'resofilter',
-      noCard: true,         // skip card to keep the assertion simple
       noTypecheck: true,
     });
 
@@ -306,12 +301,12 @@ describe('scaffold — idempotency', () => {
     scaffold({
       type: TEST_TYPE_A, domain: 'audio',
       label: 'MYTESTMOD', category: 'Effects',
-      fromType: null, noCard: false, noTypecheck: true,
+      fromType: null, noTypecheck: true,
     });
     expect(() => scaffold({
       type: TEST_TYPE_A, domain: 'audio',
       label: 'MYTESTMOD', category: 'Effects',
-      fromType: null, noCard: false, noTypecheck: true,
+      fromType: null, noTypecheck: true,
     })).toThrow(/already exists/);
   });
 });
@@ -321,7 +316,7 @@ describe('undo', () => {
     scaffold({
       type: TEST_TYPE_A, domain: 'audio',
       label: 'MYTESTMOD', category: 'Effects',
-      fromType: null, noCard: false, noTypecheck: true,
+      fromType: null, noTypecheck: true,
     });
 
     // Sanity: scaffold worked.
@@ -331,9 +326,13 @@ describe('undo', () => {
 
     // Files deleted.
     expect(existsSync(audioModulePath(TEST_TYPE_A))).toBe(false);
-    expect(existsSync(cardPath(toPascal(TEST_TYPE_A)))).toBe(false);
+    // (there is no card path to check any more — the scaffolder writes none)
     expect(existsSync(moduleTestPath('audio', TEST_TYPE_A))).toBe(false);
-    expect(result.filesDeleted.length).toBeGreaterThanOrEqual(3);
+    // TWO, not three: the def and its shape test. The third was the card stub,
+    // which the scaffolder no longer writes — so undo has one fewer file to
+    // remove and this floor moves with it rather than being left to pass on a
+    // count nobody re-derived.
+    expect(result.filesDeleted.length).toBeGreaterThanOrEqual(2);
 
     // Markers stripped from the still-edited lists (+ the legacy shared
     // files, defensively — they shouldn't carry any markers now).
@@ -344,7 +343,6 @@ describe('undo', () => {
       CANVAS_PATH,
       MODULE_CATEGORIES_PATH,
       MANIFEST_PATH,
-      CARD_MAP_TEST_PATH,
     ]) {
       const src = readFileSync(f, 'utf8');
       expect(src.includes(marker), `${f} still contains marker after undo`).toBe(false);
@@ -367,7 +365,7 @@ describe('undo', () => {
   // still wrong.
   it('is BYTE-EXACT — a scaffold/undo cycle leaves every edited file unchanged', () => {
     const before = new Map<string, string>(
-      [MANIFEST_PATH, CARD_MAP_TEST_PATH].map(
+      [MANIFEST_PATH].map(
         (f) => [f, readFileSync(f, 'utf8')],
       ),
     );
@@ -379,7 +377,7 @@ describe('undo', () => {
       scaffold({
         type: TEST_TYPE_A, domain: 'audio',
         label: 'MYTESTMOD', category: 'Effects',
-        fromType: null, noCard: false, noTypecheck: true,
+        fromType: null, noTypecheck: true,
       });
       undo(TEST_TYPE_A);
 
@@ -402,7 +400,7 @@ describe('scaffold — video / meta domain stubs', () => {
     scaffold({
       type: TEST_TYPE_A, domain: 'video',
       label: 'MYTESTMOD', category: 'Sources',
-      fromType: null, noCard: false, noTypecheck: true,
+      fromType: null, noTypecheck: true,
     });
     // The def is the source of truth — palette lives on it; the glob barrel
     // registers it; the shared video index is NOT edited.
@@ -416,7 +414,7 @@ describe('scaffold — video / meta domain stubs', () => {
     scaffold({
       type: TEST_TYPE_A, domain: 'meta',
       label: 'MYTESTMOD', category: 'tools',
-      fromType: null, noCard: false, noTypecheck: true,
+      fromType: null, noTypecheck: true,
     });
     const def = readFileSync(metaModulePath(TEST_TYPE_A), 'utf8');
     expect(def).toContain(`palette: { top: 'Hybrid'`);
@@ -474,10 +472,10 @@ describe('GUARD — the scaffolder suite never touches the real working copy', (
     expect(REPO_ROOT, 'new-module.ts did not honour NEW_MODULE_REPO_ROOT').toBe(SANDBOX);
 
     for (const p of [
-      CARD_MAP_TEST_PATH, MANIFEST_PATH, GRAPH_TYPES_PATH,
+      MANIFEST_PATH, GRAPH_TYPES_PATH,
       CANVAS_PATH, MODULE_CATEGORIES_PATH,
       REGISTRY_PATHS.audio, REGISTRY_PATHS.video, REGISTRY_PATHS.meta,
-      audioModulePath(TEST_TYPE_A), cardPath(toPascal(TEST_TYPE_A)),
+      audioModulePath(TEST_TYPE_A),
       moduleTestPath('audio', TEST_TYPE_A),
     ]) {
       expect(p.startsWith(SANDBOX + sep), `${p} must resolve inside the fixture tree`).toBe(true);

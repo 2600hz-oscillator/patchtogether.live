@@ -70,50 +70,17 @@ function ensureModuleDocs(): Plugin {
 }
 
 // ---------------------------------------------------------------------------
-// SERVER-BUILD DIET: drop the eager card-component glob from the SSR graph.
+// ⚠ THE FIRST OCCUPANT — THE CARD GLOB — IS GONE WITH THE CARDS (#2088's sibling).
 //
-// Measured with `node scripts/measure-worker-bundle.mjs` (wrangler's own
-// `--dry-run` reports the same figures): the Cloudflare Pages Worker was
-// 3062.07 KiB gzipped against a 3072 KiB (3 MiB) free-plan ceiling — 9.93 KiB
-// of headroom. 6.4 MB of the 12.3 MB raw bundle was ONE chunk, `Canvas.js`,
-// reached by exactly one edge: `/r/[id]/+page.svelte` statically imports
-// `$lib/ui/Canvas.svelte`, which imports the ~210-entry card map. Everything
-// else heavy in the Worker (hls.js, butterchurn + presets, @grame/faustwasm,
-// the video glitch renderers, module-docs.generated) hangs off that same edge.
-//
-// The server never renders a card. The patch graph is a Yjs doc backed by
-// IndexedDB + the relay, so an SSR pass over `/r/[id]` has zero nodes and hands
-// SvelteFlow a `nodeTypes` map it never indexes; `/rack` is `ssr = false` and
-// its component is never invoked at all (SvelteKit still lists the node in the
-// server manifest, which is why `ssr = false` alone does not shrink anything).
-//
-// So in the SSR build ONLY, `modules-card-components.ts` is replaced by an
-// empty map. The client build is untouched — same glob, same chunks, same
-// hydration — and the prerendered pages plus the SSR HTML of a Canvas-bearing
-// route come out byte-identical (proven in the PR by prerendering `/rack` with
-// SSR forced on, both with and without this plugin).
-//
-// Scope, stated inside the gate:
-//   • SSR **build** only. `vite dev` and vitest keep the real glob, so the unit
-//     lane exercises the real map and dev SSR matches production HTML.
-//   • This file only. Any other importer of `./modules/*Card.svelte` would come
-//     straight back into the Worker — `modules-card-components.ssr-stub.test.ts`
-//     asserts the glob has exactly one home, and
-//     `scripts/measure-worker-bundle.mjs --check` ratchets the Worker's gzipped
-//     size so a new server-reachable card import fails loudly instead of
-//     silently eating the margin.
-//
-// `PT_SSR_KEEP_CARDS=1` disables the plugin. That is the NEGATIVE CONTROL for
-// the byte-identical claim, not a fallback: build a Canvas-bearing route with
-// SSR forced on, once each way, and diff the emitted HTML. If the diff is ever
-// non-empty the server HAS started rendering cards and this plugin is no longer
-// safe. See `packages/web/scripts/prove-ssr-identical.sh`.
-const CARD_COMPONENTS_MODULE = 'src/lib/ui/modules-card-components.ts';
-
-/** The whole SSR replacement. Kept as a string so a test can assert on it. */
-export const SSR_CARD_COMPONENTS_STUB =
-  '// SSR build stub — see vite.config.ts ssrDropCardComponents().\n' +
-  'export const componentByName = {};\n';
+// `modules-card-components.ts` held `import.meta.glob('./modules/*Card.svelte',
+// { eager: true })` — ~1.9 MiB gzipped of components against a 3 MiB Cloudflare
+// Worker ceiling — and this plugin replaced it with an empty map in the SSR
+// build ONLY. There is no glob and no card file, so the module it targeted does
+// not exist and the stub has nothing to stand in for. The two remaining
+// occupants (`<Canvas>` itself and the `/dev/**` pages) are untouched and keep
+// the plugin, the `PT_SSR_KEEP_CARDS=1` negative control, and the
+// `measure-worker-bundle.mjs --check` ratchet that catches the next
+// server-reachable import.
 
 // ---------------------------------------------------------------------------
 // …AND THE SECOND OCCUPANT: `<Canvas>` ITSELF (#2088).
@@ -181,7 +148,6 @@ const DEV_ROUTES_DIR = 'src/routes/dev';
 
 function ssrDropBrowserOnlyGraph(): Plugin {
   const WEB_DIR = fileURLToPath(new URL('.', import.meta.url));
-  const CARD_TARGET = path.resolve(WEB_DIR, CARD_COMPONENTS_MODULE);
   const CANVAS_TARGET = path.resolve(WEB_DIR, CANVAS_MODULE);
   const DEV_ROUTES_TARGET = path.resolve(WEB_DIR, DEV_ROUTES_DIR) + path.sep;
   let isBuild = false;
@@ -197,7 +163,6 @@ function ssrDropBrowserOnlyGraph(): Plugin {
       const ssr = this.environment?.name === 'ssr' || options?.ssr === true;
       if (!ssr) return null;
       const resolved = path.resolve(id.split('?')[0]);
-      if (resolved === CARD_TARGET) return SSR_CARD_COMPONENTS_STUB;
       if (resolved === CANVAS_TARGET) return SSR_CANVAS_STUB;
       // /dev/** pages: never server-rendered (routes/dev/+layout.ts ssr=false),
       // so the empty component keeps the server graph type-correct and small.
