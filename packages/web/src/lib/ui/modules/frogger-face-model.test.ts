@@ -370,7 +370,7 @@ describe('frogger — the face paints ONE board at ONE scale', () => {
   });
 
   it('and the board GEOMETRY is the pinned one', () => {
-    const dims = (src) => ({
+    const dims = (src: string) => ({
       w: /const CSS_W = (\d+);/.exec(src)?.[1],
       h: /const CSS_H = (\d+);/.exec(src)?.[1],
     });
