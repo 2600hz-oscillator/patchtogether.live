@@ -201,3 +201,106 @@ rather than relaxing it. Left here rather than deleted because the one-day round
 trip is the useful record: *a test that is "correctly detecting a real defect" is
 parked against the FIX, not against itself* — and the fix is the thing that
 retires the entry.
+
+---
+
+## Addendum, 2026-09-04 — `moog904a.audio`, parked against a PRODUCT question
+
+**`e2e/tests/per-module-per-port-outputs.spec.ts :: "moog904a: every declared
+output emits a measurable signal"`** is parked via
+`EXEMPT_OUTPUT_EMIT['moog904a.audio']`. `audio` is the module's only output, so
+the whole emit case skips.
+
+⚠ **This one is not parked because the test is unsound. It is parked because
+fixing the test is what would hide the defect.**
+
+### What is actually happening
+
+`moog904a` is `cls: 'dual-mono'`, so the engine builds the ladder **twice** —
+one instance per channel behind an up-mix + `ChannelSplitter`, recombined by a
+`ChannelMerger`. Each instance bootstraps its self-oscillation from its **own**
+per-sample `Math.random()` thermal dither. It is the only module in the
+population that carries a random source, so the two instances are not two copies
+of one signal; they are two different signals that happen to share a frequency.
+
+The sweep's sink is SCOPE, whose tap is a bare `AnalyserNode`, and an analyser
+**mono-down-mixes** its input. The assertion therefore reads `A·|cos(Δφ/2)|` for
+a fresh, arbitrary `Δφ` on every spawn.
+
+Measured offline against the shipping ladder core at the driver's exact
+operating point (`fc = 800 × range 2`, `regen = 1`), 25 spawns:
+
+| quantity | value |
+|---|---|
+| single leg peak | **1.0622 every run, bit stable** |
+| mono sum peak | **0.0246 … 1.0521** |
+| emit floor asserted | 0.005 (0.47 % of A) |
+| red rate | ≈0.3 % of spawns |
+
+CI's sighting matches: `maxPeak=0.0014, lastRms=0.0010, samples=168 over 5014 ms`
+of a 5000 ms bound, with `engine=up sutInPatch=true edgeInPatch=true` and the
+params confirmed landed. Nothing was starved; the level was simply that draw.
+
+### The coverage lost
+
+The only assertion that `moog904a` makes sound **end to end** — factory →
+`AudioWorkletNode` → the engine's **dual-mono wrapper** → a patched edge → a
+real analyser. That wrapper is engine-only by construction (`dual-mono.ts`'s own
+note: `renderOfflineDef` and any test calling `def.factory(...)` bypass it), so
+no unit test and no ART scenario can cover it, and the VRT exemption records that
+the ART profile pins the shared **ladder lib** with a hand-copied drive
+expression rather than this worklet (#1913).
+
+Still covered: handle-presence and inputs-accept pin the `audio` port;
+`moog904a.test.ts` pins the worklet and `moog-ladder-dsp.test.ts` the ladder core,
+both in isolation.
+
+### The open product question — for the owner, not fixed here
+
+The mono sum is **not a test artifact**. `moog904a`'s face declares a
+`live-audio` glyph whose tap is a default `createAnalyser()`, and the legacy
+card's VuMeter uses `createLevelTap` → another default analyser. Both mono-sum.
+So a self-oscillating 904A — the module's headline behaviour — paints a
+randomly-scaled, sometimes near-flat meter while it is audibly ringing, and
+roughly 30 % of spawns display under half the true level.
+
+It also breaks dual-mono's own documented premise: that the DSP is a
+deterministic function of `(input, params)`, so two instances fed one mono signal
+are that signal on two channels. A mono patch through a 904A at high regeneration
+comes out **decorrelated** — the precise outcome the wrapper exists to prevent.
+`moog904b`, `moog904c` and `moog905` contain no `Math.random`; the Faust
+dual-monos are deterministic. This module is the sole exception.
+
+Options, cheapest first, for whoever rules on it:
+
+1. Build `moog904a` **once** and fan the single instance's output to both merger
+   inputs — a new ledger class, no DSP edit, **no ART re-pin**, and it makes the
+   module behave like the real mono 904A.
+2. Share one dither stream across the two instances.
+3. Accept the decorrelation deliberately and say so in the dual-mono ledger's
+   `why`, which currently gives the wrong premise for this entry.
+
+**Do not change the dither values.** That is the one route that costs an ART
+re-pin.
+
+### Why the test was not simply re-pointed
+
+The obvious "fix" — drive `sut.audio` from a NOISE source, the shape the sibling
+904B driver uses — makes the assertion **vacuous**. A single mono source reaches
+both instances bit-identically, so the forced response is common-mode and
+survives the down-mix at full amplitude. Measured with the resonance completely
+dead (`k = 0`, a plain low-pass): 0.2889 / 0.2935 / 0.2832 / 0.3129 / 0.3273 —
+58× the floor, green. `regeneration: 1` would become decorative, and nothing at
+any layer would assert that the shipping worklet self-oscillates through the real
+engine. A parked test pointing at a live defect is honest; a green test that
+stopped looking at it is not.
+
+### What would retire this entry
+
+The product decision above, landed. If a gate is wanted for the class rather
+than for this one module, the candidate to put to the owner first (standing
+ruling: no new gates without discussion) is a deterministic sub-second check at
+the engine seam in `dual-mono-engine.test.ts` — feed a MONO source through every
+dual-mono module and assert L is bit-identical to R. It passes for destroy,
+filter, reverb, 904b, 904c and 905, and fails for `moog904a` alone, which is the
+whole finding caught by construction instead of by a 0.3 % lottery.

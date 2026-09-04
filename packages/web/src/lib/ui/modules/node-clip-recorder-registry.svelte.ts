@@ -233,6 +233,12 @@ interface LaneRec {
   writer: ClipMediaWriter | null;
   drain: ClipMediaDrain | null;
   doneFrames: number | null;
+  /** The punch-in this thread ASKED the worklet for, latched when `arm` was
+   *  posted, and the one it REPORTED on `done`. They differ when the arm
+   *  message lost its race with the audio thread and the take slid; keeping
+   *  both is what turns that from invisible into a console line. */
+  armStartFrame: number | null;
+  doneStartFrame: number | null;
   doneWait: Promise<void> | null;
   doneResolve: (() => void) | null;
 }
@@ -253,6 +259,8 @@ function freshLane(): LaneRec {
     writer: null,
     drain: null,
     doneFrames: null,
+    armStartFrame: null,
+    doneStartFrame: null,
     doneWait: null,
     doneResolve: null,
   };
@@ -529,6 +537,8 @@ export class NodeClipRecorderRegistry {
     st.tap = entry.wiringTap;
     st.sampleRate = ctx.sampleRate;
     st.doneFrames = null;
+    st.armStartFrame = null;
+    st.doneStartFrame = null;
     st.doneWait = new Promise<void>((res) => {
       st.doneResolve = res;
     });
@@ -661,6 +671,13 @@ export class NodeClipRecorderRegistry {
       case 'armWorklet':
         // The prepare/confirm split guarantees the wiring and the drain exist
         // by the time the machine arms — this is a plain postMessage.
+        //
+        // ⚠ Latch what we ASKED FOR. This is the last moment the requested
+        // punch-in exists on this thread; from here the frame belongs to the
+        // audio thread, which may have to slide it (clip-recorder.ts header)
+        // if this message loses its race. `done` reports the start the take
+        // actually got, and the difference is the only evidence of the slide.
+        st.armStartFrame = eff.window.startFrame;
         if (entry.wiring) armClipRecorderLane(entry.wiring.node, lane, eff.window);
         break;
       case 'stopWorklet':
@@ -709,8 +726,30 @@ export class NodeClipRecorderRegistry {
         ]);
       }
       if (st.doneFrames === null) throw new Error('worklet never reported done');
+      // How far the take's real punch-in slid from the one we asked for. The
+      // audio thread absorbs a few quanta of message latency by sliding the
+      // whole window (clip-recorder.ts header) — the LENGTH stays exact, so
+      // the check below cannot fire for lateness any more, and this is the
+      // only place the slide is visible at all. Report it rather than let a
+      // loaded machine quietly move the downbeat.
+      const slip =
+        st.doneStartFrame !== null && st.armStartFrame !== null
+          ? st.doneStartFrame - st.armStartFrame
+          : null;
+      if (slip !== null && slip > 0) {
+        console.warn(
+          `[clip-rec] lane ${lane + 1} punched in ${slip} frames late (arm reached the audio thread after its own start)`,
+        );
+      }
       if (st.doneFrames !== frames) {
-        throw new Error(`captured ${st.doneFrames} frames, window demanded ${frames}`);
+        // `frames: 0` is the worklet REFUSING an arm that drained further past
+        // its punch-in than the slide may absorb — say which it was, because
+        // "captured 0 frames" alone reads like a dead input.
+        const why =
+          st.doneFrames === 0 && slip !== null && slip > 0
+            ? ` — arm drained ${slip} frames past its punch-in, beyond the slide bound`
+            : '';
+        throw new Error(`captured ${st.doneFrames} frames, window demanded ${frames}${why}`);
       }
       await drain.flush();
       if (drain.error) throw drain.error instanceof Error ? drain.error : new Error(String(drain.error));
@@ -878,10 +917,11 @@ export class NodeClipRecorderRegistry {
         entry.tapsRef = liveTaps;
         attachClipRecorderSink(entry.wiring.node, {
           drainFor: (lane) => entry.lanes[lane]?.drain ?? null,
-          onDone: (lane, frames) => {
+          onDone: (lane, frames, startFrame) => {
             const st = entry.lanes[lane];
             if (!st) return;
             st.doneFrames = frames;
+            st.doneStartFrame = startFrame;
             st.doneResolve?.();
           },
         });
@@ -935,6 +975,8 @@ function clearTake(st: LaneRec): void {
   st.writer = null;
   st.drain = null;
   st.doneFrames = null;
+  st.armStartFrame = null;
+  st.doneStartFrame = null;
   st.doneWait = null;
   st.doneResolve = null;
 }
