@@ -44,7 +44,6 @@
     "vrt.spec.ts :: score card matches baseline": 5.7,
     "vrt.spec.ts :: shimmershine card matches baseline": 4.9,
     "vrt.spec.ts :: stereovca card matches baseline": 5.1,
-    "vrt.spec.ts :: sticky card matches baseline": 5.2,
     "vrt.spec.ts :: vca card matches baseline": 5.2,
     "vrt.spec.ts :: wavecel card matches baseline": 5.2,
     "vrt.spec.ts :: wavetableVco card matches baseline": 5.2,

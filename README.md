@@ -89,9 +89,9 @@ Works offline (single-machine, single-user):
 Doesn't work offline (visible but harmlessly inert):
 
 - The "Sign in" link routes to `/dashboard`, which returns 503 with a
-  clear "Auth not configured" message. Same for `/sign-in`, `/sign-up`,
-  `/r/[id]` (multiplayer rooms), and `/api/saved-groups`. Clicking
-  these does nothing destructive — you stay on the public canvas.
+  clear "Auth not configured" message. Same for `/sign-in`, `/sign-up`
+  and `/r/[id]` (multiplayer rooms). Clicking these does nothing
+  destructive — you stay on the public canvas.
 - Multiplayer (Yjs sync over Hocuspocus) — the public canvas at `/`
   never attaches a network provider, so this is silently absent rather
   than retry-spamming the console.
@@ -128,7 +128,7 @@ Doesn't work offline (visible but harmlessly inert):
 
 ## Modules
 
-197 modules total (121 audio · 68 video · 8 meta), registered across three per-domain catalogs (`packages/web/src/lib/audio/module-registry.ts`, `.../video/module-registry.ts` and `.../meta/module-registry.ts`). Registration is glob-driven, so these counts are asserted against the live registries by `packages/web/src/lib/docs/docs-facts.test.ts` rather than maintained by hand. The full I/O + param tables are auto-generated from the registries and published at <https://patchtogether.live/docs/modules>; right-clicking any module on the canvas opens its per-module docs page in a new tab.
+195 modules total (121 audio · 68 video · 6 meta), registered across three per-domain catalogs (`packages/web/src/lib/audio/module-registry.ts`, `.../video/module-registry.ts` and `.../meta/module-registry.ts`). Registration is glob-driven, so these counts are asserted against the live registries by `packages/web/src/lib/docs/docs-facts.test.ts` rather than maintained by hand. The full I/O + param tables are auto-generated from the registries and published at <https://patchtogether.live/docs/modules>; right-clicking any module on the canvas opens its per-module docs page in a new tab.
 
 ### Audio (30)
 

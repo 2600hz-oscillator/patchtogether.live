@@ -765,12 +765,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // `audio-in.spec.ts` drives. So this exemption is not obsolete just because
   // the module was promoted.
   audioIn: 'CARD scene only: the card paints a state word + a stereo|mono badge derived from getUserMedia permission + audioinput presence (both vary across CI runners). The FACE scenes ARE captured — no prior grant means no acquire, and on the device-less linux runner that authors baselines the state is no-inputs-found: FAULT lit, the picker disabled on (no inputs), ENABLE disabled; see _shell-faces.ts for both residual risks. Card coverage is e2e/tests/audio-in.spec.ts + devices.test.ts + modules-card-map.test.ts',
-  // GROUP is a Phase-1 collapse-N-modules container with no engine
-  // binding. A bare GROUP! has no exposed ports → its visual surface
-  // is just the card chrome + label, which carries no module-specific
-  // pixels worth fingerprinting. Functional coverage is
-  // e2e/tests/grouping-phase1.spec.ts.
-  group: 'no-op render until exposed-ports are set by Create-Group; e2e covers the full flow',
   // CADILLAC — singleton meta module with NO card render at all (the
   // module is a roaming overlay sprite rendered by CadillacOverlay, not
   // a SvelteFlow node body). The reconciler skips meta-domain nodes, so
@@ -1691,7 +1685,11 @@ export const ALLOWED_PERMANENT_EXEMPT: ReadonlySet<string> = new Set([
   'es9', 'onetonine',
   'shapegen', 'sixstrum', 'mirrorpool', 'grainsOfVision',
   'frametable', 'videocube', 'sourcery', 'scoreboard',
-  'cameraInput', 'loopback', 'audioIn', 'group',
+  'cameraInput', 'loopback', 'audioIn',
+  // ⚠ `group` REMOVED 2026-09-04 — the GROUP! module is DELETED (owner ruling:
+  // group and sticky are deleted entirely), so its EXEMPT_FROM_VRT entry went
+  // with the def. This list is ANCHORED in both directions, so a name here for a
+  // module that is not exempt — including one that no longer exists — is RED.
   // ⚠ `matrixMix` REMOVED (bespoke wave 4) — it is no longer in EXEMPT_FROM_VRT,
   // and this list is ANCHORED: an entry naming a module that is not exempt is RED,
   // so a drained module cannot leave a stale licence to re-exempt itself. See the
@@ -1900,7 +1898,12 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'score',                // score/note display card
   'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
-  'sticky',               // sticky-note widget (static)
+  // ⚠ `sticky` REMOVED 2026-09-04 — the STICKY module is DELETED (owner ruling:
+  // group and sticky are deleted entirely). Its `vrt.spec.ts/sticky.png` card
+  // baseline is deleted in the same commit, along with its vrt-strict-timings
+  // row, because every STRICT_VRT_MODULES entry must name a REGISTERED module
+  // AND carry a committed baseline (vrt-meta.test.ts) — both halves red at once
+  // otherwise.
   // timelorde: TEMPORARILY demoted from the strict lane. The card big display
   // is the owner's OWL PAINTING whose YELLOW EYES + BLUE BORDER beat-pulse
   // (the colour boost is FROZEN to the idle/steady owl under

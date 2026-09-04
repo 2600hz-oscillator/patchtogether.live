@@ -21,7 +21,7 @@ deployment target. Web resolves it via SvelteKit `$env/dynamic/private`
 | --- | --- |
 | `db/schema/001_init.sql` | `racks` (owner + name), `rack_members` (user_id + role), `rack_snapshots` (Yjs `bytea`) |
 | `db/schema/002_feedback.sql` | `feedback` (suggestion/bug, patch snapshot) |
-| `db/schema/003_saved_groups.sql` | `saved_groups` (per-user JSONB library) |
+| `db/schema/003_saved_groups.sql` | `saved_groups` (per-user JSONB library) — **ORPHANED**: the GROUP! module, its `/api/saved-groups` routes and the dashboard library were deleted 2026-09-04, so nothing reads or writes this table. The migration is retained because the series is append-only; **dropping the table destroys any user's saved library and is an owner decision, not a code change** (the `006_drop_rackspace_mode.sql` precedent was explicitly non-destructive to rows). |
 | `db/schema/004_rack_update_journal.sql` | `rack_update_journal` (incremental Yjs updates) |
 | `db/schema/005_rackspace_mode.sql` | `rackspaces.mode` (superseded by 006) |
 | `db/schema/006_drop_rackspace_mode.sql` | drops `rackspaces.mode` |

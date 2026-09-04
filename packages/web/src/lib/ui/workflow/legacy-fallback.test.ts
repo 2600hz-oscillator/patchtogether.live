@@ -96,15 +96,19 @@ describe('isShellSwappable — eligibility', () => {
     for (const t of NON_SHELL_LANE_TYPES) {
       expect(isShellSwappable(t, true)).toBe(false);
     }
-    // sanity: the excluded set is the organizational chrome we intend to hold
-    // back. ⚠ THE SECOND LINE USED TO ASSERT `clipplayer` — the last MODULE
-    // CARD this set ever held, and the one the "snowflake" clause it was built
-    // around was actually true of. Its own promotion retired it (below), so the
-    // sanity leg now names what the set has become: chrome and a sprite, no
-    // module cards at all.
-    expect(NON_SHELL_LANE_TYPES.has('group')).toBe(true);
-    expect(NON_SHELL_LANE_TYPES.has('sticky')).toBe(true);
+    // sanity: the set holds back exactly the one non-module it is now for.
+    // ⚠ THIS LEG HAS BEEN RE-POINTED TWICE AND THE LINEAGE MATTERS. It first
+    // asserted `clipplayer` — the last MODULE CARD this set ever held, and the
+    // one the "snowflake" clause was actually true of — until its promotion
+    // retired that entry (below). It then asserted `group` and `sticky`, "the
+    // organizational chrome", until BOTH modules were deleted outright (owner
+    // ruling 2026-09-03). What is left is CADILLAC, which is not a module card
+    // at all: a roaming overlay sprite with no SvelteFlow node body, filtered
+    // out of flowNodes upstream. So the set is no longer a queue of modules
+    // awaiting a face — it holds one non-module and cannot drain further.
+    expect(NON_SHELL_LANE_TYPES.has('cadillac')).toBe(true);
     expect(NON_SHELL_LANE_TYPES.has('tidyvco')).toBe(false);
+    expect([...NON_SHELL_LANE_TYPES]).toEqual(['cadillac']);
   });
 
   it('clipplayer SWAPS now that it has a face — and the removal HAD to ride the promotion', () => {
@@ -287,7 +291,13 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
     // …and really can succeed on each domain the set draws from.
     expect(resolve('clipplayer')).toBeTruthy(); // audio
     expect(resolve('videoOut')).toBeTruthy(); // video
-    expect(resolve('sticky')).toBeTruthy(); // meta
+    // ⚠ THE META WITNESS USED TO BE `sticky`, and it is deleted. `cadillac` is
+    // both the replacement witness and the set's only remaining member, which
+    // makes this negative control a little weaker than it was — it no longer
+    // proves the resolver reaches a meta def OTHER than the one under test. It
+    // is still the honest choice: substituting an unrelated meta module would
+    // assert something this file has no stake in.
+    expect(resolve('cadillac')).toBeTruthy(); // meta
   });
 });
 

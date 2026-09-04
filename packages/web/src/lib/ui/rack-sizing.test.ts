@@ -27,8 +27,6 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 
 // DYNAMIC containers — they grow to fit their content, so they must NOT be
 // forced to a fixed 1u/3u tier (doing so clips them):
-//   group          — grows to fit its child modules (broke the group-geometry e2e)
-//   sticky         — free-form resizable note
 //   controlSurface — grows to fit its proxied controls (the "card grows so ALL
 //                    groups + knobs render within bounds" control-surface e2e)
 //   matrixMix      — the EMS/Buchla patchbay: a both-axes-scrollable grid card
@@ -54,8 +52,11 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 // archivist — same user-resizable family as videobox/videoOut: a corner-resize
 // handle (card-resize.ts) drives its size, with DEFAULT/MIN constants rounded to
 // 180-multiples (360/540/360/360), so a fixed tier would CAP its resize.
+// ⚠ `group` (grew to fit its child modules) and `sticky` (a free-form resizable
+// note) were the first two entries here and are DELETED with their modules
+// (owner ruling). This set is registry-anchored, so leaving them would be red.
 const DYNAMIC_SIZED = new Set([
-  'group', 'sticky', 'controlSurface', 'matrixMix',
+  'controlSurface', 'matrixMix',
   // user-resizable, sized by resize-snap-to-u not a fixed tier:
   'clockedRunner', 'livecode', 'wavesculpt', 'b3ntb0x', 'bentbox',
   'monoglitch', 'reshaper', 'ruttetra', 'toybox', 'videobox', 'videoOut',

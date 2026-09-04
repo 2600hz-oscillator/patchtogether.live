@@ -22,8 +22,9 @@
 // from the store. Anything that resolves geometry by id would therefore
 // silently disagree with lane membership under exactly the tests that exist to
 // pin lane membership. So this module takes RECTS, never ids, and the caller
-// builds the dragged rect from the payload — mirroring `recomputeLassoHits`
-// (Canvas.svelte:5142-5153), the shipped precedent for node-vs-node hit tests.
+// builds the dragged rect from the payload. (The shipped precedent for a
+// node-vs-node hit test was `recomputeLassoHits` in Canvas.svelte, which took
+// the same RECTS-not-ids shape; it went with the group lasso.)
 //
 // ── DECISION 2: WHAT OVERLAP COUNTS.  Answer: the dragged card's CENTRE must
 // lie inside the candidate. ────────────────────────────────────────────────

@@ -179,7 +179,7 @@ const PENDING_PALETTE_REGEN: readonly string[] = [];
  * therefore excused from the pixel assertion. EXACT SET — see the test.
  *
  * `audioOut`/`mixer` paint `var(--text-dim)`; `wavesculpt` a 3-hex gradient;
- * the `moog*` family + `electraControl` + `sticky` render no `.stripe` at all.
+ * the `moog*` family + `electraControl` render no `.stripe` at all.
  *
  * `chromaconsole` is the same "no `.stripe` at all" case, for a structural
  * reason rather than a styling one: it is a control surface for an EXTERNAL
@@ -272,7 +272,11 @@ const NOT_TOKEN_PINNED_SCENES: readonly string[] = [
   'moog914',
   'moog921a', 'moog921b', 'moog923', 'moog956', 'moog960', 'moog961',
   'moog962', 'moog984', 'moog992', 'moog993', 'moog994', 'moog995',
-  'push2Control', 'sticky', 'wavesculpt',
+  // ⚠ `sticky` REMOVED with its module (owner ruling: group and sticky are
+  // deleted entirely). The walk covers COMMITTED baselines, and
+  // `vrt.spec.ts/sticky.png` is deleted in the same commit as the def, so a name
+  // left here would be an entry for a scene that no longer exists.
+  'push2Control', 'wavesculpt',
 ];
 
 /** module type → card component basename, mirroring modules-card-map.ts. */

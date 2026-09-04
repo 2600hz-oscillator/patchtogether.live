@@ -659,8 +659,14 @@ describe('face-migration inventory — DERIVED from the tree, not from this list
   it('POSITIVE CONTROL: the typed-entry scan finds the cards it must', () => {
     // Membership, not size: named cards known to mount each form. If the scan
     // silently stopped matching, this fails before the clause above goes vacuous.
+    // ⚠ `sticky` WAS THE THIRD WITNESS and is deleted with its module (owner
+    // ruling). Its card mounted a bare `<textarea>` — the plainest typed-entry
+    // form the scan matches — so losing it costs this control its clearest
+    // example; `cartesian` (an <input type="number">) and `textmarquee` (a
+    // text <input>) still cover two of the predicate's three forms, and the
+    // NEGATIVE CONTROL below exercises the <textarea> arm directly.
     const found = [...templates].filter(([, t]) => mountsTypedEntry(t)).map(([type]) => type);
-    for (const type of ['cartesian', 'sticky', 'textmarquee']) {
+    for (const type of ['cartesian', 'textmarquee']) {
       expect(found, `${type} mounts typed entry in the tree and the scan must see it`).toContain(type);
     }
   });

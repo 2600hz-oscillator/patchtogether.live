@@ -361,12 +361,14 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *
  * ⚠ AND THE TRACE MOVED WITH IT, WHICH IS THE HALF A READER WILL LOOK FOR. The
  * picture is `modules/scope/ScopeTraceSurface.svelte` now — one renderer for the
- * legacy card, the faceplate body and `GroupCard`'s viz-passthrough mount, where
- * there were three copies of `drawScope` before. That surface WRITES NOTHING,
- * which is the property the gate below reads: with no producer seam anywhere in
- * `ScopeCard`'s subtree, `scope`'s absence here is DERIVED rather than deleted.
- * It also retired the `GroupCard → ScopeCard.svelte` subtree exemption, because
- * the group mounts the surface directly and no longer reaches a card at all.
+ * legacy card and the faceplate body (and, until the GROUP! module was deleted,
+ * its viz-passthrough mount), where there were three copies of `drawScope`
+ * before. That surface WRITES NOTHING, which is the property the gate below
+ * reads: with no producer seam anywhere in `ScopeCard`'s subtree, `scope`'s
+ * absence here is DERIVED rather than deleted. It also retired the
+ * `GroupCard → ScopeCard.svelte` subtree exemption — first because the group
+ * mounted the surface directly and no longer reached a card at all, and now
+ * because neither the group nor its card exists.
  *
  * ⚠ AND RASTERIZE (legacy-removal S1.5) — the FIFTH producer departure, and
  * the one that was never on S1's list: the brief's seven producers shipped and

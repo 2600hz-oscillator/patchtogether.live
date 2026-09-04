@@ -289,7 +289,9 @@ describe('matrixMix face — the roster memo (leg 2)', () => {
 
   it('excludes the matrix node itself, and every module with NO jacks', () => {
     setup();
-    patch.nodes['sticky-1'] = node('sticky-1', 'sticky', 'meta');
+    // A jackless meta module. (This was `sticky` until that module was deleted;
+    // `cadillac` is the surviving zero-port meta def and makes the same point.)
+    patch.nodes['cadillac-1'] = node('cadillac-1', 'cadillac', 'meta');
     const ids = matrixmixAxisChoices(MM).map((c) => c.nodeId);
     expect(ids, 'a matrix cannot matrix itself, and a jackless module yields no grid')
       .toEqual(['adsr-1', 'vca-1']);

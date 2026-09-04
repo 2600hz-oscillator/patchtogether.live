@@ -1345,7 +1345,6 @@ graphicEq param gain 0.5..4 linear default=1.6
 graphicEq param hue 0..1 linear default=0
 graphicEq param peak 0.5..0.99 linear default=0.92
 graphicEq param style 0..1 discrete default=1
-group meta domain=meta
 illogic meta domain=audio
 illogic in in1 cv
 illogic in in2 cv
@@ -3157,7 +3156,6 @@ stereovca out out_l audio
 stereovca out out_r audio
 stereovca param level 0..1 linear default=1
 stereovca param offset -1..1 linear default=0
-sticky meta domain=meta
 swolevco meta domain=audio
 swolevco in fm audio
 swolevco in fold cv param=fold cvScale=linear

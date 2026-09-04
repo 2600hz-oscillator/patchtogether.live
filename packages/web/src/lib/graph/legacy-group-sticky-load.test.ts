@@ -75,7 +75,7 @@ import {
   type LivePatch,
   type LoadDiagnostic,
 } from './persistence';
-import { LOAD_DIAGNOSTIC_REASONS } from './load-diagnostics';
+import { LOAD_DIAGNOSTIC_REASONS, summarizeLoadDiagnostics } from './load-diagnostics';
 import {
   laneRenderKind,
   emittedTypeFor,
@@ -177,7 +177,7 @@ describe('the frozen fixture contains what the drop leg claims (anti-vacuity con
   });
 });
 
-describe('loading the frozen rack in THIS build', () => {
+describe('loading the frozen rack after the types are UNREGISTERED', () => {
   let diagnostics: LoadDiagnostic[];
   let nodes: Record<string, ModuleNode | undefined>;
   let edges: Record<string, Edge | undefined>;
@@ -203,31 +203,103 @@ describe('loading the frozen rack in THIS build', () => {
     // cache. Anything that reads a registry from a `beforeAll` has this.
   }, 120_000);
 
-  // ⚠ THIS BLOCK IS THE PRE-DELETION POSITIVE CONTROL AND IS MEANT TO BE
-  // REPLACED. While `group` and `sticky` are still registered the rack loads
-  // WHOLE — which is precisely what makes every assertion the drop leg will
-  // make currently FALSE. Landing it first is how we know the drop leg tests
-  // the deletion and not the fixture. The commit that removes the two defs
-  // replaces this block with the drop leg.
+  // ── THE DROP LEG ─────────────────────────────────────────────────────────
+  //
+  // ⚠ WHAT STOOD HERE UNTIL THE DEFS WERE DELETED, and why it matters that it
+  // did. This block was authored as the PRE-DELETION POSITIVE CONTROL: with
+  // `group` and `sticky` still registered it asserted the rack loads WHOLE —
+  // all seven nodes present, all four cables present, `diagnostics` empty.
+  // Every one of those assertions is the exact negation of the ones below, so
+  // watching them go red exactly when the defs left the registry is what proves
+  // this leg tests the DELETION and not the fixture. (The control was also run
+  // the other way at authoring time, before anything was deleted, by making the
+  // meta barrel reject the two types: the same three assertions went red then,
+  // with the diagnostics quoted below, while the fixture-contents block above
+  // stayed green.)
 
-  it('every node survives, including the two meta nodes', () => {
-    expect(Object.keys(nodes).sort()).toEqual(
-      ['dly-1', 'grp-1', 'lfo-1', 'out-1', 'stk-1', 'vco-1', 'vco-2'].sort(),
-    );
-    expect(nodes['grp-1']!.type).toBe('group');
-    expect(nodes['stk-1']!.type).toBe('sticky');
+  it('DROP: both meta nodes are ABSENT — the rack loads WITHOUT them', () => {
+    expect(nodes['grp-1']).toBeUndefined();
+    expect(nodes['stk-1']).toBeUndefined();
+    expect(
+      Object.values(nodes).some((x) => x?.type === 'group' || x?.type === 'sticky'),
+      'no node may carry a retired type',
+    ).toBe(false);
   });
 
-  it('every cable survives — including the two that terminate on the group', () => {
-    // The group's exposed handles resolve through `resolveExposedPort` inside
-    // `validateEdge`, which is why a cable to a def-less group node validates.
-    for (const id of [...CABLES_TOUCHING_THE_GROUP, ...CABLES_THAT_MUST_SURVIVE]) {
-      expect(edges[id], `${id} must survive while group is registered`).toBeDefined();
+  it('DROP: the five ordinary nodes survive INTACT — position, params and all', () => {
+    // The whole point of "loads gracefully": what is left is a working rack,
+    // not a husk. Asserted by VALUE, not by count.
+    expect(Object.keys(nodes).sort()).toEqual(
+      ['dly-1', 'lfo-1', 'out-1', 'vco-1', 'vco-2'].sort(),
+    );
+    expect(nodes['vco-1']!.type).toBe('analogVco');
+    expect(nodes['vco-1']!.position).toEqual({ x: 40, y: 120 });
+    expect(nodes['vco-1']!.params).toEqual({ tune: 7, fine: -12 });
+    expect(nodes['dly-1']!.params).toEqual({ time: 0.375, feedback: 0.55, mix: 0.5 });
+  });
+
+  it('DROP: the two children OUTLIVE their group, carrying an inert parentGroupId', () => {
+    // A child is an ordinary registered module, so it survives its container.
+    // Its stale `data.parentGroupId` now points at nothing — harmless, because
+    // the lane filter that read it is deleted too, but stated so the next
+    // reader knows the field is expected to be there and expected to be inert.
+    for (const id of ['vco-1', 'dly-1']) {
+      expect(nodes[id]).toBeDefined();
+      expect((nodes[id]!.data as { parentGroupId?: string }).parentGroupId).toBe('grp-1');
     }
   });
 
-  it('the load is clean — nothing to tell the user', () => {
-    expect(diagnostics).toEqual([]);
+  it('DROP: exactly the two cables that touched the group are gone', () => {
+    for (const id of CABLES_TOUCHING_THE_GROUP) {
+      expect(edges[id], `${id} terminated on the group and must be gone`).toBeUndefined();
+    }
+    // ⚠ THE OTHER HALF, and it is the one that would go unnoticed: a loader that
+    // dropped EVERYTHING would pass the assertion above. Both survivors are
+    // checked by ENDPOINT, not merely for presence.
+    expect(edges['e-internal']!.source).toEqual({ nodeId: 'vco-1', portId: 'saw' });
+    expect(edges['e-internal']!.target).toEqual({ nodeId: 'dly-1', portId: 'audio' });
+    expect(edges['e-control']!.source).toEqual({ nodeId: 'vco-2', portId: 'triangle' });
+    expect(edges['e-control']!.target).toEqual({ nodeId: 'out-1', portId: 'R' });
+    expect(Object.keys(edges).sort()).toEqual([...CABLES_THAT_MUST_SURVIVE].sort());
+  });
+
+  it('DROP: one unknown-type diagnostic per retired node, naming the type', () => {
+    for (const [nodeId, type] of [['grp-1', 'group'], ['stk-1', 'sticky']] as const) {
+      const d = diagnostics.filter((x) => x.nodeId === nodeId);
+      expect(d, `${nodeId} must carry exactly one diagnostic`).toHaveLength(1);
+      expect(d[0]!.type).toBe(type);
+      expect(d[0]!.reason).toBe(LOAD_DIAGNOSTIC_REASONS.unknownType);
+    }
+  });
+
+  it('DROP: each orphaned cable carries its own diagnostic (exact set)', () => {
+    const orphaned = diagnostics
+      .filter((d) => d.reason === LOAD_DIAGNOSTIC_REASONS.orphanEdge)
+      .map((d) => d.nodeId)
+      .sort();
+    expect(
+      orphaned,
+      'exactly the two cables that touched the group — no more, and no fewer',
+    ).toEqual([...CABLES_TOUCHING_THE_GROUP].sort());
+  });
+
+  it('DROP: the user is TOLD — the load is summarised, naming both types', () => {
+    // The half #1033 promised and did not build: without this the whole thing
+    // degrades "gracefully" into a rack that silently lost nodes and cables,
+    // with the only evidence in a console nobody has open.
+    const summary = summarizeLoadDiagnostics(diagnostics);
+    expect(summary, 'a load that dropped nodes MUST produce a notice').not.toBeNull();
+    expect(summary!).toMatch(/group/);
+    expect(summary!).toMatch(/sticky/);
+    expect(summary!).toMatch(/could not be loaded/);
+    expect(summary!).toMatch(/2 cables removed/);
+  });
+
+  it('DROP: nothing threw — the load COMPLETED', () => {
+    // Implied by every assertion above (the beforeAll would have failed), but
+    // stated because "a crash on legacy patch load is a release blocker" is the
+    // literal requirement this file exists to discharge.
+    expect(diagnostics).toHaveLength(4); // 2 nodes + 2 orphaned cables
   });
 
   // ── Determinations that hold in BOTH worlds ──────────────────────────────
@@ -264,7 +336,7 @@ describe('loading the frozen rack in THIS build', () => {
     }
   });
 
-  it('SAVE: re-saving the loaded rack round-trips whatever survived, and nothing more', () => {
+  it('SAVE: a re-save cannot resurrect a dropped node', () => {
     // The save path encodes the LIVE store, so it can only ever contain what
     // the load kept — a dropped node cannot be resurrected by saving.
     const env = makeStateOnlyEnvelope(dest.ydoc, undefined);
