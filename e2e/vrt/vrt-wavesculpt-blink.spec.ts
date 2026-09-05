@@ -24,7 +24,7 @@
 // other three) so the scope traces have real signal in modes 1/2.
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch, canvasNode } from '../tests/_helpers';
+import { spawnPatch } from '../tests/_helpers';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
@@ -212,11 +212,22 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
         try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
       });
 
-      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
-      // and every lane node is `moduleShell`, so a per-module class matches
-      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
-      const card = canvasNode(page, 'vrt-1');
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE RENDERER IS IN THE DOCK PANE, NOT THE LANE. Since legacy-removal S1
+      // the wavesculpt canvas belongs to the NODE (`NodeVizSurfaceHost`, parked
+      // off-screen) and a VIEW claims it; the lane paints a `VideoTileThumb`, so
+      // a lane-scoped capture photographs the THUMB rather than the render. The
+      // blink scenes fail loudly on their live-surface `expectCount: 1`; the
+      // walls scenes did NOT — they captured the wrong picture silently, which
+      // is why both specs move together.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'vrt-1',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="vrt-1"]`)
+        .getByTestId('wavesculpt-output-body');
+      await card.waitFor({ state: 'visible', timeout: 20_000 });
 
       // Let the voices settle so the scope buffers fill with a couple of
       // cycles, then turn on the freeze hook (pins all time-derived inputs

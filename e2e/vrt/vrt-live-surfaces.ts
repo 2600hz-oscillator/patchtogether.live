@@ -356,151 +356,26 @@ export const VRT_LIVE_SURFACES: Record<string, LiveSurfaceScene> = {
   // formality.
 
 
-  // ──────────── vrt-wavesculpt-blink.spec.ts — the two RIBBON modes ───────
+  // ⚠ THE ROSTER IS EMPTY, AND THAT IS THE END OF A PRESCRIPTION RATHER THAN A
+  // RELAXATION. Its last two members were `wavesculpt-blink-ribbons` and
+  // `-gate-electricity`, which masked 84.8 % of their frame — the most
+  // expensive masks here — because unpinned `boltPhase` made the two
+  // blink_mode-0 scenes impossible to baseline (13 settle attempts, then
+  // "Failed to take two consecutive stable screenshots").
   //
-  // ONE ROOT CAUSE, NAMED, LOCATED, THE FIX WRITTEN AND MEASURED TO WORK, AND
-  // THEN DELIBERATELY NOT SHIPPED. The evidence for every clause of that
-  // sentence is below, because the previous round asserted the same conclusion
-  // without it.
+  // Their own note wrote the exit condition and the order: *"unblock the camera
+  // pass → re-attest → apply the one-line pin → DELETE BOTH ENTRIES BELOW and
+  // re-pin two unmasked baselines."* All four steps are done. Pass C
+  // (`camera-input.spec.ts`) passes — measured, not assumed — the real-GPU
+  // attest was paid on this branch, and `VRT_FIXED_BOLT_PHASE` ships in
+  // `WavesculptVizSurface.svelte` beside the wave and wiggle pins it parallels.
+  // Both scenes now capture their real render, unmasked and strict.
   //
-  // WavesculptCard advances THREE time-derived phases per frame, side by side:
-  //
-  //     boltPhase[i]        = (boltPhase[i] + BOLT_SPEED * dt) % 1.0;   ← NOT pinned
-  //     wavePhase[i]        = vrtFrozen() ? VRT_FIXED_WAVE_PHASE : …;   ← pinned
-  //     scopeWigglePhase[i] = vrtFrozen() ? 0.6 : …;                    ← pinned
-  //
-  // `boltPhase` feeds `uBoltPhase`, which positions the three travelling arc
-  // heads and seeds the crackle hash in RIBBON_FS — whose own comment asserts
-  // the crackle is "frozen-stable under the VRT freeze hook since ph is pinned
-  // there". It is not pinned. The card contradicts its own comment.
-  //
-  // GATE RESULT (2026-08-01, darwin, real config, real tolerance, UNMASKED):
-  // `--update-snapshots` could not write a baseline for EITHER blink_mode-0
-  // scene. `ribbons` took 13 consecutive settle attempts differing 19 165 /
-  // 11 812 / 24 677 / 22 396 / 22 204 / 21 431 / 21 988 / 19 435 / 23 058 /
-  // 20 755 / 22 484 / 21 069 / 23 186 px (ratio 0.03-0.06) before "Failed to
-  // take two consecutive stable screenshots. Timeout 15000ms exceeded";
-  // `gate-electricity` behaved identically. Every blink_mode-1 and mode-2 case
-  // — which do not run RIBBON_FS — settled on the FIRST attempt. That
-  // correspondence is the strongest evidence here: it was predicted from the
-  // code and then confirmed by which scenes the gate refuses to baseline.
-  //
-  // THE FIX WORKS. Applying the one line
-  //
-  //     boltPhase[i] = vrtFrozen() ? VRT_FIXED_BOLT_PHASE : (…);
-  //
-  // (VRT_FIXED_BOLT_PHASE = 0.35, exactly parallel to wavePhase and
-  // scopeWigglePhase two lines below it) took both scenes from "13 failed
-  // settle attempts, cannot baseline" to writing fresh UNMASKED baselines and
-  // passing, in 9.1 s for the pair. That was measured on this branch, not
-  // reasoned about.
-  //
-  // WHY IT IS NOT SHIPPED HERE — the blocker, verified rather than assumed:
-  //   1. `WavesculptCard.svelte` creates a WebGL context, so
-  //      `resolveWebglBasis()` includes it. CONFIRMED by running the resolver:
-  //      `npx tsx scripts/webgl-attest-hash.ts --list` listed exactly three
-  //      cards at the time — CubeCard, WavesculptCard, and a third that was
-  //      deleted with its module on 2026-08-10, so the resolver lists two
-  //      today; the hashes quoted below are from that measurement.
-  //   2. With the fix applied the content hash moves from
-  //      ac6d86f107da73ec54397fecf9c2b9b69c372c7975e58ac093981fa1da0a985b to
-  //      4aaf024247a05b7d058246b61f905364f9d429762765d963a72be19a80c6867d, and
-  //      `ci-webgl-attest/` holds exactly one attestation, for the former.
-  //      `scripts/webgl-attest-verify.sh` EXITS 1 on a miss, so the CI
-  //      `webgl-attest` job goes RED without a real-GPU re-attest.
-  //   3. The re-attest cannot be produced here. `scripts/webgl-attest.ts` runs
-  //      four passes and writes only on a fully-green run. Pass C is
-  //      `camera-input.spec.ts`, and it FAILS on this machine independently of
-  //      any change on this branch: "CAMERA → OUTPUT (deterministic render
-  //      smoke) › injected frame renders through the camera pass to a
-  //      non-black, frame-stable FBO" (camera-input.spec.ts:42). That is the
-  //      pre-existing blocker already recorded in the project's memory
-  //      (`webgl-attest-video-orientation-camera-fail`).
-  //
-  // So the correct sequencing is: unblock the camera pass → re-attest → apply
-  // the one-line pin → DELETE BOTH ENTRIES BELOW and re-pin two unmasked
-  // baselines. Until then these two masks are the honest cost, and they are
-  // justified by the gate rather than by a probe.
-  'wavesculpt-blink-ribbons': {
-    spec: 'vrt-wavesculpt-blink.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid="wavesculpt-canvas"]',
-        expectCount: 1,
-        why:
-          'RIBBON mode (blink_mode 0). The WebGL render advances `boltPhase` every frame of ' +
-          'the card rAF loop and __wavesculptVrtFreeze does not pin it, so the three ' +
-          'travelling electric arc heads sit at a different point along the ribbon on every ' +
-          'capture. GATE RESULT (UNMASKED, 2026-08-01): `--update-snapshots` could not write ' +
-          'a baseline — 13 consecutive settle attempts differing 11 812-24 677 px (ratio ' +
-          '0.03-0.06), then "Failed to take two consecutive stable screenshots. Timeout ' +
-          '15000ms exceeded". Pinning boltPhase takes the same scene to a first-attempt ' +
-          'settle; see the block comment above for the measured before/after and for why the ' +
-          'pin is blocked on a real-GPU re-attest.',
-        companion: {
-          minInkFraction: 0.07,
-          minLumaStdDev: 29,
-          minDistinctLumaBuckets: 5,
-          rationale:
-            'MASKS 84.8 % OF THE CARD (382 130 magenta px of 849x531) — by far the most ' +
-            'expensive mask here, because this card IS its viewport. That cost is stated ' +
-            'plainly rather than buried: it buys back a scene the gate cannot otherwise ' +
-            'baseline at all, and the alternative (quarantine, like the three blink_mode-1 ' +
-            'cases that used to sit in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
-            'nothing. Revert it the moment boltPhase is pinned — the fix is written and ' +
-            'measured, only the attest blocks it. ' +
-            'MEASURED on the 721x541 CSS-px render through the REAL blink capture path, 3 ' +
-            'runs: ink 0.2097 / 0.2099 / 0.2098, stdDev 88.86 / 88.47 / 88.67, buckets 11 / 11 ' +
-            '/ 10, chroma 5.73 / 6.04 / 5.92. Force-killed: ink 0.0181, stdDev 5.02, buckets 3, ' +
-            'chroma 0.22. Floors at ~a third of live: ink 0.07 is 3.9x dead, stdDev 29 is 5.8x ' +
-            'dead, buckets 5 sits between dead 3 and the observed minimum 10. NO chroma floor ' +
-            'on this case — the plain ribbons render near-white (live chroma under 6), so a ' +
-            'chroma floor here would be tuned to noise; the gate-electricity entry, whose whole ' +
-            'subject is coloured arcs, does carry one.',
-        },
-      },
-    ],
-  },
-
-  'wavesculpt-blink-gate-electricity': {
-    spec: 'vrt-wavesculpt-blink.spec.ts',
-    surfaces: [
-      {
-        selector: '[data-testid="wavesculpt-canvas"]',
-        expectCount: 1,
-        why:
-          'The same unpinned `boltPhase` in the same RIBBON mode (blink_mode 0), and this ' +
-          'scene exists specifically to show the gate electricity, so it is the case the ' +
-          'defect hits hardest — the arc heads ARE the subject. GATE RESULT (UNMASKED, ' +
-          '2026-08-01): identical to `ribbons` — `--update-snapshots` could not write a ' +
-          'baseline, repeated settle attempts at ratio 0.02-0.04, then Timeout 15000ms. It is ' +
-          'one of exactly two scenes in this spec that behave this way, and they are exactly ' +
-          'the two blink_mode-0 cases; every mode-1 and mode-2 case settles first try. The ' +
-          'arc heads are driven by the card rAF loop, so their position varies per capture.',
-        companion: {
-          minInkFraction: 0.07,
-          minLumaStdDev: 27,
-          minDistinctLumaBuckets: 5,
-          minMeanChroma: 3,
-          rationale:
-            'MASKS 84.8 % OF THE CARD (382 130 magenta px of 849x531) — by far the most ' +
-            'expensive mask here, because this card IS its viewport. That cost is stated ' +
-            'plainly rather than buried: it buys back a scene the gate cannot otherwise ' +
-            'baseline at all, and the alternative (quarantine, like the three blink_mode-1 ' +
-            'cases that used to sit in EXEMPT_BASELINE_PAIRS) deletes 100 % and asserts ' +
-            'nothing. Revert it the moment boltPhase is pinned. ' +
-            'MEASURED on the 721x541 CSS-px render through the REAL blink capture path, 3 ' +
-            'runs: ink 0.2096 / 0.2098 / 0.2098, stdDev 81.43 / 81.15 / 81.26, buckets 11 / 12 ' +
-            '/ 12, chroma 9.59 / 9.79 / 9.77. Force-killed: ink 0.0181, stdDev 5.02, buckets 3, ' +
-            'chroma 0.22. Floors at ~a third of live. The chroma floor of 3 (43x the dead 0.22, ' +
-            '3.2x below live) is here because this scene EXISTS to show electric-blue arcs on ' +
-            'the ribbons: measurably, gating the voices lifts chroma from 5.9 (ribbons — same ' +
-            'geometry, no electricity) to 9.8 here, so chroma is the one statistic that would ' +
-            'notice if the electricity stopped rendering entirely.',
-        },
-      },
-    ],
-  },
+  // An empty roster means NO MASK ANYWHERE and full strictness everywhere. The
+  // machinery stays: `expectVrtSceneScreenshot` still routes every capture, so
+  // the next mask has to register, and registering still obliges a companion
+  // and a per-run negative control. Adding a key is how a mask happens; there
+  // is no other way in.
 };
 
 /** Scene ids that carry at least one masked live surface. Exported for the

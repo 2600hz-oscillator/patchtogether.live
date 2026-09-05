@@ -28,7 +28,7 @@
 // is a smoke test, not a capture.
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch, canvasNode } from '../tests/_helpers';
+import { spawnPatch } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 interface WallCase {
@@ -97,11 +97,22 @@ test.describe('VRT: WAVESCULPT video walls', () => {
         ],
       );
 
-      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
-      // and every lane node is `moduleShell`, so a per-module class matches
-      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
-      const card = canvasNode(page, 'vrt-walls');
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE RENDERER IS IN THE DOCK PANE, NOT THE LANE. Since legacy-removal S1
+      // the wavesculpt canvas belongs to the NODE (`NodeVizSurfaceHost`, parked
+      // off-screen) and a VIEW claims it; the lane paints a `VideoTileThumb`, so
+      // a lane-scoped capture photographs the THUMB rather than the render. The
+      // blink scenes fail loudly on their live-surface `expectCount: 1`; the
+      // walls scenes did NOT — they captured the wrong picture silently, which
+      // is why both specs move together.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'vrt-walls',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="vrt-walls"]`)
+        .getByTestId('wavesculpt-output-body');
+      await card.waitFor({ state: 'visible', timeout: 20_000 });
 
       // Let the wall texture upload + a couple of feedback frames settle,
       // then freeze the time-derived inputs + suspend audio.

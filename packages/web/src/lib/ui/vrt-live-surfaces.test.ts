@@ -39,6 +39,7 @@ import { dirname, relative, resolve } from 'node:path';
 import {
   VRT_LIVE_SURFACES,
   MASKED_SCENE_IDS,
+  liveSurfacesFor,
   type LiveSurface,
 } from '../../../../../e2e/vrt/vrt-live-surfaces';
 import {
@@ -211,15 +212,67 @@ const MASK_CAUSE_VOCABULARY = [
   'FALLBACK',
 ];
 
+/**
+ * A SYNTHETIC surface, used only when the real roster is EMPTY.
+ *
+ * ⚠ IT EXISTS BECAUSE AN EMPTY ROSTER MAKES EVERY PREDICATE BELOW VACUOUS, and
+ * four of them are `it.each` — which does not merely pass on an empty list, it
+ * ERRORS. An empty roster is the DESIRABLE end state (no mask anywhere, full
+ * strictness everywhere), so the answer is not to keep a mask alive to feed the
+ * tests; it is to keep the tests exercised.
+ *
+ * This entry is a POSITIVE CONTROL: the guards run against it and it must
+ * satisfy every one of them, including the load-bearing "REJECTS a dead render"
+ * leg, which really evaluates `evaluateCompanion` against a black and a
+ * mid-grey region. So the predicates are proven to still work the day a real
+ * mask needs them.
+ */
+const CONTROL_SURFACE: LiveSurface = {
+  selector: '[data-testid="vrt-live-surface-control"]',
+  expectCount: 1,
+  why:
+    'SYNTHETIC CONTROL, not a shipped mask. It stands in for a region whose per-frame ' +
+    'animation is driven by a rAF loop the freeze hook does not pin, which is the mechanism ' +
+    'every real entry here has described. It exists so these predicates keep running while ' +
+    'the real roster is empty.',
+  companion: {
+    minInkFraction: 0.07,
+    minLumaStdDev: 27,
+    minDistinctLumaBuckets: 5,
+    rationale:
+      'SYNTHETIC. The floors are the ones the retired wavesculpt entries measured — live ink ' +
+      '0.2097, stdDev 88.86, buckets 11 against a force-killed 0.0181 / 5.02 / 3 — kept ' +
+      'verbatim so the control is calibrated against a real measurement rather than invented, ' +
+      'and so the dead-render leg below has something honest to reject.',
+  },
+};
+
 function allSurfaces(): Array<{ sceneId: string; surface: LiveSurface }> {
-  return Object.entries(VRT_LIVE_SURFACES).flatMap(([sceneId, scene]) =>
+  const real = Object.entries(VRT_LIVE_SURFACES).flatMap(([sceneId, scene]) =>
     scene.surfaces.map((surface) => ({ sceneId, surface })),
   );
+  return real.length > 0 ? real : [{ sceneId: '<control>', surface: CONTROL_SURFACE }];
 }
 
 describe('VRT live-surface registry: structure', () => {
-  it('registers at least one scene (an empty registry means the seam is unused)', () => {
-    expect(MASKED_SCENE_IDS.length).toBeGreaterThan(0);
+  it('an EMPTY roster means no mask anywhere — and the seam is still the only way in', () => {
+    // ⚠ THIS LEG USED TO BE `MASKED_SCENE_IDS.length > 0`, on the argument that
+    // "an empty registry means the seam is unused". That reading is wrong at the
+    // end state this branch reaches: the last two entries were retired because
+    // their scenes no longer NEED a mask (`VRT_FIXED_BOLT_PHASE` pins what drove
+    // them), so the roster is empty precisely because strictness went UP.
+    //
+    // What must not rot is the SEAM, and that is asserted directly — and
+    // separately by this file's hand-rolled-`mask:` scan, which is what makes
+    // "the roster is empty" mean "there are no masks" rather than "the masks
+    // moved somewhere nobody watches".
+    expect(MASKED_SCENE_IDS.length, 'the roster is derived from the registry').toBe(
+      Object.keys(VRT_LIVE_SURFACES).length,
+    );
+    expect(
+      liveSurfacesFor('a-scene-that-is-not-registered'),
+      'an unregistered scene takes NO mask — the default is full strictness',
+    ).toEqual([]);
   });
 
   it('every scene declares an owning spec file that exists', () => {

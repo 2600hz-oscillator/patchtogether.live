@@ -1038,6 +1038,17 @@ void main() {
   }
   const VRT_FIXED_TSEC = 2.0;       // pinned uTime
   const VRT_FIXED_WAVE_PHASE = 0.0; // pinned per-osc wavetable scroll
+  // ⚠ PINNED BECAUSE ITS ABSENCE COST A MASK. `boltPhase` drives the three
+  // travelling electric arc heads along each ribbon; unpinned they sit at a
+  // different point on every capture, and MEASURED (2026-08-01) that took the
+  // two blink_mode-0 scenes to "13 consecutive settle attempts differing
+  // 11 812-24 677 px, then Failed to take two consecutive stable screenshots".
+  // Those two scenes were MASKED instead — 84.8 % of the frame, the most
+  // expensive mask in the roster — and the mask's own note named this line as
+  // the fix, blocked on a real-GPU re-attest that has now been paid. So the pin
+  // ships and both masks are deleted. 0.35 is arbitrary-but-fixed, exactly as
+  // VRT_FIXED_WAVE_PHASE and the wiggle phase below are.
+  const VRT_FIXED_BOLT_PHASE = 0.35;
 
   // ---- DRS card-step seam (deterministic render-smoke; e2e only) ----
   // Independent of __wavesculptVrtFreeze (which only pins shader time for a VRT
@@ -1817,7 +1828,9 @@ void main() {
     // drawScopes() read the same phase. rate + magnitude ∝ pitch.
     const wiggleTilt: number[] = [0, 0, 0, 0];
     for (let i = 0; i < 4; i++) {
-      boltPhase[i] = (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
+      boltPhase[i] = vrtFrozen()
+        ? VRT_FIXED_BOLT_PHASE
+        : (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
       // Effective osc frequency from knobs (pitch_cv input is dynamic
       // and would require an engine-side modulator-tap read — skipped
       // here; the visual still scrolls correctly when the user drives
