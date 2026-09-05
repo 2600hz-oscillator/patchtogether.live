@@ -45,6 +45,7 @@
 // free: each `ydoc.transact(...)` / `patch.nodes[...]` reads the current value.
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import { isDeviceSlotId } from '$lib/graph/device-slots';
 import type { Edge, ModuleNode } from '$lib/graph/types';
 import {
   planDeleteBridge,
@@ -167,13 +168,23 @@ export function setControlColor(
  * def-level `undeletable` check stays in Canvas.deleteNode (it needs the
  * registry); this guard is the layer every programmatic delete shares.
  *
- * The pinned re-read happens INSIDE the transaction (same discipline as
+ * RESERVED DEVICE-SLOT GUARD (native-shell P1): a node sitting at a reserved
+ * slot id (`graph/device-slots.ts`) is refused the same way, and it is a
+ * SEPARATE mechanism on purpose. `data.pinned` is not available to every slot:
+ * it is also the canvas-HIDE bit (`isCanvasHiddenNode` = `pinned || hiddenCard`),
+ * so pinning an OUTPUT slot would delete the card the operator presents from.
+ * The reserved-id check is the one guard that works for both kinds — and unlike
+ * a data flag it cannot be cleared by a peer write, because the id is the key
+ * rather than a value stored under it.
+ *
+ * Both re-reads happen INSIDE the transaction (same discipline as
  * mutateNode) so a remote write can't slip a pinned node into a delete
  * that was validated against a stale render.
  *
  * @param nodeId  the patch node to delete
  * @param options `{ origin = LOCAL_ORIGIN }` — the transaction origin
- * @returns true when the node was deleted; false when absent or pinned.
+ * @returns true when the node was deleted; false when absent, pinned, or a
+ *          reserved device slot.
  */
 export function removePatchNode(
   nodeId: string,
@@ -184,6 +195,7 @@ export function removePatchNode(
     const live = patch.nodes[nodeId] as ModuleNode | undefined;
     if (!live) return; // node gone → safe no-op
     if (live.data?.pinned === true) return; // pinned → refuse
+    if (isDeviceSlotId(nodeId)) return; // reserved device slot → refuse
     // Drop every edge touching the doomed node first so the engine sees a
     // clean disconnect before disposal (mirrors Canvas.deleteNode).
     for (const [eid, edge] of Object.entries(patch.edges)) {
@@ -246,6 +258,7 @@ export function removePatchNodeBridging(
     const live = patch.nodes[nodeId] as ModuleNode | undefined;
     if (!live) return; // node gone → safe no-op
     if (live.data?.pinned === true) return; // pinned → refuse (removePatchNode's rule)
+    if (isDeviceSlotId(nodeId)) return; // reserved device slot → refuse (same rule)
 
     const plan = planDeleteBridge(
       nodeId,

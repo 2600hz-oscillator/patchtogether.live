@@ -62,13 +62,14 @@ OPEN** · **⛔ PENDING a decision**.
 |---|---|---|---|---|---|---|
 | 1 | **renderer crash** (`render-process-gone`) | MAIN: server, supervisors, bindings, display map. RENDERER: **everything else** — graph, streams, MIDI, sockets, blit closure | contextBridge IPC (re-established on reload); helper sockets re-dialed by the new renderer | main window reloads; bindings re-apply at boot; helper clients re-dial | **FULL output teardown.** Audio stops; cameras/MIDI/loopback re-acquire. Recovery, not continuity | ⛔ **PENDING** — output-window fate unresolved; see §2 |
 | 2 | **helper SIGKILL** (es9 / vst / pt-ptz) | the dead helper owned its device session + plugin instances; MAIN owns the supervisor; RENDERER keeps the graph | none to that helper — **the socket dies with the process** | supervisor respawns (new pid); renderer **re-dials a NEW client** | **Bounded silence on that helper's path** + **state loss** (see §3). NOT zero re-dials, NOT park-preserving | ✅ `apps/desktop/e2e/supervision.spec.ts` (asserts recovery + park LOSS) |
-| 3 | **patch load / swap** | RENDERER owns doc + graph; slot-keyed sessions must OUTLIVE the swap; helpers untouched | all of them — no process dies | nothing should reconnect: sockets, streams, tracks, MIDI claims all persist | **⚠ CLICK-FREE CROSSFADE ONLY** (owner answer 6). Content may change; the transition may not click. A hard cut or a silent rebuild gap is a DEFECT | ❌ **none** — and the design does not exist either; see §4 |
-| 4 | **device unplug** (camera / MIDI / USB) | RENDERER owns the stream + claim; the OS owns the device | contextBridge + helper sockets survive | slot re-binds when the device returns; other slots unaffected | the unplugged slot's stream ends; **no other slot may flinch**, and no permission re-prompt | ⏳ P5 (unbind/rebind while playing) + owner-machine checklist for real hardware |
+| 3a | **patch load / swap — the DEVICE half** (slot-keyed camera + output sessions) | RENDERER owns doc, graph, streams and the node-keyed registries that hold them; helpers untouched | all of them — no process dies | **nothing.** The reserved slot ids are never deleted, so no registry entry is retired and no stream is re-acquired | **NONE for a slot.** No re-acquisition, no camera blink, no permission re-prompt. An UNRESERVED camera still dies — that is the interruption, and it is now the positive control rather than the behaviour | ✅ **graph tap:** `graph/device-slots-ydoc.test.ts` runs the REAL loader + REAL reconciler and asserts NO `removeNode` for any reserved id across a load, with an unreserved camera in the same rack asserted to die. ⏳ **receiver side:** `e2e` camera-pixels-advance across a load — see the P1 report. ⚠ Neither subsumes the other: the graph tap cannot see a frame, the e2e cannot see the engine |
+| 3b | **patch load / swap — the AUDIO half** (the transition itself) | RENDERER owns the audio graph; the reconciler disposes removed nodes inline and synchronously | all — no process dies | n/a | **⚠ CLICK-FREE CROSSFADE ONLY** (owner answer 6). Content may change; the transition may not click. A hard cut or a silent rebuild gap is a DEFECT | ❌ **none — the row stays OPEN.** The design does not exist either; see §4. ⚠ P1 does NOT close this and must not be read as closing it: slots keep the INFRASTRUCTURE alive across a load, which is a precondition for a crossfade and not a crossfade |
+| 4 | **device unplug** (camera / MIDI / USB) | RENDERER owns the stream + claim; the OS owns the device | contextBridge + helper sockets survive | slot re-binds when the device returns; other slots unaffected | the unplugged slot's stream ends; **no other slot may flinch**, and no permission re-prompt | ⛔ **PENDING — the receiver-side instrument does not exist at any tier.** P1 supplies the addressing the row assumes (a stable id to re-bind AT, and `device-rebind.ts`'s id→unique-name→tie-break resolver), but nothing observes an unplug: fake devices cannot be unplugged mid-run, and the `NotReadableError` contention this row's "no other slot may flinch" clause is really about is **not reproducible with fake devices at all** (plan review F7). What is missing, named: a device-enumeration fault-injection seam, or an owner-machine checklist step that is actually run. Until one exists this row is OPEN — do not let P5's unbind/rebind spec, which exercises a USER action rather than an OS event, be counted as covering it |
 | 5 | **display change / hotplug** | MAIN owns the display map + window placement; RENDERER owns the blit source | contextBridge IPC | outputs re-place / re-fullscreen per the map | re-placement is visible; **audio must not flinch** | ⏳ P4 placement UNIT tests vs mocked `screen`. **Real hotplug is untested at every tier** — owner-machine checklist only. Say so in the spec header |
 | 6 | **save / export** (quicksave, portable, state-only, performance-zip, recorderbox Save, take finalize) | RENDERER owns the whole save path — including, today, main-thread `zipSync` over all asset bytes | everything; no process dies | nothing | **NONE.** No RMS dip, no dropped frames. This is owner goal 5, verbatim: workflows must never *even temporarily* disrupt output | ⏳ PH worklet min-RMS/underrun accumulator + audio-clock-vs-wall-clock progress. **Must be armed BEFORE P6a claims anything** |
 | 7 | **app quit** | MAIN tears down deliberately | none — by design | nothing | orderly stop; **zero orphaned helpers** | ✅ `main.ts:265-268` `will-quit` stops every supervisor (SIGTERM → SIGKILL escalation, `supervisor.ts:139-142`); checklist verifies with `ps aux` |
 | 8 | **AudioContext suspension** (sleep/wake, default-sink removal) | Chromium audio service; RENDERER observes | all | `statechange → suspended → auto-resume` | brief silence at the OS event; **no full-screen `AudioGate` overlay** under `nativeAvailable()` | ⏳ P2/PH; real sleep/wake is owner-machine only |
-| 9 | **Clear / undo / redo / PEER Clear** | RENDERER owns doc; slots must survive all four | all | nothing | slots re-assert; **no session teardown** | ⏳ P1 unit + web e2e (untracked-origin spawn, deep observer) |
+| 9 | **Clear / undo / redo / PEER Clear** | RENDERER owns doc; slots must survive all four | all | nothing | slots survive by ID — **not** re-asserted after a delete, which would be a teardown followed by a re-add. `data.pinned` is NOT available to an output slot (it is also the canvas-HIDE bit), so the reserved-id guard is the one mechanism covering both kinds | ✅ **Clear + PEER Clear:** `device-slots-ydoc.test.ts` runs a real two-peer converge and asserts content goes while every slot id stands. Untracked spawn origin means undo never captured a slot, so Cmd-Z cannot remove one. ⏳ **redo** is unexercised — the origin argument covers it by construction but nothing observes it |
 | 10 | **DOOM anything** | — | — | — | — | **EXCLUDED BY NAME.** Do not touch DOOM code, specs, waits, budgets, ledger, or sweeps without explicit owner approval (owner Q8 unanswered) |
 
 **Positive controls — the matrix means nothing without them.** Each must stay
@@ -181,7 +182,24 @@ warned on the card.
 
 ---
 
-## 4. Row 3 — patch load/swap: mandatory crossfade, no design, no instrument
+## 4. Row 3b — patch load/swap: mandatory crossfade, no design, no instrument
+
+> **⚠ ROW 3 WAS SPLIT ON 2026-09-04 (P1), and the split is a CORRECTION, not a
+> softening.** The single row promised two different things of two different
+> resources, and lumping them made the whole row read OPEN while half of it was
+> shippable — which is the mirror image of the failure this file exists to
+> prevent. **3a** is the DEVICE half: camera and output sessions surviving the
+> swap, which P1 delivers by never deleting the reserved id, and which now has a
+> graph-tap instrument that goes red on an unreserved camera in the same rack.
+> **3b**, below, is the AUDIO half: the transition itself. It is UNCHANGED and
+> still OPEN.
+>
+> **Do not let 3a's green be read as progress on 3b.** Keeping the
+> infrastructure alive across a load is a PRECONDITION for a crossfade — you
+> cannot fade between two graphs if the output device went with the first one —
+> and it is not a crossfade. The clause below still holds in full: three
+> resources structurally forbid two simultaneous owners, there is no master gain
+> to fade with, and the reconciler disposes inline. P1 moved none of that.
 
 Owner answer 6 is four words: **"Patch swap: CLICK-FREE CROSSFADE."** They change
 this row from permissive to demanding, and nothing downstream has caught up:

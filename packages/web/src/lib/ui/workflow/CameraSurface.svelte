@@ -47,6 +47,7 @@
     addWorkflowCamera,
     unmapWorkflowCamera,
     cameraRowLabel,
+    isCameraSlotNode,
     readCameraDeviceId,
     WORKFLOW_CAMERA_OUT_PORT,
     type DeviceLabelLike,
@@ -254,8 +255,10 @@
       <button
         class="unmap"
         data-testid="workflow-camera-unmap"
-        aria-label={`unmap ${cameraRowLabel(cam, devices)}`}
-        title="Unmap — removes this camera and its cables"
+        aria-label={`${isCameraSlotNode(cam) ? 'unbind' : 'unmap'} ${cameraRowLabel(cam, devices)}`}
+        title={isCameraSlotNode(cam)
+          ? 'Unbind — releases the device; the slot stays'
+          : 'Unmap — removes this camera and its cables'}
         onclick={(e) => onRowUnmap(cam, e)}
       >✕</button>
     </div>
