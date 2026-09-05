@@ -344,11 +344,18 @@ export async function pollGatePulsePeak(
   );
 }
 
-/** One-line provenance for a gate-pulse assertion message. */
+/** One-line provenance for a gate-pulse assertion message.
+ *
+ *  ⚠ `hookFound` IS ONLY MEANINGFUL WHEN THE PROBE PULSED. With
+ *  `pulseEveryMs: 0` the hook is never looked up, so the flag stays false by
+ *  construction — and the first version of this string reported that as "hook
+ *  MISSING", which read like a defect on a control leg that was working. It now
+ *  says `not probed` when no pulse was attempted. */
 export function gatePulseMsg(label: string, r: GatePulsePollResult): string {
+  const hook = r.pulses === 0 ? 'not probed' : r.hookFound ? 'found' : 'MISSING';
   return (
     `${label}: peak ${r.peak.toFixed(4)} from ${r.samples} sample(s) / ${r.pulses} pulse(s) ` +
-    `over ${r.elapsedMs.toFixed(0)} ms (hook ${r.hookFound ? 'found' : 'MISSING'})`
+    `over ${r.elapsedMs.toFixed(0)} ms (hook ${hook})`
   );
 }
 

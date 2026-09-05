@@ -599,30 +599,32 @@ for (const port of GATE_PORTS) {
 // make every port above pass for the wrong reason, forever, and no amount of
 // re-running the positive legs could tell.
 //
-// So the SAME helper, over the SAME wiring, with pulsing switched off must
-// still read never-fired.
-test('gibribbon: an UNPULSED gate reads as never-fired — the latch cannot manufacture a pulse', async ({
+// ⚠ THE FIRST VERSION OF THIS CONTROL WAS WRONG, AND CI CAUGHT IT — WHICH IS
+// THE CONTROL WORKING, JUST NOT AT WHAT I AIMED IT. It kept the `evt_hit` edge
+// wired and merely stopped PULSING, then required the scope to rest near zero.
+// It failed with `peak 1.0000 from 21 sample(s) / 0 pulse(s)`, and the reading
+// was HONEST: gibribbon SELF-PLAYS in ATTRACT mode and its demo bot
+// deliberately fumbles, so a fumble fires `evt_hit` for real. The probe was
+// reporting a pulse the TEST had not sent but the MODULE had — so the leg could
+// never distinguish "the latch invented signal" from "the game scored a hit".
+//
+// The subject is the LATCH, not the module, so the control now removes the only
+// path signal could take: gibribbon and the scope are spawned with NO EDGE
+// BETWEEN THEM. Nothing the game does can reach ch1. Any non-zero reading is
+// then manufactured by the instrument by definition, which is exactly — and
+// only — the claim this leg makes.
+test('gibribbon: with NO cable, the latched probe reads zero — it cannot manufacture a pulse', async ({
   page,
   rack,
 }) => {
   test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
   const scopeId = 'scope-control';
-  await spawnPatch(
-    page,
-    [
-      { id: 'g', type: 'gibribbon', position: { x: 200, y: 120 }, domain: 'video' },
-      { id: scopeId, type: 'scope', position: { x: 560, y: 120 }, domain: 'audio' },
-    ],
-    [
-      {
-        id: 'e-control',
-        from: { nodeId: 'g', portId: 'evt_hit' },
-        to: { nodeId: scopeId, portId: 'ch1' },
-        sourceType: 'gate',
-        targetType: 'audio',
-      } as SpawnEdge,
-    ],
-  );
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 120 }, domain: 'video' },
+    // Deliberately UNPATCHED — see the note above. The gibribbon is spawned at
+    // all so the page carries the same load as the positive legs.
+    { id: scopeId, type: 'scope', position: { x: 560, y: 120 }, domain: 'audio' },
+  ]);
   await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
   // A SHORTER bound than the positive legs, deliberately: this one is waiting
@@ -644,11 +646,11 @@ test('gibribbon: an UNPULSED gate reads as never-fired — the latch cannot manu
   ).toBeGreaterThan(0);
   expect(
     r.reachedThreshold,
-    `an unpulsed gate crossed the floor — the latch is reporting signal that was never sent: ` +
+    `an UNCABLED scope crossed the floor — the latch is reporting signal that had no path to it: ` +
       gatePulseMsg('control', r),
   ).toBe(false);
   expect(
     r.peak,
-    `an unpulsed gate should rest near zero — ${gatePulseMsg('control', r)}`,
+    `an uncabled scope must rest at zero — ${gatePulseMsg('control', r)}`,
   ).toBeLessThan(0.2);
 });
