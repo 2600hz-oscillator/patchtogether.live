@@ -322,7 +322,22 @@ async function waitForStepAtLeast(page: Page, n: number, timeoutMs: number): Pro
   );
 }
 
+/** Select one page of the clip player's RAILED face.
+ *
+ * ⚠ THE ARM ROW IS ON THE `channels` PAGE. The face is tabbed (`face.tabbed`,
+ * owner P0 2026-09-04) and renders exactly ONE band; the others are
+ * `display:none`, so `clipplayer-auto-arm-N` resolves to a real element with a
+ * 0×0 box and the click waits out the whole test budget instead of failing on a
+ * missing selector. The `aria-selected` wait is the state the band swap
+ * commits. */
+async function showClipPage(page: Page, pageId: 'session' | 'channels' | 'editor' | 'playback') {
+  const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
+}
+
 async function armLane0(page: Page): Promise<void> {
+  await showClipPage(page, 'channels');
   await page.getByTestId('clipplayer-auto-arm-0').click();
 }
 
