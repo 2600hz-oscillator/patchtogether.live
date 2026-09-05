@@ -2466,16 +2466,40 @@ describe('the ARM subset is DERIVED from the transient list, not restated beside
     }
   });
 
-  it('names EXACTLY the five record-arm latches — nothing else may ride along', () => {
+  it('names EXACTLY the six record-arm latches — nothing else may ride along', () => {
     // ⚠ EXACT, not `toContain`. A save/load scrub is a DELETE: a `live` field
     // that drifted into this set would start being erased from every saved
     // patch, which is the same class of silent damage in the other direction.
     // `autoAssign` is the near miss — it carries recorderId-shaped claims and is
     // NOT an arm: a player expects their module→lane assignments back after a
     // reload.
+    //
+    // ⚠ `recArm` (the per-lane AUDIO record toggle) joined on 2026-09-04 and
+    // belongs here: a duplicate born toggled-on would start recording the
+    // instant the transport rolled, and a patch saved mid-arm must not reload
+    // armed. Its sibling `recMode` is deliberately NOT an arm — it is a SETTING
+    // (CLIP vs ENDLESS), it survives save and duplicate on purpose, and a mode
+    // cannot start a recording on its own.
     expect([...CLIP_PLAYER_ARM_DATA_FIELDS].sort()).toEqual(
-      ['audioRec', 'automation', 'noteRec', 'recording', 'songRec'].sort(),
+      ['audioRec', 'automation', 'noteRec', 'recArm', 'recording', 'songRec'].sort(),
     );
+  });
+
+  it('⚠ recMode is CONTENT, not an arm — a CLIP/ENDLESS setting survives save and duplicate', () => {
+    // The other half of the classification, pinned from the outside: if
+    // `recMode` ever drifts into the arm set it starts being deleted from every
+    // saved patch, and a player loses a per-lane setting on every reload.
+    expect(CLIP_PLAYER_ARM_DATA_FIELDS as readonly string[]).not.toContain('recMode');
+    expect(CLIP_PLAYER_TRANSIENT_DATA_FIELDS as readonly string[]).not.toContain('recMode');
+    const d: Record<string, unknown> = {
+      recMode: ['endless', 'single', 'single', 'single', 'single', 'single', 'single', 'single'],
+      recArm: { '0': true },
+    };
+    scrubClipPlayerTransientData(d);
+    expect(d.recArm, 'the toggle is scrubbed from a duplicate').toBeUndefined();
+    expect(d.recMode, 'the mode survives — it is a setting, not an arm').toEqual([
+      'endless', 'single', 'single', 'single', 'single', 'single', 'single', 'single',
+    ]);
   });
 
   it('the LIVE fields are absent from it — the save path still carries them', () => {

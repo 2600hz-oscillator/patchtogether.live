@@ -309,19 +309,45 @@ describe('RECORDING', () => {
     expect(r.state).toBe(CLIP_REC_IDLE);
     expect(kinds(r.effects)).toEqual(['cancelWorklet', 'discardScratch']);
   });
-  it('transport stop mid-endless commits WHOLE loops only (2.7 → 2)', () => {
+  it('transport stop mid-endless TRUNCATES AND REPORTS at the whole loop (2.7 → 2)', () => {
+    // ⚠ THIS PINNED A TAKE-LOSING BUG UNTIL 2026-09-04. It asserted
+    // `[cancelWorklet, beginCommit]`, a self-contradicting pair: the worklet's
+    // `cancel` discards a lane silently — no final chunk, no `done` — while
+    // `beginCommit` waits for `done` before it will encode. Every endless take
+    // ended by a transport stop therefore timed out and landed in the recovery
+    // pile instead of the clip. The test was green the whole time because it
+    // only ever read the effect NAMES.
+    //
+    // The take now stops the way a graceful STOP does: `stopWorklet` at the
+    // whole-loop boundary, phase `stopping`, and the commit follows on the next
+    // `frame` (asserted below) — one path, already proven.
     const r = clipRecTransition(recordingEndless, {
       type: 'transportStop',
       frame: START + Math.round(2.7 * UNIT),
     });
+    const stopFrame = START + 2 * UNIT;
     expect(r.state).toEqual({
+      phase: 'stopping',
+      mode: 'endless',
+      window: { ...recordingEndless.window, stopFrame },
+    });
+    expect(kinds(r.effects)).toEqual(['stopWorklet']);
+    expect(r.effects[0]).toEqual({ kind: 'stopWorklet', stopFrame });
+    // ⚠ AND IT REACHES THE COMMIT. A stop effect that never commits would be a
+    // different way to lose the take, so the second half is asserted rather
+    // than assumed: the very next frame observation (already past a stopFrame
+    // that lies in the PAST) commits exactly two whole loops.
+    const c = clipRecTransition(r.state, {
+      type: 'frame',
+      frame: START + Math.round(2.7 * UNIT),
+    });
+    expect(c.state).toEqual({
       phase: 'committing',
       mode: 'endless',
-      window: recordingEndless.window,
+      window: { ...recordingEndless.window, stopFrame },
       frames: 2 * UNIT,
     });
-    expect(kinds(r.effects)).toEqual(['cancelWorklet', 'beginCommit']);
-    expect(r.effects[1]).toEqual({ kind: 'beginCommit', frames: 2 * UNIT });
+    expect(c.effects).toEqual([{ kind: 'beginCommit', frames: 2 * UNIT }]);
   });
   it('transport stop mid-endless below one whole loop discards', () => {
     const r = clipRecTransition(recordingEndless, {
@@ -336,13 +362,59 @@ describe('RECORDING', () => {
     expect(r.state).toBe(CLIP_REC_IDLE);
     expect(kinds(r.effects)).toEqual(['cancelWorklet', 'discardScratch']);
   });
-  it('budget ceiling auto-stops at the PREVIOUS whole unit', () => {
+  it('budget ceiling auto-stops at the PREVIOUS whole unit — and reaches the commit', () => {
     const r = clipRecTransition(recordingEndless, {
       type: 'budgetCeiling',
       frame: START + Math.round(3.9 * UNIT),
     });
-    expect(r.state.phase).toBe('committing');
-    expect((r.state as Extract<ClipRecState, { phase: 'committing' }>).frames).toBe(3 * UNIT);
+    const stopFrame = START + 3 * UNIT;
+    expect(r.state.phase).toBe('stopping');
+    expect(r.effects).toEqual([{ kind: 'stopWorklet', stopFrame }]);
+    const c = clipRecTransition(r.state, {
+      type: 'frame',
+      frame: START + Math.round(3.9 * UNIT),
+    });
+    expect(c.state.phase).toBe('committing');
+    expect((c.state as Extract<ClipRecState, { phase: 'committing' }>).frames).toBe(3 * UNIT);
+    expect(c.effects).toEqual([{ kind: 'beginCommit', frames: 3 * UNIT }]);
+  });
+  it('⚠ NO PATH EVER PAIRS cancelWorklet WITH beginCommit — the take-losing shape', () => {
+    // A REGRESSION PIN, not a transition test. `cancel` makes the worklet
+    // discard its lane silently (no final chunk, no `done`); `beginCommit`
+    // waits for `done`. Any transition emitting both asks a lane to report and
+    // to vanish, and the commit times out — which is how every endless take
+    // ended by a transport stop was lost until 2026-09-04.
+    //
+    // Exhaustive over the live phases × every event, so a future edit that
+    // reintroduces the pair anywhere reddens here rather than in production.
+    const states: ClipRecState[] = [recordingSingle, recordingEndless, stopping, armedSingle];
+    const events: ClipRecEvent[] = [
+      { type: 'frame', frame: START + Math.round(2.7 * UNIT) },
+      { type: 'stop', frame: START + Math.round(2.7 * UNIT) },
+      { type: 'cancel' },
+      { type: 'transportStop', frame: START + Math.round(2.7 * UNIT) },
+      { type: 'budgetCeiling', frame: START + Math.round(2.7 * UNIT) },
+      { type: 'commitOk' },
+      { type: 'commitFail' },
+    ];
+    const offenders: string[] = [];
+    let sawCancel = 0;
+    let sawCommit = 0;
+    for (const st of states) {
+      for (const ev of events) {
+        const k = kinds(clipRecTransition(st, ev).effects);
+        if (k.includes('cancelWorklet')) sawCancel++;
+        if (k.includes('beginCommit')) sawCommit++;
+        if (k.includes('cancelWorklet') && k.includes('beginCommit')) {
+          offenders.push(`${st.phase} + ${ev.type} → [${k.join(', ')}]`);
+        }
+      }
+    }
+    expect(offenders, 'a transition asks the worklet to vanish AND to report').toEqual([]);
+    // VACUITY GUARD: the sweep must actually reach both effects, or an empty
+    // offenders list would prove only that the matrix drove nothing.
+    expect(sawCancel, 'the sweep reached cancelWorklet at all').toBeGreaterThan(0);
+    expect(sawCommit, 'the sweep reached beginCommit at all').toBeGreaterThan(0);
   });
   it('everything else is an explicit no-op', () => {
     expectNoop(recordingSingle, { type: 'arm', mode: 'single', window: recordingSingle.window });
@@ -372,13 +444,26 @@ describe('STOPPING', () => {
     expect(r.state).toBe(CLIP_REC_IDLE);
     expect(kinds(r.effects)).toEqual(['cancelWorklet', 'discardScratch']);
   });
-  it('transport stop before the resolved boundary commits the whole loops so far', () => {
+  it('transport stop before the resolved boundary RE-STOPS SHORTER, then commits the whole loops so far', () => {
+    // A transport stop during STOPPING is the one thing that may shorten an
+    // already-resolved stop (a second STOP gesture may not — see above). It
+    // re-issues `stopWorklet` at the earlier whole-loop boundary; the worklet's
+    // own "never EXTEND a resolved stop" guard accepts a shortening.
     const r = clipRecTransition(stopping, {
       type: 'transportStop',
       frame: START + Math.round(2.4 * UNIT),
     });
-    expect(r.state.phase).toBe('committing');
-    expect((r.state as Extract<ClipRecState, { phase: 'committing' }>).frames).toBe(2 * UNIT);
+    const stopFrame = START + 2 * UNIT;
+    expect(r.state.phase).toBe('stopping');
+    expect(r.effects).toEqual([{ kind: 'stopWorklet', stopFrame }]);
+    // …and it still reaches the commit, which is the half that was lost.
+    const c = clipRecTransition(r.state, {
+      type: 'frame',
+      frame: START + Math.round(2.4 * UNIT),
+    });
+    expect(c.state.phase).toBe('committing');
+    expect((c.state as Extract<ClipRecState, { phase: 'committing' }>).frames).toBe(2 * UNIT);
+    expect(c.effects).toEqual([{ kind: 'beginCommit', frames: 2 * UNIT }]);
   });
   it('everything else is an explicit no-op', () => {
     expectNoop(stopping, { type: 'arm', mode: 'endless', window: stopping.window });
