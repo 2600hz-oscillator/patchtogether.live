@@ -28,6 +28,7 @@ import {
 } from './device-slots';
 import { DEFAULT_VIDEO_OUT_ID, videoZoneSlotPos } from './channel-columns';
 import { RESERVED_PINNED_IDS } from './workflow-pins';
+import { parsePresentSlotKey, presentSlotKey } from '$lib/ui/modules/present-bindings';
 
 const camNode = (over: Record<string, unknown> = {}) => ({
   id: 'slot:cam1',
@@ -124,6 +125,30 @@ describe('the reserved slot table', () => {
       'slot:output3',
       'slot:output4',
     ]);
+  });
+
+  // ⚠ THE `slot:` PREFIX IS A COLON ON PURPOSE, and it composes with two
+  // existing shapes that this test exists to keep it composing with.
+  //
+  // Why a colon at all: `buildDuplicate`'s `mintId` produces `${type}-${slice}`
+  // and every other reserved id in the tree is hyphenated (`pinned-<type>`,
+  // `workflow-videoOut`, `wfcam-<uuid>`). A hyphenated `slot-cam1` could in
+  // principle be minted by a module type literally named `slot`; a colon can
+  // never appear in a minted id, so the reserved namespace is disjoint BY
+  // CONSTRUCTION rather than by nobody having tried.
+  //
+  // What it must not break:
+  //  1. CSS attribute selectors — legal inside a QUOTED value, which is what
+  //     every `[data-id="…"]` call site in the tree uses (an unquoted `#id`
+  //     selector would break, and there are none).
+  //  2. #2354's present slot key `<node>::<screen>`, which parses on the FIRST
+  //     `::`. A single colon inside the node id must not be mistaken for it.
+  it('round-trips through the present slot key despite the colon (#2354)', () => {
+    const key = presentSlotKey('slot:output2', 'display-1');
+    expect(parsePresentSlotKey(key)).toEqual({
+      nodeId: 'slot:output2',
+      screenId: 'display-1',
+    });
   });
 });
 
