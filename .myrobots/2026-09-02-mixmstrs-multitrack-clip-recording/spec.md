@@ -1,8 +1,19 @@
 # MIXMSTRS multitrack clip recording — audio clips in the launcher
 
+> ⚠ **READ §0.5 FIRST — REDESIGNED 2026-09-04.** The owner ruled the shipped
+> mixmstrs-arm control surface WRONG. **Recording is a clipplayer feature, per
+> clip, with nothing to do with mixmstrs.** §0.5 carries the ruling, the list of
+> sections it supersedes, and the infrastructure that survives. Where this
+> document's older text and §0.5 disagree, **§0.5 wins** — the superseded
+> sections are marked at their own sites, not silently left standing.
+>
+> The title of this document is now a misnomer kept for continuity of the
+> record: the feature is *per-clip audio recording in the clipplayer*.
+
 Owner-commissioned design, 2026-09-02. **APPROVED FOR BUILD** — the owner read
 the proposal and said build. **RE-BASED before slice 1** (§0.1); every open
-question in §7 is now answered (§0.2).
+question in §7 is now answered (§0.2). **CONTROL SURFACE REDESIGNED** 2026-09-04
+(§0.5).
 
 > **The ask, in the owner's words.** Give mixmstrs good MULTITRACK RECORDING
 > based on prior-art and industry-standards research. Add AUDIO CLIPS to the
@@ -233,6 +244,147 @@ asked and why; the answers are authoritative.
 | Q9 | tempo warping | **No.** Plays at its recorded rate and length. |
 | Q10 | may this change `ClipplayerCard.svelte`? | **Yes**, with an owner preview + `task vrt:one -- clipplayer`, no auto-merge. |
 | **NEW** | **what do I hear on playback?** | **The normalled return + `MON`** — see §4.2b. |
+
+---
+
+## 0.5 REDESIGN, 2026-09-04 — recording is a CLIPPLAYER feature
+
+The owner reviewed the shipped control surface (slices 3–6: the mixmstrs
+`record` band — ARM rows for channels 1–4 and 5–8 carrying OFF / ONCE / INF, the
+MONITOR rows, SOURCE TAP, QUALITY) and **ruled it wrong**. It is removed, and
+the feature is rebuilt on the clipplayer.
+
+The mixer band is not being *replaced in place* — the owner explicitly accepted
+a window in which there is **no recording control surface at all**, on the
+grounds that gone-now beats replaced-later. That is why the removal ships first
+and alone (§0.5.5).
+
+### 0.5.1 The ruling — the owner's clauses, verbatim
+
+1. **Per-clip recording; clip player functionality; NOTHING to do with
+   mixmstrs.**
+2. Audio is recorded **into the selected clip** of a lane.
+3. Recording is turned on/off **with a toggle** — "the recording button for the
+   lane": one record control per lane, targeting that lane's selected clip.
+4. The toggle can be set **while paused or stopped**; recording then **starts
+   when it plays** (armed-until-play).
+5. A **switch for CLIP vs ENDLESS** recording:
+   - **CLIP** → records exactly **one loop of the clip**.
+   - **ENDLESS** → keeps recording until transport **stop** is hit OR the lane's
+     record button is tapped again — and in that case it keeps recording **until
+     the end of the current loop of the underlying clip**. Takes are always
+     whole loops.
+6. **Per clip**: a toggle for whether it plays **LIVE or the RECORDED audio**.
+7. Clips holding recorded audio show a **PURPLE BORDER** on the clip launcher.
+8. Capture source, for now: **the pre-mixmstrs input that corresponds to the
+   lane.** A postmix toggle comes later — **name the seam, do not build it.**
+
+### 0.5.2 The layout ruling — group by LANE, never by control type
+
+> **"Lane 1 should always be for all things lane 1."**
+
+The record band's fatal layout sin was grouping by **control type** — all eight
+arms in one row, then all eight monitors in the next — so that reading one
+lane's state meant scanning across parallel rows of eight.
+
+**Every per-lane surface built from here groups vertically by lane.** A lane's
+record toggle, its CLIP/ENDLESS switch, its LIVE/RECORDED state and its pad read
+as **one lane's column or strip**. This binds the future postmix toggle
+(clause 8) too. It is a standing ruling, not a one-off note about this feature.
+
+### 0.5.3 What §0.5 SUPERSEDES — marked at each site
+
+The mixmstrs-side **control surface** is withdrawn in full. Superseded:
+
+| section | what dies |
+|---|---|
+| **§4.9**, "mixmstrs face — one new band, three control families" | the whole `record` page: `ch{N}_rec`, `ch{N}_mon`, `recTap`, `recQuality` as params, the `mixmstrsSectionPlan` picks, the comp-macro shadows, the 5th face band, the ∞/1×/off option ladder |
+| **§4.9**, "The arm column — a 4th PF-14 PANEL" | superseded in its *placement contract*, not its existence: the record control is now **required to be reachable from the launcher view**, adjacent to its lane — never buried in a tab. Clause 3 makes it a per-lane toggle, not an arm with three positions |
+| **§4.2b**, the `MON` selector and the **channel-level clip-auto duck** | replaced by the **per-clip LIVE/RECORDED toggle** (clause 6), which gates at the clip-playback / return side rather than ducking a mixer channel |
+| **§4.4**, the arm state machine's *entry* condition | the machine itself SURVIVES (§0.5.4); what changes is who sets the arm — the clipplayer's per-lane record state, not a mixmstrs param edge |
+| **§4.5**, Quality | `recQuality` never shipped a working ladder and is **inert**. It is removed with the band and **is not rebuilt now** — the quality ladder is out of scope until the owner asks |
+| **§6**, slices 7 and 8 | slice 7's "mixmstrs `⏺` control column" and slice 8's quality ladder are withdrawn as written |
+| **§8** conflict 1 (record band vs `pan1..pan8` pages) | **dissolved.** With the record band gone, mixmstrs drops back to four bands and the stereo plan's pan row no longer collides with it |
+
+The arm's **INF position dies with the band**. The `recQuality` roster stays
+unshipped — do not build the quality ladder now.
+
+### 0.5.4 What SURVIVES — verified in the tree, reuse it
+
+The audio path and the machinery are **correct and stay**. Only the mixer's
+control surface goes.
+
+- `packages/dsp/src/clip-recorder.ts` — the 8-lane worklet: one `currentFrame`,
+  the bounded late-arm slide (#2348), the `stopAt` rebase for endless.
+  ⚠ There is **no** `clip-recorder-protocol.ts` in the tree; the protocol types
+  live inside `clip-recorder.ts`.
+- `packages/web/src/lib/audio/clip-audio-rec-machine.ts` — the pure machine.
+  It **already implements the endless path**: `stopping`, the
+  `clipRecEndlessStopFrame` round-up, `truncateEndless`, and the re-STOP no-op
+  that clause 5's "tap again" needs.
+  ⚠ **Known structural defect, must be fixed when endless is wired:**
+  `truncateEndless` emits `[{cancelWorklet},{beginCommit}]`, but the worklet's
+  `cancel` **discards silently and never reports `done`** — so the commit times
+  out and **the take is lost**. The contract needs a *truncate-and-report* path
+  (or a commit-at-frame), not cancel-then-commit.
+- `packages/web/src/lib/ui/modules/node-clip-recorder-registry.svelte.ts` —
+  prepare/confirm arm, the one-undo commit, the single-writer lease. Its arm
+  **EDGE** is re-pointed from mixmstrs params to the clipplayer's new per-lane
+  record state.
+- The OPFS store (`clip-media-store.ts`), the decode cache
+  (`clip-audio-cache.ts`), the playback path (`audio{N}L/R` outs,
+  boundary-started sources), and `clipPadState`.
+- **The capture tap.** The per-lane pre-board tap in mixmstrs' DSP **is**
+  clause 8's source, so the **audio plumbing stays** — only the control surface
+  dies. Lane-*N*-to-channel-*N* correspondence comes from the existing normalled
+  return mapping (§4.2b's *graph-fact* normal, which survives; its `MON` duck
+  does not).
+
+### 0.5.5 Build order — the removal ships FIRST, and alone
+
+**PR 1 — remove the band (merges on green; not a preview PR).** Strip
+`ch{N}_rec`, `ch{N}_mon`, `recTap`, `recQuality` from the mixmstrs face and def
+control surface, the record-band UI, and the channel-level duck wiring, with the
+full downstream sweep: face-model tests, mixmstrs VRT scenes, the ART
+`board-insert-identity` arm asserts, `contract-lock` rows, and the face
+inventory if touched. **Keep the DSP taps and the lane-return plumbing.**
+Attribute any ART movement before re-pinning — **expected fingerprint movement
+is zero** if the DSP is untouched; an unattributable move is an audio
+regression, so stop and report rather than re-pin.
+
+⚠ **The idle trap.** The registry reads its arm edge from mixmstrs params. With
+the band gone and the clipplayer side not yet built, the registry must **idle
+cleanly on a rack with no arm source** — no console errors, no stuck state,
+`clipPadState` unaffected. The check is a rack with mixmstrs + clipplayer
+asserting silence-and-no-errors.
+
+**PR 2 — the clipplayer side (owner-preview PR, no auto-merge).** Per-lane
+record state + toggle + CLIP-mode recording end to end → armed-while-stopped →
+endless (with the truncate fix above) → per-clip LIVE/RECORDED toggle + the
+purple pad border.
+
+### 0.5.6 Evidence each clause demands
+
+Presence is not liveness: a test must prove recorded audio was **captured and is
+audible**, never that a file appeared.
+
+- The e2e drives a **real source chain** into the lane input and asserts audible
+  output on the clip playback path — driving the engine class directly, or
+  asserting only that an edge materialised, has shipped modules that were green
+  and silent.
+- **Endless** needs a test proving the stop lands at the **end of the current
+  loop** (the whole-loop property), with the negative control that an
+  immediate-stop implementation yields a fractional length and fails.
+- **Armed-while-stopped** needs a test that **play** starts the recording.
+
+### 0.5.7 Preview cadence — owner ruling, 2026-09-03 (preserved)
+
+Slices 5–6 merge on green **without** per-slice owner preview; the **one** owner
+preview happens at the **full-picture** slice, when the complete launcher record
+picture exists — not per slice.
+
+Under §0.5's build order this resolves to: **PR 1 merges on green** (it removes
+a surface the owner rejected), and **PR 2 is the full-picture preview PR.**
 
 ---
 
@@ -738,6 +890,15 @@ stores `channels: 2` unless the user *declared* a mono tier.** There is no
 
 ### 4.2b The normalled return, and what you hear on playback
 
+> ⚠ **PARTIALLY SUPERSEDED 2026-09-04 — see §0.5.3.** The **normal itself
+> survives** — lane *N* into channel *N*, broken by a patched cable, decided as
+> a GRAPH fact and never by an audio probe. That mapping is also what gives
+> clause 8 its per-lane capture source.
+> **What dies:** the `MON` per-channel param (`live` / `both` / `clip-auto`) and
+> the **channel-level clip-auto duck**. They are replaced by the **per-clip
+> LIVE/RECORDED toggle** (clause 6), which gates at the clip-playback / return
+> side instead of ducking a mixer channel.
+
 **Owner decision, 2026-09-02.** The question the original design never asked was
 the first one a player asks after their loop commits: *where do I hear it?* A
 per-lane output jack (Q8) answers "where can I route it", not "what happens if I
@@ -879,6 +1040,20 @@ encoder's window.
 
 ### 4.4 The arm state machine
 
+> ⚠ **The machine SURVIVES (§0.5.4); only its ENTRY changes.** The states,
+> frame maths and endless round-up below are correct and shipped in
+> `clip-audio-rec-machine.ts`. What §0.5 changes is **who arms it** — the
+> clipplayer's per-lane record toggle, not a mixmstrs param edge — and the
+> naming: the owner's **CLIP** is this diagram's `single`, and **ENDLESS** is
+> `endless`. Clause 5's "tap the record button again" enters the same `stopping`
+> phase as transport STOP, which the machine's re-STOP no-op already handles.
+>
+> ⚠ **And it carries a take-losing defect on the endless path**:
+> `truncateEndless` emits `[{cancelWorklet},{beginCommit}]`, but the worklet's
+> `cancel` discards silently without a `done`, so the commit times out and the
+> take is lost. **PR 2 must replace this with truncate-and-report (or
+> commit-at-frame) before endless can be trusted.**
+
 ```
                  ┌──────────────────────── disarm / re-arm (cancel) ───────────┐
                  │                                                             │
@@ -963,6 +1138,11 @@ kind. The two arm states are separate fields for the same reason the plan kept
 look alike and are not.
 
 ### 4.5 Quality
+
+> ⚠ **SUPERSEDED 2026-09-04 — see §0.5.3.** `recQuality` shipped **inert** and
+> is removed with the band in PR 1. **The quality ladder is NOT rebuilt now** —
+> out of scope until the owner asks for it. Recording stays at the shipped
+> `studio` (PCM f32) default with no user-facing control.
 
 **The control shape is recorderbox's** — a named roster with three ordered
 values, a `coerce*` that can never fail, and labels that are the only permitted
@@ -1214,7 +1394,23 @@ means there is nothing to compensate and nothing to get wrong.
 
 ### 4.9 UX surfaces
 
+> ⚠ **SUPERSEDED 2026-09-04 — see §0.5.** The mixmstrs `record` band below is
+> REMOVED, not amended: `ch{N}_rec`, `ch{N}_mon`, `recTap` and `recQuality`
+> cease to be params, the 5th face page goes, and the arm ladder
+> (`off` / `1×` / `∞`) dies with it. The record control is now a **per-lane
+> toggle on the clipplayer**, reachable from the launcher view, with a separate
+> CLIP/ENDLESS switch — and it groups **by lane**, never as parallel rows of
+> eight (§0.5.2). The pad-state subsection below **survives**; a fourth
+> `rec-recorded` picture — the **purple border** of clause 7 — joins it.
+> The text is kept because its reasoning about `clipPadState`, panel ranks and
+> VRT cost is still the correct account of what those edits cost.
+
 #### mixmstrs face — one new band, three control families
+<!-- SUPERSEDED 2026-09-04 (§0.5.3): this entire band is removed in PR 1. -->
+<!-- Retained as the record of what shipped in slice 3 and what PR 1 deletes. -->
+
+⚠ **REMOVED.** Everything from here to "The clip grid" describes the surface
+PR 1 deletes.
 
 The module's rule is *every affordance is a `ParamDef`* — the argument for
 having no panel (`mixmstrs.ts:275-290`). Honouring it means the record controls
@@ -1497,6 +1693,13 @@ accurate"*).
 
 ## 6. Phased plan
 
+> ⚠ **AMENDED 2026-09-04 — see §0.5.5.** Slices 1–6 shipped. **Slice 7's
+> mixmstrs `⏺` control column and slice 8's quality ladder are WITHDRAWN.**
+> The plan from here is two PRs: **PR 1** removes the mixmstrs record band
+> (merges on green), **PR 2** rebuilds recording on the clipplayer as the
+> owner-preview PR. Slices 9 (perf-zip) and 10 (video) are unaffected and stay
+> queued behind PR 2.
+
 Nine slices, each a PR. Every slice runs `flox activate -- task typecheck` and
 its focused tests with `REPEAT=3` before CI. **No new gates and no new kinds of
 test** — every check below runs in an existing lane.
@@ -1577,6 +1780,11 @@ need when it is tempted to revisit the answer.
 
 ## 8. Supersessions, conflicts, and sequencing
 
+> ⚠ **The largest supersession is §0.5 (2026-09-04)**, which withdraws the
+> entire mixmstrs-side control surface and moves recording to the clipplayer.
+> Read §0.5.3 for the section-by-section list; the entries below predate it and
+> remain true only where §0.5 does not contradict them.
+
 **Superseded by the re-base (§0.1), i.e. by this document's own earlier text:**
 
 - *"clipplayer has no face and is not getting one"* (§1.2). It has one (#2326).
@@ -1616,7 +1824,13 @@ need when it is tempted to revisit the answer.
 
 **Conflicts that must be sequenced, not parallelised:**
 
-1. **Stereo plan PR-6 adds `pan1..pan8` to mixmstrs** and the batch-6 face spec
+1. ~~**Stereo plan PR-6 adds `pan1..pan8` to mixmstrs**~~ — ⚠ **DISSOLVED
+   2026-09-04 (§0.5.3).** With the record band removed, mixmstrs drops back to
+   four bands and the pan row no longer competes for the fifth. There is no
+   longer a five-plus-two-is-seven problem, and neither piece has to fold into
+   `channels`. The original text follows for the record:
+
+   **Stereo plan PR-6 adds `pan1..pan8` to mixmstrs** and the batch-6 face spec
    already warns the two pieces *"must be sequenced, not parallel"* — it
    re-ranks the face and re-pins ART. Both this record band and a pan row want
    to be new pages, and **five plus two is seven**, which trips

@@ -446,6 +446,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
       h.posted.filter((m) => m.type === 'arm').length,
       'a committed take re-armed itself — the level-triggered arm is machine-gunning',
     ).toBe(armsAfter);
+    expect(h.reg.view(CLIP)![0]!.phase, 'and the machine stayed idle').toBe('idle');
     // Nothing was discarded.
     expect(h.removed).toEqual([]);
   });

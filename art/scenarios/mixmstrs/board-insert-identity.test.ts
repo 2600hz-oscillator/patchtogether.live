@@ -346,72 +346,49 @@ describe('ART mixmstrs / pre-board insert identity', () => {
     }
   }, 300_000);
 
-  it('MON cannot attenuate anything in this slice — all three modes are identical', async () => {
-    // ⚠ THE DUCK IS BUILT BUT INERT, AND THAT IS ASSERTED RATHER THAN ASSUMED.
-    // Its other input is "is lane N of the launcher playing", and nothing
-    // publishes such an edge yet, so `clipLaneLiveGain(mon, false)` is 1 in
-    // EVERY mode. If any MON value attenuated the live branch today, this
-    // module would have silently changed the mix for every existing patch —
-    // `clip-auto` is the DEFAULT.
-    const renders: Record<number, Render> = {};
-    for (const mon of [0, 1, 2]) {
-      const ctx = new OfflineAudioContext({ numberOfChannels: OUTS.length, length: N, sampleRate: SR });
-      const params: Record<string, number> = {};
-      for (const ch of MIXMSTRS_CHANNELS) params[`ch${ch}_mon`] = mon;
-      const node = { id: `mon-${mon}`, type: 'mixmstrs', position: { x: 0, y: 0 }, params } as never;
-      const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
-      // The engine applies stored params through setParam, so do the same.
-      for (const ch of MIXMSTRS_CHANNELS) handle.setParam?.(`ch${ch}_mon`, mon);
-      MIXMSTRS_CHANNELS.forEach((ch, i) => {
-        for (const leg of [`ch${ch}L`, `ch${ch}R`]) {
-          const ref = handle.inputs.get(leg)!;
-          const osc = ctx.createOscillator();
-          osc.type = 'sawtooth';
-          osc.frequency.value = 110 + i * 37;
-          const g = ctx.createGain();
-          g.gain.value = 0.35;
-          osc.connect(g);
-          g.connect(ref.node, 0, ref.input);
-          osc.start(0);
-        }
-      });
-      const merger = ctx.createChannelMerger(OUTS.length);
-      OUTS.forEach((id, k) => {
-        const ref = handle.outputs.get(id)!;
-        ref.node.connect(merger, ref.output, k);
-      });
-      merger.connect(ctx.destination);
-      const buf = await ctx.startRendering();
-      renders[mon] = { chans: OUTS.map((_, k) => buf.getChannelData(k).slice()) };
-      handle.dispose?.();
+  it('the return gate is PINNED OPEN — no mode, and nothing attenuates', async () => {
+    // ⚠ THE DUCK IS STILL BUILT AND IS NOW PERMANENTLY INERT. `ch{N}_mon` was
+    // removed with the record band on 2026-09-04; `duckGain` stays in the graph
+    // at unity so the two-series-unity-gain shape this file measures is
+    // unchanged, and clause 6's per-clip LIVE/RECORDED toggle is what will
+    // eventually move it.
+    //
+    // This asserts the gate never attenuates even when a lane IS playing —
+    // which the old MON test could not check, because nothing published a lane
+    // edge back then. A non-zero delta here means something started ducking.
+    const ctx = new OfflineAudioContext({ numberOfChannels: OUTS.length, length: N, sampleRate: SR });
+    const node = { id: 'gate', type: 'mixmstrs', position: { x: 0, y: 0 }, params: {} } as never;
+    const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
+    // Tell the mixer every lane is playing. Under the OLD clip-auto default
+    // this muted the live branch on all eight channels.
+    for (let lane = 0; lane < MIXMSTRS_CHANNELS.length; lane++) {
+      handle.write?.('clipLaneEdge', { lane, playing: true, atTime: 0 });
     }
-    expect(peakLevel(renders[2]!), 'the MON render must be audible').toBeGreaterThan(0.05);
-    expect(peakDelta(renders[0]!, renders[1]!), 'live vs both').toBe(0);
-    expect(peakDelta(renders[0]!, renders[2]!), 'live vs clip-auto (the DEFAULT)').toBe(0);
-  }, 180_000);
+    const duck = handle.read?.('recDuck') as { lanePlaying: boolean[]; applied: number[] };
+    expect(duck.lanePlaying.every((p) => p === true), 'the lane flags DID move').toBe(true);
+    expect(
+      duck.applied,
+      'the live-branch gain moved off unity — something is ducking again, and clause 6 has not shipped',
+    ).toEqual(duck.applied.map(() => 1));
+    handle.dispose?.();
+  }, 120_000);
 
-  it('read("recState") reports the arm/mon/tap/quality the module is holding', async () => {
-    // The declared JS consumer of the four new shadowed params. Its existence is
-    // what makes `markJsConsumedParam` TRUE for them today rather than a
-    // promise about a later slice.
+  it('read("recState") is GONE — the mixer no longer publishes an arm', async () => {
+    // ⚠ A NEGATIVE PIN, and it is the one that matters for the removal. The
+    // recorder registry takes its arm edges from this key; if it ever comes
+    // back on mixmstrs, the surface the owner removed has been rebuilt on the
+    // wrong module. `recTaps` is asserted alongside it because the AUDIO half
+    // deliberately survived — clause 8 still records this module's per-lane
+    // pre-board input, it is just no longer armed from here.
     const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: N, sampleRate: SR });
     const node = { id: 'recstate', type: 'mixmstrs', position: { x: 0, y: 0 }, params: {} } as never;
     const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
-    handle.setParam?.('ch1_rec', 2);
-    handle.setParam?.('ch5_rec', 1);
-    handle.setParam?.('ch3_mon', 0);
-    handle.setParam?.('recQuality', 1);
-    const state = handle.read?.('recState') as {
-      arm: number[]; mon: number[]; tap: number; quality: number;
-    };
-    expect(state.arm).toHaveLength(MIXMSTRS_CHANNELS.length);
-    expect(state.arm[0], 'ch1 armed ENDLESS').toBe(2);
-    expect(state.arm[4], 'ch5 armed SINGLE').toBe(1);
-    expect(state.arm[1], 'ch2 untouched').toBe(0);
-    expect(state.mon[2], 'ch3 set to live').toBe(0);
-    expect(state.mon[0], 'ch1 keeps the clip-auto default').toBe(2);
-    expect(state.quality).toBe(1);
-    expect(state.tap, 'BOARD IN is the default tap').toBe(0);
+    expect(handle.read?.('recState'), 'the arm surface came back on mixmstrs').toBeUndefined();
+    const taps = handle.read?.('recTaps') as { board: unknown[] } | undefined;
+    expect(taps, 'the TAP rosters must survive — clause 8 records from them').toBeDefined();
+    expect(taps!.board, 'BOARD IN is the per-lane pre-board capture source').toHaveLength(
+      MIXMSTRS_CHANNELS.length * 2,
+    );
     handle.dispose?.();
   }, 120_000);
 });

@@ -306,33 +306,21 @@ const fmt = (v: number) => (v === 0 ? '0.0000e+0' : v.toExponential(4));
 const ALL_PARAM_INPUT_IDS = mixmstrsDef.inputs.filter((p) => p.paramTarget).map((p) => p.id);
 
 /**
- * The CLIP-RECORD controls, whose consumer is JAVASCRIPT rather than the mix.
+ * The ports the AUDIO sweeps cover — now ALL of them.
  *
- * ⚠ A NARROWING OF THE SUBJECT, NOT A TOLERANCE — and the difference is the
- * whole point. The two sweeps below ask "does a cable on this port change the
- * AUDIO". For `ch{N}_rec`, `recTap` and `recQuality` the honest answer is NO
- * and always will be: they select what a RECORDER captures, and a recorder that
- * altered the mix while arming would be a defect. `ch{N}_mon` WILL move audio
- * eventually — its duck attenuates the live branch — but only while a launcher
- * lane is PLAYING, and nothing publishes a lane-playing edge until the return
- * is wired in a later slice, so today it is inert by construction.
+ * ⚠ THERE USED TO BE A CARVE-OUT HERE and it is gone with its subject. Eighteen
+ * clip-record ports (`ch{N}_rec`, `ch{N}_mon`, `recTap`, `recQuality`) had a
+ * JAVASCRIPT consumer rather than an audio one, so they were re-pointed — never
+ * dropped — onto a `read('recState')` leg, because excluding a port from the one
+ * sweep that proves it live is exactly the #1734 hole this file exists to close.
+ * The owner removed those params on 2026-09-04, so the ports no longer exist and
+ * the exclusion list would now be a filter matching nothing.
  *
- * ⚠ SO THEY ARE NOT DROPPED, THEY ARE RE-POINTED. Excluding a port from the one
- * sweep that proves it live would re-open exactly the #1734 hole this file
- * exists to close. The `recState` leg below drives every id in this set through
- * the CV path and requires each to move the module's OWN observable — so the
- * gate's intent ("no declared CV input is dead") holds for all of them,
- * measured against the right instrument instead of the wrong one.
+ * ⚠ RE-ADDING A JS-CONSUMED PARAM MEANS RE-ADDING BOTH HALVES: the carve-out AND
+ * a leg that drives every carved-out port through the real CV path against the
+ * right observable. A carve-out with nothing behind it is how #1734 happened.
  */
-const JS_CONSUMED_INPUT_IDS: readonly string[] = [
-  ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_rec`),
-  ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_mon`),
-  'recTap',
-  'recQuality',
-];
-
-/** The ports the AUDIO sweeps cover. */
-const PARAM_INPUT_IDS = ALL_PARAM_INPUT_IDS.filter((id) => !JS_CONSUMED_INPUT_IDS.includes(id));
+const PARAM_INPUT_IDS = ALL_PARAM_INPUT_IDS;
 
 /** Each sweep leg builds and renders the REAL Faust factory once PER INPUT — a
  *  fresh OfflineAudioContext, worklet and wasm instantiation included. Measured
@@ -443,11 +431,12 @@ describe('ART mixmstrs / CV path — a cable on a paramTarget input must change 
       ctrl.offWorkletHosts.slice().sort(),
       'paramTarget inputs published on a non-DSP node (structure, not liveness)',
     ).toEqual(
-      // The comp macros, plus the clip-record controls — which are off-worklet
-      // for the same reason and by the same rig (a shadow GainNode fed DC 1,
-      // read back through a passive analyser). Derived from the same lists the
-      // def builds them from, so a rename moves both sides together.
-      [...MIXMSTRS_CHANNELS.map((c) => `comp${c}`), ...JS_CONSUMED_INPUT_IDS].sort(),
+      // The comp macros, and now ONLY the comp macros. The clip-record controls
+      // were off-worklet for the same reason and by the same rig (a shadow
+      // GainNode fed DC 1, read back through a passive analyser) until the owner
+      // removed them on 2026-09-04. Derived from the list the def builds them
+      // from, so a rename moves both sides together.
+      MIXMSTRS_CHANNELS.map((c) => `comp${c}`).sort(),
     );
     const d = peakDelta(
       await render(base, { kind: 'cv', id: 'comp1', delta: 0 - effectiveBase('comp1', base) }),
@@ -639,66 +628,4 @@ describe('ART mixmstrs / #1737 — the macro must not clobber what the rack save
     expect(fresh.live, 'a fresh spawn must render the DECLARED defaults, not mapCompMacro(0)').toEqual(declared);
   }, SWEEP_TIMEOUT_MS);
 
-  it('EVERY clip-record CV input moves read("recState") — the sweep the audio legs cannot do', async () => {
-    // ⚠ THE OTHER HALF OF THE NARROWING ABOVE. These eighteen ports are carved
-    // out of the audio sweeps because their consumer is JavaScript, and a
-    // carve-out with nothing behind it is how #1734 happened in the first
-    // place. So each one is driven through the SAME CV path
-    // (`AudioEngine.addEdge` connects to `handle.inputs.get(id).param`) and
-    // required to move the module's own observable.
-    //
-    // The measurement is taken AFTER a render, not before: the shadow's value
-    // is read off a passive analyser, which holds zeros until the graph has
-    // actually rendered a quantum. Reading pre-render would return the knob
-    // intrinsic for every port and pass no matter what the cable did.
-    const readAfterRender = async (
-      cv: { id: string; offset: number } | null,
-    ): Promise<{ arm: number[]; mon: number[]; tap: number; quality: number }> => {
-      const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: N, sampleRate: SR });
-      const node = { id: 'recstate-cv', type: 'mixmstrs', position: { x: 0, y: 0 }, params: {} } as never;
-      const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
-      if (cv) {
-        const ref = handle.inputs.get(cv.id)!;
-        const cs = ctx.createConstantSource();
-        cs.offset.value = cv.offset;
-        cs.connect(ref.param!);
-        cs.start(0);
-      }
-      const out = handle.outputs.get('masterL')!;
-      out.node.connect(ctx.destination, out.output, 0);
-      await ctx.startRendering();
-      const state = handle.read?.('recState') as {
-        arm: number[]; mon: number[]; tap: number; quality: number;
-      };
-      handle.dispose?.();
-      return state;
-    };
-
-    const base = await readAfterRender(null);
-    // Vacuity guard: the control read must be the declared defaults, or a
-    // broken `read` seam would make every comparison below trivially equal.
-    expect(base.arm, 'every channel starts unarmed').toEqual(MIXMSTRS_CHANNELS.map(() => 0));
-    expect(base.mon, 'every channel starts on the clip-auto default').toEqual(
-      MIXMSTRS_CHANNELS.map(() => 2),
-    );
-    expect(base.tap).toBe(0);
-    expect(base.quality).toBe(0);
-
-    const dead: string[] = [];
-    const table: string[] = [];
-    for (const id of JS_CONSUMED_INPUT_IDS) {
-      // Drive each port AWAY from its own default: +2 for the ones that rest at
-      // 0, −2 for MON which rests at 2. A cable that reached nothing leaves the
-      // state exactly where it was.
-      const restsHigh = id.endsWith('_mon');
-      const state = await readAfterRender({ id, offset: restsHigh ? -2 : 2 });
-      const got = JSON.stringify(state);
-      table.push(`${id} → ${got}`);
-      if (got === JSON.stringify(base)) dead.push(id);
-    }
-    expect(
-      dead,
-      `a clip-record CV cable changed NOTHING in read('recState'): ${table.join(' | ')}`,
-    ).toEqual([]);
-  }, SWEEP_TIMEOUT_MS);
 });

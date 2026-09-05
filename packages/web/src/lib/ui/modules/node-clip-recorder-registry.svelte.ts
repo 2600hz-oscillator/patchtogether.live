@@ -29,10 +29,22 @@
 // graph-lifetime `sync()` sweeping a deleted node — which ABANDONS the take
 // and leaves its scratch as a recover candidate, never deletes it.
 //
-// ⚠ THE ARM IS A PARAM, NOT A BUTTON. `ch{N}_rec` (slice 3's record band) is
-// the surface: this registry POLLS the mixer's effective (knob + CV) values
-// through `read('recState')` and drives the pure machine
-// (clip-audio-rec-machine.ts) from edges on them. Level semantics:
+// ⚠ THERE IS CURRENTLY NO ARM SURFACE AT ALL, AND THAT IS DELIBERATE. The arm
+// used to be a mixmstrs param (`ch{N}_rec`, slice 3's record band): this
+// registry polled the mixer's effective (knob + CV) values through
+// `read('recState')` and drove the pure machine from edges on them. The owner
+// ruled that surface off the mixer on 2026-09-04 — recording is a CLIPPLAYER
+// feature, per clip — and the replacement per-lane toggle has not landed yet.
+//
+// So `read('recState')` returns `undefined` on every mixmstrs node today, the
+// guard at the top of `#pumpEntry` returns, and this registry IDLES: entries are
+// still created per live mixmstrs node, no wiring is built, no take can start,
+// and `clipPadState` is untouched. `cliprec-registry-idles.spec.ts` pins that,
+// because an absent seam that throws and an absent seam that idles look
+// identical from the outside until someone boots a rack.
+//
+// The edge contract below is UNCHANGED and is what the clipplayer toggle will
+// drive; only the SOURCE of the arm value moves. Level semantics:
 //   - 0 → 1 edge while idle  = ARM SINGLE (this slice; 2/endless is slice 6,
 //     and reads as "not 1" here — arming stays un-actioned until it lands).
 //     The edge PREPARES (refusals, tempo latch, manifest, writer worker —
