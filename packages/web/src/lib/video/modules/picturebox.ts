@@ -50,10 +50,10 @@
 // `maxInstances` so the palette greys out the picker at the cap; the
 // per-user cap is enforced in Canvas's spawnFromPalette.
 //
-// The file-picker UI lives in TWO surfaces now — `PictureboxCard.svelte` (the
-// legacy card) and `picturebox/PictureboxAssetsBody.svelte` (the dock
-// faceplate's `fullViewBody`) — and both write `node.data` through the one seam
-// at `$lib/graph/picturebox-data.ts`. This factory exposes `setImage(bitmap)`
+// The file-picker UI lives in `picturebox/PictureboxAssetsBody.svelte` (the dock
+// faceplate's `fullViewBody`), which writes `node.data` through the one seam at
+// `$lib/graph/picturebox-data.ts` — so a second picker is a call rather than a
+// copy. This factory exposes `setImage(bitmap)`
 // via the handle's `read` channel so the extras producer can drive uploads;
 // `setImage(null)` clears. The 7-slot extras (`setAssetAtSlot` / `selectSlot` /
 // `slotHasAsset`) keep up to 7 textures resident so a gate-driven switch is an
@@ -236,8 +236,8 @@ export const pictureboxDef: VideoModuleDef = {
   //
   // `asset_pitch` and `asset_gate` exist so the cross-domain CV bridge has
   // somewhere to write; the docs above already call them *"synthetic, hidden
-  // param… Not a card knob"*, and the legacy card honoured that by simply not
-  // drawing them. A FACE cannot honour it the same way: `module-face-lint`'s
+  // param… Not a card knob"*, and a bespoke surface honours that by simply not
+  // drawing them. A FACE cannot: `module-face-lint`'s
   // completeness loop is unconditional for a promoted def and demands an
   // interactive cell per `ParamDef`. Without this declaration the faceplate
   // would paint a continuous rotary over a raw V/oct cache and a second one over
@@ -320,7 +320,7 @@ export const pictureboxDef: VideoModuleDef = {
   //
   // ⚠ `paramCells: { gain: 'fader' }` IS A REAL DECISION. `gain` is a linear
   // 0..2 brightness multiply whose meaningful landmark is unity at the MIDDLE of
-  // the throw. The legacy card already chose a NeonFader over a knob, and
+  // the throw. This module already used a NeonFader rather than a knob, and
   // nothing in a ParamDef distinguishes "a level" from any other continuous
   // scalar — so an undeclared face would silently swap a dial in for a throw,
   // invisibly to every def-reading gate.

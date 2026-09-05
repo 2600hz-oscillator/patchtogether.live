@@ -132,8 +132,8 @@ void main() {
  *  in the module's DESCRIPTIONS entry. */
 export const VIDEOVARISPEED_MAX_SLOT_BYTES = 100 * 1024 * 1024; // 100 MB
 
-/** Persisted shape on node.data. The NODE's controller is the writer (the legacy card
- *  and the faceplate body both originate gestures through it). */
+/** Persisted shape on node.data. The NODE's controller is the writer — every
+ *  surface originates its gestures through it, never by writing here. */
 export interface VideoVarispeedData {
   /** Metadata about the file the loader picked. Null until a file is picked.
    *  Local-only player, but we keep it on data so it survives reload. This is

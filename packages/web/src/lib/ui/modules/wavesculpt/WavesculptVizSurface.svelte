@@ -1,9 +1,8 @@
 <script lang="ts">
-  // WavesculptVizSurface — THE wavesculpt renderer, extracted from
-  // WavesculptCard.svelte so the legacy card and (next) the faceplate body
-  // paint the SAME picture from the SAME code. It was ~1900 lines living
-  // inside a 3644-line card; nothing in it was card-specific except where the
-  // presentation canvas was sized.
+  // WavesculptVizSurface — THE wavesculpt renderer, extracted so that every view
+  // paints the SAME picture from the SAME code. It was ~1900 lines living
+  // inside a 3644-line surface; nothing in it belonged to that surface except
+  // where the presentation canvas was sized.
   //
   // ⚠ WHY EXTRACTED RATHER THAN RE-DRAWN, AND WHY NOT A BLIT. Two cheaper
   // routes were rejected. A second WebGL2 context in the body would be a
@@ -101,8 +100,8 @@
     /**
      * Called once per rendered frame, BEFORE the frame is drawn.
      *
-     * ⚠ THIS IS A CADENCE GUARANTEE, NOT A CONVENIENCE. The legacy card polls
-     * the camera CV here to move its joystick dots, and that poll rides rAF
+     * ⚠ THIS IS A CADENCE GUARANTEE, NOT A CONVENIENCE. A viewer polls the
+     * camera CV here to move its joystick dots, and that poll rides rAF
      * for a measured reason: as a standalone setInterval(30ms) it was STARVED
      * and coalesced behind this renderer on a busy main thread, so a
      * gamepad-driven dot updated far too slowly to reach the stick's extremes.

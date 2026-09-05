@@ -258,7 +258,7 @@ export const RUTTETRA_GRID = { cols: COLS, rows: ROWS } as const;
  * four values at which the ramp IS one named shape rather than a blend of two.
  * `knobNameReadout` paints the NEAREST one, which derives the display
  * boundaries (0.1665 / 0.4995 / 0.833) from these anchors instead of re-typing
- * a second set of thresholds the way the legacy card does.
+ * a second set of thresholds beside them.
  *
  * ⚠ `radial` AT 1 IS THE DECLARED INTENT, AND THE SHADER OVERSHOOTS IT BY
  * 0.2 % (#1863, open) — arm 3's coefficient reaches 1.002 at `m = 1`, which

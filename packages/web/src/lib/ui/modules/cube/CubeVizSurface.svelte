@@ -1,8 +1,8 @@
 <script lang="ts">
-  // CubeVizSurface — THE cube renderer, extracted from CubeCard.svelte so the
-  // legacy card and the faceplate HERO paint the SAME picture from the SAME
-  // code. It was 600-odd lines living inside the card; nothing about it was
-  // card-specific except where the canvases were sized.
+  // CubeVizSurface — THE cube renderer, extracted so that every view paints the
+  // SAME picture from the SAME code. It was 600-odd lines living inside one
+  // surface; nothing about it belonged to that surface except where the canvases
+  // were sized.
   //
   // ⚠ WHY EXTRACTED RATHER THAN RE-DRAWN. The face spec's cheaper route was a
   // 2-D hero that blits a reduced picture. cube's whole instrument is "a solid
@@ -71,10 +71,8 @@
     waveH?: number;
     /**
      * OWN the cross-domain `video_out` frame drawer + the DRS `__cubeStep`
-     * seam. Exactly ONE mounted surface per node should — the legacy card in
-     * canvas mode, the hero panel under `?shell=1` (they never co-exist,
-     * because `migrated('cube')` swaps one for the other). Passing false makes
-     * a second surface a pure viewer.
+     * seam. Exactly ONE mounted surface per node should own them; passing false
+     * makes any further surface a pure viewer.
      */
     ownsVideoOut?: boolean;
     /**

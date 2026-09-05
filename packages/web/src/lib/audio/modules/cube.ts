@@ -77,8 +77,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 // ---------- surface → module frame-drawer registry (video_out) ----------
 //
 // The 3D CUBE WebGL render lives in CubeVizSurface.svelte (the surface owns the
-// GL context + offscreen canvas), which the legacy card and the faceplate hero
-// both mount. The cross-domain video_out bridge needs a drawFrame(canvas)
+// GL context + offscreen canvas), which the node host mounts ONCE and a view
+// only CLAIMS. The cross-domain video_out bridge needs a drawFrame(canvas)
 // callback; the surface installs one here keyed by node id (the SAME pattern
 // WAVESCULPT uses for its video_out). When nothing is installed (nothing
 // mounted / GL unavailable) the module's drawFrame paints black so the bridge
@@ -339,13 +339,14 @@ export const cubeDef: AudioModuleDef = {
   controlFamilies: [
     // THE PICTURE. Promoted into the faceplate's hero slot — the volume render,
     // the 2-D slice cross-section and the output wave, i.e. the SAME three
-    // surfaces the legacy card paints, from the same component. It is the only
+    // surfaces the module has always painted, from the same component. It is
+    // the only
     // surface anywhere that shows the CUT inside the SOLID, which is the whole
     // instrument.
     { id: 'cube-view', label: 'Cube view', kind: 'cell', testidPrefix: 'cube-view' },
-    // THE THREE WAVETABLE SLOTS as one panel. Nine DOM-only controls on the
-    // legacy card (three selects, three preset selects, three loaders) for
-    // THREE decisions; the second dropdown per slot is a Svelte-binding
+    // THE THREE WAVETABLE SLOTS as one panel. Nine DOM-only controls before the
+    // face (three selects, three preset selects, three loaders) for THREE
+    // decisions; the second dropdown per slot is a Svelte-binding
     // workaround, not a second choice. Folded here so the shell face can reach
     // them at all — the DX7 shipped with its voice unreachable under `?shell=1`
     // for exactly this reason.
@@ -362,8 +363,9 @@ export const cubeDef: AudioModuleDef = {
   // read it with — and the measurement says the SLICE owns the timbre by 5×
   // (`slice_ry` 0.885 rmsΔ over its travel against `morph_fc`'s 0.178), so the
   // slice comes first. That is the exact INVERSE of the def's own param order
-  // and of the legacy card, both of which lead with TUNE / FINE / MORPH /
-  // CONNECT and bury the three rotations 12th–14th of 15. Everything after the
+  // and of the pre-promotion panel, both of which lead with TUNE / FINE /
+  // MORPH / CONNECT and bury the three rotations 12th–14th of 15. Everything
+  // after the
   // two nouns is post-processing, playback and the camera.
   //
   // Numbers cited here are re-measured on the SHIPPED default tables

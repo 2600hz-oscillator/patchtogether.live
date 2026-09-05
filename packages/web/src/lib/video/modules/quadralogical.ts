@@ -990,8 +990,8 @@ export const quadralogicalDef: VideoModuleDef = {
       // So the two owner instructions collided and the WIDTH ruling won, which
       // is the narrower reading of the layout note rather than a contradiction
       // of it: "a row under the frame, NOT BESIDE IT" is a statement about
-      // where the edges live relative to the screen — the legacy card put them
-      // in a right-hand COLUMN — and stacked clusters directly under the frame
+      // where the edges live relative to the screen — they used to sit in a
+      // right-hand COLUMN — and stacked clusters directly under the frame
       // still satisfy that. Flagged in the PR for an explicit ruling; the
       // revert is this one word.
       //

@@ -214,8 +214,8 @@ export const fourPlexVidDef: VideoModuleDef = {
   // `gate1..4` exist so the cross-domain CV bridge has somewhere to write a raw
   // 0..1 gate swing that `setParam` edge-detects; they are an edge detector's
   // cached level, not a value anyone sets. That was true before this face and
-  // it was true of the LEGACY CARD too — which is exactly why the declaration
-  // lives on the def rather than inside `face`.
+  // it is a fact about the MODULE rather than about any one surface — which is
+  // exactly why the declaration lives on the def rather than inside `face`.
   //
   // ⚠ IT IS A LIVE DEFECT TODAY, NOT A FACE PREREQUISITE. Measured on the real
   // resolver: `listExposableControls('4plexvid')` returns all EIGHT params, so

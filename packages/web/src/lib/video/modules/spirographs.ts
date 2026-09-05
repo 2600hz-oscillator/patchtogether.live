@@ -502,7 +502,8 @@ export const spirographsDef: VideoModuleDef = {
   // ── THE HUE WHEEL ────────────────────────────────────────────────────────
   //
   // Each spiro's `chroma` declares `paramCells: 'hue'` — the conic ring, the
-  // control the legacy card drew by hand. It is a distinct primitive from
+  // control this module has always drawn by hand. It is a distinct primitive
+  // from
   // `'color'` (which is a DISCRETE packed-RGB picker): a hue is CONTINUOUS over
   // one turn and WRAPS, so a KnobConic would put its end stops in the middle of
   // a continuous space and make two adjacent reds a full drag apart.

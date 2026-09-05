@@ -191,7 +191,7 @@ export interface GibribbonHandleExtras {
   /** The lookahead lane (next-N upcoming buttons, nearest first). */
   getLane(): { button: GibButton; kind: GibEventKind; pos: number; hot: boolean }[];
   isDead(): boolean;
-  /** Alias of pushRestart (legacy card affordance name). */
+  /** Alias of pushRestart — the name the module's RESTART affordance uses. */
   reset(): void;
   /** Test-only: force-pulse a gate output WITHOUT a game event, so e2e/VRT
    *  can exercise the video→audio bridge deterministically. */

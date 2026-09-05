@@ -18,7 +18,7 @@
 // ⚠ THE CAPTURE IS NOT ON A SURFACE, AND HAS NOT BEEN SINCE #1574/#1584. The
 // recorder, its capture canvas, its frame pump and its render lease all belong
 // to the NODE for the recording's whole lifetime, so a take survives collapsing
-// the dock, an LRU eviction, or promotion removing the legacy card entirely.
+// the dock, an LRU eviction, or promotion removing a surface entirely.
 // Surfaces RESOLVE a take's configuration (folder, codec, audio tap) through
 // $lib/ui/modules/recorderbox-transport and then read the registry; they never
 // create or destroy a recording.

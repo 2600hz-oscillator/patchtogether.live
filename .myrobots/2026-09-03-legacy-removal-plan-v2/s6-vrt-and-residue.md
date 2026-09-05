@@ -92,17 +92,37 @@ replaced. The DENSE core is done: `strict-faces.ts` (40),
 `module-shell-model.ts` (5), `shell-control-kind.ts` (4), `Canvas.svelte` (5),
 `face-readout-source.test.ts` (5), `face-monitor-source.test.ts` (5).
 
-## ⚠ THE ATTEST HASH MOVED AGAIN, AND WILL MOVE ONCE MORE
+## ⚠ THE ATTEST HASH IS COMMENT-TRANSPARENT — I recorded the opposite, and it is wrong
 
-`bash scripts/webgl-attest-hash.sh` → **`8c4954e95def3fc3…`** (was `9af32fc1…`).
-Comments in basis files move it, exactly as the normalizer rule says.
+`bash scripts/webgl-attest-hash.sh` → **`8c4954e95def3fc3…`**.
 
-**13 of the 220 basis files still carry "legacy card"**, so finishing the residue
-sweep moves it a THIRD time. The attest is still correctly last.
+An earlier revision of this note said "comments in basis files move it, exactly
+as the normalizer rule says". THEY DO NOT, and the tree says so twice over:
+
+* `scripts/attest-code-basis.ts` documents its own blindness gates as proving
+  both directions — *"comment/docs edit → identical hash; code edit → different
+  hash"*.
+* MEASURED, both controls, on this branch:
+
+  | probe | result |
+  |---|---|
+  | 22 COMMENT edits across 13 basis files | hash UNCHANGED |
+  | one value change (`max: 1` → `0.4242`, ruttetra) | `9c90ad95…` — MOVED |
+  | that value restored | back to `8c4954e9…` exactly |
+
+  ⚠ A first attempt at the positive control perturbed WHITESPACE
+  (`export const` → `export  const`) and did not move the hash either — a
+  passing negative control that would have read as "the probe is broken". The
+  normalizer strips whitespace as well.
+
+CONSEQUENCE FOR SEQUENCING: the remaining prose sweep does **not** gate the
+attest. Only a CODE change in a basis file does. The 13 basis files were swept
+first anyway (cheap, and it removes the question), and every basis file is now
+clear of the vocabulary:
 
 ```sh
 bash scripts/webgl-attest-hash.sh --list | while read f; do
-  grep -qi "legacy card" "$f" && echo "$f"; done
+  grep -qi "legacy card" "$f" && echo "$f"; done   # → empty
 ```
 
 ## Still carrying the old vocabulary in CODE, reported not silently kept

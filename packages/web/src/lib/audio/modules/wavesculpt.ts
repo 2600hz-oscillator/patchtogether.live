@@ -672,13 +672,13 @@ export function clampMasterGain(v: number): number {
 //
 // `fxType{1..4}`, `video_mode` and `blink_mode` are 3-state discrete params
 // that shipped with NO `options` roster. Nothing was broken — the values work
-// and the legacy card cycles them with bespoke buttons — but the shell had no
-// way to see the names, so under `?shell=1` all six rendered as ANONYMOUS
+// and bespoke buttons cycled them — but the shell had no way to see the names,
+// so all six rendered as ANONYMOUS
 // KNOBS printing `0.00`, `1.00`, `2.00`. That is the filter LP/HP/BP defect
 // (PF-1's founding case) six times over on one module.
 //
-// ⚠ THESE ARE EXPORTED SO THE CARD READS THEM TOO. The legacy card carried its
-// own `const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED
+// ⚠ THEY ARE EXPORTED SO EVERY READER SHARES ONE ROSTER. A surface used to
+// carry its own `const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED
 // COMMUNITY']` plus three inline ternaries for the other two — a SECOND SOURCE
 // OF TRUTH for a vocabulary, which is the exact divergence `card-range-source`
 // records against FilterCard's private `const MODES = ['LP','HP','BP']`. One
@@ -1389,8 +1389,8 @@ export const wavesculptDef: AudioModuleDef = {
      * The camera pad, painted by this module's OWN body rather than by a band
      * cell. `surface: 'body'` because it is a control OVER THE PICTURE — you
      * fly the camera by watching where it goes — so the gesture belongs next to
-     * its feedback, which is exactly why the legacy card put it beside the
-     * canvas. It costs a `face-xy-body-source` obligation: the body's source
+     * its feedback, which is exactly where this module has always put it. It
+     * costs a `face-xy-body-source` obligation: the body's source
      * must really paint it, which is checked by reading the body.
      *
      * ⚠ The pad shows the KNOB; CV moves the PICTURE. Those are two different
