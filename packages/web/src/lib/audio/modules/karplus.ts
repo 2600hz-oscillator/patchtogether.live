@@ -106,7 +106,7 @@ export const karplusDef: AudioModuleDef = {
   // ── RACKLINE face (UI curation only, NOT the I/O contract; see ModuleFace
   // in $lib/graph/types). Designed from what the module IS — a monophonic
   // plucked/struck STRING played from an external trigger — rather than
-  // transcribed from the legacy card's fader bands.
+  // transcribed from the pre-promotion fader bands.
   //
   // ⚠ `order` and `pages` ANSWER DIFFERENT QUESTIONS AND MAY DISAGREE. `order`
   // is a PRIORITY ranking, consumed by the tiers that show a SUBSET; `pages` is
@@ -161,8 +161,8 @@ export const karplusDef: AudioModuleDef = {
   // ⚠ RANKS 7+ RENDER NOWHERE IN THE LANE. laneBodyPlan's plate is 3 cols × 2
   // whole rows = 6 cells (LANE_PLATE_MAX_CELLS), so rank 7 is DOCK-ONLY.
   //
-  // GLYPH: 'scope' → a LIVE analyser trace on `out`. The legacy card showed
-  // NOTHING; on a plucked voice the decay envelope IS the instrument, so the
+  // GLYPH: 'scope' → a LIVE analyser trace on `out`. Nothing showed it before;
+  // on a plucked voice the decay envelope IS the instrument, so the
   // trace is the most informative pixel budget on the tile AT MINI, COMPACT AND
   // AS THE DOCK HERO. ⚠ It is NOT painted at the `full` tier: six selected
   // cells ⇒ 2 plate rows ⇒ `glyph = hasGlyph && rows <= 1` is false

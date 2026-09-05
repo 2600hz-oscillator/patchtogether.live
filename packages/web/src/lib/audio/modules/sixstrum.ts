@@ -108,7 +108,7 @@ export const sixstrumDef: AudioModuleDef = {
   // UI metadata, NOT the I/O contract (see ModuleFace in $lib/graph/types).
   //
   // WHY A RE-DO AND NOT A TWEAK. The shipped face could not PLAY THE
-  // INSTRUMENT. The legacy card's ⟋ STRUM button drives the factory's
+  // INSTRUMENT. The module's ⟋ STRUM gesture drives the factory's
   // `manualTrigger` seam; `SHELL_CELLS.sixstrum` registered ONLY the preset
   // selector, and `face.order` had no strike key — so under `?shell=1` the dock
   // offered twenty controls over a voice that could not be sounded at all. (Two

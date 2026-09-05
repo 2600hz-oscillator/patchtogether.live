@@ -433,8 +433,8 @@ export const dx7Def: AudioModuleDef = {
     let currentVoiceRev = readVoiceRev();
     // THE HOST SHADOWS. `algorithm` and `feedback` are NOT AudioParams, so
     // `params.get(id)` is undefined for both and `readParam` has nothing to
-    // return without these. Deleting them breaks the legacy card's motorized
-    // knob readback AND the shell's param-cell drive, which both poll
+    // return without these. Deleting them breaks the motorized knob readback
+    // AND the shell's param-cell drive, which both poll
     // readParam. They are updated on setParam AND on the stamp (via the poll,
     // which reads the params the stamp wrote). dx7.test.ts pins this.
     let currentAlgo = clampAlgo(node.params?.algorithm ?? findPatch(currentPresetName).algorithm);

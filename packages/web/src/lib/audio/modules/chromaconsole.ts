@@ -96,8 +96,8 @@ export const CHROMA_CONSOLE_TYPE = 'chromaconsole';
 // port at all.
 //
 // ⚠ THE RESTING FACE MUST STAY BYTE-STABLE, which is a module-specific override
-// of a cohort-wide allowance rather than an inherited default. The legacy card's
-// header records that its determinism (no message counters, no activity blink,
+// of a cohort-wide allowance rather than an inherited default. This module's own
+// record says its determinism (no message counters, no activity blink,
 // no elapsed times, no "last CC sent" readout) is load-bearing for a committed
 // VRT baseline AND is the same set the resting-text ruling forbids AND is what
 // keeps the card from implying it knows what the pedal holds — three unrelated

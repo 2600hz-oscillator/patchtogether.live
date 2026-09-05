@@ -390,8 +390,8 @@ export const clipplayerDef: AudioModuleDef = {
   // selection left to make". The owner rejected exactly that (2026-09-04,
   // verbatim): "we do NOT want the clip viewer always visible. we want to see
   // it when we double click on a grid cell, at which point, we do not see the
-  // grid. this needs to work exactly the way the legacy card did". The legacy
-  // card is a VIEW SWITCHER — one `cardView` rune, a GRID / CLIP / ARR / CTRL
+  // grid. this needs to work exactly the way it did before". What it replaces
+  // is a VIEW SWITCHER — one `cardView` rune, a GRID / CLIP / ARR / CTRL
   // strip, and grid and editor as MUTUALLY EXCLUSIVE branches of one if/else —
   // and `face.tabbed` is the platform's own name for that structure, with the
   // band hiding, the rail and the parity sweep's rail navigation already built
@@ -433,7 +433,7 @@ export const clipplayerDef: AudioModuleDef = {
     glyph: 'none',
     extension: 'clipplayer',
     // OWNER-INSTRUCTED (2026-09-04) — see the block above. The rail IS the
-    // legacy card's GRID / CLIP / ARR / CTRL strip, and it is what makes the
+    // module's own GRID / CLIP / ARR / CTRL strip, and it is what makes the
     // grid and the editor mutually exclusive.
     tabbed: true,
     order: [

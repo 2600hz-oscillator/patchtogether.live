@@ -344,8 +344,8 @@ export const NUMPAD_LAYER_OPTIONS: readonly { value: number; label: string }[] =
  * `noteNameForMidi` names it. Both endpoints are in range (MIN_MIDI 12 = c0,
  * MAX_MIDI 108 = c8).
  *
- * ⚠ AND THE NAMES ARE WHY THERE IS A ROSTER AT ALL. The legacy card painted the
- * octave as a NUMBER next to its two nudge arrows; the resting-text ruling
+ * ⚠ AND THE NAMES ARE WHY THERE IS A ROSTER AT ALL. The octave used to be
+ * painted as a NUMBER next to two nudge arrows; the resting-text ruling
  * deletes that, and without a roster the dock would show an anonymous
  * nine-position dial with no way to tell which octave you are in — a real parity
  * loss. Labelling the states `'0'..'8'` would restore the number under the
@@ -445,8 +445,8 @@ export const numpadPlusDef: AudioModuleDef = {
 
   controlFamilies: [
     { id: 'numpad-cell', label: 'Per-step note cell', kind: 'cell', testidPrefix: 'numpad-cell' },
-    // ⚠ ONE FAMILY FOR FOURTEEN CAPS, NOT TWO. The legacy card emitted two
-    // testid prefixes for what is one control kind — `numpad-key-${st}` for the
+    // ⚠ ONE FAMILY FOR FOURTEEN CAPS, NOT TWO. Two testid prefixes used to be
+    // emitted for what is one control kind — `numpad-key-${st}` for the
     // twelve notes and `numpad-octkey-${act}` for the two octave actions — but
     // the DEF has never agreed with that split: `DEFAULT_KEYMAP` is ONE
     // fourteen-entry map and the octave actions are described in this file as

@@ -162,7 +162,7 @@ const baseDef: AudioModuleDef = {
   //   rate · depth + a live picture of shape: speed, amount, waveform, whole
   //   module, one 192×180 tile.
   //
-  // SHAPE_GLYPHS LOSS — ACCEPTED, and this is the argument. The legacy card's
+  // SHAPE_GLYPHS LOSS — ACCEPTED, and this is the argument. The pre-promotion
   // Fader carried three static marks (sine / saw / square) on its track. The
   // face replaces them with (a) the live morph glyph, which shows the RESOLVED
   // wave continuously including every in-between blend, and (b) PF-10

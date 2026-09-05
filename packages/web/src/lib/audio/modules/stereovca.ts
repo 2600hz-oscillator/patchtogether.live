@@ -238,8 +238,8 @@ export const stereovcaDef: AudioModuleDef = {
     // ⚠ `level` IS DECLARED A FADER AND `offset` IS DELIBERATELY NOT, AND THAT
     // ASYMMETRY IS THE ONE NON-OBVIOUS LINE IN THIS FILE.
     //
-    // The legacy card mounts `<NeonFader>` for BOTH (StereovcaCard.svelte), so
-    // declaring the kind for both is what "preserve today's look" would ask
+    // Both were mounted as `<NeonFader>` before the face, so declaring the kind
+    // for both is what "preserve today's look" would ask
     // for. Measured against the shell instead of assumed: the `fader` branch of
     // ModuleShell (`:990-1005`) passes NO `landmarks` and no `ticks`, and
     // `NeonFader` has no resting readout element at all — its own source says

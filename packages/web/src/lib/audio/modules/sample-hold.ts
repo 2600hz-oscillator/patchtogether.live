@@ -91,9 +91,9 @@ export const sampleHoldDef: AudioModuleDef = {
       // THE SCALE NAMES, PROMOTED OUT OF THE CARD (PF-1).
       //
       // These names already existed and the shell could not reach them: the
-      // card renders `sampleHoldScaleName(scale)` in its own `.scale-name`
-      // element above the knob, so a player using the LEGACY card has always
-      // seen "Major" / "Dorian", while a faceplate could only ever have shown
+      // module used to render `sampleHoldScaleName(scale)` in its own
+      // `.scale-name` element above the knob, so a player has always seen
+      // "Major" / "Dorian", while a faceplate could only ever have shown
       // an anonymous ten-position dial. That is the gatemaiden shape — the
       // module's only state names existing nowhere a shared surface can read.
       //

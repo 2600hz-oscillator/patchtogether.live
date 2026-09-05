@@ -625,9 +625,9 @@ export const trailsDef: AudioModuleDef = {
 
   // The CONNECT gesture is not a `ParamDef` — it writes nothing, it asks the
   // browser for permission — so it reaches `face.order` through the family
-  // key-space, exactly as midiclock's and ptzcam's do. `testidPrefix` already
-  // appears on the legacy card (`trails-connect-${id}`, TrailsCard.svelte:358),
-  // so module-docs-lint's FAMILY↔CARD clause holds with no card edit.
+  // key-space, exactly as midiclock's and ptzcam's do. ⚠ NO SURFACE EMITS
+  // `trails-connect` AS A LITERAL — MEASURED — so module-docs-lint holds this
+  // family through its CELL arm rather than through its source grep.
   controlFamilies: [
     { id: 'trails-connect', label: 'Connect Trails', kind: 'other', testidPrefix: 'trails-connect' },
   ],

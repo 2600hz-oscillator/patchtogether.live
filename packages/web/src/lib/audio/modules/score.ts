@@ -79,8 +79,8 @@ import { createPlayheadTracker, createPlayheadTrackerOf } from './playhead-track
 const ADSR_PREFIX = '/ADSR';
 
 // ⚠ ONE COERCION, SHARED WITH EVERY RENDERER. This used to be a twelve-line
-// copy, and the legacy card and the quicksave snapshot each carried their own —
-// three restatements of the same `pages` clamp and the same `stopBar` shape
+// copy, and two more readers each carried their own — three restatements of the
+// same `pages` clamp and the same `stopBar` shape
 // test. The faceplate's staff panel would have been the fourth, and a placement
 // surface that disagreed with the playback surface about how many pages exist is
 // the drift `score-data.ts`'s scheduler-grid note is about, one layer up.
@@ -196,7 +196,7 @@ export const scoreDef: AudioModuleDef = {
   //
   // ⚠ EACH `testidPrefix` IS A LITERAL BOTH SURFACES EMIT. `module-docs-lint`
   // greps the whole `ui/` tree for the prefix string, so these deliberately
-  // reuse the names the legacy card already prints (`score-tool`, `score-page`,
+  // reuse the names this module already printed (`score-tool`, `score-page`,
   // `quicksave`) rather than inventing a face-only namespace — which keeps the
   // grep finding them on the card as well as on the faceplate.
   controlFamilies: [

@@ -187,8 +187,8 @@ export const synesthesiaDef: AudioModuleDef = {
     // a NAMED two-state control instead of an unnamed switch. `paramCellKind`
     // (shell-control-kind.ts:312-316) tests `p.options?.length` BEFORE
     // `looksLikeToggle`, so without a roster this resolves to a bare `toggle`
-    // whose two positions carry no words at all — and the legacy card has
-    // printed `AUDIO` / `VIDEO` on its own button since it shipped
+    // whose two positions carry no words at all — and this module has printed
+    // `AUDIO` / `VIDEO` on its own button since it shipped
     // (SynesthesiaCard.svelte:233). The labels below are THAT string, verbatim,
     // and the same pair the def's own `docs.controls` and the worklet header
     // (packages/dsp/src/synesthesia.ts:30) use. An option NAME is permitted

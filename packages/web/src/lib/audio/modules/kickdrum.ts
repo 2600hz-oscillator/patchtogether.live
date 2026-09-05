@@ -654,9 +654,9 @@ export const kickdrumDef: AudioModuleDef = {
       },
       // Manual STRIKE — the samsloop/karplus `manualTrigger` read-key seam:
       // returns a function that fires ONE canonical trigger pulse at the
-      // worklet, the exact effect of a trigger_in rising edge. Both faces
-      // (the legacy card's STRIKE button and the shell's `kickdrum-strike`
-      // action cell) go through this one seam, so there is no second
+      // worklet, the exact effect of a trigger_in rising edge. Every audition
+      // gesture (today the shell's `kickdrum-strike` action cell) goes through
+      // this one seam, so there is no second
       // implementation to drift.
       read(key: string): unknown {
         if (key === 'manualTrigger') {

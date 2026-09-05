@@ -74,8 +74,8 @@ export interface WavecelData {
    * single-frame scope trace. Absent ⇒ `'3d'`, the card's default, so a rack
    * saved before the faceplate existed opens unchanged.
    *
-   * ⚠ THE LEGACY CARD DOES NOT USE THIS KEY — it holds the same choice in
-   * component `$state` (`WavecelCard.svelte:54`), so its view resets on every
+   * ⚠ THE KEY IS NEW. The same choice used to live in component `$state`, so
+   * the view reset on every
    * remount (the #1531 / #1574 / #1583 class). The faceplate persists it
    * instead, matching the owner's ruling for the analogous SCREEN toggle:
    * view state on `node.data` survives a tab switch, a remount and a reload,
@@ -92,8 +92,8 @@ export interface WavecelData {
    * table or a user WAV).
    *
    * ⚠ IT EXISTS BECAUSE THE FACE'S PRESET SELECTOR HAS TO SHOW ITS OWN STATE.
-   * The legacy card resets its preset `<select>` to '' the moment a load
-   * finishes, so the control never displays what it loaded — a "cheap UX for
+   * The preset `<select>` used to reset to '' the moment a load finished, so
+   * the control never displayed what it loaded — a "cheap UX for
    * did-it-take" that works on a card because re-picking the same row re-fires.
    * `faces-parity` refuses that shape by name: it picks an option and asserts
    * the selection CHANGED, because a selector that always reads the same thing

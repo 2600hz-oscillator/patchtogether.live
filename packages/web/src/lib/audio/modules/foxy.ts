@@ -383,8 +383,8 @@ export const foxyDef: AudioModuleDef = {
     // `value`, and the shell's own knob rounds for `discrete`
     // (`knob-conic-model.ts:71`) where the legacy primitive does not. So the
     // fractional write is unreachable on the surface promotion ships, and the
-    // legacy card keeps its tracked debt until `Knob.svelte` gains the branch
-    // its two sibling primitives already have — its own reviewed PR, because it
+    // debt stays tracked until `Knob.svelte` gains the branch its two sibling
+    // primitives already have — its own reviewed PR, because it
     // changes the drag feel of every discrete knob in the rack.
     {
       id: 'gen_mode', label: 'GEN', defaultValue: 0, min: 0, max: FOXY_GEN_MODE_MAX, curve: 'discrete',
@@ -468,9 +468,9 @@ export const foxyDef: AudioModuleDef = {
   // for the same reason rasterize declined it: a panel REQUIRES an operability
   // probe, and a read-only picture's only available probe watches a DIFFERENT
   // control — an aliveness check that cannot observe the thing it certifies.
-  // `fullViewBody` needs no such proxy. It also carries the two affordances the
-  // legacy card owns and a param cell cannot reach (the SCOPE/3D view flip and
-  // EXPORT TABLE), so nothing on that card becomes unreachable at the dock.
+  // `fullViewBody` needs no such proxy. It also carries the two affordances a
+  // param cell cannot reach (the SCOPE/3D view flip and EXPORT TABLE), so
+  // nothing the module had becomes unreachable at the dock.
   face: {
     order: [
       // ── the lane budget: ranks 1-6 (mini 1 · compact 2 with a glyph · plate 6)

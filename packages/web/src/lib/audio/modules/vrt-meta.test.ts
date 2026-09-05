@@ -8,8 +8,8 @@
 //   2. the FACES roster equals the promoted set in BOTH directions, and every
 //      rostered face has a committed baseline for every tier it captures.
 //
-// It used to assert the same shape for the per-module LEGACY CARD sweep. That
-// half is gone with the sweep — see the tombstone below.
+// It used to assert the same shape for the per-module LANE sweep. That half is
+// gone with the sweep — see the tombstone below.
 //
 // ── THERE IS ONE BASELINE SET (2026-08-10) ──────────────────────────────────
 // `snapshotPathTemplate` dropped its `{platform}` segment, so a baseline is a
@@ -79,7 +79,7 @@ function repoRoot(): string {
 // the `STRICT_VRT_MODULES` cross-checks) and `EXEMPT_FROM_VRT is
 // DENY-BY-DEFAULT` (the frozen allowlist that stopped a new module
 // self-exempting). Both were gates on `e2e/vrt/vrt.spec.ts` — the per-module
-// LEGACY CARD sweep — and on the four tables in `e2e/vrt/vrt-exemptions.ts`
+// LANE sweep — and on the four tables in `e2e/vrt/vrt-exemptions.ts`
 // that only it applied. The sweep is deleted, the tables with it, and a gate
 // whose artifact does not exist cannot be re-pointed: there is no card baseline
 // for it to be about.
@@ -356,7 +356,7 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
     expect(
       staleScenes,
       'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
-        'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
+        'captures an unpromoted surface under a face-scene name, which is a baseline nobody can ' +
         `interpret. Remove it or promote the module: ${staleScenes.join(', ')}`,
     ).toEqual([]);
 

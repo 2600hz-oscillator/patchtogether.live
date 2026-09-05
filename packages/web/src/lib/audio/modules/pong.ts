@@ -212,8 +212,8 @@ export const pongDef: AudioModuleDef = {
     glyph: 'algorithm',
 
     // TWO SLOTS. The `fullViewBody` court lives here (#1928): promotion stops
-    // both surfaces rendering the legacy card, so the dock body is the only
-    // place the LIVE game can be seen — it receives a nodeId and reads the
+    // the pre-promotion surface rendering, so the dock body is the only place
+    // the LIVE game can be seen — it receives a nodeId and reads the
     // engine snapshot every frame. The `glyph` slot is the LANE identity
     // picture, which receives no nodeId and is a pure layout function of pong's
     // own rest state. See `$lib/ui/modules/pong/shell-extension.ts`.

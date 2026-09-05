@@ -1175,8 +1175,8 @@ export const macrooscillatorDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
-      // Manual STRIKE (the audition, on the faceplate AND the legacy card):
-      // the shared `manualTrigger` read key every externally-struck voice in
+      // Manual STRIKE (the audition): the shared `manualTrigger` read key
+      // every externally-struck voice in
       // the rack answers — one implementation, resolved through
       // manual-strike-actions.ts, never a per-module copy.
       read(key: string): unknown {

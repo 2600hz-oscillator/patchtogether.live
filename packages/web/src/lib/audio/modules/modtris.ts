@@ -161,8 +161,8 @@ export const modtrisDef: AudioModuleDef = {
     // reader does not go hunting for the disagreement. A tab rail needs
     // DOCK_TAB_MIN_BANDS = 7 bands and NOTHING IS PADDED to reach one.
     pages: [{ id: 'fall', label: 'fall', controls: ['gravityBpm', 'levelStep'] }],
-    // ⚠ DECLARED, AND THE REASON IS PARITY RATHER THAN TASTE. The legacy card
-    // renders both as `<NeonFader>`; without `paramCells` the shell derives
+    // ⚠ DECLARED, AND THE REASON IS PARITY RATHER THAN TASTE. Both were
+    // rendered as `<NeonFader>`; without `paramCells` the shell derives
     // KNOBS and a player's muscle memory for a vertical throw lands on a rotary.
     // ⚠ Note the divergence from the sibling: `frogger` declares NOTHING here
     // because `FroggerCard` draws a `<Knob>`. Each face matches its OWN card;

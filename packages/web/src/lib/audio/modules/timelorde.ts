@@ -339,8 +339,8 @@ export const timelordeDef: AudioModuleDef = {
   // TAP TEMPO is not a param — it is a CALL into a TapTempo controller that,
   // from the second tap onward, writes the ordinary `bpm` param. A family entry
   // is how a non-param control gets a rank, a doc blurb and a shell cell; the
-  // `testidPrefix` matches the testid the legacy card already emits, so the two
-  // surfaces address one control by one string.
+  // `testidPrefix` matches the testid this module already used, so every
+  // surface addresses one control by one string.
   controlFamilies: [
     { id: 'timelorde-tap', label: 'Tap tempo', kind: 'transport', testidPrefix: 'timelorde-tap' },
   ],

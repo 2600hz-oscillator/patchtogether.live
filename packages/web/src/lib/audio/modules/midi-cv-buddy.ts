@@ -157,8 +157,8 @@ export function channelMatches(statusByte: number, channelFilter: number | null)
 
 // ---------------- The CHANNEL and PRIORITY rosters ----------------
 //
-// Both the legacy card's `<select>` and the faceplate's selector cell offer the
-// SAME choices, built here once so neither surface re-derives them. The card
+// Every picker offers the SAME choices, built here once so no surface
+// re-derives them. The list
 // used to spell `{#each Array(16)}` and the `i + 1` inline, and a face that
 // spelled them again would be two encodings of one convention — the same
 // ONE-PLACE rule the range gates apply to numbers.
@@ -551,8 +551,9 @@ export const midiCvBuddyDef: AudioModuleDef = {
   // `resolveFaceControl` resolves a face key to a PARAM id, a family TEMPLATE
   // (`<id>-{n}`) or a legend STATIC — and this module declares `params: []`, so
   // every one of its controls has to arrive as a family. Each really is a named
-  // affordance the module owns, and each has a real control on the legacy card
-  // carrying the same `testidPrefix`, which is what `module-docs-lint`'s
+  // affordance the module owns. ⚠ NO SURFACE EMITS ANY OF THESE PREFIXES AS A
+  // LITERAL — MEASURED — so `module-docs-lint` holds them through its CELL arm
+  // rather than through its source grep, which is what
   // card-drift leg checks.
   controlFamilies: [
     { id: 'midi-cv-buddy-connect',  label: 'Connect MIDI', kind: 'other', testidPrefix: 'midi-cv-buddy-connect' },

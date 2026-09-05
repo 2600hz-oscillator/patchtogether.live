@@ -123,9 +123,9 @@ export const treeohvoxDef: AudioModuleDef = {
   // can excite it — and this family is the fix.
   //
   // ⚠ TO WHOEVER AUTHORS THE FACEPLATE (queue Q3). This pad reaches the dock
-  // ONLY because treeohvox has no curated `face` yet: with none, the dock
-  // full-view renders the legacy card (measured — `dock-full-view` contains one
-  // `.mod-card`). The moment a `face` lands, the dock renders THAT instead and
+  // ONLY because treeohvox had no curated `face` when this was written: with
+  // none, the dock full-view rendered the module's own surface. The moment a
+  // `face` lands, the dock renders THAT instead and
   // this pad disappears from the dock unless the face ranks a gate cell of its
   // own — a `kind: 'action'`, `mode: 'gate'` entry in shell-cells.ts calling
   // `setManualGate`, exactly like meowbox's. THAT IS THE SIXSTRUM DEFECT

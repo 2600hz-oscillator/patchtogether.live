@@ -128,7 +128,7 @@ export const moog914Def: AudioModuleDef = {
   // first, the twelve grid bands ascending, `hp` (7.5 kHz and everything above)
   // last.
   //
-  // ⚠ IT DISAGREES WITH DECLARATION ORDER, AND WITH THE LEGACY CARD, ON PURPOSE.
+  // ⚠ IT DISAGREES WITH DECLARATION ORDER, AND WITH THE OLD PANEL, ON PURPOSE.
   // Both list `hp, band1…band12, lp` — a column whose top cell is 7.5 kHz, whose
   // bottom cell is 100 Hz, and whose middle ascends. That is not an axis; the
   // face makes it one. The tier ladder therefore reads: mini = `LP 100`;

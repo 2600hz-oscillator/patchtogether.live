@@ -22,7 +22,7 @@
 // SCHED_LOOKAHEAD_S so edges land at the start of the next audio block.
 //
 // Inputs: none. MIDI source is the host device, picked from the faceplate's
-// device body (the dock full view) or the legacy card's dropdown.
+// device body (the dock full view).
 //
 // Outputs:
 //   clock (gate): rising edge every N MIDI clock ticks (N set by user; 24 = quarter, 12 = eighth, etc).

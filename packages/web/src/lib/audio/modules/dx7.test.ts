@@ -225,7 +225,7 @@ describe('dx7Def: factory + the incremental algorithm / feedback bridge', () => 
 
   it('readParam returns the host shadow for BOTH message params', async () => {
     // `params.get()` is undefined for these two, so without the shadows the
-    // legacy card's motorized knob read and the shell's param cell both go
+    // motorized knob read and the shell's param cell both go
     // dead. This is the assertion the "retire currentAlgo" draft would have
     // broken.
     const { ctx } = makeMockEnv();

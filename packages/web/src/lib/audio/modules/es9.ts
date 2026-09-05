@@ -533,8 +533,8 @@ export const es9Def: AudioModuleDef = {
   // ⚠ TWO FAMILIES FOR TWO GESTURES, because `resolveFaceControl` resolves a
   // face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend STATIC,
   // and CONNECT/DISCONNECT are none of the first. They are real affordances the
-  // module owns — the legacy card has had both buttons since it shipped — and
-  // `module-docs-lint`'s card-drift leg requires each declared `testidPrefix`
+  // module owns — it has had both buttons since it shipped — and
+  // `module-docs-lint` requires each declared `testidPrefix`
   // to appear in real UI source, which is why `Es9Card.svelte` grows the two
   // testids in this same diff. Adding the testid is the honest fix; dropping
   // the family would be fixing a declaration to satisfy a gate.

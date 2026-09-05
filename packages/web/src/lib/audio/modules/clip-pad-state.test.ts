@@ -440,8 +440,8 @@ describe('the pad ladder is not re-typed on a surface', () => {
   });
 
   it('the face model actually calls the shared helper (not merely imports it)', () => {
-    // The subject moved with the surface: this used to read the legacy card's
-    // 'clipPadState(dataObj()' call site. The face model is the surviving one,
+    // The subject moved with the surface: this used to read another call site
+    // of 'clipPadState(dataObj()'. The face model is the surviving one,
     // and it is the one the launch grid now paints from.
     const model = surfaces.find(([p]) => p.endsWith('clipplayer/clipplayer-face-model.ts'))?.[1] ?? '';
     expect(model).toContain('clipPadState(');

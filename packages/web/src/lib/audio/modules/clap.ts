@@ -85,8 +85,8 @@ export const clapDef: AudioModuleDef = {
   // WHAT THIS MODULE IS, in one sentence: TWO ENVELOPES ON ONE NOISE SOURCE.
   // A burst train of N hard onsets SPREAD ms apart, and a room tail that fires
   // at the LAST onset — not at the strike. Everything a player hears is the
-  // interaction of those two, and the legacy card said none of it: nine peer
-  // faders in three boxes, four of which change the same duration.
+  // interaction of those two, and the pre-promotion panel said none of it: nine
+  // peer faders in three boxes, four of which change the same duration.
   //
   // ⚠ `order` and `pages` ANSWER DIFFERENT QUESTIONS. `order` is a PRIORITY
   // ranking for the tiers that show a SUBSET; `pages` is FUNCTION order for the

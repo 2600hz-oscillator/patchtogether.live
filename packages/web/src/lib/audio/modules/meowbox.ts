@@ -139,8 +139,8 @@ export const meowboxDef: AudioModuleDef = {
   // ADSR. FOUR knobs — and one of them indexes THIRTEEN five-entry tables
   // (meowbox.dsp:29-63), so MORPH alone moves all three formant frequencies, all
   // three Qs, all three weights, the voiced/noise balance, the pitch contour's
-  // rise AND fall, and the decay scale. The legacy card presents that fader and
-  // an output trim as peers in one knob row.
+  // rise AND fall, and the decay scale. The pre-promotion panel presented that
+  // fader and an output trim as peers in one knob row.
   //
   // THREE OF THOSE THIRTEEN CHANGE NUMBERS THE OTHER KNOBS ARE LABELLED WITH,
   // which is what the hero strip is for and why not one of its three readouts is

@@ -102,7 +102,7 @@ export const analogVcoDef: AudioModuleDef = {
   //
   // THE ONE FACT THIS FACE EXISTS TO STATE. analogVco is ONE phase accumulator
   // with SIX taps, and its six knobs do NOT all address the same tap — the
-  // legacy card puts all six in one undifferentiated Fader row with nothing
+  // module used to put all six in one undifferentiated Fader row with nothing
   // saying which jack each one reaches. Read off the DSP rather than off the
   // old card:
   //

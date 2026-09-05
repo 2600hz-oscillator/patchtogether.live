@@ -74,7 +74,7 @@ export const moog962Def: AudioModuleDef = {
       // positions across the dial's whole travel, so an ordinary drag quantises
       // straight back to the value it started on and the control reads as
       // INERT. That is a real usability defect, not a test artifact — the
-      // legacy card has it too, since it draws the same bare `<Knob>`.
+      // pre-promotion panel had it too, since it drew the same bare `<Knob>`.
       //
       // ⚠ AND IT IS NOT A COUNTER-EXAMPLE TO "NEVER INVENT NAMES" (see
       // `sampleHold`, whose ten scale names were PROMOTED because they already

@@ -1094,8 +1094,9 @@ export const GAMEPAD_SLOT_MAX = 3;
  * ⚠ THE LABELS ARE THE STATES' OWN VALUES, and inventing anything else here
  * would be a lie. There is no device roster behind these: nothing in the
  * Gamepad API says which controller is in which slot until you select one and
- * read `pad.id` back, which is why the legacy card's four buttons are printed
- * `0 1 2 3` too. The skill's rule verbatim — "the states' own values where they
+ * read `pad.id` back, which is why this module's four buttons have always been
+ * printed `0 1 2 3`. The skill's rule verbatim — "the states' own values where
+ * they
  * are literally quantities; never fabricate semantics".
  *
  * ⚠ NO `optionsExhaustive`. The roster covers EVERY step of the span, so the
@@ -1135,8 +1136,8 @@ export const GAMEPAD_SLOT_PARAM: ParamDef = {
  * ⚠ AND PROMOTION LOSES NOTHING, which is why this is not the `joystick` shape.
  * `gamepad` is NOT in `NON_SHELL_LANE_TYPES`, so its lane render is
  * `'placeholder'` today — the uniform rackline tile with NO ranked controls at
- * all, whose `⤢` opens the legacy card in the dock. The face replaces a
- * placeholder with a real tile and replaces the card with the same surface,
+ * all, whose `⤢` opens the module's own surface in the dock. The face replaces
+ * a placeholder with a real tile and replaces that surface with the same one,
  * gesture for gesture (see `$lib/ui/modules/gamepad/GamepadMappingBody.svelte`).
  *
  * ⚠ NO PAGES. One control is one band; a `slot` header over a cell already

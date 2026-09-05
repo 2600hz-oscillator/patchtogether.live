@@ -429,8 +429,8 @@ export interface MidiLaneApi {
 //
 // ⚠ CONNECT IS RANK 1 AND THAT IS THE POINT OF THE PROMOTION, not a nicety.
 // `laneRenderKind` returns 'placeholder' for this module today — a tile with NO
-// ranked controls at all — and `connect()` is reachable only from a mounted
-// legacy card, so on a module that is completely inert until Web MIDI is
+// ranked controls at all — and `connect()` was reachable only from a mounted
+// bespoke surface, so on a module that is completely inert until Web MIDI is
 // granted, the grant required first discovering that the dock full view exists.
 // An `action` cell is not dock-restricted (only `panel` is), so the gesture
 // lands on the lane tile. This is midiclock's argument verbatim (#2187) and it
@@ -566,9 +566,10 @@ export const midiLaneDef: AudioModuleDef = {
   // `resolveFaceControl` resolves a face key to a PARAM id, a family TEMPLATE
   // (`<id>-{n}`) or a legend STATIC — and this module declares `params: []`, so
   // every one of its controls has to arrive as a family. That is not a
-  // workaround: each of these really is a named affordance the module owns, and
-  // each has a real control on the legacy card carrying the same
-  // `testidPrefix`, which is what `module-docs-lint`'s card-drift leg checks.
+  // workaround: each of these really is a named affordance the module owns.
+  // ⚠ NO SURFACE EMITS ANY OF THESE TEN PREFIXES AS A LITERAL — MEASURED — so
+  // `module-docs-lint` holds them through its CELL arm rather than its source
+  // grep.
   //
   // ⚠ THE SETTINGS STAY ON `node.data` AND ARE **NOT** MIGRATED TO PARAMS in
   // this PR, deliberately. Turning the seven of them into `ParamDef`s is a real

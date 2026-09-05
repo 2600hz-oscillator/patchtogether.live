@@ -195,14 +195,14 @@ export const blueboxDef: AudioModuleDef = {
   // here because it is this faceplate's honest limit, not hidden. `face.momentary`
   // is the correct classification (the card writes 1 on pointerdown and 0 on
   // pointerup, `docs.controls` says "held = 1, released = 0", and it is what
-  // makes `restedParams` repair a rack the legacy card saved mid-hold). But a
+  // makes `restedParams` repair a rack that was saved mid-hold). But a
   // momentary press writes the ENGINE ONLY by design ($lib/audio/momentary-params
   // — a rack must not be saveable with a pad held down) and a GATE CABLE is a
   // worklet node input, so NEITHER reaches `node.params`, which is the single
   // source `ModuleShell.readoutValue` and this face's panel both read. The bank
   // and the readouts are therefore live for every DURABLE route into the keys
   // (the auto-exposed group/instrument bar, a MIDI-learned CC, an automation
-  // lane, a preset recall, the legacy card) and dark for the two transient ones.
+  // lane, a preset recall) and dark for the two transient ones.
   // Latching the keys instead would have made everything live and was rejected:
   // it contradicts the card, the docs and the tidyVco `hold` precedent. Filed as
   // a platform follow-up (a live-engine reader for `FaceReadout`); the numbers
@@ -280,7 +280,7 @@ export const blueboxDef: AudioModuleDef = {
     // DURABLE value, by deliberate platform design. On this module that reader
     // is not merely incomplete, it is CONSTANT ZERO FOREVER: every param is
     // momentary, a press writes the engine only, AND any durable write from the
-    // group bar / MIDI / automation / preset / legacy card is scrubbed back to
+    // group bar / MIDI / automation / preset is scrubbed back to
     // rest within a frame by ModuleShell's own `clearStuckMomentaryParams`
     // `$effect` (it reads `node.params`, so it re-fires on every write —
     // MEASURED: `btn_1 = 1` through `__ydoc.transact` reads back 0). Declaring

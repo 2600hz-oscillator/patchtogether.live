@@ -106,11 +106,11 @@ export const slewSwitchDef: AudioModuleDef = {
     { id: 'slew3',     label: 'S3',    defaultValue: 0.5,  min: 0.001, max: 5,   curve: 'log',      units: 's' },
     { id: 'slew4',     label: 'S4',    defaultValue: 0.5,  min: 0.001, max: 5,   curve: 'log',      units: 's' },
     // ⚠ THE TWO ROSTERS ARE THE STOP-2 ANSWER, not decoration (PF-1). Both of
-    // these are cycling BUTTONS on the legacy card, and their captions
-    // (`['→ FWD', '⇄ PND', '? RND']`, `LEN n`) were hardcoded in card markup
+    // these used to be cycling BUTTONS, and their captions
+    // (`['→ FWD', '⇄ PND', '? RND']`, `LEN n`) were hardcoded in that markup
     // the migrated shell cannot see. `ParamDef.options` is the documented cure
-    // for exactly that — "the mode 0/1/2 → LP/HP/BP mapping the legacy cards
-    // hardcoded in their own markup and the migrated shell had no way to see,
+    // for exactly that — "the mode 0/1/2 → LP/HP/BP mapping that used to be
+    // hardcoded in a component's own markup where the shell had no way to see it,
     // so a filter's type read as a rotary printing 0.00". Without these,
     // promoting this module would have replaced three NAMED scan patterns with
     // an unlabelled 0..2 dial.
