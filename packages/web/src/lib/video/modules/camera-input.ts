@@ -2,7 +2,7 @@
 //
 // CAMERA — webcam-as-source video module.
 //
-// Frame ingestion path (the single technical decision): a card-owned
+// Frame ingestion path (the single technical decision): a NODE-OWNED
 // HTMLVideoElement is attached to the module's runtime via
 // `handle.attachExternalSource('video', el)`. Every engine tick we sample
 // that element with `gl.texImage2D(target, 0, RGBA, RGBA, UNSIGNED_BYTE,
@@ -12,8 +12,10 @@
 // into the module's FBO so downstream modules see standard `video`
 // frames.
 //
-// The factory is DOM-free. The card UI handles `getUserMedia`, the
-// device dropdown, and lifecycle of the `<video>` element. That keeps
+// The factory is DOM-free. `$lib/ui/media/node-camera-source-registry` owns
+// `getUserMedia`, the device roster and the lifecycle of the `<video>`
+// element, on GRAPH lifetime — driven from Canvas's own node effect, so the
+// capture is independent of whatever surface happens to be mounted. That keeps
 // engine code testable without jsdom MediaStream shims.
 //
 // Inputs:
@@ -51,7 +53,7 @@ uniform vec2 uLetterbox;
 void main() {
   if (uHasInput < 0.5) {
     // Idle: dark navy with a faint vertical sweep, matching OUTPUT's
-    // idle look so an unconfigured CAMERA card reads as "alive but
+    // idle look so an unconfigured CAMERA reads as "alive but
     // nothing here yet" rather than "broken".
     float v = vUv.y * 0.05;
     outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
@@ -169,7 +171,7 @@ const DEFAULTS: CameraParams = {
   enabled: 1,
   mirror: 1,
   // Cover-crop by default (the existing camera behaviour — never letterbox the
-  // live feed). Per-source toggle to letterbox via the card's fit/fill control.
+  // live feed). Per-source toggle to letterbox via the Fit/Fill control.
   fillMode: 1,
 };
 
@@ -186,7 +188,7 @@ export const cameraInputDef: VideoModuleDef = {
     { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'linear' } },
     // Gate input that drives the MIRROR toggle: while the gate level is HIGH the
     // image is mirrored, while it's LOW it isn't (level-sensitive — edge:'gate',
-    // matching the on-card Mirror button which is a held state, not a one-shot).
+    // matching the Mirror control, which is a held state, not a one-shot).
     // No cvScale ⇒ the cv bridge passes the RAW gate level straight to the
     // `mirror` param (see cv-bridge-map.ts), and the shader thresholds it at 0.5
     // (uMirror > 0.5) — so patch an LFO / clock / gate here to flip the mirror in
@@ -210,40 +212,39 @@ export const cameraInputDef: VideoModuleDef = {
   // siblings synthesise (`shapes`, `lines`) or transform (`luma`, `mapper`);
   // the thing only this one does is bring the room in. The verb is CAPTURE.
   //
-  // ⚠ THIS IS THE FIRST PROMOTION OF A CARD-OWNED-SOURCE MODULE, and the whole
-  // cost of it was OUTSIDE the face. Every other member of
-  // `DOM_SOURCE_LANE_TYPES` is still unfaced, and the reason they were is a
-  // real one: their card is not a skin over params, it is where the source
-  // LIVES. Promoting this one required answering three separate things, none of
-  // which is a face cell:
+  // ⚠ THE CAPTURE DOES NOT LIVE ON ANY SURFACE, AND GETTING THERE COST MORE
+  // THAN THE FACE DID. A module whose SOURCE lives in its UI is the hard case:
+  // the picture is not a skin over params, it is where the stream is acquired
+  // and held. Three separate things had to be answered, none of them a face
+  // cell:
   //
-  //   1. THE SOURCE SURVIVES THE SWAP, by a mechanism that already existed and
-  //      had never been exercised on a promoted module. cameraInput ∈
-  //      `DOM_SOURCE_LANE_TYPES` ⊂ `HEADLESS_MOUNT_LANE_TYPES`, and
-  //      `needsHeadlessSourceMount` returns true for kind 'shell', so
-  //      `<HeadlessSourceHost>` keeps the REAL card mounted off-screen.
-  //      getUserMedia, the MediaStream and the permission machine all keep
-  //      running; the `<video>` is node-owned, so the move re-parents rather
-  //      than tears down.
+  //   1. THE SOURCE OUTLIVES EVERY VIEW OF IT. `getUserMedia`, the device
+  //      roster, the saved-device rebind, the permission state machine and the
+  //      engine attach are owned by
+  //      `$lib/ui/media/node-camera-source-registry`, on GRAPH lifetime,
+  //      synced from Canvas's own node effect over the raw node list. The
+  //      `<video>` element is node-owned too
+  //      (`$lib/ui/media/node-media-registry`), so moving the picture between
+  //      surfaces RE-PARENTS it rather than tearing it down — and a camera with
+  //      no surface mounted anywhere still streams.
   //   2. THE DEVICE PICKER CANNOT BE A FACE CELL, ever. `node.data.deviceId` is
   //      populated from `enumerateDevices()` at RUNTIME — not a `ParamDef`, and
   //      not expressible as an `options` roster either, because a roster is a
   //      fixed set known when the def is authored and this one differs per
-  //      machine and changes when hardware is plugged in. It moved into the
+  //      machine and changes when hardware is plugged in. It lives in the
   //      extension body, which is the only slot that fits.
-  //   3. ⚠ THE CARD'S GESTURES BECOME UNREACHABLE, WHICH IS NOT THE SAME
-  //      PROBLEM AS (1) AND IS THE ONE THAT NEARLY SHIPPED BROKEN. A headless
-  //      host is `pointer-events: none`, so "Request access" — the ONLY route
-  //      to getUserMedia for a visitor this origin has not granted before — is
-  //      unclickable in the default shell, and the card's recovery text
-  //      ("Grant in browser site settings", "Close other capture apps") goes
-  //      with it. The card's mount-time auto-acquire fires only when
-  //      `enumerateDevices()` already returns real LABELS, i.e. only on a
-  //      return visit. A live source with no way to START it is the owner's
-  //      original "no video at all" reproduced through a different mechanism.
-  //      `$lib/ui/media/camera-status-registry` is the answer: the card
-  //      publishes its state and registers its acquire command, the faceplate
-  //      shows and drives them, and getUserMedia keeps exactly one owner.
+  //   3. ⚠ THE ACQUIRE GESTURE MUST BE ON A SURFACE A PLAYER CAN CLICK, WHICH
+  //      IS NOT THE SAME PROBLEM AS (1) AND IS THE ONE THAT NEARLY SHIPPED
+  //      BROKEN. "Request access" is the ONLY route to getUserMedia for a
+  //      visitor this origin has not granted before, and the auto-acquire fires
+  //      only when `enumerateDevices()` already returns real LABELS — i.e. only
+  //      on a return visit. Put that gesture anywhere unclickable and you have
+  //      a live source with no way to START it: the owner's original "no video
+  //      at all", reproduced through a different mechanism.
+  //      `$lib/ui/media/camera-status-registry` is the seam that answers it —
+  //      the owner publishes state and registers the acquire command, and any
+  //      surface (the lane tile, the dock full view, the topbar 📷 manager)
+  //      shows and drives them without a second claim on getUserMedia.
   //
   // ⚠ THE LAMP TELLS THE TRUTH OR IT DOES NOT SHIP. A lamp derived from the
   // GRAPH alone can only say "a device is chosen and capture is enabled" — it
@@ -267,11 +268,11 @@ export const cameraInputDef: VideoModuleDef = {
 
     // ⚠ NO `pages`. Four controls over one capture are a single honest band.
 
-    // ⚠ ONE DECLARATION, AND ONLY ONE. `CameraInputCard.svelte` draws `gain`
+    // ⚠ ONE DECLARATION, AND ONLY ONE. The faceplate draws `gain`
     // with `NeonFader`, so it is declared — nothing in a ParamDef separates "a
     // level" from any other continuous scalar, and an undeclared face resolves
     // it to a KNOB. The other three are `0..1 discrete`, so `looksLikeToggle`
-    // resolves them to Toggles on their own and the card agrees (two buttons and
+    // resolves them to Toggles on their own and the face agrees (two buttons and
     // `NativeFillToggle`). Declaring them would be redundant; declaring `fader`
     // for them would be REFUSED, correctly, since a throw over a two-state param
     // has no "anywhere on this scale".
@@ -298,23 +299,23 @@ export const cameraInputDef: VideoModuleDef = {
   // Soft cap mirroring the multiplayer per-rackspace user limit. The
   // browser will fail extra getUserMedia calls anyway with NotReadableError
   // if the hardware can't multiplex; this just keeps the patch graph
-  // sane when someone spawns ten CAMERA cards by accident.
+  // sane when someone spawns ten CAMERAs by accident.
   maxInstances: 4,
 
   docs: {
-    explanation: "CAMERA is a webcam-as-source video module. The card requests getUserMedia, runs a live <video> element, and hands it to the engine, which samples each decoded frame into a GPU texture and renders a fullscreen pass-through: the shader aspect-fits the camera frame into the engine's canvas (cover-cropping the off-axis by default so a 16:9 webcam fills the frame with no black bars), optionally flips it horizontally for a selfie mirror, and multiplies the RGB by a gain before sending it downstream. When no frame is available, or while disabled/paused, it shows a dark navy idle pattern (a faint vertical gradient, brighter toward the top) rather than black, so an unconfigured card reads as alive. Usage: drop CAMERA in, pick a device and grant access, then patch OUT into any video module (mixer, effect, OUTPUT screen). Use it as the live face/scene layer of a video patch.",
+    explanation: "CAMERA is a webcam-as-source video module. It requests getUserMedia, runs a live <video> element, and hands it to the engine, which samples each decoded frame into a GPU texture and renders a fullscreen pass-through: the shader aspect-fits the camera frame into the engine's canvas (cover-cropping the off-axis by default so a 16:9 webcam fills the frame with no black bars), optionally flips it horizontally for a selfie mirror, and multiplies the RGB by a gain before sending it downstream. When no frame is available, or while disabled/paused, it shows a dark navy idle pattern (a faint vertical gradient, brighter toward the top) rather than black, so an unconfigured CAMERA reads as alive. Usage: drop CAMERA in, pick a device and grant access, then patch OUT into any video module (mixer, effect, OUTPUT screen). Use it as the live face/scene layer of a video patch.",
     inputs: {
-      gain: "CV input that modulates the Gain control (linear scale, paramTarget=gain). Patch an LFO or envelope here to pulse the camera's RGB brightness; combines with the on-card Gain fader.",
-      mirror: "Gate input that drives the Mirror toggle. It is level-sensitive (edge: gate): the image is horizontally flipped while the level is held high (above 0.5) and un-flipped while low, so an LFO/clock/gate flips the mirror in time. With nothing patched, the on-card Mirror button owns the state.",
+      gain: "CV input that modulates the Gain control (linear scale, paramTarget=gain). Patch an LFO or envelope here to pulse the camera's RGB brightness; combines with the Gain control.",
+      mirror: "Gate input that drives the Mirror toggle. It is level-sensitive (edge: gate): the image is horizontally flipped while the level is held high (above 0.5) and un-flipped while low, so an LFO/clock/gate flips the mirror in time. With nothing patched, the Mirror control owns the state.",
     },
     outputs: {
       out: "Video output carrying the live camera frame: aspect-fitted, optionally mirrored, gain-multiplied RGB. Patch into any downstream video module.",
     },
     controls: {
       gain: "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the camera frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled (bright/clipped) RGB. CV-modulatable via the gain input.",
-      enabled: "On (discrete 0/1, default 1 = on). Off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream. The PARAM owns that, not any one button — the card's Pause/Resume, the faceplate\'s ON cell and a collaborator's toggle all reach the hardware identically, because the card acts on the value rather than on the click.",
-      mirror: "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the on-card Mirror button or held high by the mirror gate input. The param is shared across collaborators.",
-      fillMode: "Fill (discrete 0/1, default 1 = fill). Aspect-fit mode set by the card's Fit toggle: 1 = Fill/cover-crop (fills the canvas, crops the off-axis, no bars), 0 = Letterbox/contain (fits the whole frame with black bars). Neither ever distorts the source aspect; when the source already matches the output aspect the card shows a non-interactive Native badge instead.",
+      enabled: "On (discrete 0/1, default 1 = on). Off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream. The PARAM owns that, not any one button — the faceplate\'s ON cell, the topbar camera manager and a collaborator's toggle all reach the hardware identically, because the capture acts on the value rather than on the click.",
+      mirror: "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the Mirror control or held high by the mirror gate input. The param is shared across collaborators.",
+      fillMode: "Fill (discrete 0/1, default 1 = fill). Aspect-fit mode set by the Fit toggle: 1 = Fill/cover-crop (fills the canvas, crops the off-axis, no bars), 0 = Letterbox/contain (fits the whole frame with black bars). Neither ever distorts the source aspect; when the source already matches the output aspect a non-interactive Native badge is shown instead.",
     },
   },
   factory(ctx, _node): VideoNodeHandle {
@@ -329,13 +330,13 @@ export const cameraInputDef: VideoModuleDef = {
 
     const { fbo, texture: outTexture } = ctx.createFbo();
 
-    // The per-instance source texture — populated from the card's
+    // The per-instance source texture — populated from the node-owned
     // <video> element. Allocated lazily on the first frame upload so
     // we don't reserve GPU memory for a stream that may never start.
     let sourceTexture: WebGLTexture | null = null;
     let sourceTexAllocated = false;
 
-    // The DOM element the card hands us. Null until the card mounts.
+    // The node-owned DOM element handed to us. Null until the capture starts.
     let videoEl: HTMLVideoElement | null = null;
 
     // True when a fresh frame is available since the last upload.
@@ -361,8 +362,8 @@ export const cameraInputDef: VideoModuleDef = {
       try {
         keepAlive = createVideoAudioKeepAlive(ctx.audioCtx, videoEl);
       } catch (err) {
-        // InvalidStateError: element already has a MediaElementSource (the card
-        // re-attached the same element). Decode keep-alive is best-effort — a
+        // InvalidStateError: element already has a MediaElementSource (the same
+        // element was re-attached). Decode keep-alive is best-effort — a
         // failure just means CAMERA falls back to the pre-existing behaviour.
         console.warn('[cameraInput] keep-alive wire failed:', err);
       }

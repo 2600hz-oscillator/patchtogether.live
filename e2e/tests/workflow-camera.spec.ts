@@ -128,12 +128,25 @@ test.describe('workflow camera manager (P4)', () => {
     await expect(page.locator(`.flow .svelte-flow__node[data-id="${cam.id}"]`)).toHaveCount(0);
     await expect(page.locator('.flow .svelte-flow__node[data-id="fx"]')).toBeVisible();
 
-    // ＋ also opened the new camera's SOURCE PICKER: the hosted REAL
-    // CameraInputCard (its own device dropdown = the module's existing
-    // source-selection seam, nothing forked).
+    // ＋ also opened the new camera's SOURCE PICKER: the hosted REAL faceplate
+    // (its own device dropdown = the module's existing source-selection seam,
+    // nothing forked).
+    //
+    // ⚠ THE TESTID MOVED WITH THE SURFACE, and the rename is the point rather
+    // than noise. `camera-device-select` was the deleted card's id; the face
+    // mounts `CameraSourceControls` twice — once in the lane tile and once in
+    // the dock full view, which can be on screen SIMULTANEOUSLY — so each mount
+    // passes its own `testidPrefix` and a single shared id would resolve to two
+    // elements and throw on every strict locator. This host renders the TILE
+    // body, hence `cameraInput-tile-*`.
     const host = page.locator(`[data-testid="workflow-camera-host"][data-node-id="${cam.id}"]`);
     await expect(host).toHaveAttribute('data-shown', 'true');
-    await expect(host.getByTestId('camera-device-select')).toBeVisible();
+    await expect(
+      host.getByTestId('cameraInput-tile-device-select'),
+      'the topbar camera host must paint the module\'s real source picker — this host is the only '
+        + 'place a mapped (hiddenCard) camera has a surface at all, so a blank one leaves the '
+        + 'player with a streaming camera and no way to see or change its device',
+    ).toBeVisible();
 
     // The menu lists it ("camera 1" — no locally-resolvable device label
     // in this headless run).

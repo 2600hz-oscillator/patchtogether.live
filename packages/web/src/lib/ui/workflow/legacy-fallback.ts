@@ -378,17 +378,25 @@ export function isLaneNative(type: string): boolean {
 // is a decision too, and it is the wrong one for any rail occupant.
 //
 // ⚠ AND THERE IS A HOST THAT IS NOT A `DockCardHost` AT ALL, WHICH IS WHY THE
-// "fourth host" WARNING ABOVE DID NOT CATCH IT. The workflow topbar's 📷 CAMERA
-// MANAGER (`$lib/ui/workflow/CameraSurface.svelte`) keeps one always-mounted
-// `<SvelteFlow nodeTypes={…}>` per mapped camera and therefore paints the
-// verbatim `CameraInputCard` on every shell — that is the surface the owner's
-// P0 screenshot calls the "top camera area". It is DELIBERATELY the card and
-// must stay one: a `hiddenCard` camera has no canvas node and no
-// `<HeadlessSourceHost>`, so that host is the module's ONLY mount and therefore
-// the sole owner of `getUserMedia`, the MediaStream and the permission machine.
-// Facing it means giving those cameras a headless owner FIRST. Recorded here
-// rather than fixed here, because swapping the component without moving the
-// ownership would stop every mapped camera dead.
+// "fourth host" WARNING ABOVE DID NOT CATCH IT — TWICE. The workflow topbar's
+// 📷 CAMERA MANAGER (`$lib/ui/workflow/CameraSurface.svelte`) keeps one
+// always-mounted `<SvelteFlow nodeTypes={…}>` per mapped camera; that is the
+// surface the owner's P0 screenshot calls the "top camera area", and for a
+// `hiddenCard` camera it is the module's ONLY surface.
+//
+// It emitted `type: node.type` into a `nodeTypes` map that no longer has a
+// per-module entry, so it resolved NOTHING and painted a blank host — a
+// streaming camera whose picture and source picker had both silently gone. It
+// now emits through `emittedTypeFor`, the same helper the lane uses, so a
+// future change to this switch cannot miss it a third time.
+//
+// ⚠ THE OLD WARNING HERE SAID THAT HOST WAS "the sole owner of `getUserMedia`,
+// the MediaStream and the permission machine" and must therefore keep its card.
+// That was true when it was written and is not true now: ownership moved to
+// `$lib/ui/media/node-camera-source-registry`, on GRAPH lifetime, before the
+// card fleet was deleted. A mapped camera streams with nothing mounted for it
+// at all — which is why the blank host was a RENDERING bug and not a dead
+// camera, and why fixing it needed no ownership move.
 
 // ⚠ `dockRailRendersFace()` AND `DockRailRenderInput` ARE GONE, AND THE REASON
 // IS THE BUG THIS FILE'S OWN HEADER DESCRIBES ABOVE.
