@@ -9,8 +9,9 @@
 //   1. ⚠ THE INERT-CONTROL TRAP. The factory PREFERRED a `node.data` mirror
 //      over the param for BOTH ranked controls, while every generic shell cell
 //      writes the param ALONE. On a fresh node the faceplate would have worked;
-//      on any node the card, a map import or a `?shell=legacy` collaborator had
-//      touched, the mirror was present and the GRID toggle and SURFACES control
+//      on any node a MIRROR WRITER had touched — a map import, a collaborator
+//      on an older build — the mirror was present and the GRID toggle and
+//      SURFACES control
 //      were DEAD — with the params declared, the cells rendered, and
 //      faces-parity's `readParam` oracle watching the param move. Every leg
 //      below that says "reads the param" is pinning that.

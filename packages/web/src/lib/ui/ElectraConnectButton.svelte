@@ -17,10 +17,9 @@
   // `$lib/ui/modules/electra-cell-actions.ts` when electraControl was promoted,
   // because a ranked ACTION cell is rendered by the SHARED shell and its
   // `onFire` is a plain function — so the gesture needed a home outside any
-  // component. This button is now a THIN RENDERER over that seam, which is what
-  // keeps the legacy card (still live under `?shell=legacy`) and the faceplate
-  // running ONE flash rather than two implementations that can disagree about a
-  // hardware pipeline.
+  // component. This button is now a THIN RENDERER over that seam, so the button
+  // and the ranked cell run ONE flash rather than two implementations that can
+  // disagree about a hardware pipeline.
   //
   // What did NOT change: the testid, the caption vocabulary, the disabled rule,
   // the pointer guard, and the crosstalk guard (`stop()` before every run) —

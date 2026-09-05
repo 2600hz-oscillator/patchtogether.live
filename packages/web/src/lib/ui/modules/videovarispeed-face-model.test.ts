@@ -285,9 +285,8 @@ describe('the two surfaces agree, and the body is not a second owner', () => {
       .not.toMatch(/nodeMedia\.adopt/);
   });
 
-  // ⚠ 'the CARD still adopts it — the `?shell=legacy` path is unchanged' STOOD
-  // HERE, and it was the OTHER half of the pair above: exactly one surface
-  // adopts. The card was that surface; the registry is the owner now, which
+  // ⚠ THE OTHER HALF OF THE PAIR ABOVE — "exactly one thing adopts" — used to
+  // be asserted against a second surface. The registry is the owner now, which
   // card-media-lifetime holds, and the body is asserted above not to become a
   // second one.
 

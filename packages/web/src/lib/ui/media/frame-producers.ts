@@ -479,19 +479,19 @@ export const RASTERIZE_FRAME_PRODUCER: FrameProducer = {
  * ⚠ THIS ONE IS NOT ABOUT A PICTURE. FOXY's audio path is a `wavecel` worklet
  * fed by a wavetable the factory REBUILDS on `bridgeTick()`: paint the three
  * rasters, compute the 3-axis field, build and post the table. Nothing else
- * calls it. `FoxyCard.svelte` called it as a side effect of asking for its
- * previews — the card's rAF read `rasterImageDataA/B/C` and the factory's
- * getter for those keys runs `bridgeTick()` before returning the image, under a
- * comment in the card that says exactly that ("Drive the bridge once, then read
- * the cached previews"). So the module's SOUND had a card's lifetime.
+ * calls it. A SURFACE called it as a side effect of asking for its previews —
+ * its rAF read `rasterImageDataA/B/C`, and the factory's getter for those keys
+ * runs `bridgeTick()` before returning the image, under a comment that said
+ * exactly that ("Drive the bridge once, then read the cached previews"). So the
+ * module's SOUND had a component's lifetime.
  *
- * MEASURED 2026-09-04, FOXY -> SCOPE.ch1, the same patch on both shells:
- * `?shell=legacy` maxPeak 1.0000; the default shell maxPeak 0.0000 over a 6 s
- * window with 201 readings. Not quiet — SILENT. And the module is not obscure
- * about it: a rack with a FOXY in it makes no sound at all on the shell every
- * player already gets, which means this is a live production defect and not a
- * consequence of the removal. It was found by the per-port emit sweep only
- * because that sweep stopped booting the legacy card.
+ * MEASURED 2026-09-04, FOXY -> SCOPE.ch1, one patch, the surface mounted and
+ * not: maxPeak 1.0000 with it, 0.0000 without it over a 6 s window with 201
+ * readings. Not quiet — SILENT. And the module is not obscure about it: with
+ * that surface gone a rack with a FOXY in it made no sound at all, which is why
+ * this is a live production defect rather than a consequence of the removal. It
+ * surfaced only when the per-port emit sweep stopped mounting the surface that
+ * happened to be pumping it.
  *
  * Driving it from here is #1587's rule applied to the case that names it best:
  * PRODUCE (rebuild the table the worklet plays) has to run while the NODE
@@ -505,13 +505,13 @@ export const FOXY_FRAME_PRODUCER: FrameProducer = {
   why:
     "the wavetable the module's `wavecel` worklet plays is rebuilt only by the factory's " +
     "`bridgeTick()`, and the only way to reach that from outside is to READ one of the raster " +
-    'keys — which `FoxyCard.svelte` did as a side effect of drawing its previews. With no card ' +
+    'keys — which a preview-drawing surface used to do as a side effect. With no such surface ' +
     'the tick never runs, the table is never posted and the module is SILENT: measured maxPeak ' +
-    '1.0000 on `?shell=legacy` against 0.0000 on the default shell, same patch.',
+    '1.0000 with that surface mounted against 0.0000 without it, same patch.',
   frame({ node, engine }) {
     // `tick`, not `rasterImageDataA`. The factory answers BOTH keys by running
     // `bridgeTick()` first, but `tick` returns `undefined` where the raster keys
-    // return an `ImageData` — and this seam has nothing to draw it on. The card
+    // return an `ImageData` — and this seam has nothing to draw it on. A surface
     // had to ask for a picture because it was going to blit one; the node does
     // not, so it asks for the tick by name and copies nothing.
     engine.read(node, 'tick');

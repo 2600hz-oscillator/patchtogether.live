@@ -224,10 +224,9 @@ describe('the noUserControl declaration, driven in BOTH directions', () => {
 
 describe('the two surfaces agree, and the body is not a second owner', () => {
   it('the BODY never adopts the node-owned <video>', () => {
-    // ⚠ NO GATE SEES THIS. The element has exactly one parent, and the legacy
-    // card adopts it under ?shell=legacy or as a dock rail occupant. A body that
-    // adopted it too would move it out from under that mount — silently, and
-    // only in the arrangement where both are alive.
+    // ⚠ NO GATE SEES THIS. The element has exactly one parent and a
+    // NODE-lifetime owner that keeps it alive with nothing mounted. A body that
+    // adopted it would move it out from under that owner — silently.
     expect(bodyCode).not.toMatch(/nodeMedia/);
     expect(bodyCode).not.toMatch(/\.adopt\(/);
   });

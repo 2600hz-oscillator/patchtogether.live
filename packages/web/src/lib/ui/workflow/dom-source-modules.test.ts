@@ -480,9 +480,8 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
   // first to exercise the headless host for real — the card stayed mounted
   // off-screen so getUserMedia, the stream and the permission machine survived
   // the lane swap. `$lib/ui/media/node-camera-source-registry` owns all three
-  // now, on GRAPH lifetime, so the module needs no card anywhere and gets no
-  // host. The legs below pin the NEW arrangement in both directions; the
-  // `?shell=legacy` leg is unchanged because the card still renders there.
+  // now, on GRAPH lifetime, so the module needs no surface anywhere and gets no
+  // host. The legs below pin the NEW arrangement in both directions.
   it('is NOT a DOM-source module any more — a node controller owns its source', () => {
     expect(DOM_SOURCE_LANE_TYPES.has('cameraInput')).toBe(false);
   });
@@ -507,13 +506,13 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
     expect(NODE_CAMERA_SOURCE_TYPES.has('cameraInput')).toBe(true);
   });
 
-  // ⚠ THE `?shell=legacy` LEG IS GONE. It asserted this module "still keeps its
-  // real card under the escape hatch, where nothing changed" — the reassurance
-  // that made the promotion above safe to land. The hatch is removed, the card
-  // with it, and `laneRenderKind` has no `'legacy'` arm to return. What the leg
-  // guarded is now guarded by there being one surface: the faceplate assertion
-  // above, plus `camerainput-shell-source.spec.ts`, which asserts the picture
-  // survives with no card mounted anywhere.
+  // ⚠ A THIRD LEG IS GONE WITH ITS SUBJECT. It asserted this module "still
+  // keeps its real pre-promotion surface, where nothing changed" — the
+  // reassurance that made the promotion above safe to land. There is no second
+  // renderer and no arm to return it. What the leg guarded is now guarded by
+  // there being one surface: the faceplate assertion above, plus
+  // `camerainput-shell-source.spec.ts`, which asserts the picture survives with
+  // no module component mounted anywhere.
 
   // ⚠ Two legs retired with the decision (S1.5): "a DOCKED camera is not
   // hosted either" and "EVERY headless-hosted module is now uniform" both read

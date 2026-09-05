@@ -23,10 +23,10 @@
 //      soundtrack over the module's own picture) and the dead-glyph clause
 //      would NOT catch it.
 //
-//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>` — one parent, and the
-//      legacy card adopts it under `?shell=legacy`. Its ONE element access is
-//      a NON-OWNING `nodeMedia.peek` for the playhead position, because
-//      `VideoSourceStatus` publishes no position or duration.
+//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>` — one parent, and a
+//      NODE-lifetime owner that keeps it alive with nothing mounted. Its ONE
+//      element access is a NON-OWNING `nodeMedia.peek` for the playhead
+//      position, because `VideoSourceStatus` publishes no position or duration.
 //
 //   4. THE RESIZE WRITES THE CARD'S OWN KEYS — `width`/`height`, never the
 //      graphicEq/milkdrop `resizedWidth`/`resizedHeight` pair, which would
@@ -223,9 +223,8 @@ describe('⚠ THE STOP-2 — the handle acquisition is ported VERBATIM, per elem
 
 describe('the two surfaces agree, and the body is not a second owner', () => {
   it('the BODY never adopts the node-owned <video>', () => {
-    // One parent; the legacy card adopts it under ?shell=legacy. A body that
-    // adopted it too would move it out from under that mount — silently, and
-    // only in the arrangement where both are alive.
+    // One parent, and a NODE-lifetime owner. A body that adopted it would move
+    // it out from under the owner that keeps it alive — silently.
     expect(bodyCode).not.toMatch(/\.adopt\(/);
     expect(bodyCode).not.toMatch(/nodeMedia\.ensure\(/);
   });

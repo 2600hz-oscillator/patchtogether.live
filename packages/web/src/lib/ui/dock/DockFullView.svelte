@@ -113,9 +113,9 @@
    *
    * Found by `tv-librarian-face.spec.ts` as an unexpected `pageerror`: a tuned
    * tvLibrarian could not have its faceplate re-opened after the pane was closed.
-   * ⚠ It is PRE-EXISTING and independent of that promotion — `DockFullView`
-   * mounts for a legacy occupant too, so a tuned tvLibrarian docked under
-   * `?shell=legacy` hits the same line on `main`.
+   * ⚠ It is PRE-EXISTING and independent of that promotion — this `$derived`
+   * runs for every dock occupant, whatever surface it paints, so any tuned
+   * tvLibrarian reached the same line.
    *
    * The fix is the TYPE CHECK, not a try/catch: the label means "mixer lane N",
    * and a value that is not a number is not that. Deny by default — an unknown

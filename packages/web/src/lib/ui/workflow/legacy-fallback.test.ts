@@ -7,12 +7,11 @@
 //   - the emitted node-type mapping, and that the carve-out set is ANCHORED to
 //     the live registry so a stale id is red rather than a silent no-op.
 //
-// ⚠ THREE OF THIS FILE'S FIVE SUBJECTS ARE GONE, AND THEY WENT TOGETHER.
-// `?shell=legacy` (the escape hatch), `'placeholder'` (the un-migrated lane
-// body) and `dockRailRendersFace` (the tray's three-term rule) each described a
-// TRANSITION between two renderers. There is one renderer. What survives is the
-// half that describes the product: docked vs lane, and the one carve-out for a
-// type with no lane body at all.
+// ⚠ THREE OF THIS FILE'S FIVE SUBJECTS ARE GONE, AND THEY WENT TOGETHER. Each
+// described a TRANSITION between two lane renderers — which one a query param
+// selected, what an un-migrated module painted, and the tray's three-term rule.
+// There is one renderer. What survives is the half that describes the product:
+// docked vs lane, and the one carve-out for a type with no lane body at all.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -63,13 +62,12 @@ describe('laneRenderKind — the pure lane decision', () => {
   });
 
   // ⚠ THE THREE DELETED LEGS, NAMED so their absence is a decision rather than
-  // an omission: "?shell=legacy → legacy for every non-docked node", "DEFAULT +
-  // un-migrated + swappable → placeholder", and "a non-card / snowflake type
-  // stays legacy even by default". The first two describe renderers that no
-  // longer exist. The third is the SAME claim as the native leg above — it said
-  // "no card ⇒ fall back to the card path", which stopped meaning anything when
-  // there was no card path to fall back to; the carve-out it was really about is
-  // asserted directly now.
+  // an omission: a query param steering every non-docked node to the second
+  // renderer, an un-migrated module painting a blank plate, and a type with no
+  // lane body of its own falling back to that second renderer. The first two
+  // describe renderers that no longer exist. The third is the SAME claim as the
+  // native leg above, and its fallback had nothing left to fall back to; the
+  // carve-out it was really about is asserted directly now.
 });
 
 describe('emittedTypeFor — kind → xyflow node type', () => {
@@ -296,11 +294,10 @@ describe('NON_SHELL_LANE_TYPES is ANCHORED to the registry (#1579)', () => {
   });
 });
 
-// ⚠ THE `dockRailRendersFace` DESCRIBE IS GONE — five legs, one rule, no
-// subject. It asserted the tray's truth table (`shellFaces && pinned &&
-// migrated`), that `?shell=legacy` kept the tray on the legacy card, that a
-// USER-DOCKED promoted module kept its card because the scope was pinned-only,
-// and an anchor onto the live drawer roster. The `pinned` clause was the live
-// card-mounting path S4 had to close, and closing it removed the rule: the rail
-// has one surface to render. `WORKFLOW_PINNED_MODULES` is no longer imported
-// here because nothing in this file has a decision to anchor onto it.
+// ⚠ THE DOCK-RAIL RULE'S DESCRIBE IS GONE — five legs, one rule, no subject. It
+// asserted a three-term truth table over the tray: which renderer the rail
+// mounted, and the pinned-only scope that left a USER-DOCKED promoted module
+// painting the pre-promotion instrument. That `pinned` clause was the live
+// second-renderer path S4 had to close, and closing it removed the rule: the
+// rail has one surface to render. `WORKFLOW_PINNED_MODULES` is no longer
+// imported here because nothing in this file has a decision to anchor onto it.

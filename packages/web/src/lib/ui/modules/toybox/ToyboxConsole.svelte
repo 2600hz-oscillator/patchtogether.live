@@ -1,12 +1,11 @@
 <script lang="ts">
   // ToyboxConsole — THE TOYBOX CONSOLE, and the ONLY one.
   //
-  // ⚠ ONE COMPONENT TREE, TWO MOUNTS. This file is the whole of TOYBOX's
-  // operable surface: the screen, the layer band, the combine-graph editor, the
-  // CV rail and the preset store. `../ToyboxCard.svelte` (legacy, reachable at
-  // `?shell=legacy`) and `./ToyboxConsoleBody.svelte` (the v2 faceplate's
-  // `fullViewBody`) are both THIN HOSTS around it — neither owns a control, a
-  // mutator call, or a frame of the preview pull.
+  // ⚠ ONE COMPONENT TREE, HOSTED. This file is the whole of TOYBOX's operable
+  // surface: the screen, the layer band, the combine-graph editor, the CV rail
+  // and the preset store. `./ToyboxConsoleBody.svelte` (the faceplate's
+  // `fullViewBody`) is a THIN HOST around it — it owns no control, no mutator
+  // call, and no frame of the preview pull.
   //
   // That is structural rather than tidy. TOYBOX is the deepest module in the
   // rack — a layer editor over six kinds, a 17-op EDITABLE node graph, six
@@ -20,10 +19,9 @@
   // `layout` is the ONLY difference between the two mounts, and it moves
   // ARRANGEMENT, never capability:
   //
-  //   * 'card' — the legacy three-column body (preview + layer editor | combine
-  //     graph | CV rail) with both section collapses. Byte-identical markup to
-  //     what shipped before the extraction, so the legacy VRT baselines and the
-  //     20 `?shell=legacy` toybox specs keep their subject unchanged.
+  //   * 'card' — the three-column body (preview + layer editor | combine graph
+  //     | CV rail) with both section collapses, kept byte-identical through the
+  //     extraction. ⚠ NO HOST MOUNTS IT ANY MORE; see the layout union.
   //   * 'face' — the owner-ruled dock layout (2026-08-28): *"i'd want to
   //     generally keep what we have while migrating to our new look&feel. and
   //     putting cv-mod, combine graph, preset controls on 3 tabs, all below a
@@ -556,9 +554,8 @@
    * silently make twenty controls un-learnable on the surface that replaced the
    * card. The override changes the NAME and keeps the binding.
    *
-   * The LEGACY card keeps `control-*` verbatim (returns `undefined` → Knob's
-   * own default), because its ids are what the shipped `?shell=legacy` specs
-   * and every saved MIDI binding already address.
+   * The other layout returns `undefined` → Knob's own `control-*` default,
+   * which is what every saved MIDI binding already addresses.
    */
   function knobTestid(paramId: string): string | undefined {
     return layout === 'face' ? `toybox-dial-${paramId}` : undefined;
@@ -2571,12 +2568,11 @@
 
 {#snippet screenZone()}
   <div class="screen-wrap" class:face={layout === 'face'}>
-    <!-- ⚠ THE TESTID IS HOST-DEPENDENT ON PURPOSE. The legacy card keeps
-         `toybox-canvas`, which twenty shipped `?shell=legacy` specs and the
-         card VRT scenes address; the faceplate takes the fleet-conventional
-         `<prefix>-face-canvas`, which is what face-screen-render-suite looks
-         for when it proves the SCREEN switch REMOVES the picture and reclaims
-         the space. One element either way — never both. -->
+    <!-- ⚠ THE TESTID IS HOST-DEPENDENT ON PURPOSE. The faceplate takes the
+         fleet-conventional `<prefix>-face-canvas`, which is what
+         face-screen-render-suite looks for when it proves the SCREEN switch
+         REMOVES the picture and reclaims the space; the other layout keeps the
+         original `toybox-canvas`. One element either way — never both. -->
     <canvas
       bind:this={canvasEl}
       width={CANVAS_W}

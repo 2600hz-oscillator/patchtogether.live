@@ -14,12 +14,12 @@
   //
   // ⚠ THE PICTURE IS BLITTED FROM THE ENGINE AND THE `<video>` IS NEVER ADOPTED
   // HERE — the `TvLibrarianTunerBody` constraint, for the same two reasons. A
-  // DOM node has exactly one parent, and the node's element may be adopted by
-  // the LEGACY card at the same moment (`?shell=legacy`); adopting it here
-  // would move it out from under that mount. And `blitOutputForPreview` reads
-  // the module's OWN output texture, which is what `gain` scales and what
-  // downstream modules actually receive — the card's raw-element preview
-  // structurally cannot show the one ranked control on this face. The engine
+  // DOM node has exactly one parent, and this one belongs to a NODE-lifetime
+  // owner that keeps it alive with nothing mounted; adopting it here would move
+  // it out from under that owner. And `blitOutputForPreview` reads the module's
+  // OWN output texture, which is what `gain` scales and what downstream modules
+  // actually receive — a raw-element preview structurally cannot show the one
+  // ranked control on this face. The engine
   // frame is the anamorphic 16:9-into-4:3 upload every downstream consumer
   // already gets (owner decision 2026-08-31 §3: blit it AS-IS; the upload's
   // aspect is a separate platform defect, not letterboxed around here).

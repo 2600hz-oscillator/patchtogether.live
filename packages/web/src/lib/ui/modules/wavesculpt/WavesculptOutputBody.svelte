@@ -17,11 +17,11 @@
   // asserts exactly one, fifteen times, as does the VRT surface roster
   // (`expectCount: 1`) — and would run a second GL context for one node.
   //
-  // ⚠ THE CLAIM OUTRANKS THE CARD'S (`VIZ_CLAIM_PRIORITY.dock`). Under
-  // `?shell=legacy` the lane card and this faceplate can both be mounted, and
-  // the surface the player deliberately opened is the one that should hold the
-  // picture; closing this pane releases the claim and the card gets the canvas
-  // back with no remount.
+  // ⚠ THE CLAIM IS RANKED, NOT LAST-WINS (`VIZ_CLAIM_PRIORITY.dock`). More than
+  // one view can be looking at one wavesculpt, and the surface the player
+  // deliberately opened is the one that should hold the picture; closing this
+  // pane releases the claim and the next standing one gets the canvas back with
+  // no remount.
   //
   // ⚠ THE CLAIM IS NEVER DROPPED BY THE SCREEN SWITCH, AND THIS IS THE ONE THING
   // NOT TO "TIDY UP". Turning SCREEN off hides the picture with CSS; it does NOT

@@ -218,8 +218,8 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *                says so outright. MEASURED on `CUBE.video_out → VIDEO OUT`,
  *                same probe and same port in every phase: never-mounted
  *                nonBlack 0/3072 px maxLuma 0; dock full-view open 3072/3072
- *                maxLuma 212; collapsed again 0/3072; `?shell=legacy` (real card
- *                in the lane) 3072/3072.
+ *                maxLuma 212; collapsed again 0/3072; a renderer mounted in the
+ *                lane 3072/3072.
  *
  *                ⚠ cube is MIGRATED, so its lane kind is 'shell', not
  *                'placeholder' — and that is not a reprieve. `curatedFace` drops

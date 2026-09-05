@@ -87,11 +87,11 @@ describe('clipplayer face — the promotion', () => {
     ).toBe('shell');
   });
 
-    // ⚠ THE `?shell=legacy` LEG THAT STOOD HERE IS GONE WITH THE HATCH. It
-    // asserted the escape hatch still rendered the verbatim card, "which is what
-    // keeps the existing specs meaningful rather than merely passing". Those
-    // specs were re-pointed at the default shell during the e2e inversion, and
-    // `laneRenderKind` has no `'legacy'` arm to return: the kind is now
+    // ⚠ A SECOND LEG STOOD HERE AND ITS SUBJECT IS GONE. It asserted that a
+    // second renderer still painted the verbatim pre-promotion instrument,
+    // "which is what keeps the existing specs meaningful rather than merely
+    // passing". Those specs were re-pointed at the shipping surface during the
+    // e2e inversion, and there is no second arm to return: the kind is now
     // `'shell' | 'native' | 'stub'`. The promotion assertion above is the whole
     // claim, and it no longer needs a companion to be non-vacuous — the
     // carve-out leg is what keeps it honest.

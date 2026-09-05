@@ -26,8 +26,9 @@
 //      clause would NOT catch it.
 //
 //   4. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>` — one parent, and the
-//      legacy card adopts it under `?shell=legacy`. It blits the module's own
-//      output instead, which also shows what `gain` does.
+//      element belongs to a NODE-lifetime owner that keeps it alive with
+//      nothing mounted. It blits the module's own output instead, which also
+//      shows what `gain` does.
 //
 //   5. A DEAD CONTROL IS DELETED AND ITS TYPE IS DELIBERATELY KEPT. The
 //      "instance (optional)" input wrote `node.data.instanceHost` and nothing
@@ -250,8 +251,8 @@ describe('⚠ THE RATE LIMITER MOVED WITH THE BOX, refusal message and all', () 
 
 describe('⚠ THE BODY BLITS AND NEVER ADOPTS THE NODE-OWNED <video>', () => {
   it('never calls nodeMedia.adopt — one element, one parent', () => {
-    // The legacy card adopts it under `?shell=legacy` or in a dock rail mount;
-    // a second adopter would move it out from under that mount.
+    // The element has ONE parent and a NODE-lifetime owner; an adopter here
+    // would move it out from under the owner that keeps it alive.
     expect(bodyCode).not.toMatch(/nodeMedia/);
     expect(bodyCode).not.toMatch(/\badopt\(/);
   });

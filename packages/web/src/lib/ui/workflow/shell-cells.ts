@@ -3087,12 +3087,12 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // ⚠ THE NOTE FIELD IS AN `entry` CELL, NOT A 128-OPTION ROSTER, and the
   // choice is forced from three directions rather than preferred:
   //
-  //   1. `face-migration-inventory.test.ts`'s TYPED-ENTRY leg asks whether a
-  //      faced module whose CARD types carries typed entry on its FACE, and
-  //      answers it with `shellCellKindsFor(type)` — `'entry'` or `'panel'`.
-  //      `MidiLaneCard.svelte` mounts `<input type="number">`, and the card
-  //      SURVIVES promotion under `?shell=legacy`, so a roster here leaves that
-  //      leg RED with no way to green it except editing the legacy card.
+  //   1. TYPED ENTRY WAS THE PRE-PROMOTION AFFORDANCE. The surface this face
+  //      replaced mounted `<input type="number">`, and a parity leg compared the
+  //      two by asking `shellCellKindsFor(type)` for `'entry'` or `'panel'`.
+  //      The comparison has no second side any more, so
+  //      `midi-lane-face-model.test.ts` pins the cell KIND directly instead —
+  //      but the affordance is the same one, and swapping it is still a loss.
   //   2. WIDTH. Measured on the dock: `selector` 168 px, `entry` 72 px. Compact
   //      is the default and width must be earned; a roster earns none here.
   //   3. RANGE PARITY. A roster labelled by `noteNameForMidi` would carry 31

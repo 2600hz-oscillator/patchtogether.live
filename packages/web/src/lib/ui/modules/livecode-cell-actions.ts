@@ -18,8 +18,8 @@
 // would be two answers to "what does Run do". It is to move the evaluation HERE,
 // where a plain `.ts` module can be called by the ranked `action` cell (which
 // reaches the LANE TILE, so Run is now one click from the rack rather than
-// behind an expand), by the faceplate body, and by the legacy card under
-// `?shell=legacy` — three callers, one implementation.
+// behind an expand) and by the faceplate body — two callers, one
+// implementation, and the next surface is a call away rather than a copy.
 //
 // ── THE EDITOR REGISTRY, AND WHY THE ACTION CANNOT JUST READ `node.data` ────
 //

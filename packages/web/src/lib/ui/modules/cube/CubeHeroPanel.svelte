@@ -137,10 +137,10 @@
 
   // ---- The NODE's picture, claimed into this hero ----
   //
-  // ⚠ CLAIM, NOT CREATE — and RANKED. Under `?shell=legacy` the lane card and
-  // this faceplate can both be mounted; the surface the player deliberately
-  // opened is the one that should hold the picture, so `dock` outranks `card`,
-  // and closing this pane hands the element straight back to the card. See
+  // ⚠ CLAIM, NOT CREATE — and RANKED. The node owns ONE canvas; a view that
+  // wants to show it claims it, and the surface the player deliberately opened
+  // outranks one that merely happens to be on screen. Releasing this claim
+  // hands the element back to the next standing one with no remount. See
   // `$lib/ui/media/node-viz-surface-registry`.
   let vizHost = $state<HTMLDivElement | null>(null);
   $effect(() => {

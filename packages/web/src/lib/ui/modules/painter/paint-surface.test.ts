@@ -3,12 +3,13 @@
 // THE PERMANENT NEGATIVE CONTROLS for PAINTER's shared interaction seam.
 //
 // ⚠ WHAT THIS FILE IS ACTUALLY PROTECTING, stated first because it is not
-// obvious from the assertions: painter now has TWO drawing surfaces — the
-// promoted faceplate's `fullViewBody` and, under `?shell=legacy`, the card —
-// and BOTH write into ONE Y.Doc-synced op log. Any `PaintOp` either surface
-// emits is STRUCTURALLY VALID, so a divergence between them does not throw,
-// does not fail a type check and does not redden a registry gate. It syncs two
-// different pictures to two peers and looks like a rendering bug months later.
+// obvious from the assertions: every painter drawing surface writes into ONE
+// Y.Doc-synced op log, and any `PaintOp` a surface emits is STRUCTURALLY VALID.
+// So a divergence between two of them does not throw, does not fail a type
+// check and does not redden a registry gate. It syncs two different pictures to
+// two peers and looks like a rendering bug months later — which is why the
+// gesture-to-op arithmetic is a shared module and this file is its negative
+// control, whether one surface calls it today or three do tomorrow.
 //
 // The seam is what makes that divergence inexpressible: both surfaces call
 // these functions and neither owns a copy of the arithmetic. This file pins the

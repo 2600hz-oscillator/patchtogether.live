@@ -33,7 +33,7 @@
 //     VRT surface roster (`expectCount: 1`). It also runs two GL contexts for
 //     one node.
 //   * ONE MOUNT, NO SHARING — i.e. the node host is the only place the picture
-//     exists — loses the legacy card's screen and the dock body's picture.
+//     exists — means no view can ever show it.
 //
 // So: ONE surface per node, mounted off-screen by the node-keyed host, and any
 // view that wants to SHOW it CLAIMS the canvas and the registry moves the
@@ -45,19 +45,24 @@
 //
 // `nodeMedia.adopt` is a bare transfer: the last host to adopt wins. That is
 // right for a `<video>` whose losing host shows an empty box nobody is looking
-// at, and it is NOT right here, because two views can be looking at one
-// wavesculpt at the same time: under `?shell=legacy` the lane card is mounted
-// AND `DockFullView` paints the migrated faceplate (`laneMigrated` is not gated
-// on the shell flag), so both the card's `.screen-wrap` and the dock body's
-// `.viz` are live and visible.
+// at, and it is NOT right here, because more than one view can be looking at
+// one wavesculpt at the same time — a split dock, or a lane viewer beside an
+// opened pane.
 //
 // Last-wins would decide that by mount ORDER. A priority decides it by which
-// surface the player is actually looking at — the dock full view is a
-// deliberate, focused gesture, so it outranks the lane card — and, because the
-// registry keeps every standing claim rather than overwriting one, CLOSING the
-// dock hands the canvas straight back to the card with no remount and no
-// re-init. A bare transfer could not do that: the card's claim would already be
-// gone.
+// surface the player is actually looking at — an opened pane is a deliberate,
+// focused gesture, so it outranks a viewer that merely happens to be on screen
+// — and, because the registry keeps every standing claim rather than
+// overwriting one, RELEASING the top claim hands the canvas straight back to
+// the next one with no remount and no re-init. A bare transfer could not do
+// that: the loser's claim would already be gone.
+//
+// ⚠ ONE TIER HAS NO PRODUCTION CLAIMANT TODAY. `CubeHeroPanel` and
+// `WavesculptOutputBody` both claim at the pane tier; nothing in the product
+// claims below it, so the ranking is exercised by this file's unit test rather
+// than by two live views. The tier stays because the mechanism it protects —
+// standing claims and hand-back on release — is what the no-remount guarantee
+// rests on, and a second viewer is a lane tile away.
 //
 // PURE CORE + INJECTED OPS, the split `node-frame-producer-registry` and
 // `node-media-registry` both use, so the whole decision table unit-tests in the

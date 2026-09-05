@@ -2944,14 +2944,12 @@
      worth doing, but not inside a change whose whole claim is that the
      surviving surface is untouched.
 
-     (Historically the two classes existed so two surfaces could share
-     one stylesheet and cannot drift. ⚠ AND SO THE CARD'S PIXELS CANNOT MOVE:
-     `composite-doom-evt-{kill,door}-{idle,driven}.png` capture the legacy card
-     at `?shell=legacy`, so a selector rename here would have moved four
-     committed baselines for no behavioural reason. These are the only additions,
-     and each is guarded by `.face-variant` so it is unreachable from the card.
-     The card's own `.mod-card` chrome (its plate, border and fixed 360 px width)
-     is not applied on the face — the faceplate IS the plate. */
+     (Historically the two classes existed so two surfaces could share one
+     stylesheet and could not drift, and so that a selector rename here would
+     not move the four committed `composite-doom-evt-{kill,door}-{idle,driven}`
+     baselines for no behavioural reason. Every addition is guarded by
+     `.face-variant`, and the plate/border/fixed-360px chrome the base rules
+     carry is not applied on the face — the faceplate IS the plate.) */
   .doom-card.face-variant {
     width: 100%;
     min-height: 0;

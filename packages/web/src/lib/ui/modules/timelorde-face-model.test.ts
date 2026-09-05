@@ -18,14 +18,14 @@
 // the assertions below pin that it is still DERIVED from the same pure function
 // the engine handle publishes, rather than re-typed on the face.
 //
-// ⚠ AND ONE COVERAGE LAPSE IS NAMED RATHER THAN LEFT TO ROT.
-// `e2e/tests/timelorde-transport-state.spec.ts` spawns `/rack?shell=legacy`, so
-// it renders the LEGACY CARD and is UNAFFECTED by this promotion: it will stay
-// green forever while asserting a strip on a surface the default shell no longer
-// reaches. That is the milder form of the precondition-is-the-defect class — not
-// a gate that certifies the bug, but a gate whose green is evidence about the
-// wrong surface. The legacy spec is KEPT (it still covers a reachable surface)
-// and this file is the face-side leg it cannot be.
+// ⚠ AND ONE COVERAGE LAPSE IS NAMED RATHER THAN LEFT TO ROT. When this file was
+// written, `e2e/tests/timelorde-transport-state.spec.ts` asserted the transport
+// strip on a surface the shipping shell did not reach, so it would have stayed
+// green forever whatever the promotion did to the face. That is the milder form
+// of the precondition-is-the-defect class — not a gate that certifies the bug,
+// but a gate whose green is evidence about the wrong surface. This file is the
+// face-side leg it could not be; the spec has since been re-pointed at the
+// shipping surface.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';

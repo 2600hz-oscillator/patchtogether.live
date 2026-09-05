@@ -3,13 +3,10 @@
   //
   // THE SEQTRIS LANE TILE — the live well, read-only, plus the bind lamp.
   //
-  // ⚠ WHAT PROMOTION REPLACES HERE IS A BLANK PLACEHOLDER, NOT A CARD. seqtris
-  // is not in NON_SHELL_LANE_TYPES, not a CARD_PRODUCER and not in
-  // HEADLESS_MOUNT_LANE_TYPES, so under the shipping default shell the card is
-  // NOT MOUNTED AT ALL today — the lane paints `ModuleShellPlaceholder` while
-  // the game runs, the pads stay lit and PIECE / LINE / SPAWN keep firing into
-  // whatever is patched. Every seqtris e2e reaches the card only through the
-  // `rack` fixture, which is `?shell=legacy` by construction.
+  // ⚠ WHAT THIS TILE REPLACED WAS A BLANK PLATE. Before it, the seqtris lane
+  // painted nothing at all while the game ran, the pads stayed lit and
+  // PIECE / LINE / SPAWN kept firing into whatever was patched — and no seqtris
+  // e2e exercised the lane, so nothing in the suite had ever seen it.
   //
   // ⚠ READ-ONLY, AND THE REASON IS SPACE — NOT THE skifree REASON. skifree's
   // tile is inert because two mounted STEERING surfaces would fight over one

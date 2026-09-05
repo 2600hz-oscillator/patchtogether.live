@@ -47,11 +47,9 @@
   //       `selected` is SvelteFlow's node-selection prop. A `fullViewBody` slot
   //       receives `{ nodeId }` and NOTHING ELSE
   //       (`ShellExtensionFullViewBodyProps`), so the branch is unreproducible
-  //       here — and it is not a loss, because it never fired on the surface
-  //       this body replaces either: both dock hosts mount the card as
-  //       `<CardComponent id={node.id} data={{ node }} />` with no `selected`
-  //       prop (`DockFullView.svelte`, `DockCardHost.svelte`). The branch exists
-  //       for the LANE card, which is `?shell=legacy` only. Focus-within is the
+  //       here — and it is not a loss, because SvelteFlow's `selected` prop
+  //       only ever reached a LANE mount: no dock host has ever passed it, so
+  //       the branch never fired on a docked surface at all. Focus-within is the
   //       whole predicate here, and the frame is focusable and focuses on click.
   //
   //   (b) CLAIMING `Tab` SUPPRESSES THE FACEPLATE FLIP GESTURE, and that is a

@@ -156,10 +156,10 @@ describe('NODE_FRAME_PRODUCER_TYPES — who owns a module per-frame push', () =>
     // ⚠ foxy joined 2026-09-04 and it is the first member whose missing owner
     // was AUDIBLE — or rather, was not. Its `wavecel` worklet plays a wavetable
     // that only the factory's `bridgeTick()` rebuilds, and the sole caller of
-    // that tick was `FoxyCard.svelte` reading its raster previews. Measured on
-    // one patch, both shells: `?shell=legacy` maxPeak 1.0000, default shell
-    // 0.0000 over a 6 s window. Every earlier member went dark or stale without
-    // its owner; this one went SILENT, on the shell players already have.
+    // that tick was a preview-drawing surface reading its rasters. Measured on
+    // one patch, with that surface mounted and without it: maxPeak 1.0000
+    // against 0.0000 over a 6 s window. Every earlier member went dark or stale
+    // without its owner; this one went SILENT.
     expect([...NODE_FRAME_PRODUCER_TYPES].sort()).toEqual([
       'foxy',
       'rasterize',

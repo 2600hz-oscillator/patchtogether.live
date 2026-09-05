@@ -325,13 +325,11 @@ describe('the dock body — the affordances promotion would otherwise delete', (
     expect(bodyCode).toMatch(/picturebox-face-slot-clear-\{i\}/);
   });
 
-  // ⚠ 'does NOT re-emit the card testids — the two surfaces coexist under
-  // ?shell=legacy' STOOD HERE. Its subject was a STRICT-MODE COLLISION: every
-  // picturebox-driving e2e booted the legacy lane, so a body re-emitting
-  // `picturebox-file-input` / `picturebox-card` would put two elements with one
-  // testid on the same page the moment a spec opened the dock. One surface
-  // cannot collide with itself, and the specs that drove those testids are the
-  // e2e inversion's business, not this file's.
+  // ⚠ A TESTID-COLLISION LEG STOOD HERE AND HAS NO SUBJECT LEFT. It refused a
+  // body that re-emitted `picturebox-file-input` / `picturebox-card`, because
+  // while a second surface existed those two elements could be on one page at
+  // once and every selector would resolve twice. One surface cannot collide
+  // with itself.
 
   it('renames the panel testid rather than carrying a name that stopped being true', () => {
     // `picturebox-multi-panel` named a panel whose defining property was that it

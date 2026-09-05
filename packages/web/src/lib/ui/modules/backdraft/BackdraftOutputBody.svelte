@@ -77,9 +77,10 @@
     fullscreen: fs,
   });
 
-  // Full Frame — the SAME `node.data.fullFrame` the legacy card persists, so
-  // the state is shared with `?shell=legacy` and syncs over Y.Doc rather than
-  // becoming a second competing truth. Here it means "fill the dock body".
+  // Full Frame — the SAME `node.data.fullFrame` a rack saved before this
+  // promotion already carries, so the switch keeps its state across the change
+  // and syncs over Y.Doc rather than becoming component-local, a second
+  // competing truth. Here it means "fill the dock body".
   let fullFrame = $derived<boolean>(
     (patch.nodes[nodeId]?.data?.fullFrame as boolean | undefined) ?? false,
   );

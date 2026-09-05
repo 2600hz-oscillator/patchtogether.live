@@ -85,9 +85,9 @@ describe('controlSurface face — the promotion', () => {
   // its own prune `$effect` and lock button. The owner filed exactly this as a
   // P0 on 2026-09-03: the rail painted a DIFFERENT INSTRUMENT from the lane for
   // the same node. Main fixed it by dropping the `pinned` term (#2358); here
-  // all three terms lost their subject at once — no `?shell=legacy` hatch, no
-  // card to fall back to, every faced module in STRICT_FACES — so the rule is
-  // deleted outright and the rail renders the faceplate unconditionally. The
+  // all three terms lost their subject at once — no second renderer, nothing to
+  // fall back to, every faced module in STRICT_FACES — so the rule is deleted
+  // outright and the rail renders the faceplate unconditionally. The
   // prune side effect lives on the `tileBody` (node-on-canvas lifetime) and the
   // LOCK is a ranked cell, so both survive; what the leg protected is now
   // protected by there being ONE surface.

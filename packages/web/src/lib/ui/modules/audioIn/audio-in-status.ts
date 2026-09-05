@@ -5,12 +5,11 @@
 //
 // ── WHY IT IS A MODULE AND NOT THREE TERNARIES IN A COMPONENT ──────────────
 //
-// Three surfaces render this status: the lane tile's `tileBody`, the dock full
-// view's `fullViewBody` and the legacy card (still the lane surface under
-// `?shell=legacy`). The card used to hold the whole state machine's PRESENTATION
-// inline — a `STATE_LABEL` record and four ternaries — so a face that
-// re-expressed it would have been a second copy of an eight-state machine, and
-// the two would agree only for as long as nobody edited one.
+// Two surfaces render this status: the lane tile's `tileBody` and the dock full
+// view's `fullViewBody`. It used to be held INLINE by whichever component
+// painted it — a `STATE_LABEL` record and four ternaries — so the second
+// surface would have been a second copy of an eight-state machine, and the two
+// would agree only for as long as nobody edited one.
 //
 // Being pure also puts the interesting half in front of `vitest`:
 // `audioin-face-model.test.ts` asserts every one of the eight states maps to a
