@@ -31,6 +31,7 @@ import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnEdge } from './_helpers';
 import { collectPageErrors } from './_page-errors';
+import { AUDIO_READY_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -581,7 +582,21 @@ for (const port of GATE_PORTS) {
         return peak > 0.4;
       },
       { id: 'g', p: port, sid: scopeId },
-      { timeout: 6000, polling: 50 },
+      // ⚠ THE CAP WAS A FLAT 6000 ms AND `evt_hit` FAILED ON IT TWICE ON CI
+      // (2026-09-05), while the other four gate ports passed and all five pass
+      // locally. This poll re-fires `forcePulse` every 50 ms and reads the
+      // scope's analyser ring in the SAME tick, so it only succeeds once the
+      // AUDIO GRAPH has rendered a pulse into the ring — and an e2e shard
+      // co-schedules several AudioContexts on CI's 2 cores, which is exactly
+      // when the render quantum falls behind. `AUDIO_READY_MS` is the shared
+      // bound for that lottery and its own note names this shape: "the CAP of
+      // an observable-anchored wait (`expect.poll` on a scope read)".
+      //
+      // A CAP, NOT A CLAIM: the assertion is still peak > 0.4 on ch1, and the
+      // poll exits on the first pulse that lands. `evt_hit` is FIRST in
+      // GATE_PORTS, so it runs while the shard is coldest — which is why one
+      // port of five kept drawing the short straw.
+      { timeout: AUDIO_READY_MS, polling: 50 },
     ).catch(() => null);
 
     expect(ok, `${port} should pulse SCOPE.ch1 above the floor via the gate bridge`).toBeTruthy();
