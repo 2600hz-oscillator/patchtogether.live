@@ -80,12 +80,34 @@ test.describe('PICTUREBOX spawn limits', () => {
     // rAF loops keep running through the pause. Measured: this test still blew
     // its 60 s budget on run 33992949683 with the hook installed.
     //
-    // THE HONEST FIX IS A SEAM CHANGE, NOT A TEST CHANGE: the render-smoke pause
-    // covers the engine but not the tile thumbs, so there is no way for a test to
-    // quiet a canvas full of them. Teaching `VideoTileThumb` to honour
-    // `__videoEnginePause` is one condition in shipped component code — small,
-    // but it is PRODUCT, and it is an owner call rather than something to slip in
-    // at the end of a removal branch. Recorded here as the named item.
+    // ⚠ AND "TEACH THE THUMB TO HONOUR `__videoEnginePause`" IS NOT ONE
+    // CONDITION — IT IS A DESIGN, WHICH IS WHY IT IS NOT DONE HERE. Checked in
+    // the source before attempting it, and both halves refuse a simple guard:
+    //
+    //   1. THE BLIT IS THE WATCH MARK. `engine.ts` says so where the preview
+    //      seam is defined: "because the blit IS the watch mark, **no
+    //      `markWatched`**". `VideoTileThumb`'s loop calls
+    //      `blitOutputToDrawingBuffer(nodeId)` every tick, and that call is the
+    //      ONLY thing keeping the node in the pull set. A guard that skips it
+    //      under the flag silently drops the node, `computePullActiveSet`
+    //      stops advancing it, and it never comes back — the
+    //      collapse-kills-the-producer class (#1721 / #1728) reintroduced
+    //      deliberately.
+    //
+    //   2. THE REQUIRED VRT LANE DEPENDS ON THE THUMB PAINTING *WHILE PAUSED*.
+    //      `e2e/vrt/_shell-faces.ts` pauses the rAF loop with
+    //      `installRenderSmokeHooks`, steps an exact frame count, and then
+    //      WAITS FOR `data-thumb-painted` before capturing. `video-controls`
+    //      and `video-orientation` do the same. A thumb that goes quiet under
+    //      the flag makes those captures stale or dark — in the one lane that
+    //      gates merges, which has only just gone green.
+    //
+    // So the honest version needs what the ENGINE has and the thumb does not: a
+    // way for a test to DRIVE it (the engine idles its auto-advance but a direct
+    // `step()` still renders). That is a seam with a drive hook, a positive
+    // control that the thumb still animates unpaused, and a VRT re-capture to
+    // prove zero pixel movement — real design, not a condition. Recorded as the
+    // named owner item with the two citations above.
     //
     // The 60 s budget is deliberately NOT raised: the cost is real and a bigger
     // ceiling would only hide it.
