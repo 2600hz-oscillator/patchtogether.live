@@ -1128,6 +1128,34 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
   // Let the lane record for 2+ full loops (~1 s each) with ONLY the CV cable
   // wiggling the module. No touch fires; readNorm reads the modulation-free
   // store value → NO track may appear.
+  //
+  // ⚠ I TRIED TO MAKE THIS LEG NON-VACUOUS AND THE ATTEMPT WAS WRONG — WRITTEN
+  // DOWN SO THE NEXT PERSON DOES NOT REPEAT IT. `toEqual([])` below is the whole
+  // claim ("CV never records") and it passes FOR FREE when nothing happens at
+  // all: a dead recorder, a stopped lane, an unbound cable and a working
+  // exclusion are one reading. The obvious repair is to prove the CV was
+  // actually driving — so I sampled `va.base` across this window and required a
+  // spread.
+  //
+  // IT READ EXACTLY 0.0000 OVER 24 SAMPLES, THREE RUNS OUT OF THREE, LOCALLY —
+  // and that is CORRECT BEHAVIOUR, not a defect. CV modulation is transient
+  // render state that must never write the store (the
+  // cv-modulation-live-store-write discipline), so the param this reads is
+  // modulation-FREE by design; this test's own comment two lines up says so
+  // ("readNorm reads the modulation-free store value"). A VCA's CV lands on an
+  // AudioParam in the audio graph, and there is no seam that reads the summed
+  // value back.
+  //
+  // So the emptiness below cannot be qualified from this side, and the honest
+  // record is that it is a WEAK assertion rather than a pretend-strong one. The
+  // MIDI half immediately after is the leg with teeth, and it now carries the
+  // positive control that this one cannot have.
+  //
+  // ⚠ AND THE WINDOW ITSELF IS LOAD-BEARING — I deleted it with that failed
+  // attempt and the WAITS RATCHET caught it, which is the second time on this
+  // branch that ledger has stopped a silent regression. Without the wait the
+  // lane has not recorded anything yet, so `toEqual([])` goes from weak to
+  // meaningless: it would pass before the recorder had a chance to fail.
   await page.waitForTimeout(3500);
   expect(
     await readAutoTrackKeys(page, IDX_L0S0),
@@ -1136,7 +1164,26 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
 
   // Now twist the SAME knob by MIDI (the hand): a track appears.
   await midiLearn(page, 'va', 21);
+  //
+  // ⚠ THE SWEEP IS MEASURED TOO, AND THIS SPLITS THE ONE FAILURE THAT ACTUALLY
+  // HAPPENS. On CI (run 33994221489) this test failed `Expected: > 1 / Received:
+  // 0` on BOTH attempts with no timing signature — every step 100-500 ms, ~40
+  // poll samples, zero events — while passing locally in 16.1 s. A bare event
+  // count cannot say WHICH half broke: "the bound CC never drove the param" and
+  // "the param moved but nothing recorded" both read as 0, and only the second
+  // is an automation defect.
+  //
+  // So the param is sampled ACROSS the sweep. A CC that never lands now fails
+  // here, by name, naming the binding; only a param that demonstrably moved
+  // reaches the event assertion below.
+  const sweep = sampleSpread(page, 'va', 'base', 24, 140);
   await sweepCc(page, 21, 3200);
+  const swept = await sweep;
+  expect(
+    swept.spread,
+    `the bound CC must drive va.base before "did it record?" is a fair question — ` +
+      `saw spread ${swept.spread.toFixed(4)} over ${swept.samples} samples`,
+  ).toBeGreaterThan(0.02);
   await expect
     .poll(async () => (await readAutoEvents(page, IDX_L0S0, 'va::base')).length, { timeout: 12000 })
     .toBeGreaterThan(1);

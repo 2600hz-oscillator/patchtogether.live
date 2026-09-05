@@ -78,8 +78,22 @@ function fpDelta(a: number[], b: number[]): number {
 async function loadPreset(page: Page, nodeId: string, _vfpga: string, name: string): Promise<void> {
   const cell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="shell-cell-vfpga-preset"]`);
   await expect(cell, `preset selector for ${nodeId}`).toHaveCount(1);
-  await cell.click();
-  await page.locator('[role="option"]', { hasText: name }).click();
+  // ⚠ DOM-LEVEL CLICKS, AND THE ARITHMETIC IS WHY. This helper replaced a
+  // single `sel.selectOption(...)` — one protocol call with no actionability —
+  // with TWO actionability-gated `.click()`s, and it runs once per preset. On
+  // CI (run 33994221489, blob-report-1) those six clicks cost 38.3 s of a flat
+  // 75 s budget: 51 %, for a setup step that is not the subject. Each call log
+  // is a single clean pass ("element is visible, enabled and stable" → "click
+  // action done") — they SETTLE; the round trips just cost ~6 s each on a
+  // starved main thread, and they scale with node count (4.3-4.7 s in the
+  // 2-node sibling, 5.7-6.5 s here with four video nodes).
+  //
+  // `dispatchEvent('click')` is the same event the component handles, without
+  // the visible/enabled/stable wait in front of it. The ASSERTION is untouched:
+  // the `.val` check below still proves the preset actually loaded, so a
+  // dispatch that reached nothing still fails here.
+  await cell.dispatchEvent('click');
+  await page.locator('[role="option"]', { hasText: name }).dispatchEvent('click');
   await expect(cell.locator('.val')).toHaveText(name);
 }
 

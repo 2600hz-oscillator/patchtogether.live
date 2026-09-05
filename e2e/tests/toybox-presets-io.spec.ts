@@ -22,6 +22,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnPatch, openToyboxDock, openToyboxFaceTab } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 type Layer = Record<string, unknown>;
 type PatchGlobal = {
@@ -57,6 +58,28 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // ⚠ THE RENDER LOOP IS PAUSED, AND IT IS FREE HERE. This spec's own header
+  // calls it "DETERMINISTIC BY DESIGN … NO canvas/pixel reads" — every
+  // assertion is a dropdown entry, a `node.data` round-trip or a zip. Nothing
+  // reads a pixel, so the live toybox preview the dock now paints is pure tax.
+  //
+  // MEASURED on CI (run 33994221489, blob-report-1): the test spent 127.7 s
+  // against its own 120 s budget with NO single stuck wait — every operation
+  // uniformly taxed. One click cost 28.9 s (24 % of the budget) with a call log
+  // that settles on the FIRST look ("element is visible, enabled and stable",
+  // once, no retries); a `dispatchEvent` — which bypasses actionability
+  // entirely — still cost 4.7 s; waiting for an ALREADY-VISIBLE selector cost
+  // 5.3 s. A uniform per-round-trip tax on operations that each succeed
+  // immediately is a starved main thread, not a slow assertion.
+  //
+  // ⚠ AND THE SPEC PREDICTED THIS. Its own note says it was moved to a
+  // "dedicated non-sharded `e2e-video` job (--workers=1)" to fit the 120 s
+  // budget; the failing log reads `Running 172 tests using 4 workers` on
+  // `e2e (shard 1/12)`. It is back under exactly the co-tenancy that note
+  // blames, and this branch's re-point added a live dock preview on top.
+  //
+  // The 120 s budget is deliberately NOT raised: the cost is real.
+  await installRenderSmokeHooks(page);
   await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
