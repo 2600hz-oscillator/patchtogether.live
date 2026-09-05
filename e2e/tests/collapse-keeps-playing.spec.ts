@@ -713,32 +713,34 @@ for (const type of TYPES) {
     // Re-pointing the queries document-wide is what keeps this sweep ALIVE for
     // a faced member; this leg is what keeps it HONEST about the two ownership
     // shapes it now spans, in both directions:
-    //   * FACED (STRICT_FACES): the body blits and must NEVER adopt — the
-    //     element a peer's legacy card may need has ONE parent. Found in the
-    //     dock pane here means a body adopted it after all.
-    //   * UN-FACED: the legacy card in the dock pane adopts it for display —
-    //     found anywhere else means the dock stopped mounting the real card.
-    // Without this, a face PR that quietly adopted the element (or a dock that
-    // dropped the card) would keep every progress assertion green.
+    //   The dock body BLITS and must NEVER adopt: the node-owned element has
+    //   ONE parent, and found in the dock pane here means a body adopted it
+    //   after all. Without this, a face PR that quietly adopted the element
+    //   would keep every progress assertion green.
+    //
+    // ⚠ AN `else` ARM FOR AN UN-FACED SUBJECT STOOD HERE AND IS DELETED. It
+    // asserted the opposite placement — the dock pane adopting the element for
+    // a module with no face — and it is now UNREACHABLE: every subject this
+    // sweep enrols is in STRICT_FACES, because every module is. A branch that
+    // cannot be taken reads as coverage and is not, so the FACED arm is
+    // asserted unconditionally and `STRICT_FACES` membership is asserted as
+    // the precondition it has become.
     const placedWhilePlaying = await liveMedia(page);
-    if (STRICT_FACES.has(type)) {
-      expect(
-        placedWhilePlaying.some((m) => m.where === 'dock'),
-        `${type} is FACED: its dock body must BLIT, never adopt — yet the node-owned <video> is ` +
-          `inside the dock pane: ${JSON.stringify(placedWhilePlaying)}`,
-      ).toBe(false);
-      expect(
-        placedWhilePlaying.some((m) => m.where === 'parking'),
-        `${type} is FACED and no surface adopts its element, so it must be PARKED while playing: ` +
-          `${JSON.stringify(placedWhilePlaying)}`,
-      ).toBe(true);
-    } else {
-      expect(
-        placedWhilePlaying.some((m) => m.where === 'dock'),
-        `${type} is UN-FACED: the dock pane mounts its legacy card, which adopts the element — ` +
-          `not found in the pane: ${JSON.stringify(placedWhilePlaying)}`,
-      ).toBe(true);
-    }
+    expect(
+      STRICT_FACES.has(type),
+      `${type} is not in STRICT_FACES — every module is faced, so this sweep's placement claim ` +
+        'below no longer describes it and the subject needs re-deriving rather than a second arm',
+    ).toBe(true);
+    expect(
+      placedWhilePlaying.some((m) => m.where === 'dock'),
+      `${type}: its dock body must BLIT, never adopt — yet the node-owned <video> is ` +
+        `inside the dock pane: ${JSON.stringify(placedWhilePlaying)}`,
+    ).toBe(false);
+    expect(
+      placedWhilePlaying.some((m) => m.where === 'parking'),
+      `${type}: no surface adopts its element, so it must be PARKED while playing: ` +
+        `${JSON.stringify(placedWhilePlaying)}`,
+    ).toBe(true);
 
     // ── THE FIXTURE OUTLASTS THE SPEC — DERIVED, THEN ASSERTED (#1553/#1577) ──
     //

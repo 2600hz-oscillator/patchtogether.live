@@ -28,9 +28,9 @@
   // `blood-audio-output.spec.ts`, not by reading this file.
   //
   // ⚠ WHEN IT BOOTS IS UNCHANGED BY THE PROMOTION. Before: the lane tile was a
-  // `ModuleShellPlaceholder` and the legacy card mounted only in the DOCK, so
-  // BLOOD booted when you opened the dock full view. After: this body mounts in
-  // the same place. The module has never booted from a lane tile and does not
+  // `ModuleShellPlaceholder` and the game mounted only in the DOCK, so BLOOD
+  // booted when you opened the dock full view. After: this body mounts in the
+  // same place. The module has never booted from a lane tile and does not
   // start doing so here.
   //
   // ── THE KEYBOARD HOST IS AUTHORED, NOT COPIED ──────────────────────────────
@@ -56,8 +56,8 @@
   //       real trade rather than an oversight. `SCANCODE_FOR_KEYBOARD_CODE`
   //       includes `Tab` (BLOOD's inventory key), so while this frame holds
   //       focus and the game is running, Tab is preventDefault-ed and does not
-  //       reach the shell's flip-to-rear. It is PRE-EXISTING — the legacy card
-  //       does exactly this in the dock today — and it is scoped: click off the
+  //       reach the shell's flip-to-rear. It is PRE-EXISTING — the surface this
+  //       body replaced did exactly this in the dock — and it is scoped: click off the
   //       frame and Tab flips again. Recorded because "the faceplate stopped
   //       flipping" is otherwise a mystifying bug report.
   //
@@ -206,8 +206,8 @@
   // Window-level and CAPTURE-phase because xyflow's own keydown fires on the
   // document and we must `preventDefault` BEFORE it — otherwise the arrow keys
   // pan the canvas instead of driving the marine. The claim predicate is the
-  // shared pure one (`shouldClaimBloodKey`), so this surface and the legacy card
-  // cannot disagree about which keys belong to the game.
+  // shared pure one (`shouldClaimBloodKey`), so no two surfaces can disagree
+  // about which keys belong to the game.
 
   /** Is the game frame FOCUSED? focus-within only — see caveat (a). */
   function frameIsFocused(): boolean {

@@ -68,10 +68,10 @@
  * `--rack-hp` (which made recorderbox/synesthesia/tidyvco render at different
  * widths). The owner "same-size all modules HORIZONTALLY" premise. Canvas's
  * wcolCardWidthPx short-circuits to the SAME SHELL_TILE_W under the preview, so
- * the RESERVED column slot == the rendered tile and band-centering (card center ==
- * channel-number center) stays exact. (NON_SHELL_LANE_TYPES — group/sticky/
- * clipplayer/control-surfaces — keep their legacy card + native width; they never
- * mount a .module-shell tile, so this rule never touches them.)
+ * the RESERVED column slot == the rendered tile and band-centering (tile center
+ * == channel-number center) stays exact. (NON_SHELL_LANE_TYPES is down to
+ * `{cadillac}`, which renders its own roaming surface at its own width and
+ * never mounts a .module-shell tile, so this rule never touches it.)
  *
  * TIER-INVARIANT HEIGHT (zoom-reposition fix, option (c)): the OUTER slot box is
  * ONE FIXED height (--shell-tile-h 180, the mock's .mod/.plate design point) at
@@ -225,7 +225,7 @@
 /* RACKLINE LANE TILES — ModuleShell (#1605).
  *
  * The tile root is `.module-shell.rl-tile`, deliberately NOT one of the three
- * legacy card roots, so the rule above never reached it and the shell rack did
+ * older plate roots, so the rule above never reached it and the shell rack did
  * not flip at all: `rearView` toggled, the Flip control read aria-pressed=true,
  * and the screen did not change. The tile renders PatchPanel
  * (lane-rail) — which has ALWAYS put a live `.card-back-panel` in the tile — so
@@ -251,7 +251,7 @@
   pointer-events: none;
 }
 /* …and the return leg, so the tile "turns back over" instead of snapping —
- * same keyframe, same 360ms `.flip-back` window as the legacy card roots. */
+ * same keyframe, same 360ms `.flip-back` window as the older plate roots. */
 .flow.flip-back .rl-tile:has(> .patch-panel-host > .card-back-panel) {
   animation: card-front-flip-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }

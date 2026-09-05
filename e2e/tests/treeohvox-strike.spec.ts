@@ -8,8 +8,8 @@
 // which was FILED as read-off-the-tree (#1658) and then MEASURED here, on the
 // shipping module, in this browser, before a line of the fix was written:
 //
-//   * legacy card, nothing patched, all TWENTY-FIVE pressables clicked
-//     (name label, both patch triggers, the eleven jacks, the knobs)
+//   * the surface of the day, nothing patched, all TWENTY-FIVE pressables
+//     clicked (name label, both patch triggers, the eleven jacks, the knobs)
 //        → `audio_out` peak 0.000e+0 over 145 accumulated frames
 //   * default rack's shell face AND its dock full-view, same treatment
 //        → 0.000e+0 over 146 frames
@@ -239,17 +239,18 @@ test.describe('treeohvox — THE AUDITION (the voice could not be sounded before
     const dock = page.getByTestId('dock-full-view');
     await expect(dock).toBeVisible();
 
-    // The faceplate, NOT the card — asserted rather than assumed, so that a
-    // regression to the legacy card in the dock is a named failure here instead
-    // of an invisible change of subject.
+    // The faceplate is what the dock mounts — asserted rather than assumed, so
+    // that a change of subject in the dock is a named failure here instead of an
+    // invisible one.
     await expect(
       dock.getByTestId('module-shell'),
       'the promoted module must render its FACEPLATE in the dock, not its card',
     ).toBeVisible();
-    await expect(
-      dock.locator('.mod-card'),
-      'and the legacy card must be gone from this surface',
-    ).toHaveCount(0);
+    // ⚠ A `.mod-card` ABSENCE LEG STOOD HERE AND IS DELETED: nothing a
+    // treeohvox dock can render carries that class, so `toHaveCount(0)` could
+    // not fail. (`.mod-card` is not a dead name tree-wide — `CvBuddyBody`
+    // still uses it — but no cvBuddy is in this dock.) The positive assertion
+    // above, that the faceplate body is what mounted, is the one with content.
 
     const pad = dock.getByTestId('shell-cell-treeohvox-gate');
     await expect(pad, 'the dock FACEPLATE offers a way to sound the voice').toBeVisible();

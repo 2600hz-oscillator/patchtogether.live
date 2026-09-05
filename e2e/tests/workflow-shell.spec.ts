@@ -1,10 +1,10 @@
 // e2e/tests/workflow-shell.spec.ts
 //
 // P0.3b — the WORKFLOW-SHELL legacy-fallback bridge, end to end. Proves the
-// core day-one guarantee: under the `?shell=1` preview an UN-MIGRATED module
-// renders a uniform styled PLACEHOLDER in its lane (cables stay attached), while
-// its REAL, unchanged legacy card opens verbatim in the bottom dock full-view
-// and is fully OPERABLE there (drive a control → the graph param changes).
+// core day-one guarantee: a module renders a uniform styled tile in its lane
+// (cables stay attached), while its full surface opens in the bottom dock
+// full-view and is fully OPERABLE there (drive a control → the graph param
+// changes).
 //
 // And the NO-OP guarantee: with the preview OFF (the default) the module renders
 // its real card in the lane EXACTLY as today — the bridge is inert until owner
@@ -555,7 +555,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
   test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
     // than the mock" fix: under ?shell=1 the tile-swapped defaults render as the
-    // SAME uniform RACKLINE tile whatever their LEGACY card measured — identical
+    // SAME uniform RACKLINE tile whatever the module used to measure — identical
     // WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
     // tier-invariant, the zoom-reposition fix), so the baseline number badges
     // cap them flush. (A PROMOTED occupant is out of scope here by construction:
@@ -1049,7 +1049,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   /** The video-zone default's LANE TILE under the shell — EITHER KIND.
    *
    *  ⚠ THIS USED TO BE A PER-ID TERNARY AND IT HAD ALREADY BEEN EDITED ONCE FOR
-   *  EXACTLY THIS REASON. It first named videoOut's verbatim legacy card
+   *  EXACTLY THIS REASON. It first named videoOut's own plate
    *  (`video-out-card`), because videoOut was a NON_SHELL video-surface
    *  snowflake; #1821 promoted it and the arm was rewritten to `module-shell`,
    *  leaving `recorderbox`/`synesthesia` on the placeholder arm — and the note

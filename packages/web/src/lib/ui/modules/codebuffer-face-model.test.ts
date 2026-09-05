@@ -85,9 +85,10 @@ describe('the code-buffer pair — the ladder', () => {
   });
 
   it('each family declares its testidPrefix, and each resolves to a live cell', () => {
-    // ⚠ THIS USED TO READ BOTH LEGACY CARDS. module-docs-lint's card-drift leg
-    // grepped real UI source for every declared prefix, and neither promotion
-    // added a dead testid to satisfy it — both cards carried these before the
+    // ⚠ THIS USED TO READ TWO PRE-FACEPLATE SURFACES. module-docs-lint's
+    // source-grep leg checked real UI source for every declared prefix, and
+    // neither promotion added a dead testid to satisfy it — both carried these
+    // before the
     // faces existed. The shell stamps `shell-cell-<familyId>` from an
     // interpolation, so there is no per-family literal left to grep; that gate
     // resolves each family to a live cell instead, and so does this leg, at the
@@ -235,9 +236,8 @@ describe('CLAIM 2 — the evaluation survives a rack with no card mounted', () =
     expect(src).not.toContain('setInterval');
     expect(src).toContain('// no-op — LIVECODE has no params');
 
-    // The evaluation now lives in a plain `.ts` module, reachable from the
-    // ranked cell (and therefore from the LANE TILE), the faceplate body and the
-    // legacy card.
+    // The evaluation lives in a plain `.ts` module, reachable from the ranked
+    // cell (and therefore from the LANE TILE) and from the faceplate body.
     const actions = read(LIVECODE_ACTIONS);
     expect(actions).toContain('export function runLivecodeNode');
     expect(actions).toContain("from '$lib/livecode/runtime'");
@@ -312,10 +312,10 @@ describe('CLAIM 3 — the resting status text is GONE, not relocated', () => {
     expect(body).toContain('caption="RUN"');
   });
 
-  // ⚠ 'the CARDS keep theirs — the rulings are about FACEPLATES' STOOD HERE. The
-  // 2026-08-19 resting-text rulings are faceplate-scoped and the legacy cards
-  // were explicitly untouched by them, so this asserted the cards still painted
-  // their placeholder and their status testid — guarding against a later sweep
+  // ⚠ A 'the OTHER surfaces keep theirs' CLAUSE STOOD HERE. The 2026-08-19
+  // resting-text rulings are faceplate-scoped and the surfaces this branch
+  // deletes were explicitly untouched by them, so this asserted they still
+  // painted their placeholder and their status testid — guarding against a later sweep
   // "finishing the job" on a surface the ruling never covered. NAMED COVERAGE
   // LOSS: livecode's "Type a script and press Run" placeholder and the clocked
   // runner's visible status line were painted on the card and are painted on no
