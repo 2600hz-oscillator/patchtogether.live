@@ -427,9 +427,37 @@ export class NodeClipRecorderRegistry {
     // cannot arm — but the entry still exists and still idles.
     const mixNode = firstOfType(patch.nodes, 'mixmstrs');
 
-    // Keep the worklet wiring fresh against the LIVE taps roster (a rebuilt
-    // mixer factory publishes a new one and the old nodes are dead).
-    if (mixNode) this.#ensureWiring(entry, engine, ctx, mixNode, entry.wiringTap);
+    // ⚠ THE RECORDER IS WIRED LAZILY — ON FIRST ARM, NEVER AT GRAPH SYNC — and
+    // that is a deliberate change from the pre-redesign behaviour.
+    //
+    // This used to run unconditionally on every pump, so ANY rack holding a
+    // launcher and a mixer built an 8-input AudioWorkletNode plus 8
+    // ChannelMergers wired to the mixer's board taps at boot, forever, whether
+    // or not a note was ever recorded. That was invisible before only because
+    // the mixer published `recState` unconditionally, so the cost had always
+    // been there; #2362 then removed `recState` and the pump started returning
+    // BEFORE this line, which silently switched the wiring off altogether.
+    // Restoring the arm here restored the boot cost with it — measured on CI as
+    // `workflow-lane-uniform-binding` REACH-UP losing a 5 s automation-binding
+    // poll on a SwiftShader runner already at ~8 fps.
+    //
+    // Recording is now an explicit per-lane gesture rather than a param that is
+    // always readable, so holding a recorder for a rack that never records buys
+    // nothing. Building it at the arm is safe BY CONSTRUCTION: `#openTake`
+    // already awaits `entry.wiringBuild` (an arm racing the very first build
+    // waits for it), and the worklet's own late-arm SLIDE (#2348) absorbs the
+    // punch-in latency that wait costs.
+    //
+    // A lane that is already live still refreshes against the LIVE taps roster
+    // each pump — a rebuilt mixer factory publishes a new one and the old nodes
+    // are dead, which is the reason this call is in the pump at all.
+    const wantsRecorder =
+      !!mixNode &&
+      entry.lanes.some(
+        (l, i) =>
+          l.preparing || l.prepared || l.machine.phase !== 'idle' || laneRecArm(data, i),
+      );
+    if (wantsRecorder) this.#ensureWiring(entry, engine, ctx, mixNode!, entry.wiringTap);
 
     const clock = engine.read(clipNode, 'recClock') as RecClock | undefined;
     const frame = Math.floor(ctx.currentTime * ctx.sampleRate);
