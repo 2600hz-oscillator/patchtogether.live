@@ -78,7 +78,7 @@ export const controlSurfaceDef: MetaModuleDef = {
   // OUT YOUR HANDS: you are deciding what you will reach for mid-performance.
   //
   // THE LADDER, read back as a sentence: at every lane tier you get the LOCK
-  // (the module's one own control) and the tile\'s live strip of bound-source
+  // (the module's one own control) and the tile's live strip of bound-source
   // colours; one Expand away you get the board itself — every group box, every
   // proxied knob, the per-knob rename and the drag layout.
   //

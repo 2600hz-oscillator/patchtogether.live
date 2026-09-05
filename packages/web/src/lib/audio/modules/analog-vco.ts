@@ -287,7 +287,7 @@ export const analogVcoDef: AudioModuleDef = {
         "The raw triangle waveform (softer than square, more mellow), useful for warmth or blended with other taps through a mixer.",
       sine: "The pure sine waveform (no harmonics, pure fundamental), ideal for clean sub-bass, tone modulation, or as a base mixed with other waveforms.",
       morph:
-        "Continuous morphing output that sweeps from sawtooth (shape = 0) through sine (shape = 0.5) to square (shape = 1) as the shape parameter changes; shaped by the shape knob and its CV input, and reflects any FM/PM modulation in real time. the faceplate's scope displays this output live so you see the crossfade happening.",
+        "Continuous morphing output that sweeps from sawtooth (shape = 0) through sine (shape = 0.5) to square (shape = 1) as the shape parameter changes; shaped by the shape knob and its CV input, and reflects any FM/PM modulation in real time. The faceplate's scope displays this output live so you see the crossfade happening.",
       sync: "Hard-sync output — a one-sample +1 pulse at each cycle boundary (phase wrap) so it can clock another VCO's sync input for chained oscillator interactions or external gear. When unplugged, the sync output is silent.",
     },
     controls: {

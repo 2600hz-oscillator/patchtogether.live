@@ -396,7 +396,7 @@ export const audioInDef: AudioModuleDef = {
         return undefined;
       },
       /**
-       * The card's only handle into the engine module\'s runtime. Three keys:
+       * The card's only handle into the engine module's runtime. Three keys:
        *
        *   'attach'  → payload: AudioInAttachPayload | null
        *               attach a new MediaStream (with channelCount) or

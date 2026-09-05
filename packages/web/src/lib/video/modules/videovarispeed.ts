@@ -188,7 +188,7 @@ export interface VideoVarispeedHandleExtras {
    *  fits it via $lib/video/crop-core, and calls this on every change / aspect
    *  flip — including at node creation, which is what makes a rack saved WITH a
    *  crop apply it on load even though no surface mounts;
-   *  the engine's crop pass windows the module\'s own output by this rect. */
+   *  the engine's crop pass windows the module's own output by this rect. */
   setCrop(rect: CropRect | null): void;
 }
 
@@ -338,7 +338,7 @@ export const videoVarispeedDef: VideoModuleDef = {
     // the first `type: 'audio'` OUTPUT and this def HAS two (audio_l/audio_r),
     // so any other literal resolves to a LIVE `live-audio` binding and the
     // dead-glyph clause would NOT catch it. It is 'none' because a VU of the
-    // CLIP'S SOUNDTRACK would sit where the module\'s own picture belongs: for a
+    // CLIP'S SOUNDTRACK would sit where the module's own picture belongs: for a
     // video module the picture IS its identity in a rack (#1785). The tile
     // picture arrives from `hasVideoSurface(def)` — `domain === 'video'` and
     // nothing else — so it is free, per-node, and outranks the cells.

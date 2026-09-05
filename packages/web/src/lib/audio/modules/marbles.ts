@@ -204,7 +204,7 @@ export const marblesDef: AudioModuleDef = {
 
   controlFamilies: [
     {
-      // The two loops + the quantiser's surviving degrees — the faceplate\'s
+      // The two loops + the quantiser's surviving degrees — the faceplate's
       // hero picture. A control FAMILY (a `cell`) rather than a param because
       // it is a picture, not a value: nothing about it is stored, undoable or
       // MIDI-learnable.

@@ -184,8 +184,8 @@ export const graphicEqDef: VideoModuleDef = {
       out: "out (video) - the rendered meters: 8 (mono) or 2x8 (stereo) frequency bars/boxes with a green→yellow→red gradient and peak-hold caps, over a dark field. Chainable into any video input and also feeds the faceplate's preview screen.",
     },
     controls: {
-      style: "Style (0..1 switch, default boxes): toggles the meter look. 0 = SOLID BARS (each band is one smooth filled bar). 1 = STACKED BOXES (each band is an LED ladder of discrete lit segments). the faceplate's STYLE button flips it.",
-      display: "Display (0..1 switch, default stereo): toggles the layout. 0 = MONO (8 meters across the full width, fed by the L/R average). 1 = STEREO (the screen splits L|R — the left channel's 8 meters on the left half, the right channel's on the right half). the faceplate\'s MONO/STEREO button flips it.",
+      style: "Style (0..1 switch, default boxes): toggles the meter look. 0 = SOLID BARS (each band is one smooth filled bar). 1 = STACKED BOXES (each band is an LED ladder of discrete lit segments). The faceplate's STYLE button flips it.",
+      display: "Display (0..1 switch, default stereo): toggles the layout. 0 = MONO (8 meters across the full width, fed by the L/R average). 1 = STEREO (the screen splits L|R — the left channel's 8 meters on the left half, the right channel's on the right half). The faceplate\'s MONO/STEREO button flips it.",
       gain: "Gain (0.5..4, default 1.6): sensitivity. Multiplies each band magnitude before it drives the meter height (FFT bands read low, so the default lifts them); higher makes quiet material reach further up the meters, clamped at the top.",
       peak: "Peak (0.5..0.99, default 0.92): peak-hold decay. A cap marker jumps up instantly to each band's latest peak then falls back, multiplying by this factor per frame — 0.5 falls fast, 0.99 lingers near the top.",
       hue: "Hue (0..1, default 0): rotates the whole green→yellow→red colour ramp around the hue wheel (0 = classic VU colours, 0.5 = ~180° opposite), tinting both bars and peak caps.",

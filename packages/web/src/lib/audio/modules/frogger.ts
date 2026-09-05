@@ -164,7 +164,7 @@ export const froggerDef: AudioModuleDef = {
     // ('voice'/'signal') or name a declared page, or it appends as a stray band
     // after every page and the rear totality gate cannot see it
     // (module-face-lint). So the four steering triggers take the leading
-    // 'signal' slot — they ARE the module\'s signal inputs, the thing you play
+    // 'signal' slot — they ARE the module's signal inputs, the thing you play
     // it with — and START takes the 'run' page's own slot, where it sits beside
     // the TIME knob that shares that band. That is the module described in two
     // sections rather than five anonymous gates.

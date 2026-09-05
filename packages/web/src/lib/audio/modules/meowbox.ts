@@ -309,7 +309,7 @@ export const meowboxDef: AudioModuleDef = {
     // volt every time you auditioned it.
     //
     // The HIGH level comes from the shared $lib/audio/gate-trigger seam, never
-    // re-derived here, so the pad's level is the repo's and not this module\'s.
+    // re-derived here, so the pad's level is the repo's and not this module's.
     const meowCs = ctx.createConstantSource();
     meowCs.offset.value = 0;
     meowCs.start();

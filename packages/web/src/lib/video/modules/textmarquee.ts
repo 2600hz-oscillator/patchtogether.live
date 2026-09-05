@@ -162,7 +162,7 @@ export const textmarqueeDef: VideoModuleDef = {
     // null; with no `attack/decay/sustain/release`, no `algorithm` and no
     // `shape` morph, EVERY other literal falls through `glyphBinding` to
     // `{ kind: 'static' }` — a dead deterministic squiggle — which
-    // `module-face-lint`'s dead-glyph clause refuses outright. The tile\'s
+    // `module-face-lint`'s dead-glyph clause refuses outright. The tile's
     // picture comes from `hasVideoSurface` (the generic `VideoTileThumb`),
     // which is textmarquee's FIRST lane picture: the card only ever painted
     // its preview inside itself.

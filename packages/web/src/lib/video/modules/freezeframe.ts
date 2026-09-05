@@ -989,7 +989,7 @@ export const freezeframeDef: VideoModuleDef = {
       gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough. Patched, the image is FROZEN while the level is LOW. Each RISING EDGE updates EXACTLY ONE frame, so a trigger pulse re-samples once and then holds still. A gate HELD HIGH gets that edge frame too, and then updates CONTINUOUSLY once the level has stood high for about 75 ms — three reports of the ~25 ms patch bridge, which is the soonest a held gate can be told apart from a trigger at all, since until the level is re-reported the two are identical. A high shorter than that window reads as a TRIGGER: notably a 50 ms gate derived from a trigger by GATEMAIDEN, which is why inserting GATEMAIDEN does not change the frame count. Both readings come from this one jack — patch a held gate or slow square LFO for live-while-open, or a clock/trigger for one frame per tick.",
     },
     outputs: {
-      video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. the faceplate\'s on-screen preview shows this output.",
+      video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The faceplate\'s on-screen preview shows this output.",
       r_out: "The posterized RED channel alone, rendered as a grey intensity image (R copied to all three channels).",
       g_out: "The posterized GREEN channel alone, rendered as a grey intensity image.",
       b_out: "The posterized BLUE channel alone, rendered as a grey intensity image.",

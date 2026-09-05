@@ -392,7 +392,7 @@ export const posterboxDef: VideoModuleDef = {
       out: "The palette-crushed video frame: the source truncated to the chosen retro bit allocation, dithered by the Bayer amount, blended dry/wet by Mix.",
     },
     controls: {
-      depth: "Depth — a 5-step discrete ladder of per-channel bit allocations: 1-1-1 (8 colours), 2-2-2 (64), 3-3-2 (256, the legacy 8-bit look, default), 4-4-4 (4096), 5-6-5 (65536, the legacy 16-bit look). Low steps are brutal posterize; high steps a subtle hi-colour rounding. the faceplate shows the allocation name and palette size.",
+      depth: "Depth — a 5-step discrete ladder of per-channel bit allocations: 1-1-1 (8 colours), 2-2-2 (64), 3-3-2 (256, the legacy 8-bit look, default), 4-4-4 (4096), 5-6-5 (65536, the legacy 16-bit look). Low steps are brutal posterize; high steps a subtle hi-colour rounding. The faceplate shows the allocation name and palette size.",
       dither: "Dither — Bayer 4×4 ordered-dither amount (0..1, default 0). At 0 the palette bands are hard (the pure legacy crush); raising it perturbs the quantizer per screen pixel so band edges dissolve into alternating checkered pixels and gradients read as retro cross-hatch.",
       mix: "Mix — dry/wet (0..1, default 1). 1 is the full crush, 0 passes the source through untouched; in between blends the crushed and clean frames linearly.",
     },

@@ -820,7 +820,7 @@ export const grainsOfVisionDef: VideoModuleDef = {
       rev_dry: "Rev Dry (0/1, default 0): hard bypass of the reverb block. At 1 the block is a transparent passthrough regardless of Rev Mix.",
       composite: "Comp (discrete 0..4, default 1 = density): how a patched B modulates A's grains — off, density (B brightness thins/thickens grains), displace (B warps where grains read from), size (B scales grain size), rate (B scrubs the per-region history time). Inert while B is unpatched.",
       comp_amount: "Cmp Amt (0..1, default 0.7): the depth of the COMPOSITE modulation. 0 leaves B inert even when a mode is selected; higher pushes B's influence toward extreme.",
-      freeze: "Freeze (0/1, default 0): hidden determinism toggle. At >=0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. no faceplate control.",
+      freeze: "Freeze (0/1, default 0): hidden determinism toggle. At >=0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No faceplate control.",
     },
   },
 

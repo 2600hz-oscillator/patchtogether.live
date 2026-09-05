@@ -198,7 +198,7 @@ export const seqtrisDef: AudioModuleDef = {
     // is `{num, numbers?, testid?}` with NO `nodeId`, so a glyph component
     // cannot resolve a graph node, cannot reach `card-api`, and would draw one
     // identical picture on every seqtris in the rack forever. `hasVideoSurface`
-    // is `domain === 'video'`; this is audio. So: none — and the tile\'s picture
+    // is `domain === 'video'`; this is audio. So: none — and the tile's picture
     // comes from the module's own `tileBody` instead.
     glyph: 'none',
 

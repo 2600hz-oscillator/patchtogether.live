@@ -188,7 +188,7 @@ export const moog902Def: AudioModuleDef = {
     // `{ kind: 'live-audio', portId: 'audio' }` — the trace is the MAIN output,
     // never the differential twin. Both `'meter'` and `'waveform'` resolve to
     // that same tap, so the choice between them is editorial and `'meter'` is
-    // the honest pick: a VCA's entire job is level, and this module\'s sharpest
+    // the honest pick: a VCA's entire job is level, and this module's sharpest
     // defect is a switch that moves level silently — which is precisely what a
     // meter shows and a waveform does not.
     //

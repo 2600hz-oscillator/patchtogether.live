@@ -176,7 +176,7 @@ export const chromaconsoleDef: AudioModuleDef = {
   //
   // ⚠ THE PEDAL'S FIVE `role: 'action'` COMMANDS (tap tempo, capture, the two
   // gesture-looper commands, the calibration menu) are deliberately NOT
-  // families. They are the DEVICE's transport, not this module\'s own controls;
+  // families. They are the DEVICE's transport, not this module's own controls;
   // five more families would be five more lines in the contract signature and
   // five `testidPrefix`es that cannot be checked, because the card emits them
   // as `chromaconsole-action-${id}-${controlId}` — an interpolation whose

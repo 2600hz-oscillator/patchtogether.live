@@ -295,7 +295,7 @@ export function isMidiOutChannelOverridden(
 
 // ---------------- The CHANNEL roster ----------------
 //
-// Both the legacy card's `<select>` and the faceplate\'s selector cell offer the
+// Both the legacy card's `<select>` and the faceplate's selector cell offer the
 // SAME sixteen choices, built here once so neither surface re-derives them. The
 // card used to spell `{#each Array(16)}` and the `i + 1` inline.
 //

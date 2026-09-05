@@ -235,9 +235,9 @@ export const chromaDef: VideoModuleDef = {
     controls: {
       hue: "Hue: rotates the input's hue around the color wheel, -180 to +180 degrees (default 0 = no shift). The rotation wraps, so it cycles cleanly through the spectrum.",
       saturation: "Sat: saturation multiplier from 0 to 2 (default 1). 0 collapses to grayscale, 1 leaves color untouched, above 1 pushes toward vivid (clamped so it cannot exceed full saturation).",
-      tintR: "R: red channel of the tint color, 0 to 1 (default 1). the faceplate sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
-      tintG: "G: green channel of the tint color, 0 to 1 (default 1). the faceplate sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
-      tintB: "B: blue channel of the tint color, 0 to 1 (default 1). the faceplate sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      tintR: "R: red channel of the tint color, 0 to 1 (default 1). The faceplate sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      tintG: "G: green channel of the tint color, 0 to 1 (default 1). The faceplate sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      tintB: "B: blue channel of the tint color, 0 to 1 (default 1). The faceplate sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
       tintMix: "Mix: blend toward the tint color, 0 to 1 (default 0). 0 bypasses the tint entirely, intermediate values wash the image toward the tint, 1 replaces every pixel with the flat tint color.",
     },
   },

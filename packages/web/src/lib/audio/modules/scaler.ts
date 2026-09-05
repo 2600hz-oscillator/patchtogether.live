@@ -100,7 +100,7 @@ export const scalerDef: AudioModuleDef = {
 
   // ONE PARAM, ONE RANK, ONE BAND.
   //
-  // `glyph: 'meter'` is RUN, not argued: `out` is this module\'s ONLY `audio`
+  // `glyph: 'meter'` is RUN, not argued: `out` is this module's ONLY `audio`
   // output, so `primaryAudioOutPortId` resolves it and the binding is both LIVE
   // and TOTAL — there is no second signal path for the meter to misrepresent,
   // which is precisely the objection that took the meter off `moog994` in this

@@ -583,7 +583,7 @@ export const foxyDef: AudioModuleDef = {
         freezeRasterB: 'FREEZE RASTER B (on/off) — holds source B\'s raster (the Y-row distribution) at its current frame.',
         freezeRasterC: 'FREEZE RASTER C (on/off) — holds source C\'s raster (the Z amplitude/warp) at its current frame.',
         freezeTable: 'FREEZE TABLE (on/off) — pins the WAVETABLE: stops re-uploading to the internal WAVECEL so the oscillator keeps reading the last-pushed table even as the rasters keep evolving (the faceplate\'s scope keeps previewing what\'s queued). Reveals the EXPORT TABLE button.',
-        gen_mode: 'GEN mode — picks the raster→wavetable PATH: XYZ (the continuous volumetric heightfield, default) vs 3D Shape Gen (discrete primitives placed in a box, voxelized and scanned). the faceplate shows the active mode name next to the knob.',
+        gen_mode: 'GEN mode — picks the raster→wavetable PATH: XYZ (the continuous volumetric heightfield, default) vs 3D Shape Gen (discrete primitives placed in a box, voxelized and scanned). The faceplate shows the active mode name next to the knob.',
       },
     };
   })(),

@@ -160,7 +160,7 @@ export const scoreboardDef: VideoModuleDef = {
   docs: {
     explanation: "A 4-digit neon 7-segment counter widget, rendered as a digital-alarm-clock face: a zero-padded value (0000-9999) drawn as chamfered hexagonal segments in a hue-tinted glow on soft black (#0a0a0a), with off segments fully invisible (no LCD ghost). It is a pure CV-driven generator with NO video input — a 2D OffscreenCanvas rasterizes the digits via the drawScoreboard helper and uploads them as an RGBA texture; a trivial fragment shader letterboxes that 8:3 source into the 4:3 engine frame, width-locked and centered vertically with pure-black bands top and bottom (and a dark fallback fill before the first paint). Each rising edge on SCORE adds 1 to the counter; it wraps from 9999 back to 0 (a periodic counter, handy for sequencing). RESET zeros it. The COLOR knob sets the lit-segment and glow hue. Patch a clock or sequencer gate into SCORE to count beats/events on screen, and a reset gate to zero it on a bar/loop boundary; the counter always starts at 0 on spawn (it is not persisted).",
     inputs: {
-      score: "Trigger (edge-only). A cv-typed input routed through the audio-to-video CV bridge into the synthetic scoreTrig param, where a hysteresis edge detector lives (rise above 0.6, fall below 0.4, so a CV hovering in the dead band never chatters): each rising edge increments the counter by 1, wrapping from 9999 back to 0. The level while held is ignored — only the edge counts. the faceplate renders this jack in the gate cable color.",
+      score: "Trigger (edge-only). A cv-typed input routed through the audio-to-video CV bridge into the synthetic scoreTrig param, where a hysteresis edge detector lives (rise above 0.6, fall below 0.4, so a CV hovering in the dead band never chatters): each rising edge increments the counter by 1, wrapping from 9999 back to 0. The level while held is ignored — only the edge counts. The faceplate renders this jack in the gate cable color.",
       reset: "Trigger (edge-only). A cv-typed input through the same bridge into the synthetic resetTrig param: each rising edge (hysteresis rise above 0.6, fall below 0.4) sets the counter back to 0. Edge-only, not level-sensitive; the held level is ignored. Rendered in the gate cable color on the faceplate.",
     },
     outputs: {
@@ -188,7 +188,7 @@ export const scoreboardDef: VideoModuleDef = {
   // correct outcome of "compact is the default and width must be earned".
   //
   // NO `pages`. A page earns a header at >=2 controls, or at 1 that is the
-  // module's identity — and COLOUR is not this module\'s identity, the COUNTER
+  // module's identity — and COLOUR is not this module's identity, the COUNTER
   // is. So the dock renders one unlabelled band, and declaring a page would be
   // buying an ~81px header to say "colour" above a colour wheel.
   //

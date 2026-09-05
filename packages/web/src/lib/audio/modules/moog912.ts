@@ -192,7 +192,7 @@ export const moog912Def: AudioModuleDef = {
   face: {
     order: ['sensitivity', 'smoothing'],
 
-    // ⚠ 'none' IS FORCED, NOT CHOSEN. This module\'s outputs are `env` (cv) and
+    // ⚠ 'none' IS FORCED, NOT CHOSEN. This module's outputs are `env` (cv) and
     // `gate` (gate) — there is no `type: 'audio'` output at all — so
     // `primaryAudioOutPortId` returns NULL and 'meter', 'waveform', 'envelope'
     // and 'algorithm' ALL resolve to `{kind:'static'}`, the dead-glyph state

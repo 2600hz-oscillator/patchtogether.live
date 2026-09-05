@@ -867,7 +867,7 @@ export const numpadPlusDef: AudioModuleDef = {
         // directions on the same page and the same 2 s rAF window: with the
         // transport STOPPED the page ran at 120.5 fps; with ONE numpadPlus
         // RUNNING on its internal clock it ran at 7.9 fps. A 15x collapse of
-        // the whole rack's frame rate, on this module\'s headline workflow.
+        // the whole rack's frame rate, on this module's headline workflow.
         //
         // ⚠ AND THE LOOKAHEAD BOUGHT NOTHING EVEN IN PRINCIPLE, which is why
         // this is a deletion rather than a repair. Every output write here is

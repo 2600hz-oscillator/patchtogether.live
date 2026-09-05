@@ -223,7 +223,7 @@ export const nibblesDef: VideoModuleDef = {
     // extension body beside SCREEN and SCALE, because a ranked `action` cell
     // needs an AUDITION probe here (reset writes no param and no `node.data`)
     // and `faces-parity` spawns every module with no `domain` — defaulted to
-    // `'audio'` — so a VIDEO module\'s factory is never constructed in that
+    // `'audio'` — so a VIDEO module's factory is never constructed in that
     // sweep and the audition cannot deliver. Measured both directions; the
     // probe lives in `face-nibbles.spec.ts` instead.
     order: ['tick_ms', 'auto'],

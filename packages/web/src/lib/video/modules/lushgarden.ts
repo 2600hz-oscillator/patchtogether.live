@@ -481,7 +481,7 @@ export const lushgardenDef: VideoModuleDef = {
       rate: "CV over RATE (log scale): modulates the continuous spawn rate between 0.5 and 10 plants per second. Ignored while a cable is patched into GROW (gated mode spawns only on edges).",
       horizon: "CV over HORIZON: moves the invisible placement ceiling that far plants anchor against — see the HORIZON control. No line or seam is ever drawn at it.",
       view: "CV over VIEW: pans the parallax viewport across the wide garden world. A slow LFO here gives the signature drifting near-fast/far-slow pan.",
-      grow: "Trigger input (rising edge). PATCHING this port switches the module to gated growth: continuous RATE spawning stops entirely and exactly ONE plant grows in per rising edge (hysteresis 0.6/0.4). the faceplate shows a [GATED] badge while wired. Unpatching holds gated mode until the module is respawned (Eurorack-style latch, same as shapegen's CLK).",
+      grow: "Trigger input (rising edge). PATCHING this port switches the module to gated growth: continuous RATE spawning stops entirely and exactly ONE plant grows in per rising edge (hysteresis 0.6/0.4). The faceplate shows a [GATED] badge while wired. Unpatching holds gated mode until the module is respawned (Eurorack-style latch, same as shapegen's CLK).",
       reset: "Trigger input (rising edge): clears every plant — the bed starts over from bare ground (spawning continues per the current mode).",
     },
     outputs: {

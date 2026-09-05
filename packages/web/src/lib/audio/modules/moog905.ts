@@ -76,7 +76,7 @@ export const moog905Def: AudioModuleDef = {
   // ideas, and inventing a second one here would spend vertical space to say
   // nothing.
   //
-  // `glyph: 'meter'` is RUN, not argued: `audio` is this module\'s only audio
+  // `glyph: 'meter'` is RUN, not argued: `audio` is this module's only audio
   // output, so `primaryAudioOutPortId` resolves it and the binding is LIVE and
   // TOTAL. A reverb is also a module where the tail IS the thing you are
   // listening for, so a level trace earns its slot rather than decorating.

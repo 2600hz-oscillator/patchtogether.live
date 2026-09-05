@@ -1023,7 +1023,7 @@ export const frametableDef: VideoModuleDef = {
           if (!atlasGeometry(bmp.width, bmp.height).valid) { bmp.close?.(); return; }
           // Bitmap → canvas, mirroring the card's own upload path EXACTLY. The
           // atlas round-trip is documented as bit-exact in frametable-atlas.ts
-          // (the SAVE tiler's per-tile flip composes with the detile\'s
+          // (the SAVE tiler's per-tile flip composes with the detile's
           // UNPACK_FLIP_Y to identity), and taking a different route to the
           // texture is how a "cosmetic" refactor turns a lossless table upside
           // down.

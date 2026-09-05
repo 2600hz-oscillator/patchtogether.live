@@ -70,7 +70,7 @@ describe('chromaconsole makes no claim about the device state', () => {
   it('claims no "synced"/"in sync" state anywhere a player reads', () => {
     const text = playerFacingText().toLowerCase();
     for (const banned of FORBIDDEN_CLAIMS) {
-      expect(text, `the faceplate must not claim "${banned}"`).not.toContain(banned);
+      expect(text, `The faceplate must not claim "${banned}"`).not.toContain(banned);
     }
   });
 

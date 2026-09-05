@@ -229,7 +229,7 @@ export const milkdropDef: VideoModuleDef = {
     {
       param: 'bass',
       writer: 'cv-port',
-      why: 'CV-only band override: the BASS jack REPLACES butterchurn\'s bass scalar for as long as it is patched, and an unpatched band follows the live audio. no faceplate control has ever existed for it — a knob here would be overwritten every frame by the cable it exists to receive',
+      why: 'CV-only band override: the BASS jack REPLACES butterchurn\'s bass scalar for as long as it is patched, and an unpatched band follows the live audio. No faceplate control has ever existed for it — a knob here would be overwritten every frame by the cable it exists to receive',
     },
     {
       param: 'mid',

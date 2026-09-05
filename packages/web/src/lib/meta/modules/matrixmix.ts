@@ -4,7 +4,7 @@
 //
 // Pick an X-axis module and a Y-axis module from everything currently in the
 // patch (by their user-facing display name). The card draws a grid: one COLUMN
-// per the X-module's jacks (every input AND output), one ROW per the Y-module\'s
+// per the X-module's jacks (every input AND output), one ROW per the Y-module's
 // jacks. Each cell is a potential connection between the row-jack + column-jack:
 //   - a FILLED CIRCLE (coloured by cable type) where a direct cable already
 //     runs between the two matrixed jacks,
