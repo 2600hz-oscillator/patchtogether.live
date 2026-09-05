@@ -20,11 +20,11 @@
 //      and `module-face-lint`'s dead-glyph clause would NOT catch it. On
 //      picturebox or acidwarp the rule enforces itself; here nothing does.
 //
-//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>`. A DOM node has one
-//      parent and the LEGACY card adopts that element under `?shell=legacy`, so
-//      a body that adopted it too would move it out from under that mount. No
-//      gate can see this; the body blits the module's own OUTPUT texture
-//      instead, and that is asserted at the source.
+//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>`. A DOM node has ONE
+//      parent, and that element belongs to the node-owned media registry — so a
+//      body that adopted it would move it out from under its real owner and
+//      take the stream down with it. No gate can see this; the body blits the
+//      module's own OUTPUT texture instead, and that is asserted at the source.
 //
 //   4. THE VRT ENTRY RESTS ON THE IDLE PICTURE BEING TIME-INVARIANT. Its
 //      argument for a real baseline (rather than a FACES_WITHOUT_SCENES

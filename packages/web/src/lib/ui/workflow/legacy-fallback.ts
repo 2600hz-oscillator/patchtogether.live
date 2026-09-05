@@ -1,44 +1,34 @@
 // packages/web/src/lib/ui/workflow/legacy-fallback.ts
 //
-// THE LEGACY-FALLBACK MIGRATION BRIDGE (P0.3b) — the PURE decision that lets the
-// whole workflow rig ship on day one with ZERO module reskins.
+// THE LANE-RENDER DECISION — the PURE rule that says what a module looks like
+// in its workflow lane.
 //
-// It GENERALIZES the existing card↔dock-stub swap in Canvas.svelte's flowNodes
-// derivation (`emittedType = dockEntry ? 'dockStub' : n.type`). Today the only
-// swap trigger is "the user docked this node". This adds the workflow-shell
-// triggers, so a module renders as one of four things in its lane:
+// It generalizes the dock-stub swap in Canvas.svelte's flowNodes derivation,
+// whose only trigger used to be "the user docked this node". A module renders
+// as one of three things:
 //
-//   • 'stub'        — the user explicitly docked it (unchanged P2.5a path):
-//                     a DockStubCard in the lane, real card in the dock rail.
-//   • 'shell'       — a MIGRATED module (has a curated `face` / is in
-//                     STRICT_FACES): the new RACKLINE <ModuleShell> curated LOD
-//                     face in the lane; Expand opens its full faceplate.
-//   • 'placeholder' — an UN-MIGRATED module under the shell preview: a uniform
-//                     styled <ModuleShellPlaceholder> in the lane + its verbatim
-//                     legacy card reachable in the dock full-view.
-//   • 'legacy'      — the module's own *Card.svelte, verbatim: what
-//                     `?shell=legacy` selects, and what the snowflakes below
-//                     get unconditionally.
+//   • 'stub'   — the user explicitly docked it (the P2.5a path): a
+//                DockStubCard in the lane, the module's real surface in the
+//                dock rail.
+//   • 'shell'  — the RACKLINE <ModuleShell> faceplate tile, at the LOD the zoom
+//                calls for; EXPAND opens its full dock faceplate. This is what
+//                a module renders unless it is one of the carve-outs below.
+//   • 'native' — a type that renders no lane body at all and owns its own
+//                surface (NON_SHELL_LANE_TYPES).
 //
-// This is a PURE render-time derivation: it reads only the faces flag, whether
-// the user has docked the node, and whether the type is MIGRATED (the caller
-// passes `migrated(n.type)` from ./strict-faces — injected as a boolean so this
-// stays registry-free + trivially testable). It is NEVER
-// persisted to the Y.Doc / dockStore entries (the un-migrated auto-fallback is
-// transient view furniture, exactly like the pinned drawer — persisting it would
-// storm the CRDT / desync peers; see the cv-modulation-live-store-write +
-// transient-dock disciplines). Zero-flake.
+// This is a PURE render-time derivation: it reads only whether the user has
+// docked the node and whether the type is a native snowflake, so it stays
+// registry-free and trivially testable. It is NEVER persisted to the Y.Doc or
+// to dockStore entries — the swap is transient view furniture, exactly like the
+// pinned drawer, and persisting it would storm the CRDT and desync peers (see
+// the cv-modulation-live-store-write + transient-dock disciplines). Zero-flake.
 
 /** What a module renders as in its workflow lane (see the file header).
  *
- *  ⚠ TWO MEMBERS LEFT, AND THE TWO THAT WENT WERE THE WHOLE TRANSITION.
- *  `'legacy'` meant "render this module's verbatim `*Card.svelte`" and
- *  `'placeholder'` meant "this type has no curated face yet, show the uniform
- *  skeleton". There are no cards, and `STRICT_FACES` holds every one of the 194
- *  faced modules against 194 card files — so the placeholder's population was
- *  ZERO before it was removed, and the legacy arm's only reachable input was the
- *  `?shell=legacy` escape hatch. Both are gone; `'native'` is the carve-out for
- *  a type that renders no lane body at all. */
+ *  ⚠ THREE MEMBERS, AND THE SET IS CLOSED BY CONSTRUCTION: a node is either
+ *  docked ('stub'), a snowflake that owns its own surface ('native'), or a
+ *  faceplate tile ('shell'). There is no fourth thing a module can be, which is
+ *  why `laneRenderKind` has no fall-through arm. */
 export type LaneRenderKind = 'shell' | 'native' | 'stub';
 
 /**
@@ -67,11 +57,10 @@ export type LaneRenderKind = 'shell' | 'native' | 'stub';
  *     FOR THE GROUP; reasoning from the group label is how one of its entries
  *     outlived its reason by a whole consolidation.
  *   ⚠ videoOut USED TO BE IN THIS SET and is not any more (#1821). Its entry
- *     read: "the VIDEO SURFACE snowflake: its legacy card BODY IS the live,
- *     freely-resizable output screen … swapping it for a placeholder tile
- *     removed the ONLY user-viewable video output from the shell (the
- *     owner-reported ?shell=1 regression)". That reasoning was about a
- *     PLACEHOLDER, and it was right: a tile with no picture is not a monitor.
+ *     read: its BODY IS the live, freely-resizable output screen, and
+ *     swapping it for a picture-less tile removed the ONLY user-viewable video
+ *     output from the shell. That reasoning was about a tile with no picture,
+ *     and it was right: a blank tile is not a monitor.
  *     It is no longer the alternative. videoOut now carries a real `face`, so
  *     its lane tile is a `ModuleShell` painting the LIVE `VideoTileThumb`, and
  *     the big picture moved to where the owner asked for it — right-click →
@@ -172,8 +161,8 @@ export type LaneRenderKind = 'shell' | 'native' | 'stub';
  *     ⚠ WHAT THE STATED REASON WAS, AND WHICH HALF SURVIVED. The "grid /
  *     launcher / mapper" clause above is TRUE of this card — it really is a 6×6
  *     mapper — and that half is not the operative one. The operative half is
- *     "…and stay on the verbatim legacy card UNTIL THEN rather than a lossy
- *     placeholder": the alternative was never a placeholder once the face
+ *     "…and keep the module's own full surface UNTIL THEN rather than a lossy
+ *     stand-in": the alternative stopped being a stand-in once the face
  *     existed, exactly as for videoOut and launchpadControlLeft, and this PR is
  *     the "later spike" the clause defers to.
  *     ⚠ THE ARITHMETIC IS REAL AND IS ANSWERED RATHER THAN WAVED AWAY. The
@@ -307,79 +296,26 @@ export function isLaneNative(type: string): boolean {
   return NON_SHELL_LANE_TYPES.has(type);
 }
 
-// ── THE DOCK RAIL's OWN FALLBACK (#1739) ────────────────────────────────────
+// ── EVERY DOCK-RAIL OCCUPANT RENDERS ITS FACEPLATE ──────────────────────────
 //
-// The bridge above answers "what does this module render as IN ITS LANE". A
-// DOCK RAIL occupant is a third surface the rule never covered, and the gap was
-// user-visible: `migrated(type)` removes the legacy card from the lane and from
-// the dock FULL VIEW (`DockFullView.svelte`, gated on the `migrated` prop), but
-// `DockCardHost` resolved `nodeTypes[node.type]` with no `migrated` input at
-// all — so the always-on `m` tray kept painting `MixmstrsCard` after mixmstrs
-// was promoted. OWNER RULING (#1739): *"the `m` key tray view needs to show the
-// new card and not the old one."*
+// The rule above answers "what does this module render as IN ITS LANE". A DOCK
+// RAIL occupant — the `m` tray, a user-docked module, the 🎧 topbar panel — is
+// a separate surface, and it has no decision to make: there is one thing a
+// module can render, so `DockCardHost` mounts it unconditionally.
 //
-// ⚠ `pinned` USED TO BE PART OF THE RULE, AND THAT TERM WAS THE SECOND HALF OF
-// AN OWNER P0 (2026-09-03: *"dev is also still using legacy card in top camera
-// area … that is a workaround for now but ALSO WRONG"*). The argument for it
-// read:
-//   * a PINNED occupant is canvas-hidden (`isCanvasHiddenNode`), so it has NO
-//     lane tile, NO EXPAND pill and no route to `DockFullView`. The tray is its
-//     ONLY surface, and it is therefore the only place its face can appear.
-//   * a USER-DOCKED entry still has both — the lane shows its DockStubCard and
-//     the stub's own affordances reach the full view — so its face is already
-//     reachable and the rail card is the second surface, not the only one.
-// The second bullet is TRUE and is not a reason. "Reachable somewhere else"
-// answers a COMPLETENESS question; a rail occupant is a surface a player LOOKS
-// AT, and `Canvas.railCards` passes `pinned: false` for every user-docked node,
-// so on the default shell docking a promoted module swapped it back to the
-// instrument it had before it was promoted. That is the same split-brain
-// `NON_SHELL_LANE_TYPES` above records as the thing to close IN THE SAME DIFF
-// as a promotion — two instruments for one node — arriving through a different
-// door. Docking a module is not a request for its old card.
+// ⚠ THAT WAS ONCE A THREE-INPUT RULE, AND THE LESSON FROM IT IS LIVE EVEN
+// THOUGH THE RULE IS NOT. A pure rule with an INJECTED input is only as good as
+// its call sites, and nothing in the type system can tell you a caller is
+// missing. Three separate hosts had to be found by hand, one of them only after
+// the owner reported it on screen — and the fourth, the topbar 📷 CAMERA
+// MANAGER, has now been missed TWICE (see the note on `emittedTypeFor` below).
 //
-// ⚠ THE COST THE OLD NOTE PRICED IS NOT PAID, AND THAT WAS CHECKED RATHER THAN
-// REASONED. It said widening "MOVES `workflow-dock.spec.ts` (which docks
-// `mixer` and asserts `.mod-card`) plus the `workflow-dock-composite` VRT
-// baseline (which docks `vca`)". `workflow-dock.spec.ts` drives
-// `/rack?shell=legacy` — the `shellFaces` arm below — so it keeps the legacy
-// card and does not move. The VRT file's `?shell=legacy` scene is likewise on
-// that arm, and its DEFAULT-shell scene EXPANDS a `vca` into a full-view PANE
-// rather than docking it to a rail, so it never reaches this rule at all.
-// Both verified against the spec sources before the term was removed.
-//
-// ⚠ `shellFaces` IS PART OF THE RULE for the same reason it is part of
-// `laneRenderKind`: `?shell=legacy` means "verbatim legacy cards inside the
-// same shell", and a tray that ignored it would make the escape hatch a lie.
-// ⚠ AND IT IS WHY THE THREE SHIPPED DRAWER SPECS CANNOT SEE THIS CHANGE —
-// `workflow-dock.spec.ts` and `workflow-mode.spec.ts` both drive
-// `/rack?shell=legacy`, so they exercise the `false` arm forever. New coverage
-// for the `true` arm must drive the DEFAULT shell; see
-// `e2e/tests/workflow-drawer-face.spec.ts`.
-//
-// ⚠ THE RULE HAS A THIRD CALLER, AND IT HAD TO BE ADDED RATHER THAN FOUND.
-// `AudioIoSurface.svelte` — the 🎧 topbar panel — hosts the pinned AUDIO IN and
-// AUDIO OUT through this same `DockCardHost`, and it did not call this function
-// at all: both mounts passed six props and no `face`, so the host's
-// `face = false` default won and it mounted `nodeTypes[type]` unconditionally.
-// Those two are canvas-hidden pinned singletons, so by the argument above THAT
-// PANEL IS THE ONLY PLACE THEIR FACE CAN APPEAR — promoting either module
-// without the prop would have merged green and left the instance every user
-// has in every session on the legacy card.
-//
-// The blind spot repeated too: the panel's own dedicated VRT scene
-// (`e2e/vrt/workflow-audio-io-composite.spec.ts`) drives `/rack?shell=legacy`,
-// so it is the `false` arm forever exactly like the three drawer specs. The
-// prescription above is the fix in both places — the audio-I/O panel's
-// default-shell coverage is `e2e/tests/workflow-audio-io-face.spec.ts`.
-//
-// GENERAL FORM, for whoever adds a FOURTH host: a pure rule with an injected
-// input is only as good as its call sites, and nothing here can tell you a
-// caller is missing. When you mount `DockCardHost`, decide `face` — the default
-// is a decision too, and it is the wrong one for any rail occupant.
+// THE GENERAL FORM, for whoever adds a fifth: when you mount a module surface
+// somewhere new, decide what it renders THERE. The default is a decision too.
 //
 // ⚠ AND THERE IS A HOST THAT IS NOT A `DockCardHost` AT ALL, WHICH IS WHY THE
-// "fourth host" WARNING ABOVE DID NOT CATCH IT — TWICE. The workflow topbar's
-// 📷 CAMERA MANAGER (`$lib/ui/workflow/CameraSurface.svelte`) keeps one
+// "fourth host" WARNING DID NOT CATCH IT — TWICE. The workflow topbar's 📷
+// CAMERA MANAGER (`$lib/ui/workflow/CameraSurface.svelte`) keeps one
 // always-mounted `<SvelteFlow nodeTypes={…}>` per mapped camera; that is the
 // surface the owner's P0 screenshot calls the "top camera area", and for a
 // `hiddenCard` camera it is the module's ONLY surface.
@@ -390,37 +326,10 @@ export function isLaneNative(type: string): boolean {
 // now emits through `emittedTypeFor`, the same helper the lane uses, so a
 // future change to this switch cannot miss it a third time.
 //
-// ⚠ THE OLD WARNING HERE SAID THAT HOST WAS "the sole owner of `getUserMedia`,
-// the MediaStream and the permission machine" and must therefore keep its card.
-// That was true when it was written and is not true now: ownership moved to
-// `$lib/ui/media/node-camera-source-registry`, on GRAPH lifetime, before the
-// card fleet was deleted. A mapped camera streams with nothing mounted for it
-// at all — which is why the blank host was a RENDERING bug and not a dead
-// camera, and why fixing it needed no ownership move.
+// ⚠ THE CAMERA IS NOT OWNED BY ANY SURFACE, and an older note here said it was.
+// `getUserMedia`, the MediaStream and the permission machine belong to
+// `$lib/ui/media/node-camera-source-registry`, on GRAPH lifetime. A mapped
+// camera streams with nothing mounted for it at all — which is why the blank
+// host was a RENDERING bug and not a dead camera, and why fixing it needed no
+// ownership move.
 
-// ⚠ `dockRailRendersFace()` AND `DockRailRenderInput` ARE GONE, AND THE REASON
-// IS THE BUG THIS FILE'S OWN HEADER DESCRIBES ABOVE.
-//
-// The rule was `shellFaces && pinned && migrated`, and the `pinned` clause meant
-// an UNPINNED dock-rail occupant mounted its verbatim CARD on the DEFAULT shell
-// — a live card-mounting path that the whole e2e inversion never touched,
-// because `Canvas.svelte` passed `pinned: false` for every user-docked node. The
-// three terms have all lost their subject at once: there is no `?shell=legacy`,
-// there are no cards to fall back to, and `migrated` was `STRICT_FACES`
-// membership in a fleet where that set holds every faced module. So the rail
-// renders the faceplate, unconditionally, and there is no decision left to
-// inject — which is strictly better than a rule with three inputs that could
-// only ever answer one way.
-//
-// The general form the header prescribes for "whoever adds a FOURTH host" is
-// unchanged and now trivial to honour: a `DockCardHost` mount has one surface to
-// choose from.
-//
-// ⚠ MAIN REACHED THE SAME CONCLUSION HALFWAY, INDEPENDENTLY (#2358, 2026-09-03).
-// The owner filed the `pinned` clause as a P0 — *"dev is also still using legacy
-// card in top camera area … that is a workaround for now but ALSO WRONG"* — and
-// that fix DROPPED `pinned`, leaving `shellFaces && migrated`. This supersedes
-// it rather than contradicting it: with the cards gone the other two terms lose
-// their subject too, so the two-term rule could also only ever answer one way.
-// The merge keeps THIS side deliberately; nothing of #2358's behaviour is lost,
-// because "every rail occupant renders the face" is what both arrive at.
