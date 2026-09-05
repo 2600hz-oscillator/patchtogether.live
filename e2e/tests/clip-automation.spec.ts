@@ -43,8 +43,17 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { waitForSoundingStep } from './_scheduler-control';
 import type { Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'serial' });
+// ⚠ AND A BUDGET, because this file never declared one. The failing attempt on
+// run 33990942421 died at "Test timeout of 32077ms exceeded" — Playwright's
+// invisible 30 s default plus the 2,077 ms the `rack` fixture had already
+// spent. The round-trip cost above is removed now, but a file whose tests each
+// drive a transport, five sampling windows and a dock is not a 30 s file, and a
+// bare default is a different bound on every runner. A BOUND: nothing here
+// asserts a latency.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 const CP = 'cp';
 // Lane 0, slot 0 → flat stride-64 clip key 0; lane 0 slot 1 → 1; lane 1 slot 0 → 64.
@@ -75,25 +84,76 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
   );
 }
 
-/** Sample a param N times and report min/max/spread (a rough loop window). */
+/**
+ * Sample one or two params N times IN THE PAGE and report the spread /
+ * divergence.
+ *
+ * ── ⚠ THESE WERE PLAYWRIGHT-SIDE LOOPS, AND THAT WAS THE FLAKE ─────────────
+ *
+ * Both read `for (i < count) { await readParam(page, …); await
+ * page.waitForTimeout(intervalMs); }` — one CDP round trip per sample against
+ * an engine param on the same main thread the audio graph and render loop are
+ * running on, plus a wall-clock guess between.
+ *
+ * MEASURED on CI (run 33990942421, blob-report-6) for the failing attempt of
+ * "grabbing an on-screen fader suspends only its playback until RELEASE": the
+ * step timeline is an unbroken alternation of `Evaluate` (~219 ms each) and
+ * `Wait for timeout` (nominal 70 ms, actual ~307 ms) from 6.0 s to 32.0 s,
+ * cut off mid-sample. `sampleSpread` is called FIVE times in that one test —
+ * nominal cost 0.98 s per call, measured 6.2 s and 6.5 s — so roughly 23 s of a
+ * 32 s budget was transport. The retry that "passed" took 31.5 s of 32.1 s:
+ * 98 % of budget. This test was over-budget by construction, not unlucky.
+ *
+ * The whole window now runs in ONE `page.evaluate` per call: same count, same
+ * spacing, same `readParam` per sample, min/max latched in the page. ~140 round
+ * trips become 10. The MEASURED QUANTITIES are unchanged — max minus min for
+ * the spread, max |a-b| for the divergence.
+ *
+ * `samples` comes back so a spread of 0 is legible: from 14 samples it is a
+ * finding, from 0 it is a broken probe.
+ */
 async function sampleSpread(
   page: Page,
   nodeId: string,
   paramId: string,
   count = 14,
   intervalMs = 70,
-): Promise<{ vals: number[]; spread: number }> {
-  const vals: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const v = await readParam(page, nodeId, paramId);
-    if (v != null) vals.push(v);
-    await page.waitForTimeout(intervalMs);
-  }
-  const spread = vals.length ? Math.max(...vals) - Math.min(...vals) : 0;
-  return { vals, spread };
+): Promise<{ vals: number[]; spread: number; samples: number }> {
+  return page.evaluate(
+    ([id, pid, n, gap]) =>
+      new Promise<{ vals: number[]; spread: number; samples: number }>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        const vals: number[] = [];
+        let taken = 0;
+        const tick = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          if (eng && node) {
+            const v = eng.readParam(node, pid as string);
+            if (typeof v === 'number') vals.push(v);
+          }
+          taken++;
+          if (taken >= (n as number)) {
+            clearInterval(timer);
+            resolve({
+              vals,
+              spread: vals.length ? Math.max(...vals) - Math.min(...vals) : 0,
+              samples: vals.length,
+            });
+          }
+        };
+        const timer = setInterval(tick, gap as number);
+        tick();
+      }),
+    [nodeId, paramId, count, intervalMs] as const,
+  );
 }
 
-/** Sample TWO params in lock-step; returns the max |a-b| seen (independence). */
+/** Sample TWO params in lock-step IN THE PAGE; returns the max |a-b| seen
+ *  (independence). Same argument as `sampleSpread` above. */
 async function sampleDivergence(
   page: Page,
   a: string,
@@ -102,13 +162,38 @@ async function sampleDivergence(
   count = 14,
   intervalMs = 70,
 ): Promise<number> {
-  let maxDiff = 0;
-  for (let i = 0; i < count; i++) {
-    const [va, vb] = await Promise.all([readParam(page, a, paramId), readParam(page, b, paramId)]);
-    if (va != null && vb != null) maxDiff = Math.max(maxDiff, Math.abs(va - vb));
-    await page.waitForTimeout(intervalMs);
-  }
-  return maxDiff;
+  return page.evaluate(
+    ([ida, idb, pid, n, gap]) =>
+      new Promise<number>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        let maxDiff = 0;
+        let taken = 0;
+        const tick = (): void => {
+          const eng = w.__engine?.();
+          const na = w.__patch?.nodes?.[ida as string];
+          const nb = w.__patch?.nodes?.[idb as string];
+          if (eng && na && nb) {
+            const va = eng.readParam(na, pid as string);
+            const vb = eng.readParam(nb, pid as string);
+            // Read in the SAME tick — the lock-step property this asserts.
+            if (typeof va === 'number' && typeof vb === 'number') {
+              maxDiff = Math.max(maxDiff, Math.abs(va - vb));
+            }
+          }
+          taken++;
+          if (taken >= (n as number)) {
+            clearInterval(timer);
+            resolve(maxDiff);
+          }
+        };
+        const timer = setInterval(tick, gap as number);
+        tick();
+      }),
+    [a, b, paramId, count, intervalMs] as const,
+  );
 }
 
 /** Force the transport running (set running=1 on any TIMELORDE; free-run

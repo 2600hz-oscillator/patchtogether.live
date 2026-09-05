@@ -72,8 +72,6 @@ e2e/tests/clip-automation.spec.ts :: per-clip automation: a MIDI CC on an automa
 e2e/tests/clip-automation.spec.ts :: per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing :: waitForTimeout(220) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero :: waitForTimeout(400) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: switching clips in a lane swaps to the NEW clip’s own envelope (each clip carries its own) :: waitForTimeout(500) #1
-e2e/tests/clip-automation.spec.ts :: sampleDivergence :: waitForTimeout(intervalMs) #1
-e2e/tests/clip-automation.spec.ts :: sampleSpread :: waitForTimeout(intervalMs) #1
 e2e/tests/clip-automation.spec.ts :: sweepCc :: waitForTimeout(60) #1
 e2e/tests/clipplayer-grid-stability.spec.ts :: dock full-view: a pad click does not move the grid (and the sampler can see it if it does) :: waitForTimeout(120) #1
 e2e/tests/clipplayer-grid-stability.spec.ts :: dock full-view: a pad click does not move the grid (and the sampler can see it if it does) :: waitForTimeout(500) #1
@@ -251,7 +249,6 @@ e2e/tests/tomtom.spec.ts :: TOM DRUM real chain: SEQUENCER → trigger_in → AU
 e2e/tests/tomtom.spec.ts :: a rack SAVED with STRIKE stuck at 1 still responds to trigger_in :: waitForTimeout(1500) #1
 e2e/tests/toybox-disk-loading.spec.ts :: a BAD custom shaderSrc degrades gracefully (no crash) :: waitForTimeout(80) #1
 e2e/tests/toybox-node-batch.spec.ts :: settleFreeze :: waitForTimeout(200) #1
-e2e/tests/toybox-node-controls.spec.ts :: assertKnobSticks :: waitForTimeout(250) #1
 e2e/tests/tv-librarian-audio.spec.ts :: audio_l/audio_r → AUDIO OUT: real energy reaches the terminal output :: waitForTimeout(120) #1
 e2e/tests/twotracks.spec.ts :: on spawn the module is idle — no transport LEDs active, playhead static :: waitForTimeout(500) #1
 e2e/tests/unpatch-patch-point.spec.ts :: legacy patch panel: right-click UNPATCH works on a REAR-VIEW back-panel jack :: waitForTimeout(300) #1

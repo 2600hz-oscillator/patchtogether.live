@@ -20,6 +20,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { canvasNode, spawnPatch } from './_helpers';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 /** All always-on pinned ids a workflow rack must hold after the ensure
  *  (P1 trio + P2 surfaces — graph/workflow-pins.ts). */
@@ -46,7 +47,23 @@ async function waitForPins(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // ⚠ WAS A FLAT 10_000, AND THE RE-POINT IS WHY IT STOPPED FITTING. This
+    // helper is byte-identical to origin/main; what changed is the navigation
+    // above it — `?shell=legacy` is gone, so the pins now land after the v2
+    // dock/ModuleShell boot rather than the legacy one, and a dock mount no
+    // longer overlaps page load (memory:
+    // repointing-a-spec-off-legacy-serializes-cold-boots). The flat number was
+    // never re-derived.
+    //
+    // MEASURED on CI (run 33990942421, blob-report-10): this step occupied
+    // 25,012 ms of wall clock before unwinding a "10000 ms" timeout — the page
+    // was unresponsive well past its own deadline, while two ~400 s
+    // `faceplate-platform` tests ran alongside it on the same shard. On the
+    // retry the identical wait took 74 ms.
+    //
+    // A BOUND, not a claim: nothing here asserts boot latency, and the wait
+    // returns the instant the pins land.
+    { timeout: BOOT_MS },
   );
 }
 
@@ -109,6 +126,11 @@ async function installFakeMidi(page: Page): Promise<void> {
     (globalThis as unknown as { __fakeMidi: unknown }).__fakeMidi = { access, input };
   });
 }
+
+// ⚠ AND `BOOT_MS` (30 s on CI) DOES NOT FIT INSIDE PLAYWRIGHT'S 30 s DEFAULT,
+// so the budget has to move with it or the inner cap could never fire — the
+// nesting inversion this repo has now been bitten by three times.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 test.describe('workflow clock surface (🕐 TIMELORDE face)', () => {
   test('surface pins exist off-canvas; the menu shows the live BPM readout', async ({ page }) => {

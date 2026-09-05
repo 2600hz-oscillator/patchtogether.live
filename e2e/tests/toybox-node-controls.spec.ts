@@ -93,10 +93,19 @@ const CANVAS = '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"
 /** Bring `locator` into view inside the DOCK pane. The card-era version panned
  *  the svelte-flow viewport transform (knobs lived inside the lane canvas);
  *  the console now mounts in the dock full view, whose pane is an ordinary
- *  scroll container — so plain scrollIntoView is the real user gesture and the
- *  viewport transform is a no-op for dock content. */
+ *  scroll container — so scrollIntoView is the real user gesture and the
+ *  viewport transform is a no-op for dock content.
+ *
+ *  ⚠ THE DOM CALL, NOT `scrollIntoViewIfNeeded()`. That Playwright API is
+ *  ACTIONABILITY-GATED: before it scrolls it waits for the element to be
+ *  STABLE — the same box across two consecutive animation frames — with no
+ *  timeout of its own. This spec drags FOURTEEN knobs per op kind, so that is
+ *  fourteen unbounded stability waits on a shard where the blob report measured
+ *  a single `Scroll into view` at 1.2-2.0 s. `scrollIntoView` is the DOM call
+ *  underneath it, with no such contract; the settle below is what this test
+ *  actually needs, and it is explicit. */
 async function panToElement(_page: Page, locator: ReturnType<Page['locator']>): Promise<void> {
-  await locator.scrollIntoViewIfNeeded();
+  await locator.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 }
 
 function sources(): GNode[] {
@@ -231,13 +240,38 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
   // deterministically. Wait until the knob's box is unchanged across a
   // window that OUTLASTS the debounce (the height-stability settle-loop
   // pattern), re-panning if it drifted.
-  for (let i = 0; i < 20; i++) {
-    const a = await slider.boundingBox();
-    await page.waitForTimeout(250);
-    const b = await slider.boundingBox();
-    if (a && b && Math.abs(a.y - b.y) < 1 && Math.abs(a.x - b.x) < 1) break;
-    await panToElement(page, slider);
-  }
+  //
+  // ⚠ THE SETTLE RUNS IN THE PAGE. It used to be a Playwright-side loop — up to
+  // 20 iterations of `boundingBox()` + `waitForTimeout(250)` + `boundingBox()`,
+  // i.e. two CDP round trips and a wall-clock sleep per iteration, PER KNOB,
+  // across fourteen knobs. Measured on CI (run 33990942421, blob-report-6) a
+  // bare `boundingBox` cost ~1 s and a nominal 250 ms sleep cost 504 ms, and
+  // the whole test spent 186.9 s against its own 180 s budget. The CLAIM is
+  // unchanged — the knob's rect must stop moving for longer than the 200 ms
+  // persistResize debounce — but it is now one evaluate instead of ~60.
+  await slider.evaluate(
+    (el, quietMs) =>
+      new Promise<void>((resolve) => {
+        let last = el.getBoundingClientRect();
+        let quietSince = performance.now();
+        const t0 = performance.now();
+        const tick = (): void => {
+          const r = el.getBoundingClientRect();
+          if (Math.abs(r.x - last.x) >= 1 || Math.abs(r.y - last.y) >= 1) {
+            last = r;
+            quietSince = performance.now();
+          }
+          // Bounded so a genuinely never-settling layout fails in the drag
+          // below with a real message, rather than hanging here.
+          if (performance.now() - quietSince >= quietMs || performance.now() - t0 >= 5_000) {
+            return resolve();
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    300,
+  );
   await slider.hover();
   const box = (await slider.boundingBox())!;
   const cx = box.x + box.width / 2;
