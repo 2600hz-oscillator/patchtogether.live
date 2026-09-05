@@ -1006,9 +1006,9 @@ export const frametableDef: VideoModuleDef = {
     // had it backwards.
     //
     // Doing it in the FACTORY is what makes it view-free: the factory is
-    // constructed with the node and disposed with it, on both surfaces and under
-    // `?shell=legacy` alike, so there is now exactly ONE hydrate path and the
-    // card and the faceplate cannot drift about what a reload restores.
+    // constructed with the node and disposed with it, whichever surfaces happen
+    // to be mounted, so there is exactly ONE hydrate path and no two views can
+    // drift about what a reload restores.
     //
     // Best-effort by construction — a missing local copy is the NORMAL case for
     // a collaborator who never had the file (the VIDEOBOX "peers without a local

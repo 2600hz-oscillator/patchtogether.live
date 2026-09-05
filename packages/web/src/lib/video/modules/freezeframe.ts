@@ -955,20 +955,17 @@ export const freezeframeDef: VideoModuleDef = {
 
     // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAD TO
     // (#1934, the #1928 class). The 2026-08-18 owner ruling gives every video
-    // module a screen on/off toggle. This module shipped one — on
-    // `FreezeframeCard.svelte` — in the SAME change that promoted it into
-    // STRICT_FACES, and promotion is precisely what stops both surfaces from
-    // rendering that card (`migrated()` becomes true;
-    // `DockFullView.svelte:319` mounts `<ModuleShell>` instead). The required
-    // control was therefore deleted by the promotion meant to keep it.
+    // module a screen on/off toggle. This module shipped one, on a surface the
+    // SAME change then stopped rendering by promoting the module into
+    // STRICT_FACES — the required control was deleted by the change meant to
+    // deliver it.
     //
     // ⚠ AND THE SPEC THAT PROVED IT WORKED COULD NOT HAVE CAUGHT THAT: it was
-    // pinned to `/rack?shell=legacy`, the one surface promotion does not
-    // change, so it passed and would have gone on passing while the shipping UI
-    // had no toggle at all. Both halves are covered now —
-    // `freezeframe-screen-toggle.spec.ts` exercises the legacy CARD and the
-    // faced DOCK surface, and `video-face-screen-source.test.ts` (#1935)
-    // refuses this shape by name so the next module cannot repeat it.
+    // pinned to the one surface the promotion did not change, so it passed and
+    // would have gone on passing while the shipping UI had no toggle at all.
+    // `freezeframe-screen-toggle.spec.ts` now drives the FACE surface — the one
+    // that ships — and `video-face-screen-source.test.ts` (#1935) refuses this
+    // shape by name so the next module cannot repeat it.
     //
     // There is no generic affordance to fall back on — `previewCollapsed`
     // appears in ZERO shell files — so it comes through `fullViewBody`, the

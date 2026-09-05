@@ -597,11 +597,12 @@ export const mappyDef: VideoModuleDef = {
     //
     // Both of these used to PREFER a `node.data` mirror over the param and fall
     // back to the param only when the mirror was absent. That is fine while the
-    // ONLY writers are card gestures that write both — and it is a silent kill
-    // switch the moment a GENERIC param cell exists, because every shell cell
-    // writes the param ALONE. On a fresh node the faceplate would have worked;
-    // on any node a card, a map import or a `?shell=legacy` collaborator had
-    // touched, the mirror was present and the faceplate's GRID toggle and
+    // ONLY writers are bespoke gestures that write both — and it is a silent
+    // kill switch the moment a GENERIC param cell exists, because every shell
+    // cell writes the param ALONE. On a fresh node the faceplate would have
+    // worked; on any node a MIRROR WRITER had touched — a map import, a
+    // collaborator on an older build — the mirror was present and the
+    // faceplate's GRID toggle and
     // SURFACES control would have been DEAD — with every def-reading gate green
     // (the params exist, the cells render, faces-parity's `readParam` oracle
     // sees the param move) and the engine ignoring all of it.

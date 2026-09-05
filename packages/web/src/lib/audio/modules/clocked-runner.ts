@@ -56,11 +56,11 @@ export const clockedRunnerDef: AudioModuleDef = {
   // resolves a face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend
   // STATIC — and this def declares `params: []`, so the division can only reach
   // the plate as a family. It is not a workaround: the division is a real named
-  // affordance the module owns, and the `testidPrefix` is a literal the LEGACY
-  // CARD already emits (`ClockedRunnerCard.svelte`,
-  // `data-testid="clocked-runner-division"`), which is what module-docs-lint's
-  // card-drift grep checks — so a rename on either surface is RED. The card file
-  // survives promotion: `?shell=legacy` still renders it.
+  // affordance the module owns. ⚠ NO SURFACE EMITS `clocked-runner-division` AS
+  // A LITERAL — MEASURED. `ModuleShell` stamps a family generically from this
+  // declaration, so module-docs-lint holds it through the CELL arm
+  // (`clocked-runner-division-{n}` ranked on the face plan and resolving to a
+  // live shell cell), never through a source grep.
   //
   // ⚠ THE CALLBACK BODY IS NOT A FAMILY, and declaring one for it would be the
   // mistake. A family is a promise to RANK, and module-face-lint requires every

@@ -167,12 +167,12 @@ export const chromaconsoleDef: AudioModuleDef = {
   // or an entry in a committed `<type>.legend.json`, of which none is this
   // module's.
   //
-  // ⚠ EACH `testidPrefix` IS A LITERAL THE LEGACY CARD ALREADY EMITS
-  // (`chromaconsole-connect-${id}`, `chromaconsole-pushall-${id}`), which is
-  // what module-docs-lint's card grep checks — so a rename on either surface is
-  // RED, and no card edit was needed to declare these. The card survives
-  // promotion: `?shell=legacy` still renders it and `chromaconsole.spec.ts`
-  // still drives it there.
+  // ⚠ NEITHER PREFIX IS EMITTED AS A LITERAL BY ANY SURFACE — MEASURED, not
+  // assumed. `ModuleShell` stamps a family generically from this declaration,
+  // so there is no `chromaconsole-connect-…` / `chromaconsole-pushall-…` string
+  // to grep for. module-docs-lint therefore holds these two through its CELL
+  // arm: `<familyId>-{n}` must be ranked on the face plan AND resolve to a live
+  // shell cell. Drop either from the rank and this def goes RED.
   //
   // ⚠ THE PEDAL'S FIVE `role: 'action'` COMMANDS (tap tempo, capture, the two
   // gesture-looper commands, the calibration menu) are deliberately NOT

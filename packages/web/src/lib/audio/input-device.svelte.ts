@@ -7,22 +7,21 @@
 //
 // ── WHY THIS FILE EXISTS ───────────────────────────────────────────────────
 //
-// `AudioinCard` owned the roster in its own component lifecycle: an
+// The roster used to live in a SURFACE's own component lifecycle: an
 // `enumerateDevices()` in `onMount`, a `devicechange` listener added there and
-// removed in `onDestroy`, and a card-local `devices` array that every picker
-// state (`(no inputs)`, `(pick one)`, the positional label fallback) was
+// removed in `onDestroy`, and a component-local `devices` array that every
+// picker state (`(no inputs)`, `(pick one)`, the positional label fallback) was
 // derived from.
 //
-// That was survivable only while the card was guaranteed to be mounted. It is
-// not any more. AUDIO IN's face ships THREE surfaces that can each paint a
-// picker — the lane tile's `tileBody`, the dock full view's `fullViewBody` and
-// the legacy card (still the lane surface under `?shell=legacy`) — and MEASURED
-// on this tree, `audioIn` is in neither `DOM_SOURCE_LANE_TYPES` nor
-// `CARD_PRODUCER_LANE_TYPES` (./../ui/workflow/dom-source-modules), so
-// `needsHeadlessSourceMount` is FALSE for it and `<HeadlessSourceHost>` does not
-// keep a hidden card alive the way it does for `cameraInput`. Leaving the roster
-// on the card would have meant: promote the module, and nothing enumerates the
-// user's inputs at all.
+// That is survivable only while one particular surface is guaranteed to be
+// mounted, and AUDIO IN has no such surface. Its face ships TWO that can each
+// paint a picker — the lane tile's `tileBody` and the dock full view's
+// `fullViewBody` — and MEASURED on this tree, `audioIn` is in neither
+// `DOM_SOURCE_LANE_TYPES` nor `CARD_PRODUCER_LANE_TYPES`
+// (./../ui/workflow/dom-source-modules), so `needsHeadlessSourceMount` is FALSE
+// for it and `<HeadlessSourceHost>` keeps no hidden surface alive the way it
+// does for `cameraInput`. Leaving the roster on a picker would have meant:
+// close that pane, and nothing enumerates the user's inputs at all.
 //
 // So ownership moved rather than a hidden card being kept alive:
 //
@@ -128,15 +127,15 @@ export async function refreshInputDevices(): Promise<void> {
 }
 
 /**
- * Start the roster watch. IDEMPOTENT — the lane tile, the dock full view and the
- * legacy card can all be mounted at once (they are, whenever a docked AUDIO IN
- * is expanded under `?shell=legacy`) and the app still holds exactly one
- * `devicechange` listener and does exactly one enumeration per change.
+ * Start the roster watch. IDEMPOTENT — the lane tile and the dock full view can
+ * both be mounted at once (they are, whenever a docked AUDIO IN is expanded)
+ * and the app still holds exactly one `devicechange` listener and does exactly
+ * one enumeration per change.
  *
  * Deliberately never torn down: the listener is one function on
- * `navigator.mediaDevices` for the lifetime of the tab, and the whole reason
- * this moved off the card is that surface lifetime must stop deciding whether
- * the rack knows what its inputs are.
+ * `navigator.mediaDevices` for the lifetime of the tab, and the whole reason it
+ * lives outside every component is that surface lifetime must stop deciding
+ * whether the rack knows what its inputs are.
  *
  * ⚠ A `devicechange` REFRESHES THE LIST AND NOTHING ELSE. Browsers may hand the
  * SAME physical device a new `deviceId` across a plug event; if the saved id no

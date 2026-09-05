@@ -16,19 +16,19 @@
 //   * THE 30 fps LED PUMP IS ON THE NODE, not on any component:
 //     $lib/ui/modules/node-launchpad-monitor-registry. It reads `grid9x9` and
 //     the live `bright`/`gamma` off the ENGINE and calls setMonitorFrame(). This
-//     is #1728 — a card unmounts on collapse and on LRU eviction, and a
+//     is #1728 — a surface unmounts on collapse and on LRU eviction, and a
 //     performer closing a pane is not a performer finished with their hardware.
 //   * THE SURFACE is the PF-20 faceplate ($lib/ui/modules/outToLaunch/): a
 //     ranked CONNECT cell that reaches the lane tile, plus a `fullViewBody`
 //     carrying the 9×9 preview, its SCREEN switch, the port picker, UNBIND and
-//     the MONITOR lamp. `OutToLaunchCard.svelte` still ships and still renders
-//     under `?shell=legacy`; both draw the preview through the SAME
-//     `out-to-launch-preview` module, so they cannot show different pictures.
+//     the MONITOR lamp. The preview picture itself is drawn by the shared
+//     `out-to-launch-preview` module rather than by the component, so what the
+//     performer sees and what the hardware is sent cannot diverge.
 //
-// ⚠ THE PARAGRAPH ABOVE USED TO SAY "the CARD owns the device … in its rAF
-// loop … setMonitorFrame() at a throttled ~30 fps", and it was already wrong
-// before this module was faced — #1728 moved the pump onto the node and left
-// the header describing the bug it had just fixed.
+// ⚠ THE PARAGRAPH ABOVE USED TO PUT THE DEVICE ON A SURFACE — "owns the device
+// … in its rAF loop … setMonitorFrame() at a throttled ~30 fps" — and it was
+// already wrong before this module was faced: #1728 moved the pump onto the
+// node and left the header describing the bug it had just fixed.
 //
 // pullExempt: the module drives EXTERNAL hardware (a real side effect with no
 // audio surface + no video output), so its draw() must keep running to refresh
@@ -134,10 +134,11 @@ export const outToLaunchDef: VideoModuleDef = {
   // them into cells they cannot be, for the mechanical reasons the face comment
   // below gives.
   //
-  // The `testidPrefix` is a literal the LEGACY CARD already emits
-  // (`OutToLaunchCard.svelte`, the Connect button), which is what
-  // module-docs-lint's card grep checks — so a rename on either surface is RED.
-  // The card file survives promotion: `?shell=legacy` still renders it.
+  // ⚠ THE `testidPrefix` IS NOT EMITTED AS A LITERAL BY ANY SURFACE —
+  // MEASURED. The shell stamps this family generically from the declaration, so
+  // module-docs-lint holds it through the CELL arm (`out-to-launch-connect-{n}`
+  // ranked on the face plan and resolving to a live shell cell), never a source
+  // grep.
   controlFamilies: [
     {
       id: 'out-to-launch-connect',

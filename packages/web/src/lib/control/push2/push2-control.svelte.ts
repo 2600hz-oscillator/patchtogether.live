@@ -1025,11 +1025,11 @@ export function disconnectPush(): void {
  * in either direction: a button that repaints without writing, and a write that
  * does not repaint.
  *
- * Fixed HERE rather than in each surface so both of them get it: the legacy
- * card still ships and still renders under `?shell=legacy`. The faceplate body
- * additionally derives on `viewRune()` directly, which is what covers a view
- * changed FROM THE HARDWARE — a route that never passes through this function
- * at all.
+ * Fixed HERE, in the seam, rather than in the surface that found it: the write
+ * and the repaint cannot come apart again for any caller of this function. The
+ * faceplate body additionally derives on `viewRune()` directly, which is what
+ * covers a view changed FROM THE HARDWARE — a route that never passes through
+ * this function at all.
  */
 export function setLaunchpadView(view: Parameters<typeof setLaunchpadViewRaw>[0]): void {
   setLaunchpadViewRaw(view);

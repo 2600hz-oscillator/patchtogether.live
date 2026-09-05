@@ -142,12 +142,10 @@ export const pongDef: AudioModuleDef = {
 
   // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
-  // ⚠ THE PROMOTION IS THE FIX, NOT A SKIN. Today on main pong is not in
-  // NON_SHELL_LANE_TYPES, not in STRICT_FACES and not a CARD_PRODUCER, so
-  // laneRenderKind returns 'placeholder': under the shipping shell the lane tile
-  // is an empty plate — no court, no score, no faders — WHILE THE GAME RUNS,
-  // scores, and pulses its gate outputs into whatever is patched. Every pong e2e
-  // drives ?shell=legacy, so nothing in the suite has ever observed it.
+  // ⚠ THE PROMOTION WAS THE FIX, NOT A SKIN. Before it, pong's lane tile was an
+  // empty plate — no court, no score, no faders — WHILE THE GAME RAN, scored,
+  // and pulsed its gate outputs into whatever was patched. No pong e2e
+  // exercised that tile, so nothing in the suite had ever observed it.
   //
   // WHAT THE MODULE IS FOR: a CV-steered arcade game whose two gate outputs are
   // the point — the rally is a clock and the scores are its events.

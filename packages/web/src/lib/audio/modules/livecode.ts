@@ -37,11 +37,11 @@ export const livecodeDef: AudioModuleDef = {
   // ⚠ ONE FAMILY, AND THE COUNT IS FORCED BY THE RESOLVER. `resolveFaceControl`
   // resolves a face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend
   // STATIC — and this def declares `params: []`, so RUN can only reach the plate
-  // as a family. The `testidPrefix` is a literal the LEGACY CARD already emits
-  // (`LivecodeCard.svelte`, `data-testid="livecode-run"`), which is what
-  // module-docs-lint's card-drift grep checks — so a rename on either surface is
-  // RED. The card file survives promotion: `?shell=legacy` still renders it, and
-  // `livecode.spec.ts` still drives it there.
+  // as a family. ⚠ NO SURFACE EMITS `livecode-run` AS A LITERAL — MEASURED.
+  // `ModuleShell` stamps a family generically from this declaration, so
+  // module-docs-lint holds it through the CELL arm (`livecode-run-{n}` ranked
+  // on the face plan and resolving to a live shell cell), never through a
+  // source grep.
   //
   // ⚠ NEITHER THE BUFFER NOR THE LOG IS A FAMILY, and declaring one for either
   // would be the mistake. A family is a promise to RANK, and module-face-lint

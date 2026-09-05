@@ -325,7 +325,7 @@ export const clipplayerDef: AudioModuleDef = {
   // measurement on `aria-label`/`title`, per the 2026-08-17/19 readout rulings)
   // and CLR AUTO as the same button in the note editor. What they stop being is
   // CELLS, because a cell that no probe can reach is a cell nothing can prove
-  // is alive, and the legacy card keeps every one of them under `?shell=legacy`.
+  // is alive.
   //
   // ⚠ `clipplayer-scene-repeat` SURVIVED ONLY BECAUSE THE PROSE WAS RE-READ.
   // Its doc blob above described a "read-only ×N" whose count is set on a

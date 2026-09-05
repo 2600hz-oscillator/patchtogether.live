@@ -513,21 +513,19 @@ export function unregisterSetter(moduleId: string, paramId: string): void {
  *
  * ⚠ THE FIRST MEMBER IS A FACE PROMOTION, AND THE CLASS HAS MORE THAN ONE.
  * `MidiAssignButton` binds under a SYNTHETIC ACTION ID — its own doc names
- * `'play'` and `'clear'` as examples — because a card button has no backing
- * param. Promoting a module replaces that button with a `<Toggle>` over the
- * REAL param, so `score`'s PLAY moved from `<node>:play` to `<node>:isPlaying`.
- * Every future promotion of a card carrying a MidiAssignButton is the same
- * shape, which is why this is a declared table rather than a module `if`.
+ * `'play'` and `'clear'` as examples — because a bare button has no backing
+ * param. A face replaces such a button with a `<Toggle>` over the REAL param,
+ * so `score`'s PLAY moved from `<node>:play` to `<node>:isPlaying`. Any control
+ * that trades a synthetic action id for a real param id is the same shape,
+ * which is why this is a declared table rather than a module `if`.
  *
- * ⚠ IT IS A ONE-WAY MIGRATION TOWARD THE DEFAULT SURFACE, deliberately.
- * Adopting RE-KEYS the record, so a player who then opens `?shell=legacy` finds
- * the legacy card's button unbound. That is the right direction: the faceplate
- * is the product and the legacy card is an escape hatch, and leaving the record
- * under both keys would give one physical pad two owners.
+ * ⚠ ADOPTING RE-KEYS THE RECORD RATHER THAN COPYING IT, deliberately. Filing
+ * the same binding under both the old and the new key would give one physical
+ * pad two owners, and nothing in the read path would say which of them won.
  */
 const LEGACY_BINDING_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  // score: the card's MidiAssignButton (`paramId="play"`, a synthetic action
-  // id) became the faceplate's `isPlaying` Toggle, which is the same
+  // score: a MidiAssignButton (`paramId="play"`, a synthetic action id)
+  // became the faceplate's `isPlaying` Toggle, which is the same
   // `makeMidiAssignable({ kind:'note', controlType:'button' })` factory with the
   // same press-edge toggle semantics — so the AFFORDANCE survived promotion
   // intact and only the KEY moved.

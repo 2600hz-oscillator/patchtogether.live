@@ -58,10 +58,10 @@ export const launchpadControlDef: MetaModuleDef = {
   // the extension body, for the reasons that file gives) would force them into
   // cells they cannot be.
   //
-  // Each `testidPrefix` is a literal the LEGACY CARD already emits
-  // (`LaunchpadControlCard.svelte:150`, `:165`), which is what
-  // module-docs-lint's card grep checks — so a rename on either surface is red.
-  // The card file survives promotion: `?shell=legacy` still renders it.
+  // ⚠ NEITHER `testidPrefix` IS EMITTED AS A LITERAL BY ANY SURFACE —
+  // MEASURED. The shell stamps a family generically from this declaration, so
+  // module-docs-lint holds both through the CELL arm (`<familyId>-{n}` ranked
+  // on the face plan and resolving to a live shell cell), never a source grep.
   controlFamilies: [
     { id: 'launchpad-control-single', label: 'Single', kind: 'other', testidPrefix: 'launchpad-control-single' },
     { id: 'launchpad-control-pair', label: 'Pair', kind: 'other', testidPrefix: 'launchpad-control-pair' },

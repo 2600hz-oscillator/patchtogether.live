@@ -54,11 +54,12 @@ export const controlSurfaceDef: MetaModuleDef = {
   // the electraControl addressability argument, verbatim — so the proxies are
   // a `control-grid` body and the lock is the face.
   //
-  // The `testidPrefix` is a literal the LEGACY BUTTON already emits
-  // (`ControlSurfaceCard.svelte`, `data-testid="control-surface-lock"`), which
-  // is what module-docs-lint's card grep checks — so a rename on either
-  // surface is RED. The card survives promotion: `?shell=legacy` still renders
-  // it, and `control-surface.spec.ts` still drives it there.
+  // ⚠ NO SURFACE EMITS `control-surface-lock` AS A LITERAL — the board body
+  // deliberately namespaces its own testids `cs-board-*`, and the shell stamps
+  // this family generically from the declaration. module-docs-lint therefore
+  // holds it through the CELL arm (`control-surface-lock-{n}` ranked on the
+  // face plan and resolving to a live shell cell), never through a source
+  // grep.
   controlFamilies: [
     {
       id: 'control-surface-lock',

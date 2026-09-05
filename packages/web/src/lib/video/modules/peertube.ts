@@ -23,9 +23,9 @@
 // `$lib/ui/media/node-hls-source-registry` on GRAPH lifetime, created and swept
 // from Canvas's own effects, with no surface involved at any point. What a
 // SURFACE owns is the search box's debounce and rate limit, and forwarding
-// gestures through `nodeHlsSource.request(...)` — and since the wave-4 face
-// promotion there are two of them (the faceplate's `fullViewBody` and, at
-// `?shell=legacy`, the card), sharing ONE `PeerTubePicker.svelte`.
+// gestures through `nodeHlsSource.request(...)`, which the faceplate's
+// `fullViewBody` does through `PeerTubePicker.svelte` — the same picker
+// ARCHIVIST's browse controls mount, so the two cannot drift.
 //
 // The factory is DOM-free + multiplayer-agnostic. It owns the FBO + the frame
 // uploader (shared video-frame-upload pump) + the audio splitter + the gate/CV
