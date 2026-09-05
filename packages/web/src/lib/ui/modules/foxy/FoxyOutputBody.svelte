@@ -78,9 +78,9 @@
   let previewCollapsed = $derived<boolean>(
     (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
   );
-  // The view flip. The legacy card keeps this in component state
-  // (`FoxyCard.svelte`'s `vizMode`); the FACE cannot, for the unmount reason
-  // above. Default '3d' matches the card, so a node that has never been flipped
+  // The view flip. It used to live in component state; the FACE cannot keep it
+  // there, for the unmount reason above. Default '3d' is unchanged, so a node
+  // that has never been flipped
   // renders identically on both surfaces.
   let vizMode = $derived<'scope' | '3d'>(
     (patch.nodes[nodeId]?.data?.vizMode as 'scope' | '3d' | undefined) ?? '3d',
@@ -108,9 +108,9 @@
     });
   }
 
-  // EXPORT TABLE — the same payload builder and the same in-DOM anchor click the
-  // legacy card uses (`buildWavetableExport` / `buildWavetableExportFilename`),
-  // so there is ONE implementation of the file format and not two.
+  // EXPORT TABLE — the shared payload builder and in-DOM anchor click
+  // (`buildWavetableExport` / `buildWavetableExportFilename`), so there is ONE
+  // implementation of the file format and not two.
   function exportTable(): void {
     const eng = engineCtx.get();
     const node = patch.nodes[nodeId] as ModuleNode | undefined;
@@ -154,8 +154,8 @@
     ctx2d.drawImage(stage, 0, 0, c.width, c.height);
   }
 
-  // LIVE WAVETABLE redraw guard, carried over from the legacy card because the
-  // reason is still live: `drawWave3D`/`drawWaveScope` are pure functions of
+  // LIVE WAVETABLE redraw guard, carried over because the reason is still
+  // live: `drawWave3D`/`drawWaveScope` are pure functions of
   // (frames, activeFrame, mode), so re-running them every rAF re-rasterizes
   // identical pixels — and at a fractional canvas zoom each repaint composites
   // with non-deterministic sub-pixel AA, which is what broke the freeze-equality

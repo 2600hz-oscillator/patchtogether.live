@@ -80,9 +80,10 @@ describe('controlSurface face — the promotion', () => {
 
   // ⚠ THE USER-DOCKED RESIDUAL LEG IS GONE, AND SO IS THE DEFECT IT DESCRIBED.
   // It asserted `dockRailRendersFace(...) === false` — controlSurface is not a
-  // pinned singleton, so a user-docked node's rail occupant kept the VERBATIM
-  // legacy card — and argued that nothing was lost because that card carried
-  // its own prune `$effect` and lock button. The owner filed exactly this as a
+  // pinned singleton, so a user-docked node's rail occupant kept its
+  // pre-faceplate surface — and argued that nothing was lost because that
+  // surface carried its own prune `$effect` and lock button. The owner filed
+  // exactly this as a
   // P0 on 2026-09-03: the rail painted a DIFFERENT INSTRUMENT from the lane for
   // the same node. Main fixed it by dropping the `pinned` term (#2358); here
   // all three terms lost their subject at once — no second renderer, nothing to
@@ -141,17 +142,19 @@ describe('controlSurface face — the ONE ranked cell', () => {
     expect(controlSurfaceDef.params).toEqual([]);
   });
 
-  // The def is the ONE place the testid lives; module-docs-lint asserts the
-  // prefix appears in real UI source (the legacy card's lock button emits it),
-  // so a rename on either surface is red.
-  it('the family testidPrefix is the literal the card lock button emits', () => {
+  // The def is the ONE place the testid lives. ⚠ NO SURFACE EMITS IT AS A
+  // LITERAL — the board body builds `control-surface-lock-{n}` per slot, so
+  // module-docs-lint holds the prefix through the CELL arm rather than a source
+  // grep. `control-surface.ts` records the same thing beside the declaration.
+  it('the family testidPrefix is the literal the lock cells are built from', () => {
     expect(controlSurfaceDef.controlFamilies![0]!.testidPrefix).toBe('control-surface-lock');
   });
 });
 
 describe('controlSurface tileBody — the prune, on the surface that outlives the dock', () => {
   // ⚠ THE STOP-2 OF THIS PROMOTION. `pruneSurfaceDangling` had exactly ONE
-  // production caller in the tree — the legacy card's `$effect` — and
+  // production caller in the tree — an `$effect` on the surface being replaced
+  // — and
   // controlSurface is in neither half of `HEADLESS_MOUNT_LANE_TYPES`, so a
   // promotion that only built the board would have stopped it silently with
   // every registry test green (a dangling binding lingers in node.data and the

@@ -21,8 +21,8 @@
   // attest basis includes any `.svelte` whose source creates a GL context, so a
   // direct GL surface here would put this file in the basis PERMANENTLY and make
   // every future edit cost an owner-machine re-attest. The engine already renders
-  // to its own GL canvas; this is a `drawImage` of it, exactly as the legacy card
-  // and BackdraftOutputBody do, and for the same reason.
+  // to its own GL canvas; this is a `drawImage` of it, exactly as
+  // BackdraftOutputBody does, and for the same reason.
   //
   // ⚠ COMPACT BY DEFAULT. The resting DRAWING BUFFER is modest (IDLE_BUFFER),
   // not the engine resolution — the blit is a GL readback whose cost scales with
@@ -55,8 +55,7 @@
 
   interface Props {
     /** The graph node this faceplate is showing — the ONLY prop the slot gets
-     *  (`ShellExtensionFullViewBodyProps`). Everything else is resolved here,
-     *  exactly as the legacy card resolves it. */
+     *  (`ShellExtensionFullViewBodyProps`). Everything else is resolved here. */
     nodeId: string;
   }
   let { nodeId }: Props = $props();
@@ -388,9 +387,9 @@
     width: 100%;
     height: auto;
   }
-  /* FULL FRAME here means "fill the dock body" — the dock has no card border to
-   * consume, so the in-app expansion is of this slot rather than of a card. The
-   * PERSISTED flag is the same `node.data.fullFrame` the legacy card writes. */
+  /* FULL FRAME here means "fill the dock body" — the dock has no plate border
+   * to consume, so the in-app expansion is of this slot. The PERSISTED flag is
+   * `node.data.fullFrame`, the key a saved rack carries. */
   .vo-face.full-frame {
     flex-direction: column;
     align-items: stretch;

@@ -5,9 +5,9 @@
 // This face rests on six claims that no shared gate can check, and every one of
 // them reads as true whether or not it is:
 //
-//   1. "The well survives promotion." The picture was painted by a LEGACY CARD
-//      the shipping shell does not mount. Every registry test stays green if it
-//      simply disappears.
+//   1. "The well survives promotion." The picture used to be painted by a
+//      surface the shipping shell does not mount. Every registry test stays
+//      green if it simply disappears.
 //   2. "SCREEN OFF stops the picture and NOTHING else." The strongest single
 //      claim on this surface, and the one a reader is most likely to copy onto
 //      a module where it is false (`skifree`, one module away in this family).
@@ -117,8 +117,8 @@ describe('modtris — the face is promoted and complete', () => {
   });
 
   it('declares BOTH cells as FADERS, and the shell really resolves faders', () => {
-    // ⚠ PARITY, NOT TASTE — and the parity was with the legacy card, which drew
-    // both of these as `<NeonFader>` while `frogger`'s drew a `<Knob>`. That is
+    // ⚠ PARITY, NOT TASTE — the parity is with what shipped before, which drew
+    // both of these as `<NeonFader>` while `frogger` drew a `<Knob>`. That is
     // WHY this declaration exists and why the sibling face declares nothing
     // here; the card that established it is gone, so the premise is recorded
     // rather than re-measured.
@@ -499,7 +499,7 @@ describe('modtris — CLAIM 6: the RANK is honest because the control was WIRED'
 });
 
 describe('modtris — the face paints ONE well at ONE scale', () => {
-  // ⚠ THE BUG THIS PINS WAS LIVE AND UNCATCHABLE. The legacy card passed
+  // ⚠ THE BUG THIS PINS WAS LIVE AND UNCATCHABLE. The predecessor passed
   // `canvasEl.width/height` — the BACKING STORE at DPR 2, i.e. 400x520 — into a
   // painter that lays out in those units and then draws its NEXT strip at an
   // ABSOLUTE `'700 9px'` with absolute `+14`/`+90`/`+102` offsets. Every WELL

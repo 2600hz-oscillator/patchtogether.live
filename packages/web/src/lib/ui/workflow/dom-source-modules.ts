@@ -13,10 +13,10 @@
 // For those, the ENGINE NODE exists but its SOURCE is null until the card mounts
 // — and `onDestroy` explicitly detaches it again.
 //
-// Under `?shell=1` the lane renders <ModuleShellPlaceholder> / <ModuleShell>
-// INSTEAD of the legacy card (see ./legacy-fallback). So for a DOM-source module
-// the card never mounts, `attachExternalSource` never runs, the node emits a
-// blank texture, and EVERY consumer downstream of it is black — the chain looks
+// The lane renders <ModuleShell> (see ./legacy-fallback), not a per-module
+// surface. So for a DOM-source module whose source lived on such a surface,
+// nothing mounted it, `attachExternalSource` never ran, the node emitted a
+// blank texture, and EVERY consumer downstream of it was black — the chain looks
 // patched and is dead. Switching an already-running rack INTO the shell is worse:
 // the card unmounts and actively DETACHES the live source.
 //
@@ -212,8 +212,8 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  *                installed from `modules/cube/CubeVizSurface.svelte`, and the
  *                gate's file walk was flat + `*Card.svelte`-filtered, so the
  *                pattern matched a file nothing read. `CubeVizSurface` is THE
- *                cube renderer (the legacy card and the faceplate hero are two
- *                mounts of it, not two renderers), and cube's own `drawFrame`
+ *                cube renderer — every surface that shows cube is a MOUNT of
+ *                it, not a second renderer — and cube's own `drawFrame`
  *                paints SOLID BLACK when no drawer is registered — cube.ts:84
  *                says so outright. MEASURED on `CUBE.video_out → VIDEO OUT`,
  *                same probe and same port in every phase: never-mounted
@@ -360,10 +360,10 @@ export const DOM_SOURCE_LANE_TYPES: ReadonlySet<string> = new Set<string>([]);
  * installer to defend against.
  *
  * ⚠ AND THE TRACE MOVED WITH IT, WHICH IS THE HALF A READER WILL LOOK FOR. The
- * picture is `modules/scope/ScopeTraceSurface.svelte` now — one renderer for the
- * legacy card and the faceplate body (and, until the GROUP! module was deleted,
- * its viz-passthrough mount), where there were three copies of `drawScope`
- * before. That surface WRITES NOTHING, which is the property the gate below
+ * picture is `modules/scope/ScopeTraceSurface.svelte` now — ONE renderer for
+ * every surface that shows a trace, where there were three copies of
+ * `drawScope` before. That surface WRITES NOTHING, which is the property the
+ * gate below
  * reads: with no producer seam anywhere in `ScopeCard`'s subtree, `scope`'s
  * absence here is DERIVED rather than deleted. It also retired the
  * `GroupCard → ScopeCard.svelte` subtree exemption — first because the group

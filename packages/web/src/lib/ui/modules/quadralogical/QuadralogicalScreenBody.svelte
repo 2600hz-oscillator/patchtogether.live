@@ -6,8 +6,8 @@
   //
   // ── WHAT IT IS ─────────────────────────────────────────────────────────────
   //
-  // The joystick field, exactly as the legacy card draws it — IN1..IN4 corner
-  // labels on the quadWeights corner map, the crosshair at the origin, the
+  // The joystick field — IN1..IN4 corner labels on the quadWeights corner map,
+  // the crosshair at the origin, the
   // yellow diamond that IS `diamond_margin`, and the puck tinted by whichever
   // input the composite currently favours — with ONE addition and ONE
   // subtraction against that card:
@@ -159,8 +159,8 @@
    * ⚠ IT IS A RHOMBUS AND IT CANNOT BE A ROTATED SQUARE. The boundary this
    * draws is `|x| + |y| = diamond_margin` in NORMALISED coordinates, whose
    * horizontal semi-axis is `margin·W/2` and vertical semi-axis `margin·H/2`.
-   * The legacy card draws it as a CSS square with `rotate(45deg)`, which has
-   * EQUAL semi-axes — correct at 1:1 and only at 1:1. With SCREEN ON this frame
+   * The obvious shortcut is a CSS square with `rotate(45deg)`, which has EQUAL
+   * semi-axes — correct at 1:1 and only at 1:1. With SCREEN ON this frame
    * is 4:3, so a rotated square would be wrong by 4/3 on one axis: it would
    * claim the all-four zone reaches further up the field than it does, and the
    * drawn geometry would stop being 1:1 with the math the shader runs.
@@ -229,8 +229,8 @@
 
   // ── per-axis MIDI / Control Surface / Electra ─────────────────────────────
   // The SAME `makeMidiAssignable` + `ControlContextMenu` seam `XyPad` uses, one
-  // assignable per axis. This is what carries the legacy card's bespoke 2-axis
-  // menu across the promotion — Assign/Forget X and Y, Send/Remove X and Y to a
+  // assignable per axis. This is what carries the bespoke 2-axis menu across
+  // the promotion — Assign/Forget X and Y, Send/Remove X and Y to a
   // Control Surface, and the Electra ▸ Row ▸ knob cascade — through the SHARED
   // menu rather than a second hand-rolled copy of it.
   const midiX = makeMidiAssignable({
