@@ -408,7 +408,6 @@
   // zone) whose hardware sessions must outlive every patch load, save and
   // swap. See graph/device-slots.ts for the model.
   import {
-    DEVICE_SLOTS,
     OUTPUT_SLOT_LAYOUT,
     isDeviceSlotId,
     outputSlotPosition,
