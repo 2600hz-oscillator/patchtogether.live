@@ -255,6 +255,13 @@ describe('hostile peer vs. a reserved slot', () => {
     const { eng, detach } = attach(a);
     try {
       runSlotEnsure(a);
+      // BIND IT FIRST — the row is about a DEVICE SESSION, and an unused slot
+      // has none. Since lazy engines landed, an unbound slot holds no engine
+      // at all, so attacking one would prove nothing about sessions; binding
+      // makes the subject real and the assertion sharper than it was before.
+      a.doc.transact(() => {
+        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
+      });
       await flushReconciler(eng);
       expect(eng.live.has('slot:cam1')).toBe(true);
 
@@ -383,6 +390,13 @@ describe('patch load — the device-slot survival contract', () => {
     const { eng, detach } = attach(a);
     try {
       runSlotEnsure(a);
+      // A slot IN USE is the subject: bind one camera, and rely on output1
+      // being always-live. An unused slot holds no engine (lazy engines), so
+      // "it was never torn down" would be trivially true of it — the claim is
+      // about slots that have something to lose.
+      a.doc.transact(() => {
+        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
+      });
       await flushReconciler(eng);
       expect(eng.live.has('slot:cam1')).toBe(true);
       expect(eng.live.has(DEFAULT_VIDEO_OUT_ID)).toBe(true);
@@ -395,10 +409,15 @@ describe('patch load — the device-slot survival contract', () => {
       // The negative assertion IS the contract. Not "a slot node exists
       // afterwards" — a node re-added at the same id would satisfy that while
       // the camera light blinked.
+      // The negative half holds for EVERY reserved id — none may be torn down.
       for (const id of RESERVED_DEVICE_SLOT_IDS) {
         expect(after, `slot ${id} must not be torn down`).not.toContain(`removeNode ${id}`);
-        expect(eng.live.has(id)).toBe(true);
       }
+      // And the two that were LIVE going in are still live coming out. (The
+      // rest hold no engine because nothing uses them — that is the lazy
+      // contract, pinned in its own describe block below.)
+      expect(eng.live.has('slot:cam1')).toBe(true);
+      expect(eng.live.has(DEFAULT_VIDEO_OUT_ID)).toBe(true);
       // POSITIVE CONTROL for the instrument itself: the same load DID tear the
       // ordinary content down, so a `removeNode` genuinely would have been
       // observed had one been emitted for a slot.
@@ -509,5 +528,158 @@ describe('patch load — the device-slot survival contract', () => {
     expect(
       (a.patch.nodes['slot:cam2']!.data as Record<string, unknown>).deviceId,
     ).toBe('MY-CAMERA');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// LAZY ENGINES — asserted against the REAL reconciler, both ways.
+//
+// ⚠ WATCH THE VACUITY SHAPE HERE. "No engine was created" is the easiest green
+// in this file to get for the wrong reason: a reconciler that never ran, a
+// snapshot that never arrived, or an engine registered for the wrong domain all
+// produce an empty op list. Every case below therefore settles the reconciler
+// FIRST and asserts against a POSITIVE CONTROL in the same rack — a node that
+// DID produce an engine — so an empty `live` set can only mean the filter,
+// never the harness.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('lazy engines: an unused slot holds none', () => {
+  it('a fresh rack stands up ONE slot engine — and the control proves the rig works', async () => {
+    const a = makePeer();
+    const { eng, detach } = attach(a);
+    try {
+      runSlotEnsure(a);
+      // POSITIVE CONTROL, added in the same rack and the same pass: ordinary
+      // content that MUST produce an engine. If this is absent the case below
+      // proves nothing, because "nothing was created" would be true of a
+      // reconciler that never ran.
+      a.doc.transact(() => {
+        a.patch.nodes['lines-1'] = {
+          id: 'lines-1', type: 'lines', domain: 'video',
+          position: { x: 0, y: 0 }, params: {}, data: {},
+        } as ModuleNode;
+      });
+      await flushReconciler(eng);
+
+      expect(eng.live.has('lines-1'), 'the control produced an engine').toBe(true);
+
+      // Every unbound, unpatched slot is absent from the engine…
+      for (const spec of DEVICE_SLOTS) {
+        if (spec.id === DEFAULT_VIDEO_OUT_ID) continue;
+        expect(eng.live.has(spec.id), `${spec.slot} must hold no engine while unused`).toBe(false);
+      }
+      // …while the master sink stays eager, so the population is EXACTLY what
+      // a rack without slots has always carried.
+      expect(eng.live.has(DEFAULT_VIDEO_OUT_ID)).toBe(true);
+      expect([...eng.live].sort()).toEqual(['lines-1', DEFAULT_VIDEO_OUT_ID].sort());
+    } finally {
+      detach();
+    }
+  });
+
+  it('BINDING a camera brings its slot up — on the next snapshot, no special casing', async () => {
+    const a = makePeer();
+    const { eng, detach } = attach(a);
+    try {
+      runSlotEnsure(a);
+      await flushReconciler(eng);
+      expect(eng.live.has('slot:cam1')).toBe(false);
+
+      // The operator picks a camera. This is the whole trigger.
+      const before = eng.ops.length;
+      a.doc.transact(() => {
+        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
+      });
+      await flushReconciler(eng);
+
+      expect(eng.live.has('slot:cam1'), 'binding mounts the slot').toBe(true);
+      expect(eng.ops.slice(before)).toContain('addNode slot:cam1:cameraInput');
+    } finally {
+      detach();
+    }
+  });
+
+  it('PATCHING into an output slot brings it up too — first use is not only binding', async () => {
+    const a = makePeer();
+    const { eng, detach } = attach(a);
+    try {
+      runSlotEnsure(a);
+      a.doc.transact(() => {
+        a.patch.nodes['lines-1'] = {
+          id: 'lines-1', type: 'lines', domain: 'video',
+          position: { x: 0, y: 0 }, params: {}, data: {},
+        } as ModuleNode;
+      });
+      await flushReconciler(eng);
+      expect(eng.live.has('slot:output3')).toBe(false);
+
+      const before = eng.ops.length;
+      a.doc.transact(() => {
+        a.patch.edges['e-lines-1-out-slot:output3-in'] = {
+          id: 'e-lines-1-out-slot:output3-in',
+          source: { nodeId: 'lines-1', portId: 'out' },
+          target: { nodeId: 'slot:output3', portId: 'in' },
+          sourceType: 'video',
+          targetType: 'video',
+        } as Edge;
+      });
+      await flushReconciler(eng);
+
+      expect(eng.live.has('slot:output3'), 'a cable mounts the sink').toBe(true);
+      expect(eng.ops.slice(before)).toContain('addNode slot:output3:videoOut');
+    } finally {
+      detach();
+    }
+  });
+
+  // The reverse is deliberate: unbinding releases the device. Asserted so that
+  // a future change making the filter latched (mount-once) reddens here rather
+  // than silently leaking a camera nobody can see.
+  it('UNBINDING releases it again — the filter is per-pass, not latched', async () => {
+    const a = makePeer();
+    const { eng, detach } = attach(a);
+    try {
+      runSlotEnsure(a);
+      a.doc.transact(() => {
+        (a.patch.nodes['slot:cam2']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
+      });
+      await flushReconciler(eng);
+      expect(eng.live.has('slot:cam2')).toBe(true);
+
+      const before = eng.ops.length;
+      a.doc.transact(() => {
+        delete (a.patch.nodes['slot:cam2']!.data as Record<string, unknown>).deviceId;
+      });
+      await flushReconciler(eng);
+
+      expect(eng.ops.slice(before)).toContain('removeNode slot:cam2');
+      expect(eng.live.has('slot:cam2')).toBe(false);
+    } finally {
+      detach();
+    }
+  });
+
+  // ⚠ THE INTERACTION THAT MATTERS: laziness must not weaken the phase's whole
+  // point. A slot that is IN USE keeps the load guarantee it had before.
+  it('a BOUND slot still survives a patch load untorn', async () => {
+    const a = makePeer();
+    const { eng, detach } = attach(a);
+    try {
+      runSlotEnsure(a);
+      a.doc.transact(() => {
+        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
+      });
+      await flushReconciler(eng);
+      expect(eng.live.has('slot:cam1')).toBe(true);
+
+      const before = eng.ops.length;
+      loadEnvelopeIntoStore(envelopeOf(otherPatch()), a.doc, a.patch as never);
+      await flushReconciler(eng);
+
+      expect(eng.ops.slice(before)).not.toContain('removeNode slot:cam1');
+      expect(eng.live.has('slot:cam1')).toBe(true);
+    } finally {
+      detach();
+    }
   });
 });

@@ -451,6 +451,89 @@ export function slotCoercionReason(decision: SlotMergeDecision): string {
   );
 }
 
+// ── LAZY ENGINES — AN UNUSED SLOT COSTS NOTHING ────────────────────────────
+//
+// Eight always-present nodes are eight always-present ENGINE nodes, and on a
+// software renderer that is not free: the product's own responsiveness guard
+// (`main thread must answer fast`, whose budget scales with the number of live
+// video engines) went over budget in three specs across three CI runs once the
+// slots were baked in. The answer is to remove the cost, not to raise the
+// bound — a bound raised to fit a slower rack is a gate re-pinned to match the
+// regression it exists to catch.
+//
+// So a slot node always EXISTS — that is what reserves the id, keeps the row in
+// the camera manager, keeps the card in the purple zone, and keeps every guard
+// in this file meaningful — but a slot nobody is using does not instantiate a
+// video-domain engine. It mounts on FIRST USE: the same shape the clip recorder
+// uses (a rack that never records holds no recorder) and the same shape this
+// layer already applies to camera card hosts.
+//
+// ⚠ THE CONTINUITY GUARANTEE IS UNAFFECTED, AND THAT IS WHY THIS IS SAFE. Every
+// promise in this file is keyed on the ID surviving, and an INERT slot has no
+// session to protect: no stream, no socket, no claim. The moment it acquires
+// one it is live by definition, because acquiring is exactly what makes it
+// non-inert. Laziness can therefore only apply to slots for which the
+// continuity question does not yet arise.
+//
+// ⚠ `output1` IS NEVER INERT. It is the historical `workflow-videoOut` — the
+// rack's master video sink, the id `resolveMasterVideoOutId` returns, and the
+// slot most likely to be presenting. Continuity outranks boot cost there. It
+// also makes the floor EXACT rather than approximate: a rack with slots then
+// holds the same video-engine population as a rack without them, which is a
+// thing a test can assert honestly.
+
+/** Minimal edge shape the inert-slot planner inspects. */
+export interface SlotEdgeLike {
+  source: { nodeId: string };
+  target: { nodeId: string };
+}
+
+/** True when this slot must hold an engine regardless of use. */
+export function isAlwaysLiveSlot(id: string): boolean {
+  return id === DEFAULT_VIDEO_OUT_ID;
+}
+
+/**
+ * Which reserved slot ids are INERT right now — present in the graph, but with
+ * nothing to run, so the reconciler gives them no engine node.
+ *
+ * A slot is inert when BOTH hold:
+ *   - nothing is BOUND to it (no `DEVICE_SLOT_RIG_KEYS` value — no camera
+ *     chosen, so there is nothing to acquire); and
+ *   - nothing is ROUTED through it (no edge touches it in either direction).
+ *
+ * The edge half is what makes "first use" include PATCHING, not only binding:
+ * cable something into `output3` and it becomes a working sink on that gesture.
+ * It also means this can never silently drop a user's cable — an edge existing
+ * is itself what makes the slot live.
+ *
+ * Pure, and O(nodes + edges) because it runs on the reconciler's hot path.
+ */
+export function planInertSlots(
+  nodes: ReadonlyArray<DeviceSlotNodeLike | null | undefined>,
+  edges: ReadonlyArray<SlotEdgeLike | null | undefined>,
+): Set<string> {
+  const inert = new Set<string>();
+  for (const n of nodes) {
+    if (!n || typeof n.id !== 'string') continue;
+    if (!RESERVED_DEVICE_SLOT_IDS.has(n.id) || isAlwaysLiveSlot(n.id)) continue;
+    const data = n.data;
+    const bound = !!data && DEVICE_SLOT_RIG_KEYS.some((k) => data[k] !== undefined);
+    if (!bound) inert.add(n.id);
+  }
+  // Checked only when something is actually inert, so a fully-bound rig never
+  // walks the edge list.
+  if (inert.size > 0) {
+    for (const e of edges) {
+      if (!e) continue;
+      inert.delete(e.source.nodeId);
+      inert.delete(e.target.nodeId);
+      if (inert.size === 0) break;
+    }
+  }
+  return inert;
+}
+
 // ── DUPLICATE ──────────────────────────────────────────────────────────────
 
 /**
