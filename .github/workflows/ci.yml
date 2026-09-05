@@ -2618,42 +2618,11 @@ jobs:
       # No DB needed for the strict subset (it's pure card-render baselines).
       # No DOOM WASM needed either — DOOM is in EXEMPT_FROM_VRT.
 
-      # ---------------------------------------------------------------------
-      # CABLE-STRIPE PALETTE GATE — pure vitest, no browser, but it needs the
-      # REAL baseline PNG bytes, so it runs HERE rather than in `unit`. The
-      # `unit` lane checks out lfs:false, where every baseline is a pointer
-      # stub and the gate would self-skip into decoration (the exact way the
-      # ART fingerprint drift gate ran nowhere until #1174 exposed it). This
-      # job already does `git lfs pull --include "e2e/vrt/__screenshots__/**"`
-      # above, and it is REQUIRED, so this is the one lane that both CAN and
-      # MUST run it. VRT_STRIPE_PALETTE_REQUIRED=1 makes it FAIL rather than
-      # skip-pass if this job ever loses those bytes.
-      #
-      # Why it can't just be the VRT comparison below: a card's 2px `.stripe`
-      # is ~0.38 % of the card, under `maxDiffPixelRatio` (1 %), so a whole
-      # cable-palette generation goes stale with the screenshot gate green —
-      # and `--update-snapshots` won't repair it either, because Playwright
-      # only rewrites a snapshot when the comparison FAILS.
-      # Cost: MEASURED 1.10 s wall on darwin (vitest boot ~0.6 s + a full decode
-      # of the top 12 rows of 409 PNGs, twice — once for the sweep and once for
-      # the batched pixel negative control). The earlier "~1 s (191 PNG header
-      # reads)" was neither measured nor accurate: it fully inflates each IDAT,
-      # and the gate now reads every single-card baseline dir, not just
-      # vrt.spec.ts.
-      # ---------------------------------------------------------------------
-      #
-      # SHARD 1 ONLY. This is a WHOLE-POPULATION gate (it decodes every
-      # committed single-card baseline against the --cable-* tokens); it has
-      # nothing to do with which scenes a shard renders, so running it 4x would
-      # cost 3x10 s of runner for four identical answers. Shard 1 always exists
-      # (the matrix is non-empty and `scripts/vrt-shard-plan.test.ts` refuses an
-      # empty shard), and a failure here reds shard 1, which reds the
-      # aggregator — the required context still cannot go green without it.
-      - name: Cable-stripe palette gate (committed baselines vs --cable-* tokens)
-        if: matrix.shard == 1
-        env:
-          VRT_STRIPE_PALETTE_REQUIRED: '1'
-        run: flox activate -- npm exec -w packages/web -- vitest run --config vitest.config.ts vrt-cable-stripe
+      # (The cable-stripe palette gate that ran here shard-1-only died with
+      # the single-card baseline population it decoded — S3 deleted both the
+      # test file and its subject. A step that vitest-runs a deleted file
+      # exits 1 on "no test files found" before Playwright starts, so it
+      # could not simply stay.)
 
       # `vrt.spec.ts` iterates the registry manifest at file-parse time
       # (e2e/tests/_registry.ts), so the manifest has to be on disk before
