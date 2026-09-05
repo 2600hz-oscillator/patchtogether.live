@@ -58,13 +58,10 @@
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import { markJsConsumedParam } from '$lib/audio/cv-shadow';
-// The ONE definition of what MON means. Neither end of the normal owns it: a
-// contract owned by one end is a contract the other end can drift from.
-import {
-  clipLaneLiveGain,
-  coerceClipLaneMon,
-  coerceClipLanePlayingEdge,
-} from '$lib/audio/clip-lane-return';
+// The lane-playing edge shape, shared with clipplayer. Neither end of the
+// normal owns it: a contract owned by one end is a contract the other can drift
+// from. (`clipLaneLiveGain` / `coerceClipLaneMon` went with the MON duck.)
+import { coerceClipLanePlayingEdge } from '$lib/audio/clip-lane-return';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ParamDef, PortDef } from '$lib/graph/types';
@@ -82,12 +79,6 @@ export const MIXMSTRS_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
  *  the docs and the card can never drift apart. */
 export const MIXMSTRS_RETURNS = [1, 2] as const;
 const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
-
-/** De-zipper time constant for the MON duck. A `setTargetAtTime` glide, never a
- *  `.value =` write: a hard step on the live branch is a discontinuity, i.e. a
- *  click, on every launch. Short enough to read as "the clip took over", long
- *  enough not to snap. */
-const DUCK_GLIDE_S = 0.005;
 
 // ── WHERE EACH `recTap` VALUE TAKES ITS SIGNAL ──────────────────────────────
 //
@@ -187,12 +178,17 @@ export function mixmstrsRecTapPair(
   return { l: roster[2 * c]!, r: roster[2 * c + 1]! };
 }
 
-/** Per-channel CLIP-RECORD arm ids (`ch{N}_rec`), derived from the channel list. */
-export const MIXMSTRS_REC_ARM_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `ch${ch}_rec`);
-/** Per-channel MON ids (`ch{N}_mon`), derived from the channel list. */
-export const MIXMSTRS_MON_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `ch${ch}_mon`);
-/** The bus-scoped clip-record controls. */
-export const MIXMSTRS_REC_BUS_IDS: readonly string[] = ['recTap', 'recQuality'];
+// ⚠ THE CLIP-RECORD CONTROL SURFACE USED TO LIVE HERE — `MIXMSTRS_REC_ARM_IDS`
+// (`ch{N}_rec`), `MIXMSTRS_MON_IDS` (`ch{N}_mon`) and `MIXMSTRS_REC_BUS_IDS`
+// (`recTap` / `recQuality`). The owner ruled the whole band wrong on 2026-09-04:
+// recording is a CLIPPLAYER feature, per clip, with nothing to do with this
+// module. All eighteen params, their CV ports and their shadow rig are gone.
+//
+// WHAT STAYED IS THE AUDIO: the pre-board insert heads, the three tap rosters
+// published by `read('recTaps')`, and `mixmstrsRecTapPair` above. The recorder
+// still captures this module's per-lane pre-board input — it is just no longer
+// ARMED from here. See `.myrobots/2026-09-02-mixmstrs-multitrack-clip-recording/spec.md`
+// §0.5.
 
 // ---------------- Comp macro mapping ----------------
 //
@@ -253,72 +249,8 @@ function buildParams(): readonly ParamDef[] {
     params.push({ id: `comp${ch}`,           label: `${ch}Cm`,  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' });
     params.push({ id: `ch${ch}_send1`,       label: `${ch}S1`,  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' });
     params.push({ id: `ch${ch}_send2`,       label: `${ch}S2`,  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' });
-    // ── CLIP RECORDING, per channel ───────────────────────────────────────
-    //
-    // ⚠ THE `ch{N}_` PREFIX IS LOAD-BEARING, NOT A STYLE CHOICE.
-    // `mixmstrsChannelIndex` claims a param for channel N by that naming rule,
-    // and three derived things then read it with ZERO edits here: the lane
-    // colour (`channelAccent`), `bareCells`, and the face model's
-    // `isChannelScoped`. A param named `rec{N}` would be silently
-    // mis-classified as BUS-scoped and would take lane ranks it must not have.
-    params.push({
-      id: `ch${ch}_rec`, label: `${ch}Rc`, defaultValue: 0, min: 0, max: 2, curve: 'discrete',
-      options: [
-        { value: 0, label: 'off', title: 'Not armed for clip recording' },
-        { value: 1, label: 'once', title: 'Arm SINGLE — record exactly one loop into the launcher, then stop' },
-        { value: 2, label: 'inf', title: 'Arm ENDLESS — record until STOP, which lands at the END of the current loop' },
-      ],
-    });
-    // MONITORING of this channel's NORMALLED launcher return (the one contract
-    // lives in `$lib/audio/clip-lane-return`). Default `clip-auto` is the
-    // owner's pick: record a loop and hear it take over, no cable moves and no
-    // second gesture.
-    params.push({
-      id: `ch${ch}_mon`, label: `${ch}Mn`, defaultValue: 2, min: 0, max: 2, curve: 'discrete',
-      options: [
-        { value: 0, label: 'live', title: 'Ignore the launcher return — this channel is its patched input, full stop' },
-        { value: 1, label: 'both', title: 'Sum the patched input AND lane N of the clip launcher (play along with your loop)' },
-        { value: 2, label: 'auto', title: 'CLIP-AUTO (default) — mute the live input while lane N of the launcher is playing' },
-      ],
-    });
   }
   params.push({ id: 'master_volume', label: 'Master', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' });
-  // ── CLIP RECORDING, bus-scoped ──────────────────────────────────────────
-  //
-  // ⚠ THESE TWO MUST **NOT** MATCH `/^ch(\d+)_/`. They are bus-scoped by
-  // construction, and the SCOPE partition the face model asserts in both
-  // directions depends on the naming staying that way.
-  //
-  // ⚠ ALL THREE TAPS ARE NOW DELIVERABLE — the roster no longer names a state
-  // this build cannot honour, and the refusal obligation that used to be
-  // recorded here is DISCHARGED rather than deferred. POST FADER required the
-  // `.dsp`'s own noted future change (8 STEREO taps replacing the 8 mono ones,
-  // because the mono sum is measurably phase-blind and could not serve); that
-  // landed, and MASTER was free all along. See the tap-semantics block above
-  // for what each one means relative to MON's duck.
-  params.push({
-    id: 'recTap', label: 'Tap', defaultValue: 0, min: 0, max: 2, curve: 'discrete',
-    options: [
-      { value: 0, label: 'board', title: 'BOARD IN (default) — the RAW patched channel input, before the MON duck and before EQ, comp and fader. The only tap that captures what you played rather than what the mix hears' },
-      { value: 1, label: 'post',  title: 'POST FADER — the channel after EQ, comp and fader. Records the DUCKED signal and the launcher return with it, so under MON auto this re-samples the playing clip rather than capturing the live input' },
-      { value: 2, label: 'mast',  title: 'MASTER — the whole mix bus, every channel and both returns. A feedback path by construction: it captures the clips already playing, which is what re-sampling is' },
-    ],
-  });
-  // The quality ladder. `studio` is the default and is NOT overkill: the tap is
-  // PRE-BOARD, where a hot module can already exceed +/-1.0 before the board
-  // sees it (this module's own fully-correlated worst case is 6.7187x at the
-  // shipped defaults), so i16 would clip it permanently and silently. f32 also
-  // costs NO conversion at all — the samples are already f32, so it is the
-  // cheapest tier by CPU, which is the resource that matters when eight lanes
-  // record at once.
-  params.push({
-    id: 'recQuality', label: 'Qual', defaultValue: 0, min: 0, max: 2, curve: 'discrete',
-    options: [
-      { value: 0, label: 'stud', title: 'STUDIO (default) — PCM f32 at the context rate; cannot clip a hot pre-board tap' },
-      { value: 1, label: 'std',  title: 'STANDARD — PCM i16, half the bytes; clips at +/-1.0' },
-      { value: 2, label: 'comp', title: 'COMPACT — Opus 128 kb/s; a Worker encoder per lane' },
-    ],
-  });
   // PRE/POST-FADER select per SEND BUS. 0 = POST (the default — every existing
   // patch keeps its current behaviour exactly), 1 = PRE. ONE flag per bus, so
   // send 1 and send 2 can sit in DIFFERENT modes at the same time. The ids match
@@ -381,17 +313,12 @@ export function mixmstrsChannelIndex(paramId: string): number | null {
  */
 const CAPTIONED_PARAM_IDS: ReadonlySet<string> = new Set<string>([
   ...MIXMSTRS_RETURNS.map((r) => `send${r}Pre`),
-  // ⚠ EVERY PARAM WITH AN `options` ROSTER KEEPS ITS CAPTION, and this is a
-  // RULE rather than a list of eighteen ids. A rostered param's readout is its
-  // only STATE NAME — the cell paints `off` / `once` / `inf`, and with the
-  // caption suppressed nothing on the plate says WHICH channel's arm that is.
-  // `module-face-lint` enforces exactly this ("face.bareCells never silences a
-  // param whose readout is its only STATE NAME"), and deriving membership from
-  // `options` means the next rostered control is captioned automatically
-  // instead of reddening a gate.
-  ...MIXMSTRS_REC_ARM_IDS,
-  ...MIXMSTRS_MON_IDS,
-  ...MIXMSTRS_REC_BUS_IDS,
+  // ⚠ THE RULE THAT PUT EIGHTEEN MORE IDS HERE STILL STANDS, it just has no
+  // members left. Every param with an `options` roster keeps its caption,
+  // because a rostered param's readout is its only STATE NAME and
+  // `module-face-lint` reddens on a `bareCells` entry that silences one. The
+  // clip-record roster was the only such population on this module and it is
+  // gone (2026-09-04); the next rostered control added here must be captioned.
 ]);
 
 // Audio input port ids in the exact order the Faust process() declares them:
@@ -404,21 +331,15 @@ const AUDIO_IN_PORTS: readonly string[] = [
 // Comp-macro ids, derived from the channel list so they never drift apart.
 const COMP_MACRO_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `comp${ch}`);
 
-/**
- * Params with NO backing Faust hslider, whose value a JS consumer reads.
- *
- * ⚠ MEMBERSHIP IS DERIVED, NEVER HAND-TYPED. Each is published on a shadow
- * `GainNode` fed by DC 1, so the shadow's OUTPUT is the EFFECTIVE (knob + CV)
- * value and a passive analyser can observe it — the comp-macro rig, reused
- * rather than re-invented. `markJsConsumedParam` then declares the consumer at
- * the construction site so `art/scenarios/cv-terminal` reads the declaration
- * instead of guessing that an unreachable param is a dead terminal.
- */
-const JS_CONSUMED_PARAM_IDS: readonly string[] = [
-  ...MIXMSTRS_REC_ARM_IDS,
-  ...MIXMSTRS_MON_IDS,
-  ...MIXMSTRS_REC_BUS_IDS,
-];
+// ⚠ `JS_CONSUMED_PARAM_IDS` IS GONE, AND SO IS ITS SHADOW RIG. It existed only
+// for the eighteen clip-record params — each published on a DC-fed shadow
+// `GainNode` so a CV cable had an AudioParam to land on, with
+// `markJsConsumedParam` declaring the consumer for `art/scenarios/cv-terminal`.
+// With the band removed (2026-09-04) every param on this module is backed by a
+// real Faust hslider again, which is what the comp macros' own `compShadow` rig
+// below is separately for. Re-introducing a JS-only param means re-introducing
+// the shadow — a declared `paramTarget` port with no AudioParam behind it is
+// the #1734 dead-terminal shape that `cv-terminal` exists to catch.
 
 // Inputs: the 20 audio ports above, plus one paramTarget CV input per param.
 //
@@ -532,17 +453,11 @@ export const mixmstrsDef: AudioModuleDef = {
         `ret${r}_volume`, `ret${r}_low`, `ret${r}_mid`, `ret${r}_high`,
       ]),
       ...MIXMSTRS_RETURNS.map((r) => `send${r}Pre`),
-      // 12-13 · The bus-scoped CLIP-RECORD controls, ranked BELOW the pre/post
-      // switches for the same measured reason those two rank last: both are
-      // INERT AT THE SHIPPED DEFAULTS. Nothing consumes `recTap` or
-      // `recQuality` until the recorder lands, so a lane tier that painted
-      // either would be offering a player a control that does nothing — the
-      // operational half of the enabler rule, and the one that actually
-      // protects someone. Ranks 12-13 are below every lane budget, so both are
-      // dock-only. The bus-scoped block grows 11 -> 13 and therefore stays
-      // LONGER than the largest lane tier, which is the invariant that keeps a
-      // lane tier from ever painting a channel control.
-      ...MIXMSTRS_REC_BUS_IDS,
+      // ⚠ THE BUS-SCOPED BLOCK IS BACK TO ELEVEN. `recTap` and `recQuality`
+      // held ranks 12-13 and are gone (2026-09-04). Eleven is still LONGER than
+      // the largest lane tier, which is the invariant that keeps a lane tier
+      // from ever painting a channel control — check it again before adding a
+      // bus-scoped control, because that margin is what the invariant rests on.
       ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_volume`),
       ...MIXMSTRS_CHANNELS.map((c) => `comp${c}`),
       ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_send1`),
@@ -553,15 +468,9 @@ export const mixmstrsDef: AudioModuleDef = {
       ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_compEnable`),
       ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_thresh`),
       ...MIXMSTRS_CHANNELS.map((c) => `ch${c}_ratio`),
-      // LAST · the per-channel CLIP-RECORD arm and its MONITOR mode. Inert at
-      // the shipped defaults like their bus-scoped siblings (`off`, and a
-      // `clip-auto` duck that cannot engage until a lane plays), so they take
-      // the lowest ranks on the module and no lane tier can reach them.
-      ...MIXMSTRS_REC_ARM_IDS,
-      ...MIXMSTRS_MON_IDS,
     ],
 
-    // FIVE bands, under a ceiling this module cannot be allowed to
+    // FOUR bands, under a ceiling this module cannot be allowed to
     // cross. At `DOCK_TAB_MIN_BANDS = 7` the dock becomes a TAB RAIL and
     // renders exactly one band at a time — which on a mixer destroys the single
     // thing the surface exists for, letting you balance eight faders against
@@ -674,74 +583,14 @@ export const mixmstrsDef: AudioModuleDef = {
           label: `return ${r}`,
           controls: [`ret${r}_volume`, `ret${r}_low`, `ret${r}_mid`, `ret${r}_high`],
         })) },
-      // ⚠ THE FIFTH BAND, AND THE LAST ONE THIS MODULE CAN AFFORD TO ADD AS A
-      // PAGE. `DOCK_TAB_MIN_BANDS = 7` turns the dock into a TAB RAIL that
-      // renders one band at a time, which on a mixer destroys the single thing
-      // the surface exists for — balancing eight faders against each other.
-      // Five is safe; the deferred `pan{N}` row would be the sixth, and a
-      // seventh trips it. So the record band and a pan band CANNOT both be new
-      // pages: whichever lands second folds into an existing band, most
-      // naturally `channels`. Sequenced, not parallelised.
-      //
-      // The record strips read in CHANNEL-RANGE HALVES: channels 1–4's arm row
-      // over their monitor row, then 5–8's — see the width measurement below
-      // for why eight-wide rows cannot ship. Each cell still carries its own
-      // channel caption (`1RC`, `5MN`), so identity never rests on counting
-      // columns.
-      //
-      // ⚠ RESTING TEXT IS OPTION NAMES ONLY (`off` / `once` / `inf`,
-      // `live` / `both` / `auto`), which is the permitted role. No elapsed
-      // time, no take size, no sample count anywhere on the faceplate — those
-      // go to `title`/`aria`.
-      { id: 'record', label: 'record',
-        controls: [
-          ...MIXMSTRS_REC_ARM_IDS,
-          ...MIXMSTRS_MON_IDS,
-          ...MIXMSTRS_REC_BUS_IDS,
-        ],
-        // ⚠ THIS BAND IS DELIBERATELY **NOT** ON THE FACE-WIDE CONSOLE RULER,
-        // and the reason is measured rather than preferred.
-        //
-        // Every control here is SEGMENTED (each declares a three-option
-        // roster), and a segmented cell is far wider than a knob because its
-        // width is set by its option labels. Putting the band on the shared
-        // ruler was tried: the face went from ONE column pitch to FOUR —
-        // `[168.2, 161.2, 161.1, 111.6]` CSS px — because `max-content` tracks
-        // shared across bands take the widest cell in any of them. That is
-        // exactly the defect #1825 exists to prevent ("three pitches, and by
-        // channel 8 the same channel's cells were 90 px apart"), so a record
-        // row cannot share the fader ruler without destroying it for the three
-        // bands that depend on it.
-        //
-        // `consoleGridCols` returns null unless EVERY cluster in a band has the
-        // same cell count, so the two singleton clusters below are what keep
-        // this band off the ruler — a structural consequence, stated here so it
-        // reads as the decision it is rather than an accident someone might
-        // "fix".
-        //
-        // ⚠ THE ROWS ARE FOUR CHANNELS WIDE, AND THAT IS A CI MEASUREMENT, NOT
-        // A TASTE. As eight-wide rows the MONITOR row alone measured **1324 CSS
-        // px against a 1220 px dock pane** (`workflow-shell-faces` dock scene:
-        // "104 CSS px of faceplate right of the capture box") — eight
-        // `live/both/auto` segmented cells at ~157 px plus seven 10 px gaps.
-        // `.faceplate-body` is `width: max-content`, so a flex row NEVER wraps
-        // on its own inside it; the wrap has to be structural. Users would have
-        // seen a clipped plate (the #2335 preview at dock width already showed
-        // exactly that, so the FITTING layout is the approved look). Four-cell
-        // halves put the widest record row at ~670 px — under the `channels`
-        // grid that actually drives the plate — and group each half as
-        // channels 1–4's arm-over-monitor, then 5–8's. quadralogical's `edges`
-        // band is the precedent: same gate, same numbers-first fix.
-        //
-        // ⚠ OWNER PREVIEW: this is the one visual compromise in the slice.
-        clusters: [
-          { label: 'arm 1–4', controls: [...MIXMSTRS_REC_ARM_IDS.slice(0, 4)] },
-          { label: 'monitor 1–4', controls: [...MIXMSTRS_MON_IDS.slice(0, 4)] },
-          { label: 'arm 5–8', controls: [...MIXMSTRS_REC_ARM_IDS.slice(4)] },
-          { label: 'monitor 5–8', controls: [...MIXMSTRS_MON_IDS.slice(4)] },
-          { label: 'source', controls: ['recTap'] },
-          { label: 'quality', controls: ['recQuality'] },
-        ] },
+      // ⚠ FOUR BANDS, AND THAT MARGIN IS LOAD-BEARING. A fifth `record` band
+      // lived here until 2026-09-04, when the owner ruled the whole clip-record
+      // control surface off this module. `DOCK_TAB_MIN_BANDS = 7` turns the
+      // dock into a TAB RAIL that renders one band at a time, which on a mixer
+      // destroys the single thing the surface exists for — balancing eight
+      // faders against each other. At four, the deferred `pan{N}` row is now
+      // free to be the fifth band on its own: the record-vs-pan sequencing
+      // conflict this comment used to record is DISSOLVED, not deferred.
     ],
 
     // A live tap on `masterL`, and the resolution is ESTABLISHED rather than
@@ -941,10 +790,6 @@ export const mixmstrsDef: AudioModuleDef = {
       inputs[`comp${ch}`] = `CV that offsets channel ${ch}'s COMP macro amount.`;
       inputs[`ch${ch}_send1`] = `CV that offsets channel ${ch}'s SEND 1 amount.`;
       inputs[`ch${ch}_send2`] = `CV that offsets channel ${ch}'s SEND 2 amount.`;
-      controls[`ch${ch}_rec`] = `CLIP-RECORD ARM for channel ${ch}. OFF (default), ONCE = record exactly one loop into the clip launcher and stop, INF = record until STOP, which lands at the END of the current loop rather than immediately. WHAT gets recorded is the recTap selector's business: BOARD IN (the default) captures the raw signal you patched in — before the monitor duck, before EQ, before the compressor, before the fader — so a muted channel still records and a hot module that already exceeds ±1.0 is captured intact; POST FADER and MASTER instead print what the mix hears (see recTap). Channel ${ch} records into launcher LANE ${ch}: the channel number and the lane number are the same number everywhere in this product. CV via the ch${ch}_rec input, so a gate can arm a channel.`;
-      inputs[`ch${ch}_rec`] = `CV (discrete) that sets channel ${ch}'s CLIP-RECORD arm — a gate can arm a channel: low = off, mid = one loop, high = record until STOP.`;
-      inputs[`ch${ch}_mon`] = `CV (discrete) that sets channel ${ch}'s launcher-return MONITOR mode (live / both / clip-auto).`;
-      controls[`ch${ch}_mon`] = `MONITOR mode for channel ${ch}'s launcher return. Lane ${ch} of the clip launcher is NORMALLED into this channel — an internal connection that BREAKS the moment you patch a cable into channel ${ch}'s input, exactly like a hardware normal. AUTO (the default) mutes the live input while lane ${ch}'s clip is playing, so recording a loop and hearing it take over needs no cable moves; BOTH sums the live input and the clip, for playing along with your own loop; LIVE ignores the return entirely. Only the LIVE branch is ducked — the returning clip is never attenuated. CV via the ch${ch}_mon input.`;
     }
     // Stereo aux returns.
     inputs.ret1L = 'Aux RETURN 1 left input — the wet signal coming back from the effect on send 1; summed (stereo) into the master bus.';
@@ -959,10 +804,6 @@ export const mixmstrsDef: AudioModuleDef = {
     inputs.send1Pre = 'CV (discrete) that switches the SEND 1 bus between POST-fader (low) and PRE-fader (high).';
     inputs.send2Pre = 'CV (discrete) that switches the SEND 2 bus between POST-fader (low) and PRE-fader (high).';
     // Bus-scoped clip-record controls.
-    controls.recTap = "WHERE a clip take is tapped from, and the three answers are genuinely different recordings. BOARD IN (the default) is the RAW patched channel input — before the monitor duck, before EQ, before the compressor, before the fader — so it captures what you PLAYED: a muted channel still records, and a hot module that already exceeds ±1.0 is captured intact. Note this is NOT the same point as a PRE-fader send: send1Pre/send2Pre's PRE means post-EQ, post-compressor, pre-fader, so 'pre-board' and 'pre-fader' are two different taps on this module. POST FADER takes the channel after EQ, compression and the fader — which means it records the channel as the MIX hears it, including the monitor duck and the launcher return, so with MON on auto it re-samples the clip that is playing rather than the live input. MASTER takes the whole mix bus, every channel and both returns; it is a feedback path by construction, because a clip playing into a channel is part of the mix it records — which is exactly what re-sampling is.";
-    controls.recQuality = 'RECORDING QUALITY for clip takes. STUDIO (the default) stores PCM f32 at the context sample rate: it costs no conversion at all — the samples are already f32 — and it is the only tier that cannot clip a hot pre-board tap, which matters because a module patched into a channel can exceed ±1.0 before the board ever sees it. STANDARD is PCM i16, half the bytes, and clips at ±1.0. COMPACT is Opus, which needs a Worker encoder per recording lane.';
-    inputs.recTap = 'CV (discrete) that selects the clip-recording TAP point.';
-    inputs.recQuality = 'CV (discrete) that selects the clip-recording QUALITY tier.';
     // Return strips.
     for (const r of MIXMSTRS_RETURNS) {
       controls[`ret${r}_volume`] = `RETURN ${r} level (0..1, default 1 = unity) — how loud the wet signal coming back from the effect on send ${r} sits in the master. This is the knob that makes a PRE-fader send usable: with send ${r} switched to PRE, the return keeps sounding while the source channel is muted, and this sets how loud. CV via the ret${r}_volume input.`;
@@ -1283,122 +1124,53 @@ export const mixmstrsDef: AudioModuleDef = {
     const COMP_PUMP_MS = 48;
     const compPumpTimer = setInterval(pumpCompMacros, COMP_PUMP_MS);
 
-    // ── CLIP-RECORD PARAM SHADOWS (ch{N}_rec, ch{N}_mon, recTap, recQuality) ──
+    // ⚠ THE CLIP-RECORD PARAM SHADOW RIG STOOD HERE and is gone (2026-09-04).
+    // It published `ch{N}_rec` / `ch{N}_mon` / `recTap` / `recQuality` on
+    // DC-fed shadow `GainNode`s so a CV cable had an AudioParam to land on, and
+    // `read('recState')` returned their effective (knob + CV) values for the
+    // recorder registry to take arm edges from. The owner ruled the surface off
+    // this module: the arm now belongs to the clipplayer, per clip.
     //
-    // The comp-macro rig, reused verbatim in shape: a shadow GainNode fed DC 1
-    // so its OUTPUT is the EFFECTIVE (knob + CV) value, a passive analyser to
-    // observe it, and `markJsConsumedParam` to declare the consumer at the
-    // construction site. Nothing here connects onward to audio, so none of it
-    // can alter the mix.
+    // ⚠ `read('recState')` NO LONGER EXISTS. Its only consumer was
+    // `node-clip-recorder-registry`, which now finds no arm source on a mixmstrs
+    // node and idles — see `cliprec-registry-idles.spec.ts`, which exists
+    // because an absent seam that throws and an absent seam that idles look
+    // identical until someone boots a rack.
+
+    // ── THE RETURN GATE — PINNED OPEN, AND DELIBERATELY STILL HERE ──────────
     //
-    // ⚠ THE CONSUMER IS REAL TODAY, not a promise. `read('recState')` returns
-    // these effective values, which is what makes a CV cable into `ch1_rec`
-    // observable from the moment this ships rather than in a later slice. MON
-    // additionally drives the duck below. The RECORDER that acts on the arm and
-    // the tap lands in a later slice; the state it will read is already live.
-    const jsKnob: Record<string, number> = {};
-    for (const def of PARAMS) {
-      if (JS_CONSUMED_PARAM_IDS.includes(def.id)) jsKnob[def.id] = def.defaultValue;
-    }
-    const jsShadow: Record<string, GainNode> = {};
-    const jsShadowAna: Record<string, { ana: AnalyserNode; buf: Float32Array<ArrayBuffer> }> = {};
-    for (const id of JS_CONSUMED_PARAM_IDS) {
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(jsKnob[id] ?? 0, ctx.currentTime);
-      const sink = ctx.createConstantSource();
-      sink.offset.value = 1; // DC 1 → g's output IS the effective (knob + CV) value
-      sink.start();
-      sink.connect(g);
-      const ana = ctx.createAnalyser();
-      ana.fftSize = 32;
-      g.connect(ana); // passive observation tap; feeds no audible path
-      markJsConsumedParam(g.gain);
-      silenceSources.push(sink);
-      jsShadow[id] = g;
-      jsShadowAna[id] = { ana, buf: new Float32Array(ana.fftSize) };
-    }
-
-    /** The effective (knob + CV) value of a JS-consumed param, clamped to its
-     *  declared range. Falls back to the knob intrinsic until the graph has
-     *  rendered — readiness is a property of the CLOCK, never of the value. */
-    function jsEffective(id: string, min: number, max: number): number {
-      const knob = jsKnob[id] ?? 0;
-      if (ctx.currentTime - compShadowsBuiltAt < COMP_SHADOW_READY_S) return knob;
-      const s = jsShadowAna[id];
-      if (!s) return knob;
-      s.ana.getFloatTimeDomainData(s.buf);
-      const v = s.buf[s.buf.length - 1] ?? knob;
-      return Math.max(min, Math.min(max, v));
-    }
-
-    /** Snap a continuous effective value onto one of the three discrete steps. */
-    const snap3 = (v: number): number => Math.max(0, Math.min(2, Math.round(v)));
-
-    /** The module's live clip-record state, as the recorder will read it. */
-    function readRecState(): {
-      arm: number[];
-      mon: number[];
-      tap: number;
-      quality: number;
-    } {
-      return {
-        arm: MIXMSTRS_REC_ARM_IDS.map((id) => snap3(jsEffective(id, 0, 2))),
-        mon: MIXMSTRS_MON_IDS.map((id) => snap3(jsEffective(id, 0, 2))),
-        tap: snap3(jsEffective('recTap', 0, 2)),
-        quality: snap3(jsEffective('recQuality', 0, 2)),
-      };
-    }
-
-    // ── THE MON DUCK ────────────────────────────────────────────────────────
+    // ⚠ THIS USED TO BE THE MON DUCK, and the owner removed the CONTROL, not
+    // the path. `ch{N}_mon` (live / both / clip-auto) drove `duckGain` so a
+    // playing lane muted the channel's live input; clause 6 of the 2026-09-04
+    // ruling replaces that with a PER-CLIP LIVE/RECORDED toggle, which gates at
+    // the clip-playback / return side instead of ducking a mixer channel.
     //
-    // Two inputs, two cadences, ONE writer of the gain value
-    // (`clipLaneLiveGain`):
+    // Until that toggle exists, the gate is PINNED OPEN: `duckGain` stays in
+    // the graph at unity and nothing ever moves it, so the live input is never
+    // attenuated. Two reasons it stays rather than collapsing into the merger:
     //
-    //  - THE LANE EDGE (`write('clipLaneEdge')`) — clipplayer publishes "lane N
-    //    starts/stops sounding at ctx time T" the instant it schedules the
-    //    clip's own source node, and the duck ramps AT that T: one AudioParam
-    //    event per transition, landing on the clip's first sample. SCHEDULED,
-    //    NOT POLLED — a per-quantum read of lane state is unavailable on the
-    //    audio thread, and bridging it per tick would derive a boundary from a
-    //    tick count, which is the blood failure (62 % of demand delivered, 38 %
-    //    of every output sample a hard zero).
-    //  - THE MON KNOB — this pump re-evaluates when the knob (or its CV) moves,
-    //    against the CURRENT lanePlaying flags, at control rate. It is not the
-    //    boundary; it is the knob.
+    //  1. `boardIn -> duckGain -> merger` is the exact two-series-unity-gain
+    //     shape `art/scenarios/mixmstrs/board-insert-identity` measures. Taking
+    //     a node out of the chain changes the arithmetic that test pins, and
+    //     "x * 1.0 is identity" is a claim this module has ALREADY been bitten
+    //     by (`mixmstrs.dsp:205-216`: an algebraically identical crossfade moved
+    //     the send baselines by 1-2 ULP on ~35 % of samples).
+    //  2. It is the named seam clause 6 re-points. Leaving it costs two unity
+    //     multiplies per channel and saves rebuilding the insert.
+    //
+    // `lanePlaying` is still tracked because `read('recDuck')` reports it and
+    // the clipplayer still publishes lane edges — the FLAG is live, the RAMP is
+    // not. When clause 6 lands, this is where its gain lands.
     const lanePlaying: boolean[] = new Array(NUM_CHANNELS).fill(false);
     const duckApplied: number[] = new Array(NUM_CHANNELS).fill(1);
-    function pumpMonDuck() {
-      if (ctx.currentTime - compShadowsBuiltAt < COMP_SHADOW_READY_S) return;
-      for (let c = 0; c < NUM_CHANNELS; c++) {
-        const mon = coerceClipLaneMon(snap3(jsEffective(MIXMSTRS_MON_IDS[c]!, 0, 2)));
-        const want = clipLaneLiveGain(mon, lanePlaying[c] === true);
-        if (Math.abs(want - (duckApplied[c] ?? 1)) <= 1e-6) continue;
-        duckApplied[c] = want;
-        // Both legs of the channel move together — one MON, one stereo pair.
-        for (const leg of [2 * c, 2 * c + 1]) {
-          duckGain[leg]?.gain.setTargetAtTime(want, ctx.currentTime, DUCK_GLIDE_S);
-        }
-      }
-    }
-    const monPumpTimer = setInterval(pumpMonDuck, COMP_PUMP_MS);
 
-    /** Apply one lane-playing edge: flip the flag and schedule BOTH duck legs
-     *  at the edge's own context time — the same instant the clip's source
-     *  node starts or stops, so the duck lands on the clip's first sample.
-     *  `duckApplied` is synced so the knob pump never re-ramps the same value
-     *  at "now" and undoes the scheduled landing. */
+    /** Record one lane-playing edge. The flag moves; the gain does NOT — there
+     *  is no monitor mode to apply until clause 6's per-clip LIVE/RECORDED
+     *  toggle ships. */
     function applyClipLaneEdge(raw: unknown): void {
       const edge = coerceClipLanePlayingEdge(raw);
       if (!edge || edge.lane >= NUM_CHANNELS) return;
-      const c = edge.lane;
-      lanePlaying[c] = edge.playing;
-      const mon = coerceClipLaneMon(snap3(jsEffective(MIXMSTRS_MON_IDS[c]!, 0, 2)));
-      const want = clipLaneLiveGain(mon, edge.playing);
-      duckApplied[c] = want;
-      const at = Math.max(edge.atTime, ctx.currentTime);
-      for (const leg of [2 * c, 2 * c + 1]) {
-        duckGain[leg]?.gain.setTargetAtTime(want, at, DUCK_GLIDE_S);
-      }
+      lanePlaying[edge.lane] = edge.playing;
     }
 
     const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
@@ -1414,21 +1186,6 @@ export const mixmstrsDef: AudioModuleDef = {
         // application of comp → (enable, thresh, ratio) happens in setParam.
         const g = compShadow[p.id];
         if (g) inputsMap.set(p.id, { node: g, input: 0, param: g.gain });
-        continue;
-      }
-      if (jsShadow[p.id]) {
-        // The same treatment for the clip-record controls: the CV input routes
-        // to the shadow's AudioParam, which is exactly what
-        // `AudioEngine.addEdge` connects a cable to.
-        //
-        // ⚠ WITHOUT THIS THE PORT IS DECLARED AND ANSWERS NOTHING. A cable
-        // would have no AudioParam to land on — the #1734 dead-terminal shape,
-        // where the def promises a CV input the handle cannot honour. It was
-        // caught by `art/scenarios/cv-terminal` ("every DECLARED paramTarget
-        // port is answered by the live handle"), which is precisely the gate
-        // that exists for it.
-        const g = jsShadow[p.id]!;
-        inputsMap.set(p.id, { node: g, input: 0, param: g.gain });
         continue;
       }
       const ap = params.get(`${PARAM_PREFIX}/${p.id}`);
@@ -1479,19 +1236,6 @@ export const mixmstrsDef: AudioModuleDef = {
           applyCompMacro(paramId, value);
           return;
         }
-        if (jsShadow[paramId]) {
-          // A JS-consumed clip-record control. The knob intrinsic is what
-          // `readParam` reports (the engine folds the modulator tap on top of
-          // it — reporting the combined value here would count a patched cable
-          // twice on the motorized fader), and the shadow carries the same
-          // value so the EFFECTIVE reading stays knob + CV.
-          jsKnob[paramId] = value;
-          jsShadow[paramId]?.gain.setValueAtTime(value, ctx.currentTime);
-          // MON moved: let the duck re-evaluate on the next pump rather than
-          // writing the gain here, so there is exactly ONE place that decides
-          // what the live branch is worth.
-          return;
-        }
         params.get(`${PARAM_PREFIX}/${paramId}`)?.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {
@@ -1500,8 +1244,6 @@ export const mixmstrsDef: AudioModuleDef = {
         // whatever this returns, so reporting the combined value here would
         // double-count a patched cable on the motorized fader (#1737).
         if (paramId.startsWith('comp')) return compMacro[paramId];
-        // Same contract for the JS-consumed clip-record controls.
-        if (jsShadow[paramId]) return jsKnob[paramId];
         return params.get(`${PARAM_PREFIX}/${paramId}`)?.value;
       },
       read(key) {
@@ -1519,55 +1261,40 @@ export const mixmstrsDef: AudioModuleDef = {
           pumpCompMacros();
           return true;
         }
-        // THE CLIP-RECORD STATE, as the recorder will read it: EFFECTIVE
-        // (knob + CV) values, snapped to their discrete steps. This is the
-        // consumer that makes `markJsConsumedParam` true for these params
-        // TODAY — a cable into `ch1_rec` moves what this returns, from the
-        // moment the module ships, not in a later slice.
-        if (key === 'recState') return readRecState();
         // THE TAP ROSTERS the clip recorder wires from — every `recTap` value
         // deliverable, addressed in one place. See MixmstrsRecTaps above.
         if (key === 'recTaps') return recTaps;
-        // Deterministic MON-duck pump seam, the sibling of `pumpCompMacros`
-        // above and for the same reason: a wall-clock interval cannot be relied
-        // on to tick inside an offline render.
-        if (key === 'pumpMonDuck') {
-          pumpMonDuck();
-          return true;
-        }
-        // THE NORMALLED-RETURN ENTRY POINTS — one post-duck gain per channel
+        // THE NORMALLED-RETURN ENTRY POINTS — one gain per channel
         // leg, port order (ch1L … ch8R). clipplayer connects its lane output
         // legs INTO these when the normal is connected. See the wiring comment
         // at the construction site.
         if (key === 'laneReturns') {
           return laneReturnIn.map((g) => ({ node: g as AudioNode, input: 0 }));
         }
-        // Duck observability for tests + the duck e2e leg: the current flags
-        // and the last APPLIED live-branch gain per channel. Never audio data.
+        // Lane-playing observability. `applied` is the live-branch gain, which
+        // is PINNED AT 1 until clause 6's per-clip LIVE/RECORDED toggle ships —
+        // a reading of anything else here means something started ducking
+        // again. Never audio data.
         if (key === 'recDuck') {
           return { lanePlaying: lanePlaying.slice(), applied: duckApplied.slice() };
         }
         return undefined;
       },
       write(key, value) {
-        // The lane-playing boundary, as clip-lane-return.ts specifies it: a
-        // value scheduled at a context time, published by clipplayer through
-        // the engine's write seam the instant it schedules the clip's own
-        // source node. Validated here (the consumer's boundary), applied to
-        // both duck legs at the edge's own atTime.
+        // The lane-playing boundary, as clip-lane-return.ts specifies it,
+        // published by clipplayer the instant it schedules the clip's own
+        // source node. Validated here (the consumer's boundary). It now only
+        // moves a FLAG — see the pinned-open return gate above.
         if (key === 'clipLaneEdge') applyClipLaneEdge(value);
       },
       dispose() {
         clearInterval(compPumpTimer);
-        clearInterval(monPumpTimer);
         for (const s of silenceSources) {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
         for (const g of Object.values(compShadow)) g.disconnect();
         for (const { ana } of Object.values(compShadowAna)) ana.disconnect();
-        for (const g of Object.values(jsShadow)) g.disconnect();
-        for (const { ana } of Object.values(jsShadowAna)) ana.disconnect();
         for (const g of boardIn) g.disconnect();
         for (const g of duckGain) g.disconnect();
         for (const g of laneReturnIn) g.disconnect();

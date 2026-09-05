@@ -129,6 +129,7 @@
   } from '$lib/graph/performance-bundle';
   import {
     buildPerformanceZip,
+    describeSkippedMedia,
     parsePerformanceZip,
     type PerformanceMedia,
     type PerformanceZipBundle,
@@ -3763,6 +3764,17 @@
     const parsed = parsePerformanceZip(zipBytes);
     const bundle = validateBundle(parsed.bundle);
 
+    // ⚠ AN ASSET THAT COULD NOT BE RESTORED IS SAID OUT LOUD, NOT SWALLOWED.
+    // `parsePerformanceZip` used to THROW on a single over-cap entry, which took
+    // the whole performance with it; it now drops that one asset and reports it,
+    // so the load must surface the loss or the rack comes back quietly thinner
+    // than the one that was saved. This is a NOTICE beside a successful load,
+    // never a failure — the patch, the wiring and every other asset are here.
+    const skipped = describeSkippedMedia(parsed.skippedMedia);
+    if (skipped) {
+      error = `Loaded, but ${skipped}`;
+      trace(`load performance: ${skipped}`);
+    }
 
     await ensureEngine();
 

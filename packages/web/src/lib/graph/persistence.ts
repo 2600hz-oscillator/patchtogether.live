@@ -20,6 +20,11 @@ import { getNodePosition, type XY } from '$lib/multiplayer/layouts';
 import { getModuleDef as getAudioModuleDef } from '$lib/audio/module-registry';
 import { getVideoModuleDef } from '$lib/video/module-registry';
 import { getMetaModuleDef } from '$lib/meta/module-registry';
+// The ARM subset of the clip player's live-performance fields. Imported rather
+// than restated — see TRANSIENT_DATA_FIELDS_BY_TYPE below for what restating it
+// cost. Runtime VALUE import; clip-types imports nothing from graph/, so the
+// dependency runs one way only.
+import { CLIP_PLAYER_ARM_DATA_FIELDS } from '$lib/audio/modules/clip-types';
 import type { ModuleNode, Edge } from './types';
 import { makeAdoptionGraph, validateEdge, type ResolveDef } from './validate-edge';
 // The two reason strings the summariser BUCKETS ON live with the summariser,
@@ -123,10 +128,22 @@ const TRANSIENT_DATA_FIELDS_BY_TYPE: Readonly<Record<string, readonly string[]>>
   // CLIPPLAYER record-ARM state is per-session, never topology: a saved patch
   // that reloaded ARMED would REPLACE-clear its own printed SONG on first Play
   // (a legacy `songRec.armed` with no `recorderId` records for ANY client), and
-  // a reloaded arranger/KEYS arm would re-record. These mirror the ARM subset of
-  // CLIP_PLAYER_TRANSIENT_DATA_FIELDS (the duplicate-scrub); `song` itself is
-  // CONTENT and persists.
-  clipplayer: ['songRec', 'recording', 'noteRec'],
+  // a reloaded arranger/KEYS arm would re-record. `song` itself is CONTENT and
+  // persists.
+  //
+  // ⚠ DERIVED, NOT RE-TYPED — and that is the fix, not a tidy-up. This entry
+  // used to be a hand-written `['songRec', 'recording', 'noteRec']` under a
+  // comment claiming it mirrored the ARM subset of
+  // CLIP_PLAYER_TRANSIENT_DATA_FIELDS. It did not: `audioRec` and `automation`
+  // joined that constant and never joined this copy, so a patch saved mid-take
+  // reloaded still carrying the take — a pad painted `rec-active` red forever
+  // (clipPadState reads audioRecState FIRST, and #writeAudioRec only fires on a
+  // machine TRANSITION, which a loaded patch has none of), masking the real clip
+  // in that slot, over a foreign recorderId whose single-writer lease then
+  // refused every future arm on that lane. Two lists that must agree and cannot
+  // be checked against each other is the defect; one list with two projections
+  // has nothing to drift. Classification lives with the fields, in clip-types.
+  clipplayer: CLIP_PLAYER_ARM_DATA_FIELDS,
 };
 
 /** Strip transient fields from `data` for the given module type (no-op when the

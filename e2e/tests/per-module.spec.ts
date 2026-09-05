@@ -55,11 +55,16 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // AudioClipRecord), which a bare spawn structurally cannot produce — and
   // the default driver would land on gate1, which needs a launched note clip
   // this spec does not seed either. The REAL chain (record a take from a live
-  // oscillator, launch it, audible RMS on audio1L) is asserted end-to-end by
-  // cliprec-arm-single.spec.ts; the note outputs are swept per-port with a
-  // full driver in per-module-per-port-outputs.spec.ts.
+  // oscillator, launch it, audible RMS on audio1L) WAS asserted end-to-end by a
+  // dedicated arm-single spec. ⚠ That spec was DELETED on 2026-09-04 along with
+  // the mixmstrs record band the owner removed: nothing can arm a take today,
+  // so the leg is SUSPENDED rather than silently re-cited, and it returns with
+  // the clipplayer's per-lane record toggle. Its filename is not named here
+  // because `exemption-coverage-anchors` reddens on a citation that cannot be
+  // resolved — correctly. The note outputs are still swept per-port with a full
+  // driver in per-module-per-port-outputs.spec.ts.
   clipplayer:
-    'audio outs are recorded-take playback (needs OPFS media + a committed clip); covered by cliprec-arm-single.spec.ts (real-chain record→launch→audible RMS) + the per-port sweep for the note outputs',
+    'audio outs are recorded-take playback (needs OPFS media + a committed clip); end-to-end record→launch coverage SUSPENDED with the record band (2026-09-04) + the per-port sweep for the note outputs',
   // SIXSTRUM — strings ring only when a strum/pluck gate is struck, but the
   // bare output-alive driver resolves an output port with no gate source, so
   // the 6 Karplus voices never fire. The REAL default source chain

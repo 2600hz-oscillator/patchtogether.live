@@ -31,8 +31,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   MIXMSTRS_CHANNELS,
-  MIXMSTRS_MON_IDS,
-  MIXMSTRS_REC_ARM_IDS,
   MIXMSTRS_RETURNS,
   mixmstrsChannelIndex,
   mixmstrsDef,
@@ -72,16 +70,17 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
     expect(isChannelScoped(`send${MIXMSTRS_RETURNS[0]}Pre`), 'a bus tap point is not a channel').toBe(false);
     expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_low`), 'a channel EQ band IS a channel control').toBe(true);
     expect(isChannelScoped(`comp${MIXMSTRS_CHANNELS[0]}`), 'a COMP macro IS a channel control').toBe(true);
-    // ⚠ THE CLIP-RECORD CONTROLS, BOTH WAYS. The per-channel pair is claimed by
-    // the `ch{N}_` naming rule with no edit anywhere — which is exactly why the
-    // bus-scoped pair had to AVOID that prefix. A control named `rec{N}` would
-    // have been silently mis-classified as bus-scoped and would have taken lane
-    // ranks it must not have; one named `ch_recTap` would have been claimed as
-    // channel 0's. Asserted so a future rename cannot quietly do either.
-    expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_rec`), 'a record ARM is a channel control').toBe(true);
-    expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_mon`), 'a MON mode is a channel control').toBe(true);
-    expect(isChannelScoped('recTap'), 'the tap point is BUS-scoped').toBe(false);
-    expect(isChannelScoped('recQuality'), 'the quality tier is BUS-scoped').toBe(false);
+    // ⚠ THE NAMING RULE ITSELF, still asserted with the clip-record band gone.
+    // `ch{N}_` claims a param for channel N with no edit anywhere, and anything
+    // that must be BUS-scoped has to AVOID that prefix — a control named
+    // `rec{N}` would have been silently mis-classified as bus-scoped and taken
+    // lane ranks it must not have; one named `ch_recTap` would have been
+    // claimed as channel 0's. The removed band is where that bit, so the
+    // property is kept on the controls that remain.
+    expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_volume`), 'a fader is a channel control').toBe(true);
+    expect(isChannelScoped(`ch${MIXMSTRS_CHANNELS[0]}_compEnable`), 'a comp enable is a channel control').toBe(true);
+    expect(isChannelScoped('master_volume'), 'the master fader is BUS-scoped').toBe(false);
+    expect(isChannelScoped('send1Pre'), 'a send PRE/POST switch is BUS-scoped').toBe(false);
   });
 
   it('face.order is a BUS-SCOPED prefix followed by a CHANNEL-SCOPED suffix', () => {
@@ -234,23 +233,14 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
     }
     expect(problems.join('\n'), 'the console grid is staggered — column N is no longer channel N').toBe('');
 
-    // THE RECORD BAND'S HALF-ROWS still cover the strip: off the ruler its
-    // column identity is per-cell captions (`5RC`), but a LOST member is the
-    // same defect there as anywhere — a channel with no arm, silently. The arm
-    // halves must concatenate to exactly the arm roster in strip order, and the
-    // monitor halves to the monitor roster.
-    const record = (FACE.pages ?? []).find((p) => p.id === 'record');
-    expect(record, 'the record band exists').toBeDefined();
-    const halves = (prefix: string) =>
-      (record!.clusters ?? [])
-        .filter((c) => c.label.startsWith(prefix))
-        .flatMap((c) => c.controls);
-    expect(halves('arm'), 'the arm halves partition the arm roster in strip order').toEqual([
-      ...MIXMSTRS_REC_ARM_IDS,
-    ]);
-    expect(halves('monitor'), 'the monitor halves partition the monitor roster in strip order').toEqual([
-      ...MIXMSTRS_MON_IDS,
-    ]);
+    // ⚠ AND THE `record` BAND IS GONE, asserted rather than assumed. The owner
+    // ruled the clip-record control surface off this module on 2026-09-04; a
+    // band reappearing here means someone rebuilt it on the mixer instead of
+    // the clipplayer.
+    expect(
+      (FACE.pages ?? []).map((p) => p.id),
+      'mixmstrs has FOUR bands — a `record` band here means the removed surface came back',
+    ).not.toContain('record');
 
     // AND THE FADERS LEAD. The band that holds the volumes must hold them in its
     // FIRST cluster, so a column reads fader → tone rather than tone → fader.
@@ -410,24 +400,25 @@ describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
     //  1. A send-bus PRE/POST switch is the one control whose cluster heading
     //     names something else (the send AMOUNT row), so it keeps its caption.
     //
-    //  2. ⚠ AND SO DOES ANY PARAM WITH AN `options` ROSTER — added when the
-    //     clip-record band landed, and stated as a RULE because eighteen ids
-    //     pasted here would be a list that goes stale the next time a rostered
-    //     control is added. A rostered cell's readout IS its state name: it
-    //     paints `off` / `once` / `inf`, and with the caption suppressed nothing
-    //     on the plate says WHICH channel's arm that is. `module-face-lint`
-    //     enforces the same property from the other side ("face.bareCells never
-    //     silences a param whose readout is its only STATE NAME"), so the two
-    //     gates now agree by construction rather than by maintenance.
+    // ⚠ THERE USED TO BE A SECOND PROPERTY HERE — "any param with an `options`
+    // roster keeps its caption" — and it is DELETED, not left standing, because
+    // its population is now zero. The clip-record band was the only rostered
+    // control mixmstrs had, and the owner removed it on 2026-09-04. The rule's
+    // own VACUITY GUARD below is what caught this: a `hasRoster` clause matching
+    // nothing is a rule that passes for the wrong reason, and keeping it would
+    // have been a permanently-exempt assertion rather than a test.
+    //
+    // The property itself is NOT lost — `module-face-lint` enforces it fleet-
+    // wide from the other side ("face.bareCells never silences a param whose
+    // readout is its only STATE NAME"). If a rostered control is ever added back
+    // to THIS module, restore the clause here together with its guard.
     const isSendPre = (id: string) => /^send\d+Pre$/.test(id);
-    const byId = new Map(PARAMS.map((p) => [p.id, p]));
-    const hasRoster = (id: string) => (byId.get(id)?.options?.length ?? 0) > 0;
-    const keepsCaption = (id: string) => isSendPre(id) || hasRoster(id);
+    const keepsCaption = (id: string) => isSendPre(id);
 
     const captioned = PARAM_IDS.filter((id) => !BARE.has(id));
     expect(
       captioned.filter((id) => !keepsCaption(id)).sort(),
-      'a param is captioned but is neither a send PRE/POST switch nor a rostered control — ' +
+      'a param is captioned but is not a send PRE/POST switch — ' +
         'either it was left out of face.bareCells by accident, or the exception rule changed ' +
         'and this test did not',
     ).toEqual([]);
@@ -436,15 +427,17 @@ describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
       'a send PRE/POST switch went bare — nothing else on the face names the tap point, and ' +
         'the header echo that used to was removed in #1738',
     ).toEqual([]);
-    expect(
-      PARAM_IDS.filter(hasRoster).filter((id) => BARE.has(id)),
-      'a rostered control went bare — its readout is the only thing naming its state, so a ' +
-        'bare cell would paint `off` with nothing saying off of WHAT',
-    ).toEqual([]);
-    // VACUITY GUARD: both properties must select something, or this rule would
-    // be satisfied by a def that happens to have neither kind of control.
+    // VACUITY GUARD: the property must select something, or this rule would be
+    // satisfied by a def that happens to have no such control at all.
     expect(PARAM_IDS.filter(isSendPre).length, 'send PRE/POST switches exist').toBeGreaterThan(0);
-    expect(PARAM_IDS.filter(hasRoster).length, 'rostered controls exist').toBeGreaterThan(0);
+    // ⚠ AND NO PARAM ON THIS MODULE CARRIES AN `options` ROSTER ANY MORE. Pinned
+    // rather than assumed: if one comes back, the caption clause deleted above
+    // must come back with it, and this assertion is what says so.
+    const byId = new Map(PARAMS.map((p) => [p.id, p]));
+    expect(
+      PARAM_IDS.filter((id) => (byId.get(id)?.options?.length ?? 0) > 0),
+      'a rostered control returned to mixmstrs — restore the caption rule this test deleted',
+    ).toEqual([]);
   });
 
   it('ANCHOR: bareCells names only live params, and both sides are non-empty', () => {

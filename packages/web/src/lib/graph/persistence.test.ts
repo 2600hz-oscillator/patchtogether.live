@@ -29,6 +29,12 @@ import {
   type LivePatch,
 } from './persistence';
 import { setNodePosition } from '$lib/multiplayer/layouts';
+import {
+  CLIP_PLAYER_ARM_DATA_FIELDS,
+  clipIndex,
+  clipPadState,
+  type ClipPlayerData,
+} from '$lib/audio/modules/clip-types';
 import type { ModuleNode, Edge } from './types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { registerModule } from '$lib/audio/module-registry';
@@ -615,6 +621,113 @@ describe('persistence: CLIPPLAYER transient-field stripping', () => {
     expect('noteRec' in data).toBe(false);
     // …and the printed SONG content survived intact.
     expect(data.song).toEqual(song);
+  });
+
+  // ── THE LIST THAT DIVERGED ────────────────────────────────────────────────
+  //
+  // ⚠ THIS ASSERTS THE USER-VISIBLE DAMAGE, NOT LIST MEMBERSHIP. `audioRec` and
+  // `automation` joined `CLIP_PLAYER_TRANSIENT_DATA_FIELDS` and never joined the
+  // loader's hand-typed copy, whose own comment claimed to mirror it. A patch
+  // saved mid-take therefore reloaded carrying a live take:
+  //
+  //   • `clipPadState` reads `audioRecState` FIRST, so the pad paints
+  //     `rec-active` red over whatever clip is really in that slot — and
+  //     `#writeAudioRec` only ever fires on a machine TRANSITION, which a loaded
+  //     patch has none of, so the red never clears. Permanently stuck.
+  //   • the `recorderId` is a FOREIGN client's single-writer lease, so every
+  //     future arm on that lane is refused.
+  //   • the `mediaId` names OPFS bytes that do not travel with the patch.
+  //
+  // A membership assertion would have gone green the moment someone added the
+  // word to either list; this one only goes green when the pad is free.
+  it('a patch saved MID-TAKE reloads with the pad FREE, not stuck rec-active', () => {
+    const src = freshPatch();
+    const LANE = 0;
+    const SLOT = 2;
+    const key = String(clipIndex(SLOT, LANE));
+    // The real clip the stuck red pad would mask.
+    const masked = { kind: 'note', steps: [], lengthSteps: 8, root: 48, loop: true };
+    src.ydoc.transact(() => {
+      src.store.nodes['cp-mid-take'] = {
+        id: 'cp-mid-take',
+        type: 'clipplayer',
+        domain: 'audio',
+        position: { x: 5, y: 6 },
+        params: {},
+        data: {
+          clips: { [key]: masked }, // CONTENT — must survive
+          // The take that was rolling when the user hit Save.
+          audioRec: {
+            [String(LANE)]: {
+              lane: LANE,
+              slot: SLOT,
+              mode: 'single',
+              phase: 'recording',
+              startFrame: 48_000,
+              stopFrame: 96_000,
+              unitFrames: 48_000,
+              recorderId: 424_242, // a client id that will never exist again
+            },
+          },
+          // The sibling ARM field the same divergence dropped.
+          automation: { [String(LANE)]: { armed: true, recorderId: 424_242 } },
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+
+    const data = dest.store.nodes['cp-mid-take']!.data as Record<string, unknown>;
+    // THE SYMPTOM FIRST, so a regression reads as the damage rather than as a
+    // bookkeeping miss: the pad shows the clip that is actually there.
+    expect(
+      clipPadState(JSON.parse(JSON.stringify(data)) as ClipPlayerData, clipIndex(SLOT, LANE)),
+      'the pad paints its CLIP, not a take that ended when the tab closed',
+    ).toBe('loaded');
+    expect('audioRec' in data, 'a live take is not topology').toBe(false);
+    expect('automation' in data, 'an automation arm is not topology either').toBe(false);
+    expect(data.clips).toEqual({ [key]: masked });
+  });
+
+  // ── AND THE PIN THAT MAKES A THIRD LIST IMPOSSIBLE TO FORGET ──────────────
+  //
+  // Data-driven off the SAME constant the loader is now derived from, so a
+  // future ARM field is covered the moment it is classified — and anyone who
+  // re-types the loader's list by hand and omits one goes red here rather than
+  // shipping the stuck pad again.
+  //
+  // ⚠ WHAT THIS CANNOT SEE: it reads the arm set from the exported constant, so
+  // it cannot catch a field that was never CLASSIFIED at all (a new `data` key
+  // that joins neither list). `clip-types.test.ts` carries that half — the kinds
+  // record is exhaustive over the transient list by construction, and the
+  // classification is asserted field-by-field there.
+  it('EVERY arm field in the shared constant is stripped on load', () => {
+    expect(CLIP_PLAYER_ARM_DATA_FIELDS.length, 'a vacuous loop is not a gate').toBeGreaterThan(2);
+    const src = freshPatch();
+    const armed: Record<string, unknown> = { keepMe: 'content' };
+    for (const f of CLIP_PLAYER_ARM_DATA_FIELDS) armed[f] = { sentinel: f };
+    src.ydoc.transact(() => {
+      src.store.nodes['cp-all-arms'] = {
+        id: 'cp-all-arms',
+        type: 'clipplayer',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: armed,
+      };
+    });
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(makeEnvelope(src.ydoc), dest.ydoc, dest.store);
+    const data = dest.store.nodes['cp-all-arms']!.data as Record<string, unknown>;
+    for (const f of CLIP_PLAYER_ARM_DATA_FIELDS) {
+      expect(f in data, `${f} is an ARM field and must not survive a save`).toBe(false);
+    }
+    // The negative control: a non-transient key on the same object survives, so
+    // this cannot pass by stripping everything.
+    expect(data.keepMe).toBe('content');
   });
 });
 

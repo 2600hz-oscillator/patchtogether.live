@@ -12,6 +12,7 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import {
   buildPerformanceZip,
+  describeSkippedMedia,
   streamPerformanceZip,
   PerformanceZipAborted,
   parsePerformanceZip,
@@ -380,25 +381,62 @@ describe('parsePerformanceZip errors', () => {
     expect(() => parsePerformanceZip(wrong)).toThrow(/unsupported/i);
   });
 
-  it('rejects an oversized bundled video', () => {
+  // ── ONE OVERSIZED ENTRY MUST NOT DESTROY THE WHOLE PERFORMANCE ───────────
+  //
+  // ⚠ THIS LEG USED TO ASSERT THE THROW. The cap's own comment justified
+  // applying it to `role: 'audio'` on the grounds that TWOTRACKS reels are
+  // bounded by a fixed worklet buffer (≈20 s). CLIP TAKES ARE NOT BOUNDED THAT
+  // WAY — `studio` is PCM-f32 at ~23 MB/min, so a five-minute take is ~115 MB.
+  // Throwing there protects nobody from the big entry; it takes the graph, the
+  // wiring, the MIDI bindings and every OTHER media asset down with it. The
+  // already-shipped precedent for an entry that cannot be delivered is the leg
+  // directly below: SKIP it and let the node fall back to re-link.
+  //
+  // ⚠ AND IT IS WORSE THAN "FAILS TO LOAD". The ceiling is enforced ONLY on
+  // read — there is no write-side check anywhere — so an over-cap entry saves
+  // successfully and is discovered on the far side of the round trip. The user
+  // who most needs the rest of that bundle is the one who cannot open it.
+  //
+  // ⚠ THIS ASSERTS THE SURVIVORS, NOT THE ABSENCE OF A THROW. A parse that
+  // returned an empty bundle would also "not throw"; the point is that the good
+  // media and the patch come back, and that the loss is REPORTED, not silent.
+  it('SKIPS an oversized entry and still returns the rest of the performance', () => {
     const { bundle } = realBundle();
-    // Craft a manifest pointing at an entry whose bytes exceed the cap, WITHOUT
-    // allocating 50 MB: build the zip with a small entry, then assert the cap
-    // path via a manifest that claims a too-big entry path resolved to big bytes.
-    // Simplest faithful route: build a real oversized entry just over the cap is
-    // expensive, so use a manifest whose media path holds bytes we control to be
-    // exactly cap+1 via a sparse fill.
-    const big = new Uint8Array(MAX_VIDEO_BYTES + 1); // zero-filled; compresses tiny
+    // cap+1 zero-filled: the allocation is virtual and it compresses to nothing,
+    // so this is a real over-cap entry rather than a mocked size.
+    const big = new Uint8Array(MAX_VIDEO_BYTES + 1);
+    const ok = new Uint8Array([9, 8, 7, 6]);
     const zip = zipSync({
       'performance.json': strToU8(JSON.stringify({
         format: PERFORMANCE_ZIP_FORMAT,
         savedAt: 0,
         bundle,
-        media: [{ nodeId: 'v1', handleId: 'h', role: 'video', name: 'big.mp4', path: 'media/big.mp4' }],
+        media: [
+          // A long studio clip take — the case the fixed-buffer argument for
+          // applying a VIDEO ceiling to audio does not cover.
+          { nodeId: 'cp1', handleId: 'cp1:0', role: 'audio', name: 'take.pcm', path: 'media/take.pcm' },
+          { nodeId: 'v1', handleId: 'h', role: 'video', name: 'fine.mp4', path: 'media/fine.mp4' },
+        ],
       })),
-      'media/big.mp4': big,
+      'media/take.pcm': big,
+      'media/fine.mp4': ok,
     });
-    expect(() => parsePerformanceZip(zip)).toThrow(/exceeds the .* limit/i);
+
+    const parsed = parsePerformanceZip(zip);
+    // The performance survives: the patch, and every entry under the ceiling.
+    expect(parsed.bundle.patch).toBeDefined();
+    expect(parsed.media.map((m) => m.name)).toEqual(['fine.mp4']);
+    expect(parsed.media[0]!.bytes).toEqual(ok);
+    // …and the loss is on the record, WITH the numbers, so the caller can say so
+    // instead of the asset just being quietly gone.
+    expect(parsed.skippedMedia).toHaveLength(1);
+    expect(parsed.skippedMedia![0]).toMatchObject({
+      nodeId: 'cp1',
+      role: 'audio',
+      name: 'take.pcm',
+      reason: 'oversized',
+      bytes: MAX_VIDEO_BYTES + 1,
+    });
   });
 
   it('skips referenced-but-missing media (node falls back to re-link)', () => {
@@ -415,6 +453,56 @@ describe('parsePerformanceZip errors', () => {
     const parsed = parsePerformanceZip(zip);
     expect(parsed.media).toEqual([]); // skipped, not thrown
     expect(parsed.bundle.patch).toBeDefined();
+    // Reported the same way an oversized one is — a caller that surfaces one
+    // surfaces both, and `bytes: 0` distinguishes "not in the zip at all".
+    expect(parsed.skippedMedia).toHaveLength(1);
+    expect(parsed.skippedMedia![0]).toMatchObject({ name: 'gone.mp4', reason: 'missing', bytes: 0 });
+  });
+
+  it('reports NOTHING skipped on a clean bundle — the report is not always-on', () => {
+    // The negative control for the two legs above: a bundle whose media all
+    // resolve must come back with an EMPTY skip list, or "nothing was lost" and
+    // "something was lost" would look identical to every caller.
+    const { bundle } = realBundle();
+    const media: PerformanceMedia[] = [
+      { nodeId: 'v1', handleId: 'h-vid-1', role: 'video', name: 'clip.webm', bytes: VIDEO_BYTES },
+    ];
+    const parsed = parsePerformanceZip(buildPerformanceZip({ bundle, media, savedAt: 1 }));
+    expect(parsed.media).toHaveLength(1);
+    expect(parsed.skippedMedia).toEqual([]);
+  });
+});
+
+// The one line the loader shows. Pure, so it is pinned here rather than left to
+// an e2e that would have to build a 100 MB fixture to read one sentence.
+describe('describeSkippedMedia', () => {
+  it('is EMPTY when nothing was skipped, so a caller can test it directly', () => {
+    expect(describeSkippedMedia([])).toBe('');
+    expect(describeSkippedMedia(undefined)).toBe('');
+  });
+
+  it('names the asset AND the number that explains it', () => {
+    const line = describeSkippedMedia([
+      {
+        nodeId: 'cp1',
+        handleId: 'cp1:0',
+        role: 'audio',
+        name: 'take.pcm',
+        reason: 'oversized',
+        bytes: 115 * 1048576,
+      },
+    ]);
+    expect(line).toContain('take.pcm');
+    expect(line).toContain('115 MB'); // what it is
+    expect(line).toContain('100 MB'); // …and what it is over
+  });
+
+  it('distinguishes a MISSING entry from an oversized one', () => {
+    const line = describeSkippedMedia([
+      { nodeId: 'v1', handleId: 'h', role: 'video', name: 'gone.mp4', reason: 'missing', bytes: 0 },
+    ]);
+    expect(line).toContain('not in the bundle');
+    expect(line).not.toContain('MB'); // a byte count nobody has is not reported
   });
 });
 
