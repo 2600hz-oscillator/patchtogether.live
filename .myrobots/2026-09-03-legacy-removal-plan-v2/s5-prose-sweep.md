@@ -43,6 +43,42 @@ is `'`. 119 apostrophes needed escaping; a line-shape guess found 14 of them.
 
 ---
 
+## ⚠ A BULK PROSE EDIT HAS THREE FAILURE MODES, NOT ONE — AND I SHIPPED ALL THREE
+
+The single-quote trap above is the one this file warned about first. The sweep
+had two more, and they reached `main`-bound commits before anything caught them:
+
+1. **STRING CONTEXT** — inserting `faceplate's` into a single-quoted string.
+   Warned about above; cost 1,722 errors the first time.
+2. **SENTENCE POSITION** — `No card row.` → `no faceplate row.` and
+   `The card's X` → `the faceplate's X` left **34 user-visible sentences
+   starting lowercase** across 23 module defs and the manifest. The rules were
+   written as a VOCABULARY substitution; prose is not a vocabulary, and the
+   replacement word's case depends on where the sentence begins.
+3. **COMMENT CONTEXT** — 29 `\'` escapes landed in `//` comments, where there
+   is no string to escape and the backslash is literal text a reader sees.
+
+⚠ THE CHECK THAT WOULD HAVE CAUGHT (2) AND (3), for the next sweep: after the
+rewrite, diff for `^\+.*\. (no|the|its|a) <newword>` (sentence starts) and for
+`^\+\s*(//|\*).*\\'` (escapes in comments). Both are one grep each and both
+found real damage here.
+
+## ⚠ THE SWEEP EDITED DOOM, AND THE RULE SAYS EXCLUDE IT BY NAME
+
+`packages/web/src/lib/video/modules/doom.ts` took 41 lines of docs rewrites
+from the S5 sweep. The standing boundary is *"DOOM requires explicit owner
+approval … Exclude it by name from a broad sweep and state why"* — a broad
+sweep is exactly the shape it names, and the exclusion was not applied.
+
+REVERTED to `origin/main` verbatim. Whether DOOM's product copy is inside
+ruling 2's scope is an OWNER decision; a sweep must not make it as a side
+effect. The branch's OTHER DOOM changes are unaffected and remain sanctioned:
+the S2 DOOM sub-slice, ruling 29's single approved line in `DoomSurface.svelte`,
+and `DoomCard.svelte` going with the card fleet.
+
+⚠ IF THE OWNER DOES PUT DOOM IN SCOPE, `doom.ts` needs the sentence-position
+fix applied too — its share was 17 of the 51 broken sentences.
+
 ## ⚠ SEVEN "card" STRINGS ARE KEPT ON PURPOSE — THEY NAME OTHER PEOPLE'S HARDWARE
 
 This is the distinction a future blanket sweep will get wrong, and seven
