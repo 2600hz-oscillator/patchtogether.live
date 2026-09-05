@@ -33,18 +33,11 @@
     node: ModuleNode;
     title: string;
     pinned: boolean;
-    /** #1739 — mount the PROMOTED FACEPLATE for this occupant instead of its
-     *  verbatim legacy card. Canvas evaluates `dockRailRendersFace` (which is
-     *  `shellFaces && migrated`) so the rule and its `?shell=legacy` arm live
-     *  in ONE pure, tested place. Pinned and user-docked occupants are treated
-     *  alike since the 2026-09-03 owner P0. */
-    face: boolean;
   }
 
   interface Props {
     zone: DockZone;
     cards: DockRailCard[];
-    nodeTypes: Record<string, unknown>;
     rackSizeByType: Record<string, { size?: string; hp?: number }>;
     onUndock: (nodeId: string) => void;
     /** Close the pinned drawer occupant (bottom zone's ✕ / Esc). */
@@ -55,7 +48,7 @@
      *  class here makes docked cards flip with the rack in every zone. */
     rearView?: boolean;
   }
-  let { zone, cards, nodeTypes, rackSizeByType, onUndock, onClosePinned, rearView = false }: Props = $props();
+  let { zone, cards, rackSizeByType, onUndock, onClosePinned, rearView = false }: Props = $props();
 
   let collapsed = $derived(dockStore.railCollapsed(zone));
   let railSize = $derived(dockStore.railSize(zone));
@@ -210,9 +203,6 @@
         {#each cards as card (card.node.id)}
           <DockCardHost
             node={card.node}
-            {nodeTypes}
-            face={card.face}
-            rackSize={rackSizeByType[card.node.type]}
             scale={dockStore.scaleOf(card.node.id)}
             title={card.title}
             onStepScale={(dir) => dockStore.stepScaleOf(card.node.id, dir)}

@@ -111,17 +111,13 @@
      *  point: ONE component decides, everyone else is told. Both are true
      *  whenever the pinned node exists; see Canvas's derivation for why the
      *  pinned pair needs the prop at all. */
-    audioInFace?: boolean;
-    audioOutFace?: boolean;
     /** True while a cable feeds TIMELORDE's `clock` input (any source). */
     externallyClocked?: boolean;
     /** True while the DIN bridge's clock edge into TIMELORDE exists. */
     dinAssigned?: boolean;
-    /** The main canvas's glob-driven nodeTypes map (for the card hosts). */
+    /** The main canvas's node-component map — the camera manager's single-node
+     *  <SvelteFlow> host needs it to resolve the lane faceplate. */
     nodeTypes?: Record<string, unknown>;
-    /** Canvas's type → rack {size, hp} map (the audio-I/O plain-mount hosts
-     *  size their cards exactly like the dock drawers do). */
-    rackSizeByType?: Record<string, { size?: string; hp?: number }>;
     /** Canvas's ensureEngine — surfaces whose backing api lives on the
      *  engine-side module boot it on first use. */
     onEnsureEngine?: (() => Promise<unknown>) | null;
@@ -160,12 +156,9 @@
     midiclockNode = null,
     audioInNode = null,
     audioOutNode = null,
-    audioInFace = false,
-    audioOutFace = false,
     externallyClocked = false,
     dinAssigned = false,
     nodeTypes = {},
-    rackSizeByType = {},
     onEnsureEngine = null,
     currentUserId = null,
     cameraNodes = [],
@@ -618,10 +611,6 @@
       <AudioIoSurface
         audioIn={audioInNode}
         audioOut={audioOutNode}
-        {audioInFace}
-        {audioOutFace}
-        {nodeTypes}
-        {rackSizeByType}
         open={openMenu === 'io'}
         onRequestClose={closeMenus}
       />

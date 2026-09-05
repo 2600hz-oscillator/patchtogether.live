@@ -2185,14 +2185,11 @@
     };
   });
 
-  /** One DockRail occupant. `face` is the #1739 promotion decision, evaluated
-   *  HERE and injected, never re-derived
-   *  inside the rail. */
+  /** One DockRail occupant. */
   interface DockRailCardSpec {
     node: ModuleNode;
     title: string;
     pinned: boolean;
-    face: boolean;
   }
 
   /** Rail card lists (top/left; bottom adds the pinned occupant below).
@@ -2203,19 +2200,16 @@
     for (const { nodeId } of dockStore.entriesFor(zone)) {
       const node = snapshot.nodes.find((n) => n.id === nodeId);
       if (!node) continue;
-      // ⚠ A USER-DOCKED ENTRY GETS ITS FACE TOO (owner P0, 2026-09-03). This
-      // line used to pass `pinned: false` into a rule that required `pinned`,
-      // so docking a PROMOTED module on the default shell swapped it back to
-      // its verbatim legacy card — the pre-promotion instrument, in the one
-      // place the player had just chosen to keep it. `pinned` stays on the
-      // SPEC (the rail reads it for its own chrome); it is simply no longer an
-      // input to the render decision.
+      // ⚠ `pinned` IS RAIL CHROME, NOT A RENDER INPUT (owner P0, 2026-09-03).
+      // This line used to feed a rule that required `pinned` to render the
+      // module's own faceplate, so docking one swapped it back to the
+      // pre-promotion instrument in the one place the player had just chosen
+      // to keep it. The rail reads `pinned` for its own chrome and nothing
+      // else; there is one thing to render either way.
       out.push({
         node,
         title: dockDisplayName(node),
         pinned: false,
-        // The rail renders the faceplate. There is nothing else to render.
-        face: true,
       });
     }
     return out;
@@ -2805,16 +2799,14 @@
     // owns its own full-width <DockFullView> faceplate below the bottom rail
     // (P0.3b re-spec); this list holds only the pinned occupant + docked entries.
     if (dockedBottomNode && dockedBottomSpec) {
-      // #1739 — THE PINNED OCCUPANT GETS ITS FACE. The tray is its ONLY surface
-      // (canvas-hidden ⇒ no lane tile, no EXPAND pill, no route to
-      // DockFullView), so without this the `m` key was the one place in the app
-      // where a promoted module still painted its legacy card. Since the
-      // 2026-09-03 P0 the docked entries below get theirs on the same rule.
+      // ⚠ THE TRAY IS THE PINNED OCCUPANT'S ONLY SURFACE — canvas-hidden ⇒ no
+      // lane tile, no EXPAND pill, no route to DockFullView. #1739 is why the
+      // `m` key stopped being the one place in the app that painted a
+      // pre-promotion instrument.
       out.push({
         node: dockedBottomNode,
         title: dockedBottomSpec.label,
         pinned: true,
-        face: true,
       });
     }
     out.push(...docked);
@@ -2846,13 +2838,11 @@
   // default won and it mounted `nodeTypes[type]` unconditionally. The rule
   // existed, was correct, and had a caller that did not call it.
   //
-  // ⚠ BOTH ARE JUST "IS THERE A NODE", and that is not a simplification of the
-  // rule — it is the rule's whole content now. The panel mounts the faceplate
-  // because that is the ONLY surface these two modules have: they are
-  // canvas-hidden pinned singletons, so there is no lane tile and no EXPAND
-  // pill to reach a second one from.
-  let workflowAudioInFace = $derived(!!workflowAudioInNode);
-  let workflowAudioOutFace = $derived(!!workflowAudioOutNode);
+  // ⚠ THE PANEL MOUNTS EACH MODULE'S FACEPLATE BECAUSE THAT IS THE ONLY
+  // SURFACE EITHER HAS: they are canvas-hidden pinned singletons, so there is
+  // no lane tile and no EXPAND pill to reach a second one from. The pair of
+  // booleans that used to say so answered "is there a node", which the host
+  // already knows, so they are gone rather than restated.
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
    *  → tap tempo + tempo knob flip to the externally-clocked state. */
   let workflowExternallyClocked = $derived(
@@ -8555,12 +8545,9 @@
     midiclockNode={workflowMidiclockNode}
     audioInNode={workflowAudioInNode}
     audioOutNode={workflowAudioOutNode}
-    audioInFace={workflowAudioInFace}
-    audioOutFace={workflowAudioOutFace}
     externallyClocked={workflowExternallyClocked}
     dinAssigned={workflowDinAssigned}
     nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-    {rackSizeByType}
     onEnsureEngine={ensureEngine}
     currentUserId={currentUserId ?? null}
     cameraNodes={workflowCameraNodes}
@@ -8586,7 +8573,6 @@
   <DockRail
     zone="top"
     cards={topRailCards}
-    nodeTypes={nodeTypes as unknown as Record<string, unknown>}
     {rackSizeByType}
     onUndock={undockNode}
     {rearView}
@@ -8600,7 +8586,6 @@
     <DockRail
       zone="left"
       cards={leftRailCards}
-      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       {rackSizeByType}
       onUndock={undockNode}
       {rearView}
@@ -8821,7 +8806,6 @@
       <DockRail
         zone="bottom"
         cards={bottomRailCards}
-        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
         {rackSizeByType}
         onUndock={undockNode}
         onClosePinned={() => dockStore.close('bottom')}
