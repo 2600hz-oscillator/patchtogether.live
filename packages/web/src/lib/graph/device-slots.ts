@@ -338,6 +338,12 @@ export function planDeviceSlotIdentityRepairs(
  *    its dropdown pick here (workflow-cameras.ts `readCameraDeviceId`).
  *    Browser device ids are per-origin, per-machine and rotate on a permission
  *    reset, so the value is meaningless anywhere but the machine that wrote it.
+ *  - `deviceLabel` — the human name the card writes beside the id, and the ONLY
+ *    thing that still names the hardware once the id has rotated (a different
+ *    USB port, a driver reinstall, cleared site data). It travels WITH the id
+ *    or the rebind resolver has nothing to fall back to — so it is the same
+ *    rig property wearing a different type, and splitting the pair would leave
+ *    a slot able to resolve a camera it was never told about.
  *
  * Kept deliberately SHORT. Everything not on this list stays patch content, so
  * the failure mode of an omission is a machine-specific value riding a save —
@@ -350,7 +356,7 @@ export function planDeviceSlotIdentityRepairs(
  * contribution to that contract is only that the KEY it is keyed on — the node
  * id — now survives a patch load.
  */
-export const DEVICE_SLOT_RIG_KEYS: readonly string[] = ['deviceId'];
+export const DEVICE_SLOT_RIG_KEYS: readonly string[] = ['deviceId', 'deviceLabel'];
 
 /**
  * Strip rig-owned keys from a slot node's `data`, in place, and report which

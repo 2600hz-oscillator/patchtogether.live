@@ -35,6 +35,7 @@
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { resolveDevice, shouldRewriteSavedId } from '$lib/graph/device-rebind';
+  import { isDeviceSlotId } from '$lib/graph/device-slots';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import { shouldReacquireOnPick, savedDeviceMissing } from '$lib/video/camera-device';
   import type { VideoEngine } from '$lib/video/engine';
@@ -576,6 +577,25 @@
         // case into the failure branch left every fresh camera stuck at
         // 'no-cameras-found' without ever calling getUserMedia.
         const hadSavedDevice = Boolean(selectedDeviceId || savedLabel);
+        // ⚠ AN UNBOUND DEVICE SLOT IS DARK, AND MUST NOT REACH getUserMedia.
+        //
+        // A dynamic camera with nothing saved falls through to an
+        // UNCONSTRAINED request and gets the browser's default camera — which
+        // is right, because a dynamic camera only exists because the user just
+        // pressed ＋ and asked for one. A RESERVED DEVICE SLOT
+        // (graph/device-slots.ts) exists in every rack whether or not anyone
+        // asked, so the same fall-through would mean: for any operator who has
+        // EVER granted camera permission to this origin, four slots each fire
+        // an unconstrained getUserMedia on every single rack boot. That is a
+        // camera light on at boot, and four clients contending for one physical
+        // default device — the `NotReadableError` class this card already
+        // carries a bare-retry for.
+        //
+        // A slot acquires when it is BOUND, and not before.
+        if (!hadSavedDevice && isDeviceSlotId(node?.id)) {
+          camState = 'idle';
+          return;
+        }
         const rebind = resolveDevice(
           { id: selectedDeviceId, name: savedLabel },
           devices.map((d) => ({ id: d.deviceId, name: d.label })),

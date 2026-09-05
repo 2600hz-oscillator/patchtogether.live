@@ -236,9 +236,23 @@ describe('rig properties vs patch content', () => {
     expect(DEVICE_SLOT_RIG_KEYS).toContain('deviceId');
   });
 
+  // The id and the label are ONE binding. Once a device id rotates (a different
+  // USB port, a driver reinstall, cleared site data) the label is the only
+  // thing left that names the hardware, and device-rebind.ts falls back to it.
+  // Carrying one without the other would leave a slot able to resolve a camera
+  // it was never told about.
+  it('treats deviceLabel as rig-owned too — the pair travels together', () => {
+    expect(DEVICE_SLOT_RIG_KEYS).toContain('deviceLabel');
+  });
+
   it('strips rig keys and reports what it removed', () => {
-    const data: Record<string, unknown> = { deviceId: 'abc', name: 'FRONT', gain: 1 };
-    expect(stripRigBindings(data)).toEqual(['deviceId']);
+    const data: Record<string, unknown> = {
+      deviceId: 'abc',
+      deviceLabel: 'FaceTime HD',
+      name: 'FRONT',
+      gain: 1,
+    };
+    expect(stripRigBindings(data)).toEqual(['deviceId', 'deviceLabel']);
     expect(data).toEqual({ name: 'FRONT', gain: 1 });
   });
 
@@ -246,6 +260,23 @@ describe('rig properties vs patch content', () => {
     expect(stripRigBindings({ name: 'x' })).toEqual([]);
     expect(stripRigBindings(null)).toEqual([]);
     expect(stripRigBindings(undefined)).toEqual([]);
+  });
+
+  // ⚠ THE PREDICATE CameraInputCard's AUTO-ACQUIRE GUARD TURNS ON.
+  //
+  // A dynamic camera with nothing saved deliberately falls through to an
+  // UNCONSTRAINED getUserMedia and gets the browser's default camera — that is
+  // right, because it only exists because someone just pressed ＋. A reserved
+  // slot exists in every rack whether or not anyone asked, so the same
+  // fall-through would fire four unconstrained requests on EVERY boot for any
+  // operator who has ever granted camera permission to this origin: a camera
+  // light at boot, and four clients contending for one physical device.
+  //
+  // The card asks `isDeviceSlotId(node.id)`, so the two must not converge.
+  it('DISTINGUISHES a reserved slot from a dynamic camera by id alone', () => {
+    expect(isDeviceSlotId('slot:cam1')).toBe(true);
+    expect(isDeviceSlotId('wfcam-deadbeef')).toBe(false);
+    expect(isDeviceSlotId('cameraInput-abc12345')).toBe(false);
   });
 });
 
