@@ -43,19 +43,22 @@ async function bridgeOwned(page: Page): Promise<boolean> {
   }, NODE);
 }
 
-/** Is the real Es9Card mounted anywhere in the document? */
-async function cardMounted(page: Page): Promise<boolean> {
-  return (await page.locator(`[data-testid="es9-status-${NODE}"]`).count()) > 0;
-}
+/*
+ * ⚠ `cardMounted` STOOD HERE AND IS DELETED. It counted
+ * `es9-status-${NODE}`, a testid no file in the tree emits, so both of its
+ * `toBe(false)` call sites were satisfied by a page that rendered nothing at
+ * all. The claim it made — the lane and the dock render the FACE and not a
+ * second surface — is stated POSITIVELY by `laneClass` containing
+ * `moduleShell` and by `faceBodyMounted`, both of which can fail.
+ */
 
 /**
  * Is the module's own DOCK FULL-VIEW surface mounted anywhere?
  *
- * ⚠ THIS USED TO BE `cardMounted` AND HAD TO MOVE WHEN es9 WAS PROMOTED. The
- * dock full view renders `<ModuleShell view="dock-full">` for a migrated
- * module, so `Es9Card` is not what expands any more — the faceplate's own
- * extension body is. Re-pointing rather than deleting is the honest fix,
- * because the SUBJECT of the tests below is the connection's lifetime across
+ * ⚠ THIS HAD TO MOVE WHEN es9 WAS PROMOTED. The dock full view renders
+ * `<ModuleShell view="dock-full">`, so the faceplate's own extension body is
+ * what expands. Re-pointing rather than deleting was the honest fix, because
+ * the SUBJECT of the tests below is the connection's lifetime across
  * expand/collapse, and that subject is unchanged: it just needs a locator for
  * "the pane is open" that survives the promotion. The bridge lamp is that
  * locator — it mounts and unmounts with the pane, and nothing else does.
@@ -79,8 +82,8 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
 }) => {
   await spawnEs9(page);
 
-  // The lane tile is a shell tile — NOT the legacy card. This is the half the
-  // previous fix had to give up.
+  // The lane tile is a shell tile. This is the half the previous fix had to
+  // give up.
   //
   // ⚠ IT IS `moduleShell`, NOT `moduleShellPlaceholder`, SINCE THE PROMOTION,
   // and the difference is the whole point of it. A placeholder is a rackline
@@ -91,7 +94,7 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
   const lane = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
   await expect(lane).toHaveCount(1);
   const laneClass = (await lane.getAttribute('class')) ?? '';
-  expect(laneClass, 'es9 renders as a faced shell tile, not its legacy card').toContain(
+  expect(laneClass, 'es9 renders as a faced shell tile').toContain(
     'moduleShell',
   );
   expect(
@@ -99,9 +102,8 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
     'and NOT the placeholder it rendered before promotion — the ranked cells are the point',
   ).not.toContain('moduleShellPlaceholder');
 
-  // …and the connection exists regardless. Before this change the bridge could
-  // not exist without a mounted card; now the card is not even rendered.
-  expect(await cardMounted(page), 'no Es9Card is mounted in the lane').toBe(false);
+  // …and the connection exists regardless. The bridge used to depend on a
+  // mounted surface; nothing renders one now and the bridge is still there.
   expect(await bridgeOwned(page), 'the ENGINE owns the bridge anyway').toBe(true);
 });
 
@@ -115,11 +117,10 @@ test('EXPAND to dock then COLLAPSE does not touch the connection', async ({ page
   }, NODE);
   await expect.poll(() => faceBodyMounted(page), { timeout: 10_000 }).toBe(true);
   expect(await bridgeOwned(page), 'still owned while expanded').toBe(true);
-  // ⚠ AND THE LEGACY CARD IS NOWHERE, which is the promotion's own claim and
-  // the reason the locator above had to move. Asserted rather than assumed: if
-  // the dock ever went back to mounting the card, the lifetime tests below
-  // would still pass while measuring a different surface.
-  expect(await cardMounted(page), 'the dock renders the FACE, not the card').toBe(false);
+  // ⚠ THE "AND NOTHING ELSE IS MOUNTED" LEG IS DELETED — see the tombstone
+  // where `cardMounted` used to be. `faceBodyMounted` above is the positive
+  // form of the same claim: the pane that is open is the FACEPLATE's, and that
+  // one can fail.
 
   // COLLAPSE — the exact gesture that used to kill the stream. ESC closes the
   // whole dock full view (Canvas's dock-key handler).
@@ -153,6 +154,7 @@ test('NEGATIVE CONTROL — deleting the NODE does release the bridge', async ({ 
     .toBe(false);
 });
 
-// The `preview OFF` leg (legacy card in-lane + bridge owned) was DELETED by
-// the S2 inversion: its subject was the legacy renderer itself. The bridge's
-// card-independence is pinned by the three tests above on the shell users get.
+// A `preview OFF` leg (the pre-faceplate surface in-lane + bridge owned) was
+// DELETED by the S2 inversion: its subject was that renderer itself. The
+// bridge's independence from any surface is pinned by the three tests above,
+// on the shell users get.

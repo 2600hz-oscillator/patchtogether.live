@@ -124,8 +124,8 @@ function dockPane(page: Page, nodeId: string): Locator {
 
 /**
  * Open one `face.pages` page on this node's faceplate — the face's own view
- * switcher, and the successor to the legacy card's GRID / CLIP / ARR / CTRL
- * strip (`face.tabbed`, owner P0 2026-09-04).
+ * switcher, and the successor to the GRID / CLIP / ARR / CTRL strip this
+ * module shipped before it (`face.tabbed`, owner P0 2026-09-04).
  *
  * ⚠ THE `aria-selected` WAIT IS NOT DECORATION. A railed face renders exactly
  * one band; clicking a chip and reading a cell in the same breath is a race
@@ -180,7 +180,7 @@ test.describe('CLIP PLAYER faceplate', () => {
   test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
   // ── 1. THE SPLIT-BRAIN LEG, IN THE DOM ──────────────────────────────────
-  test('the LANE TILE is the SHELL — the lane strip and the panic STOP, and no legacy card', async ({ page }) => {
+  test('the LANE TILE is the SHELL — the lane strip and the panic STOP', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
 
@@ -834,10 +834,10 @@ test.describe('CLIP PLAYER faceplate', () => {
   // every lane's `active` slot (clips resume on restart) and leaves the elapsed
   // schedule behind, so the engine's `currentStep:L` read kept answering the
   // LAST sounded step — and the editor painted a full-column "playhead" frozen
-  // on screen for as long as the clip stayed armed. The legacy card polled the
-  // same key and froze the same way, but its editor is a view you leave; the
-  // face's editor band is always on screen, so the column read as a permanent
-  // artifact. The read is now gated on the SAME `transportRunning()` the
+  // on screen for as long as the clip stayed armed. The same key was polled
+  // and froze the same way before the faceplate, but that editor was a view you
+  // left; the face's editor band is always on screen, so the column read as a
+  // permanent artifact. The read is now gated on the SAME `transportRunning()` the
   // scheduler gates on (clipplayer.ts), which clears both surfaces at once.
   //
   // The order is the point: run → column PRESENT (the positive control — a
