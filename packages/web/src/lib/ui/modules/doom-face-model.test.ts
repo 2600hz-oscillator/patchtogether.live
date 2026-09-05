@@ -205,10 +205,18 @@ describe('⚠ doom — ONE SURFACE, TWO MOUNTS (the promotion hazard)', () => {
   // being reintroduced. What remains is the face-side half of this same
   // describe (the body and the extension mount the ONE surface), `face-doom.spec.ts`,
   // and the standing DOOM e2e battery including the collab lockstep specs.
-  it('the FACE BODY mounts the same surface, in face variant', () => {
+  it('the FACE BODY mounts the ONE surface', () => {
     const src = bodySrc();
     expect(src).toContain("import DoomSurface from './DoomSurface.svelte'");
-    expect(src).toMatch(/<DoomSurface[^>]*variant="face"/s);
+    expect(src).toMatch(/<DoomSurface\b/);
+    // ⚠ THE `variant="face"` ASSERTION IS GONE WITH THE PROP. `DoomSurface`
+    // carried `variant?: 'card' | 'face'` defaulting to `'card'`, and this leg
+    // pinned the body to the non-default arm. Nothing mounted the `'card'` arm
+    // any more — it emitted `data-testid="doom-card"`, `class:mod-card` and a
+    // PatchPanel the faceplate already provides through `face.rear` — so the
+    // prop, its branch and its dead CSS are deleted. A prop with one legal
+    // value is not a choice to assert.
+    expect(src, 'the deleted prop must not come back by habit').not.toContain('variant=');
   });
 
   it('⚠ the SURFACE — not either wrapper — owns the session and the keyboard', () => {

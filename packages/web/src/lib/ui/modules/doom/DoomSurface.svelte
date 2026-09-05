@@ -162,7 +162,6 @@
      *  PatchPanel, ModuleTitle, the stripe and the OUTPUT FIT row; `'face'`
      *  drops all four because the faceplate owns the rear rail, the name and
      *  the ranked cells. Everything else is IDENTICAL on both. */
-    variant?: 'card' | 'face';
     /** SCREEN OFF (face only): hide the preview canvas. ⚠ It gates the BLIT
      *  and nothing else — the game runs in the module factory's `surface.draw`
      *  and keeps ticking, and the session/keyboard/dialog affordances all stay
@@ -177,7 +176,6 @@
   let {
     id,
     data = undefined,
-    variant = 'card',
     previewCollapsed = false,
     controlsRow = undefined,
   }: Props = $props();
@@ -2230,12 +2228,18 @@
   // — GAMES.md §1.1's own remedy, and it costs no assertion because the card
   // already carried the same string on `title`. The legacy card is UNCHANGED:
   // it still paints both.
-  let paintsProse = $derived(variant === 'card');
-  // …and the lone-host HOST badge is dropped on the face for a second reason
-  // that is about information rather than the ruling: on a solo rack there is
-  // nobody to be host over, so it is a word that is always true and never
-  // informative. It returns the moment a second member appears.
-  let showHostBadge = $derived(isHost && (variant === 'card' || memberIds.length > 1));
+  // ⚠ `paintsProse` IS GONE, NOT SET FALSE. It was `variant === 'card'`, and
+  // every block it guarded painted a SENTENCE this surface is not allowed to
+  // rest on (GAMES.md §1.1) — the prose lives on `surfaceLabel`, the accessible
+  // name, which is speakable and assertable without a resting readout. With the
+  // card gone the guard has one value forever, so the blocks go with it rather
+  // than becoming unreachable code behind a constant.
+  //
+  // The lone-host HOST badge stays dropped, for a reason that was always about
+  // information rather than the ruling: on a solo rack there is nobody to be
+  // host over, so it is a word that is always true and never informative. It
+  // returns the moment a second member appears.
+  let showHostBadge = $derived(isHost && memberIds.length > 1);
 
   /** The whole identity/session sentence, as the surface's accessible name.
    *  This is where the face's un-painted prose goes (GAMES.md §1.1) — speakable
@@ -2257,7 +2261,7 @@
    *  has always used `nodrag` on the individual controls instead. The FACE body
    *  renders inside the dock full view, where nothing above it wants the press. */
   function onSurfacePointerDown(ev: PointerEvent): void {
-    if (variant === 'face') ev.stopPropagation();
+    ev.stopPropagation();
   }
 </script>
 
@@ -2271,9 +2275,6 @@
       title={identityLabel}
       aria-label={identityLabel}
     >{badgeText}</span>
-    {#if paintsProse}
-      <span class="player-label" data-testid="doom-player-label">{identityLabel}</span>
-    {/if}
   {:else if myPendingSlot !== null}
     <!-- Slice 6: pending late joiner — tinted by the slot it WILL take, with
          a "P(N)?" badge + "Spectating — joining as Player N next map" label. -->
@@ -2284,9 +2285,6 @@
       title={specLabel}
       aria-label={specLabel}
     >{specBadge}</span>
-    {#if paintsProse}
-      <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
-    {/if}
   {:else if memberIds.length > 1}
     <!-- Pure spectator (no slot, multi-user rack): clear "Spectating"
          affordance. A lone host in a single-user rack is NOT a spectator —
@@ -2297,14 +2295,6 @@
       title={specLabel}
       aria-label={specLabel}
     >{specBadge}</span>
-    {#if paintsProse}
-      <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
-    {/if}
-  {:else if paintsProse}
-    <!-- Card only: the faceplate's own title bar already names the module, so
-         a second name here would be the duplicate the ruling's permitted-text
-         list exists to prevent. -->
-    <ModuleTitle {id} {data} defaultLabel="DOOM" inline />
   {/if}
   {#if showHostBadge}
     <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>
@@ -2621,30 +2611,6 @@
        own chrome. -->
   {@render controlsRow?.()}
 
-  {#if paintsProse}
-    <!-- CARD ONLY: a derived sentence at rest. The face carries the same facts
-         on the surface's accessible name (see `surfaceLabel`). -->
-    <footer class="hint">
-      {#if memberIds.length > 1}
-        <small data-testid="doom-member-hint">
-          {memberIds.length} rack-mates · host: {isHost ? 'you' : 'remote'}
-          {#if mpMode === 'multi'}
-            {#if mySlot !== null}
-              · player {mySlot + 1}{sess.netStarted ? (sess.isNetArbiter ? ' · arbiter' : ' · client') : ''}
-            {:else if myPendingSlot !== null}
-              · joining P{myPendingSlot + 1} next map
-            {:else}
-              · spectating
-            {/if}
-          {:else if !isHost}
-            · waiting for host to start multiplayer
-          {/if}
-        </small>
-      {:else}
-        <small data-testid="doom-member-hint">Single-user rack — you're the host.</small>
-      {/if}
-    </footer>
-  {/if}
 {/snippet}
 
 <!-- role="application" + tabindex="0" + onclick: the surface IS an
@@ -2670,47 +2636,16 @@
      lib/dev/svelte-ignore-audit.ts. -->
 <div
   bind:this={cardEl}
-  class="doom-card"
-  class:mod-card={variant === 'card'}
-  class:face-variant={variant === 'face'}
+  class="doom-card face-variant"
   role="application"
   aria-label={surfaceLabel}
   tabindex="0"
-  data-card-type={variant === 'card' ? 'doom' : undefined}
-  data-testid={variant === 'card' ? 'doom-card' : 'doom-face-surface'}
+  data-testid="doom-face-surface"
   onclick={() => { cardEl?.focus(); latchKeyboard(); }}
   onpointerdown={onSurfacePointerDown}
 >
-  {#if variant === 'card'}
-    <!-- Slice 5: the stripe is tinted by the local player's slot color (vanilla
-         DOOM player colors — green/indigo/brown/red) so a wall of 4 DOOM cards
-         is instantly readable; a spectator keeps the default video-cable red. -->
-    <div class="stripe" style="background: {slotTint};"></div>
-    <header class="title">{@render identity()}</header>
-
-    <!-- All 37 handles (28 inputs + 9 outputs) live under the canonical
-         PatchPanel corner trigger — matches MIXMSTRS /
-         Pong / 70-odd other cards. Inputs are split per-player (P1..P4) with
-         the local viewer's section labeled " (you)"; outputs render in the
-         single right column. The previous inline #353 slot-emphasis CSS
-         (.hidden-slot-port) is superseded by the section grouping — every
-         gate is still in the DOM (so cross-peer cables resolve + the
-         io-spec invariant holds), just collapsed under the trigger until
-         hovered/clicked open.
-         ⚠ CARD ONLY: the faceplate has its own rear rail (`face.rear`), so a
-         PatchPanel here would be a second, rival set of the same jacks. -->
-    <PatchPanel
-      nodeId={id}
-      sections={patchPanelSections}
-      groupingStrategy="sectioned"
-      panelWidth={440}
-    >
-      {@render gameBody()}
-    </PatchPanel>
-  {:else}
     <header class="title">{@render identity()}</header>
     {@render gameBody()}
-  {/if}
 </div>
 
 <style>
@@ -2757,17 +2692,7 @@
     /* background is set inline by slot color (slice 5) */
     color: white;
   }
-  .doom-card .player-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    /* grow to fill the header so the host/spec badge stays right-aligned */
-    margin-right: auto;
-  }
-  .doom-card .join-btn {
+    .doom-card .join-btn {
     font-size: 11px;
     padding: 3px 8px;
     background: color-mix(in oklab, var(--cable-cv, #4a9) 70%, black);
@@ -3004,24 +2929,22 @@
     background: color-mix(in oklab, var(--cable-video, #c33) 30%, transparent);
     color: var(--cable-video, #c33);
   }
-  .doom-card .player-label.spectating {
-    font-style: italic;
-    opacity: 0.85;
-  }
-  /* port-label + .hidden-slot-port CSS removed in the PatchPanel migration:
+    /* port-label + .hidden-slot-port CSS removed in the PatchPanel migration:
      handles + their labels now live inside PatchPanel rows, so the inline
      absolute-positioned labels are gone, and the slot-emphasis hide-rule is
      replaced by the per-player sectioned grouping (local slot section is
      labeled " (you)"). */
-  .doom-card .hint {
-    padding: 0 10px 8px;
-    color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);
-    font-size: 10px;
-  }
+  
+  /* ── FACE ────────────────────────────────────────────────────────────────
+     The root keeps BOTH `doom-card` and `face-variant` as static classes even
+     though there is only one surface now: every rule above is written against
+     `.doom-card`, and the overrides below against `.doom-card.face-variant`, so
+     keeping the pair is what lets this deletion move ZERO pixels. Collapsing
+     them into one class is a rename of ~60 rules with no behaviour attached —
+     worth doing, but not inside a change whose whole claim is that the
+     surviving surface is untouched.
 
-  /* ── FACE VARIANT ────────────────────────────────────────────────────────
-     Every rule above is REUSED verbatim by the faceplate body — the root keeps
-     the `doom-card` class in both variants precisely so the two surfaces share
+     (Historically the two classes existed so two surfaces could share
      one stylesheet and cannot drift. ⚠ AND SO THE CARD'S PIXELS CANNOT MOVE:
      `composite-doom-evt-{kill,door}-{idle,driven}.png` capture the legacy card
      at `?shell=legacy`, so a selector rename here would have moved four
