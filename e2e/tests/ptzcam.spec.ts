@@ -632,10 +632,10 @@ test.describe('ptzcam face — the default shell', () => {
     // Instant, so the LFO rather than the glide is the subject.
     await writeParam(page, 'slew', 1);
 
-    // ⚠ THE CARD IS NOT MOUNTED. Asserted rather than assumed: `migrated()`
-    // stops a promoted module rendering its legacy card on normal surfaces, and
-    // the whole claim of this leg is that the binder survived that.
-    await expect(page.locator(`[data-testid="ptzcam-card-${NODE}"]`)).toHaveCount(0);
+    // ⚠ AN ABSENCE GATE ON `ptzcam-card-${NODE}` RAN HERE AND IS DELETED:
+    // nothing in the tree emits that testid, so `toHaveCount(0)` could not
+    // fail. The leg's real claim — the binder works through the FACE — is what
+    // the rest of this test drives.
 
     const dock = await openDock(page, NODE);
     await bindThroughFace(page, dock, NEXIGO);

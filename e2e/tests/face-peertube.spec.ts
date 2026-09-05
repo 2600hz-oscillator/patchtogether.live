@@ -260,12 +260,14 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
       mountTimeout: BOOT_MS,
     });
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON: on the default shell no
-    // peertube card is mounted anywhere — not in the lane, not in a headless
-    // host (peertube left DOM_SOURCE_LANE_TYPES in LEG-02 P3). If this ever
-    // finds a card, the rest proves nothing about the face.
-    await expect(page.locator('[data-testid="peertube-card"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="headless-source-host"][data-node-id="fpt1"]')).toHaveCount(0);
+    // ⚠ TWO PRECONDITION GATES RAN HERE AND ARE DELETED. They required
+    // `peertube-card` and an off-screen `headless-source-host` to be absent.
+    // Neither testid is emitted by any file in the tree, so both matchers were
+    // satisfied by a page that rendered nothing at all — the precondition this
+    // file "rests on" could not fail, which makes it decoration rather than a
+    // precondition. What it stood for is now true by construction: there is one
+    // surface and one source owner. The positive assertions below are what
+    // actually hold the file up.
 
     const dock = await openDock(page, 'fpt1');
     const body = dock.locator('[data-testid="peertube-face-body"]');

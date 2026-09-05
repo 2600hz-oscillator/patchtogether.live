@@ -53,6 +53,27 @@ export function assertDecodablePng(buf) {
     }
   }
   if (!sawEnd) throw new Error('no IEND chunk');
+  // ⚠ TRAILING BYTES AFTER IEND ARE CORRUPTION, and this check exists because
+  // its absence let four of them into the committed set. A PNG ends AT IEND;
+  // anything after it is not part of the image. `pngjs` — the decoder
+  // Playwright's screenshot comparator uses — refuses such a file outright
+  // ("unrecognised content at end of stream"), so a baseline with a tail is
+  // unreadable by the one consumer that matters while every structural check
+  // above it passes: the signature is right, every chunk CRC is right, and the
+  // IDAT inflates with a correct Adler-32. This verifier used to `break` at
+  // IEND and report "decodes clean" for exactly those files.
+  //
+  // MEASURED 2026-09-05 over the 495 committed baselines: 4 carried tails of
+  // 720-1610 bytes (adsr-sustain-high, karplus-dark-mallet,
+  // wavesculpt-blink-custom-colors, wavesculpt-blink-scopes-trial). Each one
+  // failed its capture with "Failed to re-generate expected", because
+  // `--update-snapshots` must READ the existing snapshot before it can decide
+  // to replace it — so the corruption was also UNREPAIRABLE by the accept
+  // loop. The repair is `git rm` + recapture, which is the same one the
+  // accept-loop prose already prescribes for an in-tolerance stale baseline.
+  if (off !== buf.length) {
+    throw new Error(`${buf.length - off} trailing byte(s) after IEND`);
+  }
   if (idat.length === 0) throw new Error('no IDAT chunks');
   // The full inflate: zlib's trailing Adler-32 is the integrity check that
   // catches what chunk-structure walking cannot.

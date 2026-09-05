@@ -164,11 +164,10 @@ test.describe('VIDEOVARISPEED face — the promotion is what makes it loadable',
       mountTimeout: BOOT_MS,
     });
 
-    // THE PROMOTION ITSELF: the default shell mounts no card anywhere.
-    await expect(
-      page.locator('[data-testid="videovarispeed-card"]'),
-      'a legacy card is mounted on the default shell — the shell did not replace it',
-    ).toHaveCount(0);
+    // ⚠ A "THE PROMOTION ITSELF" GATE RAN HERE AND IS DELETED. It required
+    // `videovarispeed-card` to be absent; nothing in the tree emits that
+    // testid, so the matcher was satisfied by a page that rendered nothing at
+    // all. The positive assertions below are what hold this file up.
 
     const dock = await openDock(page, VVS);
     const body = dock.locator('[data-testid="videovarispeed-face-body"]');

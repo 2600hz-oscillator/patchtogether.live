@@ -120,18 +120,27 @@ async function boot(page: Page): Promise<void> {
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_CAP_MS });
 }
 
-/** ⚠ THE PERMANENT DISCRIMINATOR. Every liveness assertion in this file is
- *  paired with this one, in the same test. See the header. */
-async function expectNoCardAndNoHost(page: Page, nodeId: string, cardTestId: string): Promise<void> {
-  await expect(
-    page.locator(`[data-testid="${cardTestId}"]`),
-    `a ${cardTestId} is mounted somewhere — this test cannot distinguish node ownership from a card keeping the source alive`,
-  ).toHaveCount(0);
-  await expect(
-    page.locator(`[data-testid="headless-source-host"][data-node-id="${nodeId}"]`),
-    'the headless host is still mounting this node — the source is being rescued by the compensation layer #1511 removes, not owned by the node',
-  ).toHaveCount(0);
-}
+/*
+ * ⚠ `expectNoCardAndNoHost` STOOD HERE AND IS DELETED. READ THIS BEFORE
+ * REPLACING IT WITH SOMETHING THAT LOOKS LIKE IT.
+ *
+ * It was this file's "PERMANENT DISCRIMINATOR": every liveness assertion was
+ * paired with `toHaveCount(0)` on a per-module surface testid and on an
+ * off-screen `headless-source-host`, so a green liveness result could not be
+ * explained by some OTHER mount doing the work.
+ *
+ * Neither testid is emitted by anything in the tree any more. A matcher whose
+ * selector cannot match is satisfied by a page that rendered nothing at all,
+ * so the discriminator had stopped discriminating — it reported "no other
+ * owner" for the same reason it would report it on a blank page.
+ *
+ * ⚠ NAMED COVERAGE LOSS, carried into the PR body. The alternative explanation
+ * it ruled out (a surface, not the node, owning the source) is now ruled out
+ * by CONSTRUCTION: the node source registry is the only owner and no component
+ * competes with it. Re-arming this as a RUNTIME claim would need a new
+ * discriminator against the faceplate dock body — a new gate, which is an
+ * owner decision rather than this branch's.
+ */
 
 /** Does the ENGINE hold this node's element? The one observable that separates
  *  "a <video> exists in the DOM" from "the module has a live source". */
@@ -197,7 +206,6 @@ test.describe('the HLS tuners: the source belongs to the NODE (#1511)', () => {
       mountTimeout: 30_000,
     });
 
-    await expectNoCardAndNoHost(page, 'tv-node', 'tv-librarian-card');
 
     // The ELEMENT exists and the ENGINE holds it, with nothing mounted. On
     // `main` this was true only because the headless host had constructed the
@@ -242,7 +250,6 @@ test.describe('the HLS tuners: the source belongs to the NODE (#1511)', () => {
 
     // THE DISCRIMINATOR AGAIN, after the liveness: a host or a card appearing
     // mid-test would make everything above prove nothing.
-    await expectNoCardAndNoHost(page, 'tv-node', 'tv-librarian-card');
     expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
@@ -256,7 +263,6 @@ test.describe('the HLS tuners: the source belongs to the NODE (#1511)', () => {
       mountTimeout: 30_000,
     });
 
-    await expectNoCardAndNoHost(page, 'pt-node', 'peertube-card');
     await expect
       .poll(() => engineHasElement(page, 'pt-node'), {
         message: 'the engine never received the node-owned <video>',
@@ -288,7 +294,6 @@ test.describe('the HLS tuners: the source belongs to the NODE (#1511)', () => {
       })
       .toMatch(/^blob:/);
 
-    await expectNoCardAndNoHost(page, 'pt-node', 'peertube-card');
     expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 });

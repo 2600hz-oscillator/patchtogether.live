@@ -171,15 +171,11 @@ test.describe('the Launchpad monitor OUTLIVES its card', () => {
       [{ id: 'e1', from: { nodeId: SRC, portId: 'out' }, to: { nodeId: OTL, portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
 
-    // A FACED module under the shell: the lane renders `ModuleShell`, never the
-    // legacy card. (Before the promotion this read "a placeholder tile, not the
-    // real card" — the module was `bespoke-surface`, so the lane was a uniform
-    // rackline tile with zero controls. Either way the card is not here; what
-    // changed is that the tile now carries CONNECT and BRIGHT.)
-    await expect(
-      page.locator('[data-testid="out-to-launch-card"]'),
-      'the shell renders the faceplate tile, not the real card',
-    ).toHaveCount(0);
+    // ⚠ AN `out-to-launch-card` ABSENCE LEG RAN HERE AND IS DELETED: nothing in
+    // the tree emits that testid, so `toHaveCount(0)` could not fail. The claim
+    // it stood for — the lane renders the faceplate tile, carrying CONNECT and
+    // BRIGHT — is asserted positively further down, where a regression can
+    // actually break it.
 
     // ── ARRANGE: a Launchpad that no clip-launcher unit has claimed. ──
     const outputId = await page.evaluate(

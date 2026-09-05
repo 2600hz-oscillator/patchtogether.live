@@ -290,11 +290,12 @@ test.describe('RECORDERBOX face — the promotion is what makes it recordable', 
       mountTimeout: BOOT_MS,
     });
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON: on the default shell no
-    // recorderbox card is mounted anywhere — not in the lane, not in a headless
-    // host. If this ever finds a card, nothing below proves anything about the
-    // face, because the card carries a reconciler of its own.
-    await expect(page.locator('[data-testid="recorderbox-card"]')).toHaveCount(0);
+    // ⚠ A PRECONDITION GATE RAN HERE AND IS DELETED. It required
+    // `recorderbox-card` to be absent; nothing in the tree emits that testid,
+    // so the matcher was satisfied by a page that rendered nothing at all. What
+    // it guarded — a second reconciler running behind the face — cannot happen
+    // now that the face is the only surface. The positive assertions below are
+    // what hold this file up.
 
     const tile = page.locator(
       '.svelte-flow__node[data-id="frb1"] [data-testid="recorderbox-tile-body"]',

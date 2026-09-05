@@ -172,11 +172,10 @@ test.describe('VIDEOBOX face — the promotion is what makes it loadable', () =>
       mountTimeout: BOOT_MS,
     });
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON: on the default shell no
-    // videobox card is mounted anywhere — not in the lane, not in a headless
-    // host (videobox left DOM_SOURCE_LANE_TYPES in LEG-02 P1). If this ever
-    // finds a card, the rest proves nothing about the face.
-    await expect(page.locator('[data-testid="videobox-card"]')).toHaveCount(0);
+    // ⚠ A PRECONDITION GATE RAN HERE AND IS DELETED. It required
+    // `videobox-card` to be absent; nothing in the tree emits that testid, so
+    // the matcher was satisfied by a page that rendered nothing at all. The
+    // positive assertions below are what hold this file up.
 
     const dock = await openDock(page, 'fvb1');
     const body = dock.locator('[data-testid="videobox-face-body"]');

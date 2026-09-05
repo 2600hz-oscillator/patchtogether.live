@@ -16,34 +16,31 @@
 // which is the precedent this follows. The glob list is deliberately NOT edited
 // — the classification is fine, the prefix collision was the accident.
 //
-// LEG-02 P1 (#1511) — VIDEOBOX's source belongs to the NODE, not to a mounted
-// card. This is the acceptance test for that claim, and it is written so that it
-// can only pass for the right reason.
+// LEG-02 P1 (#1511) — VIDEOBOX's source belongs to the NODE, not to any mounted
+// surface. This is the acceptance test for that claim.
 //
-// ── WHY THE OBVIOUS SPEC WOULD BE WORTHLESS ─────────────────────────────────
+// ── WHY THE OBVIOUS SPEC WOULD HAVE BEEN WORTHLESS WHEN THIS WAS WRITTEN ────
 //
-// "Load a video and assert it plays" passes on `main` too — because on `main`
-// the source survives via `<HeadlessSourceHost>`, which parks the REAL card
-// off-screen at `left:-9999px` and keeps every one of its loops running. The
-// picture is identical; the ownership is not. So a spec that only asserts the
-// media is alive cannot tell the fix from the compensation it replaces, and
-// would go on passing if someone reinstated the host tomorrow.
+// "Load a video and assert it plays" passed on the pre-conversion tree too,
+// because the source survived in an off-screen host that kept a second copy of
+// the module and all its loops running. The picture was identical; the
+// ownership was not. So the liveness assertions here were each PAIRED with an
+// absence leg naming that host, so that "it works" and "something else is
+// rescuing it" could be told apart.
 //
-// ⚠ THE DISCRIMINATOR IS THE ABSENCE, AND IT IS A PERMANENT LEG OF EVERY TEST
-// HERE: `headless-source-host` count 0 AND `[data-testid=videobox-card]` count 0,
-// asserted IN THE SAME TEST as the liveness. Without that pair, "it still works"
-// and "the host is still rescuing it" are indistinguishable from the output —
-// which is the exact green-and-blind shape this epic could otherwise ship.
+// ⚠ THAT PAIRING IS GONE, AND THE DELETION NOTE WHERE THE HELPER STOOD SAYS
+// WHY. Short version: both testids it named are emitted by nothing in the tree,
+// so the absence legs could not fail; the alternative owner they ruled out is
+// now ruled out by construction. See `expectNoCardAndNoHost`'s tombstone below
+// before adding anything of that shape back.
 //
 // ── WHAT MOVED HERE FROM WHERE ──────────────────────────────────────────────
 //
 // ⚠ `collapse-keeps-playing.spec.ts` DERIVES its subjects from
-// `DOM_SOURCE_LANE_TYPES`, so videobox leaving that set silently removes it from
+// `DOM_SOURCE_LANE_TYPES`, so videobox leaving that set silently removed it from
 // that sweep. That is a real coverage transfer, not a side effect to shrug at,
-// and this file is where it lands. The collapse scenario is reproduced below and
-// then strengthened: that sweep dismisses the tray and asserts the card-owned
-// media survived; this one dismisses the tray and asserts the media survives
-// with NO CARD ANYWHERE — which is a state that sweep could not construct.
+// and this file is where it lands: the collapse scenario is reproduced below,
+// with the media asserted to survive the pane being dismissed.
 //
 // ── THE PLAYBACK INSTRUMENT ─────────────────────────────────────────────────
 //
@@ -98,25 +95,33 @@ const NODE = 'vb-lifetime';
 const BOOT_CAP_MS = 90_000;
 
 async function boot(page: Page): Promise<void> {
-  // Plain `/rack` — the DEFAULT shell, where an unfaced module renders a
-  // placeholder tile and its real card exists only inside the dock full view.
-  // That is the state a saved rack is in, not an edge case.
+  // Plain `/rack` — the default surface, which is the state a saved rack is in
+  // rather than an edge case.
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_CAP_MS });
 }
 
-/** ⚠ THE PERMANENT DISCRIMINATOR. Every liveness assertion in this file is
- *  paired with this one, in the same test. See the header. */
-async function expectNoCardAndNoHost(page: Page, nodeId: string): Promise<void> {
-  await expect(
-    page.locator('[data-testid="videobox-card"]'),
-    'a videobox CARD is mounted somewhere — this test cannot distinguish node ownership from a card keeping the source alive',
-  ).toHaveCount(0);
-  await expect(
-    page.locator(`[data-testid="headless-source-host"][data-node-id="${nodeId}"]`),
-    'the headless host is still mounting this node — the source is being rescued by the compensation layer #1511 removes, not owned by the node',
-  ).toHaveCount(0);
-}
+/*
+ * ⚠ `expectNoCardAndNoHost` STOOD HERE AND IS DELETED. READ THIS BEFORE
+ * REPLACING IT WITH SOMETHING THAT LOOKS LIKE IT.
+ *
+ * It was this file's "PERMANENT DISCRIMINATOR": every liveness assertion was
+ * paired with `toHaveCount(0)` on `videobox-card` and on an off-screen
+ * `headless-source-host`, so a green liveness result could not be explained by
+ * some OTHER mount keeping the <video> alive.
+ *
+ * Both of those testids are now emitted by NOTHING in the tree. A matcher
+ * whose selector cannot match is satisfied by a page that rendered nothing at
+ * all, so the discriminator had stopped discriminating — it was reporting
+ * "no other owner" for the same reason it would report it on a blank page.
+ *
+ * ⚠ NAMED COVERAGE LOSS, carried into the PR body. The alternative explanation
+ * it ruled out (a surface, not the node, owning the source) is now ruled out by
+ * CONSTRUCTION: `$lib/ui/media/node-video-source-registry` is the only owner
+ * and no component competes with it. Re-arming this as a RUNTIME claim would
+ * need a new discriminator against the faceplate dock body — a new gate, which
+ * is an owner decision rather than this branch's.
+ */
 
 /** Does the ENGINE hold this node's element? The one observable that separates
  *  "a decoded file exists in the DOM" from "the module has a live source". */
@@ -187,21 +192,22 @@ async function measureProgress(page: Page, ms: number) {
 }
 
 test.describe('videobox: the source belongs to the NODE (#1511)', () => {
-  test('the engine holds the element with NO card ever mounted', async ({ page }) => {
+  test('the engine holds the element with no surface ever mounted', async ({ page }) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
     await boot(page);
     // Spawn and then touch NOTHING. The dock is never opened, so no videobox
-    // card is ever constructed at any point in this test.
+    // surface is ever constructed at any point in this test.
     await spawnPatch(page, [{ id: NODE, type: 'videobox', domain: 'video' }], [], {
       mountTimeout: 30_000,
     });
 
-    // ⚠ THIS IS THE HEADLINE. On `main` this passes too — but only because the
-    // headless host mounts the card. The pairing below is what makes it mean
-    // something: the engine has the element AND nothing is keeping a card alive.
+    // ⚠ THIS IS THE HEADLINE: the engine holds the element although nothing
+    // has ever rendered this module. Before the conversion the same result was
+    // produced by an off-screen host keeping a second copy alive; there is no
+    // such host now, so the node is the only thing that could have done it.
     await expect
       .poll(() => engineHasElement(page, NODE), {
         timeout: 20_000,
@@ -210,7 +216,6 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
           'NODE creation, so this failing means the graph sync never ran or the attach retry never converged',
       })
       .toBe(true);
-    await expectNoCardAndNoHost(page, NODE);
 
     // The element is PARKED — created off-screen by the registry and adopted by
     // nobody, which is exactly the state "no surface is displaying it" should
@@ -222,7 +227,7 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
     expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
-  test('playback survives the card being dismissed, with no host to rescue it', async ({ page }) => {
+  test('playback survives the surface being dismissed, with nothing to rescue it', async ({ page }) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -237,9 +242,8 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
     // Opening the dock is not a workaround: a file picker is only honoured
     // inside a real user gesture, and an off-screen `pointer-events: none` host
     // was never clickable either. So loading a file has ALWAYS required an
-    // expanded surface, on `main` too (the legacy card then; the ModuleShell
-    // face body since the wave-3 promotion — same testids, same controller
-    // seam). What changes is what happens after it closes.
+    // expanded surface — today the ModuleShell face body. What this test is
+    // about is what happens after it closes.
     await page.evaluate((id) => {
       (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id);
     }, NODE);
@@ -270,29 +274,29 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
       { timeout: 30_000 },
     );
 
-    // ── DISMISS. The dock surface unmounts (since the wave-3 promotion that is
-    //    the ModuleShell face body, not the card), and — because videobox is no
-    //    longer in DOM_SOURCE_LANE_TYPES — nothing re-mounts anything anywhere. ─
+    // ── DISMISS. The ModuleShell face body unmounts, and nothing re-mounts
+    //    the module anywhere. ──────────────────────────────────
     await page.getByTestId('faceplate-collapse').click();
     await expect(pane).toHaveCount(0, { timeout: 20_000 });
 
-    // The discriminator FIRST, so a failure names the right cause.
-    await expectNoCardAndNoHost(page, NODE);
-    expect(await engineHasElement(page, NODE), 'the engine lost the element when the card went away').toBe(true);
+    expect(
+      await engineHasElement(page, NODE),
+      'the engine lost the element when the pane closed',
+    ).toBe(true);
 
     const placement = await mediaPlacement(page);
-    expect(placement.length, 'the node-owned <video> vanished with the card').toBe(1);
-    expect(placement[0]!.hasSrc, 'the loaded file was released when the card unmounted').toBe(true);
+    expect(placement.length, 'the node-owned <video> vanished with the surface').toBe(1);
+    expect(placement[0]!.hasSrc, 'the loaded file was released when the surface unmounted').toBe(true);
     expect(placement[0]!.where, 'the element should be parked once no surface displays it').toBe('parking');
 
     // ...and it is still PLAYING, measured as forward progress.
     const rec = await measureProgress(page, OBSERVE_MS);
     expect(
       rec.progressS,
-      `forward playback progress with no card mounted: ${rec.progressS.toFixed(3)} s over ` +
+      `forward playback progress with no surface mounted: ${rec.progressS.toFixed(3)} s over ` +
         `${rec.samples} samples / ${rec.elapsedMs.toFixed(0)} ms (sawPlaying=${rec.sawPlaying}). ` +
         'Units: SECONDS of media time, wrap-safe and seek-proof. A zero here means the drift loop ' +
-        'died with the card — which is the #1511 defect, not a flake.',
+        'died with the surface — which is the #1511 defect, not a flake.',
     ).toBeGreaterThan(MIN_PROGRESS_S);
 
     expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
@@ -306,7 +310,7 @@ test.describe('videobox: the source belongs to the NODE (#1511)', () => {
     });
     await expect.poll(() => engineHasElement(page, NODE), { timeout: 20_000 }).toBe(true);
 
-    // ⚠ THE OTHER HALF OF "no card teardown". A lifecycle that never tears down
+    // ⚠ THE OTHER HALF OF "no surface teardown". A lifecycle that never tears down
     // is not node ownership, it is a leak — and it would pass every assertion
     // above. The graph is the authority, so removing the node must free it.
     await spawnPatch(page, [], [], { mountTimeout: 30_000 });

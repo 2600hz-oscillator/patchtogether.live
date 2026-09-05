@@ -220,8 +220,10 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     // would still be "a module-shell" while painting a fraction of the face.
     await expect(shell).toHaveAttribute('data-shell-view', 'drawer');
     await expect(shell).toHaveAttribute('data-shell-tier', 'dock');
-    // …and the legacy card is GONE from this host (the owner's actual report).
-    await expect(card.locator('.mod-card, .moog-panel')).toHaveCount(0);
+    // ⚠ A `.mod-card, .moog-panel` ABSENCE LEG RAN HERE AND IS DELETED: no
+    // element in the rack carries either class, so `toHaveCount(0)` could not
+    // fail. The four attribute assertions above are the ones with content —
+    // they say WHICH surface this is, not which one it is not.
     // The face's own furniture, by its own testids — not "something painted".
     await expect(card.getByTestId('face-pages')).toBeVisible();
     await expect(card.getByTestId('face-hero')).toBeVisible();
@@ -1107,13 +1109,10 @@ test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the
     // `view='drawer'`, not `'lane'` — a shell that fell back to the lane view
     // would still be "a module-shell" while painting a fraction of the face.
     await expect(railShell).toHaveAttribute('data-shell-view', 'drawer');
-    // …and the pre-promotion instrument is GONE from this host. This is the
-    // owner's literal report, and it is the leg that was `.toHaveCount(1)` in
-    // spirit before the fix.
-    await expect(
-      railCard.locator('.mod-card, .moog-panel'),
-      'the verbatim legacy card must not be mounted in the rail',
-    ).toHaveCount(0);
+    // ⚠ THE SAME `.mod-card, .moog-panel` ABSENCE LEG RAN HERE AND IS DELETED
+    // for the same reason: nothing in the rack carries either class. The
+    // `data-shell-view` assertion above is what says the rail mounts the
+    // DRAWER face rather than something else.
 
     // The canvas side is unchanged: docking still swaps the lane to the STUB,
     // so this is not "the face leaked onto both surfaces".

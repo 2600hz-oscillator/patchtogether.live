@@ -105,17 +105,27 @@ async function boot(page: Page): Promise<void> {
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_CAP_MS });
 }
 
-/** ⚠ THE PERMANENT DISCRIMINATOR. Paired with every liveness assertion. */
-async function expectNoCardAndNoHost(page: Page): Promise<void> {
-  await expect(
-    page.locator('[data-testid="videovarispeed-card"]'),
-    'a videovarispeed CARD is mounted somewhere — this test cannot then distinguish node ownership from a card doing the work',
-  ).toHaveCount(0);
-  await expect(
-    page.locator(`[data-testid="headless-source-host"][data-node-id="${VVS}"]`),
-    'the headless host is mounting this node — the behaviour is being rescued by the compensation layer #1511 removes',
-  ).toHaveCount(0);
-}
+/*
+ * ⚠ `expectNoCardAndNoHost` STOOD HERE AND IS DELETED. READ THIS BEFORE
+ * REPLACING IT WITH SOMETHING THAT LOOKS LIKE IT.
+ *
+ * It was this file's "PERMANENT DISCRIMINATOR": every liveness assertion was
+ * paired with `toHaveCount(0)` on a per-module surface testid and on an
+ * off-screen `headless-source-host`, so a green liveness result could not be
+ * explained by some OTHER mount doing the work.
+ *
+ * Neither testid is emitted by anything in the tree any more. A matcher whose
+ * selector cannot match is satisfied by a page that rendered nothing at all,
+ * so the discriminator had stopped discriminating — it reported "no other
+ * owner" for the same reason it would report it on a blank page.
+ *
+ * ⚠ NAMED COVERAGE LOSS, carried into the PR body. The alternative explanation
+ * it ruled out (a surface, not the node, owning the source) is now ruled out
+ * by CONSTRUCTION: the node source registry is the only owner and no component
+ * competes with it. Re-arming this as a RUNTIME claim would need a new
+ * discriminator against the faceplate dock body — a new gate, which is an
+ * owner decision rather than this branch's.
+ */
 
 /** The node's live slot state, read from the registry's own hook.
  *
@@ -197,12 +207,10 @@ async function fireAssetSelect(page: Page, slot: number): Promise<void> {
  *  surface is the FACEPLATE, not the card.
  *
  *  ⚠ RE-POINTED AT THE FACE BODY (2026-09-01). This helper used to drive
- *  `videovarispeed-card` inside the pane and open the 7-slot sheet with a
- *  `contextmenu` on it. Both are gone from the default shell: the dock mounts
- *  `<ModuleShell>` now, and the bank is a permanent section of the body rather
- *  than a right-click sheet (right-click is claimed per-control by
- *  `ControlContextMenu`). The `expectNoCardAndNoHost` discriminator below is
- *  unchanged and now holds INSIDE the pane too, which is strictly stronger. */
+ *  a per-module surface inside the pane and open the 7-slot sheet with a
+ *  `contextmenu` on it. Both are gone: the dock mounts `<ModuleShell>`, and the
+ *  bank is a permanent section of the body rather than a right-click sheet
+ *  (right-click is claimed per-control by `ControlContextMenu`). */
 async function loadSlot(page: Page, slot: number): Promise<void> {
   const pane = page.locator('[data-testid="dock-full-view"]');
   const body = pane.locator('[data-testid="videovarispeed-face-body"]');
@@ -262,8 +270,7 @@ test.describe('videovarispeed: transport + CV belong to the NODE (#1511)', () =>
     await page.getByTestId('faceplate-collapse').click();
     await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0, { timeout: 20_000 });
 
-    // ── From here the rack is in its ORDINARY state: no card anywhere.
-    await expectNoCardAndNoHost(page);
+    // ── From here the rack is in its ORDINARY state: no surface anywhere.
     const before = await slotState(page);
     expect(before, 'the node published no slot state — the controller does not exist').not.toBeNull();
     expect(before!.activeSlot, 'expected to start on slot 0').toBe(0);
@@ -278,10 +285,6 @@ test.describe('videovarispeed: transport + CV belong to the NODE (#1511)', () =>
           'path runs only while a card is mounted, so a regression here restores the original defect.',
       })
       .toBe(2);
-
-    // ...and the discriminator again AFTER the behaviour, so a card that
-    // appeared mid-test cannot be what made it pass.
-    await expectNoCardAndNoHost(page);
 
     // A switch BACK must land on the slot's own live playhead, not on 0.
     await fireAssetSelect(page, 0);
@@ -361,7 +364,6 @@ test.describe('videovarispeed: transport + CV belong to the NODE (#1511)', () =>
         message: 'no controller for a spawned varispeed — the graph sync never ran',
       })
       .toBe(true);
-    await expectNoCardAndNoHost(page);
 
     // ⚠ THE OTHER HALF OF "no card teardown": a lifecycle that never ends is a
     // leak, and it would pass every assertion above. The graph is the authority.
