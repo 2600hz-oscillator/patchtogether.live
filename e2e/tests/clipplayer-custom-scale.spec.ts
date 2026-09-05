@@ -66,12 +66,35 @@ async function clipNotes(page: Page, id: string, slot = '0'): Promise<number[]> 
 }
 
 /** Open the clip player's dock full view (grid + roll + deck in one surface). */
+/** Bind a clip by double-clicking its PAD, returning to the grid band first.
+ *
+ *  The pad dblclick is what moves the railed face to `editor`, so a second bind
+ *  has to come back to `session` before the pads exist to click. */
+async function bindPad(page: Page, dock: import('@playwright/test').Locator, idx: number) {
+  const tab = dock.getByTestId('faceplate-tab-session');
+  await tab.click();
+  await expect(tab, 'the session page opens').toHaveAttribute('aria-selected', 'true');
+  await dock.locator(`[data-clip="${idx}"]`).dblclick();
+  await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
+}
+
 async function openDock(page: Page) {
   const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
   await expect(tile).toBeVisible();
   await tile.getByTestId('shell-open-dock').click();
   const dock = page.getByTestId('dock-full-view');
   await expect(dock).toBeVisible();
+  // ⚠ SELECT THE BAND THE PADS ARE ON. The face is RAILED (`face.tabbed`, owner
+  // P0 2026-09-04) and renders exactly ONE band: the launch grid is `session`,
+  // the piano roll is `editor`. An unselected band is `display:none`, so a
+  // `[data-clip]` locator resolves a real element with a 0×0 box and the
+  // dblclick every caller starts with times out instead of failing on a missing
+  // selector. Every test in this file opens with a pad, so the page is selected
+  // here rather than repeated per test; the pad dblclick then moves the face to
+  // `editor` itself, which is the product's own gesture.
+  const tab = dock.getByTestId('faceplate-tab-session');
+  await tab.click();
+  await expect(tab, 'the session page opens').toHaveAttribute('aria-selected', 'true');
   return dock;
 }
 
@@ -185,16 +208,18 @@ test('custom scale is PER LANE — applying it on lane 0 leaves lane 1 on the fu
   await dock.getByTestId('clipplayer-customscale-apply-cp').click();
   await expect.poll(async () => rowCount(page), { timeout: 5000 }).toBe(3);
 
-  // Bind LANE 1's clip (index = lane*SCENE_STRIDE) — on the face the grid is
-  // always on screen, so switching lanes is just another pad double-click.
-  await dock.locator('[data-clip="64"]').dblclick();
-  await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
+  // Bind LANE 1's clip (index = lane*SCENE_STRIDE). Switching lanes means
+  // returning to the GRID band first: the pad dblclick above moved the face to
+  // `editor`, which is the product's own gesture, so the pads are no longer
+  // rendered. (This comment used to read "on the face the grid is always on
+  // screen" — true of the card, not of the railed face.)
+  await bindPad(page, dock, 64);
   await expect
     .poll(async () => rowCount(page), { timeout: 5000 })
     .toBe(FULL_ROWS);
   await expect(dock.getByTestId('clipplayer-customscale-apply-cp')).toHaveText('APPLY SCALE');
 
   // …and lane 0 still has its own filter when we go back to it.
-  await dock.locator('[data-clip="0"]').dblclick();
+  await bindPad(page, dock, 0);
   await expect.poll(async () => rowCount(page), { timeout: 5000 }).toBe(3);
 });

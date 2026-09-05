@@ -1125,31 +1125,19 @@ test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
 
-  test('`?shell=legacy` still docks to the VERBATIM CARD — the escape hatch is not collateral', async ({ page }) => {
-    // The negative half, and the reason the rule keeps its `shellFaces` term.
-    // Without this leg the fix above would be indistinguishable from deleting
-    // the legacy arm outright, which is a different (owner-gated) change.
-    const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
-    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
-
-    await spawnPatch(page, [{ id: 'dock-mix-legacy', type: 'mixer', position: { x: 300, y: 200 } }]);
-    await page.evaluate(() => {
-      (globalThis as unknown as { __dock: { dock: (id: string, zone: string) => void } }).__dock.dock(
-        'dock-mix-legacy',
-        'top',
-      );
-    });
-
-    const railCard = page.locator('[data-dock-card="dock-mix-legacy"]');
-    await expect(railCard).toBeVisible({ timeout: BOOT_MS });
-    await expect(
-      railCard.locator('.mod-card, .moog-panel'),
-      '?shell=legacy means verbatim legacy cards, in the rail too',
-    ).toHaveCount(1);
-    await expect(railCard.locator('[data-testid="module-shell"]')).toHaveCount(0);
-
-    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
-  });
+  /* ⚠ A LEG STOOD HERE ASSERTING `?shell=legacy` DOCKS TO THE VERBATIM CARD,
+   * and it is retired because THIS BRANCH IS THE CHANGE IT WAS WATCHING FOR.
+   * Its own words: *"the reason the rule keeps its `shellFaces` term. Without
+   * this leg the fix above would be indistinguishable from deleting the legacy
+   * arm outright, which is a different (owner-gated) change."* That gated
+   * change is exactly what happened — the escape hatch, the cards and
+   * `dockRailRendersFace`'s three terms are all gone — so the leg is deleted
+   * with its subject rather than re-pointed at a surface it was written to
+   * contrast against.
+   *
+   * COVERAGE, NAMED: the POSITIVE half it paired with is the test directly
+   * above (a user-docked promoted module renders its FACE in the rail), which
+   * is unchanged and still runs. What that pair proved between them — that the
+   * rail's choice was a CHOICE — is no longer a property the product has: the
+   * rail renders the faceplate because it is the only surface a module has. */
 });

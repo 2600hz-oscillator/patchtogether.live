@@ -58,6 +58,24 @@ test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS }
  * became 0" and "never looked" are then distinguishable, which they are not
  * from a bare poll timeout.
  */
+
+/** Select one page of the clip player's RAILED face.
+ *
+ * ⚠ THE FACE IS TABBED (`face.tabbed`, owner P0 2026-09-04) AND RENDERS EXACTLY
+ * ONE BAND. The launch grid is `session`, the piano roll is `editor`; the
+ * inactive one is `display:none`, so its testids resolve to real elements with
+ * a 0×0 box and every interaction times out instead of failing on a missing
+ * selector. The `aria-selected` wait is the state the band swap commits —
+ * clicking a chip and reading a cell in the same breath races it. */
+async function showClipPage(
+  scope: import('@playwright/test').Locator,
+  pageId: 'session' | 'editor',
+) {
+  const tab = scope.getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
+}
+
 async function waitLane0Playing(
   page: import('@playwright/test').Page,
   expected: number,
@@ -128,7 +146,10 @@ async function openEditorLane0(page: import('@playwright/test').Page) {
     'cp1',
   );
   const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="cp1"]');
+  await showClipPage(pane, 'editor');
   await expect(pane.getByTestId('clipplayer-face-editor')).toBeVisible({ timeout: 60_000 });
+  // The PAD is on the other band, so come back to it for the dblclick.
+  await showClipPage(pane, 'session');
   await pane.getByTestId('clipplayer-pad-0').dblclick();
   await expect
     .poll(
