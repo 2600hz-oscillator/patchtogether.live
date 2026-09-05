@@ -56,6 +56,7 @@
   import AudioIoSurface from './AudioIoSurface.svelte';
   import MediaLoaderSurface from './MediaLoaderSurface.svelte';
   import AssetsPickerSurface from './AssetsPickerSurface.svelte';
+  import { readCameraDeviceId } from './workflow-cameras';
   import CameraSurface from './CameraSurface.svelte';
   import type { ModuleNode } from '$lib/graph/types';
 
@@ -172,6 +173,19 @@
     cameraNodes = [],
     cameraAtCap = false,
   }: Props = $props();
+
+  /**
+   * How many camera rows actually hold a DEVICE.
+   *
+   * ⚠ NOT `cameraNodes.length`, and the difference is the device-slot layer
+   * (native-shell P1). Four reserved camera slots are now present in every
+   * rack, bound or not — so a row count would light the 📷 badge and announce
+   * "4 mapped" on a rig with no camera plugged in at all, which is a status
+   * light that means nothing. An unbound slot is an ADDRESS, not a camera.
+   */
+  let boundCameraCount = $derived(
+    cameraNodes.filter((n) => readCameraDeviceId(n)).length,
+  );
 
   // ---- Topbar menu state: ONE menu open at a time ----
   type MenuId = 'file' | 'clock' | 'din' | 'io' | 'assets' | 'cameras';
@@ -636,14 +650,14 @@
       <button
         class="slot-trigger"
         class:open={openMenu === 'cameras'}
-        class:active={cameraNodes.length > 0}
+        class:active={boundCameraCount > 0}
         data-testid="workflow-topbar-slot-cameras"
         onclick={() => toggleMenu('cameras')}
         aria-haspopup="menu"
         aria-expanded={openMenu === 'cameras'}
-        title={cameraNodes.length > 0
-          ? `Cameras — ${cameraNodes.length} mapped; click a row to patch its output`
-          : 'Cameras — map a camera source and patch its output from the menu'}
+        title={boundCameraCount > 0
+          ? `Cameras — ${boundCameraCount} bound; click a row to patch its output`
+          : 'Cameras — bind a camera source and patch its output from the menu'}
         aria-label="Camera manager"
       >📷</button>
       <CameraSurface

@@ -403,6 +403,17 @@
     workflowCameraAtCap,
   } from '$lib/ui/workflow/workflow-cameras';
   import { isCanvasHiddenNode } from '$lib/graph/hidden-card';
+  // NATIVE-SHELL P1 — the device-slot layer: reserved node ids (`cam1..cam4`
+  // in the header's camera manager, `output1..output4` in the purple video
+  // zone) whose hardware sessions must outlive every patch load, save and
+  // swap. See graph/device-slots.ts for the model.
+  import {
+    OUTPUT_SLOT_LAYOUT,
+    isDeviceSlotId,
+    outputSlotPosition,
+    planDeviceSlotIdentityRepairs,
+    planDeviceSlotSpawns,
+  } from '$lib/graph/device-slots';
   // DOCKING P2.5a — three dock zones (top rail / LEFT rail = the workflow
   // left toolbar / bottom drawer), plain-mount rail hosts (DockCardHost via
   // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
@@ -1765,6 +1776,105 @@
       trace(
         `workflow: repaired pinned identity (${repairs
           .map((r) => `${r.id}:${r.fields.join('+')}`)
+          .join(', ')})`,
+      );
+    }
+  });
+
+  // ---------------- NATIVE-SHELL P1: the DEVICE-SLOT ensure ----------------
+  //
+  // Eight reserved node ids — `cam1..cam4` (hidden cameraInput instances whose
+  // face is the topbar 📷 manager) and `output1..output4` (videoOut sinks in
+  // the purple video zone) — that every rack always holds, so a hardware
+  // session can hang off an id that no workflow ever destroys.
+  //
+  // ⚠ THIS IS AN INVARIANT, NOT A SEED, and the distinction is the whole
+  // phase. The video-zone defaults below are ONE-SHOT latched spawns: delete
+  // one and it stays deleted, because it is patch CONTENT the user is entitled
+  // to reject. A slot is rig INFRASTRUCTURE: it re-asserts forever, exactly
+  // like the pinned singletons above, because the thing hanging off it is a
+  // camera the operator is presenting through.
+  //
+  // Runs on every snapshot (no latch), so the set SELF-HEALS after any
+  // wholesale node replacement — but note the load path no longer NEEDS the
+  // self-heal for the sessions to survive: `loadEnvelopeIntoStore` now skips
+  // reserved ids on its clear pass, so the id (and the MediaStream keyed on it)
+  // is never destroyed in the first place. The re-assert is the backstop for
+  // the paths that do not go through the loader: a peer's Clear arriving over
+  // sync, an undo/redo cycle, a raw doc edit.
+  //
+  // Same gate as the pinned ensure (first sync with a provider; the local
+  // replica seed without one; `?seed=none` skips it for the empty-rack
+  // fixture) and the same UNTRACKED origin, so Cmd-Z can never remove a slot.
+  //
+  // ⚠ THE GUARANTEE IS TRANSIENT-AND-SELF-REPAIRING, NOT IMPOSSIBILITY. Yjs
+  // has no conditional insert, so a hostile peer CAN land a foreign type at a
+  // reserved id; what the repair buys is that the state heals and the session
+  // returns at the SAME id, rather than the rack wedging. Anything stronger
+  // would have to live outside the mutable collaborative graph.
+  $effect(() => {
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
+    const missing = planDeviceSlotSpawns(snapshot.nodes);
+    const repairs = planDeviceSlotIdentityRepairs(snapshot.nodes);
+    if (missing.length === 0 && repairs.length === 0) return;
+    ydoc.transact(() => {
+      for (const r of repairs) {
+        const node = patch.nodes[r.id];
+        if (!node) continue; // raced a delete — the spawn pass re-creates it
+        // WRITE ONLY WHAT THE PLANNER NAMED (the workflow-pins applier's rule,
+        // learned there the hard way: canonicalising all fields on any repair
+        // silently re-pinned a node the planner had deliberately exempted).
+        // IN PLACE — never delete + re-add, which would be the very teardown
+        // being defended against.
+        if (r.fields.includes('type')) node.type = r.type;
+        if (r.fields.includes('domain')) node.domain = r.domain;
+        if (r.fields.includes('pinned') || r.fields.includes('hiddenCard')) {
+          if (!node.data) node.data = {} as Record<string, unknown>;
+          const d = node.data as Record<string, unknown>;
+          // Both directions. `pinned`/`hiddenCard` are also the canvas-HIDE
+          // bits, so a peer setting either on an OUTPUT slot makes the rack's
+          // video sink vanish from the purple zone with no delete and no error.
+          if (r.fields.includes('pinned')) d.pinned = r.pinned;
+          if (r.fields.includes('hiddenCard')) d.hiddenCard = r.hiddenCard;
+        }
+      }
+      for (const spec of missing) {
+        if (patch.nodes[spec.id]) continue; // in-transact re-check
+        // NAMED AFTER THE SLOT, NOT THROUGH `nextDefaultName` — and this is a
+        // behaviour fix, not a cosmetic choice. `nextDefaultName` hands out
+        // `CAMERAINPUT`, `CAMERAINPUT2`, … by scanning existing names of that
+        // shape, so four slots taking names from that sequence made a user's
+        // FIRST ＋-added camera "camera 5". `cam1` does not match the pattern,
+        // so the slots sit outside the sequence entirely and dynamic cameras
+        // number from 1 again. It also reads better: the slot's name is the
+        // rig's own vocabulary, the same string the row label and the shell's
+        // pre-flight UI use. Still ordinary `data.name`, so an operator can
+        // rename it to "STAGE LEFT" like any other module.
+        const data: Record<string, unknown> = { name: spec.slot };
+        if (spec.pinned) data.pinned = true;
+        if (spec.hiddenCard) data.hiddenCard = true;
+        patch.nodes[spec.id] = {
+          id: spec.id,
+          type: spec.type,
+          domain: spec.domain,
+          // Header slots render no card, so their position is inert; output
+          // slots get their purple-zone slot, then placeVideoZoneDefaults packs
+          // and locks them alongside the seeded defaults.
+          position:
+            spec.zone === 'video-zone' ? outputSlotPosition(spec) : { x: 24, y: 24 },
+          params: {},
+          data,
+        };
+      }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    if (missing.length > 0) {
+      trace(`device slots: ensured (${missing.map((s) => s.slot).join(', ')})`);
+    }
+    if (repairs.length > 0) {
+      trace(
+        `device slots: repaired identity (${repairs
+          .map((r) => `${r.slot}:${r.fields.join('+')}`)
           .join(', ')})`,
       );
     }
@@ -3604,6 +3714,14 @@
         // a workflow rack (always-on M/E/C drawers). Their edges still go
         // (Clear = unpatch everything).
         if (isPinnedNode(patch.nodes[id])) continue;
+        // RESERVED DEVICE SLOTS survive it too, and by their ID rather than a
+        // data flag — an OUTPUT slot cannot carry `data.pinned` without losing
+        // the card it presents from (see graph/device-slots.ts). Deleting the
+        // id here would retire the node-keyed registries that own the camera
+        // MediaStream, which is the same "device access breaks" this layer
+        // exists to prevent — Clear just reaches it by a different route than
+        // load does.
+        if (isDeviceSlotId(id)) continue;
         delete patch.nodes[id];
       }
     }, LOCAL_ORIGIN);
@@ -5669,7 +5787,15 @@
    */
   function placeVideoZoneDefaults(): void {
     if (!shellFaces) return;
-    const present = VIDEO_ZONE_DEFAULTS.filter((spec) => !!patch.nodes[spec.id]);
+    // The packer's roster is the seeded defaults PLUS the reserved output slots
+    // (native-shell P1). `output1` is already the head of VIDEO_ZONE_DEFAULTS —
+    // it IS the historical `workflow-videoOut` id, kept rather than renamed
+    // because renaming it would be the delete+add teardown the slot layer
+    // exists to prevent — so only `output2..4` are appended, and they pack to
+    // the right of the seeded trio. Layout only: the slots' PRESENCE is the
+    // invariant ensure above, never this one-shot latch.
+    const roster = [...VIDEO_ZONE_DEFAULTS, ...OUTPUT_SLOT_LAYOUT];
+    const present = roster.filter((spec) => !!patch.nodes[spec.id]);
     if (present.length === 0) return;
     const pending = present.filter((spec) => {
       const d = patch.nodes[spec.id]?.data as { videoZonePlaced?: boolean } | undefined;
