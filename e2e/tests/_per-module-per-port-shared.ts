@@ -759,8 +759,19 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'gibribbon.evt_fire', 'gibribbon.evt_gameover', 'gibribbon.evt_hit',
   'gibribbon.evt_kill', 'gibribbon.evt_miss', 'gibribbon.health_cv',
   'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
+  // ⚠ ADDED 2026-09-05, AND THIS ARRAY IS WHERE IT GETS REVIEWED. A
+  // viewport-capture port with no capture: `getDisplayMedia` is refused
+  // outside a user activation and has NO already-granted state, so a bare
+  // spawn can never start one and only the no-capture placeholder arrives.
+  // MEASURED nondeterministic — 2 of 4 local runs read delta 0 of 192 cells
+  // against the sink's own idle — so no CI bound fixes it. The coverage MOVES
+  // to `loopback-shell-source.spec.ts`, which drives the stubbed gesture and
+  // asserts render stats over FIXED_STEPS with the rAF loop paused, i.e.
+  // renderer-independent by construction. Full reasoning at the
+  // EXEMPT_OUTPUT_EMIT entry.
+  'loopback.out',
   'mandelbulb.audio_out',
-  // Black at default params on both shells — see EXEMPT_OUTPUT_EMIT.
+  // Black at default params — see EXEMPT_OUTPUT_EMIT.
   'mandleblot.color_out',
   'midiLane.note_gate', 'midiLane.poly',
   // ('moog904a.audio' was here until 2026-09-04. It parked the module's ONLY

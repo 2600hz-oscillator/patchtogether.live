@@ -31,7 +31,7 @@ import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnEdge } from './_helpers';
 import { collectPageErrors } from './_page-errors';
-import { AUDIO_READY_MS } from '../_helpers/boot-budget';
+import { AUDIO_READY_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -535,6 +535,14 @@ const GATE_PORTS = ['evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover
 
 for (const port of GATE_PORTS) {
   test(`gibribbon: ${port} bridges into scope.ch1 (forcePulse)`, async ({ page, rack }) => {
+    // ⚠ THE INNER CAP MUST FIT INSIDE THE OUTER BUDGET, and the first attempt
+    // at this fix did not. Raising the poll to `AUDIO_READY_MS` (30 s on CI)
+    // without touching the test budget put a 30 s wait inside Playwright's 30 s
+    // default, so the test died at 31.5 s with a BARE `Test timeout` and the
+    // poll never got to report its own message — a strictly worse failure than
+    // the one being repaired, because it says nothing about the subject.
+    // Nested bounds: the budget covers the spawn AND the audio cap.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const scopeId = `scope-${port}`;
     await spawnPatch(
       page,
