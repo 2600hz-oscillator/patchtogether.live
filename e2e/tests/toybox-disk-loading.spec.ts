@@ -24,7 +24,7 @@
 // engages under the EXPLICIT flag (__videoWorkerEnabled / ?videoworker=1 —
 // only the dedicated render-worker-*.spec.ts files set it), so this spec
 // renders TOYBOX on the MAIN thread via its standard factory. The pixels it reads come from the on-card
-// 2D `toybox-canvas`, populated by __toyboxFreeze's DIRECT engine.step() +
+// 2D `toybox-face-canvas`, populated by __toyboxFreeze's DIRECT engine.step() +
 // blitOutputToDrawingBuffer — NOT from a free-running worker. The only reason this
 // blew its budget on CI's software renderer was TOYBOX's live main-thread rAF
 // render loop grinding UNPAUSED underneath the deterministic __toyboxFreeze frames.

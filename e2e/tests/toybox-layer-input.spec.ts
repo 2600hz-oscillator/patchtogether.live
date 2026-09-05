@@ -21,12 +21,12 @@
 //
 // ── GPU-attest rebuild Phase 3 (bounded-step DRS conversion) ───────────────────
 // SwiftShader-cheap, NO assertion changed. This spec reads the MAIN-THREAD on-card
-// 2D canvas (`toybox-canvas`), not worker pixels: TOYBOX is renderLocus:'worker',
+// 2D canvas (`toybox-face-canvas`), not worker pixels: TOYBOX is renderLocus:'worker',
 // but on CI's SwiftShader the worker's WebGL2 context never initializes, so the
 // WorkerProxyHandle's `bridge.ready()` is FALSE and it transparently renders the
 // node ON THE MAIN THREAD via the real toybox factory fallback (worker-proxy-
 // handle.ts). `__toyboxFreeze(t)` drives a DIRECT engine `step()` (unaffected by a
-// paused rAF loop) then blits that fallback render into `toybox-canvas`, and the
+// paused rAF loop) then blits that fallback render into `toybox-face-canvas`, and the
 // toybox's own iTime comes from `__toyboxFreezeTime` (toybox.ts: `frozenTime() ??
 // frame.time`), so time=1.0 vs time=2.0 stay DISTINCT frames regardless of the
 // engine clock pin. The only reason this timed out on CI was TOYBOX's live main-

@@ -222,12 +222,11 @@ async function expectAlive(page: Page, label: string, capMs = 30_000): Promise<v
   try {
     await page.waitForFunction(
       ({ LIT40_FLOOR, MEAN_FLOOR }) => {
-        // ⚠ EITHER SURFACE'S CANVAS. The legacy card spells it `toybox-canvas`;
-        // the faceplate body spells it `toybox-face-canvas` (the fleet convention
-        // `face-screen-render-suite` looks for). Two rows in this file boot the
-        // DEFAULT shell and reach the dock, where after the 2026-09-02 promotion
-        // the FACE is what mounts — so a probe that knew only the card's id would
-        // report a black frame for a picture that is painting perfectly.
+        // ⚠ THE FACEPLATE BODY'S CANVAS — `toybox-face-canvas`, the fleet
+        // convention `face-screen-render-suite` looks for. It is read as an OR
+        // because the console once carried a second spelling for a second host,
+        // and a probe that knows only one id reports a black frame for a picture
+        // that is painting perfectly.
         const c = document.querySelector(
           '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
         ) as HTMLCanvasElement | null;

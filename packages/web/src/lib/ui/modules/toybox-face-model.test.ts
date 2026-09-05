@@ -258,9 +258,14 @@ describe('⚠ THE FACE MOUNTS NO `control-*` TESTID — the faces-parity identit
     ).toBe(paramIds.length);
   });
 
-  it('the override is FACE-ONLY, so the legacy card keeps its shipped ids', () => {
+  it('the override is UNCONDITIONAL — every knob gets the module id', () => {
+    // ⚠ THIS USED TO PIN A TERNARY. The other arm returned `undefined` so a
+    // second host fell through to Knob's own `control-*` default; that host is
+    // gone, and a ternary with one reachable arm is a branch nobody can test.
+    // The property is unchanged and now total: every knob carries the override,
+    // so none of them can emit `control-*` into the faces-parity multiset.
     expect(consoleCode).toMatch(
-      /function knobTestid\([^)]*\)[^{]*\{\s*return layout === 'face' \? `toybox-dial-\$\{paramId\}` : undefined;/,
+      /function knobTestid\([^)]*\): string \{\s*return `toybox-dial-\$\{paramId\}`;/,
     );
   });
 
@@ -283,7 +288,7 @@ describe('⚠ SCREEN ON/OFF — on the shared key, and it keeps the watch mark',
   it('the canvas is the conventional <prefix>-face-canvas and is REMOVED by the collapse', () => {
     // `face-screen-render-suite` looks for that testid, and the suite's whole
     // subject is that the space is RECLAIMED — `hidden` would not do.
-    expect(consoleCode).toContain("'toybox-face-canvas'");
+    expect(consoleCode).toContain('data-testid="toybox-face-canvas"');
     expect(consoleCode).toMatch(/\{#if screenOn\}\s*\{@render screenZone\(\)\}/);
   });
 
@@ -294,9 +299,11 @@ describe('⚠ SCREEN ON/OFF — on the shared key, and it keeps the watch mark',
     // DATAMOSH ops carry history between frames.
     expect(consoleCode).toMatch(/function renewWatchMark\(\)/);
     expect(consoleCode).toMatch(/markWatched\?\.\(id\)/);
-    // …and it is called BEFORE the screen gate, not inside it.
+    // …and it is called BEFORE the screen gate, not inside it. (It used to be
+    // guarded on the host, because a second arrangement did its own blitting;
+    // with one host the guard was a branch that could never be false.)
     expect(consoleCode).toMatch(
-      /if \(layout === 'face'\) renewWatchMark\(\);\s*if \(screenOn\) blitOnce\(\);/,
+      /\n\s*renewWatchMark\(\);\s*\n\s*if \(screenOn\) blitOnce\(\);/,
     );
   });
 
@@ -322,22 +329,26 @@ describe('⚠ THE TAB RAIL IS THE TWO SECTION COLLAPSES, RESTYLED', () => {
     expect(consoleCode).not.toMatch(/data\.faceTab/);
   });
 
-  it('ONE predicate answers "is this section showing" for both hosts', () => {
-    expect(consoleCode).toMatch(
-      /let editorVisible = \$derived\(layout === 'face' \? faceTab === 'combine' : editorOpen\)/,
-    );
-    expect(consoleCode).toMatch(
-      /let cvVisible = \$derived\(layout === 'face' \? faceTab === 'cv' : cvOpen\)/,
-    );
+  it('ONE predicate answers "is this section showing", and the TAB is it', () => {
+    // ⚠ THIS LEG USED TO PIN A TWO-ARMED DERIVATION — `layout === 'face' ?
+    // faceTab === … : <collapse state>` — because the console was arranged by
+    // two hosts and each had its own section control. The second host is gone
+    // with the surface it belonged to, so the tab rail is the ONLY control and
+    // the predicate is the tab. What the leg protects is unchanged: ONE
+    // predicate, so a section cannot be shown by one route and hidden by
+    // another.
+    expect(consoleCode).toMatch(/let editorVisible = \$derived\(faceTab === 'combine'\)/);
+    expect(consoleCode).toMatch(/let cvVisible = \$derived\(faceTab === 'cv'\)/);
+    expect(consoleCode).toMatch(/let presetsVisible = \$derived\(faceTab === 'presets'\)/);
   });
 
-  it('the card KEEPS its ▾ toggles and the face does not double them up', () => {
-    // Capability parity in the direction that is easy to lose: the legacy card
-    // must not lose a control the face happens not to need.
-    expect(consoleCode).toContain('toybox-combine-toggle');
-    expect(consoleCode).toContain('toybox-cv-toggle');
-    expect(consoleCode).toMatch(/\{#if layout === 'card'\}\s*<button[\s\S]{0,400}?toybox-combine-toggle/);
-    expect(consoleCode).toMatch(/\{#if layout === 'card'\}\s*<button[\s\S]{0,400}?toybox-cv-toggle/);
+  it('there is NO second hide-control beside the tab rail', () => {
+    // The other half of the same property, asserted as an absence with a real
+    // subject: two ways to hide one panel is how each strands the other.
+    expect(consoleCode).not.toContain('toybox-combine-toggle');
+    expect(consoleCode).not.toContain('toybox-cv-toggle');
+    expect(consoleCode).not.toMatch(/\beditorOpen\b/);
+    expect(consoleCode).not.toMatch(/\bcvOpen\b/);
   });
 
   it('an INACTIVE tab costs nothing — the scopes stop on the same predicate', () => {

@@ -60,8 +60,8 @@ test.describe('TOYBOX console + CV/MOD section', () => {
     await seedShaderLayer(page);
 
     // Console structure: screen + persistent layer band + tab rail, with the
-    // cv-mod pane as the DEFAULT tab (the card's toybox-cols 3-column body
-    // died with the card; see the manifest row).
+    // cv-mod pane as the DEFAULT tab (the three-column body this console was
+    // extracted from is gone with the host that mounted it).
     await expect(page.locator('[data-testid="toybox-face-console"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-face-layer-band"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-face-pane"]')).toHaveAttribute('data-tab', 'cv');

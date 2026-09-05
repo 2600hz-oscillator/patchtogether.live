@@ -29,7 +29,7 @@
 // boot). See the "picking a SURFACE source ..." test below.
 //
 // GPU-attest rebuild Phase 3 (SwiftShader-cheap conversion): this spec reads the
-// MAIN-THREAD toybox 2D canvas (`toybox-canvas`) — NOT worker-rendered pixels. It
+// MAIN-THREAD toybox 2D canvas (`toybox-face-canvas`) — NOT worker-rendered pixels. It
 // does NOT set `__videoWorkerEnabled` — TOYBOX is `renderLocus:
 // 'worker-experimental'` (PR V2), so the DEFAULT flag state keeps it on the
 // main thread (engine factory path, not the OffscreenCanvas worker

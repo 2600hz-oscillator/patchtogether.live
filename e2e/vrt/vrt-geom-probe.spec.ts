@@ -18,7 +18,7 @@
 //   VRT_PROBE=1 npx playwright test --config=vrt/vrt.config.ts vrt-geom-probe
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen, canvasNode } from '../tests/_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 test('combine-editor capture geometry', async ({ page }) => {
@@ -62,7 +62,13 @@ test('combine-editor capture geometry', async ({ page }) => {
   // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
   // and every lane node is `moduleShell`, so a per-module class matches
   // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
-  const card = canvasNode(page, 'tb');
+  // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+  // `tileBody`, so the graph SVG this probe measures lives in the
+  // `fullViewBody` and the geometry it reports is the PANE's.
+  await openToyboxDock(page, 'tb');
+  const card = page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="tb"]')
+    .getByTestId('toybox-face-body');
   await card.waitFor({ state: 'visible', timeout: 15_000 });
   // eslint-disable-next-line no-console
   console.log('[geom] BIRTH trace:\n  ' + (await birth).join('\n  '));
@@ -189,9 +195,9 @@ test('combine-editor capture geometry', async ({ page }) => {
   const m = await page.evaluate(() => {
     const s = document.querySelector('[data-testid="toybox-graph-svg"]') as SVGElement;
     const w = document.querySelector('[data-testid="toybox-graph-wrap"]') as HTMLElement;
-    // By NODE ID — every lane node's xyflow class is `moduleShell`.
+    // The DOCK PANE's console body — the box the graph really lives in.
     const c = document.querySelector(
-      '.flow > .svelte-flow .svelte-flow__node[data-id="tb"]',
+      '[data-testid="dock-fullview-pane"][data-pane-node="tb"] [data-testid="toybox-face-body"]',
     ) as HTMLElement;
     const sr = s.getBoundingClientRect();
     const wr = w.getBoundingClientRect();

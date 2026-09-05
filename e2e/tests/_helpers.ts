@@ -871,10 +871,13 @@ export async function openToyboxFaceTab(
   await expect(page.getByTestId('toybox-face-pane')).toHaveAttribute('data-tab', tab);
 }
 
-/** Either surface's TOYBOX preview canvas: the card spells it `toybox-canvas`,
- *  the faceplate `toybox-face-canvas` (dock-only). One selector so pixel reads
- *  survive the shell flip. */
-export const TOYBOX_CANVAS_SEL = '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]';
+/** TOYBOX's preview canvas — `toybox-face-canvas`, in the dock pane.
+ *
+ *  ⚠ IT IS STILL AN `OR`, AND THAT IS DELIBERATE. The console once carried a
+ *  second spelling for a second host, and every caller here reads pixels rather
+ *  than asserting an id — so the union costs nothing and the day a second
+ *  surface paints the picture again, the reads keep working. */
+export const TOYBOX_CANVAS_SEL = '[data-testid="toybox-face-canvas"]';
 
 // (openToyboxNodeMenu / ensureCvOpen were pruned as unreferenced exports —
 // LoC campaign row 16. The toybox specs that needed them roll their own or
