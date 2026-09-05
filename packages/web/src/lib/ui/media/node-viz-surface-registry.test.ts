@@ -5,9 +5,9 @@
 // DOM at all — the same split `node-frame-producer-registry.test.ts` uses.
 //
 // ⚠ WHAT THIS FILE CANNOT SEE, said first. Nothing here proves that Canvas
-// mounts the host, that the surface renders a canvas, that the card's box is
+// mounts the host, that the surface renders a canvas, that the viewer's box is
 // unchanged, or that a picture ever arrives. Those are
-// `card-producer-lifetime.spec.ts` (the producer with no card anywhere) and
+// `card-producer-lifetime.spec.ts` (the producer with no surface anywhere) and
 // `wavesculpt.spec.ts` (fifteen tests that photograph the adopted canvas
 // through the DRS step seam). This file owns the ARBITRATION.
 
@@ -42,7 +42,13 @@ function harness() {
 }
 
 const PARK: Host = { id: 'park' };
-const CARD: Host = { id: 'card' };
+/** A SYNTHETIC lower-ranked claimant. ⚠ NOTHING IN THE PRODUCT CLAIMS BELOW
+ *  `dock` today — the tier under it is the PARKED state, which is the absence
+ *  of a claim rather than a claimant. The ranking is still a real mechanism, so
+ *  it is exercised here with a declared number instead of a production tier
+ *  invented to give the test something to point at. */
+const LOWER = 1;
+const LANE: Host = { id: 'lane' };
 const DOCK: Host = { id: 'dock' };
 const el = (): El => ({ id: 'canvas', parent: 'park' });
 
@@ -83,20 +89,20 @@ describe('node-viz-surface-registry — publishing and parking', () => {
     const { reg, moves } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    const c = reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
-    expect(e.parent).toBe('card');
-    expect(reg.showing('n1')).toBe(CARD);
+    const c = reg.claim('n1', LANE, LOWER);
+    expect(e.parent).toBe('lane');
+    expect(reg.showing('n1')).toBe(LANE);
     c.release();
     expect(e.parent).toBe('park');
     expect(reg.showing('n1')).toBeNull();
-    expect(moves).toEqual(['mount:canvas->card', 'park:canvas->park']);
+    expect(moves).toEqual(['mount:canvas->lane', 'park:canvas->park']);
   });
 
   it('release is IDEMPOTENT — a second release cannot steal the canvas from a new owner', () => {
     const { reg } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    const stale = reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    const stale = reg.claim('n1', LANE, LOWER);
     stale.release();
     reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
     stale.release(); // the teardown a stale mount runs LATE
@@ -104,46 +110,46 @@ describe('node-viz-surface-registry — publishing and parking', () => {
   });
 
   it('a claim made BEFORE the surface is published is honoured when it arrives', () => {
-    // Mount order is not guaranteed: a card can be in the lane before Canvas
+    // Mount order is not guaranteed: a viewer can be in the lane before Canvas
     // has rendered the node host for the same node.
     const { reg } = harness();
-    reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    reg.claim('n1', LANE, LOWER);
     const e = el();
     reg.publish('n1', e, PARK);
-    expect(e.parent).toBe('card');
+    expect(e.parent).toBe('lane');
   });
 });
 
 describe('node-viz-surface-registry — arbitration between two live views', () => {
-  it('the DOCK outranks the CARD however the mounts are ordered', () => {
-    for (const cardFirst of [true, false]) {
+  it('the DOCK outranks the LANE however the mounts are ordered', () => {
+    for (const laneFirst of [true, false]) {
       const { reg } = harness();
       const e = el();
       reg.publish('n1', e, PARK);
-      if (cardFirst) {
-        reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+      if (laneFirst) {
+        reg.claim('n1', LANE, LOWER);
         reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
       } else {
         reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
-        reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+        reg.claim('n1', LANE, LOWER);
       }
-      expect(e.parent, `card mounted first: ${cardFirst}`).toBe('dock');
+      expect(e.parent, `lane mounted first: ${laneFirst}`).toBe('dock');
     }
   });
 
   it('⚠ CLOSING THE DOCK HANDS THE CANVAS BACK — the whole reason claims are a LIST', () => {
     // A bare last-wins transfer (the `nodeMedia.adopt` shape) cannot do this:
-    // the card's claim would have been overwritten, so the card would sit with
+    // the lane claim would have been overwritten, so that viewer would sit with
     // an empty screen box until something remounted it.
     const { reg, moves } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    reg.claim('n1', LANE, LOWER);
     const dock = reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
     dock.release();
-    expect(e.parent).toBe('card');
-    expect(moves).toEqual(['mount:canvas->card', 'mount:canvas->dock', 'mount:canvas->card']);
-    // ...and never through the park on the way, which would blank the card for
+    expect(e.parent).toBe('lane');
+    expect(moves).toEqual(['mount:canvas->lane', 'mount:canvas->dock', 'mount:canvas->lane']);
+    // ...and never through the park on the way, which would blank the viewer for
     // a frame.
     expect(moves.filter((m) => m.startsWith('park:'))).toEqual([]);
   });
@@ -152,11 +158,11 @@ describe('node-viz-surface-registry — arbitration between two live views', () 
     const { reg } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    const a = reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
-    const b = reg.claim('n1', { id: 'card2' }, VIZ_CLAIM_PRIORITY.card);
-    expect(e.parent).toBe('card2');
+    const a = reg.claim('n1', LANE, LOWER);
+    const b = reg.claim('n1', { id: 'lane2' }, LOWER);
+    expect(e.parent).toBe('lane2');
     b.release();
-    expect(e.parent, 'the older same-priority claim is still standing').toBe('card');
+    expect(e.parent, 'the older same-priority claim is still standing').toBe('lane');
     a.release();
     expect(e.parent).toBe('park');
   });
@@ -165,12 +171,12 @@ describe('node-viz-surface-registry — arbitration between two live views', () 
     const { reg, moves } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    reg.claim('n1', LANE, LOWER);
     const after = moves.length;
     // Same host, claimed again (an $effect that re-ran for an unrelated reason).
-    reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    reg.claim('n1', LANE, LOWER);
     expect(moves.length, 'idempotent resolve').toBe(after);
-    expect(e.parent).toBe('card');
+    expect(e.parent).toBe('lane');
   });
 });
 
@@ -179,7 +185,7 @@ describe('node-viz-surface-registry — retract', () => {
     const { reg, moves } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    reg.claim('n1', LANE, LOWER);
     reg.retract('n1');
     expect(e.parent, 'the surface component removes its DOM from where it PUT it').toBe('park');
     expect(moves.at(-1)).toBe('park:canvas->park');
@@ -197,7 +203,7 @@ describe('node-viz-surface-registry — retract', () => {
     const { reg } = harness();
     const e = el();
     reg.publish('n1', e, PARK);
-    const c = reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    const c = reg.claim('n1', LANE, LOWER);
     reg.retract('n1');
     expect(() => c.release()).not.toThrow();
     expect(e.parent).toBe('park');
@@ -217,7 +223,7 @@ describe('node-viz-surface-registry — the per-frame listeners', () => {
     expect([a, b, other]).toEqual([1, 1, 0]);
   });
 
-  it('unsubscribing stops the callback — a card that unmounts stops polling', () => {
+  it('unsubscribing stops the callback — a viewer that unmounts stops polling', () => {
     const { reg } = harness();
     let n = 0;
     const off = reg.onFrame('n1', () => n++);
@@ -229,7 +235,7 @@ describe('node-viz-surface-registry — the per-frame listeners', () => {
 
   it('⚠ A THROWING LISTENER CANNOT STOP THE RENDER IT RIDES', () => {
     // The poll is a VIEW concern riding a PRODUCER's frame. An exception in one
-    // card's camera read must not take out `video_out` for the whole rack.
+    // one camera read must not take out `video_out` for the whole rack.
     const { reg } = harness();
     let reached = 0;
     reg.onFrame('n1', () => {
@@ -256,7 +262,7 @@ describe('node-viz-surface-registry — the per-frame listeners', () => {
 });
 
 describe('node-viz-surfaces — the ROSTER and the HOST agree in both directions', () => {
-  // `GroupCard`/`group-viz-hosts` precedent: the `.ts` roster is the truth and
+  // The `.ts` roster is the truth and
   // the `.svelte` host holds the component map, so neither file can name a
   // module the other does not.
   const HOST_SRC = readFileSync(
@@ -316,7 +322,7 @@ describe('node-viz-surfaces — the ROSTER and the HOST agree in both directions
 
 describe('onWinner — how the host learns the claimant KIND without importing a view (cube)', () => {
   // ⚠ WHY THIS SEAM EXISTS: wavesculpt's views show one canvas at ONE size, so
-  // the claims only decide WHERE it shows. cube's card and hero mounted the
+  // the claims only decide WHERE it shows. cube's two historical views mounted the
   // same attest-pinned renderer at DIFFERENT sizes (320×260 vs 300×210+orbit),
   // so the host re-mounts per WINNING KIND — and the claims already carry the
   // kind as priority. These legs own the delivery contract; the host's use of
@@ -341,21 +347,21 @@ describe('onWinner — how the host learns the claimant KIND without importing a
     const seen: Array<number | null> = [];
     reg.publish('n1', el(), PARK);
     reg.onWinner('n1', (p) => seen.push(p));
-    const card = reg.claim('n1', CARD, VIZ_CLAIM_PRIORITY.card);
+    const lane = reg.claim('n1', LANE, LOWER);
     const dock = reg.claim('n1', DOCK, VIZ_CLAIM_PRIORITY.dock);
-    // A SECOND card claim while the dock holds the picture changes nothing.
-    const card2 = reg.claim('n1', { id: 'card2' }, VIZ_CLAIM_PRIORITY.card);
+    // A SECOND lower claim while the dock holds the picture changes nothing.
+    const lane2 = reg.claim('n1', { id: 'lane2' }, LOWER);
     dock.release();
-    card.release();
-    card2.release();
+    lane.release();
+    lane2.release();
     expect(seen).toEqual([
       null,
-      VIZ_CLAIM_PRIORITY.card,
+      LOWER,
       VIZ_CLAIM_PRIORITY.dock,
-      // card2's arrival: silent (dock still wins). dock release → card wins
-      // (card2 is the most recent same-priority claim, same NUMBER — no move).
-      VIZ_CLAIM_PRIORITY.card,
-      // card's release: card2 still stands at the same priority — silent.
+      // lane2's arrival: silent (dock still wins). dock release → lane wins
+      // (lane2 is the most recent same-priority claim, same NUMBER — no move).
+      LOWER,
+      // lane's release: lane2 still stands at the same priority — silent.
       null,
     ]);
   });

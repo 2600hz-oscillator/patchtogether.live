@@ -93,10 +93,14 @@
    *  guarantee is load-bearing (`node-viz-surface-registry.test.ts`). */
   const KIND_MOUNTED_TYPES = new Set(['cube']);
 
-  type MountKind = 'card' | 'dock';
-  let mountKind = $state<MountKind>('card');
+  // ⚠ `parked` IS THE ABSENCE OF A CLAIM, not a second surface. It used to be
+  // spelled for the renderer's other historical host; what it really names is
+  // the shape a node keeps while nobody is viewing it — and those numbers are
+  // not chrome, they reach `video_out` (see `cube-view-mounts`).
+  type MountKind = 'parked' | 'dock';
+  let mountKind = $state<MountKind>('parked');
   const kindOf = (p: number | null): MountKind =>
-    p === VIZ_CLAIM_PRIORITY.dock ? 'dock' : 'card';
+    p === VIZ_CLAIM_PRIORITY.dock ? 'dock' : 'parked';
 
   /** The props each type mounts with. `ownsVideoOut` is NEVER passed: the node
    *  host is the only mount, so it must own the frame drawer and the DRS step
@@ -109,15 +113,15 @@
   ): { nodeId: string } & Record<string, unknown> {
     if (t === 'cube') {
       const sizes = CUBE_VIEW_SIZES[kind];
-      // Drag-to-orbit exists on the DOCK mount alone — the legacy card's canvas
-      // historically had no orbit gesture, and giving it one as a side effect
-      // of the extraction would be a behaviour change nobody reviewed.
+      // Drag-to-orbit exists on the DOCK mount alone — the parked shape has
+      // never had an orbit gesture, and giving it one as a side effect of the
+      // extraction would be a behaviour change nobody reviewed.
       return kind === 'dock'
         ? { nodeId: id, ...sizes, onOrbit: (dx: number, dy: number) => orbitCubeView(id, dx, dy) }
         : { nodeId: id, ...sizes };
     }
-    // wavesculpt: the per-frame listener list is the cadence guarantee the
-    // card's camera poll rides (see the registry's `onFrame`).
+    // wavesculpt: the per-frame listener list is the cadence guarantee its
+    // camera poll rides (see the registry's `onFrame`).
     return { nodeId: id, onFrame: () => nodeVizSurfaces.emitFrame(id) };
   }
 

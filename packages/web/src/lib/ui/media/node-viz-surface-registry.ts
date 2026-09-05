@@ -100,10 +100,16 @@ export function vizSurfaceTypes(list: readonly VizSurfaceProducer[]): ReadonlySe
  * ranked between two existing ones without renumbering either.
  */
 export const VIZ_CLAIM_PRIORITY = {
-  /** The legacy `*Card.svelte` screen. */
-  card: 1,
   /** A dock full-view faceplate body — an explicit, focused gesture, so it
-   *  outranks a lane card that happens to also be mounted behind it. */
+   *  outranks any viewer that merely happens to be on screen behind it.
+   *
+   *  ⚠ ONE NAMED TIER, AND THE RANKING IS STILL LOAD-BEARING. `claim()` takes a
+   *  plain number, so a second claimant ranks by declaring a lower one here;
+   *  what the tier below `dock` means today is NO CLAIM AT ALL — the parked
+   *  state, which `NodeVizSurfaceHost` mounts as `MountKind.parked`. The
+   *  ordering itself is exercised in this file's unit test with a synthetic
+   *  lower claimant, so the mechanism has coverage without a production tier
+   *  invented to give it some. */
   dock: 2,
 } as const;
 
