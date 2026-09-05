@@ -343,6 +343,27 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // iteration loop and is NOT exempt, which is what keeps the module's emit
   // test meaningful. Fixing the palette at default params is a module change,
   // not a sweep change.
+  // ── LOOPBACK.out — a VIEWPORT-CAPTURE port with no capture, and the port
+  // this branch's new differential floor found rather than caused.
+  //
+  // `getDisplayMedia` is refused outside a user activation and, unlike
+  // `getUserMedia`, has NO previously-granted state — the controller's own
+  // header says a call from an effect is refused ALWAYS, so a bare spawn can
+  // never start a capture. What the node emits here is the no-capture
+  // placeholder frame, and its ARRIVAL is not deterministic: MEASURED
+  // 2026-09-05 on darwin, this port failed the differential on 2 of 4 runs at
+  // the 8 s poll and passed on the other 2, with the sink reading identical to
+  // its own idle (delta 0 of 192 cells) when it failed. Scaling the CI bound
+  // does not touch that — it is a coin flip on a fast local machine too.
+  //
+  // ⚠ THE COVERAGE MOVES RATHER THAN GOES. `loopback-shell-source.spec.ts`
+  // stubs `getDisplayMedia`, drives the REAL capture gesture through the face,
+  // and then steps the engine SYNCHRONOUSLY with the rAF loop paused —
+  // `stepAndReadStats(FIXED_STEPS)` + `assertRenderStats` — so its claim is
+  // renderer-independent BY CONSTRUCTION rather than by a poll that has to be
+  // lucky. That is the stronger instrument for the same question, and it is
+  // the one to extend if this port's placeholder ever needs pinning.
+  'loopback.out': 'a viewport-capture port on a bare spawn: getDisplayMedia is refused outside a user activation and has no already-granted state, so no capture ever starts here and only the no-capture placeholder can arrive — MEASURED nondeterministic, 2 of 4 local runs read delta 0 of 192 cells against the sink idle at the 8 s poll. Real coverage: loopback-shell-source.spec.ts drives the stubbed gesture and asserts render stats over FIXED_STEPS with the rAF loop paused',
   'mandleblot.color_out': 'the RGB-palette output renders black at default params — MEASURED: own tile 0.0000 nonBlack, sink 0.0000, and 0.1612/mean 1.02 on the surface the lane mounted before the faceplate (which is why the 0.001 floor passed). mono_out from the SAME iteration loop still emits and is not exempt',
   // ── CLIPPLAYER audio{N}L/R (slice 5): recorded-audio-clip playback. A
   // lane's audio pair emits only while that lane PLAYS AN AUDIO CLIP, and an

@@ -34,6 +34,7 @@ import {
   emitBudgetMs,
 } from './_per-module-per-port-shared';
 import { buildKriaData } from './_helpers';
+import { SLOW_RENDER } from '../_helpers/boot-budget';
 import type {
   RegistryModule,
   SpawnEdge,
@@ -114,8 +115,28 @@ const SINK_DIFF_MIN_CELLS = 8;
 /** The thumb is throttled to VIDEO_THUMB_FPS (15) and its first ticks paint the
  *  empty well before the engine has drawn the node, so the first READABLE frame
  *  is not necessarily the settled one. Frames, not a fixed sleep: the poll ends
- *  as soon as the picture differs. */
-const SINK_FRAME_TIMEOUT_MS = 8_000;
+ *  as soon as the picture differs.
+ *
+ *  ⚠ IT WAS A FLAT 8 s AND THAT IS A DIFFERENT BOUND ON EVERY RUNNER. Measured
+ *  locally and written down twelve lines above: loopback reads EMPTY at ~1 s and
+ *  carries a real picture by ~4 s. 8 s is two settles' headroom on a dev box and
+ *  none at all on CI, where the same picture is composited by SwiftShader on a
+ *  shared 2-core runner with up to five workers.
+ *
+ *  ⚠ AND IT COST THREE PORTS ON 2026-09-05, all with the same call log
+ *  ("Timeout 8000ms exceeded while waiting on the predicate"): `loopback.out`,
+ *  `mandelbulb` and `mandleblot`. Read the subjects and the diagnosis is one
+ *  line — loopback's no-capture frame is a REAL picture this file's own
+ *  `SINK_CELL_DELTA` note measures at mean 25.1 against idle's 19.0, and the two
+ *  fractal iterators are the most expensive first frames in the registry. None
+ *  of the three is a port that fails to emit; all three are pictures that had
+ *  not arrived yet.
+ *
+ *  Scaled rather than raised: the poll EXITS the instant the picture differs, so
+ *  a port that emits pays nothing for the larger ceiling and only a port that
+ *  was going to fail spends it. This is a BOUND, and the sweep's assertion —
+ *  that the sink shows a picture DIFFERENT from its own idle — is untouched. */
+const SINK_FRAME_TIMEOUT_MS = SLOW_RENDER ? 24_000 : 8_000;
 
 async function readSinkFrame(canvas: Locator): Promise<SinkFrame | null> {
   return await canvas.evaluate(
