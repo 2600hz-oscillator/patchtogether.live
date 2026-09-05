@@ -1,35 +1,35 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "2f505b423083261ce6161bc2ac0d668727aadcd4276fb6f31c864c103f56b073",
-  "attestedAt": "2026-09-02T12:36:35.136Z",
+  "webglContentHash": "8c4954e95def3fc321480322d03d842e567222e51f67e7f465de5ecd01d18ad3",
+  "attestedAt": "2026-09-05T16:59:14.540Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "468a340d826799efb78ffe75699d748ccd5e895e",
+  "gitHeadAtAttest": "8965378d23530fb82bb94c6fdba1654c23acd6c1",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 0.1,
+    "maxForeignCpu": 0.6,
     "thresholdCpu": 25,
-    "load1": 3.95166015625,
+    "load1": 4.009765625,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:57084",
+    "url": "http://127.0.0.1:55805",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/wt-blood-pcm",
-    "commit": "468a340d826799efb78ffe75699d748ccd5e895e"
+    "root": "/Users/2600hz/Documents/workspace/wt-legacy-removal",
+    "commit": "8965378d23530fb82bb94c6fdba1654c23acd6c1"
   },
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
       "specFiles": 60,
-      "passed": 227,
+      "passed": 207,
       "failed": 0,
       "flaky": 0,
-      "skipped": 5,
+      "skipped": 2,
       "flakyDetails": []
     },
     "A-serial": {
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 318
+  "durationSec": 249
 }
