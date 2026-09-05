@@ -82,6 +82,34 @@
   /** Which camera's host is on-screen right now. */
   let shownId = $derived(open ? (hoveredId ?? expandedId) : null);
 
+  /**
+   * Which cameras actually get a mounted card host.
+   *
+   * ⚠ NOT SIMPLY `cameras`, AND THE DIFFERENCE IS NOT COSMETIC. Every host is
+   * a full `SvelteFlow` instance mounted in the document for the lifetime of
+   * the shell. That was a fine price when the list was 0..N cameras the user
+   * had explicitly added; it is not once the device-slot layer bakes FOUR
+   * reserved camera slots into every rack (graph/device-slots.ts), because
+   * four permanently-mounted flow instances are then present in every rack
+   * whether or not a camera exists — and they are not inert: they put extra
+   * `.svelte-flow__pane` / `.svelte-flow__node` subtrees on the page, which any
+   * unscoped query over the canvas will find. That regressed three lane specs
+   * (drop-target and stack geometry) before this predicate existed.
+   *
+   * The host exists to keep a LIVE stream alive across a menu close. An UNBOUND
+   * slot has no stream, so it needs no host — mount one only when:
+   *   - the slot is BOUND (`data.deviceId`), i.e. there is a session to protect;
+   *   - or its row is the one the user is currently working (`shownId`), so the
+   *     source picker for an unbound slot still has a real card to drive.
+   *
+   * Dynamic `wfcam-*` cameras carry no deviceId until the user picks one, so
+   * they are hosted through the second arm at exactly the moment the ＋ row
+   * opens their picker — the behaviour they had before, by a different route.
+   */
+  let hostedCameras = $derived(
+    cameras.filter((c) => readCameraDeviceId(c) !== null || c.id === shownId),
+  );
+
   // Drop stale expand/hover state when its camera is unmapped (any path —
   // our ✕, a collaborator's, Clear).
   $effect(() => {
@@ -265,11 +293,15 @@
   {/each}
 </div>
 
-<!-- The ALWAYS-MOUNTED card-host farm. One host per mapped camera; the
+<!-- The ALWAYS-MOUNTED card-host farm. One host per LIVE camera; the
      shown one sits right of the menu, the rest park off-screen (still
      rendered — see the header comment). data-wf-camera-host exempts
-     clicks inside from the topbar's outside-pointerdown close. -->
-{#each cameras as cam (cam.id)}
+     clicks inside from the topbar's outside-pointerdown close.
+
+     ⚠ "LIVE", NOT "LISTED" — see `hostedCameras`. An UNBOUND reserved slot
+     gets no host, because it has no stream to keep alive and a host is very
+     far from free: each one is a whole SvelteFlow instance in the document. -->
+{#each hostedCameras as cam (cam.id)}
   {@const pos = shownId === cam.id ? hostPos : null}
   <div
     class="cam-host"
