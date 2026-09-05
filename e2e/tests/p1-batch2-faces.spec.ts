@@ -8,9 +8,9 @@
 // in STRICT_FACES, render a perfect dock faceplate, and still show the uniform
 // un-migrated PLACEHOLDER in its lane. That is the bug this spec exists for:
 //
-//   1. LANE — the curated ModuleShell renders in the lane under `?shell=1`,
-//      NOT `module-shell-placeholder`, and the legacy card's controls are gone
-//      from the lane (they live in the dock now).
+//   1. LANE — the curated ModuleShell renders in the lane, NOT
+//      `module-shell-placeholder`, and the full control set is gone from the
+//      lane (it lives in the dock now).
 //   2. DOCK — the full-view faceplate mounts at the 'dock' face tier and
 //      renders exactly the module's declared `face.pages` as labeled section
 //      bands, in order.
@@ -74,7 +74,7 @@ const BATCH2 = [
     // four pages, different set.
     pages: ['voice', 'algorithm · operators', 'performance', 'master adsr'],
     holes: 4,
-    /** A param the lane face must NOT be showing as a legacy card control. */
+    /** A param the lane face must NOT be showing — it belongs to the dock. */
     laneParam: 'algorithm',
   },
   {
@@ -111,8 +111,8 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       // ── 1) LANE: the curated shell, NOT the un-migrated placeholder. ──
       const shell = laneNode.locator('[data-testid="module-shell"]');
       await expect(shell).toBeVisible();
-      // The LEGACY CARD itself is gone from the lane — the shell replaced it,
-      // it did not wrap it. (Scoped to the card ROOT, not `control-*`: the
+      // No pre-faceplate surface root is in the lane — the shell replaced it,
+      // it did not wrap it. (Scoped to the ROOT class, not `control-*`: the
       // shell's own curated cells carry the same `control-<paramId>` testids,
       // so a testid-based negative would be vacuous. The preview-OFF case
       // below asserts the positive on this exact selector, which is what keeps
@@ -128,7 +128,7 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       await expect(faceplate).toBeVisible();
       await expect(
         faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]'),
-        `${type}: the dock mounts the CURATED shell (not the legacy card fallback)`,
+        `${type}: the dock mounts the CURATED shell at the dock tier`,
       ).toBeVisible();
       const bands = faceplate.locator('[data-testid="face-page"]');
       await expect(bands).toHaveCount(pages.length);

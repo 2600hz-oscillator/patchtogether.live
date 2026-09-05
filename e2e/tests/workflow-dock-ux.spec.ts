@@ -8,12 +8,11 @@
 //
 //  2. Expanding module B while module A is open JOINS the dock (owner split
 //     extension: up to two side-by-side panes; a third replaces the
-//     least-recently-opened) — for BOTH migrated (curated shell face) and
-//     un-migrated (verbatim legacy card) modules. The original owner repro
-//     (tidyvco expanded → expand backdraft → NOTHING switched) was a
-//     mid-flush crash: 18 legacy cards called `useStore()` un-guarded at
-//     init, which THROWS outside the SvelteFlow provider (the dock full-view
-//     is a plain-mount), aborting the Svelte flush and wedging the faceplate
+//     least-recently-opened). The original owner repro (tidyvco expanded →
+//     expand backdraft → NOTHING switched) was a mid-flush crash: 18 module
+//     surfaces called `useStore()` un-guarded at init, which THROWS outside the
+//     SvelteFlow provider (the dock full-view is a plain-mount), aborting the
+//     Svelte flush and wedging the faceplate
 //     on the previous occupant. Fixed by the guarded captureFlowStore seam
 //     (card-kit) + a `{#key node.id}` remount per occupant in DockFullView.
 //     The pageerror assertions here pin the crash class shut.
@@ -173,10 +172,9 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await expect(uBtn).toContainText('EXPAND');
   });
 
-  // FIX 2 (re-specced for the owner SPLIT extension) — expand migrated A,
-  // then un-migrated B (its verbatim LEGACY card — a VIDEO card, i.e. one of
-  // the 18 useStore()-at-init cards that crashed the old swap): A+B sit
-  // SIDE-BY-SIDE.
+  // FIX 2 (re-specced for the owner SPLIT extension) — expand A, then B (a
+  // VIDEO module, i.e. one of the 18 useStore()-at-init surfaces that crashed
+  // the old swap): A+B sit SIDE-BY-SIDE.
   //
   // ⚠ B IS A VIDEO MODULE ON PURPOSE — the split has to hold across DOMAINS,
   // which is what makes this more than a repeat of the two-audio-tile case. It
@@ -194,7 +192,7 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: the owner split extension — two side-by-side dock panes with LRU replacement, asserted across DOMAINS (an audio pane beside a video one).
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
+  test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — across DOMAINS', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await gotoWorkflow(page);

@@ -20,10 +20,10 @@
 //      to learn it. The band counts are asserted here, in the unit lane,
 //      against the same planner the shell renders from.
 //   2. A ZERO-CONTROL FACE MUST STAY FACED. `dockFacePlan` returns `null` for
-//      an UN-faced def and that sends the caller to the legacy card, so the
-//      empty plan for these two modules has to be `[]` — truthy, faced, no
-//      bands. `[]` and `null` are one keystroke apart and only one of them is
-//      a visible regression (the legacy card comes back).
+//      an UN-faced def, and `ModuleShell` renders NO section bands at all for
+//      a null plan, so the empty plan for these two modules has to be `[]` —
+//      truthy, faced, no bands. `[]` and `null` are one keystroke apart and
+//      only one of them is a visible regression (an empty faceplate).
 //   3. THE GLYPH CHOICE WAS FORCED FOR THREE OF THEM AND A JUDGEMENT FOR ONE,
 //      and that distinction is invisible in the declaration itself — every one
 //      of them just reads `glyph: 'none'`.
@@ -157,10 +157,10 @@ describe('thin audio tail — a face that ranks NOTHING still renders as a FACE'
   it('planning a zero-control face yields NO bands — and an empty plan, never a null one', () => {
     for (const { type, def, bands } of TAIL) {
       const plan = dockFacePlan(def as never);
-      // `null` means UN-FACED and sends the caller to the legacy card. That is
-      // the regression this clause exists to catch, and it is invisible in a
-      // band count alone — `plan?.length ?? 0` would read 0 for both.
-      expect(plan, `${type}: planned as UN-FACED — the legacy card would come back`).not.toBeNull();
+      // `null` means UN-FACED, and the shell then renders no bands at all.
+      // That is the regression this clause exists to catch, and it is
+      // invisible in a band count alone — `plan?.length ?? 0` reads 0 for both.
+      expect(plan, `${type}: planned as UN-FACED — the faceplate would come up empty`).not.toBeNull();
       expect(plan!.length, `${type}: dock band count (the roster's \`pages\`)`).toBe(bands);
     }
   });

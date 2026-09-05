@@ -291,12 +291,12 @@ test.describe('vca face — the knob readouts follow the graph', () => {
   });
 });
 
-// ── THE OTHER SURFACE: the LEGACY CARD, and the seam that feeds it. ─────────
+// ── THE SECOND ROUTE TO THE SAME VOCABULARY. ───────────────────────────────
 //
 // Everything above renders the CURATED FACE, which reads the def DIRECTLY
 // (`ModuleShell` passes `units={pd.units}` / `format={pd.format}` off the
-// ParamDef). The legacy card reaches the same def through `paramProps(def, id)`
-// — a SECOND route to the same vocabulary, and until now an unwitnessed one.
+// ParamDef). `paramProps(def, id)` is a SECOND route to that vocabulary, and
+// for a while it was an unwitnessed one.
 //
 // The gap that motivated this: `paramProps` did not forward `format`, so the
 // face printed `CLOSED` / `-12 dB` / `UNITY` while the card's value tag on the
@@ -365,8 +365,8 @@ test.describe('vca face — the two dials NAME their sense, and neither can see 
   });
 });
 
-// The 'VCA legacy card' describe (the card's hover value-tag speaking the DEF
-// formatter via `paramProps`) was DELETED by the S2 inversion: its subject was
-// the legacy card's readout path, which leaves the product with the card
-// fleet. The def-owned vocabulary itself is pinned above on the face readouts
-// (`aria-valuetext` on base/strength), the surface users get.
+// A second describe (a hover value-tag speaking the DEF formatter via
+// `paramProps`) was DELETED by the S2 inversion: its subject was a readout path
+// that left the product with the surface that owned it. The def-owned
+// vocabulary itself is pinned above on the face readouts (`aria-valuetext` on
+// base/strength), the surface users get.
