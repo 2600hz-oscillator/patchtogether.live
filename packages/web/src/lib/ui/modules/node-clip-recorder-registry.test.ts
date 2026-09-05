@@ -29,6 +29,7 @@ import { clipUndo, __test_resetClipUndo } from '$lib/control/clip-undo';
 import { referencedClipMediaIds } from '$lib/audio/clip-media-store';
 import {
   audioRecState,
+  laneRecArm,
   clipIndex,
   clipPadState,
   readClip,
@@ -82,7 +83,12 @@ const clipData = () => patch.nodes[CLIP]!.data as ClipPlayerData;
 interface Harness {
   reg: NodeClipRecorderRegistry;
   ctx: { currentTime: number; sampleRate: number };
-  recState: { arm: number[]; tap: number; quality: number };
+  /** CLAUSE 3 — set/clear a lane's RECORD TOGGLE on the launcher's own data,
+   *  which is where the arm now lives. Replaces the old `recState.arm[]` the
+   *  mixer used to publish. */
+  setRecArm(lane: number, on: boolean): void;
+  /** CLAUSE 5 — set a lane's CLIP/ENDLESS switch. */
+  setRecMode(lane: number, mode: 'single' | 'endless'): void;
   recClock: { running: boolean; baseStepDur: number; boundary: number | null; refSeconds: number | null };
   posted: Record<string, unknown>[];
   port: { postMessage: (m: unknown) => void; onmessage: ((e: MessageEvent) => void) | null };
@@ -100,7 +106,22 @@ interface Harness {
 
 function makeHarness(): Harness {
   const ctx = { currentTime: 0, sampleRate: SR };
-  const recState = { arm: [0, 0, 0, 0, 0, 0, 0, 0], tap: 0, quality: 0 };
+  // ⚠ MUTATE IN PLACE, like the product does — `node.data` is a Y.Doc proxy and
+  // a spread-and-reassign is rejected ("reassigning object that already occurs
+  // in the tree"). A harness that wrote it the easy way would not be exercising
+  // the write the product performs.
+  const setRecArm = (lane: number, on: boolean) => {
+    const d = patch.nodes[CLIP]!.data as ClipPlayerData;
+    if (!d.recArm) d.recArm = {};
+    if (on) d.recArm[String(lane)] = true;
+    else delete d.recArm[String(lane)];
+  };
+  const setRecMode = (lane: number, mode: 'single' | 'endless') => {
+    const d = patch.nodes[CLIP]!.data as ClipPlayerData;
+    const modes = Array.from({ length: 8 }, (_, i) => d.recMode?.[i] ?? 'single');
+    modes[lane] = mode;
+    d.recMode = modes;
+  };
   const recClock = {
     running: true,
     baseStepDur: 0.125,
@@ -130,7 +151,6 @@ function makeHarness(): Harness {
   const deps: ClipRecRegistryDeps = {
     engine: () => ({
       read: (node, key) => {
-        if (node.id === MIX && key === 'recState') return recState;
         if (node.id === MIX && key === 'recTaps') return taps;
         if (node.id === CLIP && key === 'recClock') return recClock;
         return undefined;
@@ -162,7 +182,8 @@ function makeHarness(): Harness {
   return {
     reg,
     ctx,
-    recState,
+    setRecArm,
+    setRecMode,
     recClock,
     posted,
     port,
@@ -203,7 +224,7 @@ async function recordOneTake(h: Harness, slipFrames = 0) {
   h.reg.sync(liveNodes());
   h.reg.pump(); // builds wiring; adopts the (all-zero) arm state
   await settle();
-  h.recState.arm[0] = 1;
+  h.setRecArm(0, true);
   h.reg.pump(); // the arm edge → prepare
   await settle(); // the media open resolves
   h.reg.pump(); // confirm → the machine + worklet arm
@@ -243,7 +264,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // the edge — PREPARE
     // The pads read armed IMMEDIATELY, in the AudioRecState "not yet
     // resolved" shape (startFrame null) — no window exists yet, on purpose.
@@ -282,7 +303,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.gateOpens(); // the contended host: IDB/worker open stalls
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // the edge — prepare starts, open hangs
     await settle();
     // A FULL SECOND passes — far beyond CLIP_REC_ARM_LEAD_S. Under the old
@@ -292,7 +313,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     h.reg.pump();
     expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
-    expect(h.reg.view(MIX)![0]!.preparing).toBe(true);
+    expect(h.reg.view(CLIP)![0]!.preparing).toBe(true);
     expect(audioRecState(clipData(), 0)?.phase).toBe('armed'); // pad honest throughout
     h.releaseOpens();
     await settle();
@@ -320,7 +341,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     const rec = readClip(clipData(), clipIndex(0, 0));
     expect(rec?.kind).toBe('audio');
     if (rec?.kind === 'audio') expect(rec.frames).toBe(UNIT_FRAMES);
-    expect(h.reg.lastRefusal(MIX)).toBeNull();
+    expect(h.reg.lastRefusal(CLIP)).toBeNull();
   });
 
   it('CANCEL MID-PREPARE: the arm dropping while the media opens discards the open, arms nothing', async () => {
@@ -329,9 +350,9 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle();
     h.gateOpens();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare, open hangs
-    h.recState.arm[0] = 0;
+    h.setRecArm(0, false);
     h.reg.pump(); // cancel mid-prepare
     expect(audioRecState(clipData(), 0)).toBeNull(); // pad cleared at once
     h.releaseOpens();
@@ -342,7 +363,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
     expect(h.writerClose).toHaveBeenCalled();
     expect(h.removed.length).toBe(1);
-    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
   });
 
   it('a reference-bar boundary too close at confirm SLIPS one bar to the next wrap', async () => {
@@ -354,7 +375,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[2] = 1;
+    h.setRecArm(2, true);
     h.reg.pump();
     await settle();
     h.reg.pump(); // confirm
@@ -365,16 +386,16 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
 
   it('a loaded patch with the arm already ON is ADOPTED, never fired', async () => {
     const h = makeHarness();
-    h.recState.arm[0] = 1; // saved that way
+    h.setRecArm(0, true); // saved that way
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
     expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
-    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
     // …and the SAME harness arms fine on a real edge (positive control).
-    h.recState.arm[0] = 0;
+    h.setRecArm(0, false);
     h.reg.pump();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
@@ -402,13 +423,29 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
       { id: rec.mediaId, frames, clipAlreadyNamed: true },
     ]);
     // The machine is idle again; the pads read loaded/queued, not rec-*.
-    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
     expect(audioRecState(clipData(), 0)).toBeNull();
     // "Hear it take over": the recorded slot is queued, immediately.
     expect(clipData().queued?.[0]).toBe(0);
     expect(clipData().queuedImmediate?.[0]).toBe(true);
-    // The arm knob snapped back to OFF (a fresh edge is required to re-arm).
-    expect((patch.nodes[MIX]!.params as Record<string, number>).ch1_rec).toBe(0);
+    // ⚠ THE RECORD TOGGLE SNAPPED OFF, and this is what makes the arm safe.
+    // The arm is LEVEL-triggered on (toggle AND running) — that is what lets a
+    // toggle set while stopped record when the transport plays (clause 4) — so
+    // a take that ends MUST drop the toggle or the same level re-arms on the
+    // very next pump and machine-guns takes forever. It is also the owner's
+    // CLIP semantics: one loop, then stop.
+    expect(laneRecArm(clipData(), 0), 'the record toggle must snap off after a take').toBe(false);
+    // …asserted as BEHAVIOUR too, not just state: pumping again with the take
+    // finished must not start a second one.
+    const armsAfter = h.posted.filter((m) => m.type === 'arm').length;
+    h.reg.pump();
+    await settle();
+    h.reg.pump();
+    await settle();
+    expect(
+      h.posted.filter((m) => m.type === 'arm').length,
+      'a committed take re-armed itself — the level-triggered arm is machine-gunning',
+    ).toBe(armsAfter);
     // Nothing was discarded.
     expect(h.removed).toEqual([]);
   });
@@ -436,10 +473,11 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.finished).toEqual([]);
     expect(h.removed).toEqual([]);
     expect(h.writerClose).toHaveBeenCalled();
-    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
-    expect(h.reg.lastRefusal(MIX)).toMatch(/commit failed/);
-    // The arm still snapped off — a failed take must not look armed.
-    expect((patch.nodes[MIX]!.params as Record<string, number>).ch1_rec).toBe(0);
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/commit failed/);
+    // The toggle still snapped off — a failed take must not look armed, and a
+    // still-on toggle would retry straight back into the same broken writer.
+    expect(laneRecArm(clipData(), 0), 'a failed take must not leave the toggle on').toBe(false);
   });
 
   it('a worklet frame count that misses the window is a FAILED commit, not a wrong-length clip', async () => {
@@ -447,7 +485,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
@@ -469,7 +507,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.pump();
     await settle(12);
     expect(readClip(clipData(), clipIndex(0, 0))).toBeNull();
-    expect(h.reg.lastRefusal(MIX)).toMatch(/captured/);
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/captured/);
     expect(h.removed).toEqual([]); // scratch kept
   });
 
@@ -485,7 +523,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
       const rec = readClip(clipData(), clipIndex(0, 0));
       expect(rec?.kind).toBe('audio'); // committed, same as an on-time take
       expect(rec?.kind === 'audio' ? rec.frames : -1).toBe(frames);
-      expect(h.reg.lastRefusal(MIX)).toBeNull();
+      expect(h.reg.lastRefusal(CLIP)).toBeNull();
       expect(warn.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
         /punched in 384 frames late/,
       );
@@ -499,7 +537,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
@@ -516,8 +554,8 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     await settle(12);
     expect(readClip(clipData(), clipIndex(0, 0))).toBeNull();
     // Loud, and diagnosable: "captured 0 frames" alone reads like a dead input.
-    expect(h.reg.lastRefusal(MIX)).toMatch(/captured 0 frames/);
-    expect(h.reg.lastRefusal(MIX)).toMatch(/9600 frames past its punch-in/);
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/captured 0 frames/);
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/9600 frames past its punch-in/);
     expect(h.removed).toEqual([]); // scratch kept for recovery
   });
 
@@ -526,15 +564,15 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
-    expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
-    h.recState.arm[0] = 0;
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('armed');
+    h.setRecArm(0, false);
     h.reg.pump();
     await settle();
-    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
     expect(h.posted.some((m) => m.type === 'cancel')).toBe(true);
     expect(h.removed.length).toBe(1); // nothing worth keeping was captured
     expect(audioRecState(clipData(), 0)).toBeNull();
@@ -545,39 +583,50 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
-    expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('armed');
     // A "card unmount" is NOT an event this registry can see — the type has
     // no dispose/release/detach, so the closest thing to unmount/remount is
     // the graph pass re-running with the same nodes. Ten of them:
     for (let i = 0; i < 10; i++) h.reg.sync(liveNodes());
     h.reg.pump();
-    expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('armed');
     expect(audioRecState(clipData(), 0)?.phase).toBe('armed');
   });
 
-  it('SWEEP of a deleted mixer ABANDONS the take: worklet cancelled, writer closed, scratch KEPT, pads cleared', async () => {
+  it('SWEEP of a deleted LAUNCHER ABANDONS the take: worklet cancelled, writer closed, scratch KEPT, pads cleared', async () => {
     const h = makeHarness();
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
     h.ctx.currentTime = 1;
     h.reg.pump(); // recording now
-    expect(h.reg.view(MIX)![0]!.phase).toBe('recording');
-    delete patch.nodes[MIX];
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('recording');
+    // ⚠ THE LAUNCHER, NOT THE MIXER. Entries are keyed on the clipplayer since
+    // 2026-09-04 — it owns the toggle, the mode, the target slot and the lease
+    // — so deleting IT is what abandons a take. (Deleting the mixer instead
+    // removes the capture SOURCE; the entry survives and simply cannot arm,
+    // which is a different behaviour and is covered by the refusal path.)
+    delete patch.nodes[CLIP];
     h.reg.sync(liveNodes());
-    expect(h.reg.view(MIX)).toBeNull();
+    expect(h.reg.view(CLIP)).toBeNull();
     expect(h.posted.some((m) => m.type === 'cancel')).toBe(true);
     expect(h.writerClose).toHaveBeenCalled();
     expect(h.removed).toEqual([]); // the scratch is a RECOVER candidate
-    expect(audioRecState(clipData(), 0)).toBeNull();
+    // ⚠ THE PADS GO WITH THE NODE. The old assertion read `audioRec` back off
+    // the launcher's data to prove the projection was cleared; with the
+    // LAUNCHER itself deleted there is no data to read and no grid to paint, so
+    // reading it would throw rather than check anything. What must survive the
+    // deletion is the media: the take is ABANDONED, never destroyed, so its
+    // scratch stays a recover candidate — asserted by `h.removed` above.
+    expect(patch.nodes[CLIP], 'the launcher really is gone').toBeUndefined();
   });
 
   it("a foreign peer's lease refuses the arm (single-writer)", async () => {
@@ -600,11 +649,11 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
+    h.setRecArm(0, true);
     h.reg.pump();
     await settle();
-    expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
-    expect(h.reg.lastRefusal(MIX)).toMatch(/another collaborator/);
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/another collaborator/);
     expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
   });
 
@@ -616,7 +665,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[1] = 1;
+    h.setRecArm(1, true);
     h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
@@ -631,21 +680,55 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.manifests[0]!.lengthSteps).toBe(32);
   });
 
-  it('arming with the transport stopped STARTS it (Bitwig/Deluge)', async () => {
+  it('⚠ CLAUSE 4 — arming while STOPPED does NOT start the transport; the take begins when it PLAYS', async () => {
+    // ⚠ THIS TEST IS THE INVERSE OF THE ONE IT REPLACES. It used to assert the
+    // Bitwig/Deluge model — "arming with the transport stopped STARTS it" — and
+    // the owner ruled the opposite on 2026-09-04: "the toggle can be set while
+    // paused or stopped… recording then starts when it plays". Auto-starting
+    // made that impossible to express, because every arm was also a play.
     const h = makeHarness();
     (patch.nodes[TL]!.params as Record<string, number>).running = 0;
     h.recClock.running = false;
     h.reg.sync(liveNodes());
     h.reg.pump();
     await settle();
-    h.recState.arm[0] = 1;
-    h.reg.pump(); // prepare — starts the transport
-    expect((patch.nodes[TL]!.params as Record<string, number>).running).toBe(1);
-    // The live clock now reads running (the fake mirrors the param write).
+    h.setRecArm(0, true);
+    h.reg.pump();
+    await settle();
+    expect(
+      (patch.nodes[TL]!.params as Record<string, number>).running,
+      'arming must not start the transport',
+    ).toBe(0);
+    // ⚠ NO I/O HAPPENS WHILE STOPPED, AND THAT IS DELIBERATE. The take is not
+    // pre-opened: a toggle can sit armed for as long as the player likes, and
+    // holding an OPFS manifest + writer worker open for that whole time to save
+    // one pump of latency is the wrong trade. The punch-in latency it would
+    // have saved is already absorbed by the worklet's late-arm SLIDE (#2348),
+    // which is the same path the cold-boot-race test covers.
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
+    expect(h.reg.view(CLIP)![0]!.prepared, 'nothing is opened while stopped').toBe(false);
+    expect(h.manifests.length, 'no media is opened while stopped').toBe(0);
+    expect(h.posted.some((m) => m.type === 'arm'), 'nothing armed while stopped').toBe(false);
+    // ⚠ THE LOAD-BEARING HALF: THE TOGGLE SURVIVES. Repeated pumps with the
+    // transport stopped must not clear it — the old code cancelled a pending
+    // arm on every stopped pump, which is exactly why arm-while-stopped could
+    // not work. The toggle is the durable intent; play is what spends it.
+    h.reg.pump();
+    await settle();
+    h.reg.pump();
+    await settle();
+    expect(
+      laneRecArm(clipData(), 0),
+      'a stopped transport cleared the record toggle — the arm must survive until it plays',
+    ).toBe(true);
+    // NOW PLAY. The take prepares and arms off the running transport.
+    (patch.nodes[TL]!.params as Record<string, number>).running = 1;
     h.recClock.running = true;
+    h.reg.pump(); // prepare
     await settle();
     h.reg.pump(); // confirm
-    expect(h.reg.view(MIX)![0]!.phase).toBe('armed');
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('armed');
+    expect(h.posted.some((m) => m.type === 'arm'), 'play armed the worklet').toBe(true);
   });
 });
 

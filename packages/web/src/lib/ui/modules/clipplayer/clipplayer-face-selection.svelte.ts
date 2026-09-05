@@ -19,9 +19,30 @@
 
 import { SvelteMap } from 'svelte/reactivity';
 import { patch } from '$lib/graph/store';
-import { CLIP_LANES, SCENE_STRIDE } from '$lib/audio/modules/clip-types';
+import { CLIP_LANES, SCENE_STRIDE, laneOf, slotOf } from '$lib/audio/modules/clip-types';
 
 const selection = new SvelteMap<string, number>();
+
+/** PER-LANE selected slot, per node — `nodeId → slot[CLIP_LANES]`.
+ *
+ * ⚠ THE FLAT SELECTION ABOVE CANNOT ANSWER CLAUSE 2. The owner's rule is
+ * "audio is recorded into the SELECTED CLIP of a lane", and the record toggle
+ * is per lane — so every lane needs a selected slot AT THE SAME TIME. One flat
+ * index names exactly one (lane, slot) pair, so it can only answer for the lane
+ * it happens to sit in; asking it for lane 5's selection while the editor is on
+ * lane 2 has no answer at all.
+ *
+ * So this map remembers, per lane, the last slot selected IN that lane. The
+ * flat `selection` is unchanged and still drives the editor — the two are
+ * written together by `clipplayerSelectClip`, which is the only way either
+ * moves, so they cannot drift.
+ *
+ * ⚠ VIEW-LOCAL FOR THE SAME REASON THE FLAT ONE IS. It is a personal authoring
+ * lens, never patch content: syncing it would move a collaborator's screen. It
+ * is also the RIGHT scope for recording — the take belongs in the clip the
+ * person who armed it was looking at, and the single-writer lease already means
+ * exactly one peer records a given lane. */
+const laneSelection = new SvelteMap<string, number[]>();
 
 /** STICKY NOW, per node — while on, a plain launch fires IMMEDIATELY, ignoring
  *  QNT, exactly as a shift-click does.
@@ -76,7 +97,42 @@ export function clipplayerSelectedClip(nodeId: string): number {
 export function clipplayerSelectClip(nodeId: string, index: number): void {
   if (!Number.isInteger(index) || index < 0 || index >= CLIP_LANES * SCENE_STRIDE) return;
   selection.set(nodeId, index);
+  // …and remember it as THIS LANE's selection (clause 2). Written here rather
+  // than derived on read, because a derivation could only ever recover the one
+  // lane the flat index sits in.
+  const lane = laneOf(index);
+  const slots = laneSelection.get(nodeId) ?? new Array<number>(CLIP_LANES).fill(0);
+  slots[lane] = slotOf(index);
+  laneSelection.set(nodeId, slots);
   pruneDeletedNodes();
+}
+
+/** Mark `slot` as `lane`'s record target WITHOUT moving the editor.
+ *
+ * ⚠ A SEPARATE GESTURE FROM `clipplayerSelectClip`, on purpose. Double-click is
+ * "open this clip in the editor", and it CREATES a clip in an empty slot and
+ * navigates away from the grid — none of which a player wants merely to say
+ * "record into that one". Worse, the clip it creates is a NOTE clip, which the
+ * recorder then refuses, so double-click could never be the record-target
+ * gesture. A plain pad CLICK calls this instead: it moves nothing the player
+ * can see except which pad the lane's record button is aimed at.
+ */
+export function clipplayerSelectLaneSlot(nodeId: string, lane: number, slot: number): void {
+  if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) return;
+  if (!Number.isInteger(slot) || slot < 0 || slot >= SCENE_STRIDE) return;
+  const slots = laneSelection.get(nodeId) ?? new Array<number>(CLIP_LANES).fill(0);
+  slots[lane] = slot;
+  laneSelection.set(nodeId, slots);
+  pruneDeletedNodes();
+}
+
+/** CLAUSE 2 — the slot the record toggle for `lane` will record into: the last
+ *  clip selected in that lane, or slot 0 for a lane never touched (the pad a
+ *  fresh player's eye lands on, matching the flat selection's own default). */
+export function clipplayerSelectedSlotForLane(nodeId: string, lane: number): number {
+  if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) return 0;
+  const slot = laneSelection.get(nodeId)?.[lane];
+  return typeof slot === 'number' && slot >= 0 && slot < SCENE_STRIDE ? slot : 0;
 }
 
 /** Drop selections for nodes that no longer exist.
@@ -94,5 +150,8 @@ function pruneDeletedNodes(): void {
   }
   for (const id of nowSticky.keys()) {
     if (!patch.nodes[id]) nowSticky.delete(id);
+  }
+  for (const id of laneSelection.keys()) {
+    if (!patch.nodes[id]) laneSelection.delete(id);
   }
 }
