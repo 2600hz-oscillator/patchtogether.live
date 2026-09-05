@@ -40,28 +40,11 @@ import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-/** Read LINES' EFFECTIVE `orient` param (bridge-modulated) via the engine.
- *  engine.readParam(node, 'orient') routes to the video engine, whose LINES
- *  handle returns the live param the cross-domain CV bridge writes each tick. */
-async function readOrient(page: Page, nodeId: string): Promise<number | null> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        readParam: (node: { id: string; type: string; domain: string }, paramId: string) => number | undefined;
-        getDomain: (d: string) => { step: () => void };
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    const node = w.__patch.nodes[id];
-    if (!eng || !node) return null;
-    // Force a video tick so the cv bridge samples the LFO + writes orient,
-    // independent of rAF throttling under CI load.
-    try { eng.getDomain('video').step(); } catch { /* video engine may not exist yet */ }
-    const v = eng.readParam(node, 'orient');
-    return typeof v === 'number' ? v : null;
-  }, nodeId);
-}
+// ⚠ A PER-SAMPLE `readOrient(page, id)` HELPER STOOD HERE AND IS DELETED. It
+// was one `page.evaluate` per sample — a CDP round trip that stepped the video
+// engine on the same main thread it was measuring. Its body now lives inside
+// `sampleOrientSpan`'s single in-page loop, unchanged in what it does; see that
+// helper's header for the measurement that condemned the round trip.
 
 /** Set SCALER's AMOUNT live (mirrors a user turning the knob). */
 async function setAmount(page: Page, nodeId: string, amount: number): Promise<void> {
@@ -89,26 +72,107 @@ async function setAmount(page: Page, nodeId: string, amount: number): Promise<vo
   );
 }
 
-/** Sample LINES.orient N times across a window; return observed span (max-min). */
+/**
+ * Sample LINES.orient N times across a window IN THE PAGE; return the span.
+ *
+ * ── ⚠ THIS USED TO BE A PLAYWRIGHT-SIDE LOOP, AND THAT WAS THE FAILURE ─────
+ *
+ * It read:
+ *
+ *     for (let i = 0; i < samples; i++) {
+ *       const v = await readOrient(page, linesNodeId);   // one CDP round trip
+ *       ...
+ *       await page.waitForTimeout(intervalMs);           // and a second wait
+ *     }
+ *
+ * 24 samples x 2 AMOUNT settings = 96 round trips, each stepping the VIDEO
+ * ENGINE on the same main thread it is sampling. Measured off the CI blob
+ * report of run 33990942421: 14,456 ms in 48 `Evaluate` calls (~301 ms each,
+ * against ~1 ms of assertion) plus 10,752 ms in 48 nominal-50 ms sleeps that
+ * actually cost ~224 ms each — 25.2 s of a 30 s budget spent on transport, for
+ * a measurement whose own arithmetic is trivial.
+ *
+ * ⚠ AND THE BRANCH IS WHY IT TIPPED. Re-pointing this spec off `?shell=legacy`
+ * serialized a cold boot that used to overlap page load, and the round trips
+ * got dearer as the default shell started painting: the branch's own cost
+ * re-pin measures the file at 8.4 s -> 21.3 s. Every assertion in this test had
+ * already PASSED when the ceiling came down ("low-AMOUNT orient span 0.593",
+ * "high-AMOUNT orient span (1.000, [0.00..1.00])") — nothing about the product
+ * is implicated.
+ *
+ * Now the whole window runs in ONE `page.evaluate`: the same per-sample
+ * `step()` + `readParam` pair, the same count, the same spacing, min/max
+ * latched in the page. 96 round trips become 2. The MEASURED QUANTITY is
+ * unchanged — max minus min of the effective `orient` over N samples.
+ *
+ * `samples` and `elapsedMs` come back for the same reason every poller in
+ * `_helpers/scope-poll.ts` returns them: a span of 0 from 24 samples is a
+ * finding, a span of 0 from 0 samples is a broken probe, and the assertion
+ * message must be able to tell them apart.
+ */
 async function sampleOrientSpan(
   page: Page,
   linesNodeId: string,
   samples: number,
   intervalMs: number,
-): Promise<{ span: number; min: number; max: number; values: number[] }> {
-  const values: number[] = [];
-  for (let i = 0; i < samples; i++) {
-    const v = await readOrient(page, linesNodeId);
-    if (typeof v === 'number') values.push(v);
-    await page.waitForTimeout(intervalMs);
-  }
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const v of values) {
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
-  }
-  return { span: hi - lo, min: lo, max: hi, values };
+): Promise<{ span: number; min: number; max: number; values: number[]; samples: number; elapsedMs: number }> {
+  return page.evaluate(
+    ([id, n, gap]) =>
+      new Promise<{ span: number; min: number; max: number; values: number[]; samples: number; elapsedMs: number }>(
+        (resolve) => {
+          const w = globalThis as unknown as {
+            __engine?: () => {
+              readParam: (
+                node: { id: string; type: string; domain: string },
+                paramId: string,
+              ) => number | undefined;
+              getDomain: (d: string) => { step: () => void };
+            } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          };
+          const t0 = performance.now();
+          const values: number[] = [];
+          let taken = 0;
+          const tick = (): void => {
+            const eng = w.__engine?.();
+            const node = w.__patch?.nodes?.[id as string];
+            if (eng && node) {
+              // Force a video tick so the cv bridge samples the LFO + writes
+              // orient, independent of rAF throttling under CI load. Same call
+              // the per-sample round trip made, now beside the read.
+              try {
+                eng.getDomain('video').step();
+              } catch {
+                /* video engine may not exist yet */
+              }
+              const v = eng.readParam(node, 'orient');
+              if (typeof v === 'number') values.push(v);
+            }
+            taken++;
+            if (taken >= (n as number)) {
+              let lo = Infinity;
+              let hi = -Infinity;
+              for (const v of values) {
+                if (v < lo) lo = v;
+                if (v > hi) hi = v;
+              }
+              clearInterval(timer);
+              resolve({
+                span: values.length > 0 ? hi - lo : 0,
+                min: lo,
+                max: hi,
+                values,
+                samples: values.length,
+                elapsedMs: performance.now() - t0,
+              });
+            }
+          };
+          const timer = setInterval(tick, gap as number);
+          tick();
+        },
+      ),
+    [linesNodeId, samples, intervalMs] as const,
+  );
 }
 
 test('AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression)', async ({ page }) => {

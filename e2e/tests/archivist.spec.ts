@@ -18,6 +18,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, PLACEHOLDER_PAINT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const PNG = readFileSync(fileURLToPath(new URL('../fixtures/tiny.png', import.meta.url)));
 const WAV = readFileSync(fileURLToPath(new URL('../fixtures/samsloop-test.wav', import.meta.url)));
@@ -97,14 +98,17 @@ async function spawnArchivist(page: Page) {
       typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
       'function',
     undefined,
-    { timeout: 30_000 },
+    // Derived, not hand-typed — and it has to be SMALLER than the test
+    // budget below or it can never fire. See the describe's note.
+    { timeout: BOOT_MS },
   );
   await page.evaluate(
     (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
     'arc',
   );
   const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="arc"]');
-  await expect(pane.locator('[data-testid="archivist-face-body"]')).toBeVisible({ timeout: 60_000 });
+  await expect(pane.locator('[data-testid="archivist-face-body"]'))
+    .toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
   return pane;
 }
 
@@ -117,6 +121,34 @@ async function search(pane: Pane, type: string, term: string): Promise<void> {
   // user hits (and no SvelteFlow pan handler exists in the dock pane).
   await pane.locator('[data-testid="archivist-face-search"]').press('Enter');
 }
+
+// ── ⚠ THE BUDGET WAS BARE, AND ITS INNER CAPS WERE INVERTED (2026-09-05) ───
+//
+// The VIDEO leg timed out on CI at 32.9 s against Playwright's 30 s default,
+// which this file never overrode. Read off the blob report, the three legs
+// share one scaffold and only VIDEO overruns:
+//
+//     IMAGE passed 13.0 s · AUDIO passed 13.4 s · VIDEO timedOut 33.0 s
+//
+// ⚠ EVERY ASSERTION HAD ALREADY PASSED when the ceiling came down — the log
+// carries "video duration 1.968301 is finite + > 0" and each data-lit /
+// data-clean-output attribute. Nothing about the product is implicated; the
+// test was killed on its way out.
+//
+// WHY IT MOVED: this branch re-pointed the file off `?shell=legacy`, and a dock
+// mount no longer overlaps page load (memory:
+// repointing-a-spec-off-legacy-serializes-cold-boots). The branch's own cost
+// re-pin measures it: `archivist.spec.ts` 13.1 s -> 33.2 s, 2.5x, straight
+// through the 30 s default nobody had declared.
+//
+// ⚠ AND THE TWO INNER CAPS WERE LARGER THAN THE BUDGET CONTAINING THEM — a
+// `waitForFunction(..., { timeout: 30_000 })` and a `toBeVisible({ timeout:
+// 60_000 })` inside a 30 s test. Neither could EVER fire: the outer default
+// always won, so both were decoration that read as care. They are derived from
+// the shared bounds now, and both are smaller than the budget.
+//
+// This is a BOUND, not a claim: nothing here asserts a latency.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 test.describe('ARCHIVIST (archive.org, mocked)', () => {
   test('IMAGE: search → loads a random image with a CLEAN output', async ({ page }) => {

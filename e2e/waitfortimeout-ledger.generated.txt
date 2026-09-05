@@ -207,7 +207,6 @@ e2e/tests/samsloop.spec.ts :: per-rackspace cap: adding samsloop #21 surfaces "s
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(300) #1
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(300) #2
 e2e/tests/scaler-cv-passthrough.spec.ts :: AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient more than low (dead-knob regression) :: waitForTimeout(600) #1
-e2e/tests/scaler-cv-passthrough.spec.ts :: sampleOrientSpan :: waitForTimeout(intervalMs) #1
 e2e/tests/scope-tuner.spec.ts :: SCOPE with no signal shows em-dashes :: waitForTimeout(400) #1
 e2e/tests/scope-xy-intensity.spec.ts :: INTENSITY sweep: 7:00 dot lights far fewer pixels than 5:00 long trail :: waitForTimeout(350) #1
 e2e/tests/scope-xy-intensity.spec.ts :: INTENSITY sweep: 7:00 dot lights far fewer pixels than 5:00 long trail :: waitForTimeout(350) #2
