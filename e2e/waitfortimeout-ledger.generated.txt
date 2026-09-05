@@ -105,8 +105,6 @@ e2e/tests/doom-identity-crossview.spec.ts :: peers show slot badge + DOOM color;
 e2e/tests/doom-launch.spec.ts :: arbiter launches coop E1M1; both peers enter the level + move their own marine :: waitForTimeout(1500) #1
 e2e/tests/doom-launch.spec.ts :: arbiter launches coop E1M1; both peers enter the level + move their own marine :: waitForTimeout(300) #1
 e2e/tests/doom-mp-latejoin-freeze.spec.ts :: host keeps playing after an anon late-joiner relaunches + moves past the consistency-check boundary :: waitForTimeout(800) #1
-e2e/tests/doom-mp-lockstep-sharedstate.spec.ts :: sampleSharedTics :: waitForTimeout(8) #1
-e2e/tests/doom-mp-lockstep-sharedstate.spec.ts :: sampleSharedTics :: waitForTimeout(8) #2
 e2e/tests/doom-per-type-death-gates.spec.ts :: ${} (${}): pulse propagates through the audio bridge :: waitForTimeout(400) #1
 e2e/tests/doom-session-survives-card-collapse.spec.ts :: a RUNNING DOOM session SURVIVES its card being collapsed — and the graph still releases it :: waitForTimeout(250) #1
 e2e/tests/dx7-syx-load.spec.ts :: dx7: uploading a 32-voice SYX populates the dropdown + selecting different patches changes the audible waveform :: waitForTimeout(100) #1
