@@ -54,31 +54,41 @@ test.describe('PICTUREBOX spawn limits', () => {
   test.setTimeout(60_000);
 
   test('per-workspace cap = 8: ninth pick is blocked and the palette greys it out', async ({ page }) => {
-    // ⚠ THE RENDER LOOP IS PAUSED, AND THAT IS THE FIX — NOT A BIGGER BUDGET.
+    // ⚠ OPEN FINDING (2026-09-05). THE DIAGNOSIS HOLDS; THE FIX IS INCOMPLETE,
+    // AND THE SEAM IT NEEDS DOES NOT EXIST YET.
     //
-    // This test blew its 60 s budget on CI inside `locator.click`, 61.5 s spent
-    // in "waiting for element to be visible, enabled and stable". The element
-    // is `palette-item-picturebox`: a STATIC <button> in a DOM overlay, which
-    // cannot itself be moving. Playwright's stability check needs the same
-    // bounding box across two CONSECUTIVE ANIMATION FRAMES, so a static button
-    // that is "not stable" for a minute means it never got two consecutive
-    // frames at all — the main thread is starved, not the button.
+    // DIAGNOSIS, from the CI call log: `locator.click` spent the whole budget in
+    // "waiting for element to be visible, enabled and stable" on
+    // `palette-item-picturebox` — a STATIC <button> in a DOM overlay, which
+    // cannot itself be moving. Playwright's stability check needs the same box
+    // across two CONSECUTIVE ANIMATION FRAMES, so a static button that is "not
+    // stable" for a minute never got two consecutive frames: the main thread is
+    // starved, and the button is the victim.
     //
-    // What starves it is this test's own subject: by pick #8 the canvas carries
-    // eight PICTUREBOX lane tiles, each with a live `VideoTileThumb` blitting,
-    // on CI's 2-core runner with five shard-mates. Locally, under
-    // `E2E_SWIFTSHADER=1`, the same eight cost 10.0 s and pass — the renderer
-    // is not the variable, the core count is.
+    // WHAT STARVES IT is this test's own subject — by pick #8 the canvas carries
+    // eight PICTUREBOX lane tiles, on CI's 2-core runner with five shard-mates.
+    // Locally under `E2E_SWIFTSHADER=1` the same eight cost ~9.5 s and pass, so
+    // the renderer is not the variable; the core count is.
     //
-    // ⚠ AND THE PICTURES ARE NOT THE SUBJECT. Every assertion here is DOM: the
-    // palette offers the item, `countPictureboxes` counts `.svelte-flow__node`
-    // wrappers, and the cap hides the entry. Nothing reads a pixel. So pausing
-    // the video engine removes the load WITHOUT removing anything this test
-    // claims — the budget stays at 60 s, untouched.
+    // ⚠ WHY PAUSING THE ENGINE IS NOT ENOUGH. `installRenderSmokeHooks` sets
+    // `__videoEnginePause`, which stops the VIDEO ENGINE's loop — and it is kept
+    // below because that load is real and worth removing. But the thumbnails are
+    // not drawn by the engine: `VideoTileThumb.svelte` runs its OWN
+    // `requestAnimationFrame(draw)` at `VIDEO_THUMB_FPS`, released only by an
+    // IntersectionObserver when the tile scrolls out of view. Eight tiles spawned
+    // AT the click point are all in view by construction, so eight independent
+    // rAF loops keep running through the pause. Measured: this test still blew
+    // its 60 s budget on run 33992949683 with the hook installed.
     //
-    // The `rack` fixture is dropped deliberately: it navigates during SETUP,
-    // and `addInitScript` has to land before the app boots. Same reason
-    // `backdraft.spec.ts`'s feedback case owns its own navigation.
+    // THE HONEST FIX IS A SEAM CHANGE, NOT A TEST CHANGE: the render-smoke pause
+    // covers the engine but not the tile thumbs, so there is no way for a test to
+    // quiet a canvas full of them. Teaching `VideoTileThumb` to honour
+    // `__videoEnginePause` is one condition in shipped component code — small,
+    // but it is PRODUCT, and it is an owner call rather than something to slip in
+    // at the end of a removal branch. Recorded here as the named item.
+    //
+    // The 60 s budget is deliberately NOT raised: the cost is real and a bigger
+    // ceiling would only hide it.
     await installRenderSmokeHooks(page);
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
