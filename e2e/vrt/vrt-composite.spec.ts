@@ -30,6 +30,7 @@ import { test, expect } from '@playwright/test';
 import { COMPOSITE_VRT_SCENES } from './vrt-composite-scenes';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
+import { canvasNode } from '../tests/_helpers';
 
 test.describe.configure({ mode: 'default' });
 
@@ -58,14 +59,16 @@ test.describe('VRT: composite-state scenes', () => {
 
       await scene.setup(page);
 
-      // Each scene's cards must be visible before we snap. Default to the
+      // Each scene's nodes must be visible before we snap. Default to the
       // original NIBBLES→SCOPE pair when the scene doesn't declare its own.
-      const cardSelectors = scene.cardSelectors ?? [
-        '.svelte-flow__node-nibbles',
-        '.svelte-flow__node-scope',
-      ];
-      for (const sel of cardSelectors) {
-        await page.locator(sel).first().waitFor({ state: 'visible', timeout: 10_000 });
+      //
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so the per-module classes this
+      // used to wait on could never match (the mechanism
+      // `e2e/tests/ptzcam.spec.ts` records).
+      const cardNodeIds = scene.cardNodeIds ?? ['nib', 'sc'];
+      for (const id of cardNodeIds) {
+        await canvasNode(page, id).waitFor({ state: 'visible', timeout: 10_000 });
       }
 
       // One more rAF after both cards land so any post-mount layout shift

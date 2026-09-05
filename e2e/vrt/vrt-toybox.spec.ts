@@ -24,7 +24,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-toybox.spec.ts/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
+import { spawnPatch, ensureCombineOpen, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 // The four bundled content ids + the layer `kind` each maps to (GEN → 'gen',
@@ -260,7 +260,7 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
         [],
       );
 
-      const card = page.locator('.svelte-flow__node-toybox').first();
+      const card = canvasNode(page, 'tb');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
@@ -300,7 +300,7 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
         [],
       );
 
-      const card = page.locator('.svelte-flow__node-toybox').first();
+      const card = canvasNode(page, 'tb');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
@@ -541,7 +541,7 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
+      const card = canvasNode(page, 'tb');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
@@ -652,7 +652,7 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
+      const card = canvasNode(page, 'tb');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
@@ -797,7 +797,7 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
+      const card = canvasNode(page, 'tb');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
@@ -831,7 +831,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
+    const card = canvasNode(page, 'tb');
     await card.waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
@@ -862,7 +862,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
+    const card = canvasNode(page, 'tb');
     await card.waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
@@ -1045,7 +1045,7 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
+    const card = canvasNode(page, 'tb');
     await card.waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
@@ -1161,7 +1161,7 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
+    const card = canvasNode(page, 'tb');
     await card.waitFor({ state: 'visible', timeout: 10_000 });
     await pinViewport(page);
 
@@ -1380,7 +1380,7 @@ test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
+      const card = canvasNode(page, 'tb');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 

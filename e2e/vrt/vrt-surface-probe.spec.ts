@@ -22,7 +22,7 @@
 // you can't read.
 
 import { test } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { REGISTRY } from '../tests/_registry';
 import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
@@ -64,7 +64,10 @@ test.describe('VRT surface probe (measurement only)', () => {
         ]);
       }
 
-      const card = page.locator(`.svelte-flow__node-${mod.type}`).first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'vrt-1');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 

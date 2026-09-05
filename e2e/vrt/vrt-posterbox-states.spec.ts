@@ -25,7 +25,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-posterbox-states.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 test.describe.configure({ mode: 'default' });
@@ -94,7 +94,10 @@ test.describe('VRT: POSTERBOX composite states', () => {
         },
       ]);
 
-      const card = page.locator('.svelte-flow__node-posterbox').first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'crush');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
 
       // Height-stability settle: text-row raster determinism (the ±1 px

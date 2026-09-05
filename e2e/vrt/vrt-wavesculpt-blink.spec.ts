@@ -24,7 +24,7 @@
 // other three) so the scope traces have real signal in modes 1/2.
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { expectVrtSceneScreenshot } from './vrt-capture';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
@@ -212,7 +212,10 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
         try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
       });
 
-      const card = page.locator('.svelte-flow__node-wavesculpt').first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'vrt-1');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
 
       // Let the voices settle so the scope buffers fill with a couple of

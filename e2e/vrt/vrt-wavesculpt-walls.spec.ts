@@ -28,7 +28,7 @@
 // is a smoke test, not a capture.
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 interface WallCase {
@@ -97,7 +97,10 @@ test.describe('VRT: WAVESCULPT video walls', () => {
         ],
       );
 
-      const card = page.locator('.svelte-flow__node-wavesculpt').first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'vrt-walls');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
 
       // Let the wall texture upload + a couple of feedback frames settle,

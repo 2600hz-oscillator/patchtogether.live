@@ -23,7 +23,7 @@
 // sequences, hover-intent timing) and benefit from being declarative.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, openModulePalette } from '../tests/_helpers';
+import { spawnPatch, openModulePalette, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 // Per-test exemption set, keyed `${platform}/${snapshot-stem}`. Each
@@ -117,7 +117,10 @@ test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
     { id: 'vco-pp', type: 'analogVco', position: { x: 80, y: 80 } },
   ]);
 
-  const card = page.locator('.svelte-flow__node-analogVco').first();
+  // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+  // and every lane node is `moduleShell`, so a per-module class matches
+  // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+  const card = canvasNode(page, 'vco-pp');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Redesign: clicking the trigger opens a BODY-PORTALED chrome (root view:
@@ -145,7 +148,7 @@ test('node-context-menu: right-click on VCA', async ({ page }) => {
   await spawnPatch(page, [
     { id: 'vca-ctx', type: 'vca', position: { x: 100, y: 100 } },
   ]);
-  const card = page.locator('.svelte-flow__node-vca').first();
+  const card = canvasNode(page, 'vca-ctx');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Right-click on the card body (chunky chrome, not a knob).
@@ -175,7 +178,7 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
     { id: 'lfo-pc', type: 'lfo', position: { x: 100, y: 100 } },
     { id: 'flt-pc', type: 'filter', position: { x: 600, y: 100 } },
   ]);
-  const card = page.locator('.svelte-flow__node-lfo').first();
+  const card = canvasNode(page, 'lfo-pc');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Redesign: the patch-to picker is reached via the carry flow — open the

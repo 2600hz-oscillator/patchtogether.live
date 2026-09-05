@@ -135,9 +135,21 @@ test.describe('VRT: CELLSHADE rebuild composite scenes', () => {
 
       await spawnPatch(page, scene.nodes, scene.edges);
 
-      const card = page.locator('.svelte-flow__node-cellshade').first();
+      // ⚠ THE PICTURE IS IN THE DOCK BODY, NOT IN THE LANE. This scene used to
+      // photograph the lane node and assert `cellshade-preview` inside it — a canvas the
+      // module's pre-promotion surface painted. The faceplate paints the same
+      // picture in its `fullViewBody`, so the scene opens the pane and captures
+      // THAT: same module, same params, same subject, at full size.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'cel',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="cel"]`)
+        .getByTestId('cellshade-output-body');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
-      await expect(page.locator('canvas[data-testid="cellshade-preview"]')).toHaveCount(1);
+      await expect(card.locator('canvas[data-testid="cellshade-face-canvas"]')).toHaveCount(1);
 
       // Let the frozen frame settle into the preview.
       await page.waitForTimeout(700);

@@ -19,7 +19,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-synesthesia-composite.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 test.describe.configure({ mode: 'default' });
@@ -61,8 +61,11 @@ test.describe('VRT: SYNESTHESIA composite', () => {
       ],
     );
 
-    const synCard = page.locator('.svelte-flow__node-synesthesia').first();
-    const scopeCard = page.locator('.svelte-flow__node-scope').first();
+    // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+    // and every lane node is `moduleShell`, so a per-module class matches
+    // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+    const synCard = canvasNode(page, 'syn');
+    const scopeCard = canvasNode(page, 'sc');
     await synCard.waitFor({ state: 'visible', timeout: 10_000 });
     await scopeCard.waitFor({ state: 'visible', timeout: 10_000 });
 

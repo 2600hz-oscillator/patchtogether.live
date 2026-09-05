@@ -39,7 +39,7 @@ import { test, type Page } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { REGISTRY } from '../tests/_registry';
 import { applyVrtScene, VRT_SCENES } from './vrt-scenes';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
@@ -86,7 +86,10 @@ for (const type of TARGETS) {
         { id: 'vrt-1', type, position: { x: 80, y: 80 }, domain: mod.domain },
       ]);
     }
-    const card = page.locator(`.svelte-flow__node-${type}`).first();
+    // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+    // and every lane node is `moduleShell`, so a per-module class matches
+    // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+    const card = canvasNode(page, 'vrt-1');
     await card.waitFor({ state: 'visible', timeout: 15_000 });
     await card.evaluate(
       (el) =>
