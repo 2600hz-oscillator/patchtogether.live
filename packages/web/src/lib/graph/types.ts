@@ -390,8 +390,8 @@ export type KnobCurve = 'linear' | 'log' | 'exp' | 'discrete';
 
 /**
  * ONE NAMED DETENT of a DISCRETE param (PF-1) — the `mode 0/1/2` → `LP/HP/BP`
- * mapping the legacy cards hardcoded in their own markup and the migrated
- * shell had no way to see, so a filter's type read as a rotary printing
+ * mapping that used to be hardcoded in a component's own markup, where the
+ * shell had no way to see it, so a filter's type read as a rotary printing
  * "0.00".
  *
  * UI VOCABULARY, NOT CONTRACT — exactly like `ParamDef.label` (see the
@@ -532,9 +532,10 @@ export type ParamSchema = Readonly<ParamDef[]>;
 //   * `param` must name a live `ParamDef` of the same def, so an entry that
 //     outlives its subject is RED rather than quietly inert.
 //
-// It lives on the DEF, not on `face`, for two reasons. It is true of the
-// LEGACY card too (that is what the def's own comments were already saying),
-// and `face` is unreachable for exactly the modules that need this: authoring a
+// It lives on the DEF, not on `face`, for two reasons. It is a fact about the
+// MODULE rather than about any one surface (that is what the def's own comments
+// were already saying), and `face` is unreachable for exactly the modules that
+// need this: authoring a
 // `face` IS promotion to STRICT_FACES, so a `face`-nested field could not have
 // been adopted by anything without also building that module a full faceplate.
 // Like `face`, it is hash-transparent (HASH_TRANSPARENT_PROPS in
@@ -1084,7 +1085,7 @@ export interface ModuleFace {
    * Today's only adopter is `spirographs` (owner: *"this should just be 3 tabs,
    * one per spiro"*), where the rail is not a density workaround but the
    * module's own structure: three INDEPENDENT figures, one editable at a time,
-   * which is exactly what its legacy card's own tablist did.
+   * which is exactly what the module's own tablist already did.
    */
   tabbed?: true;
   /**
@@ -1109,9 +1110,10 @@ export interface ModuleFace {
    * first adopter of a slot it does not need, and left the real blocker
    * standing.
    *
-   * WHAT PROMOTION WOULD OTHERWISE DELETE: five legacy cards mount
-   * `hideControls` (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
-   * `graphicEq`), and `migrated(type)` stops BOTH surfaces rendering the card.
+   * WHAT PROMOTION WOULD OTHERWISE DELETE: five modules mounted `hideControls`
+   * on their pre-promotion surface (`ruttetra`, `monoglitch`, `milkdrop`,
+   * `reshaper`, `graphicEq`), and `migrated(type)` stops that surface
+   * rendering.
    * On ruttetra the def's own `docs` advertise the gesture in the user's words
    * — "hiding the controls turns it into a resizable monitor" — so promoting
    * without this makes the shipped documentation describe a control that no
@@ -1126,8 +1128,8 @@ export interface ModuleFace {
    *
    * Gate: `face-monitor-source.test.ts`, deny-by-default in BOTH directions —
    * a face declaring this must own a `fullViewBody` that reads and writes
-   * `hideControls` and exposes a button, and a FACED module whose legacy card
-   * still mounts `hideControls` must declare this or carry a named exemption.
+   * `hideControls` and exposes a button, and a FACED module that carried
+   * `hideControls` before must declare this or carry a named exemption.
    */
   monitor?: FaceMonitor;
   /**
@@ -1173,10 +1175,10 @@ export interface ModuleFace {
    * The worked case is `cvBuddy`/`cvBuddyMini`. RUN and CLOCK are single-source
    * — the id-smallest instance of either kind drives ES-9 jacks 7 and 8 — so on
    * every other instance the PPQN and OFFSET controls are dials wired to
-   * nothing, and the legacy card has always hidden them. `primaryOnlyBands`
-   * carries that forward; without it, promotion turns two hidden controls into
-   * two live-looking ones that change nothing, which is a worse surface than
-   * the card it replaced.
+   * nothing, and they have always been hidden. `primaryOnlyBands` carries that
+   * forward; without it, promotion turns two hidden controls into two
+   * live-looking ones that change nothing, which is a worse surface than the
+   * one it replaced.
    *
    * ⚠ IT IS STRUCTURE, NOT TEXT — free under the resting-text rulings for the
    * same reason `bandFocus` is: it decides which bands RENDER and paints

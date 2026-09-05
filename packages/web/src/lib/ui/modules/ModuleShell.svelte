@@ -608,8 +608,8 @@
   // A THIRD axis, and the only one whose input is not this node: which OTHER
   // nodes exist. `cvBuddy`'s RUN + CLOCK are single-source — the id-smallest
   // instance of either kind drives ES-9 jacks 7/8 — so on every other instance
-  // the clock band is dials wired to nothing, and the legacy card has always
-  // hidden it. Read as a PREDICATE, never `why`, which is a reviewer-facing
+  // the clock band is dials wired to nothing, and it has always been hidden.
+  // Read as a PREDICATE, never `why`, which is a reviewer-facing
   // argument asserted unreachable from this file.
   //
   // ⚠ IT SITS HERE, AFTER `headPlan`, BECAUSE THE PRECONDITION IS THE POINT.
@@ -655,11 +655,11 @@
 
   /**
    * MONITOR MODE (#2009) — "hide the controls and watch the picture", the
-   * `node.data.hideControls` affordance five legacy cards mount and promotion
-   * would otherwise DELETE from both surfaces at once.
+   * `node.data.hideControls` affordance five modules carried before their
+   * faces, and that promotion would otherwise DELETE.
    *
    * ⚠ THE FLAG IS READ, NEVER TRUSTED ALONE. `hideControls` is persisted and
-   * collab-synced, so a rack saved from the legacy card hands it to this
+   * collab-synced, so a rack saved before the promotion hands it to this
    * faceplate on the very first render of a module that may not have declared
    * `monitor` at all. `faceMonitorPlan` requires the DECLARATION and a painting
    * `extBody` alongside it, which is what stops an old patch blanking a face
@@ -784,7 +784,8 @@
   /**
    * The LIVE node (the Y.Doc entry, not the flow-node snapshot) + its version
    * tick, so a cell reading `node.data` (a preset roster, an imported bank)
-   * re-derives on a local OR remote change exactly like the legacy card.
+   * re-derives on a local OR remote change, which is the behaviour the module
+   * already had.
    *
    * The version is CARRIED IN THE RESULT on purpose: `patch.nodes[id]` is a
    * stable SyncedStore proxy, so a derived that returns it bare is `===` to its
@@ -847,8 +848,10 @@
   }
 
   /** A stable, collision-free test id for a family/static cell's interactive
-   *  element. Deliberately NOT the family's own `testidPrefix` (that id belongs
-   *  to the legacy card and is grep-pinned to it by the docs gate). */
+   *  element. Deliberately NOT the family's own `testidPrefix`: that id names
+   *  what a BESPOKE surface emits as a literal, and module-docs-lint's source
+   *  arm greps for it there. Emitting it here too would make that grep pass on
+   *  the shell for every family, which is the drift the arm exists to catch. */
   function cellTestId(ctl: FaceControl): string {
     return `shell-cell-${ctl.familyId ?? ctl.key.replace(/[{}]/g, '')}`;
   }
@@ -921,10 +924,11 @@
          and is how the LIVECODE DSL addresses a module, so it is not chrome —
          and every module lost it the moment it was promoted, because the face
          painted the name as a plain <span> while the affordance stayed behind
-         in the legacy card's ModuleTitle.
+         in `ModuleTitle`.
 
          `variant="inherit"` keeps the tile's own type (14.5px/800): the label
-         hardcodes 0.7rem monospace for the card, which has no type of its own
+         hardcodes 0.7rem monospace for its original host, which has no type of
+         its own
          to inherit. A rename affordance that restyled 45 faceplates would be a
          redesign, not a repair. -->
     <span class="tile-name" title={displayName}>
@@ -1000,8 +1004,8 @@
             />
           </div>
         {:else if cellKind === 'toggle'}
-          <!-- LATCHING 0/1 SWITCH → the shared <Toggle> `.switch`, the same
-               primitive the legacy card paints for it. As a KnobConic it read
+          <!-- LATCHING 0/1 SWITCH → the shared <Toggle> `.switch`, the fleet's
+               own primitive for it. As a KnobConic it read
                "0.00" and needed a full-arc drag to change one of two states.
                Toggle emits role="switch" + `control-<paramId>`, so the param
                multiset + MIDI-learn are unchanged; only the primitive moves. -->
@@ -1019,8 +1023,8 @@
         {:else if cellKind === 'segmented'}
           <!-- NAMED DISCRETE STATES at the DOCK (PF-1 `ParamDef.options`, ≤6):
                the inline `.seg` button row. The states a module HAS are the
-               thing a faceplate should say out loud — the legacy cards said it
-               with hardcoded markup the migrated shell could not see, so a
+               thing a faceplate should say out loud — they used to be spelled
+               in hardcoded markup the shell could not see, so a
                filter's LP/HP/BP arrived here as a rotary printing "0.00".
                Segmented emits `control-<paramId>` on its radiogroup and is
                MIDI-assignable, so the param multiset + MIDI-learn are
@@ -1192,8 +1196,8 @@
           <!-- LIVE-OVERRIDE BADGE (param-override-badges.ts): while the
                registered predicate is true the engine is IGNORING this fader
                (backdraft.delay under a patched DELAY CLOCK), so the cell dims
-               and badges — the faceplate half of the legacy card's CLK badge,
-               driven by the same shared predicate. Dimmed, not disabled: the
+               and badges — the faceplate half of the CLK badge, driven by the
+               same shared predicate. Dimmed, not disabled: the
                control stays draggable/MIDI-learnable per the dim ruling; the
                ENGINE is what ignores the writes. `edgesVersion()` makes the
                patch/unpatch reactive. -->
@@ -1271,7 +1275,7 @@
     {:else}
       <!-- FAMILY / STATIC cell — a REAL control from the shared primitive
            library, driven by the module's declarative spec (shell-cells.ts) so
-           it runs the SAME action/state the legacy card runs. -->
+           it runs the SAME action/state the module already ran. -->
       {@const cell = shellCellFor(node.type, ctl)}
       {#if cell?.kind === 'selector'}
         <div class="kcol ms-cell-sel" data-cell-kind={ctl.kind} data-cell-control="selector" data-cell-key={ctl.key} style:--ka={ka}>
@@ -1798,9 +1802,9 @@
         </section>
     {/snippet}
     <!-- PF-17 — the OSS ATTRIBUTION footer. A module whose DSP is a port of
-         someone else's open-source work says so on its faceplate, and the
-         legacy card always did (`CloudseedCard.svelte`); the migrated shell
-         dropped the line on the floor. Licence attribution is not decoration,
+         someone else's open-source work says so on its faceplate. It always
+         did, and the migrated shell dropped the line on the floor. Licence
+         attribution is not decoration,
          and the dock is the surface with the room for it. Dock-only: it is a
          credit, not a control, and a 192px lane tile has no space to spend. -->
     {#if def?.ossAttribution?.author}
@@ -1856,7 +1860,7 @@
 
        ⚠ NO `sections` HERE, AND IT IS A MEASURED DELTA (#1762). This mounts
        `groupingStrategy: 'auto'` (group by cable type), so a module whose ports
-       are all one type drills into ONE list: mixmstrs' legacy card opened on
+       are all one type drills into ONE list: mixmstrs used to open on
        `Ch1 (11) … Master (3)`, the face opens on `INPUT (101)`. Every port is
        still reachable (here and on the back panel), so nothing is lost but the
        grouping — and the fix is not `sections={…}` on a whim, because in
@@ -2020,8 +2024,8 @@
   }
 
   /* LIVE-OVERRIDE state (param-override-badges.ts): the engine is ignoring
-   * this control right now, so the throw dims — the legacy card's
-   * `.delay-cell.clk-driven` treatment, ported. The control stays interactive
+   * this control right now, so the throw dims — the `.delay-cell.clk-driven`
+   * treatment, ported. The control stays interactive
    * (dim ruling: draggable, resettable, MIDI-learnable). */
   .ms-cell-overridden :global(.thumb) {
     opacity: 0.45;
@@ -2074,8 +2078,8 @@
   .cell-cap.err { color: #ff6b6b; }
 
   /* File-import cell: a real <input type="file"> inside a styled label, the
-     same affordance the legacy card carries (so the picker, the accept filter
-     and drag-drop all behave identically). */
+     same affordance the module already carried (so the picker, the accept
+     filter and drag-drop all behave identically). */
   .file-btn {
     display: inline-flex;
     align-items: center;

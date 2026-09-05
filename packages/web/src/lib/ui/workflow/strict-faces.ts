@@ -28,7 +28,8 @@
 // sixstrum), the two percussion voices (snaredrum, tomtom) and the two
 // processors (shimmershine, qbrt). Same bar: a complete co-located `face`
 // (order + pages + glyph + `rear`), authored from what each module ACTUALLY
-// is rather than transcribed from its legacy card. The two pitched voices are
+// is rather than transcribed from the surface it replaced. The two pitched
+// voices are
 // additionally enrolled in default-pitch-accuracy (unit + e2e).
 //
 // P1 BATCH 3 (2026-07-26): the third wave — the plucked-string voice (karplus)
@@ -46,7 +47,8 @@
 //
 // FACE BATCH 3 (2026-08-03): the PF-20 wave — clap, drummergirl and
 // pentemelodica, plus a RE-DO of sixstrum's shipped face. Faceplates authored
-// against what each module IS rather than against its legacy card, each with a
+// against what each module IS rather than against the surface it replaced,
+// each with a
 // hero, a declared sidebar and DERIVED readouts registered in
 // face-readout-values.ts (never a knob relabelled), negative-controlled
 // PERMANENTLY in a per-module `*-face-model.test.ts`.
@@ -181,7 +183,8 @@
 // the surface in) and needs a real-GPU re-attest.
 //
 // ⚠ ITS RANKING IS THE INVERSE OF ITS OWN DEF, and that is the argument. The
-// def and the legacy card both lead with TUNE / FINE / MORPH / CONNECT and put
+// def and the pre-promotion surface both led with TUNE / FINE / MORPH /
+// CONNECT and put
 // the three rotations 12th-14th of 15 — an implementation order, since the
 // field is computed before it is cut. Measured, the cut owns the timbre by 5×
 // (`slice_ry` 0.885 rmsΔ over its travel against `morph_fc`'s 0.178), so the
@@ -309,8 +312,9 @@
 // witness has no phase to land on. NOT YET MEASURED as such — the claim is a
 // PREDICTION for `vrt-face-audio-probe` to settle, not a result.
 //
-// OWNER CONSTRAINT, 2026-08-10 ("preserve today's look"): the legacy card is
-// pixel-unchanged, the module keeps one prominent LEVEL control and its three
+// OWNER CONSTRAINT, 2026-08-10 ("preserve today's look"): no pixel of the
+// existing surface moved, the module keeps one prominent LEVEL control and its
+// three
 // jacks, and nothing is renamed or recoloured. The one difference the first
 // pass could NOT honour is the reason this face was held a release: a ranked
 // param paints as `KnobConic`, so the dock showed LEVEL as a dial where the
@@ -326,7 +330,8 @@
 // FIVE of its twenty-three params are BIT-EXACTLY inaudible at the factory
 // default and two more are within a percent of it — SEVEN asleep in all,
 // because each is the dependent half of an ENABLER PAIR whose enabler ships
-// closed. Nothing on the legacy card says so, so a new user turns a third of
+// closed. Nothing on the pre-promotion panel said so, so a new user turned a
+// third of
 // the panel and hears nothing. That is a legibility defect, not a DSP one: four
 // of the five pairs are the ordinary correct convention (a depth at zero
 // silences its rate, a feature off silences its shaping controls), and the
@@ -579,8 +584,8 @@
 // struck from ANY surface: `RingsCard` had a MODEL button, six faders and a
 // jack field, and no strum. A user who spawned RINGS and turned all seven
 // knobs heard nothing, with no indication why. That is the sixstrum defect on
-// a legacy card rather than on a face, and it is fixed here on BOTH surfaces
-// through ONE seam — a `strumCs` ConstantSource on worklet input 2 plus the
+// the pre-promotion surface rather than on a face, and it is fixed through ONE
+// seam — a `strumCs` ConstantSource on worklet input 2 plus the
 // factory's `manualTrigger` read key, the karplus pattern verbatim.
 //
 // ⚠ THE SPEC IT WAS BUILT FROM WAS STALE IN FOUR PLACES, and re-measuring
@@ -853,9 +858,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // and it is the STOP-2 class the skill's grep is blind to because the
   // affordance is not a `<button>` — it is a DECLARATION THAT WAS NEVER MADE.
   // `sel1..sel4` are `curve: 'discrete'` with NO `options` roster, so nothing in
-  // the def says what any of the four positions is CALLED. The legacy card
-  // answered that in markup (`← IN {value + 1}`), and promoting the module
-  // removes that card from both surfaces — so the faceplate would have rendered
+  // the def says what any of the four positions is CALLED. The pre-promotion
+  // surface answered that in its own markup (`← IN {value + 1}`), and promoting
+  // the module stops that surface rendering — so the faceplate would have
+  // rendered
   // four dials reading 0..3, on the module whose entire job is "which input",
   // with nothing anywhere naming an input. Every gate is green either way:
   // `contract-lock` pins min/max/curve (a roster is cosmetic and not
@@ -1221,8 +1227,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION SURFACE IS SMALLER THAN THE RULE SAYS, AND IT WAS TRACED
   // RATHER THAN ASSUMED. `shell-cells.ts:995` and the module-faceplates skill
-  // both state the promotion rule as "migrated(type) removes the legacy card
-  // from the lane AND the dock". That is true of the dock FULL-VIEW
+  // both state the promotion rule as "migrated(type) removes the pre-promotion
+  // surface from the lane AND the dock". That is true of the dock FULL-VIEW
   // (`DockFullView.svelte:317-340`, gated on the `migrated` prop passed at
   // `Canvas.svelte:8359`) and FALSE of the pinned DRAWER — `DockCardHost.svelte`
   // resolves `nodeTypes[node.type]` at `:62`/`:167` with no `migrated` input at
@@ -1902,7 +1908,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // readouts each other's control.
   //
   // Its VRT exemption reason carried two more falsehoods, both fixed here: it
-  // described the legacy card this promotion makes unreachable, and it credited
+  // described the surface this promotion makes unreachable, and it credited
   // ART coverage that does not exist (no `art/scenarios/moog902/`; the module is
   // in the ART backlog).
   //
@@ -2149,8 +2155,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // across its FULL declared range (±36 st, ±100 ¢) gives
   // `max|x − x_ref| = 0.000e+0` on ALL THREE audio outputs — the modulator's
   // free-run leg is gated off and those two dials reach nothing. `docs.controls`
-  // has always said so in prose; NOTHING on the panel did, and the legacy card
-  // renders them as two ordinary faders identical to the six live ones. The
+  // has always said so in prose; NOTHING on the panel did, and the
+  // pre-promotion surface rendered them as two ordinary faders identical to the
+  // six live ones. The
   // face answers it three ways at once: they rank 7 and 8 (dock-only, since
   // `faceTierCap('full')` is 6), the LOCK readout names the live mode, and the
   // sidebar says what they would do in the other one. Positive control, so the
@@ -2196,8 +2203,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // is the only control that can un-mute the module — which is a ranking
   // argument that WOULD BE WRONG for a different module, and it inverts
   // declaration order. A face is also the only surface that can say so: the
-  // legacy card's two faders can render neither a landmark tick nor a state
-  // name, so `MUTE at the centre, UNITY at both ends` has nowhere to appear.
+  // two plain faders can render neither a landmark tick nor a state name, so
+  // `MUTE at the centre, UNITY at both ends` had nowhere to appear.
   //
   // ⚠ THE MERIT ARGUMENT MOVED, AND THIS COMMENT RECORDS THE MOVE RATHER THAN
   // HIDING IT. The Q42 spec staked the merit on a DERIVED READOUT (a quiescent
@@ -2628,9 +2635,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ THIS FACE EXISTS TO PROVE A PLATFORM SEAM, and that is why it is the
   // module that landed it. #2009 filed the gap: `hideControls` — "hide the
   // controls and it becomes a resizable monitor" — is a `node.data` affordance
-  // on FIVE legacy cards (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
-  // `graphicEq`) with NO shell representation, and `migrated(type)` deletes it
-  // from both surfaces at once. `fullViewBody` paints ABOVE the bands and by
+  // five modules carried before their faces (`ruttetra`, `monoglitch`,
+  // `milkdrop`, `reshaper`, `graphicEq`) with NO shell representation, and
+  // `migrated(type)` deletes it. `fullViewBody` paints ABOVE the bands and by
   // contract cannot suppress them, so there was no seam to promote through.
   //
   // ⚠ AND ON THIS MODULE THE LOSS WOULD HAVE BEEN A DOCUMENTED ONE. The def's
@@ -2800,10 +2807,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // a stack of 2D lines and tints them like a phosphor.
   //
   // ⚠ THE FIRST INHERITOR OF MONITOR MODE, and the reason this module was next.
-  // #2009 named FIVE legacy cards that mount `hideControls` (`ruttetra`,
+  // #2009 named FIVE modules that carried `hideControls` (`ruttetra`,
   // `monoglitch`, `milkdrop`, `reshaper`, `graphicEq`) with no shell
-  // representation, and `migrated(type)` deletes the affordance from both
-  // surfaces at once. `ruttetra` (#2053) built the seam — `face.monitor` →
+  // representation, and `migrated(type)` deletes the affordance with the
+  // surface that mounted it. `ruttetra` (#2053) built the seam — `face.monitor` →
   // `faceMonitorPlan` → the shell suppresses hero + bands, with the toggle on
   // the module's own `fullViewBody` so the button that turns the mode on is
   // always still on screen to turn it off. This face is the second adopter and
@@ -2869,12 +2876,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // one was about to propagate — the first draft of THIS comment repeated it,
   // and only a local VRT run caught it.
   //
-  // ⚠ SO THE CARD BASELINE CANNOT BE USED AS A PROMOTION SIGNAL AT ALL, for any
-  // of the three cards still queued (`milkdrop`, `reshaper`, `graphicEq`). What
-  // WOULD move one is an edit the legacy card actually renders — and note
-  // `MonoglitchCard.svelte` HARDCODES its fader captions (`label="R"`), exactly
-  // as ruttetra's does, so even a def label change does not reach those pixels.
-  // This face changes no card-visible pixel: the card edit is the monitor-box
+  // ⚠ SO THAT BASELINE COULD NOT BE USED AS A PROMOTION SIGNAL AT ALL, for any
+  // of the three modules still queued (`milkdrop`, `reshaper`, `graphicEq`).
+  // What WOULD have moved one is an edit the photographed surface actually
+  // renders — and it HARDCODED its fader captions (`label="R"`), exactly as
+  // ruttetra's did, so even a def label change did not reach those pixels. This
+  // face moved no photographed pixel: the edit is the monitor-box
   // constants, which are the same six numbers it already had.
   //
   // NO READOUT, NO SIDEBAR, NO HERO — the 2026-08-19 rulings removed the fields.
@@ -3030,8 +3037,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // Four video modules with 2-4 params each, promoted together because they are
   // the SAME SHAPE: one honest band of faders, one live picture, one SCREEN
   // switch. None declares `pages`, none declares `hero`, none declares
-  // `bareCells`, and none is a MONITOR-mode module — `hideControls` lives on
-  // five legacy cards (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
+  // `bareCells`, and none is a MONITOR-mode module — `hideControls` belongs to
+  // five modules (`ruttetra`, `monoglitch`, `milkdrop`, `reshaper`,
   // `graphicEq`) and none of these four is among them, so inventing it here
   // would be adding an affordance rather than preserving one.
   //
@@ -3552,10 +3559,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // SHAPEDRAMPS — a sync-locked parametric ramp generator, and the FIRST module
   // in this programme to gain a picture rather than carry one forward.
   //
-  // ⚠ ITS CARD HAS NO PREVIEW. Every other video face's `fullViewBody` ports a
-  // canvas the legacy card already owned; `ShapedrampsCard.svelte` is eight
-  // faders and two section labels, and `vrt-exemptions.ts` lists it among the
-  // cards "confirmed 0 canvases each". So the SCREEN switch is an ADDITION, and
+  // ⚠ IT HAD NO PREVIEW TO PORT. Every other video face's `fullViewBody` ports
+  // a canvas the module already owned; this one had eight faders and two
+  // section labels, and the exemption roster listed it among the surfaces
+  // "confirmed 0 canvases each". So the SCREEN switch is an ADDITION, and
   // the promotion is the first time a player can see what this module emits
   // without patching it into an OUTPUT first.
   //
@@ -3773,8 +3780,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // pong e2e exercised the lane tile, so nothing in the suite had ever seen it.
   //
   // ⚠ THE COURT MOVES TO THE DOCK BODY AND NOWHERE ELSE. `drawPong` is a pure
-  // function the legacy CARD called; promotion stops both surfaces rendering
-  // that card. And the lane STILL gets no picture — pong is domain audio so
+  // function the pre-promotion surface called, and promotion stops that surface
+  // rendering. And the lane STILL gets no picture — pong is domain audio so
   // there is no VideoTileThumb, and both outputs are 'gate' so every glyph
   // literal except 'none' reddens the dead-glyph clause. That is a platform gap
   // affecting five modules, not a choice made here.
@@ -4149,7 +4156,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `DockFullView`. Its ONLY surface is the 🎧 topbar panel — and
   // `AudioIoSurface.svelte` never called `dockRailRendersFace`, so promoting
   // this module alone would have given the face to user-ADDED instances and
-  // left the instance every user has in every session on the legacy card. That
+  // left the instance every user has in every session on the old one. That
   // was fixed first, in its own PR, precisely because it moves a second module
   // (`audioIn`) on a surface everyone sees.
   //
@@ -4197,8 +4204,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // doc. What blocked promotion was that the picture was a WebGL2 renderer
   // welded into a 3 644-line card, and no faceplate body can mount that. The
   // renderer was extracted first into `wavesculpt/WavesculptVizSurface.svelte`
-  // (behaviour-neutral, VRT-proved, its own PR) so the legacy card and the
-  // faceplate body are two mounts of ONE renderer rather than two renderers
+  // (behaviour-neutral, VRT-proved, its own PR) so every surface is a mount of
+  // ONE renderer rather than two renderers
   // drifting against one DSP — the shape `cube` already established.
   //
   // ⚠ THE BAND STRUCTURE DEVIATES FROM THE REVIEWED MOCKS, PLATFORM-FORCED.
@@ -4342,8 +4349,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // whole rack follows a hardware sequencer.
   //
   // ⚠ THE PROMOTION FIXES THE MODULE'S WORST PRACTICAL DEFECT, which is not a
-  // look problem. `connect()` was reachable ONLY from a mounted legacy card, and
-  // under the default shell an un-migrated module renders a lane PLACEHOLDER —
+  // look problem. `connect()` was reachable ONLY from a mounted bespoke
+  // surface, and an un-migrated module rendered a lane PLACEHOLDER —
   // so on a module that is completely inert until MIDI access is granted, the
   // grant required first discovering that the dock full view exists. CONNECT is
   // an `action` cell here, and an action cell is not dock-restricted (only
@@ -4443,10 +4450,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // derivation named there as platform work the same ruling declines.
   //
   // ⚠ IT IS NOT A PARITY LOSS, WHICH IS THE THING TO CHECK RATHER THAN ASSUME.
-  // Every affordance the legacy card has is on the faceplate: the connect
-  // gesture and PUSH ALL are ranked `action` cells (so both reach the LANE TILE,
-  // which the card never did — the default shell painted this module as a
-  // placeholder), the eight slot values are knob cells, and the output picker,
+  // Every affordance the module had is on the faceplate: the connect gesture
+  // and PUSH ALL are ranked `action` cells (so both reach the LANE TILE, which
+  // it never did — the lane painted this module as a placeholder), the eight
+  // slot values are knob cells, and the output picker,
   // the channel, the eight assignment selects, the enum slots' `Segmented`, the
   // stale-slot warning and the five pedal commands are the `fullViewBody`. Two
   // readouts are deleted under the 2026-08-17 ruling — the per-slot value and
@@ -4514,12 +4521,12 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ THE ALTERNATIVE — keep the carve-out, author a DOCK-ONLY face — was
   // measured and refused. `DockFullView` gates on `migrated` alone, so it
   // works; what it ships is TWO DESIGNS for one module. The lane would keep the
-  // 320-340 px legacy card and its nine-branch status line while the dock
-  // painted a compact faceplate with neither, on the same node at the same
-  // moment; the tile would keep its card's native box in a rack of RACKLINE
+  // 320-340 px pre-promotion surface and its nine-branch status line while the
+  // dock painted a compact faceplate with neither, on the same node at the same
+  // moment; the tile would keep that native box in a rack of RACKLINE
   // tiles forever (`Canvas.svelte`'s two sizing sites also key off
   // NON_SHELL_LANE_TYPES); and the resting-text ruling — which is about
-  // faceplates, "the legacy cards are untouched" — would then apply to half a
+  // faceplates, and left every other surface alone — would then apply to half a
   // module. #1739's owner ruling on the `m` tray is the same complaint one
   // surface earlier, and its fix was to make the surfaces AGREE.
   //
@@ -4761,7 +4768,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ THE PROMOTION FIXES THE SAME PRACTICAL DEFECT midiclock HAD, for the same
   // mechanical reason. `laneRenderKind` returns 'placeholder' here today — a
   // tile with no ranked controls at all — and `connect()` is reachable only
-  // from a mounted legacy card. On a module that is completely inert until Web
+  // from a mounted bespoke surface. On a module that is completely inert until
+  // Web
   // MIDI is granted, the grant required first discovering the dock full view.
   // CONNECT is `face.order[0]` and an `action` cell is not dock-restricted, so
   // the gesture lands on the lane tile.
@@ -4850,8 +4858,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // real tier. What makes the promotion a gain anyway is WHERE THE MODULE LIVES.
   // It is the `E` of the M/E/C pin trio with `surface: 'drawer'`, spawned into
   // every workflow rackspace with `data.pinned` and CANVAS-HIDDEN — so its
-  // always-on instance has no lane tile at all, and `dockRailRendersFace`
-  // (`shellFaces && migrated`) flips its drawer from the legacy card to
+  // always-on instance has no lane tile at all, and its drawer mounts
   // `<ModuleShell view='drawer'>`. `dockFullViewHeadPlan` gates the extension
   // body on `isFaceplateView(view)` = `view !== 'lane'` — "the pinned drawer
   // paints the same full faceplate and wants the same head precedence (#1739)" —
@@ -4928,7 +4935,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION FIXES THE SAME PRACTICAL DEFECT midiclock AND midiLane HAD,
   // for the same mechanical reason: `laneRenderKind` returned 'placeholder'
-  // here, and `connect()` was reachable only from a mounted legacy card. On a
+  // here, and `connect()` was reachable only from a mounted bespoke surface. On
+  // a
   // module that is completely inert until Web MIDI is granted, the grant
   // required first discovering the dock full view. CONNECT is `face.order[0]`
   // and an `action` cell is not dock-restricted, so the gesture lands on the
@@ -5003,8 +5011,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // premise electraControl's thirty-six rename fields established one wave
   // earlier. "Nothing a ranked cell list can carry" was the half that was
   // simply false — LIVECODE's RUN and the runner's DIVISION are both ordinary
-  // cells over `node.data`, and both testid prefixes already existed on the
-  // legacy cards.
+  // cells over `node.data`, and both testid prefixes already existed.
   //
   // ⚠ AND ON LIVECODE THE PROMOTION FIXED A DEFECT IT WOULD OTHERWISE HAVE
   // CAUSED, which is the finding worth carrying out of this pair.
@@ -5015,7 +5022,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // would have shipped a module that cannot do anything, with every
   // def-reading gate green because the def has nothing to read. The evaluation
   // moved to `$lib/ui/modules/livecode-cell-actions.ts`, which the ranked RUN
-  // cell, the faceplate body and the legacy card all call.
+  // cell and the faceplate body both call rather than either owning.
   //
   // ⚠ THE CHILD IS THE OPPOSITE CASE AND THE CONTRAST IS THE POINT.
   // `clockedRunner`'s tick loop is `clock.subscribe(tick)` inside its FACTORY
@@ -5147,8 +5154,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // END STATE RATHER THAN A COVERAGE GAP. modtris is its only remaining member
   // (audioIn, the one other candidate, is DENIED for getUserMedia), so
   // `deriveFixture` now returns `migration-complete` and
-  // `workflow-shell.spec.ts`'s "the verbatim legacy card is OPERABLE in the dock
-  // full view" leg SKIPS BY NAME — green, and no longer running. Named in the PR
+  // `workflow-shell.spec.ts`'s "the verbatim pre-promotion surface is OPERABLE
+  // in the dock full view" leg SKIPS BY NAME — green, and no longer running.
+  // Named in the PR
   // body because skips are not passes.
   //
   // ⚠ AND IT IS DELIBERATELY NOT REPAIRED. `deriveFixture`'s own
@@ -5219,7 +5227,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ FOUR DECLARED INPUT PORTS GATED THIS PROMOTION. `queue1_cv … queue4_cv`
   // resolve through `data.slots`, which is written by exactly one widget in the
-  // repo — the one mounted only by the legacy card. The face carries it as a
+  // repo — the one the pre-promotion surface alone mounted. The face carries it
+  // as a
   // SECOND panel; without that, four documented inputs would have been
   // permanently inert with every registry test green.
   //
@@ -5302,7 +5311,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE OBVIOUS WORRY ABOUT THIS MODULE TURNS OUT TO BE FREE, and it is worth
   // stating so nobody spends a review round on it. Promotion stops rendering
-  // the legacy card, and for a module whose headline feature is STEALING THE
+  // the old surface, and for a module whose headline feature is STEALING THE
   // KEYBOARD the fear is that promotion silently unplugs the keys. It does not,
   // for a structural reason rather than a lucky one: the `keydown`/`keyup`
   // capture listener is installed inside the FACTORY and torn down in
@@ -5354,7 +5363,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
 
   // ── TEMPOLOCK (2026-08-29) — the beat-tracking clock, BORN FACED ─────────
   //
-  // A new module, so there is no legacy card to reach parity with: the face
+  // A new module, so there is no earlier surface to reach parity with: the
+  // face
   // IS the surface. One ranked control (the BAND selector — three named
   // options, total by construction over its 0..2 discrete range, so
   // `paramCellKind` resolves segmented at the dock and a named knob in the
@@ -5450,7 +5460,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // neither and inherits the faceplate's `var(--text, #eef1f5)`. A body that
   // simply copied the markup would have written `#eef1f5` into every untouched
   // run of every rack anyone opened the dock on — Y.Doc-persisted, synced to
-  // collaborators, and read back by the still-live legacy card. The serializer
+  // collaborators, and read back by every other reader of that run. The
+  // serializer
   // is therefore extracted to `$lib/graph/textmarquee-editor` (OUTSIDE
   // `lib/video/**`, so it costs no attest) and both surfaces stamp
   // `EDITOR_BASE_STYLE` on the element explicitly instead of inheriting it.
@@ -5576,7 +5587,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   //   (1) and (3) are now `$lib/audio/input-device.svelte.ts` (the input-side
   //   twin of the `output-device` seam `audioOut`'s promotion authored) plus
-  //   `$lib/ui/modules/audioIn/audio-in-actions.ts`, and the LEGACY CARD is
+  //   `$lib/ui/modules/audioIn/audio-in-actions.ts`, and every surface was
   //   moved onto them in the same diff.
   //
   // ⚠ THE IRREVERSIBLE HAZARD IS THE SECOND SURFACE, and it is why this face
@@ -5684,10 +5695,11 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // a slot) and is fixed in the same diff.
   //
   // ⚠ THE USER-DOCKED RESIDUAL THIS ENTRY RECORDED IS CLOSED. It read: "a
-  // user-docked controlSurface keeps mounting the verbatim legacy card in the
-  // dock rail (`dockRailRendersFace` requires `pinned`), and the card is
-  // `DYNAMIC_SIZED`, so the free-growing board survives promotion unmodified
-  // there." The owner reported that residual as a P0 on 2026-09-03 (on
+  // user-docked controlSurface keeps mounting its verbatim pre-promotion
+  // surface in the dock rail (the tray rule requires `pinned`), and that
+  // surface is `DYNAMIC_SIZED`, so the free-growing board survives promotion
+  // unmodified there." The owner reported that residual as a P0 on 2026-09-03
+  // (on
   // cameraInput, the same shape): a docked promoted module painting its
   // pre-promotion card. `pinned` is no longer part of the rule, so a docked
   // node's rail occupant is the face and the board is one Expand away, exactly
@@ -5846,10 +5858,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // deleting it would buy a real-GPU re-attest window for a dead field that
   // still sits in saved racks. Named rather than silently paid.
   //
-  // ⚠ ONE RESTING READOUT IS DELETED ON BOTH SURFACES, NOT HIDDEN: the card's
+  // ⚠ ONE RESTING READOUT IS DELETED ON EVERY SURFACE, NOT HIDDEN: the
   // `peertube-now-playing` line (the selected video's name, restated outside
-  // every control). It moves to the picture's `aria-label` on the face body AND
-  // on the legacy card. ⚠ ITS SOURCE IS `selectionLabel`, NOT THE ROSTER, and
+  // every control). It moves to the picture's `aria-label`. ⚠ ITS SOURCE IS
+  // `selectionLabel`, NOT THE ROSTER, and
   // that is the one place this differs from tvLibrarian's identical deletion:
   // `PEERTUBE_PROFILE.autoLoadCatalogue` is FALSE, so a reloaded rack restores
   // the selection with an EMPTY catalogue and no highlighted row to be the
@@ -6395,8 +6407,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ ONE SEAM, TWO MOUNTS: every pointer -> `PaintOp` conversion lives in
   // `$lib/ui/modules/painter/paint-surface.ts`, imported by the face body AND
   // by `PainterCard.svelte`. This is not tidiness — a stroke drawn on the face
-  // and the same stroke drawn on the still-live legacy card must serialise
-  // identically, and the op log is VALID either way, so a divergence would sync
+  // and the same stroke drawn on any second surface must serialise identically,
+  // and the op log is VALID either way, so a divergence would sync
   // two different pictures to two peers with every gate green.
   //
   // ⚠ THE TYPED-ENTRY LEG IS SATISFIED BY THE BODY, NOT BY DELETING ANYTHING.
@@ -6776,7 +6788,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `ToyboxCard.svelte` mounting ANYWHERE — and that card was this module's
   // only surface. Everything in it had to MOVE, not be duplicated:
   // `$lib/ui/modules/toybox/ToyboxConsole.svelte` is ONE component with a
-  // `layout` prop that the legacy card and the faceplate body both mount. A
+  // `layout` prop each host mounts it with. A
   // fork would have been two consoles over one Y.Doc drifting apart one fix at
   // a time; `toybox-face-model.test.ts` pins the single-tree property in both
   // directions, and every zone is a SNIPPET, so a control cannot exist on one
@@ -6807,8 +6819,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // set here. Twenty knobs would each have read as an unbacked extra. Dropping
   // `paramId` would have "fixed" that by making twenty controls un-learnable,
   // so the face passes Knob's own `testid` override instead (`toybox-dial-*`):
-  // the NAME changes, the MIDI binding does not, and the legacy card keeps
-  // `control-*` for the shipped specs and every saved binding.
+  // the NAME changes and the MIDI binding does not, so every saved binding
+  // still addresses the same key.
   //
   // ⚠ SCREEN OFF KEEPS RENDERING AND RENEWS THE WATCH MARK. On the blit path
   // that mark is a side effect of PAINTING (`blitOutputForPreview` calls
@@ -6835,10 +6847,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * The legacy-fallback MIGRATION derivation: is this module type MIGRATED to a
- * curated ModuleShell face? Drives the workflow `flowNodes` swap (migrated →
- * ModuleShell curated face; un-migrated → styled placeholder + legacy card in
- * the dock). The bridge and the face-lint gate read the SAME set, so a module is
+ * The MIGRATION derivation: is this module type MIGRATED to a curated
+ * ModuleShell face? Drives the workflow `flowNodes` swap. The bridge and the
+ * face-lint gate read the SAME set, so a module is
  * "migrated" exactly when it's on the curation bar.
  *
  * A module is only truly migrated once it is BOTH faced AND promoted, so this

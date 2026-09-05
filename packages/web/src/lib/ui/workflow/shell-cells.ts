@@ -807,7 +807,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       options: () => wavesculptPresetOptions(),
       // ⚠ THIS USED TO BE `value: () => ''` — a constant, so the chip could
       // never move off the sentinel however many presets you picked. See
-      // `wavesculptPresetValue`: the sweep caught it, and the legacy card's
+      // `wavesculptPresetValue`: the sweep caught it, and the module's own
       // native <select> had the affordance the faceplate lacked.
       value: (node) => wavesculptPresetValue(node, 0),
       onchange: (nodeId, value) => { if (value) void loadWavesculptPreset(nodeId, 0, value); },
@@ -1442,8 +1442,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   },
   cube: {
     // THE HERO PICTURE — cube's whole visualisation, promoted into the
-    // faceplate's hero slot, and the SAME component the legacy card mounts
-    // rather than a reduction of it.
+    // faceplate's hero slot, and the SAME component the module already
+    // mounted rather than a reduction of it.
     //
     // ⚠ THAT IDENTITY IS THE POINT. cube is "a solid and a cut": three
     // wavetables stacked into a 3-D density field, read by one movable plane
@@ -1601,7 +1601,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // module is not quiet, it is MUTE, and the dock full-view offered nine
     // controls over a voice that could not be heard at all.
     //
-    // Fires the SAME host-side trigger source the legacy card's PLUCK button
+    // Fires the SAME host-side trigger source the module's PLUCK gesture
     // fires (manual-strike-actions → the factory's `manualTrigger` read key),
     // so there is one implementation, not two. Not a param: it writes nothing
     // to the graph (see that module's header), which is also why `strike` is
@@ -1619,8 +1619,9 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       onFire: (nodeId) => { fireManualStrike(nodeId); },
       // ⚠ THIS IS THE CELL THE MISSING PROBE COST MOST. karplus's dock PLUCK
       // animates its press flash off the CLICK, not off `fireManualStrike`'s
-      // return value (the legacy card honours it) — so the button flashed on a
-      // string that was never plucked, and the sweep asserted only that the
+      // return value (the seam reports it and this cell threw it away) — so the
+      // button flashed on a string that was never plucked, and the sweep
+      // asserted only that the
       // button was enabled. `delivered` is precisely the boolean being thrown
       // away (face-redo ledger defect #22).
       probe: { effect: { kind: 'audition', seam: 'manual-strike' } },
@@ -1656,8 +1657,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // faceplate and a photograph. RINGS is a BODY, not a voice: with nothing
     // patched and nothing struck the output is not quiet, it is exactly zero
     // — the Float32Arrays are untouched — and before this PR the module could
-    // not be struck from ANY surface. The legacy card had a MODEL button, six
-    // faders and a jack field, and no way to make a sound.
+    // not be struck from ANY surface: a MODEL button, six faders and a jack
+    // field, and no way to make a sound.
     //
     // Fires the SAME host-side trigger source the card's new STRUM button
     // fires (manual-strike-actions → the factory's `manualTrigger` read key),
@@ -1705,7 +1706,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // quiet, they are SILENT — and the dock offered six controls over a module
     // more than a third of which could not be sounded.
     //
-    // Fires the SAME host-side trigger source the legacy card's button fires
+    // Fires the SAME host-side trigger source the module's own button fires
     // (manual-strike-actions → the factory's `manualTrigger` read key), so
     // there is one implementation, not two. It takes the nodeId and not the
     // `env` handle: `fireManualStrike` resolves the live engine itself through
@@ -1765,7 +1766,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // THE AUDITION. A kick with nothing patched into trigger_in is SILENT, so
     // without this the dock full-view offers 25 controls over a voice you
     // cannot hear — while tomtom, karplus and sixstrum can all be auditioned.
-    // Fires the SAME host-side trigger source the legacy card's STRIKE button
+    // Fires the SAME host-side trigger source the module's STRIKE gesture
     // fires (manual-strike-actions), so there is one implementation, not two.
     // Not a param: it writes nothing to the graph (see that module's header).
     'kickdrum-strike-{n}': {
@@ -1842,12 +1843,12 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   },
   treeohvox: {
     // THE AUDITION, and this one was ORDERED BY THE DEF. `treeohvox.ts:125-137`
-    // carries a note addressed to whoever authors this faceplate: its card's
+    // carries a note addressed to whoever authors this faceplate: a bespoke
     // gate pad reaches the dock ONLY while the module has no `face`, because an
-    // un-faced dock full view renders the legacy card. The moment a face lands,
-    // the dock renders the face instead and the pad disappears unless the face
+    // un-faced dock full view renders that surface instead. The moment a face
+    // lands, the dock renders the face and the pad disappears unless the face
     // ranks a gate cell of its own. That is the sixstrum defect verbatim — the
-    // card's STRUM button always worked while the FACE offered twenty controls
+    // STRUM button always worked while the FACE offered twenty controls
     // over an instrument that could not be sounded — and this cell is the
     // instruction being carried out.
     //
@@ -1975,7 +1976,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       onchange: (nodeId, value) => selectSixstrumPreset(nodeId, value),
     },
     // THE AUDITION, RECOVERED — the cell whose ABSENCE is the whole reason for
-    // the sixstrum face re-do. The legacy card's ⟋ STRUM button drives
+    // the sixstrum face re-do. The module's ⟋ STRUM gesture drives
     // `read('manualTrigger')` on the factory handle; this registry held only the
     // preset selector and `face.order` had no strike key, so under `?shell=1`
     // the dock offered twenty controls over a voice that could not be sounded
@@ -2512,8 +2513,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   //
   // Four per reel, all of them messages rather than writes: the transport
   // one-shots and the tape export. The implementations live in
-  // `twotracks-face-actions.ts` and the LEGACY CARD calls the same ones, so the
-  // face and the card cannot drift about what a press does.
+  // `twotracks-face-actions.ts` rather than in a component, so no second
+  // surface can ever drift about what a press does.
   //
   // ⚠ EVERY TRANSPORT CELL IS `mode: 'trigger'`, NOT `'gate'`. REC / PLAY /
   // STOP fire ONCE on the rising edge — they are commands, not held states — and
@@ -2660,8 +2661,9 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   //
   // ⚠ THE CHANNEL CELL WRITES `midiInChannel`, NOT `channel`, AND THAT IS A BUG
   // FIX RATHER THAN A NAMING PREFERENCE. `channel-columns.ts` declares
-  // `data.channel: 1..8` to be workflow COLUMN MEMBERSHIP TRUTH; the legacy card
-  // wrote a 0..15 MIDI filter into the same key, so picking a channel ejected
+  // `data.channel: 1..8` to be workflow COLUMN MEMBERSHIP TRUTH; the
+  // pre-promotion control wrote a 0..15 MIDI filter into the same key, so
+  // picking a channel ejected
   // the module from its lane or teleported it into another's, and the factory
   // reading that key back made a lane-dropped module listen to one channel it
   // never chose. `MidiOutBuddyCard.svelte` has carried a header about this since
@@ -2753,8 +2755,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // consents, so before this press midiclock has no stream, no device roster,
     // and four jacks sitting at rest: it is the first thing to do, on a module
     // that otherwise looks broken. Until promotion the only button that could
-    // do it lived on the legacy card, and the default shell paints an
-    // un-migrated module as a lane PLACEHOLDER — so granting access meant
+    // do it lived on a bespoke surface, and an un-migrated module painted a
+    // lane PLACEHOLDER — so granting access meant
     // finding and opening the dock full view first. An `action` cell is not
     // dock-restricted (only `panel` is, by `panelCellKeys`), so ranking this
     // key puts the gesture on the lane tile where the module is met.
@@ -2841,7 +2843,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // ⚠ CONNECT IS midiclock's ARGUMENT (#2187) VERBATIM. Web MIDI publishes no
   // port until the browser consents, so a fresh spawn is eight knobs that send
   // nothing — and until promotion the only affordance that could ask for the
-  // grant lived on a legacy card the default shell paints as a lane
+  // grant lived on a bespoke surface an un-migrated lane painted as a
   // PLACEHOLDER. An `action` cell is not dock-restricted (only `panel` is, by
   // `panelCellKeys`), so ranking it FIRST puts the gesture on the tile inside
   // the glyph-less compact cap of 3.
@@ -2956,8 +2958,9 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // is no prompt to grant and no roster to pick from — one bridge, one device,
   // `maxInstances: 1` — and the gesture is simply "dial the helper".
   //
-  // ⚠ TWO CELLS WITH STATIC CAPTIONS, NOT ONE THAT FLIPS. The legacy card
-  // renders CONNECT *or* DISCONNECT depending on state, and a single cell whose
+  // ⚠ TWO CELLS WITH STATIC CAPTIONS, NOT ONE THAT FLIPS. The pre-promotion
+  // control rendered CONNECT *or* DISCONNECT depending on state, and a single
+  // cell whose
   // label followed suit would be a caption that changes — the exact shape
   // `StatusLed`'s contract refuses at the call site, for the same reason: a
   // caption is the STATIC name of the thing, and a reader who has to re-read it
@@ -3255,7 +3258,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // so both live in the extension body (see that file).
   //
   // ⚠ BOTH LABELS ARE STATIC, AND THAT IS HONEST HERE RATHER THAN A COMPROMISE.
-  // The legacy card flipped its captions to `Re-pair Launchpads` /
+  // The pre-promotion control flipped its captions to `Re-pair Launchpads` /
   // `Re-connect single` once a deployment was live, and `ShellActionCell.label`
   // is a plain string so a cell cannot. Nothing is lost, because the ACTION does
   // not change: pressing either one re-runs the same handshake from the top,
@@ -3344,8 +3347,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   //
   // SEND TO ELECTRA generates a 3-page `.epr` preset plus a Lua bundle from the
   // whole rack and pushes them to a physical Electra One over sysex. Until
-  // promotion the only button that could do it lived on the legacy card, and the
-  // module is the `E` of the workflow pin trio — canvas-hidden, drawer-only — so
+  // promotion the only button that could do it lived on a bespoke surface, and
+  // the module is the `E` of the workflow pin trio — canvas-hidden, drawer-only — so
   // the gesture was reachable ONLY by opening the bottom drawer. An `action`
   // cell is not dock-restricted (only `panel` is, by `panelCellKeys`), so
   // ranking this key is what puts the flash on the lane tile of any canvas
@@ -3397,8 +3400,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // for "a 0/1 LATCHING switch backed by node.data".
   //
   // ⚠ IT WRITES THROUGH `setSurfaceLocked`, the same in-place LOCAL_ORIGIN
-  // mutator the legacy card's lock button calls, so the two surfaces cannot
-  // disagree about what locking means and the flip reaches Cmd-Z and every
+  // mutator every other lock path calls, so no two surfaces can disagree about
+  // what locking means and the flip reaches Cmd-Z and every
   // collaborator. A toggle cell is not dock-restricted, so LOCK reaches the
   // lane tile — which matters here, because dragging a group box is a LANE
   // gesture on the dock body and the lock is what arms it.
@@ -3477,7 +3480,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
     // runtime when `clocked()` spawns the runner and re-read by the factory on
     // every tick. What decides it is width and parity: nine divisions as a
     // segmented cell is toward the top of that kind's 94.3-430.9 px range,
-    // a `selector` is a flat 168, and the LEGACY CARD's own affordance is a
+    // a `selector` is a flat 168, and the module's own affordance was already a
     // `<select>` — so the parity-correct primitive and the narrow one coincide.
     'clocked-runner-division-{n}': {
       kind: 'selector',
@@ -3562,7 +3565,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       // NARROWEST honest layout of sixteen steps: 8x2 measures 333 px and 16x1
       // measures 621 px, which would make numpadPlus the widest face in the
       // fleet on a module whose other controls are tiny. 4x4 is also what the
-      // legacy card already shipped, so it is the zero-surprise choice.
+      // module already shipped, so it is the zero-surprise choice.
       minWidth: 168,
       probe: {
         testid: 'numpad-cell-0',
@@ -3589,8 +3592,8 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'key map',
       component: NumpadKeymapPanel,
       // Seven columns of 26 px plus six 3 px gaps plus 4 px padding and a 1 px
-      // border. 7x2 is exactly fourteen with no ragged row; the legacy card let
-      // them WRAP at its own content width, which produced 12 + 2.
+      // border. 7x2 is exactly fourteen with no ragged row; the pre-promotion
+      // surface let them WRAP at its own content width, which produced 12 + 2.
       minWidth: 210,
       probe: {
         testid: 'numpad-key-0',
@@ -3609,9 +3612,9 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
   // `fullViewBody`, and the block's own header there says why each one has to.
   //
   // ⚠ BOTH CALL THE SHARED ACTION SEAM, never a second copy of the file format.
-  // `mappy-map-actions.ts` is what the LEGACY CARD calls too, which is the whole
-  // point: a venue map exported from the card and imported from the faceplate
-  // is the same file by construction rather than by two authors agreeing.
+  // `mappy-map-actions.ts` owns the format outright, which is the whole point: a
+  // venue map exported from one surface and imported on another is the same file
+  // by construction rather than by two authors agreeing.
   mappy: {
     // IMPORT — a `file` cell, so the shell paints the picker AND the
     // status/error line the action returns. That line is not decoration: a

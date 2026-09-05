@@ -89,7 +89,7 @@ export interface ShellDefLike {
   /** The def's palette classification (top/sub) — the role-line fallback. */
   palette?: { top: string; sub: string };
   /** Upstream OSS credit for a ported DSP — surfaced in the dock faceplate
-   *  footer (PF-17), exactly as the legacy card surfaced it. */
+   *  footer (PF-17), exactly as the module always surfaced it. */
   ossAttribution?: { author: string };
 }
 
@@ -164,9 +164,9 @@ export function spineCableVar(def: ShellDefLike | undefined): string {
 //
 // Under the shell preview every video-DOMAIN module's lane tile shows a LIVE
 // ANIMATED THUMBNAIL of its actual output in the glyph slot — the same picture
-// its legacy card's on-card preview loop shows — instead of the generic static
-// wave glyph (which read as "fake" on a video module and left no video visible
-// anywhere). The thumbnail REUSES the exact legacy preview seam: each tick it
+// the module's own preview loop shows — instead of the generic static wave
+// glyph (which read as "fake" on a video module and left no video visible
+// anywhere). The thumbnail REUSES the exact preview seam: each tick it
 // asks the engine to blit THIS node's surface FBO into the shared drawing
 // buffer (`videoEngine.blitOutputToDrawingBuffer(nodeId)`) and drawImage()s the
 // engine canvas into a small 2D thumb canvas — no WebGL in the component, so
@@ -248,7 +248,7 @@ export function laneGlyphFor(def: LaneGlyphDefLike | undefined): LaneGlyph {
 
 /** Thumbnail render policy: a SMALL fixed-res 2D canvas (aspect-fit blit of the
  *  engine frame, engine is 1024×768 4:3 by default) at a THROTTLED fps. The
- *  legacy cards run their previews at full rAF over card-sized buffers; the
+ *  A module surface runs its preview at full rAF over a full-size buffer; the
  *  lane tile is a ~170px-wide well, so quarter-ish res at 15fps reads
  *  identically and keeps 30+ tiles cheap. Visibility-gating (tap released when
  *  the tile is off-screen) lives in the component via IntersectionObserver;
@@ -891,9 +891,9 @@ export function dockFullViewHeadPlan(args: {
 // ── MONITOR MODE (#2009) ────────────────────────────────────────────────────
 //
 // "Hide the controls and watch the picture" is a `node.data.hideControls`
-// affordance that five legacy cards mount (`ruttetra`, `monoglitch`,
-// `milkdrop`, `reshaper`, `graphicEq`) and that promotion DELETES from both
-// surfaces at once, because `migrated(type)` stops the card rendering. #2009
+// affordance five modules carried before their faces (`ruttetra`, `monoglitch`,
+// `milkdrop`, `reshaper`, `graphicEq`) and that promotion DELETES, because
+// `migrated(type)` stops the surface that mounted it rendering. #2009
 // filed the gap: `fullViewBody` paints ABOVE the bands and cannot suppress
 // them, and `editorSurface` — the slot the issue nominated — is a static
 // surface for controls that are not cell-shaped, not a toggle over bands that
@@ -928,7 +928,7 @@ export interface FaceMonitorPlan {
  * `dockFullViewHeadPlan` never mounts it, would be a button nobody can see.
  *
  * ⚠ `hidden` alone is NOT enough and must never be. `node.data.hideControls`
- * is a persisted key that a rack saved from the LEGACY card already carries, so
+ * is a persisted key that a rack saved before the promotion already carries, so
  * a face that has not declared `monitor` can be handed `hidden: true` by an old
  * patch on its very first render. Reading the flag without the declaration
  * would blank that faceplate on load. Undeclared ⇒ inert, always.
