@@ -32,6 +32,7 @@ import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnEdge } from './_helpers';
 import { collectPageErrors } from './_page-errors';
 import { AUDIO_READY_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { pollGatePulsePeak, gatePulseMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -564,49 +565,90 @@ for (const port of GATE_PORTS) {
 
     expect((await readScopePeak(page, scopeId)) ?? 0).toBeLessThan(0.2);
 
-    const ok = await page.waitForFunction(
-      ({ id, p, sid }) => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-          } | null;
-          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-        };
-        const eng = w.__engine?.();
-        if (!eng) return false;
-        const node = w.__patch.nodes[id];
-        const scope = w.__patch.nodes[sid];
-        if (!node || !scope) return false;
-        const extras = eng.read(node, 'extras') as { forcePulse?: (p: string) => void } | undefined;
-        if (!extras || typeof extras.forcePulse !== 'function') return false;
-        extras.forcePulse(p);
-        const snap = eng.read(scope, 'snapshot') as { ch1: Float32Array } | undefined;
-        if (!snap) return false;
-        let peak = 0;
-        for (let i = 0; i < snap.ch1.length; i++) {
-          const a = Math.abs(snap.ch1[i]!);
-          if (a > peak) peak = a;
-        }
-        return peak > 0.4;
-      },
-      { id: 'g', p: port, sid: scopeId },
-      // ⚠ THE CAP WAS A FLAT 6000 ms AND `evt_hit` FAILED ON IT TWICE ON CI
-      // (2026-09-05), while the other four gate ports passed and all five pass
-      // locally. This poll re-fires `forcePulse` every 50 ms and reads the
-      // scope's analyser ring in the SAME tick, so it only succeeds once the
-      // AUDIO GRAPH has rendered a pulse into the ring — and an e2e shard
-      // co-schedules several AudioContexts on CI's 2 cores, which is exactly
-      // when the render quantum falls behind. `AUDIO_READY_MS` is the shared
-      // bound for that lottery and its own note names this shape: "the CAP of
-      // an observable-anchored wait (`expect.poll` on a scope read)".
-      //
-      // A CAP, NOT A CLAIM: the assertion is still peak > 0.4 on ch1, and the
-      // poll exits on the first pulse that lands. `evt_hit` is FIRST in
-      // GATE_PORTS, so it runs while the shard is coldest — which is why one
-      // port of five kept drawing the short straw.
-      { timeout: AUDIO_READY_MS, polling: 50 },
-    ).catch(() => null);
-
-    expect(ok, `${port} should pulse SCOPE.ch1 above the floor via the gate bridge`).toBeTruthy();
+    // ⚠ THE HAND-ROLLED FIRE-THEN-READ LOOP IS GONE — see `pollGatePulsePeak`.
+    // It called `forcePulse` and read the analyser ring in the SAME synchronous
+    // tick, so it read the ring BEFORE the pulse had been rendered into it and
+    // depended on a LATER round trip coinciding with a still-high window. That
+    // coincidence stops happening on a loaded shard, and the failure MOVED
+    // between members of this very loop: `evt_hit` on one CI run, `evt_kill`
+    // and `evt_miss` on the next. Five interchangeable ports cannot have five
+    // separate bridge defects.
+    //
+    // The seam pulses AND samples in the page, on independent timers, and
+    // LATCHES the peak — so a pulse only has to be caught once by any sample,
+    // ever, instead of by the one sample that happens to follow it.
+    const r = await pollGatePulsePeak(page, {
+      sourceNodeId: 'g',
+      port,
+      scopeNodeId: scopeId,
+      threshold: 0.4,
+      boundMs: AUDIO_READY_MS,
+    });
+    expect(r.hookFound, `${port}: extras.forcePulse never resolved — ${gatePulseMsg(port, r)}`).toBe(true);
+    expect(
+      r.reachedThreshold,
+      `${port} should pulse SCOPE.ch1 above the floor via the gate bridge — ${gatePulseMsg(port, r)}`,
+    ).toBe(true);
   });
 }
+
+// ⚠ THE NEGATIVE CONTROL FOR THE LATCH ITSELF, and it is not optional. A
+// monotone "highest peak ever seen" probe is exactly the kind of instrument
+// that can quietly stop being able to report ZERO — a stray reading, a wrong
+// scope id resolving to a live node, or a latch that starts non-empty would all
+// make every port above pass for the wrong reason, forever, and no amount of
+// re-running the positive legs could tell.
+//
+// So the SAME helper, over the SAME wiring, with pulsing switched off must
+// still read never-fired.
+test('gibribbon: an UNPULSED gate reads as never-fired — the latch cannot manufacture a pulse', async ({
+  page,
+  rack,
+}) => {
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
+  const scopeId = 'scope-control';
+  await spawnPatch(
+    page,
+    [
+      { id: 'g', type: 'gibribbon', position: { x: 200, y: 120 }, domain: 'video' },
+      { id: scopeId, type: 'scope', position: { x: 560, y: 120 }, domain: 'audio' },
+    ],
+    [
+      {
+        id: 'e-control',
+        from: { nodeId: 'g', portId: 'evt_hit' },
+        to: { nodeId: scopeId, portId: 'ch1' },
+        sourceType: 'gate',
+        targetType: 'audio',
+      } as SpawnEdge,
+    ],
+  );
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
+
+  // A SHORTER bound than the positive legs, deliberately: this one is waiting
+  // for nothing to happen, so it should spend the whole window and say so
+  // rather than exit early.
+  const r = await pollGatePulsePeak(page, {
+    sourceNodeId: 'g',
+    port: 'evt_hit',
+    scopeNodeId: scopeId,
+    threshold: 0.4,
+    boundMs: 3_000,
+    pulseEveryMs: 0, // ← the control: arm the latch, never fire
+  });
+
+  expect(r.pulses, `the control must not pulse — ${gatePulseMsg('control', r)}`).toBe(0);
+  expect(
+    r.samples,
+    `the control must actually SAMPLE, or it proves nothing — ${gatePulseMsg('control', r)}`,
+  ).toBeGreaterThan(0);
+  expect(
+    r.reachedThreshold,
+    `an unpulsed gate crossed the floor — the latch is reporting signal that was never sent: ` +
+      gatePulseMsg('control', r),
+  ).toBe(false);
+  expect(
+    r.peak,
+    `an unpulsed gate should rest near zero — ${gatePulseMsg('control', r)}`,
+  ).toBeLessThan(0.2);
+});
