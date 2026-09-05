@@ -2690,12 +2690,13 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `ruttetra-face-model.test.ts` asserts the def stays clean of it, because a
   // move back would be silent.
   //
-  // ⚠ ITS LANE VRT CARD BASELINE DOES NOT MOVE — this paragraph USED to claim
-  // it does, and that claim was already known to be false when it merged.
-  // CORRECTED 2026-08-21 (#2078), from this commit's own PR body: *"I expected
-  // `ruttetra.png` … to move, since that spec captures
-  // `.svelte-flow__node-ruttetra`. It will NOT: `vrt.spec.ts:86` boots
-  // `?shell=legacy`, so it renders the legacy card regardless of promotion."*
+  // ⚠ ITS LANE VRT BASELINE DID NOT MOVE — this paragraph USED to claim it did,
+  // and that claim was already known to be false when it merged. CORRECTED
+  // 2026-08-21 (#2078): the author expected `ruttetra.png` to move because that
+  // scene captured `.svelte-flow__node-ruttetra`, and it did not — the scene
+  // rendered the module's own card, which the promotion did not touch. (Scene
+  // and baseline were both deleted in S3, so the question can no longer be
+  // asked.)
   // The commit bears that out — `a2b982bd0` committed `face-ruttetra-compact.png`
   // and `face-ruttetra-dock.png` and did NOT touch `ruttetra.png`. The
   // correction reached the PR body and never reached this line, so the tree
@@ -2853,10 +2854,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `vrt.spec.ts/monoglitch.png` is a LIVE card scene (masked canvas) rather
   // than an `EXEMPT_FROM_VRT` entry, so the obvious inference is that promotion
   // re-renders it as the faced lane tile and moves the pixels. It does not:
-  // `vrt.spec.ts:86` boots `/rack?shell=legacy`, where `MonoglitchCard.svelte`
-  // keeps rendering whether or not the module is promoted. MEASURED on this
-  // branch — `task vrt:one -- monoglitch` reports `monoglitch card matches
-  // baseline` PASSING with the face merged.
+  // that scene rendered the module's own card, which promotion did not touch.
+  // MEASURED at the time — `task vrt:one -- monoglitch` PASSED with the face
+  // merged. ⚠ THE SCENE AND ITS BASELINE ARE BOTH DELETED (S3), so this records
+  // why the promotion was safe rather than a check anyone can re-run.
   //
   // ⚠ THE RUTTETRA PR ALREADY FOUND THIS AND THE FIX DID NOT REACH THE TREE,
   // which is why it is worth this many lines. `a2b982bd0`'s body says it plainly
@@ -2934,11 +2935,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `$lib/ui/modules/reshaper/monitor-box.ts`, outside the WebGL basis. Verified
   // empirically by normalising the def before and after, not assumed.
   //
-  // ⚠ ITS LANE VRT CARD BASELINE DOES NOT MOVE. `vrt.spec.ts/reshaper.png` is a
-  // live card scene, but `vrt.spec.ts:86` boots `?shell=legacy`, where
-  // `ReshaperCard.svelte` renders whether or not the module is promoted — the
-  // #2078 correction, applied rather than re-derived. The card edit here is the
-  // monitor-box constants, which are the same six numbers it already had.
+  // ⚠ ITS LANE VRT BASELINE DID NOT MOVE — the #2078 correction, applied rather
+  // than re-derived: that scene rendered the module's own card, which the
+  // promotion did not touch. The edit here is the monitor-box constants, the
+  // same six numbers it already had. (Scene and baseline deleted in S3.)
   //
   // ⚠ NO `freeze` PARAM AND NO `simPin`, and unlike its siblings that is true
   // with sources PATCHED too. `FRAG_SRC` declares no time uniform, no
@@ -3769,8 +3769,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // ⚠ THE PROMOTION IS THE FIX. Today the lane tile is a ModuleShellPlaceholder
   // — no court, no score, no faders — WHILE THE GAME RUNS on the shared
-  // scheduler clock and pulses its score gates into whatever is patched. Every
-  // pong e2e drives ?shell=legacy, so nothing in the suite has ever seen it.
+  // scheduler clock and pulses its score gates into whatever is patched. No
+  // pong e2e exercised the lane tile, so nothing in the suite had ever seen it.
   //
   // ⚠ THE COURT MOVES TO THE DOCK BODY AND NOWHERE ELSE. `drawPong` is a pure
   // function the legacy CARD called; promotion stops both surfaces rendering
@@ -3989,9 +3989,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `ScopeCard.svelte`'s XY toggle was a bare proxy assignment — not undoable,
   // not origin-tagged — beside a range toggle three lines down that was both.
   // #2025 argued a face pays that by construction; `raw-write-ledger.ts`
-  // refutes it by name, because promotion does not delete the card and the
-  // per-card VRT sweep still renders it under `?shell=legacy`. The card is
-  // edited and the ledger entry deleted in one diff.
+  // refutes it by name: a face does not pay another file's recorded debt —
+  // editing that file does. Both happened in one diff.
   'scope',
 
   // ── TIMELORDE (2026-08-23) ────────────────────────────────────────────────
@@ -4777,8 +4776,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // `noteNameForMidi` returns '' outside MIDI 12..108 while the card's field
   // reaches all of 0..127; and it would have left the face-migration
   // inventory's TYPED-ENTRY parity leg RED, because that leg reads
-  // `shellCellKindsFor(type)` and the legacy card keeps its `<input>` under
-  // `?shell=legacy`.
+  // `shellCellKindsFor(type)`, which would have disagreed with what the face
+  // actually ranks.
   'midiLane',
 
   // ── ES-9 — a REAL Eurorack system patched into the rack, and the
@@ -5093,8 +5092,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // frogger is not in NON_SHELL_LANE_TYPES, is not a CARD_PRODUCER and is not
   // in HEADLESS_MOUNT_LANE_TYPES, so `laneRenderKind` already returned
   // 'placeholder' and the shipping shell mounted no frogger surface at all
-  // while the game ran and fired gates underneath. Every frogger e2e drove
-  // `?shell=legacy`, so nothing in the suite had ever observed it. That is the
+  // while the game ran and fired gates underneath. No frogger e2e exercised
+  // that surface, so nothing in the suite had ever observed it. That is the
   // REASON to promote, not a cost of promoting.
   //
   // The board moves to a `fullViewBody` extension (the `rasterize` shape — an
@@ -5123,9 +5122,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // not in `NON_SHELL_LANE_TYPES`, is not a `CARD_PRODUCER` and is not in
   // `HEADLESS_MOUNT_LANE_TYPES`, so `laneRenderKind` already returned
   // 'placeholder' and the shipping shell mounted NO modtris surface at all
-  // while the game ran and fired gates underneath. Every modtris e2e drove
-  // `?shell=legacy` (and the shared `rack` fixture is `?shell=legacy` by
-  // construction), so nothing in the suite had ever observed it. That is the
+  // while the game ran and fired gates underneath. No modtris e2e exercised
+  // that surface — the shared `rack` fixture did not reach it either — so
+  // nothing in the suite had ever observed it. That is the
   // REASON to promote, not a cost of promoting. The inventory `why` that called
   // it "a falling-block viewport played on the keyboard, with two faders beside
   // it" was wrong on BOTH clauses — `ModtrisCard.svelte` registers no key
@@ -5209,8 +5208,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // five would be lying whatever they showed. Three live defects close as a
   // CONSEQUENCE: a note becomes deletable by pointer at all, a tie becomes
   // removable at all, and the def's own `docs.controls` stops promising a
-  // select/remove the module did not have. `?shell=legacy` still renders the
-  // modal card verbatim and `score.spec.ts` still gates it.
+  // select/remove the module did not have. `score.spec.ts` gates the modal.
   //
   // ⚠ AND WITH NOTHING SELECTED THE MARK CELLS ARM THE NEXT NOTE, which is one
   // control with one value rather than a second mode — the shape every notation
@@ -5402,7 +5400,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // green. The boot is therefore extracted to `$lib/blood/blood-boot.ts` and
   // called by both surfaces, and it is proved THROUGH the face by
   // `blood-face-screen.spec.ts` and by `blood-audio-output.spec.ts`, which this
-  // PR re-points off `?shell=legacy` so the whole boot → keyboard → PCM → SCOPE
+  // PR re-points onto the faceplate so the whole boot → keyboard → PCM → SCOPE
   // chain runs on the surface a player actually meets.
   //
   // ⚠ WHEN IT BOOTS IS UNCHANGED. The lane tile was a `ModuleShellPlaceholder`
@@ -5610,8 +5608,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // control. They survive as `StatusLed` `detail` — one sentence, on
   // `aria-label` and `title` — through the pure `audio-in-status.ts`, which is
   // where the eight-state machine now lives and where it is negative-controlled.
-  // The legacy card keeps both, because the resting-text rulings govern faces
-  // and that template is what `?shell=legacy` renders.
+  // (The resting-text rulings govern FACES, which is why the state machine had
+  // to move out of a template and into a pure module to survive the promotion.)
   //
   // ⚠ ITS BLAST RADIUS IS EVERY USER AT ONCE. `pinned-audioIn` is canvas-hidden
   // and the 🎧 topbar tray is its ONLY surface; `Canvas.svelte` already wires
@@ -5775,10 +5773,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // permanently unreachable dead code while `docs.explanation` promises it
   // works. `videobox-face-model.test.ts` pins the port at source.
   //
-  // ⚠ THE BODY BLITS AND NEVER ADOPTS. The node-owned `<video>` has one parent
-  // and the legacy card adopts it under `?shell=legacy`; the blit is also
-  // strictly more honest, because the engine output is what `gain` scales and
-  // what downstream receives. The engine frame's anamorphic 16:9-into-4:3
+  // ⚠ THE BODY BLITS AND NEVER ADOPTS. The node-owned `<video>` has ONE parent
+  // and an owner that is not this body; the blit is also strictly more honest,
+  // because the engine output is what `gain` scales and what downstream
+  // receives. The engine frame's anamorphic 16:9-into-4:3
   // upload is blitted AS-IS per the 2026-08-31 owner decision (§3): consistent
   // with the fleet, and the upload aspect is a separate, already-reported
   // platform defect — not letterboxed around here.
@@ -5897,8 +5895,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ THE INERT-CONTROL TRAP, and it would have shipped GREEN AND BROKEN. The
   // factory PREFERRED a `node.data` mirror over the param for BOTH of these,
   // while every generic shell cell writes the param alone. On a fresh node the
-  // faceplate would have worked; on any node the card, a map import or a
-  // `?shell=legacy` collaborator had touched, the mirror was present and the
+  // faceplate would have worked; on any node a map import or a collaborator
+  // had touched, the mirror was present and the
   // GRID toggle and SURFACES control would have been DEAD — with the params
   // declared, the cells rendered and faces-parity's `readParam` oracle watching
   // the param move. The mirror is deleted in both directions and every reader
@@ -5984,10 +5982,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // restore a clip on reload, never set `pendingHandleName`, and would ship the
   // re-allow overlay as unreachable dead code.
   //
-  // ⚠ THE BODY BLITS AND NEVER ADOPTS. The node-owned `<video>` has one parent
-  // and the legacy card adopts it under `?shell=legacy`; the blit is also more
-  // honest, because the engine output is what the CROP output windows and what
-  // downstream receives, letterboxed exactly as they see it.
+  // ⚠ THE BODY BLITS AND NEVER ADOPTS. The node-owned `<video>` has ONE parent
+  // and an owner that is not this body; the blit is also more honest, because
+  // the engine output is what the CROP output windows and what downstream
+  // receives, letterboxed exactly as they see it.
   //
   // ⚠ THE 7-SLOT BANK IS AN ALWAYS-VISIBLE SECTION, NOT A RIGHT-CLICK SHEET.
   // On the card "Load multiple…" was opened by a whole-card `oncontextmenu`,
@@ -6209,9 +6207,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // mounted) and not in HEADLESS_MOUNT_LANE_TYPES — so under the shipping
   // default shell the card is NOT MOUNTED AT ALL today, and the lane paints
   // `ModuleShellPlaceholder` while the game runs, the pads stay lit and PIECE /
-  // LINE / SPAWN keep firing into whatever is patched. Every seqtris e2e
-  // reaches the card only through the `rack` fixture, which is `?shell=legacy`
-  // by construction, so the whole existing suite stays green either way and
+  // LINE / SPAWN keep firing into whatever is patched. The whole seqtris suite
+  // reached the module only through the shared `rack` fixture, which never
+  // exercised that surface, so the existing suite stays green either way and
   // GREEN DOES NOT MEAN COVERED HERE — `e2e/tests/seqtris-face.spec.ts` is the
   // default-shell half, added in this same diff.
   //
