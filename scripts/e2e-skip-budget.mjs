@@ -820,6 +820,39 @@ export const SKIP_BUDGET = [
       + 'DOM legs are UN-PARKED; only its PRODUCER leg (which needs the live loop) remains parked here.',
   },
   {
+    specs: ['picturebox-limits.spec.ts'],
+    reason: /PARKED — main-thread starvation from eight live VideoTileThumb rAF loops/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED 2026-09-05 (legacy removal) — the per-workspace PICTUREBOX cap (8), driven through the '
+      + 'REAL palette so it exercises the production spawn path. A HARD failure, not a flake: it exceeded '
+      + 'its 60 s budget on four consecutive CI runs, most recently 33997816714. DIAGNOSED from the call '
+      + 'log rather than guessed — `locator.click` spends the whole budget in "waiting for element to be '
+      + 'visible, enabled and stable" on `palette-item-picturebox`, a STATIC <button> in a DOM overlay '
+      + 'that cannot itself be moving; Playwright wants the same box across two CONSECUTIVE ANIMATION '
+      + 'FRAMES, so a static button "not stable" for a minute never got two frames. The load is the '
+      + "test's own subject: eight PICTUREBOX lane tiles, each with its OWN VideoTileThumb rAF loop, on a "
+      + '2-core runner sharing five workers. Locally under E2E_SWIFTSHADER=1 the identical eight cost '
+      + '~9.5 s and PASS, so the renderer is not the variable — the core count is. Same UNDER-BUDGET '
+      + 'starvation family as the backdraft entry above, with one difference that is why it is parked '
+      + 'rather than repaired: THERE IS NO SEAM TO IDLE. `installRenderSmokeHooks` pauses the ENGINE (and '
+      + 'is kept in the spec, because that share of the load is real) but cannot reach the thumbs, and a '
+      + 'guard on the thumb is refused twice over — (1) engine.ts, at the preview seam: "because the blit '
+      + 'IS the watch mark, no markWatched", so skipping it drops the node from the pull set permanently '
+      + '(the collapse-kills-the-producer class, #1721/#1728); (2) e2e/vrt/_shell-faces.ts pauses the rAF '
+      + 'loop, steps an exact frame count and then WAITS FOR data-thumb-painted before capturing (as do '
+      + 'video-controls and video-orientation), so a thumb that goes quiet under the flag makes the '
+      + 'REQUIRED VRT face lane stale or dark. UN-PARK CONDITION: give VideoTileThumb what the engine has '
+      + 'and it lacks — a step()-style DRIVE HOOK so the loop can idle its auto-advance while a test '
+      + 'still renders on demand — plus a positive control that the thumb animates unpaused and a VRT '
+      + 'recapture proving zero pixel movement. "It passes now" is NOT an un-park reason. '
+      + '⚠ LOST WHILE PARKED: the per-workspace cap has NO e2e coverage. The decision logic stays '
+      + 'unit-tested in packages/web/src/lib/multiplayer/picturebox-limits.test.ts, but nothing proves the '
+      + 'cap reaches the real palette through the production spawn path — the exact thing this test '
+      + 'existed for, and why it clicked the UI instead of the __patch global.',
+  },
+  {
     specs: [
       'workflow-channel-columns.spec.ts',
       'workflow-dock-ux.spec.ts',
