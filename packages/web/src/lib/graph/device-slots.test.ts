@@ -22,6 +22,8 @@ import {
   outputSlotPosition,
   planDeviceSlotIdentityRepairs,
   planDeviceSlotSpawns,
+  planInertSlots,
+  isAlwaysLiveSlot,
   slotCoercionReason,
   stripRigBindings,
   stripSlotIdentityForDuplicate,
@@ -370,5 +372,99 @@ describe('the duplicate strip', () => {
     const data: Record<string, unknown> = { name: 'LFO' };
     expect(stripSlotIdentityForDuplicate(data)).toEqual([]);
     expect(data).toEqual({ name: 'LFO' });
+  });
+});
+
+describe('lazy engines — an unused slot costs nothing', () => {
+  const slotNode = (id: string, data: Record<string, unknown> = {}) => ({
+    id,
+    type: deviceSlotForId(id)!.type,
+    domain: 'video',
+    data,
+  });
+  const allSlots = () => DEVICE_SLOTS.map((s) => slotNode(s.id));
+
+  it('marks every UNUSED slot inert — except output1', () => {
+    const inert = planInertSlots(allSlots(), []);
+    expect([...inert].sort()).toEqual(
+      DEVICE_SLOTS.filter((s) => s.id !== DEFAULT_VIDEO_OUT_ID)
+        .map((s) => s.id)
+        .sort(),
+    );
+  });
+
+  // Continuity outranks boot cost on the master sink: it is the id
+  // `resolveMasterVideoOutId` returns and the one most likely to be presenting.
+  // Keeping it eager is also what makes the engine-count floor EXACT — a
+  // slotted rack holds the same video-engine population as an unslotted one.
+  it('NEVER makes output1 inert, bound or not, patched or not', () => {
+    expect(isAlwaysLiveSlot(DEFAULT_VIDEO_OUT_ID)).toBe(true);
+    expect(planInertSlots([slotNode(DEFAULT_VIDEO_OUT_ID)], [])).not.toContain(
+      DEFAULT_VIDEO_OUT_ID,
+    );
+  });
+
+  it('a BOUND camera slot is live', () => {
+    const inert = planInertSlots(
+      [slotNode('slot:cam1', { deviceId: 'abc' }), slotNode('slot:cam2')],
+      [],
+    );
+    expect(inert.has('slot:cam1')).toBe(false);
+    expect(inert.has('slot:cam2')).toBe(true);
+  });
+
+  it('a deviceLabel alone counts as bound (the pair travels together)', () => {
+    expect(
+      planInertSlots([slotNode('slot:cam1', { deviceLabel: 'FaceTime HD' })], []).has('slot:cam1'),
+    ).toBe(false);
+  });
+
+  // The edge half is what makes "first use" include PATCHING, and it is also
+  // what stops this from ever silently dropping a user's cable: an edge
+  // existing is itself the thing that makes the slot live.
+  it('an INCOMING cable makes an output slot live', () => {
+    const inert = planInertSlots(allSlots(), [
+      { source: { nodeId: 'lines-1' }, target: { nodeId: 'slot:output3' } },
+    ]);
+    expect(inert.has('slot:output3')).toBe(false);
+    expect(inert.has('slot:output2')).toBe(true);
+  });
+
+  it('an OUTGOING cable makes a camera slot live', () => {
+    const inert = planInertSlots(allSlots(), [
+      { source: { nodeId: 'slot:cam4' }, target: { nodeId: 'chroma-1' } },
+    ]);
+    expect(inert.has('slot:cam4')).toBe(false);
+  });
+
+  it('never marks ordinary patch content inert', () => {
+    const inert = planInertSlots(
+      [
+        { id: 'lfo-1', type: 'lfo', domain: 'audio', data: {} },
+        { id: 'wfcam-abc', type: 'cameraInput', domain: 'video', data: { hiddenCard: true } },
+      ],
+      [],
+    );
+    expect(inert.size).toBe(0);
+  });
+
+  it('is empty on a rack with no slots at all (?seed=none)', () => {
+    expect(planInertSlots([], []).size).toBe(0);
+  });
+
+  it('tolerates null/undefined nodes and edges', () => {
+    expect(() => planInertSlots([null, undefined], [null, undefined])).not.toThrow();
+  });
+
+  // ⚠ THE FLOOR, STATED AS AN EQUALITY. A fresh rack's live slot population is
+  // exactly ONE node — the same `workflow-videoOut` an unslotted rack has had
+  // all along. This is the unit-level statement of what the e2e asserts against
+  // a real engine, and it is what makes "slots cost nothing until used" a
+  // measurable claim rather than a hopeful one.
+  it('a fresh rack runs exactly ONE slot engine — the same one it always had', () => {
+    const live = DEVICE_SLOTS.map((s) => s.id).filter(
+      (id) => !planInertSlots(allSlots(), []).has(id),
+    );
+    expect(live).toEqual([DEFAULT_VIDEO_OUT_ID]);
   });
 });
