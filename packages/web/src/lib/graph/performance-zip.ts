@@ -73,13 +73,18 @@
 import { zipSync, unzipSync, strToU8, strFromU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import type { PerformanceBundle } from './performance-bundle';
 
-/** Reject any single bundled video larger than this on import. This is a
+/** SKIP any single bundled asset larger than this on import. This is a
  *  per-FILE sanity guard, NOT a per-bundle cap: a perf with 7 VIDEOVARISPEED
  *  slots is intended to be large (the owner explicitly accepts large bundles),
  *  so we never cap the bundle total or silently drop a populated slot. The
  *  ceiling matches VIDEOVARISPEED_MAX_SLOT_BYTES (the per-slot load limit the
  *  card enforces) so any file the card ACCEPTED into a slot also survives the
- *  round-trip — a 50 MB cap (the old value) would have rejected a legal slot. */
+ *  round-trip — a 50 MB cap (the old value) would have rejected a legal slot.
+ *
+ *  ⚠ IT IS ENFORCED ON READ ONLY — there is NO write-side check anywhere, so an
+ *  over-cap asset saves cleanly and is discovered on the other side of the round
+ *  trip. That is why exceeding it drops ONE asset (reported via
+ *  `skippedMedia`) rather than failing the load: see `parsePerformanceZip`. */
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB (== per-slot load cap)
 
 export const PERFORMANCE_ZIP_FORMAT = 'pt-performance-v1';
@@ -111,6 +116,25 @@ export interface PerformanceMedia {
   slot?: number;
 }
 
+/** One media entry the parse could NOT deliver, and why.
+ *
+ *  ⚠ NEVER A REASON TO FAIL THE WHOLE BUNDLE. A performance is a graph, its
+ *  wiring, its MIDI bindings and N assets; losing one asset is the loss of one
+ *  asset, and the node it belonged to already knows how to fall back to
+ *  re-link. Reported rather than swallowed so the caller can SAY what is
+ *  missing — a silently thinner rack is the other way to get this wrong. */
+export interface SkippedPerformanceMedia {
+  nodeId: string;
+  handleId: string;
+  role: 'video' | 'audio';
+  name: string;
+  /** `missing` — the manifest referenced a path the zip does not contain.
+   *  `oversized` — the entry is larger than MAX_VIDEO_BYTES. */
+  reason: 'missing' | 'oversized';
+  /** Bytes found in the zip. 0 when the entry was absent entirely. */
+  bytes: number;
+}
+
 /** Everything needed to reconstruct a whole performance: the manifest (patch
  *  envelope + mappings) + the out-of-band media bytes. */
 export interface PerformanceZipBundle {
@@ -121,6 +145,10 @@ export interface PerformanceZipBundle {
   media: PerformanceMedia[];
   /** Epoch-ms stamp (caller supplies; this module never reads the clock). */
   savedAt?: number;
+  /** Set by `parsePerformanceZip` ONLY — always an array on a parse result,
+   *  empty when nothing was dropped. Absent on the WRITE side, where this same
+   *  type is the builder's input. */
+  skippedMedia?: SkippedPerformanceMedia[];
 }
 
 /** In-manifest descriptor for one stored media entry (the bytes live at `path`). */
@@ -411,16 +439,34 @@ export function parsePerformanceZip(zip: ArrayBuffer | Uint8Array): PerformanceZ
     throw new Error('performance.json has no `bundle` manifest');
   }
   const media: PerformanceMedia[] = [];
+  const skippedMedia: SkippedPerformanceMedia[] = [];
   for (const m of manifest.media ?? []) {
     const mbytes = entries[m.path];
-    if (!mbytes) continue; // referenced media missing → skip (node re-links)
-    // The 50 MB cap guards the heavy out-of-band VIDEO assets. TWOTRACKS audio
-    // tapes are bounded by the worklet's fixed buffer (≈20 s stereo, well under
-    // the cap) but we apply the same ceiling defensively to any bundled asset.
+    if (!mbytes) {
+      // Referenced media missing → skip (node re-links).
+      skippedMedia.push({ ...mediaIdentity(m), reason: 'missing', bytes: 0 });
+      continue;
+    }
+    // ── THE PER-ENTRY CEILING SKIPS; IT DOES NOT THROW ──────────────────────
+    //
+    // ⚠ THIS USED TO TAKE THE WHOLE BUNDLE DOWN, and the comment that justified
+    // it applied a VIDEO ceiling to `role: 'audio'` on the strength of one
+    // audio producer: a TWOTRACKS reel is bounded by the worklet's fixed buffer
+    // (≈20 s stereo, far under the cap), so "defensively" cost nothing. CLIP
+    // TAKES ARE NOT BOUNDED THAT WAY — `studio` is PCM-f32 at ~23 MB/min, so a
+    // five-minute take is ~115 MB and a single one of them made the ENTIRE
+    // performance — graph, wiring, MIDI bindings and every other asset —
+    // unloadable. Worse, the ceiling is enforced only HERE, on read: there is
+    // no write-side check anywhere, so such a bundle saves cleanly and is only
+    // discovered on the far side of the round trip.
+    //
+    // The ceiling itself stays (the per-slot load cap it mirrors is real, and
+    // choosing a per-TAKE ceiling is an owner decision, not this function's).
+    // What changes is the blast radius: one asset, treated exactly like the
+    // missing-entry case directly above — dropped, reported, node re-links.
     if (mbytes.length > MAX_VIDEO_BYTES) {
-      throw new Error(
-        `Bundled ${m.role} '${m.name}' is ${(mbytes.length / 1048576).toFixed(0)} MB — exceeds the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB limit`,
-      );
+      skippedMedia.push({ ...mediaIdentity(m), reason: 'oversized', bytes: mbytes.length });
+      continue;
     }
     media.push({
       nodeId: m.nodeId,
@@ -436,7 +482,23 @@ export function parsePerformanceZip(zip: ArrayBuffer | Uint8Array): PerformanceZ
   // `PerformanceManifest` no longer declares it): there is one rack shell, so
   // there is nothing for it to select. Old zips still load — the extra manifest
   // key is inert, exactly as an old loader treated it when it was added.
-  return { bundle: manifest.bundle, media, savedAt: manifest.savedAt };
+  return { bundle: manifest.bundle, media, savedAt: manifest.savedAt, skippedMedia };
+}
+
+/** The identifying half of a skip report, copied off the manifest entry. */
+function mediaIdentity(m: MediaEntry): Pick<SkippedPerformanceMedia, 'nodeId' | 'handleId' | 'role' | 'name'> {
+  return { nodeId: m.nodeId, handleId: m.handleId, role: m.role, name: m.name };
+}
+
+/** One line naming what a load could not deliver, for the caller to surface.
+ *  Empty string when nothing was skipped, so a caller can test it directly. */
+export function describeSkippedMedia(skipped: readonly SkippedPerformanceMedia[] | undefined): string {
+  if (!skipped || skipped.length === 0) return '';
+  const one = (s: SkippedPerformanceMedia): string =>
+    s.reason === 'oversized'
+      ? `${s.name} (${(s.bytes / 1048576).toFixed(0)} MB — over the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB per-asset limit)`
+      : `${s.name} (not in the bundle)`;
+  return `${skipped.length} media asset${skipped.length === 1 ? '' : 's'} could not be restored: ${skipped.map(one).join(', ')}`;
 }
 
 /** True if `bytes` looks like a performance zip (cheap pre-check — peeks for

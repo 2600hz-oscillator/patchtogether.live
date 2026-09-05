@@ -800,23 +800,63 @@ export function toggleLaneAutomationArm(
 // would double-claim modules (one lane per module is a GLOBAL invariant), and
 // copied playing/queued sets would ghost-launch. The duplicate paths (single
 // node + group) call this on the CLONE before insertion.
+//
+// ⚠ AND IT IS THE SAVE/LOAD SCRUB'S SOURCE TOO — ONE LIST, TWO PROJECTIONS.
+// `graph/persistence.ts` used to carry its OWN hand-typed clipplayer array
+// whose own comment claimed to "mirror the ARM subset" of this constant. It did
+// not, and could not: `audioRec` and `automation` were added here and never
+// there. A patch saved mid-take then reloaded still carrying the take —
+// `clipPadState` reads `audioRecState` FIRST, so the pad painted `rec-active`
+// red over whatever clip was really in that slot, and `#writeAudioRec` only
+// fires on a machine TRANSITION, which a loaded patch has none of, so the red
+// never cleared; the foreign `recorderId` then held the single-writer lease and
+// refused every future arm on that lane; and the `mediaId` named OPFS bytes
+// that never travelled with the patch. THE DIVERGENCE WAS THE DEFECT, not the
+// missing word, so the list that diverged is gone: the loader imports
+// `CLIP_PLAYER_ARM_DATA_FIELDS` from here and there is nothing left to keep in
+// step. A new field is classified ONCE, below, or it does not compile.
 // ---------------------------------------------------------------------------
+/** Every live-performance `node.data` field, tagged with WHICH scrubs drop it.
+ *
+ *  `'arm'`  — a record-ARM latch. Dropped by BOTH scrubs. A duplicate born
+ *             armed double-records; a patch reloaded armed re-records, or (for
+ *             `audioRec`) sits forever in a phase nothing can transition it out
+ *             of. These are the fields a SAVED patch must never carry.
+ *  `'live'` — session state that means nothing outside the session that made
+ *             it, but that the save/load path has always carried. Dropped by
+ *             the DUPLICATE scrub only; narrowing the save path further is a
+ *             separate, behaviour-changing decision and not this constant's. */
+const CLIP_PLAYER_TRANSIENT_DATA_FIELD_KINDS = {
+  playing: 'live', // the live playing-set
+  queued: 'live', // pending launches
+  queuedImmediate: 'live', // pending NOW overrides
+  recording: 'arm', // arranger record-arm (legacy launch-log)
+  songRec: 'arm', // SONG-REC arm (the printed-performance recorder; `song` is CONTENT)
+  noteRec: 'arm', // KEYS note-record state
+  // per-lane AUDIO clip-record arm + recorderIds (a duplicate must never be
+  // born recording: it would double-record the lane and its copied recorderId
+  // would double-claim the single-writer lease)
+  audioRec: 'arm',
+  automation: 'arm', // per-lane automation arm + recorderIds
+  autoAssign: 'live', // module→lane claims (globally exclusive — never copied)
+  resetNonce: 'live', // reset intent counter
+  sceneLaunch: 'live', // scene-launch intent marker (sceneRepeats itself is CONTENT — copied)
+} as const satisfies Record<string, 'arm' | 'live'>;
+
+/** One live-performance field name. */
+export type ClipPlayerTransientDataField = keyof typeof CLIP_PLAYER_TRANSIENT_DATA_FIELD_KINDS;
+
 /** node.data fields that are LIVE-PERFORMANCE state, never duplicated. */
-export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = [
-  'playing', // the live playing-set
-  'queued', // pending launches
-  'queuedImmediate', // pending NOW overrides
-  'recording', // arranger record-arm (legacy launch-log)
-  'songRec', // SONG-REC arm (the printed-performance recorder; `song` is CONTENT)
-  'noteRec', // KEYS note-record state
-  'audioRec', // per-lane AUDIO clip-record arm + recorderIds (a duplicate must
-  // never be born recording: it would double-record the lane and its copied
-  // recorderId would double-claim the single-writer lease)
-  'automation', // per-lane automation arm + recorderIds
-  'autoAssign', // module→lane claims (globally exclusive — never copied)
-  'resetNonce', // reset intent counter
-  'sceneLaunch', // scene-launch intent marker (sceneRepeats itself is CONTENT — copied)
-] as const;
+export const CLIP_PLAYER_TRANSIENT_DATA_FIELDS = Object.keys(
+  CLIP_PLAYER_TRANSIENT_DATA_FIELD_KINDS,
+) as readonly ClipPlayerTransientDataField[];
+
+/** The ARM subset — what a SAVED patch must not reload carrying. A strict
+ *  subset of `CLIP_PLAYER_TRANSIENT_DATA_FIELDS` BY CONSTRUCTION, which is the
+ *  whole point: `graph/persistence.ts` consumes this rather than restating it. */
+export const CLIP_PLAYER_ARM_DATA_FIELDS = CLIP_PLAYER_TRANSIENT_DATA_FIELDS.filter(
+  (f) => CLIP_PLAYER_TRANSIENT_DATA_FIELD_KINDS[f] === 'arm',
+) as readonly ClipPlayerTransientDataField[];
 
 /** Strip the live-performance fields from a clip-player data CLONE (in
  *  place). Safe on any shape; a no-op for non-objects. PURE mutation of the
