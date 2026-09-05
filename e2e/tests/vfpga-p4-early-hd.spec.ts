@@ -313,6 +313,35 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
     // waiting rather than ~97.5 s of transport. The number is kept only to stop
     // a genuinely broken render hanging the shard.
     test.setTimeout(75_000); // 3 runners + output on SwiftShader, two capture phases
+    //
+    // ── ⚠ OPEN FINDING (2026-09-05), MEASURED, DELIBERATELY NOT BUMPED ──────
+    //
+    // This budget expired again on CI (run 33990942421, shard 4). The call log
+    // shows the axe falling inside the SECOND `observeOutputDelta`, so the cost
+    // is spread across the whole test rather than parked in one wait.
+    //
+    // MEASURED locally under `E2E_SWIFTSHADER=1` on an idle many-core box:
+    // 17.3 s and 17.5 s across two runs, against this 75 s budget — a 4.3x
+    // headroom. CI's 2-core runner with five shard-mates routinely costs 3-5x
+    // an idle box for GL work, so 75 s is not comfortably sized here, it is
+    // MARGINALLY sized: the failure needs only a 4.3x day.
+    //
+    // ⚠ AND THE OBVIOUS MOVE IS THE ONE THIS FILE ALREADY REJECTED. See the
+    // `observeOutputDelta` header: "bumping 75_000 was the wrong move — the
+    // number was not slightly small, it was measuring a path the test does not
+    // always take." That rejection stands, and the removable transport cost it
+    // named (60 CDP round trips) is already gone.
+    //
+    // WHAT IS LEFT is ~15 s of the local 17.4 s — two phases of 30 x
+    // `gapMs: 250` of in-page waiting. That is a flat wall-clock cadence, and
+    // the repo's rule says renderer-dependent readiness should be FRAMES. But
+    // the warp this measures ACCUMULATES over that cadence, and both thresholds
+    // (`dOff + 5` / `> 6`) are pinned against it — so converting ms to frames
+    // would move the goalposts of a measured assertion, not just its bound.
+    //
+    // So this is recorded as an OWNER ITEM rather than forced: the honest fix
+    // is a re-derivation of the sampling cadence AND its two thresholds
+    // together, which is a change to what the test claims.
 
     await spawnPatch(
       page,
