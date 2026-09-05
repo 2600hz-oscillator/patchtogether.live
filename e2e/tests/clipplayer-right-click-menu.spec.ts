@@ -17,12 +17,23 @@
 // menu and not the other reddens on the comparison without anyone having to
 // remember the second surface exists.
 //
-// On the default shell both right-clickable surfaces live in the DOCK FULL VIEW
-// (the launch grid and the piano roll are the same components the card
-// mounted); the menu itself is portaled to <body> and shared. Everything here
-// is the real user path: real clicks to create the clip and draw the note, real
-// right-clicks, and every assertion of effect read back off the SYNCED node
-// data every peer sees.
+// Both right-clickable surfaces live in the DOCK FULL VIEW; the menu itself is
+// portaled to <body> and shared. Everything here is the real user path: real
+// clicks to create the clip and draw the note, real right-clicks, and every
+// assertion of effect read back off the SYNCED node data every peer sees.
+//
+// ⚠ THE TWO SURFACES ARE ON DIFFERENT PAGES OF A TABBED FACE, AND THIS FILE
+// USED TO ASSUME THEY WERE BOTH ON SCREEN AT ONCE. That was true of the card,
+// which stacked the launch grid and the piano roll in one column. The faceplate
+// is railed (`face.tabbed`, owner P0 2026-09-04): the grid is the `session`
+// page, the roll is `editor`, and a railed face renders exactly ONE band — the
+// others are `display:none`, so a pad locator resolves to a real element with a
+// 0×0 box and every click on it times out.
+//
+// So the page is SELECTED before each surface is used, which is also what a
+// player does. Double-clicking a pad SWITCHES the face to `editor` on its own
+// (that is the gesture's product behaviour, not a test detail), so anything
+// that touches a pad afterwards has to come back to `session` first.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -63,11 +74,26 @@ async function spawn(page: Page) {
   await expect(page.getByTestId('dock-full-view').locator('[data-clip="0"]')).toBeVisible();
 }
 
+/**
+ * Open one page of the clip player's railed face — the same helper shape
+ * `face-clipplayer.spec.ts` uses.
+ *
+ * ⚠ THE `aria-selected` WAIT IS NOT DECORATION: clicking a chip and reading a
+ * cell in the same breath races the band swap, and the attribute is the state
+ * the swap actually commits.
+ */
+async function showPage(page: Page, pageId: 'session' | 'editor') {
+  const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
+}
+
 /** Create clip `idx` and draw its notes THE WAY A USER DOES: double-click the
  *  pad (which creates the clip and binds the editor band to it), click cells to
  *  place notes. On the face the grid and the roll are both always on screen, so
  *  there is no view to return to. */
 async function drawClip(page: Page, idx: number, cells: Array<[row: number, step: number]>) {
+  await showPage(page, 'session');
   await page.locator(`[data-clip="${idx}"]`).dblclick();
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
   for (const [row, step] of cells) await page.getByTestId(`clipplayer-cell-${row}-${step}`).click();
@@ -76,6 +102,7 @@ async function drawClip(page: Page, idx: number, cells: Array<[row: number, step
 
 /** Right-click a launcher PAD — the surface in the owner's screenshot. */
 async function openPadMenu(page: Page, idx: number) {
+  await showPage(page, 'session');
   await page.locator(`[data-clip="${idx}"]`).click({ button: 'right' });
   const menu = page.getByTestId('clipplayer-clip-prob-menu-cp');
   await expect(menu).toBeVisible();
@@ -84,7 +111,10 @@ async function openPadMenu(page: Page, idx: number) {
 
 /** Right-click the note in the piano roll — the editor surface. */
 async function openNoteMenu(page: Page, idx: number) {
+  await showPage(page, 'session');
   await page.locator(`[data-clip="${idx}"]`).dblclick();
+  // The dblclick is what moves the face to `editor`; assert the roll rather
+  // than the chip, so a change to that gesture reds here by name.
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
   await page.locator('[data-testid="clipplayer-pianoroll"] .cell.note').first().click({ button: 'right' });
   const menu = page.getByTestId('clipplayer-prob-menu-cp');
