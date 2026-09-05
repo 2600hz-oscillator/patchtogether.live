@@ -38,7 +38,6 @@ export const matrixmixDef: MetaModuleDef = {
   domain: 'meta',
   label: 'matrixmix',
   category: 'tools',
-  card: 'MatrixMixCard',
   inputs: [],
   outputs: [],
   params: [],

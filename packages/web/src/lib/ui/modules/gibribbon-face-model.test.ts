@@ -46,7 +46,6 @@ const ENGINE = readFileSync(
 const DEF_SRC = readFileSync(new URL('../../video/modules/gibribbon.ts', import.meta.url), 'utf8');
 const BODY = readFileSync(new URL('./gibribbon/GibribbonBody.svelte', import.meta.url), 'utf8');
 const SCREEN = readFileSync(new URL('./gibribbon/GibribbonScreen.svelte', import.meta.url), 'utf8');
-const CARD = readFileSync(new URL('./GibribbonCard.svelte', import.meta.url), 'utf8');
 
 /** Everything between `</script>` and `<style>` — the rendered DOM, as source. */
 function markupOf(svelte: string): string {
@@ -156,7 +155,7 @@ describe('gibribbon — CLAIM 2: the face adds NO resting numbers of its own', (
   });
 
   it('no element carries a score-like class anywhere on either surface', () => {
-    for (const [name, src] of [['body', BODY], ['screen', SCREEN], ['card', CARD]] as const) {
+    for (const [name, src] of [['body', BODY], ['screen', SCREEN] as const]) {
       expect(markupOf(src), `${name}: no .score/.hud chrome element`).not.toMatch(/class="[^"]*\b(score|hud|combo|health)\b/);
     }
   });
@@ -213,7 +212,7 @@ describe('gibribbon — CLAIM 3: ONE clock — the scheduler tick steps, draw re
   });
 
   it('the surfaces only READ — no write path into the engine from a picture', () => {
-    for (const [name, src] of [['body', BODY], ['screen', SCREEN]] as const) {
+    for (const [name, src] of [['body', BODY], ['screen', SCREEN] as const]) {
       expect(src, `${name}: no eng.write`).not.toMatch(/eng\.write\(/);
       expect(src, `${name}: no eng.setParam`).not.toMatch(/eng\.setParam\(/);
     }
@@ -310,11 +309,9 @@ describe('gibribbon — CLAIM 5: the port surface IS the audio-in design (id sur
 });
 
 describe('gibribbon — the surfaces share ONE playfield (the frogger one-painter rule)', () => {
-  it('both the body and the card mount GibribbonScreen, and neither owns a second canvas', () => {
+  it('the body mounts GibribbonScreen and owns no second canvas', () => {
     expect(BODY).toMatch(/import GibribbonScreen from '\.\/GibribbonScreen\.svelte'/);
-    expect(CARD).toMatch(/import GibribbonScreen from '\.\/gibribbon\/GibribbonScreen\.svelte'/);
     expect(markupOf(BODY)).not.toMatch(/<canvas/);
-    expect(markupOf(CARD)).not.toMatch(/<canvas/);
     expect(markupOf(SCREEN)).toMatch(/<canvas/);
   });
 

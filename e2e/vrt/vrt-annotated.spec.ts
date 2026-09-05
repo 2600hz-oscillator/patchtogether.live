@@ -25,7 +25,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { REGISTRY } from '../tests/_registry';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { annotateControlsOnCard, removeControlOverlay } from './annotate-controls';
@@ -66,7 +66,7 @@ test.describe('VRT card-faces: numbered card screenshots + key for the docs site
 
       // Deterministic fonts + viewport (same as vrt.spec.ts).
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await page.addStyleTag({
@@ -78,7 +78,10 @@ test.describe('VRT card-faces: numbered card screenshots + key for the docs site
         { id: 'annot-1', type, position: { x: 80, y: 80 }, domain: mod.domain },
       ]);
 
-      const card = page.locator(`.svelte-flow__node-${type}`).first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'annot-1');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
 
       // Height-settle loop (identical to vrt.spec.ts) so boundingBox() reads a

@@ -4,18 +4,18 @@
 //
 // ── ⚠ WHY THIS FILE EXISTS, AND WHY `control-surface.spec.ts` IS NOT ENOUGH ──
 //
-// All three tests in `control-surface.spec.ts` boot `/rack?shell=legacy`. That
-// was CORRECT while this module was a `NON_SHELL_LANE_TYPES` snowflake whose
-// verbatim card WAS the default lane render, and it stays correct as coverage
-// of that card — `?shell=legacy` still renders it. It stops being sufficient
-// the moment the module is PROMOTED: those tests keep passing against a
-// surface no player meets, while the face's lock, board, proxies, rename and
+// The three tests in `control-surface.spec.ts` were written against the
+// PRE-PROMOTION surface. That was CORRECT while this module was a
+// `NON_SHELL_LANE_TYPES` snowflake whose own instrument WAS the lane render. It
+// stops being sufficient the moment the module is PROMOTED: those tests keep
+// passing against a surface no player meets, while the face's lock, board,
+// proxies, rename and
 // — above all — the PRUNE have zero coverage. Green, and blind.
 //
 // ── THE PRUNE LEG IS THE POINT OF THIS FILE ─────────────────────────────────
 //
-// `pruneSurfaceDangling` had exactly ONE production caller — the legacy card's
-// `$effect` — and controlSurface is in neither half of
+// `pruneSurfaceDangling` had exactly ONE production caller — an `$effect` on
+// the surface this branch deletes — and controlSurface is in neither half of
 // `HEADLESS_MOUNT_LANE_TYPES`, so promotion silently stops it with every
 // registry test green (the ES-9 card-only-side-effect shape). The fix parks it
 // on the `tileBody`; the leg below proves it fires WITH THE DOCK CLOSED, which
@@ -124,7 +124,7 @@ test.describe('CONTROL SURFACE faceplate', () => {
   // from the shared boot bound rather than a flat literal.
   test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
-  test('the LANE TILE is the SHELL: LOCK + the empty-state prompt, and no legacy card', async ({ page }) => {
+  test('the LANE TILE is the SHELL: LOCK + the empty-state prompt', async ({ page }) => {
     // ⚠ THE REGRESSION PIN FOR THE `NON_SHELL_LANE_TYPES` DRAIN, which is what
     // this promotion actually is. While the carve-out stood, `laneRenderKind`
     // short-circuited to 'legacy' BEFORE `migrated` was consulted — a face
@@ -136,10 +136,10 @@ test.describe('CONTROL SURFACE faceplate', () => {
 
     const lane = laneShell(page, SURFACE);
     await expect(lane, 'the lane renders ModuleShell, not ControlSurfaceCard').toBeVisible();
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${SURFACE}"] .control-surface-card`),
-      'and the legacy card is NOT mounted beside it',
-    ).toHaveCount(0);
+    // ⚠ A `.control-surface-card` ABSENCE LEG STOOD HERE AND IS DELETED: no
+    // file in the tree carries that class, so `toHaveCount(0)` could not fail.
+    // The LOCK cell and the empty-state prompt asserted above are the positive
+    // form of the same claim, and both can fail.
 
     // The LOCK reaches the lane: a toggle cell is not dock-restricted, which
     // is the whole reason it is a cell rather than a body control.

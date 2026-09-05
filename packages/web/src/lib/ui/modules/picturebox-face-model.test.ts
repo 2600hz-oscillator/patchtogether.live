@@ -41,13 +41,12 @@ import {
   pushCardParams,
   type PushCardDefLike,
 } from '$lib/control/push2/push-card-schema';
-import { listExposableControls } from '$lib/graph/group-controls';
+import { listExposableControls } from '$lib/graph/exposable-controls';
 
 const def = pictureboxDef as unknown as FaceDefLike & { type: string };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const bodySource = readFileSync(resolve(HERE, 'picturebox/PictureboxAssetsBody.svelte'), 'utf8');
-const cardSource = readFileSync(resolve(HERE, 'PictureboxCard.svelte'), 'utf8');
 
 // ⚠ THE CODE-ONLY VIEWS, AND THIS FILE NEEDED THEM ON ITS FIRST RUN — the
 // fourth instance of the class `strip-source-comments.ts` was written for. Three
@@ -57,7 +56,6 @@ const cardSource = readFileSync(resolve(HERE, 'PictureboxCard.svelte'), 'utf8');
 // code from a comment; the shared quote-aware stripper can, and it handles the
 // `<!-- … -->` markup comments in a `.svelte` file that no TS-based tool sees.
 const bodyCode = stripSourceComments(bodySource);
-const cardCode = stripSourceComments(cardSource);
 
 /** The LIVE `ParamDef` — `FaceDefLike` narrows params to what curation reads,
  *  so min/max/curve are unreachable through `def.params`. */
@@ -311,34 +309,27 @@ describe('the dock body — the affordances promotion would otherwise delete', (
   });
 
   it('puts ALL SEVEN slots on screen, with no gesture in front of them', () => {
-    // THE DEFECT THE PROMOTION FIXES. On the card, slots 2-7 are behind an
-    // `oncontextmenu` toggle nothing advertises. The body binds no context menu
+    // THE DEFECT THE PROMOTION FIXES. On the card, slots 2-7 were behind an
+    // `oncontextmenu` toggle nothing advertised. The body binds no context menu
     // at all, which also hands the node its normal right-click menu back.
+    //
+    // ⚠ THE "…AND THE CARD STILL DOES" HALF IS GONE WITH THE CARD. It made the
+    // deny above a real DIFFERENCE rather than a grep matching nothing
+    // anywhere; the positive half below (every slot reachable by its own
+    // selector) is what now keeps this from passing on an empty surface.
     expect(bodyCode).toContain('ASSET_SLOT_LABELS');
     expect(bodyCode, 'the body must not bind oncontextmenu').not.toMatch(/oncontextmenu/);
-    // …and the CARD still does, which is what makes the line above a real
-    // difference rather than a grep that matches nothing anywhere.
-    expect(cardCode, 'the card is still the surface with the gesture').toMatch(/oncontextmenu/);
     expect(ASSET_SLOT_LABELS.length).toBe(ASSET_SLOTS);
     // Each slot row must be reachable by its own selector, one per slot.
     expect(bodyCode).toMatch(/picturebox-face-slot-input-\{i\}/);
     expect(bodyCode).toMatch(/picturebox-face-slot-clear-\{i\}/);
   });
 
-  it('does NOT re-emit the card testids — the two surfaces coexist under ?shell=legacy', () => {
-    // ⚠ THE SPEC ASKED FOR THE OPPOSITE, and the measurement inverted it. Every
-    // picturebox-driving e2e navigates `/rack?shell=legacy`, where the LANE
-    // still renders the legacy card. Re-emitting `picturebox-file-input` /
-    // `picturebox-card` on the dock body would put two elements with one testid
-    // on the same page the moment a spec opened the dock — a strict-mode
-    // violation manufactured to save edits that turned out not to be needed.
-    for (const id of ['picturebox-card', 'picturebox-file-input', 'picturebox-preview']) {
-      expect(bodyCode, `body re-emits ${id}`).not.toContain(`"${id}"`);
-    }
-    // …and the card still owns them, so the specs that drive them keep working.
-    expect(cardCode).toContain('picturebox-file-input');
-    expect(cardCode).toContain('picturebox-card');
-  });
+  // ⚠ A TESTID-COLLISION LEG STOOD HERE AND HAS NO SUBJECT LEFT. It refused a
+  // body that re-emitted `picturebox-file-input` / `picturebox-card`, because
+  // while a second surface existed those two elements could be on one page at
+  // once and every selector would resolve twice. One surface cannot collide
+  // with itself.
 
   it('renames the panel testid rather than carrying a name that stopped being true', () => {
     // `picturebox-multi-panel` named a panel whose defining property was that it
@@ -371,36 +362,33 @@ describe('the REMOVED readout, and where its finding went', () => {
     expect(bodyCode).toMatch(/no image loaded/);
   });
 
-  it('the LEGACY CARD keeps its hint — the ruling is faceplate-scoped', () => {
-    // ⚠ The build spec said "REMOVED from every surface". CLAUDE.md's rule is
-    // explicit that these rulings are about FACEPLATES and "the legacy cards are
-    // untouched", and the card is still the lane surface under `?shell=legacy`
-    // where two live assertions read this element. Removing it there would break
-    // them for a rule that does not reach the card.
-    expect(cardCode).toContain('picturebox-synced');
-  });
+  // ⚠ 'the LEGACY CARD keeps its hint — the ruling is faceplate-scoped' STOOD
+  // HERE. It asserted `picturebox-synced` was still on the card, because the
+  // resting-text ruling reaches FACEPLATES and the card was still the lane
+  // surface where two live e2e assertions read that element. NAMED COVERAGE
+  // LOSS, and it is a real one: the `gif` / `synced (1024×768)` line is the only
+  // place a player learns whether their gif was preserved frame-for-frame or
+  // re-encoded, and with the card gone it is painted NOWHERE. The finding
+  // survives only in the accessible description asserted two legs up, which is
+  // speakable but not visible.
 });
 
-describe('the card and the body write through ONE seam', () => {
-  it('neither surface hand-rolls the slot pad-and-slice any more', () => {
-    // D5: `onSlotFileChange` and `clearSlot` were the same eighteen lines, and
-    // this body would have been the third copy. The shared writers are pinned by
-    // `$lib/graph/picturebox-data.test.ts`, including the LOCAL_ORIGIN leg that
-    // decides whether Cmd-Z works at all.
-    for (const [name, src] of [['card', cardCode], ['body', bodyCode]] as const) {
-      expect(src, `${name} imports the shared writers`).toContain('$lib/graph/picturebox-data');
-      expect(src, `${name} still hand-rolls the pad loop`).not.toMatch(
-        /while \(\w+\.length < ASSET_SLOTS\)/,
-      );
-    }
+describe('the surviving surface writes through ONE seam', () => {
+  it('it does not hand-roll the slot pad-and-slice', () => {
+    // D5: `onSlotFileChange` and `clearSlot` were the same eighteen lines on two
+    // surfaces, and this body would have been the third copy. The shared writers
+    // are pinned by `$lib/graph/picturebox-data.test.ts`, including the
+    // LOCAL_ORIGIN leg that decides whether Cmd-Z works at all.
+    expect(bodyCode, 'the body imports the shared writers')
+      .toContain('$lib/graph/picturebox-data');
+    expect(bodyCode, 'the body still hand-rolls the pad loop').not.toMatch(
+      /while \(\w+\.length < ASSET_SLOTS\)/,
+    );
   });
 
-  it('the CARD no longer re-types the GAIN range (D3, the backdraft class)', () => {
-    // It passed `min={0} max={2}` as literals while reading `defaultValue` off
-    // the def — the half-bound state, which looks def-bound to a reader. From
-    // promotion the dock renders this fader straight off the `ParamDef`, so the
-    // second copy would give one control two travels depending on the surface.
-    expect(cardCode).toMatch(/paramSpec\(pictureboxDef, 'gain'\)/);
-    expect(cardCode).not.toMatch(/min=\{0\}\s+max=\{2\}/);
-  });
+  // ⚠ 'the CARD no longer re-types the GAIN range (D3, the backdraft class)'
+  // STOOD HERE. The card passed `min={0} max={2}` as literals while reading
+  // `defaultValue` off the def — the half-bound state, which reads as def-bound.
+  // The dock renders this fader straight off the `ParamDef`, and with one
+  // surface there is no second copy to give one control two travels.
 });

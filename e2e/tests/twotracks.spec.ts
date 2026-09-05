@@ -24,17 +24,37 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { runFor } from './_module-coverage-helpers';
 
-// xyflow keeps the node wrapper visibility:hidden until ResizeObserver fires.
-// On CI's production preview bundle TwotracksCard (580px wide, complex layout
-// with dual-reel structure + RAF waveform polling) can take longer than
-// Playwright's default 5s — wait explicitly before making visibility assertions.
-const CARD_VISIBLE_MS = 15_000;
+// The card died with promotion. The face: the two reel pictures + their
+// START/END/playhead scrubbers are `fullViewBody` (`twotracks-reel-body`,
+// canvases `twotracks-face-canvas-a`/`-b` — the SAME two-gesture seam split
+// the card had), every param is a ranked cell (`control-<param>` — mode and
+// overdub and monitor are SWITCHES, filterMode and lofi SEGMENTED radiogroups,
+// the rest knobs/faders), and the transports + tape export are ACTION cell
+// families (`shell-cell-twotracks-<rec|play|stop|save>-<a|b>`), all in a
+// TABBED dock (a-transport/a-tape/a-tone, the b mirror, mix).
+const PANE_VISIBLE_MS = 60_000;
 
-async function waitForCard(page: Page) {
-  await page.locator('[data-testid="twotracks-card"]').waitFor({
-    state: 'visible',
-    timeout: CARD_VISIBLE_MS,
-  });
+/** Open the dock pane and return it — every locator scopes under it. */
+async function openTtPane(page: Page) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'tt',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="tt"]');
+  await expect(pane.getByTestId('twotracks-reel-body')).toBeVisible({ timeout: PANE_VISIBLE_MS });
+  return pane;
+}
+
+/** Activate a faceplate tab (inactive pages are display:none). */
+async function ttTab(pane: import('@playwright/test').Locator, tab: string) {
+  await pane.locator(`[data-testid="faceplate-tab-${tab}"]`).click();
 }
 
 async function setupPage(page: Page) {
@@ -43,7 +63,7 @@ async function setupPage(page: Page) {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -57,37 +77,25 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    // Faceplate tile carries the module name.
+    const tile = page.locator('.svelte-flow__node[data-id="tt"]');
+    await expect(tile.locator('[data-testid="module-shell"]')).toBeVisible({ timeout: 15_000 });
+    await expect(tile).toContainText(/TWOTRACKS/i);
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-    await expect(card).toBeVisible();
-
-    // Card should have correct label (TWOTRACKS).
-    await expect(card).toContainText('TWOTRACKS');
-
-    // Reel A block present.
-    await expect(card.locator('[data-testid="twotracks-reel-a"]')).toBeVisible();
-
-    // Reel A waveform canvas present.
-    await expect(card.locator('[data-testid="twotracks-waveform"]')).toHaveCount(1);
-
-    // LED elements present.
-    await expect(card.locator('[data-testid="led-arm"]')).toBeVisible();
-    await expect(card.locator('[data-testid="led-rec"]')).toBeVisible();
-    await expect(card.locator('[data-testid="led-play"]')).toBeVisible();
-    await expect(card.locator('[data-testid="led-overdub"]')).toBeVisible();
-
-    // Mode toggle present.
-    await expect(card.locator('[data-testid="twotracks-mode-toggle"]')).toBeVisible();
-
-    // Overdub toggle present.
-    await expect(card.locator('[data-testid="twotracks-overdub-toggle"]')).toBeVisible();
-
-    // Decay slider present.
-    await expect(card.locator('[data-testid="twotracks-echoes"]')).toBeVisible();
-
-    // Save button present.
-    await expect(card.locator('[data-testid="twotracks-save"]')).toBeVisible();
+    const pane = await openTtPane(page);
+    // Reel A picture present (the reel body shows BOTH reels at once).
+    await expect(pane.getByTestId('twotracks-face-canvas-a')).toBeVisible();
+    // (The four transport LEDs died with the card — deleted state readouts;
+    // the transport truth is `data.transportState_a`, asserted in P5.)
+    // Mode + overdub switches, echoes knob, transports + save on the
+    // A·transport / A·tape tabs.
+    await ttTab(pane, 'a-transport');
+    await expect(pane.getByTestId('control-mode_a')).toBeVisible();
+    await expect(pane.getByTestId('control-overdub_flag_a')).toBeVisible();
+    await expect(pane.getByTestId('shell-cell-twotracks-rec-a')).toBeVisible();
+    await expect(pane.getByTestId('shell-cell-twotracks-save-a')).toBeVisible();
+    await ttTab(pane, 'a-tape');
+    await expect(pane.getByTestId('control-echoes_a')).toBeVisible();
 
     // No console errors on spawn.
     expect(errors, errors.join('; ')).toEqual([]);
@@ -104,7 +112,9 @@ test.describe('TWOTRACKS module', () => {
       { id: 'e1', from: { nodeId: 'vco', portId: 'saw' }, to: { nodeId: 'tt', portId: 'audio_l_in_a' } },
       { id: 'e2', from: { nodeId: 'tt', portId: 'out_l' }, to: { nodeId: 'scope', portId: 'ch1' } },
     ]);
-    await waitForCard(page);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="tt"] [data-testid="module-shell"]'),
+    ).toBeVisible({ timeout: 15_000 });
 
     await runFor(page, 600);
 
@@ -124,11 +134,10 @@ test.describe('TWOTRACKS module', () => {
 
     await runFor(page, 400);
 
-    const scopeCard = page.locator('.svelte-flow__node-scope');
-    await expect(scopeCard).toBeVisible();
-
-    const twoTracksCard = page.locator('[data-testid="twotracks-card"]');
-    await expect(twoTracksCard).toBeVisible();
+    await expect(page.locator('.svelte-flow__node[data-id="scope"]')).toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node[data-id="tt"] [data-testid="module-shell"]'),
+    ).toBeVisible();
 
     const filtered = errors.filter((e) => !e.includes('ResizeObserver') && !e.includes('vite'));
     expect(filtered, filtered.join('; ')).toEqual([]);
@@ -140,19 +149,22 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
-
-    const card = page.locator('[data-testid="twotracks-card"]');
-    const modeBtn = card.locator('[data-testid="twotracks-mode-toggle"]');
-
-    await expect(modeBtn).toBeVisible();
-    await expect(modeBtn).toHaveText(/loop tape/i);
-
-    await modeBtn.evaluate((el: HTMLElement) => el.click());
-    await expect(modeBtn).toHaveText(/^tape$/i);
-
-    await modeBtn.evaluate((el: HTMLElement) => el.click());
-    await expect(modeBtn).toHaveText(/loop tape/i);
+    const pane = await openTtPane(page);
+    await ttTab(pane, 'a-transport');
+    // The card's labelled cycle button died; the face MODE is a SWITCH whose
+    // checked state IS "loop tape" (default 1). Assert the param follows.
+    const modeSwitch = pane.getByTestId('control-mode_a');
+    const readMode = () => page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes['tt']?.params['mode_a'] ?? 1;
+    });
+    await expect(modeSwitch).toHaveAttribute('aria-checked', 'true'); // loop tape
+    await modeSwitch.click();
+    await expect(modeSwitch).toHaveAttribute('aria-checked', 'false'); // tape
+    expect(await readMode()).toBe(0);
+    await modeSwitch.click();
+    await expect(modeSwitch).toHaveAttribute('aria-checked', 'true');
+    expect(await readMode()).toBe(1);
   });
 
   test('overdub toggle button activates and deactivates', async ({ page }) => {
@@ -161,19 +173,17 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
+    await ttTab(pane, 'a-transport');
+    const overdub = pane.getByTestId('control-overdub_flag_a');
+    await expect(overdub).toBeVisible();
+    await expect(overdub).toHaveAttribute('aria-checked', 'false');
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-    const overdubBtn = card.locator('[data-testid="twotracks-overdub-toggle"]');
+    await overdub.click();
+    await expect(overdub).toHaveAttribute('aria-checked', 'true');
 
-    await expect(overdubBtn).toBeVisible();
-    await expect(overdubBtn).not.toHaveClass(/active/);
-
-    await overdubBtn.evaluate((el: HTMLElement) => el.click());
-    await expect(overdubBtn).toHaveClass(/active/);
-
-    await overdubBtn.evaluate((el: HTMLElement) => el.click());
-    await expect(overdubBtn).not.toHaveClass(/active/);
+    await overdub.click();
+    await expect(overdub).toHaveAttribute('aria-checked', 'false');
   });
 
   test('echoes knob reflects the echoes param value', async ({ page }) => {
@@ -182,12 +192,11 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
-
-    const card = page.locator('[data-testid="twotracks-card"]');
-    // ECHOES is an assignable Knob (role="slider", default 3); its aria-valuenow
+    const pane = await openTtPane(page);
+    await ttTab(pane, 'a-tape');
+    // ECHOES is the ranked knob (role="slider", default 3); its aria-valuenow
     // tracks the echoes_a param.
-    const echoesKnob = card.locator('[data-testid="twotracks-echoes"] [role="slider"]');
+    const echoesKnob = pane.getByTestId('control-echoes_a');
     await expect(echoesKnob).toBeVisible();
     await expect(echoesKnob).toHaveAttribute('aria-valuenow', '3');
 
@@ -213,40 +222,24 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
 
-    const card = page.locator('[data-testid="twotracks-card"]');
+    // Reel B picture (the body paints both reels).
+    await expect(pane.getByTestId('twotracks-face-canvas-b')).toBeVisible();
 
-    // Reel B block present
-    const reelB = card.locator('[data-testid="twotracks-reel-b"]');
-    await expect(reelB).toBeVisible();
-
-    // Reel B waveform canvas
-    await expect(card.locator('[data-testid="twotracks-waveform-b"]')).toBeVisible();
-
-    // Reel B EQ section
-    await expect(card.locator('[data-testid="twotracks-eq-b"]')).toBeVisible();
-
-    // Reel B filter section
-    await expect(card.locator('[data-testid="twotracks-filter-b"]')).toBeVisible();
-
-    // Reel B transport LEDs
-    await expect(reelB.locator('[data-testid="led-arm-b"]')).toBeVisible();
-    await expect(reelB.locator('[data-testid="led-rec-b"]')).toBeVisible();
-    await expect(reelB.locator('[data-testid="led-play-b"]')).toBeVisible();
-    await expect(reelB.locator('[data-testid="led-overdub-b"]')).toBeVisible();
-
-    // Reel B mode toggle
-    await expect(card.locator('[data-testid="twotracks-mode-toggle-b"]')).toBeVisible();
-
-    // Reel B overdub toggle
-    await expect(card.locator('[data-testid="twotracks-overdub-toggle-b"]')).toBeVisible();
-
-    // Reel B decay slider
-    await expect(card.locator('[data-testid="twotracks-echoes-b"]')).toBeVisible();
-
-    // Reel B save button
-    await expect(card.locator('[data-testid="twotracks-save-b"]')).toBeVisible();
+    // The B tabs mirror A: transport (mode/overdub switches + transports +
+    // save) and tone (EQ + filter). LEDs died with the card (P5's data assert
+    // covers the transport truth).
+    await ttTab(pane, 'b-transport');
+    await expect(pane.getByTestId('control-mode_b')).toBeVisible();
+    await expect(pane.getByTestId('control-overdub_flag_b')).toBeVisible();
+    await expect(pane.getByTestId('shell-cell-twotracks-rec-b')).toBeVisible();
+    await expect(pane.getByTestId('shell-cell-twotracks-save-b')).toBeVisible();
+    await ttTab(pane, 'b-tape');
+    await expect(pane.getByTestId('control-echoes_b')).toBeVisible();
+    await ttTab(pane, 'b-tone');
+    await expect(pane.getByTestId('control-eqLow_b')).toBeVisible();
+    await expect(pane.getByTestId('control-filterMode_b')).toBeVisible();
 
     // No errors
     expect(errors, errors.join('; ')).toEqual([]);
@@ -268,56 +261,43 @@ test.describe('TWOTRACKS module', () => {
     }, value);
   }
 
-  test('P2: A/B knob strip is visible with A and B readouts', async ({ page }) => {
+  test('P2: the A/B crossfade knob ranks on the face', async ({ page }) => {
     await setupPage(page);
 
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
+    await ttTab(pane, 'mix');
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-    const abStrip = card.locator('[data-testid="twotracks-ab-knob"]');
-
-    await expect(abStrip).toBeVisible();
-
-    // The A/B crossfade Knob should be present inside the strip.
-    await expect(abStrip.locator('.knob, [role="slider"], canvas, svg').first()).toBeVisible();
-
-    // Default ab=0: percentage display should show A:100% B:0%
-    await expect(abStrip).toContainText('A:100%');
-    await expect(abStrip).toContainText('B:0%');
+    // The A/B crossfade is the ranked `control-ab` knob (the card's painted
+    // A:x% / B:y% readout died — deleted resting text; the LAW itself is
+    // unit-tested DSP, and the knob's value is the whole UI claim).
+    const ab = pane.getByTestId('control-ab');
+    await expect(ab).toBeVisible();
+    await expect(ab).toHaveAttribute('aria-valuenow', '0');
   });
 
-  test('P2: A/B law: ab=0 shows A only; ab=1 shows B only; center shows both', async ({ page }) => {
+  test('P2: the A/B knob is a live two-way surface for the synced ab param', async ({ page }) => {
     await setupPage(page);
 
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
+    await ttTab(pane, 'mix');
+    const ab = pane.getByTestId('control-ab');
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-    const abStrip = card.locator('[data-testid="twotracks-ab-knob"]');
-
-    // Default ab=0: A:100% B:0%
-    await expect(abStrip).toContainText('A:100%');
-    await expect(abStrip).toContainText('B:0%');
-
-    // Set ab=0.5 (center): A:100% B:100%
+    // The percentage READOUT died with the card (the gain LAW is pinned by
+    // twotracks-engine unit tests); what the face owes is that the knob is a
+    // live two-way surface for the synced param.
+    await expect(ab).toHaveAttribute('aria-valuenow', '0');
     await setAbParam(page, 0.5);
-    await expect(abStrip).toContainText('A:100%');
-    await expect(abStrip).toContainText('B:100%');
-
-    // Set ab=1.0 (full B): A:0% B:100%
+    await expect(ab).toHaveAttribute('aria-valuenow', '0.5');
     await setAbParam(page, 1);
-    await expect(abStrip).toContainText('A:0%');
-    await expect(abStrip).toContainText('B:100%');
-
-    // Restore to ab=0: A:100% B:0%
+    await expect(ab).toHaveAttribute('aria-valuenow', '1');
     await setAbParam(page, 0);
-    await expect(abStrip).toContainText('A:100%');
-    await expect(abStrip).toContainText('B:0%');
+    await expect(ab).toHaveAttribute('aria-valuenow', '0');
   });
 
   test('P2: reel B mode toggle alternates between tape and loop tape', async ({ page }) => {
@@ -326,19 +306,18 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
+    await ttTab(pane, 'b-transport');
+    const modeSwitch = pane.getByTestId('control-mode_b');
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-    const modeBtn = card.locator('[data-testid="twotracks-mode-toggle-b"]');
+    await expect(modeSwitch).toBeVisible();
+    await expect(modeSwitch).toHaveAttribute('aria-checked', 'true'); // loop tape
 
-    await expect(modeBtn).toBeVisible();
-    await expect(modeBtn).toHaveText(/loop tape/i);
+    await modeSwitch.click();
+    await expect(modeSwitch).toHaveAttribute('aria-checked', 'false'); // tape
 
-    await modeBtn.evaluate((el: HTMLElement) => el.click());
-    await expect(modeBtn).toHaveText(/^tape$/i);
-
-    await modeBtn.evaluate((el: HTMLElement) => el.click());
-    await expect(modeBtn).toHaveText(/loop tape/i);
+    await modeSwitch.click();
+    await expect(modeSwitch).toHaveAttribute('aria-checked', 'true');
   });
 
   test('P2: reel B overdub toggle activates and deactivates independently', async ({ page }) => {
@@ -347,27 +326,26 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
+    const overdubA = pane.getByTestId('control-overdub_flag_a');
+    const overdubB = pane.getByTestId('control-overdub_flag_b');
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-    const overdubBtnA = card.locator('[data-testid="twotracks-overdub-toggle"]');
-    const overdubBtnB = card.locator('[data-testid="twotracks-overdub-toggle-b"]');
+    // Both start off (aria works across inactive tabs; clicks need the tab).
+    await expect(overdubA).toHaveAttribute('aria-checked', 'false');
+    await expect(overdubB).toHaveAttribute('aria-checked', 'false');
 
-    // Both start off
-    await expect(overdubBtnA).not.toHaveClass(/active/);
-    await expect(overdubBtnB).not.toHaveClass(/active/);
+    // Enable reel B overdub only.
+    await ttTab(pane, 'b-transport');
+    await overdubB.click();
+    await expect(overdubB).toHaveAttribute('aria-checked', 'true');
+    await expect(overdubA).toHaveAttribute('aria-checked', 'false');
 
-    // Enable reel B overdub only
-    await overdubBtnB.evaluate((el: HTMLElement) => el.click());
-    await expect(overdubBtnB).toHaveClass(/active/);
-    // Reel A should remain off
-    await expect(overdubBtnA).not.toHaveClass(/active/);
-
-    // Disable reel B, enable reel A
-    await overdubBtnB.evaluate((el: HTMLElement) => el.click());
-    await overdubBtnA.evaluate((el: HTMLElement) => el.click());
-    await expect(overdubBtnA).toHaveClass(/active/);
-    await expect(overdubBtnB).not.toHaveClass(/active/);
+    // Disable reel B, enable reel A.
+    await overdubB.click();
+    await ttTab(pane, 'a-transport');
+    await overdubA.click();
+    await expect(overdubA).toHaveAttribute('aria-checked', 'true');
+    await expect(overdubB).toHaveAttribute('aria-checked', 'false');
   });
 
   test('P2: EQ sections present on both reels', async ({ page }) => {
@@ -376,19 +354,19 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
 
-    const card = page.locator('[data-testid="twotracks-card"]');
+    // Reel A tone tab — the three EQ knobs.
+    await ttTab(pane, 'a-tone');
+    for (const band of ['eqLow_a', 'eqMid_a', 'eqHigh_a']) {
+      await expect(pane.getByTestId(`control-${band}`)).toBeVisible();
+    }
 
-    // Reel A EQ section — three assignable EQ knobs (role="slider").
-    const eqA = card.locator('[data-testid="twotracks-eq-a"]');
-    await expect(eqA).toBeVisible();
-    await expect(eqA.locator('[role="slider"]')).toHaveCount(3);
-
-    // Reel B EQ section
-    const eqB = card.locator('[data-testid="twotracks-eq-b"]');
-    await expect(eqB).toBeVisible();
-    await expect(eqB.locator('[role="slider"]')).toHaveCount(3);
+    // Reel B mirror.
+    await ttTab(pane, 'b-tone');
+    for (const band of ['eqLow_b', 'eqMid_b', 'eqHigh_b']) {
+      await expect(pane.getByTestId(`control-${band}`)).toBeVisible();
+    }
   });
 
   test('P2: filter sections present on both reels with mode toggle buttons', async ({ page }) => {
@@ -397,31 +375,25 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
-    await waitForCard(page);
+    const pane = await openTtPane(page);
 
-    const card = page.locator('[data-testid="twotracks-card"]');
-
-    // Reel A filter
-    const filterA = card.locator('[data-testid="twotracks-filter-a"]');
+    // Reel A tone tab — the card's cycle button became a SEGMENTED radiogroup;
+    // each mode is its own segment and the checked one is the state.
+    await ttTab(pane, 'a-tone');
+    const filterA = pane.getByTestId('control-filterMode_a');
     await expect(filterA).toBeVisible();
-    // Mode button starts at "OFF"
-    const filterBtnA = filterA.locator('button');
-    await expect(filterBtnA).toHaveText('OFF');
-    // Cycle through modes
-    await filterBtnA.evaluate((el: HTMLElement) => el.click());
-    await expect(filterBtnA).toHaveText('HP');
-    await filterBtnA.evaluate((el: HTMLElement) => el.click());
-    await expect(filterBtnA).toHaveText('LP');
-    await filterBtnA.evaluate((el: HTMLElement) => el.click());
-    await expect(filterBtnA).toHaveText('BP');
-    await filterBtnA.evaluate((el: HTMLElement) => el.click());
-    await expect(filterBtnA).toHaveText('OFF');
+    const checkedA = filterA.locator('[role="radio"][aria-checked="true"]');
+    await expect(checkedA).toHaveText('OFF');
+    for (const mode of ['HP', 'LP', 'BP', 'OFF']) {
+      await filterA.getByRole('radio', { name: mode, exact: true }).click();
+      await expect(checkedA).toHaveText(mode);
+    }
 
-    // Reel B filter
-    const filterB = card.locator('[data-testid="twotracks-filter-b"]');
+    // Reel B mirror starts at OFF.
+    await ttTab(pane, 'b-tone');
+    const filterB = pane.getByTestId('control-filterMode_b');
     await expect(filterB).toBeVisible();
-    const filterBtnB = filterB.locator('button');
-    await expect(filterBtnB).toHaveText('OFF');
+    await expect(filterB.locator('[role="radio"][aria-checked="true"]')).toHaveText('OFF');
   });
 
   // ═══════════════════════════ Phase 3 ═══════════════════════════
@@ -433,26 +405,22 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      const pane = await openTtPane(page);
+      await ttTab(pane, 'mix');
+      const lofi = pane.getByTestId('control-lofi');
+      await expect(lofi).toBeVisible();
 
-      const card = page.locator('[data-testid="twotracks-card"]');
-      const lofiStrip = card.locator('[data-testid="twotracks-lofi"]');
-
-      await expect(lofiStrip).toBeVisible();
-
-      // All four labels should be present as buttons
-      const buttons = lofiStrip.locator('button');
+      // All four modes present as segments; OFF checked by default.
+      const buttons = lofi.locator('[role="radio"]');
       await expect(buttons).toHaveCount(4);
       await expect(buttons.nth(0)).toHaveText('OFF');
       await expect(buttons.nth(1)).toHaveText('LOW');
       await expect(buttons.nth(2)).toHaveText('HIGH');
       await expect(buttons.nth(3)).toHaveText('ERROR');
-
-      // Default: OFF button is active
-      await expect(buttons.nth(0)).toHaveClass(/active/);
-      await expect(buttons.nth(1)).not.toHaveClass(/active/);
-      await expect(buttons.nth(2)).not.toHaveClass(/active/);
-      await expect(buttons.nth(3)).not.toHaveClass(/active/);
+      await expect(buttons.nth(0)).toHaveAttribute('aria-checked', 'true');
+      await expect(buttons.nth(1)).toHaveAttribute('aria-checked', 'false');
+      await expect(buttons.nth(2)).toHaveAttribute('aria-checked', 'false');
+      await expect(buttons.nth(3)).toHaveAttribute('aria-checked', 'false');
 
       const filtered = errors.filter((e) => !e.includes('ResizeObserver') && !e.includes('vite'));
       expect(filtered, filtered.join('; ')).toEqual([]);
@@ -464,34 +432,29 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      const pane = await openTtPane(page);
+      await ttTab(pane, 'mix');
+      const buttons = pane.getByTestId('control-lofi').locator('[role="radio"]');
 
-      const card = page.locator('[data-testid="twotracks-card"]');
-      const lofiStrip = card.locator('[data-testid="twotracks-lofi"]');
-      const buttons = lofiStrip.locator('button');
+      // Start: OFF checked.
+      await expect(buttons.nth(0)).toHaveAttribute('aria-checked', 'true');
 
-      // Start: OFF active
-      await expect(buttons.nth(0)).toHaveClass(/active/);
+      // LOW → HIGH → ERROR → OFF, each click moving the checked segment.
+      await buttons.nth(1).click();
+      await expect(buttons.nth(1)).toHaveAttribute('aria-checked', 'true');
+      await expect(buttons.nth(0)).toHaveAttribute('aria-checked', 'false');
 
-      // Click LOW
-      await buttons.nth(1).evaluate((el: HTMLElement) => el.click());
-      await expect(buttons.nth(1)).toHaveClass(/active/);
-      await expect(buttons.nth(0)).not.toHaveClass(/active/);
+      await buttons.nth(2).click();
+      await expect(buttons.nth(2)).toHaveAttribute('aria-checked', 'true');
+      await expect(buttons.nth(1)).toHaveAttribute('aria-checked', 'false');
 
-      // Click HIGH
-      await buttons.nth(2).evaluate((el: HTMLElement) => el.click());
-      await expect(buttons.nth(2)).toHaveClass(/active/);
-      await expect(buttons.nth(1)).not.toHaveClass(/active/);
+      await buttons.nth(3).click();
+      await expect(buttons.nth(3)).toHaveAttribute('aria-checked', 'true');
+      await expect(buttons.nth(2)).toHaveAttribute('aria-checked', 'false');
 
-      // Click ERROR
-      await buttons.nth(3).evaluate((el: HTMLElement) => el.click());
-      await expect(buttons.nth(3)).toHaveClass(/active/);
-      await expect(buttons.nth(2)).not.toHaveClass(/active/);
-
-      // Click OFF to reset
-      await buttons.nth(0).evaluate((el: HTMLElement) => el.click());
-      await expect(buttons.nth(0)).toHaveClass(/active/);
-      await expect(buttons.nth(3)).not.toHaveClass(/active/);
+      await buttons.nth(0).click();
+      await expect(buttons.nth(0)).toHaveAttribute('aria-checked', 'true');
+      await expect(buttons.nth(3)).toHaveAttribute('aria-checked', 'false');
     });
 
     test('lofi ERROR button shows error highlight class when active', async ({ page }) => {
@@ -500,23 +463,24 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      const pane = await openTtPane(page);
+      await ttTab(pane, 'mix');
+      const lofi = pane.getByTestId('control-lofi');
+      const errorBtn = lofi.locator('[role="radio"]').nth(3);
 
-      const card = page.locator('[data-testid="twotracks-card"]');
-      const lofiStrip = card.locator('[data-testid="twotracks-lofi"]');
-      const errorBtn = lofiStrip.locator('button').nth(3);
+      // The card's red highlight class died with the card (VRT owns the look);
+      // the surviving state is the checked segment + the PARAM it writes.
+      const readLofi = () => page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+        return w.__patch.nodes['tt']?.params['lofi'] ?? 0;
+      });
+      await errorBtn.click();
+      await expect(errorBtn).toHaveAttribute('aria-checked', 'true');
+      await expect.poll(readLofi, { message: 'ERROR writes lofi=3' }).toBe(3);
 
-      // Initially not in error state
-      await expect(errorBtn).not.toHaveClass(/error/);
-
-      // Activate ERROR mode
-      await errorBtn.evaluate((el: HTMLElement) => el.click());
-      await expect(errorBtn).toHaveClass(/active/);
-      await expect(errorBtn).toHaveClass(/error/);
-
-      // Back to OFF — error class should clear
-      await lofiStrip.locator('button').nth(0).evaluate((el: HTMLElement) => el.click());
-      await expect(errorBtn).not.toHaveClass(/error/);
+      await lofi.locator('[role="radio"]').nth(0).click();
+      await expect(errorBtn).toHaveAttribute('aria-checked', 'false');
+      await expect.poll(readLofi, { message: 'OFF writes lofi=0' }).toBe(0);
     });
   });
 
@@ -529,76 +493,26 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      const pane = await openTtPane(page);
 
-      const card = page.locator('[data-testid="twotracks-card"]');
+      // Both reel pictures paint in the body.
+      await expect(pane.getByTestId('twotracks-face-canvas-a')).toBeVisible();
+      await expect(pane.getByTestId('twotracks-face-canvas-b')).toBeVisible();
 
-      // Both waveform canvases should be present and visible
-      await expect(card.locator('[data-testid="twotracks-waveform"]')).toBeVisible();
-      await expect(card.locator('[data-testid="twotracks-waveform-b"]')).toBeVisible();
-
-      // Both SAVE TAPE buttons present
-      await expect(card.locator('[data-testid="twotracks-save"]')).toBeVisible();
-      await expect(card.locator('[data-testid="twotracks-save-b"]')).toBeVisible();
+      // Both SAVE TAPE cells present (attached across their tabs).
+      await expect(pane.getByTestId('shell-cell-twotracks-save-a')).toBeAttached();
+      await expect(pane.getByTestId('shell-cell-twotracks-save-b')).toBeAttached();
     });
 
-    test('P4: SAVE TAPE disabled initially and shows "no tape" info', async ({ page }) => {
-      await setupPage(page);
-
-      await spawnPatch(page, [
-        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
-      ]);
-      await waitForCard(page);
-
-      const card = page.locator('[data-testid="twotracks-card"]');
-
-      // SAVE TAPE buttons should be disabled when no tape recorded
-      const saveA = card.locator('[data-testid="twotracks-save"]');
-      const saveB = card.locator('[data-testid="twotracks-save-b"]');
-      await expect(saveA).toBeDisabled();
-      await expect(saveB).toBeDisabled();
-
-      // tape-info should show "no tape" for both reels
-      const reelA = card.locator('[data-testid="twotracks-reel-a"]');
-      const reelB = card.locator('[data-testid="twotracks-reel-b"]');
-      await expect(reelA.locator('.tape-info')).toHaveText(/no tape/i);
-      await expect(reelB.locator('.tape-info')).toHaveText(/no tape/i);
-    });
-
-    test('P4: SAVE TAPE becomes enabled and shows duration when bufLen is set', async ({ page }) => {
-      await setupPage(page);
-
-      await spawnPatch(page, [
-        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
-      ]);
-      await waitForCard(page);
-
-      const card = page.locator('[data-testid="twotracks-card"]');
-      const saveA = card.locator('[data-testid="twotracks-save"]');
-      const reelA = card.locator('[data-testid="twotracks-reel-a"]');
-
-      // Simulate 1 second of recorded tape by setting bufLenA in node.data via Y.Doc.
-      // bufLenA is a plain number stored in Y.Doc (not Float32Array) so this works.
-      await page.evaluate(() => {
-        const w = globalThis as unknown as {
-          __ydoc: { transact: (fn: () => void) => void };
-          __patch: { nodes: Record<string, { data: Record<string, unknown> }> };
-        };
-        w.__ydoc.transact(() => {
-          const tt = w.__patch.nodes['tt'];
-          if (tt) {
-            if (!tt.data) tt.data = {};
-            tt.data['bufLenA'] = 48000; // 1 second at 48 kHz
-          }
-        });
-      });
-
-      // SAVE TAPE should become enabled
-      await expect(saveA).not.toBeDisabled();
-
-      // tape-info should show duration (1.0s)
-      await expect(reelA.locator('.tape-info')).toContainText('1.0s');
-    });
+    // ⚠ RETIRED (S2): 'SAVE TAPE disabled initially and shows "no tape" info'
+    // and 'SAVE TAPE becomes enabled and shows duration when bufLen is set'.
+    // Both guarded CARD chrome: the card's save button disabled itself on
+    // `bufLen` and painted a `.tape-info` duration readout. The face's SAVE
+    // TAPE is a trigger ACTION cell with no disabled state (the export handler
+    // owns the no-tape case), and the duration readout is deleted resting
+    // text. `bufLenA` itself stays covered: twotracks-perfzip.spec.ts asserts
+    // it round-trips, and the export seam is audited by the per-module sweep's
+    // `file-export` probe.
   });
 
   // ═══════════════════════════ Phase 5 ═══════════════════════════
@@ -612,14 +526,12 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
-
-      const card = page.locator('[data-testid="twotracks-card"]');
+      const pane = await openTtPane(page);
       for (const id of [
-        'twotracks-rec', 'twotracks-play', 'twotracks-stop',
-        'twotracks-rec-b', 'twotracks-play-b', 'twotracks-stop-b',
+        'shell-cell-twotracks-rec-a', 'shell-cell-twotracks-play-a', 'shell-cell-twotracks-stop-a',
+        'shell-cell-twotracks-rec-b', 'shell-cell-twotracks-play-b', 'shell-cell-twotracks-stop-b',
       ]) {
-        await expect(card.locator(`[data-testid="${id}"]`)).toBeVisible();
+        await expect(pane.getByTestId(id)).toBeAttached();
       }
     });
 
@@ -629,18 +541,10 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      await openTtPane(page);
 
-      const card = page.locator('[data-testid="twotracks-card"]');
-
-      // No transport LED should be lit on a freshly-spawned, empty module.
-      for (const led of ['led-rec', 'led-play', 'led-overdub', 'led-arm',
-                          'led-rec-b', 'led-play-b', 'led-overdub-b', 'led-arm-b']) {
-        await expect(card.locator(`[data-testid="${led}"]`)).not.toHaveClass(/active/);
-      }
-      // REC / PLAY buttons inactive.
-      await expect(card.locator('[data-testid="twotracks-rec"]')).not.toHaveClass(/active/);
-      await expect(card.locator('[data-testid="twotracks-play"]')).not.toHaveClass(/active/);
+      // (The card's LED bank died — deleted state readouts. The transport
+      // truth is `data.transportState_a`, and idle-over-time is the claim.)
 
       // The transport state in node.data must stay 'idle' over time (the worklet
       // must NOT free-run the playhead on an empty module). Sample twice ~500ms
@@ -662,34 +566,31 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      const pane = await openTtPane(page);
 
-      const card = page.locator('[data-testid="twotracks-card"]');
-
-      // Every continuous control is now an assignable Knob (role="slider").
-      // Per reel: 3 EQ + cutoff + reso + echoes + rate = 7; ×2 reels = 14;
-      // + A/B + A→B + B→A = 17.
-      const knobs = card.locator('[role="slider"]');
-      await expect(knobs).toHaveCount(17);
+      // Every continuous control is a ranked slider. The card's census was 17
+      // knobs; the face adds the four START/END loop faders as ranked cells
+      // (the card kept those on the waveform only), so the dock census is 21.
+      const knobs = pane.locator('[role="slider"]');
+      await expect(knobs).toHaveCount(21);
 
       // Right-clicking a knob opens the control context menu whose entries are
       // the MIDI-Learn + Send-to-control-surface actions — i.e. the control is
       // assignable to both. Verify on a representative knob (reel A echoes).
-      const echoesKnob = card.locator('[data-testid="twotracks-echoes"] [role="slider"]');
+      await ttTab(pane, 'a-tape');
+      const echoesKnob = pane.getByTestId('control-echoes_a');
       await echoesKnob.click({ button: 'right' });
       await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
       await expect(page.locator('[data-testid="ctx-midi-learn"]')).toBeVisible();
     });
 
-    test('the 1× button resets reel speed to true 1.0×', async ({ page }) => {
+    test('double-clicking the RATE knob resets reel speed to true 1.0×', async ({ page }) => {
       await setupPage(page);
 
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
-
-      const card = page.locator('[data-testid="twotracks-card"]');
+      const pane = await openTtPane(page);
 
       // Drive the rate off 1× via the dev Y.Doc.
       await page.evaluate(() => {
@@ -703,8 +604,11 @@ test.describe('TWOTRACKS module', () => {
         });
       });
 
-      // Click the 1× reset button → rate_a returns to exactly 1.
-      await card.locator('[data-testid="twotracks-rate-reset"]').evaluate((el: HTMLElement) => el.click());
+      // The card's 1× button died; the shell-wide reset gesture is DOUBLE-
+      // CLICK on the knob (Knob.svelte's dblclick → onchange(defaultValue)),
+      // and rate_a's default IS exactly 1.
+      await ttTab(pane, 'a-tape');
+      await pane.getByTestId('control-rate_a').dblclick();
       const rate = await page.evaluate(() => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { params: Record<string, number> }> };
@@ -720,18 +624,17 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
-      await waitForCard(page);
+      const pane = await openTtPane(page);
+      await ttTab(pane, 'mix');
+      const monitor = pane.getByTestId('control-monitor');
 
-      const card = page.locator('[data-testid="twotracks-card"]');
-      const monitor = card.locator('[data-testid="twotracks-monitor"]');
-
-      // Off by default.
+      // Off by default (a ranked SWITCH on the face).
       await expect(monitor).toBeVisible();
-      await expect(monitor).toHaveAttribute('aria-pressed', 'false');
+      await expect(monitor).toHaveAttribute('aria-checked', 'false');
 
-      // Click → monitor engages (param + pressed state).
-      await monitor.evaluate((el: HTMLElement) => el.click());
-      await expect(monitor).toHaveAttribute('aria-pressed', 'true');
+      // Click → monitor engages (param + checked state).
+      await monitor.click();
+      await expect(monitor).toHaveAttribute('aria-checked', 'true');
       const on = await page.evaluate(() => {
         const w = globalThis as unknown as {
           __patch: { nodes: Record<string, { params: Record<string, number> }> };
@@ -741,8 +644,8 @@ test.describe('TWOTRACKS module', () => {
       expect(on).toBe(1);
 
       // Click again → off.
-      await monitor.evaluate((el: HTMLElement) => el.click());
-      await expect(monitor).toHaveAttribute('aria-pressed', 'false');
+      await monitor.click();
+      await expect(monitor).toHaveAttribute('aria-checked', 'false');
     });
   });
 
@@ -757,8 +660,13 @@ test.describe('TWOTRACKS module', () => {
     // Drag across a reel waveform from one displayed fraction to another. With
     // posPxToNorm dividing by the displayed width, the written tape fraction ≈
     // the drag fraction.
+    // The face canvases carry the SAME two-gesture seam split the card had
+    // (marker drags → setNodeParam; elsewhere → a transient seek message).
     async function dragWaveform(page: Page, testid: string, fromFrac: number, toFrac: number) {
-      const canvas = page.locator(`[data-testid="${testid}"]`);
+      const canvas = page
+        .locator('[data-testid="dock-fullview-pane"][data-pane-node="tt"]')
+        .locator(`[data-testid="${testid}"]`);
+      await canvas.scrollIntoViewIfNeeded();
       const box = await canvas.boundingBox();
       if (!box) throw new Error(`no bounding box for ${testid}`);
       const y = box.y + box.height / 2;
@@ -795,7 +703,7 @@ test.describe('TWOTRACKS module', () => {
     test('start/end default to the full tape (0 and 1)', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
+      await openTtPane(page);
       expect(await effStart(page)).toBe(0);
       expect(await effEnd(page)).toBe(1);
     });
@@ -803,8 +711,8 @@ test.describe('TWOTRACKS module', () => {
     test('dragging the START handle inward moves start_a', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
-      await dragWaveform(page, 'twotracks-waveform', 0.01, 0.5);
+      await openTtPane(page);
+      await dragWaveform(page, 'twotracks-face-canvas-a', 0.01, 0.5);
       const start = await readParam(page, 'start_a');
       expect(start).toBeGreaterThan(0.35);
       expect(start).toBeLessThan(0.65);
@@ -815,8 +723,8 @@ test.describe('TWOTRACKS module', () => {
     test('dragging the END handle inward moves end_a', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
-      await dragWaveform(page, 'twotracks-waveform', 0.99, 0.5);
+      await openTtPane(page);
+      await dragWaveform(page, 'twotracks-face-canvas-a', 0.99, 0.5);
       const end = await readParam(page, 'end_a');
       expect(end).toBeGreaterThan(0.35);
       expect(end).toBeLessThan(0.65);
@@ -827,10 +735,10 @@ test.describe('TWOTRACKS module', () => {
     test('START cannot be dragged past END (clamped to the loop window)', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
+      await openTtPane(page);
       // Pull END in first, then try to drag START well past it.
       await setParam(page, 'end_a', 0.3);
-      await dragWaveform(page, 'twotracks-waveform', 0.01, 0.85);
+      await dragWaveform(page, 'twotracks-face-canvas-a', 0.01, 0.85);
       const start = await readParam(page, 'start_a');
       // Clamped at end − MIN_LOOP_GAP (0.3 − 0.01); never crosses END.
       expect(start).toBeLessThanOrEqual(0.3);
@@ -840,8 +748,8 @@ test.describe('TWOTRACKS module', () => {
     test('reel B scrubbers are independent of reel A', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
-      await dragWaveform(page, 'twotracks-waveform-b', 0.01, 0.4);
+      await openTtPane(page);
+      await dragWaveform(page, 'twotracks-face-canvas-b', 0.01, 0.4);
       const startB = await readParam(page, 'start_b');
       expect(startB).toBeGreaterThan(0.25);
       // Reel A unchanged.
@@ -851,10 +759,10 @@ test.describe('TWOTRACKS module', () => {
     test('clicking the middle of the waveform still scrubs the playhead (not a handle)', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
+      await openTtPane(page);
       // A mid-tape press is far from both edge handles → it must NOT move
       // start_a/end_a (it's a playhead scrub).
-      await dragWaveform(page, 'twotracks-waveform', 0.5, 0.55);
+      await dragWaveform(page, 'twotracks-face-canvas-a', 0.5, 0.55);
       expect(await effStart(page)).toBe(0);
       expect(await effEnd(page)).toBe(1);
     });
@@ -871,25 +779,28 @@ test.describe('TWOTRACKS module', () => {
     test('A→B and B→A knobs render in the center, default off (0)', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
+      await openTtPane(page);
 
-      const cross = page.locator('[data-testid="twotracks-crossfeed"]');
-      await expect(cross).toBeVisible();
-      const knobs = cross.locator('[role="slider"]');
-      await expect(knobs).toHaveCount(2);
+      const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="tt"]');
+      await ttTab(pane, 'mix');
+      const a2b = pane.getByTestId('control-a2b');
+      const b2a = pane.getByTestId('control-b2a');
+      await expect(a2b).toBeVisible();
+      await expect(b2a).toBeVisible();
       // Both default to 0 (off → byte-for-byte the prior signal path).
-      await expect(knobs.nth(0)).toHaveAttribute('aria-valuenow', '0');
-      await expect(knobs.nth(1)).toHaveAttribute('aria-valuenow', '0');
+      await expect(a2b).toHaveAttribute('aria-valuenow', '0');
+      await expect(b2a).toHaveAttribute('aria-valuenow', '0');
     });
 
     test('cross-feed knobs reflect the a2b / b2a params (assignable + synced)', async ({ page }) => {
       await setupPage(page);
       await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
-      await waitForCard(page);
+      await openTtPane(page);
 
-      const cross = page.locator('[data-testid="twotracks-crossfeed"]');
-      const a2b = cross.locator('[role="slider"]').nth(0);
-      const b2a = cross.locator('[role="slider"]').nth(1);
+      const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="tt"]');
+      await ttTab(pane, 'mix');
+      const a2b = pane.getByTestId('control-a2b');
+      const b2a = pane.getByTestId('control-b2a');
 
       // Drive both via the dev Y.Doc; the knobs must reflect them.
       await page.evaluate(() => {

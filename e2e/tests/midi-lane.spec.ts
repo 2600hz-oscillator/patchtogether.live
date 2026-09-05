@@ -19,9 +19,9 @@ test.describe.configure({ mode: 'parallel' });
 
 test('midi-lane: drop module → card mounts with no console errors + output handles present', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-midiLane');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiLane"])');
   await expect(card).toBeVisible();
-  await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDILANE(\d+)?$/);
+  await expect(card.locator('[data-testid="tile-name-label-button"]')).toHaveText(/^MIDILANE(\d+)?$/);
   // The core (always-present) output handles render on the card.
   for (const portId of ['pitch_cv', 'gate', 'velocity_cv', 'cc_a', 'cc_b', 'note_gate']) {
     await expect(card.locator(`[data-handleid="${portId}"]`)).toHaveCount(1);
@@ -30,20 +30,20 @@ test('midi-lane: drop module → card mounts with no console errors + output han
 
 test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-midiLane');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiLane"])');
   await expect(card).toBeVisible();
-  const btn = card.getByRole('button', { name: /Connect MIDI/ });
+  const btn = card.getByTestId('shell-cell-midi-lane-connect');
   await expect(btn).toBeVisible();
   await expect(btn).toBeEnabled();
 });
 
 test('midi-lane: clicking Connect does not crash the card', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-midiLane');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="midiLane"])');
   await expect(card).toBeVisible();
-  const btn = card.getByRole('button', { name: /Connect MIDI/ });
+  const btn = card.getByTestId('shell-cell-midi-lane-connect');
   await btn.click();
   await page.waitForTimeout(300);
   await expect(card).toBeVisible();
-  await expect(card.locator('[data-testid="name-label-button"]')).toHaveText(/^MIDILANE(\d+)?$/);
+  await expect(card.locator('[data-testid="tile-name-label-button"]')).toHaveText(/^MIDILANE(\d+)?$/);
 });

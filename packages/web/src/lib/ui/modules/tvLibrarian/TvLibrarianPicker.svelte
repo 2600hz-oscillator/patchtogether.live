@@ -1,14 +1,14 @@
 <script lang="ts">
   // packages/web/src/lib/ui/modules/tvLibrarian/TvLibrarianPicker.svelte
   //
-  // THE BROWSE SURFACE, SHARED BY BOTH SURFACES — the map/list toggle, the world
-  // map, the country dropdown, the channel roster and the two navigation
-  // gestures, plus the legal disclaimer.
+  // THE BROWSE SURFACE — the map/list toggle, the world map, the country
+  // dropdown, the channel roster and the two navigation gestures, plus the
+  // legal disclaimer.
   //
-  // ⚠ WHY THIS IS ONE COMPONENT RATHER THAN TWO COPIES. Promotion stops BOTH
-  // surfaces rendering `TvLibrarianCard.svelte`, so the faceplate needs this
-  // surface; `?shell=legacy` still renders the card, so the card needs it too.
-  // Two copies of a picker is how the two drift, and this module already has a
+  // ⚠ WHY THIS IS ONE COMPONENT RATHER THAN A COPY PER MOUNT. The tuner body
+  // mounts it, and it is the shape peertube's picker follows for the same
+  // reason. Two copies of a picker is how the two drift, and this module
+  // already has a
   // documented instance of correctness travelling by hand-copy and arriving late
   // (the `muted = false` audio trap — see node-hls-source-registry's header).
   // One component, two mounts, no drift by construction.

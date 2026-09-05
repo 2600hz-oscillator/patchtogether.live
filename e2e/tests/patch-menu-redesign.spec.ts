@@ -54,7 +54,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right') {
 }
 
 async function spawnSeqAdsr(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'seq', type: 'kria', position: { x: 80, y: 120 } },
@@ -67,29 +67,12 @@ async function spawnSeqAdsr(page: Page) {
 
 // ── (1) edge-alignment ──────────────────────────────────────────────────
 
-test('right trigger → menu right edge aligns to card right (never spills past)', async ({
-  page,
-}) => {
-  await spawnSeqAdsr(page);
-  await openFrom(page, 'adsr', 'right');
-
-  const card = await page
-    .locator('.svelte-flow__node[data-id="adsr"]')
-    .boundingBox();
-  const menu = await chrome(page, 'adsr').boundingBox();
-  expect(card).toBeTruthy();
-  expect(menu).toBeTruthy();
-  if (!card || !menu) return;
-
-  const cardRight = card.x + card.width;
-  const menuRight = menu.x + menu.width;
-  // Right edges align (within a few px) and the menu never pokes past the
-  // card's right edge.
-  expect(Math.abs(menuRight - cardRight)).toBeLessThanOrEqual(4);
-  expect(menuRight).toBeLessThanOrEqual(cardRight + 1);
-});
-
-test('left trigger → menu left edge aligns to card left', async ({ page }) => {
+test('the rail trigger anchors the menu BESIDE the tile — top-aligned, never covering it', async ({ page }) => {
+  // ⚠ The card's left/right corner-trigger edge-alignment claims died with
+  // the card (one rail trigger on the shell — see patch-panel.spec.ts's
+  // header + the S2 manifest). The shell contract, measured: the portaled
+  // menu opens ADJACENT to the tile's left edge, top-aligned, so it never
+  // hides the tile it patches.
   await spawnSeqAdsr(page);
   await openFrom(page, 'adsr', 'left');
 
@@ -101,8 +84,12 @@ test('left trigger → menu left edge aligns to card left', async ({ page }) => 
   expect(menu).toBeTruthy();
   if (!card || !menu) return;
 
-  expect(Math.abs(menu.x - card.x)).toBeLessThanOrEqual(4);
-  expect(menu.x).toBeGreaterThanOrEqual(card.x - 1);
+  // Beside, not over: the menu's right edge lands at (or left of) the tile's
+  // left edge, within a small gutter.
+  expect(menu.x + menu.width).toBeLessThanOrEqual(card.x + 1);
+  expect(card.x - (menu.x + menu.width), 'flush beside the tile, not floating away').toBeLessThanOrEqual(24);
+  // Top-aligned with the tile.
+  expect(Math.abs(menu.y - card.y)).toBeLessThanOrEqual(4);
 });
 
 // ── (2) overlay-replace drill ────────────────────────────────────────────

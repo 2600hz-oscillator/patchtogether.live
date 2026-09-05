@@ -5,9 +5,9 @@
 // This face rests on six claims that no shared gate can check, and every one of
 // them reads as true whether or not it is:
 //
-//   1. "The well survives promotion." The picture was painted by a LEGACY CARD
-//      the shipping shell does not mount. Every registry test stays green if it
-//      simply disappears.
+//   1. "The well survives promotion." The picture used to be painted by a
+//      surface the shipping shell does not mount. Every registry test stays
+//      green if it simply disappears.
 //   2. "SCREEN OFF stops the picture and NOTHING else." The strongest single
 //      claim on this surface, and the one a reader is most likely to copy onto
 //      a module where it is false (`skifree`, one module away in this family).
@@ -37,6 +37,7 @@ import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyp
 import { hasVideoSurface, laneGlyphFor } from '$lib/ui/workflow/module-shell-model';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
 import { curatedFace, FACE_TIER_CAPS, type FaceTier } from '$lib/ui/workflow/curated-face';
+import { declaredParamCells, paramCellKind } from '$lib/ui/workflow/shell-control-kind';
 
 /** Every tier the shell can render, DERIVED from the cap table rather than
  *  re-typed — a hand-listed ladder would silently stop covering a new tier. */
@@ -48,7 +49,6 @@ const FACE = modtrisDef.face!;
 const DECLARED: readonly string[] = modtrisDef.params.map((p) => p.id);
 
 const BODY = readFileSync(new URL('./modtris/ModtrisWellBody.svelte', import.meta.url), 'utf8');
-const CARD = readFileSync(new URL('./ModtrisCard.svelte', import.meta.url), 'utf8');
 const STEPPER = readFileSync(
   new URL('../../audio/modules/modtris-state.ts', import.meta.url),
   'utf8',
@@ -116,17 +116,28 @@ describe('modtris — the face is promoted and complete', () => {
     expect(FACE.pages?.[0]?.controls).toEqual(['gravityBpm', 'levelStep']);
   });
 
-  it('declares BOTH cells as FADERS, because the legacy card draws faders', () => {
-    // ⚠ PARITY, NOT TASTE. Without `paramCells` the shell derives KNOBS from a
-    // continuous param and a player's muscle memory for a vertical throw lands
-    // on a rotary. ⚠ And note the divergence from the sibling: `frogger`
-    // declares NOTHING here because `FroggerCard` draws a `<Knob>`. Each face
-    // matches its OWN card; copying across the family is a parity loss nothing
-    // gates.
+  it('declares BOTH cells as FADERS, and the shell really resolves faders', () => {
+    // ⚠ PARITY, NOT TASTE — the parity is with what shipped before, which drew
+    // both of these as `<NeonFader>` while `frogger` drew a `<Knob>`. That is
+    // WHY this declaration exists and why the sibling face declares nothing
+    // here; the card that established it is gone, so the premise is recorded
+    // rather than re-measured.
+    //
+    // ⚠ THE SUCCESSOR IS THE RESOLVER, NOT THE DECLARATION. Asserting only
+    // `FACE.paramCells` would pin a string that the shell might not honour —
+    // a continuous param with no `paramCells` entry derives a KNOB, and a
+    // player's muscle memory for a vertical throw would land on a rotary. So
+    // this asks `paramCellKind` what the dock ACTUALLY paints.
     expect(FACE.paramCells).toEqual({ gravityBpm: 'fader', levelStep: 'fader' });
-    expect(CARD.match(/<NeonFader\b/g) ?? []).toHaveLength(2);
-    expect(CARD, 'the card must not have grown a Knob under a fader declaration')
-      .not.toMatch(/<Knob\b/);
+    const cells = declaredParamCells(modtrisDef as never);
+    for (const id of ['gravityBpm', 'levelStep'] as const) {
+      const p = modtrisDef.params.find((x) => x.id === id)!;
+      expect(paramCellKind(p, new Set(), 'dock', cells), `${id} paints a fader`).toBe('fader');
+      // …and WITHOUT the declaration it would not, which is the whole reason the
+      // declaration is there rather than left to the shell's default.
+      expect(paramCellKind(p, new Set(), 'dock'), `${id} defaults to a knob undeclared`)
+        .not.toBe('fader');
+    }
   });
 });
 
@@ -471,11 +482,15 @@ describe('modtris — CLAIM 6: the RANK is honest because the control was WIRED'
   });
 
   it('the def no longer promises a GROUP-card portal the product does not do', () => {
-    // `GROUP_VIZ_HOST_TYPES` is `new Set(['scope'])`; `group-viz-hosts.test.ts`
-    // measures `canvasInSlot 0` for modtris (#1755). The flag stays declared —
-    // it is the licence the eventual host fix reads — but the user-facing
-    // sentence that said it worked is gone.
-    expect(modtrisDef.vizPassthrough).toBe(true);
+    // It never did: the sole viz host held only `scope`, and the measurement
+    // recorded `canvasInSlot 0` for modtris (#1755), so the user-facing
+    // sentence claiming a working portal was removed while the flag stayed as
+    // a licence for an eventual host fix. ⚠ THE FLAG IS NOW GONE TOO — the
+    // whole `vizPassthrough` field was retired by owner ruling on 2026-09-04
+    // once its host was deleted, so the licence has no type to be declared on.
+    // Asserted as ABSENT rather than dropped: a def re-adding the key would be
+    // re-adding a promise nothing can keep.
+    expect((modtrisDef as { vizPassthrough?: boolean }).vizPassthrough).toBeUndefined();
     const explanation = modtrisDef.docs?.explanation ?? '';
     expect(explanation).not.toMatch(/portaled into a containing GROUP card/);
     expect(explanation, 'and it names where the well actually lives now')
@@ -483,56 +498,41 @@ describe('modtris — CLAIM 6: the RANK is honest because the control was WIRED'
   });
 });
 
-describe('modtris — the card and the face paint ONE well at ONE scale', () => {
-  // ⚠ THE BUG THIS PINS WAS LIVE AND UNCATCHABLE. `ModtrisCard` passed
+describe('modtris — the face paints ONE well at ONE scale', () => {
+  // ⚠ THE BUG THIS PINS WAS LIVE AND UNCATCHABLE. The predecessor passed
   // `canvasEl.width/height` — the BACKING STORE at DPR 2, i.e. 400x520 — into a
   // painter that lays out in those units and then draws its NEXT strip at an
   // ABSOLUTE `'700 9px'` with absolute `+14`/`+90`/`+102` offsets. Every WELL
   // dimension is derived from w/h so the well scaled correctly and the bug hid
   // in plain sight; only NEXT / LN / the count were wrong, rendering at ~4.5-5.5
   // CSS px with a compressed vertical rhythm. There was no pixel test at all,
-  // because modtris was EXEMPT_FROM_VRT — the exemption this PR discharges.
-  it('BOTH surfaces pass CSS px and scale the context by DPR', () => {
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
-      expect(src, `${name}: must scale the context`).toMatch(/setTransform\(DPR, 0, 0, DPR, 0, 0\)/);
-      expect(src, `${name}: must pass CSS px, not the backing store`)
-        .toMatch(/drawModtris\(ctx2d, snap, CSS_W, CSS_H\)/);
-    }
+  // because modtris was EXEMPT_FROM_VRT — the exemption that PR discharged.
+  //
+  // ⚠ THE TWO-SURFACE FORM OF THESE LEGS IS GONE WITH THE SECOND SURFACE, and
+  // what that costs is exactly nothing: the defect was never "the two surfaces
+  // disagree", it was "a surface passes device px to a painter that lays out in
+  // CSS px". That is a property of ONE surface, asserted here on the one that
+  // is left, and the geometry leg's `200` — which used to be proven equal
+  // between the two — is asserted against the literal it always compared to.
+  it('the face body passes CSS px and scales the context by DPR', () => {
+    expect(BODY, 'must scale the context').toMatch(/setTransform\(DPR, 0, 0, DPR, 0, 0\)/);
+    expect(BODY, 'must pass CSS px, not the backing store')
+      .toMatch(/drawModtris\(ctx2d, snap, CSS_W, CSS_H\)/);
   });
 
-  it('NEGATIVE CONTROL: neither surface passes the BACKING STORE any more', () => {
+  it('NEGATIVE CONTROL: it does not pass the BACKING STORE any more', () => {
     // The exact shape of the old call. Without this leg the assertion above
     // would still pass if someone added a second, wrong `drawModtris` call.
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
-      expect(src, `${name}: canvasEl.width is device px, not layout px`)
-        .not.toMatch(/drawModtris\([^)]*canvasEl\.width/);
-    }
+    expect(BODY, 'canvasEl.width is device px, not layout px')
+      .not.toMatch(/drawModtris\([^)]*canvasEl\.width/);
   });
 
-  it('and they agree on the well GEOMETRY, so the two pictures are the same picture', () => {
+  it('and the well GEOMETRY is the pinned one', () => {
     const dims = (src: string) => ({
       w: /const CSS_W = (\d+);/.exec(src)?.[1],
       h: /const CSS_H = (\d+);/.exec(src)?.[1],
     });
-    expect(dims(BODY)).toEqual(dims(CARD));
     expect(dims(BODY).w).toBe('200');
-  });
-
-  it('the card binds its ranges to the DEF, and never by POSITION', () => {
-    // ⚠ THE POSITIONAL READ WAS ABOUT TO BECOME LIVE. The card read
-    // `modtrisDef.params[0]/[1]` for both faders' defaults; the first draft of
-    // the VRT seam in this same PR was a `freeze` ParamDef, and declaring it
-    // ahead of `gravityBpm` would have re-pointed BOTH faders — with
-    // contract-lock, module-docs-lint and every range assertion green, because
-    // all of them read the DEF and none can see the card.
-    // ⚠ COMMENTS STRIPPED: the card's own header quotes the six literals it
-    // removed, and a raw grep cannot tell a quotation from the code.
-    const card = withoutComments(CARD);
-    expect(card).toMatch(/paramSpec\(modtrisDef, 'gravityBpm'\)/);
-    expect(card).toMatch(/paramSpec\(modtrisDef, 'levelStep'\)/);
-    expect(card, 'no positional param reads').not.toMatch(/modtrisDef\.params\[\d+\]/);
-    expect(card, 'no re-typed travel').not.toMatch(/min=\{\d/);
-    expect(card, 'no re-typed travel').not.toMatch(/max=\{\d/);
-    expect(card, 'no re-typed default').not.toMatch(/defaultValue=\{\d/);
+    expect(dims(BODY).h, 'the well height must still be declared in CSS px').toBeTruthy();
   });
 });

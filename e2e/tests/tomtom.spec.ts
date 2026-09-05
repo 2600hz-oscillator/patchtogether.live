@@ -83,7 +83,7 @@ test('TOM DRUM real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-tomtom');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="tomtom"])');
   await expect(card).toHaveCount(1);
   // The title renders the auto-assigned node name (type-uppercased →
   // "TOMTOM", possibly numbered) or the def label ("tom drum" uppercased).
@@ -202,7 +202,7 @@ test('a rack SAVED with STRIKE stuck at 1 still responds to trigger_in', async (
     ],
   );
 
-  await expect(page.locator('.svelte-flow__node-tomtom')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="tomtom"])')).toHaveCount(1);
 
   await seedKriaWith(page, 'b-seq', buildKriaMidiData([60, null, 60, null], { duration: 0.25 }));
 

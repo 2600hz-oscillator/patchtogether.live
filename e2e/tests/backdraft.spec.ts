@@ -23,6 +23,7 @@ import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, type RenderStats } from './_render-smoke';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 // ── SHARED DRIVE HELPERS ────────────────────────────────────────────────────
 // Every capture in this file is frame-driven, never wall-clocked. See the
@@ -107,8 +108,61 @@ async function driveFrames(page: Page, steps: number): Promise<number> {
   return delta;
 }
 
+/** Read the VIDEO OUT sink's engine surface (`vid.outputTexture('v-out')` +
+ *  readPixels — the texture every present path blits; the card-era probe read
+ *  the `video-out-canvas` card chrome, which does not mount on the default
+ *  shell). Returns a sparse luma sample grid plus dims so callers can build
+ *  stats or mirror comparisons. The claim "the whole chain reaches OUTPUT"
+ *  survives: this is the SINK's own surface, not BACKDRAFT's FBO. */
+async function readVoutFrame(
+  page: Page,
+  stride = 16,
+): Promise<{ width: number; height: number; data: number[] } | null> {
+  return page.evaluate((stride) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    if (!w.__engine) return null;
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    const tex = vid.outputTexture('v-out');
+    if (!tex) return null;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const px = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+    if (!complete) return null;
+    const data: number[] = [];
+    for (let i = 0; i < px.length; i += 4 * stride) {
+      data.push(px[i]!, px[i + 1]!, px[i + 2]!);
+    }
+    return { width: W, height: H, data };
+  }, stride);
+}
+
 test.describe('BACKDRAFT — video feedback generator', () => {
   test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, errorWatch }) => {
+    // ⚠ AND IT STILL NEVER DECLARED ONE — until now. It timed out at the bare
+    // 30 s default AGAIN on 2026-09-05, for the third recorded time, and the
+    // paragraph below has been sitting here naming the cause the whole time.
+    // The frame-driven rewrite it describes was the right fix for the COST; it
+    // was never a fix for the CEILING, and the two were conflated. This branch
+    // then added a dock open to the file, which put the cost back over.
+    // `SLOW_BOOT_TEST_TIMEOUT_MS` is the bound; the FRAMES loop below is still
+    // what makes the cost renderer-honest.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     // FRAME-DRIVEN. This test timed out at the DEFAULT 30 s on CI (#1256 run
     // 30444817370, and twice before that) — it cost 34.8 s there against a 30 s
     // budget it never declared. Its only settle was `waitForTimeout(800)`,
@@ -121,7 +175,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // hook has to be installed BEFORE the app boots, so this test owns its own
     // navigation. (Same reason SPATIAL TRANSFORM and PIXELATE below dropped it.)
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // Enough frames for the feedback trails to build and the two masks to bite;
     // the assertions below are floors on structure, not on trail depth.
@@ -147,23 +201,18 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-backdraft'), 'BACKDRAFT visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'),  'OUTPUT visible').toBeVisible();
-    await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
-    // The card carries no in-rack picture any more (owner call). The <canvas>
-    // is still MOUNTED because it is the surface Full Frame / Full Screen /
-    // Present hand to the user, but it is 0x0 and unpainted while the card sits
-    // in the rack — so assert BOTH, or "present" and "hidden" each pass on
-    // their own for the wrong reason. The output pixels this spec reads come
-    // from the downstream VIDEO OUT, which is unaffected.
-    await expect(page.locator('[data-testid="backdraft-canvas"]')).toHaveCount(1);
     await expect(
-      page.locator('[data-testid="backdraft-canvas"]'),
-      'the output surface is not shown in the rack',
-    ).toBeHidden();
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas, 'video-out canvas in DOM').toHaveCount(1);
+      page.locator('.svelte-flow__node[data-id="bd"] [data-testid="module-shell"]'),
+      'BACKDRAFT visible',
+    ).toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]'),
+      'OUTPUT visible',
+    ).toBeVisible();
+    // (The card-era mounted-but-hidden `backdraft-canvas` anatomy died with the
+    // card; the presenting surface lives in the dock body (`backdraft-canvas`
+    // there) and is covered by the fullscreen/full-frame specs. The output
+    // pixels this spec reads come from the SINK's engine surface.)
 
     // Graph readiness (a condition, not a duration), then an EXACT frame count.
     // The read below is of the video-out CANVAS on purpose — this test's claim
@@ -176,22 +225,20 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // The output should be non-trivial (feedback trails + masks). Assert a
     // spread of pixel values (variance) rather than pixel-exact — that's
     // the VRT suite's job.
-    const stats = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    const frame = await readVoutFrame(page, 4);
+    const stats = (() => {
+      if (!frame) return null;
       let n = 0, sum = 0, sumSq = 0, nonZero = 0;
-      for (let i = 0; i < data.length; i += 16) {
-        const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+      for (let i = 0; i < frame.data.length; i += 3) {
+        const v = (frame.data[i]! + frame.data[i + 1]! + frame.data[i + 2]!) / 3;
         sum += v; sumSq += v * v; n++;
         if (v > 8) nonZero++;
       }
       const mean = sum / n;
       const variance = sumSq / n - mean * mean;
       return { mean, variance, nonZeroFrac: nonZero / n };
-    });
-    expect(stats, 'canvas readable').not.toBeNull();
+    })();
+    expect(stats, 'sink surface readable').not.toBeNull();
     expect(stats!.nonZeroFrac, 'output is not all-black (feedback rendered)').toBeGreaterThan(0.02);
     expect(stats!.variance, 'output has spatial structure (trails + masks)').toBeGreaterThan(20);
 
@@ -216,7 +263,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // one — on a slow renderer it could be ZERO engine frames, which would make
     // the stillness assertion trivially true for a second reason.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     const FRAMES = 8;
 
@@ -233,20 +280,16 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       ],
     );
 
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
     await waitForNodeLit(page, 'bd');
 
-    const sample = (): Promise<number[]> =>
-      canvas.evaluate((el) => {
-        const c = el as HTMLCanvasElement;
-        const ctx = c.getContext('2d');
-        if (!ctx) return [];
-        const d = ctx.getImageData(0, 0, c.width, c.height).data;
-        const out: number[] = [];
-        for (let i = 0; i < d.length; i += 4 * 64) out.push(d[i]!);
-        return out;
-      });
+    const sample = async (): Promise<number[]> => {
+      const f = await readVoutFrame(page, 64);
+      if (!f) return [];
+      // Red channel only (matches the card-era sample).
+      const out: number[] = [];
+      for (let i = 0; i < f.data.length; i += 3) out.push(f.data[i]!);
+      return out;
+    };
 
     const setFreeze = (v: number) =>
       page.evaluate((fv) => {
@@ -360,7 +403,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       // captures spawn the SAME node ids, so re-spawning onto the live doc
       // would read capture 1's already-settled feedback ring (identical
       // frames, diff exactly 0 — the shard-1 failure on #1036).
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -548,7 +591,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     async function capture(pixelate: number): Promise<RenderStats> {
       // FRESH RACK PER CAPTURE: both captures spawn the SAME node ids, so
       // re-spawning onto the live doc would read the previous scene.
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -664,12 +707,33 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
-    // The CLK override badge appears once the clock cable is patched.
+    await expect(page.locator('.svelte-flow__node[data-id="bd"] [data-testid="module-shell"]')).toHaveCount(1);
+    // The live-override badge appears on the DELAY fader cell once the clock
+    // cable is patched — the faceplate half of the card's CLK badge, driven by
+    // the SAME shared predicate (param-override-badges.ts /
+    // backdraft-clocked-delay.ts, so the two surfaces cannot disagree). The
+    // DELAY fader lives on the DOCK ladder (probed: zero delay cells in the
+    // lane tile), so open the pane and assert there.
+    await page.waitForFunction(
+      () =>
+        typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+        'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'bd',
+    );
+    const bdPane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="bd"]');
+    await expect(bdPane).toBeVisible({ timeout: 60_000 });
+    // The DELAY fader sits on the 'loop' faceplate tab; inactive pages are
+    // display:none (the tabbed-dock recipe), so activate it before asserting.
+    await bdPane.locator('[data-testid="faceplate-tab-loop"]').click();
     await expect(
-      page.locator('[data-testid="backdraft-clk-badge"]'),
-      'CLK badge shows the DELAY knob is clock-overridden',
-    ).toBeVisible();
+      bdPane.locator('[data-testid="face-override-badge-delay"]'),
+      'override badge shows the DELAY fader is clock-overridden',
+    ).toBeVisible({ timeout: 60_000 });
 
   });
 
@@ -709,18 +773,42 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       await driveFrames(page, 2);
     }
 
-    // Sample a small grid of luma values + the canvas dims so we can compare
-    // mirrored positions. Returns { w, h, lumaAt(x,y) } as a flat array.
+    // Sample a small grid of luma values + dims so we can compare mirrored
+    // positions — read at the SINK's engine surface (see readVoutFrame). NB
+    // readPixels rows are bottom-origin; the mirror comparisons are symmetric
+    // under a vertical flip EXCEPT the kept-half check, which flips its labels
+    // accordingly (the engine's row 0 is the VISUAL bottom).
     function readGrid() {
-      return page.locator('canvas[data-testid="video-out-canvas"]').evaluate((el) => {
-        const c = el as HTMLCanvasElement;
-        const ctx = c.getContext('2d');
-        if (!ctx) return null;
-        const { width, height } = c;
-        const img = ctx.getImageData(0, 0, width, height).data;
+      return page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain: (d: string) => {
+              gl: WebGL2RenderingContext;
+              outputTexture: (id: string, port?: string) => WebGLTexture | null;
+              res: { width: number; height: number };
+            };
+          };
+        };
+        if (!w.__engine) return null;
+        const vid = w.__engine().getDomain('video');
+        const gl = vid.gl;
+        const tex = vid.outputTexture('v-out');
+        if (!tex) return null;
+        const { width, height } = vid.res;
+        const fb = gl.createFramebuffer()!;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        const img = new Uint8Array(width * height * 4);
+        if (complete) gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.deleteFramebuffer(fb);
+        while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+        if (!complete) return null;
         const luma = (x: number, y: number): number => {
           const xi = Math.max(0, Math.min(width - 1, Math.round(x)));
-          const yi = Math.max(0, Math.min(height - 1, Math.round(y)));
+          // Flip to VISUAL y (readPixels is bottom-origin).
+          const yi = Math.max(0, Math.min(height - 1, height - 1 - Math.round(y)));
           const i = (yi * width + xi) * 4;
           return (img[i]! + img[i + 1]! + img[i + 2]!) / 3;
         };
@@ -738,7 +826,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     }
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -758,7 +846,6 @@ test.describe('BACKDRAFT — video feedback generator', () => {
         { id: 'e_out', from: { nodeId: 'bd',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in'   }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
     await waitForNodeLit(page, 'bd');
 
     // Baseline: UNFOLDED frame (both mirrors off). Used to identify which
@@ -873,12 +960,15 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       expect(diff / n, 'BOTH mirrors → 4-way quadrant symmetry (kaleidoscope)').toBeLessThan(12);
     }
 
-    // ---- Gate input toggles the mirror param on a rising edge ----
-    // Reset mirrorX off + unfreeze. Drive the synthetic gate param
-    // (mirrorXGate — what the mirror_x_gate CV bridge writes) low→high: the
-    // module edge-detects the RISING edge and FLIPS mirrorX. The card mirrors
-    // the engine's live value back into the store, so the assertion (reading
-    // the store) sees the flip — exactly what the button binds to.
+    // ---- Gate input toggles the mirror on a rising edge ----
+    // Drive the synthetic gate param (mirrorXGate — what the mirror_x_gate CV
+    // bridge writes) low→high: the module edge-detects the RISING edge and
+    // FLIPS its live mirrorX latch. ⚠ THE OBSERVABLE IS THE RENDER, not the
+    // store: the store write-back was the LEGACY CARD's rAF reflection (its
+    // comment said so verbatim), and no shell surface re-persists the latch —
+    // so the spec asserts what the toggle DOES: the output gains X symmetry on
+    // the first edge and loses it on the second (toggle-on-edge), measured
+    // with the same grid instrument as the folds above.
     const setGate = (v: number) =>
       page.evaluate((v) => {
         const w = globalThis as unknown as {
@@ -887,45 +977,63 @@ test.describe('BACKDRAFT — video feedback generator', () => {
         };
         w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) n.params.mirrorXGate = v; });
       }, v);
-    const readMirrorX = () =>
+    const unfreezeAll = () =>
       page.evaluate(() => {
-        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
-        return w.__patch.nodes['bd']?.params.mirrorX;
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) { n.params.mirrorX = 0; n.params.mirrorXGate = 0; n.params.freeze = 0; } });
       });
+    /** Mean-abs luma diff between left samples and their right mirrors — the
+     *  X-symmetry meter (small = folded, large = the asymmetric triangle). */
+    const xAsym = (g: NonNullable<Awaited<ReturnType<typeof readGrid>>>): number => {
+      const m = new Map<string, number>();
+      for (const p of g.pts) m.set(`${Math.round(p.x)},${Math.round(p.y)}`, p.v);
+      let diff = 0, n = 0;
+      for (const p of g.pts) {
+        if (p.x > g.width / 2) continue;
+        const partner = m.get(`${Math.round(g.width - p.x)},${Math.round(p.y)}`);
+        if (partner === undefined) continue;
+        diff += Math.abs(p.v - partner); n++;
+      }
+      return n ? diff / n : 0;
+    };
 
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => { const n = w.__patch.nodes['bd']; if (n) { n.params.mirrorX = 0; n.params.mirrorXGate = 0; n.params.freeze = 0; } });
-    });
-    // The edge is detected inside engine.step(), and the card's own rAF then
-    // reflects the engine's live value back into the store — so BOTH have to be
-    // driven. driveFrames() does exactly that (N steps, then two animation
-    // frames for the card). With the loop paused an `expect.poll` would spin
-    // forever: polling advances no frames.
-    await driveFrames(page, 2);
-    expect(await readMirrorX(), 'mirrorX starts low').toBeLessThan(0.5);
+    await unfreezeAll();
+    await driveFrames(page, 4);
+    const gBase = await readGrid();
+    expect(gBase).not.toBeNull();
+    const baseAsym = xAsym(gBase!);
+    // Anti-vacuity: the ungated frame is measurably ASYMMETRIC, so "symmetric
+    // after the edge" cannot pass on a dead/flat render.
+    // Floor 8: measured 11.33 for this triangle over the 81-point grid (many
+    // grid samples land on black on both sides, diluting the mean); a folded
+    // frame measures ~2 (the fold assertions above run at ceiling 12 on the
+    // SAME instrument for a busier scene).
+    expect(baseAsym, `ungated frame is X-asymmetric (${baseAsym.toFixed(2)})`).toBeGreaterThan(8);
 
-    // First rising edge → mirrorX flips 0 → 1.
+    // First rising edge → the live mirror latch flips on → X symmetry.
     await setGate(1);
     await driveFrames(page, 4);
-    expect(await readMirrorX(), 'rising edge on mirror_x_gate flips mirrorX 0→1').toBeGreaterThanOrEqual(0.5);
+    const gOn = await readGrid();
+    expect(xAsym(gOn!), 'rising edge on mirror_x_gate folds the output (X-symmetric)').toBeLessThan(baseAsym / 2);
 
-    // Fall, then a SECOND rising edge → mirrorX flips back 1 → 0 (toggle-on-edge).
+    // Fall, then a SECOND rising edge → the latch flips back off (toggle-on-
+    // edge) → the asymmetric picture returns.
     await setGate(0);
     await driveFrames(page, 2);
     await setGate(1);
     await driveFrames(page, 4);
-    expect(await readMirrorX(), 'second rising edge flips mirrorX 1→0').toBeLessThan(0.5);
+    const gOff = await readGrid();
+    expect(xAsym(gOff!), 'second rising edge unfolds the output (asymmetry returns)').toBeGreaterThan(baseAsym / 2);
   });
 
   test('faders route through the patch store', async ({ page, rack }) => {
     await spawnPatch(page, [
       { id: 'bd', type: 'backdraft', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="bd"] [data-testid="module-shell"]')).toHaveCount(1);
 
     await page.evaluate(() => {
       const w = globalThis as unknown as {

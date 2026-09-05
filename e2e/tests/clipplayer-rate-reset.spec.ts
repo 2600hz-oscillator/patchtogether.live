@@ -129,7 +129,7 @@ test.fixme('per-lane rate: card dropdowns set 1/2 : 1 : 2x lanes advancing at a 
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio',
       params: { running: 0, bpm: 240 } },
   ]);
-  const card = page.locator('.svelte-flow__node-clipplayer');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])');
   await expect(card).toHaveCount(1);
 
   // Set the rates on the CARD (the owner's dropdown): lane0=1/2, lane2=2x
@@ -232,7 +232,7 @@ test.fixme('RST button: all active clips snap back to step 1 and keep playing', 
     { id: 'tl', type: 'timelorde', position: { x: 520, y: 80 }, domain: 'audio',
       params: { running: 0, bpm: 240 } },
   ]);
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 
   await seedDenseClips(page, 'cp', [0, 1]);
   await setTransport(page, 1);
@@ -292,7 +292,7 @@ test('reset gate input: clock edges hold the playhead at the top; removing them 
   );
   // All-rest pattern: the kria runs with the transport but emits nothing.
   await seedKriaWith(page, 'rstSeq', buildKriaMidiData([null, null, null, null], { duration: 0.5 }));
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 
   await seedDenseClips(page, 'cp', [0]);
   await setTransport(page, 1);

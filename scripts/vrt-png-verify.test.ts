@@ -79,6 +79,20 @@ describe('vrt-png-verify', () => {
     expect(() => assertDecodablePng(png.subarray(0, png.length - 6))).toThrow(/truncated|no IEND/);
   });
 
+  // ⚠ THE CLASS THIS VERIFIER USED TO REPORT AS CLEAN. Four committed
+  // baselines carried 720-1610 bytes after IEND. Every structural check passes
+  // on them — signature, chunk CRCs, a complete IDAT inflate with a correct
+  // Adler-32 — so the old walk `break`ed at IEND and called them decodable.
+  // `pngjs`, which Playwright's comparator uses, refuses them outright, so the
+  // capture could neither read nor replace them. A file the one consumer that
+  // matters cannot open is corrupt, whatever the chunk walk says.
+  it('catches trailing bytes after IEND (valid chunks, unreadable by pngjs)', () => {
+    const png = makePng();
+    expect(() => assertDecodablePng(png)).not.toThrow();
+    const withTail = Buffer.concat([png, Buffer.alloc(720, 0x5a)]);
+    expect(() => assertDecodablePng(withTail)).toThrow(/trailing byte/);
+  });
+
   it('catches a non-PNG (an LFS pointer stub committed as-is)', () => {
     const pointer = Buffer.from(
       'version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n',

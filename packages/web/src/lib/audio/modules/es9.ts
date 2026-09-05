@@ -533,8 +533,8 @@ export const es9Def: AudioModuleDef = {
   // ⚠ TWO FAMILIES FOR TWO GESTURES, because `resolveFaceControl` resolves a
   // face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend STATIC,
   // and CONNECT/DISCONNECT are none of the first. They are real affordances the
-  // module owns — the legacy card has had both buttons since it shipped — and
-  // `module-docs-lint`'s card-drift leg requires each declared `testidPrefix`
+  // module owns — it has had both buttons since it shipped — and
+  // `module-docs-lint` requires each declared `testidPrefix`
   // to appear in real UI source, which is why `Es9Card.svelte` grows the two
   // testids in this same diff. Adding the testid is the honest fix; dropping
   // the family would be fixing a declaration to satisfy a gate.
@@ -545,7 +545,7 @@ export const es9Def: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: a raw audio port (±1.0 ≙ ±10 V) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors; cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate's BRIDGE lamp says whether it answered, and CONNECT is on the module's tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
+      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: a raw audio port (±1.0 ≙ ±10 V) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors; cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate\'s BRIDGE lamp says whether it answered, and CONNECT is on the module\'s tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
     inputs: inputDocs(),
     outputs: outputDocs(),
     controls: controlDocs(),

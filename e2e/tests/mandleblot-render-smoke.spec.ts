@@ -136,7 +136,7 @@ test.describe('MANDLEBLOT — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // MANDLEBLOT is a pure generated SOURCE (no decode/getUserMedia/asset) →
@@ -212,7 +212,7 @@ test.describe('MANDLEBLOT — deterministic render smoke', () => {
 
     await installRenderSmokeHooks(page, T_A);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // The same painting view as the test above, but with `color_cycle` at the

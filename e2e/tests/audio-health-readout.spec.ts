@@ -38,7 +38,7 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test('audio health readout is live, and playbackStats exists in this browser', async ({ page }) => {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   // ⚠ THE FIRST ASSERTION IN A SPEC PAYS FOR THE APP'S LOAD, and `expect`'s
   // default budget is 5 s. `[data-testid="audio-health"]` is UNCONDITIONAL
   // markup in `footer.bottombar` (Canvas.svelte) — there is no state that can

@@ -62,7 +62,7 @@ const BOOT_SUBJECTS: ReadonlyArray<{ readonly probe: RegExp; readonly why: strin
   },
   {
     probe: /locator\(['"]\[data-testid="canvas-root"\]['"]\)\)\s*\.toBeVisible\(([^;]*?)\)/g,
-    why: 'the legacy canvas root — the /rack?shell=legacy equivalent of the topbar',
+    why: 'the canvas root — the lane-side equivalent of the topbar',
   },
 ];
 

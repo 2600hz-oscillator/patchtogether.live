@@ -1,6 +1,6 @@
 // e2e/vrt/dashboard.spec.ts
 //
-// Public/unauthed scratch-canvas snapshot. `/rack?shell=legacy&seed=none` is the scratch canvas
+// Public/unauthed scratch-canvas snapshot. `/rack?seed=none` is the scratch canvas
 // (moved off `/` in the landing-page overhaul; `/` is now the static
 // landing). `/dashboard` redirects to /sign-in for anon users, so a
 // signed-out "dashboard" shot would just be the sign-in page. The
@@ -41,7 +41,7 @@ test('landing-empty: public canvas with no modules', async ({ page }) => {
   // stable run-to-run and drifts the landing-empty baseline (esp. on the
   // ubuntu linux runner). See e2e/vrt/_fonts.ts for the full writeup.
   await pinVrtFonts(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await hideJitterers(page);

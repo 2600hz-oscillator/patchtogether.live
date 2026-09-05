@@ -11,8 +11,8 @@
 // ConstantSourceNodes.
 //
 // ⚠ THE POINTER IS NOT "THE CARD'S" ANY MORE (2026-09-02, the promotion).
-// Three surfaces now play the same strip — the legacy card, the face's
-// `tileBody` on the lane and its `fullViewBody` at the dock — and all three go
+// Two surfaces now play the same strip — the face's `tileBody` on the lane and
+// its `fullViewBody` at the dock — and both go
 // through ONE action seam, `$lib/ui/modules/moog956/ribbon-actions.ts`. Its
 // header carries the ordering argument the module lives or dies by; the short
 // form is below under `gate`.
@@ -66,7 +66,6 @@ export const moog956Def: AudioModuleDef = {
   domain: 'audio',
   label: '956 ribbon',
   category: 'utility',
-  card: 'Moog956Card',
 
   // No inputs — a manual touch source (like joystick).
   inputs: [],

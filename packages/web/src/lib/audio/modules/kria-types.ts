@@ -506,8 +506,8 @@ export function setMuted(track: KriaTrack, muted: boolean): KriaTrack {
 // THE STEP-EDITOR GRID MODEL (PURE) — the ONE place row↔value lives
 // ---------------------------------------------------------------------------
 //
-// Every editor of this sequencer reads this model: the legacy card, the
-// faceplate's step-grid panel, and — through the pure mutators above — the
+// Every editor of this sequencer reads this model: the faceplate's step-grid
+// panel and — through the pure mutators above — the
 // monome grid bridge. It exists because the row↔value mapping used to be
 // written TWICE inside KriaCard.svelte, once in the click handler and once in
 // the lit test, and the two disagreed.

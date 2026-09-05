@@ -368,16 +368,14 @@ class DockStore {
     return wasDocked;
   }
 
-  /** GC sweep against the live snapshot (see dock-entries.sweepDockState).
-   *  Returns ids evicted because a peer grouped them (caller toasts). */
-  sweep(liveIds: ReadonlySet<string>, groupedIds: ReadonlySet<string>): string[] {
-    const res = sweepDockState(this.#entries, this.#tombstones, liveIds, groupedIds);
+  /** GC sweep against the live snapshot (see dock-entries.sweepDockState). */
+  sweep(liveIds: ReadonlySet<string>): void {
+    const res = sweepDockState(this.#entries, this.#tombstones, liveIds);
     if (res.changed) {
       this.#entries = res.entries;
       this.#tombstones = res.tombstones;
       this.#persist();
     }
-    return res.evictedGrouped;
   }
 
   /** Tombstone count (unit-test observability). */

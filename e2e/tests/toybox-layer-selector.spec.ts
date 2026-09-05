@@ -24,7 +24,7 @@
 // node.data reads poll via expect.poll. selectOption uses { force, noWaitAfter }.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 
 type Layer = {
   kind?: string;
@@ -38,18 +38,6 @@ type PatchGlobal = {
   __toyboxFreeze?: (t?: number) => void;
   __toyboxPrevSig?: string;
 };
-
-/** Pin the viewport at scale 1, panned up so the (tall) card body clears the
- *  fixed bottombar footer that otherwise intercepts pointer events. */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** Click an in-card control by testid. force bypasses the bottombar overlay;
  *  noWaitAfter skips the no-op post-click navigation wait (load-bearing on CI —
@@ -70,7 +58,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     ({ time }) => {
       const g = globalThis as unknown as PatchGlobal;
       g.__toyboxFreeze?.(time);
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!c) return false;
       const ctx = c.getContext('2d');
       if (!ctx) return false;
@@ -90,7 +78,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     { timeout: 30_000 },
   );
   return page.evaluate(() => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const ctx = c.getContext('2d')!;
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     let r = 0, g = 0, b = 0, n = 0;
@@ -174,16 +162,14 @@ test.describe('TOYBOX per-layer editing — LAYER selector @webgl-serial', () =>
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     // LAYER 1 (index 0) is the active tab by default + already populated.
     await expect(page.locator('[data-testid="toybox-layer-tab-0"]')).toHaveAttribute('data-active', 'true');

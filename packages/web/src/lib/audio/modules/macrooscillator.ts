@@ -1074,12 +1074,12 @@ export const macrooscillatorDef: AudioModuleDef = {
       morph:
         "The third universal macro (0..1), model-specific: saw→square→triangle morph (VA), folder↔tanh crossfade (WAVESHAPE), feedback (FM 2-OP) / envelope decay (FM 6-OP), chord spread (CHORD), even/odd balance (ADDITIVE), damping (STRING), mode-amp morph (MODAL), body decay (KICK/SNARE), decay length (HIHAT), phase-distortion (WAVETABLE), grain-envelope shape (GRANULAR), pitched→whispered source (SPEECH).",
       level:
-        "Output level (0..1) applied to the main OUT only; the AUX tap is left at full scale regardless of this control. ⚠ It cannot fix the module's real level problem: OUT RMS spans 76.6 dB BETWEEN engines at identical macro settings (FM 2-OP −5.0 dBFS against MODAL −81.6 dBFS), and LEVEL moves all fourteen by the same amount. The faceplate's `out` and `vs loudest` readouts print where the current engine sits in that spread. Note also that at LEVEL 0 the main output is genuinely silent while AUX is unchanged — on eight of the fourteen engines that means AUX is still at full scale.",
+        "Output level (0..1) applied to the main OUT only; the AUX tap is left at full scale regardless of this control. ⚠ It cannot fix the module's real level problem: OUT RMS spans 76.6 dB BETWEEN engines at identical macro settings (FM 2-OP −5.0 dBFS against MODAL −81.6 dBFS), and LEVEL moves all fourteen by the same amount. The faceplate\'s `out` and `vs loudest` readouts print where the current engine sits in that spread. Note also that at LEVEL 0 the main output is genuinely silent while AUX is unchanged — on eight of the fourteen engines that means AUX is still at full scale.",
       // Read-only cell + audition button, neither with a backing ParamDef —
       // declared as one-member control families above and keyed as
       // `<familyId>-{n}`.
       "macro-hero-{n}":
-        "The engine picture in the faceplate's hero slot: a short window of the CURRENT engine at the CURRENT macro settings, computed from the live knobs through the module's own pure-math mirror rather than tapped off the audio, so it shows what the voice will do before anything has struck it. OUT is drawn solid and AUX as a ghost, both at the SAME scale — which is how the level relationship between the two outputs becomes visible instead of being something you discover with a meter. Two captions carry facts the picture would otherwise hide: the display gain (MODAL peaks at 0.0028, so an un-scaled trace would be a flat line indistinguishable from silence) and the lead-in that had to be skipped (MODAL's exciter is a fixed 4 Hz impulse train, so its first non-zero sample is a quarter of a second in).",
+        "The engine picture in the faceplate's hero slot: a short window of the CURRENT engine at the CURRENT macro settings, computed from the live knobs through the module\'s own pure-math mirror rather than tapped off the audio, so it shows what the voice will do before anything has struck it. OUT is drawn solid and AUX as a ghost, both at the SAME scale — which is how the level relationship between the two outputs becomes visible instead of being something you discover with a meter. Two captions carry facts the picture would otherwise hide: the display gain (MODAL peaks at 0.0028, so an un-scaled trace would be a flat line indistinguishable from silence) and the lead-in that had to be skipped (MODAL's exciter is a fixed 4 Hz impulse train, so its first non-zero sample is a quarter of a second in).",
       "macro-strike-{n}":
         "Audition: strike the engine once, exactly as a rising edge into TRIG would. It exists because five of the fourteen engines (FM 6-OP, STRING, KICK, SNARE, HIHAT) initialise their excitation or envelopes to zero and are therefore SILENT — not quiet, silent — with nothing patched into TRIG, so on a bare rack more than a third of the module cannot be heard at all. Pressing it writes nothing: no param moves, nothing is persisted, nothing is shared with the rackspace and nothing lands in the undo stack. A real cable into TRIG keeps working alongside it.",
     },
@@ -1175,8 +1175,8 @@ export const macrooscillatorDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
-      // Manual STRIKE (the audition, on the faceplate AND the legacy card):
-      // the shared `manualTrigger` read key every externally-struck voice in
+      // Manual STRIKE (the audition): the shared `manualTrigger` read key
+      // every externally-struck voice in
       // the rack answers — one implementation, resolved through
       // manual-strike-actions.ts, never a per-module copy.
       read(key: string): unknown {

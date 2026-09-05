@@ -74,8 +74,8 @@ export interface WavecelData {
    * single-frame scope trace. Absent ⇒ `'3d'`, the card's default, so a rack
    * saved before the faceplate existed opens unchanged.
    *
-   * ⚠ THE LEGACY CARD DOES NOT USE THIS KEY — it holds the same choice in
-   * component `$state` (`WavecelCard.svelte:54`), so its view resets on every
+   * ⚠ THE KEY IS NEW. The same choice used to live in component `$state`, so
+   * the view reset on every
    * remount (the #1531 / #1574 / #1583 class). The faceplate persists it
    * instead, matching the owner's ruling for the analogous SCREEN toggle:
    * view state on `node.data` survives a tab switch, a remount and a reload,
@@ -92,8 +92,8 @@ export interface WavecelData {
    * table or a user WAV).
    *
    * ⚠ IT EXISTS BECAUSE THE FACE'S PRESET SELECTOR HAS TO SHOW ITS OWN STATE.
-   * The legacy card resets its preset `<select>` to '' the moment a load
-   * finishes, so the control never displays what it loaded — a "cheap UX for
+   * The preset `<select>` used to reset to '' the moment a load finished, so
+   * the control never displayed what it loaded — a "cheap UX for
    * did-it-take" that works on a card because re-picking the same row re-fires.
    * `faces-parity` refuses that shape by name: it picks an option and asserts
    * the selection CHANGED, because a selector that always reads the same thing
@@ -142,10 +142,6 @@ function resolveFrames(data: WavecelData | undefined): ResolvedFrames {
   };
 }
 
-// Module-grouping Phase 3A: `vizPassthrough` is available on AudioModuleDef
-// for WAVECEL's 3D wavetable visualization canvas. Left UNSET until the
-// card adopts the `data-viz-passthrough` <canvas> contract used by
-// ScopeCard for GroupCard portal-hoisting.
 export const wavecelDef: AudioModuleDef = {
   type: 'wavecel',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
@@ -333,7 +329,7 @@ export const wavecelDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A stereo WAVETABLE oscillator: it scans through a stack of single-cycle waveforms (a wavetable) and plays back the one MORPH points at, smoothly cross-fading between adjacent frames so turning MORPH sweeps the timbre. SPREAD layers several copies of the voice reading NEIGHBOURING frames of the table across the stereo field for a wide, shimmering image (a wavetable spread, not a pitch detune — one shared phase, several frames), and FOLD runs the result through a wavefolder to fold the peaks back on themselves and add bright harmonics. It is polyphonic: patch a poly chord bus into POLY and it renders one wavetable voice per gated lane at that lane's pitch and sums them (the morph/spread/fold timbre is shared across all voices); with nothing in POLY it plays the single mono PITCH. A per-voice amplitude ADSR (A/D/S/R) shapes each note once a poly lane or the TRIG gate fires, riding on top of a BASE-volume floor: at the default BASE of 0 the envelope has full control of each note, and turning BASE up floors the voice so the envelope only swells it the rest of the way. With nothing patched into POLY or TRIG there is no note to shape and WAVECEL free-runs as a continuous full-level drone. Load one of the factory wavetables, pick a built-in preset, or upload your own WAV, and watch the on-card screen as either an oscilloscope trace or an animated 3D view of the whole table.",
+      "A stereo WAVETABLE oscillator: it scans through a stack of single-cycle waveforms (a wavetable) and plays back the one MORPH points at, smoothly cross-fading between adjacent frames so turning MORPH sweeps the timbre. SPREAD layers several copies of the voice reading NEIGHBOURING frames of the table across the stereo field for a wide, shimmering image (a wavetable spread, not a pitch detune — one shared phase, several frames), and FOLD runs the result through a wavefolder to fold the peaks back on themselves and add bright harmonics. It is polyphonic: patch a poly chord bus into POLY and it renders one wavetable voice per gated lane at that lane's pitch and sums them (the morph/spread/fold timbre is shared across all voices); with nothing in POLY it plays the single mono PITCH. A per-voice amplitude ADSR (A/D/S/R) shapes each note once a poly lane or the TRIG gate fires, riding on top of a BASE-volume floor: at the default BASE of 0 the envelope has full control of each note, and turning BASE up floors the voice so the envelope only swells it the rest of the way. With nothing patched into POLY or TRIG there is no note to shape and WAVECEL free-runs as a continuous full-level drone. Load one of the factory wavetables, pick a built-in preset, or upload your own WAV, and watch the faceplate\'s screen as either an oscilloscope trace or an animated 3D view of the whole table.",
     inputs: {
       pitch:
         "1V/octave pitch CV setting the oscillator's frequency (0V = C4), summed with the Tune and Fine knobs. This is the MONO voice and is used whenever nothing is gating the POLY input.",
@@ -356,9 +352,9 @@ export const wavecelDef: AudioModuleDef = {
       out_r:
         "Right channel of the stereo wavetable output — weighted toward the spread taps reading frames ABOVE the Morph position; the L/R pair widens as Spread increases, at any Morph position.",
       scope_out:
-        "A mono-video oscilloscope trace of the currently-morphed waveform (single-color line on a dark background). It ALWAYS renders this scope view regardless of which mode the on-card preview toggle is showing — patch it into a video destination to see the wave even while the card shows the 3D view.",
+        "A mono-video oscilloscope trace of the currently-morphed waveform (single-color line on a dark background). It ALWAYS renders this scope view regardless of which mode the faceplate's preview toggle is showing — patch it into a video destination to see the wave even while the faceplate shows the 3D view.",
       wave3d_out:
-        "A video output rendering the whole wavetable as a 3D stack of frames in perspective, with the active frame highlighted; the surface animates as Morph (and its CV) scans across the table. Like SCOPE VIDEO it ALWAYS renders its own (3D) view regardless of the card's preview toggle.",
+        "A video output rendering the whole wavetable as a 3D stack of frames in perspective, with the active frame highlighted; the surface animates as Morph (and its CV) scans across the table. Like SCOPE VIDEO it ALWAYS renders its own (3D) view regardless of the faceplate's preview toggle.",
     },
     controls: {
       tune:
@@ -388,7 +384,7 @@ export const wavecelDef: AudioModuleDef = {
       "wavecel-wav-input-{n}":
         "Load WAV — uploads your own wavetable from an E352-format WAV file (single-cycle frames concatenated); the parsed frames become the active USER table and persist with the patch. A status line confirms the frame count, or shows a parse error if the file isn't valid.",
       "wavecel-viz-toggle-{n}":
-        "Toggles the on-card preview screen between the SCOPE oscilloscope trace and the 3D wavetable view (the button shows the current mode). This only changes what the card displays — the SCOPE VIDEO and 3D VIDEO output ports always emit their own respective views regardless of this toggle.",
+        "Toggles the faceplate's preview screen between the SCOPE oscilloscope trace and the 3D wavetable view (the button shows the current mode). This only changes what the faceplate displays — the SCOPE VIDEO and 3D VIDEO output ports always emit their own respective views regardless of this toggle.",
     },
   },
 

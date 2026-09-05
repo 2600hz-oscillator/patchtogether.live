@@ -61,10 +61,10 @@
   // ⚠ NO RESIZE GRIP, DELIBERATELY. The card's corner grip writes
   // `node.data.width/height`, which size THE CARD; a dock faceplate is sized by
   // the dock pane and a lane tile is a fixed 192 px, so a grip here would move
-  // numbers nothing reads. videoOut settled the same question the same way on the
-  // owner's instruction. The card keeps its grip (`?shell=legacy` still renders
-  // it) and `node.data.width` is still READ — by the spawn geometry in
-  // `livecode-cell-actions`, so a saved rack's new modules land where they did.
+  // numbers nothing reads. videoOut settled the same question the same way on
+  // the owner's instruction. ⚠ `node.data.width` IS STILL READ — by the spawn
+  // geometry in `livecode-cell-actions`, so a saved rack's new modules land
+  // where they did, and dropping the grip does not make the key dead.
 
   import { onDestroy, onMount } from 'svelte';
   import { patch } from '$lib/graph/store';
@@ -175,13 +175,11 @@
 
   // ── The dev-only test hook ───────────────────────────────────────────────
   //
-  // ⚠ THE SAME SHAPE AND THE SAME KEY AS THE CARD'S, deliberately.
+  // ⚠ THE HOOK KEEPS ITS ORIGINAL SHAPE AND KEY, deliberately.
   // `editor-edit-survives-collapse.spec.ts` drives `__livecode[id].type()` from
-  // the DOCK FULL VIEW on the DEFAULT shell — the surface this body now IS — so
-  // without it that spec would time out waiting for a hook the promotion
-  // removed. Only one of the two surfaces is ever mounted for a given node (the
-  // card renders under `?shell=legacy`, this body under the faceplate shell), so
-  // the shared key cannot collide.
+  // the DOCK FULL VIEW — the surface this body now IS — so without it that spec
+  // would time out waiting for a hook the promotion removed. One editor is
+  // mounted per node, so the key cannot collide with itself.
   if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

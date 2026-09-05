@@ -108,8 +108,9 @@ export const moog984Def: AudioModuleDef = {
   // ranking, which only ever decides what a LANE TIER paints as a subset);
   // `pages` is ROW-major, because the dock renders everything and there the
   // layout must be the physical matrix — rows are inputs, columns are outputs,
-  // exactly as `m_ij` is named, as `docs` describes it and as the legacy card
-  // draws it. Transposing the dock to match the ranking would make the face
+  // exactly as `m_ij` is named, as `docs` describes it and as the module has
+  // always drawn it. Transposing the dock to match the ranking would make the
+  // face
   // disagree with every other statement of the same object.
   //
   // ── THE GRID IS REAL, AND IT IS ONE BAND ─────────────────────────────────

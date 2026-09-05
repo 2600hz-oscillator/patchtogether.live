@@ -76,7 +76,7 @@ test.describe('OUTLINES — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // OUTLINES is a stateful particle SOURCE → its own OUTPUT. We read its
@@ -95,7 +95,7 @@ test.describe('OUTLINES — deterministic render smoke', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="outlines-card"]'), 'OUTLINES card present').toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="outlines"])'), 'OUTLINES tile present').toHaveCount(1);
 
     // Fire a FIXED number of deterministic gate rising edges ONCE (synchronous —
     // each edge spawns one seeded shape inside setParam, before any step). This

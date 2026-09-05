@@ -54,7 +54,7 @@ test.setTimeout(120_000);
 async function readFrame(
   page: import('@playwright/test').Page,
 ): Promise<{ grid: number[]; nonZeroFrac: number }> {
-  const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="vout"] canvas[data-testid="video-tile-thumb"]');
   await expect(canvas).toHaveCount(1);
   const out = await canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -102,7 +102,7 @@ async function captureTiler(
   page: import('@playwright/test').Page,
   tileIndex: number,
 ): Promise<{ grid: number[]; nonZeroFrac: number }> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -120,8 +120,8 @@ async function captureTiler(
     ],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('[data-testid="tiler-card"]'), 'TILER visible').toHaveCount(1);
-  await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="tiler"])'), 'TILER visible').toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node[data-id="vout"] [data-testid="module-shell"]')).toHaveCount(1);
   // A handful of rAFs so the SHAPES → TILER → OUTPUT chain renders — COUNTED,
   // not guessed. The comment always said "rAFs"; the code said milliseconds,
   // which is ~42 frames on a local GPU and ~5 under CI's SwiftShader (7.9 fps
@@ -158,7 +158,7 @@ test.describe('TILER — video multiscreen / tile processor', () => {
       [],
       { mountTimeout: HEAVY_MOUNT_TIMEOUT },
     );
-    await expect(page.locator('[data-testid="tiler-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="tiler"])')).toHaveCount(1);
 
     await page.evaluate(() => {
       const w = globalThis as unknown as {

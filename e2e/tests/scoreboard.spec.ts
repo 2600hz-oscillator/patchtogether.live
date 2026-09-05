@@ -20,7 +20,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -158,10 +158,13 @@ test.describe('SCOREBOARD — 4-digit neon 7-segment counter widget', () => {
     const reset = await waitForCounter(page, 'sb', (n) => n === 0, 4000);
     expect(reset.ok, `counter cleared to 0 after RESET gate (saw ${reset.last})`).toBe(true);
 
-    // ---- 3. The preview canvas painted non-trivial pixels. ----
+    // ---- 3. The screen painted non-trivial pixels (the DOCK face canvas —
+    // the counter screen's home on the default shell). ----
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('sb'));
+    await expect(page.locator('[data-testid="scoreboard-face-canvas"]')).toBeVisible();
     const variance = await page.evaluate(() => {
       const canvas = document.querySelector<HTMLCanvasElement>(
-        'canvas[data-testid="scoreboard-screen"]',
+        'canvas[data-testid="scoreboard-face-canvas"]',
       );
       if (!canvas) return -1;
       const ctx = canvas.getContext('2d');

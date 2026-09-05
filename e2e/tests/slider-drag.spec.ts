@@ -22,8 +22,9 @@
 // The in-place nested write is the correct, working contract — this spec pins
 // it so a refactor to whole-node-replace (a tempting "fix") is caught.
 //
-// Parametrized over a Fader card (ADSR) and a Knob card (VCA) — both render
-// [role="slider"][aria-valuenow] with an aria-label. FILTER cutoff uses a
+// Parametrized over ADSR attack and VCA base — on the default shell both
+// render as tile ladder controls (`control-<param>`, the shell Knob's own
+// role=slider element carrying aria-valuenow). FILTER cutoff uses a
 // different layout and is intentionally excluded so a selector mismatch can't
 // mask a real check.
 
@@ -104,11 +105,13 @@ async function ariaValueNow(control: Locator): Promise<number> {
 test.describe('knob/slider value propagates to store + UI + engine', () => {
   for (const c of CASES) {
     test(c.label, async ({ page }) => {
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: 'm', type: c.type, params: { [c.param]: c.spawn } }]);
 
-      const control = page.locator(`[role="slider"][aria-label="${c.ariaLabel}"]`).first();
+      const control = page
+        .locator(`.svelte-flow__node[data-id="m"] [data-testid="control-${c.param}"][role="slider"]`)
+        .first();
       await control.waitFor({ state: 'visible', timeout: 10_000 });
 
       // Engine must materialize the node, and all three channels must agree on

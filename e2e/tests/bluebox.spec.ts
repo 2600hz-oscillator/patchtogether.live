@@ -95,6 +95,19 @@ async function pollBandAmp(
   return r.best;
 }
 
+/** Open the bluebox's dock full view — the keypad's home on the default
+ *  shell (`control-btn_*` momentary buttons in the ladder). */
+async function openDock(page: Page) {
+  await page.evaluate(
+    () => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('bb'),
+  );
+  // ⚠ Return the DOCK-SCOPED root: the lane tile ranks some of the same
+  // `control-btn_*` keys, so a bare page-level locator is ambiguous.
+  const dock = page.locator('[data-testid="dock-full-view"][data-fullview-node="bb"]');
+  await expect(dock).toBeVisible();
+  return dock;
+}
+
 /** Set a node's button param via the live store (no UI click — used in
  *  the test that asserts the param surface works without the keypad). */
 async function setBlueboxParam(page: Page, nodeId: string, paramId: string, value: number) {
@@ -115,18 +128,18 @@ async function setBlueboxParam(page: Page, nodeId: string, paramId: string, valu
 
 // ─── tests ──────────────────────────────────────────────────────────────────
 
-test('bluebox: card mounts with no console errors', async ({ page, rack, errorWatch }) => {
+test('bluebox: the shell mounts with no console errors and the full keypad', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 100, y: 100 } }]);
 
-  const card = page.locator('[data-testid="bluebox-card"]');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('BLUEBOX');
-  // All 12 keys render with their dedicated testids.
-  await expect(page.locator('[data-testid="bluebox-key-0"]')).toBeVisible();
-  await expect(page.locator('[data-testid="bluebox-key-5"]')).toBeVisible();
-  await expect(page.locator('[data-testid="bluebox-key-9"]')).toBeVisible();
-  await expect(page.locator('[data-testid="bluebox-key-bluebox"]')).toBeVisible();
-  await expect(page.locator('[data-testid="bluebox-key-redbox"]')).toBeVisible();
+  const tile = page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  const dock = await openDock(page);
+  // The tone bank hero paints, and all 12 keys render as dock momentary
+  // controls (`control-btn_*` — the same button params the keypad card drove).
+  await expect(dock.locator('[data-testid="bluebox-tonebank"]')).toBeVisible();
+  for (const key of ['0', '5', '9', 'bluebox', 'redbox']) {
+    await expect(dock.locator(`[data-testid="control-btn_${key}"]`)).toBeVisible();
+  }
 });
 
 test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({ page, rack }) => {
@@ -165,7 +178,8 @@ test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({
   // Press "5" via the UI — dispatch a pointerdown and hold while we
   // poll the scope. Skip pointerup until after we've measured so the
   // tone stays on.
-  const key5 = page.locator('[data-testid="bluebox-key-5"]');
+  const dock = await openDock(page);
+  const key5 = dock.locator('[data-testid="control-btn_5"]');
   await key5.dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0 });
 
   // 770 Hz row + 1336 Hz col peaks must both rise above silence; an
@@ -203,7 +217,8 @@ test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page
   );
   await page.waitForTimeout(200);
 
-  const blueKey = page.locator('[data-testid="bluebox-key-bluebox"]');
+  const dock = await openDock(page);
+  const blueKey = dock.locator('[data-testid="control-btn_bluebox"]');
   await blueKey.dispatchEvent('pointerdown', { pointerId: 2, pointerType: 'mouse', button: 0 });
   const amp2600 = await pollBandAmp(page, 'scp', 2600, 0.05, 2000);
   const amp1700 = await pollBandAmp(page, 'scp', 1700, 0, 200);
@@ -233,7 +248,8 @@ test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page, ra
   );
   await page.waitForTimeout(200);
 
-  const redKey = page.locator('[data-testid="bluebox-key-redbox"]');
+  const dock = await openDock(page);
+  const redKey = dock.locator('[data-testid="control-btn_redbox"]');
   await redKey.dispatchEvent('pointerdown', { pointerId: 3, pointerType: 'mouse', button: 0 });
   const amp1700 = await pollBandAmp(page, 'scp', 1700, 0.05, 2000);
   const amp2200 = await pollBandAmp(page, 'scp', 2200, 0.05, 2000);

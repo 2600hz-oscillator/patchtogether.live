@@ -120,74 +120,26 @@ describe('cloudseedPresetLabel — the face roster', () => {
   });
 });
 
-// ── THE CARD ↔ DEF SOURCE GUARD ──────────────────────────────────────────────
+// ── THE SURFACE ↔ DEF SOURCE GUARD, AND WHY IT IS GONE ──────────────────────
 //
-// The same divergence class the cppId switch was deleted for, one level down.
-// `CloudseedCard.svelte` used to pass 29 hand-typed `min={0} max={1}
-// defaultValue={0.63} curve="linear"` prop sets. Every one AGREED with the def,
-// so nothing was broken — and nothing COULD have caught it if one stopped
-// agreeing, because contract-lock, module-docs-lint and every range assertion
-// read the DEF and none of them can see a card. This is the textual gate that
-// keeps them gone, in the same shape as module-docs-lint's controlFamilies →
-// card-testid grep.
-
-describe('SOURCE guard — CloudseedCard cannot re-type what the def declares', () => {
-  const cardSrc = readFileSync(
-    fileURLToPath(new URL('./CloudseedCard.svelte', import.meta.url)),
-    'utf8',
-  );
-  /** Comments are prose, not markup — and this card's own comments quote the
-   *  literals they document the removal of. */
-  const cardCode = cardSrc
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
-
-  /** Any `<word>Min`/`<word>Max`/`defaultValue`/`step` bound to a number. The
-   *  prefix class is `[A-Za-z]*` on purpose: `\b(min|max)` finds no boundary
-   *  inside `xMin`, which is the literal form of the backdraft bug. */
-  const LITERAL_RANGE = /(?:^|[^A-Za-z0-9_])([A-Za-z]*(?:[Mm]in|[Mm]ax)|defaultValue|step)=\{\s*-?\d/g;
-  /** `curve` is the MAPPING, not decoration: a card saying `linear` against a
-   *  `log` def moves the control's midpoint by a decade. */
-  const LITERAL_MAPPING = /(?:^|[^A-Za-z0-9_])(curve|units)=(["'])[^"']*\2/g;
-
-  it('the guard matches the shapes it claims to (instrument negative control)', () => {
-    for (const s of ['min={0} max={1}', 'xMin={-1}', 'defaultValue={0.63}', 'step={0.01}']) {
-      expect([...s.matchAll(LITERAL_RANGE)].length, `must catch: ${s}`).toBeGreaterThan(0);
-    }
-    for (const s of ['curve="linear"', "units='s'"]) {
-      expect([...s.matchAll(LITERAL_MAPPING)].length, `must catch: ${s}`).toBeGreaterThan(0);
-    }
-    for (const s of ["min={pmin('dry_out')}", "curve={pcurve('dry_out')}"]) {
-      expect([...s.matchAll(LITERAL_RANGE)].length, `must not fire on: ${s}`).toBe(0);
-      expect([...s.matchAll(LITERAL_MAPPING)].length, `must not fire on: ${s}`).toBe(0);
-    }
-  });
-
-  it('passes NO hand-typed range or mapping to any control', () => {
-    expect(
-      [...cardCode.matchAll(LITERAL_RANGE)].map((m) => m[0].trim()),
-      'read it from cloudseedDef.params — pmin/pmax/pdef/pcurve',
-    ).toEqual([]);
-    expect(
-      [...cardCode.matchAll(LITERAL_MAPPING)].map((m) => m[0].trim()),
-      'read it from cloudseedDef.params — pcurve',
-    ).toEqual([]);
-  });
-
-  it('every bound control names a REAL def param (the helper throws; this says so first)', () => {
-    const ids = new Set(cloudseedDef.params.map((p) => p.id));
-    const bad = [...cardCode.matchAll(/p(?:min|max|def|curve)\('([^']+)'\)/g)]
-      .map((m) => m[1]!)
-      .filter((pid) => !ids.has(pid));
-    expect([...new Set(bad)], "a typo'd id throws at card mount, which is a blank module").toEqual([]);
-  });
-
-  it('the CLEAR TAIL testid carries the numbered-key suffix its docs key promises', () => {
-    // `controlFamilies` members render as `${testidPrefix}-${nodeId}-${n}` and
-    // the docs key is `cloudseed-clear-{n}`; the card emitted no `-1`, and
-    // module-docs-lint's grep is PREFIX-ONLY so nothing caught the drift.
-    const fam = cloudseedDef.controlFamilies!.find((f) => f.id === 'cloudseed-clear')!;
-    expect(cardCode).toContain(`${fam.testidPrefix}-\${id}-1`);
-  });
-});
+// ⚠ A WHOLE DESCRIBE STOOD HERE AND ITS SUBJECT WAS `CloudseedCard.svelte`.
+// The card used to pass 29 hand-typed `min={0} max={1} defaultValue={0.63}
+// curve="linear"` prop sets. Every one AGREED with the def, so nothing was
+// broken — and nothing COULD have caught it if one stopped agreeing, because
+// contract-lock, module-docs-lint and every range assertion read the DEF and
+// none of them can see a surface. That is what the guard was for, and it held
+// four legs: an instrument control on its own two regexes, the no-literals
+// sweep, a real-param check on every `pmin/pmax/pdef/pcurve` id, and the CLEAR
+// TAIL numbered-suffix check.
+//
+// All four are unspellable once the fleet goes. The shell resolves a cell's
+// range from the `ParamDef` itself, so there is no second place a bound can be
+// re-typed and no surface source to grep; and the family renders as ONE cell
+// (`shell-cell-cloudseed-clear`) rather than as numbered members, so the
+// `-${id}-1` suffix the docs key promised has no emitter to check.
+//
+// NAMED COVERAGE LOSS: the numbered-suffix drift this file caught once — the
+// card emitted no `-1` while the docs key said `cloudseed-clear-{n}`, and
+// module-docs-lint's grep was PREFIX-ONLY so nothing else saw it — has no
+// successor check. What replaces it structurally is that the shell derives the
+// testid from the family id rather than the surface spelling it.

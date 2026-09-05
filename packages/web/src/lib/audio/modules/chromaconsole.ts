@@ -96,8 +96,8 @@ export const CHROMA_CONSOLE_TYPE = 'chromaconsole';
 // port at all.
 //
 // ⚠ THE RESTING FACE MUST STAY BYTE-STABLE, which is a module-specific override
-// of a cohort-wide allowance rather than an inherited default. The legacy card's
-// header records that its determinism (no message counters, no activity blink,
+// of a cohort-wide allowance rather than an inherited default. This module's own
+// record says its determinism (no message counters, no activity blink,
 // no elapsed times, no "last CC sent" readout) is load-bearing for a committed
 // VRT baseline AND is the same set the resting-text ruling forbids AND is what
 // keeps the card from implying it knows what the pedal holds — three unrelated
@@ -167,12 +167,12 @@ export const chromaconsoleDef: AudioModuleDef = {
   // or an entry in a committed `<type>.legend.json`, of which none is this
   // module's.
   //
-  // ⚠ EACH `testidPrefix` IS A LITERAL THE LEGACY CARD ALREADY EMITS
-  // (`chromaconsole-connect-${id}`, `chromaconsole-pushall-${id}`), which is
-  // what module-docs-lint's card grep checks — so a rename on either surface is
-  // RED, and no card edit was needed to declare these. The card survives
-  // promotion: `?shell=legacy` still renders it and `chromaconsole.spec.ts`
-  // still drives it there.
+  // ⚠ NEITHER PREFIX IS EMITTED AS A LITERAL BY ANY SURFACE — MEASURED, not
+  // assumed. `ModuleShell` stamps a family generically from this declaration,
+  // so there is no `chromaconsole-connect-…` / `chromaconsole-pushall-…` string
+  // to grep for. module-docs-lint therefore holds these two through its CELL
+  // arm: `<familyId>-{n}` must be ranked on the face plan AND resolve to a live
+  // shell cell. Drop either from the rank and this def goes RED.
   //
   // ⚠ THE PEDAL'S FIVE `role: 'action'` COMMANDS (tap tempo, capture, the two
   // gesture-looper commands, the calibration menu) are deliberately NOT
@@ -205,7 +205,7 @@ export const chromaconsoleDef: AudioModuleDef = {
       "interface as usual. The pedal has 34 documented CCs; this card exposes all of them, " +
       "but only EIGHT at a time are backed by real parameters (the slots), and those eight " +
       "are what clip automation, MIDI learn, Electra and the Push 2 card can drive. Assign " +
-      "any control to any slot from the card; the assignment is saved with your rack. " +
+      "any control to any slot from the faceplate; the assignment is saved with your rack. " +
       "Eight is deliberate: a clip can hold sixteen automation lanes in total, so one device " +
       "taking half of them still leaves room for the rest of your patch. " +
       "IMPORTANT: the Chroma Console is receive-only. It never reports its settings back, so " +

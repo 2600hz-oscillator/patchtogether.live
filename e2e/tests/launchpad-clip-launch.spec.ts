@@ -110,7 +110,7 @@ test('@launchpad a simulated pad press launches a clip → audible RMS at the cl
     ],
   );
 
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 
   // Seed a clip in lane 0 / slot 0 (drives pitch1/gate1) — the same data the
   // card/grid write. (We launch it via the LAUNCHPAD, not by writing queued[].)
@@ -197,7 +197,7 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
     ],
   );
 
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 
   await page.evaluate(() => {
     const w = globalThis as unknown as {
@@ -375,7 +375,7 @@ async function buildSingleChain(page: import('@playwright/test').Page, prefix: s
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 }
 
 /** Seed note clips at the given flat indices (clipIndex = lane*64 + slot,

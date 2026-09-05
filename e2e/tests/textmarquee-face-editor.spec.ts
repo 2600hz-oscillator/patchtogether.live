@@ -5,11 +5,11 @@
 //
 // ── WHY THIS FILE IS MANDATORY RATHER THAN NICE TO HAVE ────────────────────
 //
-// `textmarquee.spec.ts` and `textmarquee-render-smoke.spec.ts` both boot
-// `?shell=legacy` and both survive this promotion completely unchanged — which
-// is exactly why neither is evidence about the face. 377 of 431 e2e specs boot
-// the legacy shell; after a promotion they keep passing over a surface no
-// player meets.
+// `textmarquee.spec.ts` and `textmarquee-render-smoke.spec.ts` were both
+// written against the PRE-PROMOTION surface and both survive this promotion
+// completely unchanged — which is exactly why neither is evidence about the
+// face. At the time, 377 of 431 e2e specs were in that position: after a
+// promotion they keep passing over a surface no player meets.
 //
 // What this file covers is the one thing that could go wrong QUIETLY:
 //

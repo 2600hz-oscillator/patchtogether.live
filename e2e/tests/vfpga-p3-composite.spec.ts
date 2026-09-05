@@ -24,7 +24,7 @@ const BENT = ['sync-bender', 'chroma-rot', 'framestore-howl', 'databend-cvbs'] a
 
 /** OUTPUT canvas pixel stats (mean luma, non-black fraction, spatial variance). */
 async function outputStats(page: Page): Promise<{ mean: number; nonZeroFrac: number; variance: number } | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
   await expect(canvas, 'video-out canvas mounted').toHaveCount(1);
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -47,7 +47,7 @@ async function outputStats(page: Page): Promise<{ mean: number; nonZeroFrac: num
  *  position-sensitive, so a geometric bend (sync-roll / tear / howl-warp) that
  *  rearranges pixels but preserves the luma distribution still reads as DISTINCT. */
 async function outputFingerprint(page: Page): Promise<number[] | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -71,13 +71,16 @@ function fpDelta(a: number[], b: number[]): number {
   return d / n;
 }
 
-/** Set a node's loaded VFPGA via its card preset menu (scoped by SvelteFlow
- *  data-id) + wait for the loaded readout to update. */
-async function loadPreset(page: Page, nodeId: string, vfpga: string, name: string): Promise<void> {
-  const sel = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="vfpga-preset"]`);
-  await expect(sel, `preset menu for ${nodeId}`).toHaveCount(1);
-  await sel.selectOption(vfpga);
-  await expect(page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="vfpga-loaded"]`)).toHaveText(name);
+/** Set a node's loaded VFPGA via its tile's preset SELECTOR cell + wait for
+ *  the cell's value span (the shell's loaded readout — `vfpga-loaded` died
+ *  with the card). Picking an option closes the listbox — never Escape (the
+ *  dock-wide Esc hazard). Mirrors vfpga-p4-early-hd. */
+async function loadPreset(page: Page, nodeId: string, _vfpga: string, name: string): Promise<void> {
+  const cell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="shell-cell-vfpga-preset"]`);
+  await expect(cell, `preset selector for ${nodeId}`).toHaveCount(1);
+  await cell.click();
+  await page.locator('[role="option"]', { hasText: name }).click();
+  await expect(cell.locator('.val')).toHaveText(name);
 }
 
 async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: number; variance: number }> {
@@ -93,7 +96,7 @@ async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: numbe
 /** Mean per-pixel saturation (max(R,G,B) - min(R,G,B), 0..255) over the OUTPUT — a
  *  renderer-tolerant "how colourful is it" measure (0 = greyscale, high = vivid). */
 async function outputSaturation(page: Page): Promise<number> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -131,8 +134,8 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
         { mountTimeout: 15_000 },
       );
 
-      await expect(page.locator('.svelte-flow__node-vfpgaRunner')).toHaveCount(2);
-      await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+      await expect(page.locator('.svelte-flow__node:has([data-shell-type="vfpgaRunner"])')).toHaveCount(2);
+      await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])')).toHaveCount(1);
 
       // Source stays smpte-bars (the default). REFERENCE render: wire src straight
       // to OUTPUT by loading a known-identity program on `bent` first? Simpler: the
@@ -195,7 +198,7 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
       ],
       { mountTimeout: 15_000 },
     );
-    await expect(page.locator('.svelte-flow__node-vfpgaRunner')).toHaveCount(2);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="vfpgaRunner"])')).toHaveCount(2);
     await loadPreset(page, 'bent', 'framestore-howl', 'framestore-howl');
     // Feed the howl a few frames so the recirculated (warped) frame builds up on
     // the send tap, then require the OUTPUT (driven by vout2) to be non-black +
@@ -219,7 +222,7 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -359,8 +362,15 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
 
     expect(stats.nonZeroFrac, `vout2 Y-plane reaches OUTPUT non-black (frac=${stats.nonZeroFrac})`).toBeGreaterThan(0.1);
     expect(stats.variance, `vout2 Y-plane has spatial structure (var=${stats.variance})`).toBeGreaterThan(20);
-    // It is the LUMA plane (greyscale), not the colourful composite — saturation ~0.
-    const sat = await outputSaturation(page);
-    expect(sat, `vout2 is the luma (Y) plane → ~greyscale (sat=${sat.toFixed(1)})`).toBeLessThan(8);
+    // It is the LUMA plane (greyscale), not the colourful composite —
+    // saturation ~0. POLLED: the thumb blit lags a rewire by a few frames, so
+    // a one-shot read can still see the previous (colourful) wiring's picture
+    // (measured: sat 121.8 = the composite, intermittently, on a one-shot).
+    await expect
+      .poll(() => outputSaturation(page), {
+        timeout: 15_000,
+        message: 'vout2 is the luma (Y) plane → the thumb desaturates once the rewire propagates',
+      })
+      .toBeLessThan(8);
   });
 });

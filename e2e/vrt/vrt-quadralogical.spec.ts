@@ -94,7 +94,7 @@ test.describe('VRT: QUADRALOGICAL per-edge effects', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -107,9 +107,21 @@ test.describe('VRT: QUADRALOGICAL per-edge effects', () => {
       };
       await spawnPatch(page, buildNodes(quadParams), buildEdges());
 
-      const card = page.locator('.svelte-flow__node-quadralogical').first();
+      // ⚠ THE PICTURE IS IN THE DOCK BODY, NOT IN THE LANE. This scene used to
+      // photograph the lane node and assert `quadralogical-canvas` inside it — a canvas the
+      // module's pre-promotion surface painted. The faceplate paints the same
+      // picture in its `fullViewBody`, so the scene opens the pane and captures
+      // THAT: same module, same params, same subject, at full size.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'quad',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="quad"]`)
+        .getByTestId('quadralogical-screen-body');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
-      await expect(page.locator('canvas[data-testid="quadralogical-canvas"]')).toHaveCount(1);
+      await expect(card.locator('canvas[data-testid="quadralogical-face-quadrants"]')).toHaveCount(1);
 
       // Let the flat-colour sources + the mix settle into the on-card preview.
       await page.waitForTimeout(700);

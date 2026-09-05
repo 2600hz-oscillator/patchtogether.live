@@ -219,7 +219,7 @@ export const pentemelodicaDef: AudioModuleDef = {
       // ── the LANE budget: ranks 1-6, and it ends HERE (faceTierCap). Every
       // one of them acts on ALL FIVE VOICES AT ONCE, which is the only
       // non-arbitrary way to pick six out of forty-eight.
-      'cutoff',      // 1  the module's principal timbre, on the summed mix
+      'cutoff',      // 1  the module\'s principal timbre, on the summed mix
       'resonance',   // 2  and it is two controls: it also sets the MODE-1 depth
       'mode',        // 3  which of four responses the whole instrument has
       'wetdry',      // 4  the filter's authority; ships at 1.0 = no dry path
@@ -400,7 +400,7 @@ export const pentemelodicaDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A complete five-voice polyphonic analog-style synth in one card. A poly chord bus drives five independent VCO voices (lane i → voice i, a fixed 1:1 mapping with no allocator), each a band-limited oscillator with a continuous triangle→saw→square WAVE morph, coarse Tune + Fine detune, exponential FM and through-phase PM (from that voice's own FM jack), and a pulse-width control. The five voices share ONE amplitude ADSR (the gate edge comes from each poly lane), get summed through a per-voice level + pan stereo mixer, then pass through an embedded multimode filter (LP→BP→HP→Notch MODE dial, Cutoff/Resonance, Wet/Dry) to the stereo OUT. Each voice is also tapped pre-mixer to its own VOICE output for separate processing. To play chords you must feed the POLY input from a real poly source — patch MIDI LANE (in poly mode) or POLYSEQZ (or a SEQUENCER set to chord steps) into POLY; a single mono note source only lights one voice.",
+      "A complete five-voice polyphonic analog-style synth in one module. A poly chord bus drives five independent VCO voices (lane i → voice i, a fixed 1:1 mapping with no allocator), each a band-limited oscillator with a continuous triangle→saw→square WAVE morph, coarse Tune + Fine detune, exponential FM and through-phase PM (from that voice's own FM jack), and a pulse-width control. The five voices share ONE amplitude ADSR (the gate edge comes from each poly lane), get summed through a per-voice level + pan stereo mixer, then pass through an embedded multimode filter (LP→BP→HP→Notch MODE dial, Cutoff/Resonance, Wet/Dry) to the stereo OUT. Each voice is also tapped pre-mixer to its own VOICE output for separate processing. To play chords you must feed the POLY input from a real poly source — patch MIDI LANE (in poly mode) or POLYSEQZ (or a SEQUENCER set to chord steps) into POLY; a single mono note source only lights one voice.",
     inputs: {
       poly: "The 5-lane poly pitch/gate chord bus that plays the voices: lane i drives voice i (fixed mapping). Patch a real poly source here — MIDI LANE in poly mode, POLYSEQZ, or SEQUENCER with chord steps — so each held note opens a voice's shared ADSR; a mono pitch source only plays voice 1.",
       fm1: "Voice 1's audio-rate modulator jack: it feeds both that voice's exponential FM and its phase modulation, with the depths set by voice 1's FM and PM faders — so one patched modulator gives either or both flavours.",

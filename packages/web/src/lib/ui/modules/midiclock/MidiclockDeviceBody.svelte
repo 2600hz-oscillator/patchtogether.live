@@ -20,8 +20,8 @@
   //   * THE PRE-CONNECT HINT — instructional copy in an EMPTY state, and the
   //     empty state is the whole content of the plate before a grant.
   //   * THE ACCESS FAILURE — an ERROR, absent whenever nothing is wrong. ⚠ AND
-  //     IT STAYS LOUD. The legacy card's comment is the reason and it is worth
-  //     carrying: "The old copy was a one-line hint swap that a user reading a
+  //     IT STAYS LOUD. The reason was written down before the faceplate and is
+  //     worth carrying: "The old copy was a one-line hint swap that a user reading a
   //     dead button did not register — and the suppressed-prompt case produced
   //     NO message at all." It comes from the shared `midiOutcomeMessage` seam,
   //     which always yields a nameable outcome including the case where the
@@ -29,7 +29,7 @@
   //
   // ── ⚠ WHAT THE PROMOTION DELETED, AND WHERE THE FINDING WENT ───────────────
   //
-  // The legacy card painted two readout rows and BOTH are gone:
+  // The pre-faceplate surface painted two readout rows and BOTH are gone:
   //
   //   `STATE — RUN / STOP` was a state word about the module, the deleted hero
   //     readout strip's exact shape. It carried a REAL finding, and the finding
@@ -134,7 +134,7 @@
   function onChangeDevice(ev: Event): void {
     const sel = (ev.currentTarget as HTMLSelectElement).value || null;
     midiclockApi(nodeId)?.selectDevice(sel);
-    // ⚠ ORIGIN-TAGGED. The legacy card wrote this key with a bare SyncedStore
+    // ⚠ ORIGIN-TAGGED. This key used to be written with a bare SyncedStore
     // proxy write — no `transact`, no `LOCAL_ORIGIN` — so picking a device
     // synced to collaborators but never reached the UndoManager, i.e. it was
     // silently outside Cmd-Z. `mutateNode` is the sanctioned seam.

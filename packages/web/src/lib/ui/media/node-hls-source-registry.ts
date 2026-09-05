@@ -50,10 +50,10 @@
 //     inside a COLLAPSED GROUP          NO CARD  -> everything below is DEAD
 //     canvas-hidden / pinned            NO CARD  -> everything below is DEAD
 //
-// ⚠ AND THE COLLAPSED-GROUP ARM IS NOT SHELL-SPECIFIC. Canvas's `flowNodes`
-// derivation drops a collapsed group's children OUTSIDE its `shellFaces` branch,
-// so the same two rows are dark under `?shell=legacy` too — measured on the same
-// pure decision, `kind='legacy'` + `laneOmitsNode: true` also returns false.
+// ⚠ AND THE COLLAPSED-GROUP ARM WAS NEVER SURFACE-SPECIFIC. Canvas's
+// `flowNodes` derivation drops a collapsed group's children before the lane
+// decision runs at all, so those two rows were dark whichever renderer the lane
+// was using — measured on the pure decision, not inferred.
 //
 // ── THE THREE LIVE DEFECTS THIS FIXES ───────────────────────────────────────
 //

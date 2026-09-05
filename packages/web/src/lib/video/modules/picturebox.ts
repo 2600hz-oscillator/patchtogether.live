@@ -50,10 +50,10 @@
 // `maxInstances` so the palette greys out the picker at the cap; the
 // per-user cap is enforced in Canvas's spawnFromPalette.
 //
-// The file-picker UI lives in TWO surfaces now — `PictureboxCard.svelte` (the
-// legacy card) and `picturebox/PictureboxAssetsBody.svelte` (the dock
-// faceplate's `fullViewBody`) — and both write `node.data` through the one seam
-// at `$lib/graph/picturebox-data.ts`. This factory exposes `setImage(bitmap)`
+// The file-picker UI lives in `picturebox/PictureboxAssetsBody.svelte` (the dock
+// faceplate's `fullViewBody`), which writes `node.data` through the one seam at
+// `$lib/graph/picturebox-data.ts` — so a second picker is a call rather than a
+// copy. This factory exposes `setImage(bitmap)`
 // via the handle's `read` channel so the extras producer can drive uploads;
 // `setImage(null)` clears. The 7-slot extras (`setAssetAtSlot` / `selectSlot` /
 // `slotHasAsset`) keep up to 7 textures resident so a gate-driven switch is an
@@ -236,8 +236,8 @@ export const pictureboxDef: VideoModuleDef = {
   //
   // `asset_pitch` and `asset_gate` exist so the cross-domain CV bridge has
   // somewhere to write; the docs above already call them *"synthetic, hidden
-  // param… Not a card knob"*, and the legacy card honoured that by simply not
-  // drawing them. A FACE cannot honour it the same way: `module-face-lint`'s
+  // param… Not a card knob"*, and a bespoke surface honours that by simply not
+  // drawing them. A FACE cannot: `module-face-lint`'s
   // completeness loop is unconditional for a promoted def and demands an
   // interactive cell per `ParamDef`. Without this declaration the faceplate
   // would paint a continuous rotary over a raw V/oct cache and a second one over
@@ -250,7 +250,7 @@ export const pictureboxDef: VideoModuleDef = {
   // one does. Both of these have a matching input above.
   //
   // ⚠ THIS IS A BEHAVIOUR CHANGE BEYOND THE FACEPLATE, and both directions are
-  // improvements: `group-controls.listExposableControls` stops auto-exposing
+  // improvements: `exposable-controls.listExposableControls` stops auto-exposing
   // these two on a collapsed GROUP's instrument bar, and `push-card-schema`
   // stops ranking them for a Push 2 encoder. Neither surface should ever have
   // offered a raw gate cache as a knob.
@@ -320,7 +320,7 @@ export const pictureboxDef: VideoModuleDef = {
   //
   // ⚠ `paramCells: { gain: 'fader' }` IS A REAL DECISION. `gain` is a linear
   // 0..2 brightness multiply whose meaningful landmark is unity at the MIDDLE of
-  // the throw. The legacy card already chose a NeonFader over a knob, and
+  // the throw. This module already used a NeonFader rather than a knob, and
   // nothing in a ParamDef distinguishes "a level" from any other continuous
   // scalar — so an undeclared face would silently swap a dial in for a throw,
   // invisibly to every def-reading gate.
@@ -337,7 +337,7 @@ export const pictureboxDef: VideoModuleDef = {
   },
 
   docs: {
-    explanation: "An image source for the video graph. You pick an image file in the card (\"Choose image...\"); a still is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. An ANIMATED gif is kept byte-for-byte (not flattened) and PLAYS — its frames are decoded (WebCodecs ImageDecoder) and stepped on the engine clock, looping with the gif's own per-frame delays; the card preview animates too. Where ImageDecoder is unavailable it falls back to the first frame, and a gif over the sync size cap is stored as a first-frame still (the card hints why). The fragment shader samples the current frame's texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the card to open the \"Load multiple…\" panel and load one image (or gif) per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an animated-gif loop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",
+    explanation: "An image source for the video graph. You pick an image file in the card (\"Choose image...\"); a still is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. An ANIMATED gif is kept byte-for-byte (not flattened) and PLAYS — its frames are decoded (WebCodecs ImageDecoder) and stepped on the engine clock, looping with the gif's own per-frame delays; the card preview animates too. Where ImageDecoder is unavailable it falls back to the first frame, and a gif over the sync size cap is stored as a first-frame still (the card hints why). The fragment shader samples the current frame's texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the tile to open the \"Load multiple…\" panel and load one image (or gif) per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an animated-gif loop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",
     inputs: {
       gain: "CV in that modulates Gain (output brightness/RGB multiply); displaces the Gain fader, linear, summed at the param target.",
       asset_pitch: "Pitch (V/oct) in carrying the raw slot-select value; read on each asset_gate rising edge and mapped by pitch class to one of the 7 C-major slots (C..B). No CV scaling — passed through raw.",
@@ -348,8 +348,8 @@ export const pictureboxDef: VideoModuleDef = {
     },
     controls: {
       gain: "Gain — output brightness; multiplies the image's RGB. Linear 0..2 (1.0 = unity). Also modulatable via the gain CV input.",
-      asset_pitch: "Asset pitch — synthetic, hidden param caching the raw V/oct from the asset_pitch input. Not a card knob; the card reads it on each gate edge to choose a slot. Range -10..10.",
-      asset_gate: "Asset gate — synthetic, hidden param caching the raw gate level (0..1) from the asset_gate input. Not a card knob; the card edge-detects its rising edge to fire a slot switch.",
+      asset_pitch: "Asset pitch — synthetic, hidden param caching the raw V/oct from the asset_pitch input. Not a faceplate knob; the card reads it on each gate edge to choose a slot. Range -10..10.",
+      asset_gate: "Asset gate — synthetic, hidden param caching the raw gate level (0..1) from the asset_gate input. Not a faceplate knob; the card edge-detects its rising edge to fire a slot switch.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

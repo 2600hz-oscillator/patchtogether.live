@@ -70,7 +70,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
  * a comment. Narrowing to reason strings would have missed it.
  */
 const EXEMPTION_SOURCES = [
-  'e2e/vrt/vrt-exemptions.ts',
+  // `e2e/vrt/vrt-exemptions.ts` was the third member until the per-module
+  // legacy-CARD VRT sweep that applied its four tables was deleted. The file
+  // went with the sweep, and a source that does not exist cannot hold a
+  // citation — the `every entry exists` assertion below is what makes that a
+  // red rather than a silent shrink of this gate's scope.
   'e2e/tests/per-module-per-port-behavioral.spec.ts',
   'e2e/tests/_per-module-per-port-shared.ts',
 ] as const;

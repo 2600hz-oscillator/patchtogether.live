@@ -51,7 +51,7 @@ async function trayGeometry(page: import('@playwright/test').Page) {
       panes: panes.map((pane) => {
         const face = pane.querySelector('.faceplate') as HTMLElement;
         const ctrls = pane.querySelector('[data-testid="faceplate-win-ctrls"]') as HTMLElement;
-        const frame = pane.querySelector('.fp-card-frame') as HTMLElement | null;
+        const body = pane.querySelector('.faceplate-body') as HTMLElement | null;
         const f = face.getBoundingClientRect();
         const c = ctrls.getBoundingClientRect();
         return {
@@ -59,10 +59,10 @@ async function trayGeometry(page: import('@playwright/test').Page) {
           right: Math.round(f.right),
           top: Math.round(f.top),
           width: Math.round(f.width),
-          // Content width the tray is wrapping: a legacy card's frame, else the
-          // curated face's kit (which legitimately asks for its full kit width).
-          contentWidth: frame ? Math.round(frame.getBoundingClientRect().width) : Math.round(f.width),
-          isLegacyCard: !!frame,
+          // The content the tray is wrapping. `.faceplate-body` is the scrolled
+          // content region, so a tray narrower than this is one that CUT its
+          // occupant off rather than one that shrink-wrapped it.
+          contentWidth: body ? Math.round(body.getBoundingClientRect().width) : Math.round(f.width),
           ctrlsInsetRight: Math.round(f.right - c.right),
           ctrlsInsetTop: Math.round(c.top - f.top),
           ctrlsVisible: c.width > 0 && c.height > 0,
@@ -89,54 +89,24 @@ async function whatIsAt(page: import('@playwright/test').Page, x: number, y: num
 }
 
 test.describe('#1573 expanded tray hugs its content', () => {
-  test('a narrow legacy card leaves the canvas exposed AND clickable beside it', async ({ page }) => {
+  test('a narrow occupant leaves the canvas exposed AND clickable beside it', async ({ page }) => {
     test.setTimeout(120_000);
-    // ── ⚠ THE PRECONDITION IS A RENDER PATH, NOT A MODULE (#2068 / #2299) ────
+    // ── ⚠ THE SUBJECT IS A NARROW MODULE, AND THAT IS ALL IT EVER NEEDED ─────
     //
-    // This test needs ONE thing of its subject: that the dock renders it as a
-    // LEGACY CARD, because "a narrow card leaves the canvas exposed beside it"
-    // is a statement about the un-migrated tray. It has been re-pointed twice
-    // for that — `sourcery` (faced in batch-22 G3), then `mappy` — and the
-    // comment that stood here argued mappy was different in KIND: that its
-    // `bespoke-surface` disposition made the legacy card a PROPERTY rather than
-    // a queue position.
+    // This test asserts "a narrow occupant leaves the canvas exposed beside
+    // it", so its only real requirement is a narrow occupant. It nonetheless
+    // got re-pointed twice — `sourcery`, then `mappy` — and then wired to a
+    // dev seam, because each time it was written as a claim about the tray's
+    // second RENDER BRANCH rather than about width.
     //
-    // That was wrong, and it was wrong in the way the inventory's `why` prose is
-    // systematically wrong: it quoted a disposition as a durable fact. mappy is
-    // faced as of 2026-09-01 (its "direct geometry manipulation is the entire
-    // module" reasoning described exactly what a `fullViewBody` is for), so the
-    // assertion below would have gone red on that PR — correctly, and for the
-    // third time.
-    //
-    // ⚠ AND A THIRD RE-POINT IS THE WRONG FIX, per the owner's ruling: everything
-    // migrates and the legacy UI is then deleted, so nominating another
-    // un-migrated module would make a preserved un-migrated module a DEPENDENCY
-    // OF THE TEST SUITE. #2299 shipped the seam that answers this properly —
-    // `__forceUnmigrated([type])` moves Canvas's ONE promotion-evaluation site,
-    // so the spec ASKS FOR the placeholder/legacy-card path instead of depending
-    // on any module still being on it. The subject stays `mappy` purely because
-    // it is a narrow card and the geometry claim is about a narrow card; any
-    // other narrow card would do, and none of them needs to stay un-migrated.
-    await page.addInitScript(() => {
-      (globalThis as unknown as { __forceUnmigratedPending: string[] })
-        .__forceUnmigratedPending = ['mappy'];
-    });
+    // That branch is gone: every dock pane is a faceplate now, so there is no
+    // path to choose and nothing to force. The subject stays `mappy` because it
+    // is narrow and the geometry claim is about a narrow occupant — any other
+    // narrow module would do just as well, and none of them has to be in any
+    // particular state for this to mean what it says. The churn is over because
+    // the thing that caused it was deleted, not routed around.
     await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
-    // THE SEAM TOOK, asserted at the hook so a build without VITE_E2E_HOOKS
-    // fails naming the missing hook rather than timing out later on a legacy
-    // card that was never going to render. Re-applying is idempotent and also
-    // covers a boot ordering in which the pending list was drained first.
-    const forced = await page.evaluate(() => {
-      const w = globalThis as unknown as { __forceUnmigrated?: (t: string[]) => string[] };
-      if (typeof w.__forceUnmigrated !== 'function') return null;
-      return w.__forceUnmigrated(['mappy']);
-    });
-    expect(
-      forced,
-      '__forceUnmigrated hook not present — a DEV/VITE_E2E_HOOKS build is expected (the same gate '
-        + 'as __patch / __ydoc / __openDockFullView)',
-    ).toEqual(['mappy']);
     await spawnPatch(page, [{ id: 'p1', type: 'mappy', domain: 'video' }], [], { mountTimeout: 30_000 });
 
     await page.evaluate((id) => (globalThis as never as { __openDockFullView(i: string): void }).__openDockFullView(id), 'p1');
@@ -144,22 +114,14 @@ test.describe('#1573 expanded tray hugs its content', () => {
 
     const g = await trayGeometry(page);
     const [tray] = g.panes;
-    expect(
-      tray.isLegacyCard,
-      'the dock must render a legacy card frame for a FORCED-UNMIGRATED type. The seam was '
-        + 'confirmed installed above, so a false here means `__forceUnmigrated` no longer reaches '
-        + "Canvas's promotion-evaluation site (`laneMigrated`) — repair the seam rather than "
-        + 'relaxing this, and never by nominating a module that must stay un-migrated: the owner '
-        + 'ruling is that everything migrates and the legacy UI is then deleted.',
-    ).toBe(true);
 
     // The tray wraps its content rather than the viewport. Stated as a relation:
     // it must not be consuming space its content did not ask for.
     expect(
       tray.width,
-      `tray ${tray.width}px vs viewport ${g.vw}px — a content-sized tray cannot need most of the screen for a ${tray.contentWidth}px card`,
+      `tray ${tray.width}px vs viewport ${g.vw}px — a content-sized tray cannot need most of the screen for a ${tray.contentWidth}px occupant`,
     ).toBeLessThan(g.vw / 2);
-    expect(tray.width, 'the tray must still fully contain its card').toBeGreaterThanOrEqual(tray.contentWidth);
+    expect(tray.width, 'the tray must still fully contain its occupant').toBeGreaterThanOrEqual(tray.contentWidth);
 
     // THE LOAD-BEARING ASSERTION: the space the tray gave back is really the canvas.
     // Sampled at the vertical middle of the tray, where the full-width drawer used to sit.
@@ -191,8 +153,8 @@ test.describe('#1573 expanded tray hugs its content', () => {
   test('a curated face is CONTENT-SIZED too, not padded to a kit width', async ({ page }) => {
     // ⚠ THIS TEST ASSERTED ITS OWN OPPOSITE UNTIL #1796, and the reversal is the owner's.
     //
-    // It was the POSITIVE CONTROL for #1573: shrink-wrapping was scoped to legacy card
-    // frames, and a migrated face "asks for the kit width by design", so this checked
+    // It was the POSITIVE CONTROL for #1573: shrink-wrapping was scoped to ONE KIND
+    // of occupant, and a faceplate "asks for the kit width by design", so this checked
     // that a face did NOT shrink — `kitMin > 0` and `tray.width >= kitMin`.
     //
     // That design was the defect. Owner, 2026-08-17: *"tidyvco is fully twice as wide as
@@ -201,8 +163,13 @@ test.describe('#1573 expanded tray hugs its content', () => {
     // faces were EXACTLY 900 px wide, against ~450 px of real content on tidyVco.
     //
     // So the control INVERTS rather than disappears: it still proves the scoping claim,
-    // just the other way round — a curated face must now be content-sized like the
-    // legacy card frame beside it, and must NOT carry a width floor.
+    // just the other way round — a face must be content-sized like the narrow occupant
+    // in the test above, and must NOT carry a width floor.
+    //
+    // ⚠ THE TWO TESTS NOW SHARE A SUBJECT KIND, and that is deliberate rather than
+    // redundant. `mappy` above is NARROW, `adsr` here is a fuller face: the pair asserts
+    // that content sizing holds at both ends, which is exactly the claim a single
+    // width-floor rule used to break at one end and satisfy at the other.
     test.setTimeout(120_000);
     await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
@@ -213,7 +180,6 @@ test.describe('#1573 expanded tray hugs its content', () => {
 
     const g = await trayGeometry(page);
     const [tray] = g.panes;
-    expect(tray.isLegacyCard, 'adsr is migrated — no legacy card frame').toBe(false);
 
     // Read off the element, never a typed constant — the rule is "no floor", so the
     // assertion is about the DECLARATION rather than about any particular number.

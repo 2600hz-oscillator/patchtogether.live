@@ -74,6 +74,17 @@ async function readPatchSummary(
 }
 
 async function typeAndRun(page: Page, livecodeNodeId: string, script: string): Promise<void> {
+  // The RUN seam's `__livecode[id]` handle is registered by whichever editor
+  // surface is MOUNTED — on the default shell that is the dock face body
+  // (LivecodeEditorBody), so open the pane first (idempotent).
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${livecodeNodeId}"]`);
+  if ((await pane.count()) === 0) {
+    await page.evaluate(
+      (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+      livecodeNodeId,
+    );
+    await expect(pane).toBeVisible();
+  }
   await page.waitForFunction(
     (id) => {
       const w = globalThis as unknown as { __livecode?: Record<string, { run: (s: string) => void }> };
@@ -95,7 +106,7 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -256,30 +267,30 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
   // hasText with a string does substring match, which would also pick up
   // 'ANALOGVCO2'. Use a regex with start+end anchors so we land on the
   // bare-prefix instance only.
-  const labelA = page.locator('[data-testid="name-label-button"]', { hasText: /^ANALOGVCO$/ });
+  const labelA = page.locator('[data-testid="tile-name-label-button"]', { hasText: /^ANALOGVCO$/ });
   await expect(labelA).toBeVisible();
   await labelA.click();
-  const inputA = page.locator('[data-testid="name-label-input"]');
+  const inputA = page.locator('[data-testid="tile-name-label-input"]');
   await expect(inputA).toBeFocused();
   await inputA.fill('BASS');
   await inputA.press('Enter');
 
-  const renamed = page.locator('[data-testid="name-label-button"]', { hasText: 'BASS' });
+  const renamed = page.locator('[data-testid="tile-name-label-button"]', { hasText: 'BASS' });
   await expect(renamed).toBeVisible();
 
-  const labelB = page.locator('[data-testid="name-label-button"]', { hasText: 'ANALOGVCO2' });
+  const labelB = page.locator('[data-testid="tile-name-label-button"]', { hasText: 'ANALOGVCO2' });
   await labelB.click();
-  const inputB = page.locator('[data-testid="name-label-input"]');
+  const inputB = page.locator('[data-testid="tile-name-label-input"]');
   await inputB.fill('BASS');
   await inputB.press('Enter');
-  const error = page.locator('[data-testid="name-label-error"]');
+  const error = page.locator('[data-testid="tile-name-label-error"]');
   await expect(error).toBeVisible();
   await expect(error).toContainText(/already in use/);
-  await expect(page.locator('[data-testid="name-label-button"]', { hasText: 'BASS' })).toHaveCount(1);
+  await expect(page.locator('[data-testid="tile-name-label-button"]', { hasText: 'BASS' })).toHaveCount(1);
 });
 
 test('livecode: JS recreates the voice-demo patch → graph-isomorphic', async ({ page }) => {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 50, y: 400 } }]);
 
@@ -317,7 +328,7 @@ set('out', 'master',   0.4);`;
 
   const dslSummary = await readPatchSummary(page);
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await loadVoiceDemo(page);
   await page.waitForFunction(() => {

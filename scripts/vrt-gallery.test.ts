@@ -75,9 +75,9 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { STRICT_FACES } from '../packages/web/src/lib/ui/workflow/strict-faces';
 // The anchor for the VACUITY TRIPWIRE — see the first test for why this is a
-// list of NAMES and not a floor. `vrt-exemptions.ts` is a dependency-free data
+// list of NAMES and not a floor. `_shell-faces.ts` is a dependency-free data
 // module, so importing it here costs nothing and drags in no registry.
-import { STRICT_VRT_MODULES } from '../e2e/vrt/vrt-exemptions';
+import { FACES, faceTiers } from '../e2e/vrt/_shell-faces';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'e2e', 'vrt', 'build_gallery.py');
@@ -243,27 +243,39 @@ describe('vrt gallery — TOTALITY (every committed baseline appears, nothing in
     // not have survived this PR, which deliberately drops 146 scenes' worth of
     // darwin-only baselines pending a linux recapture.
     //
-    // So the anchor is NAMES. `STRICT_VRT_MODULES` is the deterministic subset
-    // that gates the REQUIRED `vrt-strict` lane, and `vrt-meta.test.ts`
-    // separately asserts each one has a committed `vrt.spec.ts/<type>.png` —
-    // so "a strict module's baseline is readable" is a property the repo
-    // already guarantees, stated here as a tripwire. A name is checkable
-    // against the tree where a number is not: this cannot pass on an empty
-    // tree, it needs no maintenance as baselines are added or removed, and a
-    // rename or demotion fails with the name in the message rather than with
-    // an arithmetic complaint.
+    // So the anchor is NAMES.
+    //
+    // ⚠ THE NAMES MOVED LANES, AND THE PROPERTY DID NOT. This used to anchor on
+    // `STRICT_VRT_MODULES` — the deterministic subset of the per-module legacy
+    // CARD sweep — because `vrt-meta.test.ts` separately guaranteed each one had
+    // a committed `vrt.spec.ts/<type>.png`. That sweep is deleted and its
+    // exemption tables with it, so the old anchor names nothing. The successor
+    // is the FACE roster, which has the identical shape one lane over: every
+    // type in `ROSTERED_FACE_TYPES` captures a scene per `faceTiers(type)`, and
+    // `vrt-meta.test.ts` still asserts each of those PNGs is committed. Every
+    // reason the original gave for choosing names over a floor holds unchanged
+    // — it cannot pass on an empty tree, it needs no maintenance as baselines
+    // come and go, and a rename or a demotion fails WITH THE NAME rather than
+    // with an arithmetic complaint.
+    // `FACES`, not `ROSTERED_FACE_TYPES`: the latter is the union with
+    // `FACES_WITHOUT_SCENES`, whose members are promoted faces that
+    // deliberately capture NOTHING (a measured non-determinism, recorded rather
+    // than masked). Anchoring on the union would demand PNGs for the five faces
+    // whose whole entry says there are none — which is how a tripwire starts
+    // failing for being right.
+    const faceKeys = FACES.map((f) => f.type)
+      .sort()
+      .flatMap((type) => faceTiers(type).map((tier) => `workflow-shell-faces.spec.ts/face-${type}-${tier}`));
     expect(
-      [...STRICT_VRT_MODULES],
-      'STRICT_VRT_MODULES is empty, so the filter below is vacuous and this ' +
+      faceKeys,
+      'the face roster resolved no scenes, so the filter below is vacuous and this ' +
         'tripwire measures nothing — the anchor itself must be non-empty',
     ).not.toEqual([]);
 
-    const unreadable = [...STRICT_VRT_MODULES]
-      .map((type) => `vrt.spec.ts/${type}`)
-      .filter((key) => !onDisk.has(key));
+    const unreadable = faceKeys.filter((key) => !onDisk.has(key));
     expect(
       unreadable,
-      'these STRICT_VRT_MODULES baselines are NOT readable under ' +
+      'these rostered FACE baselines are NOT readable under ' +
         `${BASELINES}. Every assertion in this file compares two walks of that ` +
         'tree, so an unreadable tree makes them agree on nothing and pass. If ' +
         'this is a partial/lfs:false checkout, this lane cannot run the gate ' +
@@ -275,12 +287,10 @@ describe('vrt gallery — TOTALITY (every committed baseline appears, nothing in
     // …and the PYTHON walk found the same names. The tripwire above proves the
     // tree is there; this proves the script SAW it, which is the half that
     // would otherwise still be an agreement about nothing.
-    const notRendered = [...STRICT_VRT_MODULES]
-      .map((type) => `vrt.spec.ts/${type}`)
-      .filter((key) => !real.coverage.rendered.includes(key));
+    const notRendered = faceKeys.filter((key) => !real.coverage.rendered.includes(key));
     expect(
       notRendered,
-      `build_gallery.py rendered no card for: ${notRendered.join(', ')}`,
+      `build_gallery.py rendered no tile for: ${notRendered.join(', ')}`,
     ).toEqual([]);
   });
 

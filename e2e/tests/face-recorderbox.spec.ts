@@ -18,9 +18,9 @@
 // ── WHAT ALREADY COVERS THIS MODULE, AND WHY NONE OF IT COVERS THE FACE ─────
 //
 // `recorderbox.spec.ts` and `recorderbox-recover-reachable.spec.ts` are the
-// module's two existing specs and BOTH boot `?shell=legacy`. They survive the
-// promotion unchanged and go on passing over a surface no player meets — the
-// 377-of-431 problem stated in AGENTS.md. `recorderbox-face-model.test.ts` pins
+// module's two existing specs and BOTH were written against the PRE-PROMOTION
+// surface. They survive the promotion unchanged and go on passing over a
+// surface no player meets. `recorderbox-face-model.test.ts` pins
 // every source-level claim; `face-rack-status-source.test.ts` proves the body
 // declares what it paints; `face-screen-render-*.spec.ts` drives the SCREEN
 // switch; `workflow-shell-faces` photographs the plate. None of them can see:
@@ -163,8 +163,7 @@ async function stubPickers(page: Page): Promise<void> {
 }
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The two existing recorderbox specs boot
-  // `?shell=legacy`, which is precisely the surface promotion does not change.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
@@ -291,11 +290,12 @@ test.describe('RECORDERBOX face — the promotion is what makes it recordable', 
       mountTimeout: BOOT_MS,
     });
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON: on the default shell no
-    // recorderbox card is mounted anywhere — not in the lane, not in a headless
-    // host. If this ever finds a card, nothing below proves anything about the
-    // face, because the card carries a reconciler of its own.
-    await expect(page.locator('[data-testid="recorderbox-card"]')).toHaveCount(0);
+    // ⚠ A PRECONDITION GATE RAN HERE AND IS DELETED. It required
+    // `recorderbox-card` to be absent; nothing in the tree emits that testid,
+    // so the matcher was satisfied by a page that rendered nothing at all. What
+    // it guarded — a second reconciler running behind the face — cannot happen
+    // now that the face is the only surface. The positive assertions below are
+    // what hold this file up.
 
     const tile = page.locator(
       '.svelte-flow__node[data-id="frb1"] [data-testid="recorderbox-tile-body"]',
@@ -516,10 +516,10 @@ test.describe('RECORDERBOX face — the promotion is what makes it recordable', 
    * ⚠ THE OWNER-REPORTED BUG WAS PINNED ONLY ON THE SURFACE THE PROMOTION STOPS
    * MOUNTING. `recorderbox-recover-reachable.spec.ts` — written for an owner
    * report on 2026-07-31, "the recovery question appeared and its Save/Discard
-   * were clipped away" — boots `?shell=legacy` and asserts on
-   * `recorderbox-recover-*`, i.e. the CARD. After this promotion the default
-   * shell mounts no card anywhere, so on the surface a player actually reaches
-   * that owner P0 had ZERO coverage. This is the
+   * were clipped away" — asserts on `recorderbox-recover-*` on the
+   * PRE-PROMOTION surface. After this promotion nothing mounts that surface, so
+   * on the one a player actually reaches that owner P0 had ZERO coverage. This
+   * is the
    * [[shared-derivation-repaired-only-on-the-surface-you-looked-at]] shape: the
    * geometry argument for the dock ("a dock pane has no rack-tier height pin")
    * is a good argument, and an argument is not a measurement.

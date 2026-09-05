@@ -19,21 +19,19 @@
   // deleted the module for every workflow user.
   //
   // ⚠ PORTED, NOT REDESIGNED, and that is a design instruction rather than
-  // laziness. Three renderers draw this one grid — this body, the legacy card
-  // (still live under `?shell=legacy`) and the Push 2's ElectraControl mode
-  // (`push-electra-model.ts`) — and every deviation is a place they can disagree
-  // about what a slot is called or where it lands on the hardware. The shared
-  // `electraSlotLabel` expression is imported for exactly that reason; the card's
-  // own comment says "Never re-type it here".
+  // laziness. Two renderers draw this one grid — this body and the Push 2's
+  // ElectraControl mode (`push-electra-model.ts`) — and every deviation is a
+  // place they can disagree about what a slot is called or where it lands on
+  // the hardware. The shared `electraSlotLabel` expression is imported for
+  // exactly that reason: never re-type it here.
   //
   // ⚠ EVERY `data-testid` IS KEPT DELIBERATELY — `electra-control-grid`,
   // `electra-control-bank-{TOP,MID,BOT}`, `electra-control-slot-{r}-{k}`,
   // `electra-control-stripe-{r}-{k}`, `electra-control-rename-{r}-{k}`,
   // `electra-control-rename-input-{r}-{k}`, and `data-slot` / `data-filled` on
-  // every cell. `e2e/tests/electra-control.spec.ts` and
-  // `quadralogical-assign.spec.ts` drive all of them against the CARD (both boot
-  // `?shell=legacy`), and the new drawer-face spec drives the same ids against
-  // this body. One vocabulary, two surfaces, no rename.
+  // every cell. `e2e/tests/electra-control.spec.ts`,
+  // `quadralogical-assign.spec.ts` and the drawer-face spec all drive them
+  // against this body. One vocabulary, no rename.
   //
   // ⚠ THE SLOT MAP IS MUTATED IN PLACE AND MUST STAY THAT WAY. `setSlotName` is
   // the ONLY writer this component calls, and `$lib/graph/electra-control` does

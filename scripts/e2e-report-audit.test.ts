@@ -432,20 +432,12 @@ describe('the collab lane skip audit (#2294): the ci.yml argv, both directions',
     return p;
   };
 
-  // The lane as it actually ran on 2026-09-01: 50 passed / 1 skipped, and the
-  // 1 is in-card-title's task #101 quarantine — a named, budgeted entry.
-  const asMeasured = write(
-    'collab-as-measured.json',
-    collabReport([
-      {
-        file: 'in-card-title.spec.ts',
-        title: 'rename in A appears in B inside the in-card title (peer Yjs sync)',
-        reason:
-          'task #101: quarantined — relay-contention timeout on the @collab lane; '
-          + 'root-cause the A→relay→B propagation stall, add a regression test, then un-fixme',
-      },
-    ]),
-  );
+  // The lane's expected shape since the S2 legacy-removal inversion: ZERO
+  // runtime skips. (It measured 50 passed / 1 skipped on 2026-09-01, the 1
+  // being in-card-title's task #101 quarantine — that spec was deleted as
+  // legacy-card coverage and the collab budget is now empty, so a clean run
+  // has no skip rows at all.)
+  const asMeasured = write('collab-as-measured.json', collabReport([]));
 
   // THE INDUCED REGRESSION: the DOOM asset guard fires, so the multiplayer
   // tests stand down. This is the exact shape a broken WAD fetch produces.

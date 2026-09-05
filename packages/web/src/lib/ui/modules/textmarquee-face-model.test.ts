@@ -56,7 +56,6 @@ function src(rel: string): string {
   return stripSourceComments(readFileSync(resolve(HERE, rel), 'utf8'));
 }
 const bodySrc = () => src('textmarquee/TextmarqueeEditorBody.svelte');
-const cardSrc = () => src('TextmarqueeCard.svelte');
 
 /** Every `data-testid` literal in a source file. */
 function testids(source: string): string[] {
@@ -172,68 +171,68 @@ describe('textmarquee face — four knobs, one band, no rail', () => {
 // THE PARITY DIFF, AS A GATE
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('⚠ textmarquee — the legacy card testid diff (the STOP-2 surface)', () => {
-  /** Card testids that are SHELL CHROME after promotion — the plate and the
-   *  preview well, both of which ModuleShell + the body provide under their own
-   *  names. Everything else must be reachable on the face. */
-  const SHELL_CHROME = new Set([
-    // The card's own plate. ModuleShell IS the plate on the face.
-    'textmarquee-card',
-    // The card's preview canvas. The body declares the fleet-convention name
-    // `textmarquee-face-canvas` instead, which is what
-    // `face-screen-render-suite.ts` derives its assertions from.
-    'textmarquee-screen',
-  ]);
+describe('⚠ textmarquee — the STOP-2 surface, pinned on the face', () => {
+  /**
+   * THE THIRTEEN AFFORDANCES THAT HAD TO SURVIVE PROMOTION.
+   *
+   * ⚠ THIS TABLE USED TO BE DERIVED FROM `TextmarqueeCard.svelte`, AND THAT IS
+   * WHY IT IS WRITTEN OUT HERE. The original three legs read the card's fifteen
+   * testids, subtracted the two that are shell chrome after promotion (the
+   * card's own plate, which ModuleShell IS; and its preview canvas, which the
+   * body renames to the fleet-convention `textmarquee-face-canvas`), and
+   * required every one of the remaining thirteen to be declared BY THE BODY —
+   * because textmarquee declares four params and NO control families, so not
+   * one of these corresponds to a ranked control and the entire remainder is
+   * component-only behaviour a promotion can silently delete.
+   *
+   * The card is gone, so the diff cannot be computed any more. What it was
+   * protecting is not: each of these thirteen is a capability, and a future
+   * edit that drops one from the body is exactly the loss the diff existed to
+   * catch. So the DERIVED list becomes a WRITTEN one, once, at the moment the
+   * derivation stops being possible — with the vacuity guard that made the
+   * original honest kept in the same shape (the body's inventory is read, not
+   * assumed) and its direction inverted: the body must contain all thirteen.
+   */
+  const CARD_ERA_AFFORDANCES = [
+    'textmarquee-align-center',
+    'textmarquee-align-left',
+    'textmarquee-align-right',
+    'textmarquee-bg',
+    'textmarquee-bold',
+    'textmarquee-editor',
+    'textmarquee-empty',
+    'textmarquee-font',
+    'textmarquee-italic',
+    'textmarquee-run-color',
+    'textmarquee-size',
+    'textmarquee-toolbar',
+    'textmarquee-underline',
+  ] as const;
 
-  it('the card still declares exactly the fifteen testids this diff was computed against', () => {
-    // A vacuity guard: if the card grows or loses one, the table below stops
-    // describing reality and this leg says so before the next one passes for
-    // the wrong reason.
-    expect(testids(cardSrc())).toEqual([
-      'textmarquee-align-center',
-      'textmarquee-align-left',
-      'textmarquee-align-right',
-      'textmarquee-bg',
-      'textmarquee-bold',
-      'textmarquee-card',
-      'textmarquee-editor',
-      'textmarquee-empty',
-      'textmarquee-font',
-      'textmarquee-italic',
-      'textmarquee-run-color',
-      'textmarquee-screen',
-      'textmarquee-size',
-      'textmarquee-toolbar',
-      'textmarquee-underline',
-    ]);
-  });
-
-  it('NONE of the leftover thirteen is covered by a param or a control family', () => {
-    // The diff's denominator. textmarquee declares four params and no control
-    // families, and not one of them corresponds to a card testid — so the
-    // ENTIRE remainder is component-only behaviour, i.e. STOP 2.
+  it('the thirteen are exactly the affordances that are NOT ranked controls', () => {
+    // The diff's denominator, kept: textmarquee declares four params and no
+    // control families, and not one of these thirteen corresponds to either —
+    // which is what made them STOP-2 subjects rather than cells.
     const ranked = new Set(def.face?.order ?? []);
     expect(ranked.size).toBe(4);
-    expect(
-      (textmarqueeDef as { controlFamilies?: unknown }).controlFamilies,
-    ).toBeUndefined();
-    const leftover = testids(cardSrc()).filter((t) => !SHELL_CHROME.has(t));
-    expect(leftover.length).toBe(13);
-    for (const t of leftover) {
+    expect((textmarqueeDef as { controlFamilies?: unknown }).controlFamilies).toBeUndefined();
+    expect(CARD_ERA_AFFORDANCES.length).toBe(13);
+    for (const t of CARD_ERA_AFFORDANCES) {
       const asParam = t.replace(/^textmarquee-/, '');
       expect(ranked.has(asParam), `${t} is not a ranked param`).toBe(false);
     }
   });
 
-  it('every leftover testid is declared BY THE BODY, verbatim', () => {
-    const leftover = testids(cardSrc()).filter((t) => !SHELL_CHROME.has(t));
+  it('every one of them is declared BY THE BODY, verbatim', () => {
     const onBody = new Set(testids(bodySrc()));
-    const missing = leftover.filter((t) => !onBody.has(t));
+    // Vacuity guard first: a body whose testids stopped resolving would make
+    // the missing list empty for the wrong reason.
+    expect(onBody.size, 'the body declares no testids at all').toBeGreaterThan(0);
+    const missing = CARD_ERA_AFFORDANCES.filter((t) => !onBody.has(t));
     expect(
       missing,
-      'these card affordances have no home on the promoted surface — promotion stops the ' +
-        'shipping shell rendering TextmarqueeCard, so each one listed here is a capability a ' +
-        'player permanently loses',
+      'these affordances have no home on the promoted surface — each one listed here is a ' +
+        'capability a player permanently loses',
     ).toEqual([]);
   });
 
@@ -250,9 +249,9 @@ describe('⚠ textmarquee — the legacy card testid diff (the STOP-2 surface)',
 // THE SERIALIZER — one copy, explicit styles
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('⚠ textmarquee — the editor cascade is DATA, and both surfaces say so', () => {
-  it('BOTH surfaces stamp the explicit style contract on the element', () => {
-    for (const [name, s] of [['body', bodySrc()], ['card', cardSrc()]] as const) {
+describe('⚠ textmarquee — the editor cascade is DATA, and the surface says so', () => {
+  it('the surface stamps the explicit style contract on the element', () => {
+    for (const [name, s] of [['body', bodySrc()] as const]) {
       expect(
         s.includes('applyEditorBaseStyle'),
         `${name} never stamps EDITOR_BASE_STYLE — every untouched run will serialize whatever ` +
@@ -261,8 +260,8 @@ describe('⚠ textmarquee — the editor cascade is DATA, and both surfaces say 
     }
   });
 
-  it('NEITHER surface keeps a private serializer', () => {
-    for (const [name, s] of [['body', bodySrc()], ['card', cardSrc()]] as const) {
+  it('it keeps NO private serializer', () => {
+    for (const [name, s] of [['body', bodySrc()] as const]) {
       expect(
         s.includes('getComputedStyle'),
         `${name} reads getComputedStyle directly — the serializer is shared for a reason`,
@@ -334,14 +333,10 @@ describe('⚠ textmarquee — SCREEN OFF stops the COPY, never the producer', ()
     expect(flush - destroy).toBeLessThan(200);
   });
 
-  it('the LEGACY CARD honours the same key, and marks too', () => {
-    // Otherwise the two surfaces disagree about a shared node key: switching
-    // SCREEN off on the faceplate and then opening `?shell=legacy` would bring
-    // the picture back.
-    const s = cardSrc();
-    expect(s.includes('previewCollapsed')).toBe(true);
-    expect(s.includes('markWatched')).toBe(true);
-  });
+  // ⚠ 'the LEGACY CARD honours the same key, and marks too' STOOD HERE. Two
+  // surfaces reading one persisted node key must agree about it, or switching
+  // SCREEN off on the faceplate and then opening the other surface brings the
+  // picture back. One surface cannot disagree with itself.
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -349,15 +344,12 @@ describe('⚠ textmarquee — SCREEN OFF stops the COPY, never the producer', ()
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('textmarquee — no surface re-types a bound', () => {
-  it('the card binds every knob through paramSpec, not a literal', () => {
-    const s = cardSrc();
-    expect(s.includes('paramSpec(textmarqueeDef')).toBe(true);
-    expect(
-      /min=\{0\}\s+max=\{1\}/.test(s),
-      'the card re-types the def\'s bounds; a def-reading gate cannot see a card that widens ' +
-        'what the contract allows',
-    ).toBe(false);
-  });
+  // ⚠ 'the card binds every knob through paramSpec, not a literal' STOOD HERE.
+  // It was the module-local form of the range rule: a def-reading gate cannot
+  // see a surface that widens what the contract allows, so the surface had to
+  // be read. The shell renders these four straight off the ParamDef, so there
+  // is no second bound to re-type — and the def half of the pair, which is what
+  // the face actually resolves against, is kept below.
 
   it('and the def is still the 0..1 linear four this face was built on', () => {
     for (const id of ['posX', 'posY', 'scrollX', 'scrollY']) {

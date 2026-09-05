@@ -457,9 +457,9 @@ describe("'mono-fanout' — the phase lottery is GONE (25 spawns)", () => {
    * One spawn, rendered through the ENGINE SEAM with the SHIPPING worklet.
    *
    * `monoPeak` is what an `AnalyserNode` sees — every level surface in the app
-   * (the faceplate `live-audio` glyph, the legacy card's VuMeter) is a bare
-   * analyser tap, and an analyser MONO-DOWN-MIXES. That is the quantity the
-   * defect moved; the per-channel peaks never moved at all.
+   * (the faceplate `live-audio` glyph, every VU meter) is a bare analyser tap,
+   * and an analyser MONO-DOWN-MIXES. That is the quantity the defect moved;
+   * the per-channel peaks never moved at all.
    */
   async function spawn(def: AudioModuleDef) {
     const ctx = new OfflineAudioContext(2, FANOUT_N, FANOUT_SR);

@@ -9,7 +9,8 @@
 //   - port-context-menu     → right-click PortContextMenu (a port handle)
 //   - module-palette        → Add-module palette (pane right-click), default view
 //   - palette-vcos          → palette drilled into "Audio modules → VCOs"
-//   - saved-groups-picker   → modal overlay (api stubbed for determinism)
+//   (- saved-groups-picker  → DELETED with the GROUP! module; see the note
+//                            where scene 6 stood.)
 //
 // Baselines are authored by LINUX CI — one set, no {platform} segment (see
 // vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
@@ -22,7 +23,7 @@
 // sequences, hover-intent timing) and benefit from being declarative.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, openModulePalette } from '../tests/_helpers';
+import { spawnPatch, openModulePalette, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 // Per-test exemption set, keyed `${platform}/${snapshot-stem}`. Each
@@ -54,7 +55,7 @@ async function bootCanvas(page: Page): Promise<void> {
   // this the captured text metrics differ run-to-run and platform-to-platform.
   // Full root cause: e2e/vrt/_fonts.ts.
   await pinVrtFonts(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await hideJitterers(page);
@@ -116,7 +117,10 @@ test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
     { id: 'vco-pp', type: 'analogVco', position: { x: 80, y: 80 } },
   ]);
 
-  const card = page.locator('.svelte-flow__node-analogVco').first();
+  // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+  // and every lane node is `moduleShell`, so a per-module class matches
+  // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+  const card = canvasNode(page, 'vco-pp');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Redesign: clicking the trigger opens a BODY-PORTALED chrome (root view:
@@ -144,7 +148,7 @@ test('node-context-menu: right-click on VCA', async ({ page }) => {
   await spawnPatch(page, [
     { id: 'vca-ctx', type: 'vca', position: { x: 100, y: 100 } },
   ]);
-  const card = page.locator('.svelte-flow__node-vca').first();
+  const card = canvasNode(page, 'vca-ctx');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Right-click on the card body (chunky chrome, not a knob).
@@ -174,7 +178,7 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
     { id: 'lfo-pc', type: 'lfo', position: { x: 100, y: 100 } },
     { id: 'flt-pc', type: 'filter', position: { x: 600, y: 100 } },
   ]);
-  const card = page.locator('.svelte-flow__node-lfo').first();
+  const card = canvasNode(page, 'lfo-pc');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Redesign: the patch-to picker is reached via the carry flow — open the
@@ -198,61 +202,10 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
 });
 
 // ----------------------------------------------------------------------
-// 6. Saved-groups picker. Stub /api/saved-groups so the modal renders a
-//    deterministic 2-row library. Production trigger is auth-gated; the
-//    modal component itself is always mounted, so we flip its `open` prop
-//    directly via the dev-only __openSavedGroupsPicker hook wired up in
-//    Canvas.svelte.
+// ⚠ SCENE 6 IS GONE: `saved-groups-picker` captured the SavedGroupsPicker
+// modal over a stubbed `/api/saved-groups` library, driven through the
+// dev-only `__openSavedGroupsPicker` hook. The modal, the hook, the route and
+// the whole saved-group library went with the GROUP! module (owner ruling:
+// group and sticky are deleted entirely), so the scene has no subject left to
+// capture. Its baseline is deleted in the same commit.
 // ----------------------------------------------------------------------
-test('saved-groups-picker: modal with stubbed library', async ({ page }) => {
-  // Route-stub must register before navigation so the first GET is caught.
-  await page.route('**/api/saved-groups', async (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        savedGroups: [
-          {
-            id: 'sg-vrt-1',
-            label: 'Acid bass',
-            payload: {
-              children: [{}, {}, {}],
-              internalEdges: [{}, {}],
-            },
-          },
-          {
-            id: 'sg-vrt-2',
-            label: 'Pad voice',
-            payload: {
-              children: [{}, {}, {}, {}],
-              internalEdges: [{}, {}, {}],
-            },
-          },
-        ],
-      }),
-    });
-  });
-  await bootCanvas(page);
-
-  await page.waitForFunction(() => {
-    const w = globalThis as unknown as { __openSavedGroupsPicker?: () => void };
-    return typeof w.__openSavedGroupsPicker === 'function';
-  });
-  await page.evaluate(() => {
-    const w = globalThis as unknown as { __openSavedGroupsPicker: () => void };
-    w.__openSavedGroupsPicker();
-  });
-
-  const modal = page.locator('[data-testid="saved-groups-picker"]');
-  await modal.waitFor({ state: 'visible', timeout: 5_000 });
-  // Wait for the stubbed rows to render (loading→loaded transition).
-  await modal.locator('[data-testid="saved-group-row"]').first().waitFor({
-    state: 'visible',
-    timeout: 5_000,
-  });
-  await page.evaluate(
-    () => new Promise<void>((r) => requestAnimationFrame(() => r())),
-  );
-  await expect(modal).toHaveScreenshot('saved-groups-picker.png');
-});

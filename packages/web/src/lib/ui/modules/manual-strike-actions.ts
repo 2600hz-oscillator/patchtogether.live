@@ -5,7 +5,7 @@
 // of the edge shapes the repo's own vocabulary already distinguishes.
 //
 // An externally-struck voice has no internal exciter: with nothing patched into
-// its strike input it is SILENT, on the legacy card and in the RACKLINE dock
+// its strike input it is SILENT, on the lane tile and in the RACKLINE dock
 // alike. kickdrum, karplus, snaredrum, sixstrum and samsloop all answer the SAME
 // engine read keys, so the host side of "audition it" is not per-module
 // behaviour — it is these functions and a nodeId.
@@ -57,7 +57,7 @@
 //   * `manual-gate-latch.ts` is the PURE held-gate state machine (see its
 //     header for why a boolean was not enough);
 //   * `fireManualStrike` / `setManualGate` / `panicManualGates` are the thin
-//     process-wide wiring the shell cells and the legacy cards both call.
+//     process-wide wiring the shell cells call.
 //
 // `getActiveEngine()` rather than the Svelte engine CONTEXT, because
 // shell-cells.ts specs are plain data called from ModuleShell — they are not
@@ -145,8 +145,8 @@ export function resolveManualGate(
 }
 
 /**
- * Fire ONE strike at the live node — the action both surfaces call (a module's
- * shell `action` cell and its legacy card's audition button). Silently does
+ * Fire ONE strike at the live node — the action every surface calls through
+ * (a module's shell `action` cell). Silently does
  * nothing when the audition is unavailable (see `resolveKey`). Returns whether a
  * strike actually fired, so a caller can drive a press flash off the truth
  * instead of off the click.
@@ -240,8 +240,8 @@ function ensurePanicListeners(): void {
 
 /**
  * Open (high) or close (low) the node's HELD audition gate — the action both
- * surfaces call (a module's `mode:'gate'` shell cell and its legacy card's
- * momentary pad). Returns whether an edge was actually sent to the engine:
+ * surfaces call (a module's `mode:'gate'` shell cell). Returns whether an edge
+ * was actually sent to the engine:
  * `false` means either the audition is unavailable OR the latch already held
  * that state, and in both cases nothing was scheduled.
  */

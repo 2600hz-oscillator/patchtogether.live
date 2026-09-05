@@ -91,7 +91,7 @@ test.fixme('CLAP real chain: SEQUENCER → trigger_in → AUDIOOUT — audible R
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-clap');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="clap"])');
   await expect(card).toHaveCount(1);
   // The title renders the auto-assigned node name (type-uppercased →
   // "CLAP", possibly numbered) — the def label is also "clap".

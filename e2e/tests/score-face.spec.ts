@@ -4,9 +4,9 @@
 //
 // ⚠ WHY THIS FILE EXISTS ALONGSIDE `score.spec.ts`, WHICH DID NOT NEED TO
 // CHANGE. `score.spec.ts` reaches the rack through the shared `rack` fixture,
-// which navigates `/rack?shell=legacy&seed=none`. `laneRenderKind` returns
-// `'legacy'` whenever `shellFaces` is false, so EVERY one of its tests renders
-// the verbatim `ScoreCard.svelte` — promoted or not. It therefore
+// which at the time booted the PRE-INVERSION renderer: the lane decision
+// short-circuited before it read the promotion, so EVERY one of its tests
+// painted the module's old instrument — promoted or not. It therefore
 // stays GREEN through this promotion, which is the good outcome and the
 // dangerous one at once: green on a surface no default user reaches any more.
 // It is the module's LEGACY-CARD regression suite now, and it is still worth

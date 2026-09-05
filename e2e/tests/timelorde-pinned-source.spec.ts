@@ -1,7 +1,7 @@
 // e2e/tests/timelorde-pinned-source.spec.ts
 //
-// #1754 — THE CANVAS-HIDDEN ARM of the headless-source host, on the only module
-// that sits in it.
+// #1754 — THE CANVAS-HIDDEN ARM of the producer rule, on the only module that
+// sits in it.
 //
 // ── THE DEFECT, AND IT IS NOT THE ONE THE FIRST DRAFT OF THIS FILE DESCRIBED ──
 //
@@ -18,19 +18,28 @@
 // So the premise was simply false for it, and MEASURED on the pre-fix tree, in
 // BOTH shells: a fresh `/rack` auto-spawns `pinned-timelorde`
 // (`data.pinned: true`, `presence: 'type'`), `.mod-card.timelorde-card` resolves
-// to ZERO elements, and there is no headless host for it either. The producer
-// card has never been mounted anywhere. `write(node,'displayFrame')` therefore
-// never runs and `video_out` is the module's idle field forever — `nonBlack
-// 0/3072, maxLuma 8, 1 distinct signature over 30 frames`, the number
-// `card-producer-lifetime.spec.ts` recorded when it named this exclusion as the
-// half it does not cover.
+// to ZERO elements, and there was no headless host for it either. The producer
+// card had never been mounted anywhere, so nothing ever filled the node's display
+// frame and `video_out` was the module's idle field forever — `nonBlack 0/3072,
+// maxLuma 8, 1 distinct signature over 30 frames`.
 //
-// ⚠ IT HAS NOTHING TO DO WITH THE FACE, WHICH IS WHY THE FIX IS NOT GATED ON ONE.
-// An earlier version of this fix keyed on `shellFaces && migrated(type)`, which
-// would have repaired exactly half of it: the default shell after the promotion,
-// leaving `?shell=legacy` dark. Both shells are equally broken today and both are
-// fixed, so the two still AGREE — which is what the skip's own parity argument
-// asks for. The parity arm below is a REAL second subject, not a ceremonial one.
+// ⚠ THE FIX THIS FILE GUARDS HAS BEEN REPLACED BY A BETTER ONE, AND THE CLAIM IS
+// NOW ITS INVERSE (legacy-removal S1). The original repair was to stop skipping:
+// keep the real card alive in `<HeadlessSourceHost>` so its rAF kept running.
+// That worked, and it made the card LOAD-BEARING — a card that cannot be
+// deleted, on a fleet that is being deleted.
+//
+// The composite is now owned by the NODE (`$lib/ui/media/frame-producers` —
+// TIMELORDE_FRAME_PRODUCER), on graph lifetime. So the assertions invert: the
+// pinned singleton has NO card anywhere and NO host, and `video_out` carries a
+// live picture regardless. That is strictly stronger than what this file asked
+// before — it no longer matters whether any surface exists at all — and it is
+// the same rule, satisfied by an owner instead of a workaround.
+//
+// ⚠ IT STILL HAS NOTHING TO DO WITH THE FACE, WHICH IS WHY BOTH SHELLS RUN. An
+// earlier version of the ORIGINAL fix keyed on `shellFaces && migrated(type)`,
+// which would have repaired exactly half of it. Both shells were equally broken
+// and both are covered here; the parity arm is a REAL second subject.
 //
 // ── WHAT THIS FILE ASSERTS, AND WHY EACH LEG IS SHAPED THE WAY IT IS ─────────
 //
@@ -38,20 +47,19 @@
 //      inferred. ⚠ A draft of this spec read a `__patchSnapshot` global that DOES
 //      NOT EXIST, through `?.()` — a leg that would have been permanently green
 //      over no measurement at all. GREP FOR THE HOOK.
-//   2. the card is mounted EXACTLY ONCE, INSIDE the host. Not `toHaveCount(0)` on
-//      the lane alone: `camerainput-shell-source.spec.ts` records that mistake —
-//      zero is satisfied both by "hosted off-screen" (right) and by "not mounted
-//      anywhere" (the regression).
-//   3. the hosted copy is OFF-CANVAS, asserted as a PERMANENT NEGATIVE CONTROL.
-//      `HeadlessSourceHost` mounts the real card in its own SvelteFlow, so
-//      `.svelte-flow__node[data-id=X]` can match TWO elements and Playwright's
-//      `toBeVisible` is satisfied by an element at left:-9999px. If the two mounts
-//      ever become indistinguishable this leg goes RED rather than blind.
-//   4. `video_out` is LIVE — the thing the mount is FOR. Sampled with an
-//      accumulator INSIDE the page (never a Playwright poll loop, which would
-//      starve the subject it measures on a loaded runner) and reporting
-//      `samples` / `frames` / the values seen, so "dark" and "never looked" are
-//      distinguishable from the failure text.
+//   2. NO card and NO headless host, anywhere. ⚠ `toHaveCount(0)` is the shape
+//      that goes blind — it is satisfied by "correctly nothing there" AND by
+//      "the page rendered nothing at all" — so leg 2 carries a POSITIVE CONTROL
+//      that spawns an ordinary canvas timelorde and requires the SAME selector
+//      to find its lane surface. The absence is then a reading, not a silence.
+//   3. `video_out` is LIVE, and MOVING. Brightness alone is refused here on
+//      purpose: `drawFrame` keeps blitting the last bitmap anyone pushed, so a
+//      dead producer reads bright and frozen (measured: nonBlack 47034/48400
+//      from a card that was already gone). Sampled with an accumulator INSIDE
+//      the page (never a Playwright poll loop, which would starve the subject it
+//      measures on a loaded runner) and reporting `samples` / `frames` / the
+//      values seen, so "dark" and "never looked" are distinguishable from the
+//      failure text.
 
 import { test, expect, type Page } from '@playwright/test';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
@@ -174,99 +182,64 @@ async function sampleVideoOut(page: Page, nodeId: string, frames: number): Promi
 
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS * 2 });
 
-for (const shell of ['default', 'legacy'] as const) {
-  const query = shell === 'legacy' ? '?shell=legacy' : '';
+{
+  const query = '';
 
-  test.describe(`timelorde — the PINNED producer keeps its card [${shell} shell]`, () => {
-    test('the auto-spawned pinned singleton is canvas-hidden and hosted EXACTLY once', async ({ page }) => {
+  test.describe('timelorde — the PINNED producer needs NO mounted surface', () => {
+    test('the auto-spawned pinned singleton is canvas-hidden and hosted NOWHERE', async ({ page }) => {
       await bootRack(page, query);
 
       // ── 1. THE PRECONDITION, FROM THE REAL HOOK ─────────────────────────
       await waitForPinnedTimelorde(page);
 
-      // ── 2. THE MOUNT THE WHOLE FIX RESTS ON ─────────────────────────────
+      // ── 2. NOTHING MOUNTS ITS CARD, AND NOTHING NEEDS TO ────────────────
+      // ⚠ THIS IS THE INVERSE OF WHAT THIS LEG ASSERTED UNTIL legacy-removal
+      // S1, and the inversion is the fix rather than a relaxation: the composite
+      // is node-owned now, so a card mount would be a SECOND owner of one node's
+      // display frame rather than the only one.
       await expect(
         host(page),
-        'HeadlessSourceHost does not keep the pinned timelorde card alive — its rAF is the SOLE ' +
-          'writer of displayFrame, so video_out is dark for everything downstream (#1754)',
-      ).toHaveCount(1, { timeout: BOOT_MS });
-      await expect(
-        host(page).locator('.mod-card.timelorde-card'),
-        'the real card is not mounted INSIDE the host',
-      ).toHaveCount(1);
-      // ⚠ THE COUNT-IN-HOST LEG, AND IT REPLACES A "NO LANE COPY" ONE THAT WAS
-      // ITSELF THE #2148 TRAP. `HeadlessSourceHost` renders the real card inside
-      // its OWN SvelteFlow, so it has its own `.svelte-flow__pane` — a locator
-      // scoped to `.svelte-flow__pane:visible` therefore matches the HOSTED card
-      // and reports a "lane copy" that does not exist. (Measured: that leg failed
-      // here on a correct tree.) Total-is-one plus in-host-is-one is the same
-      // claim without a selector that cannot tell the two panes apart, and it is
-      // ALSO the stronger form: it fails both if nobody took the card and if two
-      // hosts did.
+        'a headless host is keeping the pinned timelorde card alive — its composite belongs to ' +
+          'the NODE ($lib/ui/media/frame-producers), so this mount is a second producer',
+      ).toHaveCount(0, { timeout: BOOT_MS });
       await expect(
         page.locator('.mod-card.timelorde-card'),
-        'the card is mounted MORE THAN ONCE across the whole page — two producers would fight ' +
-          'over one node’s displayFrame',
-      ).toHaveCount(1);
+        'the pinned timelorde has a card mounted somewhere — it is canvas-hidden and its ' +
+          'producer is node-lifetime, so nothing should be rendering one',
+      ).toHaveCount(0);
 
-      // ── 3. IT IS THE REAL CARD, NOT AN EMPTY WRAPPER ────────────────────
-      // "Mounted" and "usable" are different claims, and an empty wrapper in the
-      // host would satisfy leg 3.
-      await expect(
-        host(page).locator('.run-btn'),
-        'the hosted copy is not the real card — its transport RUN button is missing',
-      ).toHaveCount(1);
-    });
-
-    test('PERMANENT NEGATIVE CONTROL: the hosted copy is OFF-CANVAS and unreachable', async ({ page }) => {
-      // ⚠ THIS LEG EXISTS SO THE ONE ABOVE CANNOT GO BLIND. `HeadlessSourceHost`
-      // renders the real card inside its own SvelteFlow, passing id and type
-      // through — so a reachability assertion that did not scope the host OUT
-      // would be satisfied by an element at left:-9999px with pointer-events
-      // none. Measured on this tree: rect.left ≈ -9994. The day the two mounts
-      // become indistinguishable, this goes RED instead of quietly certifying
-      // an off-screen card as a usable surface.
-      await bootRack(page, query);
-      await waitForPinnedTimelorde(page);
-      await expect(host(page)).toHaveCount(1, { timeout: BOOT_MS });
-
-      const probe = await host(page).locator('.mod-card.timelorde-card').evaluate((el: Element) => {
-        const r = el.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-        const hit = document.elementFromPoint(cx, cy);
-        return {
-          left: Math.round(r.left),
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-          // `elementFromPoint` at the element's own centre is what a CLICK
-          // actually does — the settled reachability predicate (#2148), and it
-          // is capability-independent (a disabled control still hit-tests).
-          hitsSelf: !!hit && (hit === el || el.contains(hit)),
+      // ── 3. THE POSITIVE CONTROL, because zero is what a broken page reads too
+      // The same selector, on an ORDINARY canvas timelorde under the legacy
+      // shell, must find exactly one card. Without this the two assertions above
+      // are satisfied by a page that rendered nothing at all — the failure mode
+      // a `toHaveCount(0)` leg has by construction.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, unknown> };
+          __ydoc: { transact: (fn: () => void) => void };
         };
+        w.__ydoc.transact(() => {
+          w.__patch.nodes['probe-timelorde'] = {
+            id: 'probe-timelorde',
+            type: 'timelorde',
+            domain: 'audio',
+            position: { x: 200, y: 4560 },
+            params: {},
+            data: {},
+          };
+        });
       });
-
-      expect(
-        probe.width,
-        `the hosted card has no box at all (${JSON.stringify(probe)}) — an unmounted or ` +
-          'display:none card would also read as unreachable, and this leg must not pass on that',
-      ).toBeGreaterThan(0);
-      expect(
-        probe.left,
-        `the hosted card sits ON the canvas at left=${probe.left} — HeadlessSourceHost is meant to ` +
-          'park it off-screen; an on-canvas second copy is a duplicate surface',
-      ).toBeLessThan(-1000);
-      expect(
-        probe.hitsSelf,
-        `the hosted card is HIT-TESTABLE at its own centre (${JSON.stringify(probe)}) — it would be ` +
-          'a reachable second mount of the same node',
-      ).toBe(false);
+      await expect(
+        page.locator(`.svelte-flow__node[data-id="probe-timelorde"] [data-testid="module-shell"]`),
+        'POSITIVE CONTROL: an ordinary canvas timelorde renders its FACE, so the zero-counts ' +
+          'above are a reading rather than a dead page',
+      ).toHaveCount(1, { timeout: BOOT_MS });
     });
 
-    test('THE POINT OF THE MOUNT: video_out carries a real picture, not the idle field', async ({ page }) => {
+    test('THE POINT: video_out carries a real, MOVING picture with no card anywhere', async ({ page }) => {
       await bootRack(page, query);
       await waitForPinnedTimelorde(page);
-      await expect(host(page)).toHaveCount(1, { timeout: BOOT_MS });
+      await expect(page.locator('.mod-card.timelorde-card')).toHaveCount(0, { timeout: BOOT_MS });
       // ⚠ THE AUDIO ENGINE HAS TO EXIST BEFORE `getVideoSource` CAN ANSWER, and
       // a bare `/rack` boot does not start it (no user gesture). Without this the
       // probe reports "video_out publishes no drawFrame" on a perfectly live
@@ -280,8 +253,8 @@ for (const shell of ['default', 'legacy'] as const) {
         await w.__ensureEngine();
       });
 
-      // The card's push is asynchronous (`createImageBitmap` → `handle.write`),
-      // so poll the SAMPLER rather than a single shot — each attempt is itself a
+      // The push is asynchronous (`createImageBitmap` → the node's write), so
+      // poll the SAMPLER rather than a single shot — each attempt is itself a
       // multi-frame in-page measurement, and the auto-retrying expect bounds the
       // failure without becoming the gate.
       let last: VideoOutSample | null = null;
@@ -295,7 +268,7 @@ for (const shell of ['default', 'legacy'] as const) {
             timeout: BOOT_MS,
             message:
               'video_out is DARK on a default rack. Pre-fix this measured nonBlack 0/3072, ' +
-              'maxLuma 8 (the module’s own #07090d idle field), 1 distinct signature over 30 ' +
+              'maxLuma 8 (the module\u2019s own #07090d idle field), 1 distinct signature over 30 ' +
               'frames — with zero card mounts anywhere (#1754). See the sample below.',
           },
         )
@@ -334,9 +307,13 @@ for (const shell of ['default', 'legacy'] as const) {
 // its renderer and rasterize's body ADVANCES its painter, so both were safe and
 // the exclusion was scoped to DOM_SOURCE types only.
 //
-// timelorde is the first promoted producer whose face merely BLITS: the thing
-// that FILLS `video_out` is `TimelordeCard`'s rAF and it lives nowhere else. So
-// opening the faceplate killed the producer. MEASURED before the fix, with the
+// timelorde was the first promoted producer whose face merely BLITS: the thing
+// that FILLED `video_out` was `TimelordeCard`'s rAF and it lived nowhere else, so
+// opening the faceplate killed the producer. ⚠ THAT rAF IS THE NODE'S NOW
+// (legacy-removal S1), which removes the class for this module by construction
+// rather than by exemption — but the FACE_MOUNTS_PRODUCER default it forced is
+// still live for every card-owned producer, so the movement leg below keeps its
+// value as a guard on the SHAPE. MEASURED before the fix, with the
 // dock open: card mounts 0, no host, and the face canvas painting
 // `nonBlack 47034/48400` — a bright picture that was a STALE bitmap pushed
 // before the card went away. `FACE_MOUNTS_PRODUCER` now names the two faces that
@@ -411,13 +388,17 @@ test.describe('timelorde — the DOCK FULL VIEW does not unmount the producer', 
     await expect(page.getByTestId('timelorde-face-canvas'), 'the dock body paints its display')
       .toBeVisible({ timeout: BOOT_MS });
 
-    // The producer must still be mounted SOMEWHERE — off-screen is correct, gone
-    // is the defect.
+    // ⚠ INVERTED BY legacy-removal S1, AND THE COVERAGE IS UNCHANGED. This leg
+    // asserted the producer card was still mounted SOMEWHERE (off-screen was
+    // correct, gone was the defect), because the card's rAF was the only thing
+    // filling video_out. The composite is node-owned now, so the card must be
+    // mounted NOWHERE — and the MOVEMENT assertion below is untouched, which is
+    // the leg that actually catches the class either way.
     await expect(
       page.locator('.mod-card.timelorde-card'),
-      'opening the faceplate unmounted the producer card — video_out freezes on whatever was ' +
-        'last pushed, or paints the idle field if nothing was',
-    ).toHaveCount(1, { timeout: BOOT_MS });
+      'a card is mounted with the faceplate open — the composite belongs to the node, so this ' +
+        'would be a second producer for one display frame',
+    ).toHaveCount(0, { timeout: BOOT_MS });
 
     let last: VideoOutSample | null = null;
     await expect

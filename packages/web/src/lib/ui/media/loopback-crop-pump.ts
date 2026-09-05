@@ -60,13 +60,12 @@
 // presents as "the Crop control silently does nothing", with no error
 // anywhere, on a module whose entire purpose is that crop.
 //
-// ⚠ AND NOTHING WOULD HAVE CAUGHT IT. `loopback.spec.ts` runs every test on
-// `?shell=legacy`, where no host exists at all; its crop test drives `crop`
-// through the engine under `__loopbackTestFrame`, whose `effectiveCrop()`
-// derives the rectangle from the PARAM and never calls this reader. So the one
-// spec named after the module is blind to its crop measurement by
-// construction — which is why the fix ships with a pure unit test rather than
-// with an assertion bolted onto that spec.
+// ⚠ AND `loopback.spec.ts` CANNOT CATCH IT, whatever it boots. Its crop test
+// drives `crop` through the engine under `__loopbackTestFrame`, whose
+// `effectiveCrop()` derives the rectangle from the PARAM and never calls this
+// reader at all. So the one spec named after the module is blind to its crop
+// MEASUREMENT by construction — which is why the fix ships with a pure unit
+// test rather than with an assertion bolted onto that spec.
 //
 // So the pick is now EXPLICIT and TESTED: query every `.svelte-flow`, reject
 // any that is inside a `.headless-source-host`, take the first survivor. See

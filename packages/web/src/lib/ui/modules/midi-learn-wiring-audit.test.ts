@@ -131,10 +131,30 @@ function parseControls(src: string): ControlInstance[] {
   return out;
 }
 
+/**
+ * Every module-owned surface: the flat `.svelte` in this directory AND one level
+ * of module subdirectory beneath it.
+ *
+ * ⚠ THE SECOND LEVEL IS WHERE THE CONTROLS WENT. This walk was flat, which was
+ * right while every knob lived on a `*Card.svelte` beside it. MEASURED now: the
+ * surviving Knob/Fader render sites are `ModuleShell.svelte`,
+ * `VfpgaModulationPanel`, `WarrensspectrumBankPanel` — and
+ * `toybox/ToyboxConsole.svelte` (17 of them), `electraControl/ElectraGridBody`
+ * and `controlSurface/ControlSurfaceBoardBody`, none of which a flat readdir can
+ * see. One level is the depth the shell-extension glob itself loads from.
+ */
 function cardFiles(): string[] {
-  return readdirSync(__dirname)
-    .filter((f) => f.endsWith('.svelte'))
-    .sort();
+  const out: string[] = [];
+  for (const entry of readdirSync(__dirname, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const inner of readdirSync(join(__dirname, entry.name))) {
+        if (inner.endsWith('.svelte')) out.push(`${entry.name}/${inner}`);
+      }
+      continue;
+    }
+    if (entry.name.endsWith('.svelte')) out.push(entry.name);
+  }
+  return out.sort();
 }
 
 interface XyPadInstance {
@@ -221,10 +241,30 @@ describe('MIDI Learn wiring audit (static scan of every module card)', () => {
       }
     }
 
-    // Sanity: the scan actually found the module surface (guards against a
-    // refactor that moves cards and silently makes this test vacuous).
-    expect(cardsWithControls, 'cards containing Knob/Fader controls').toBeGreaterThan(50);
-    expect(totalControls, 'total Knob/Fader instances scanned').toBeGreaterThan(400);
+    // Sanity: the scan actually found the module surfaces (guards against a
+    // refactor that moves them and silently makes this test vacuous).
+    //
+    // ⚠ THE TWO FLOORS HERE WERE `> 50` FILES AND `> 400` CONTROLS, AND BOTH
+    // WERE MEASURING THE LEGACY FLEET. They are magnitudes of a population that
+    // is going away — the shell renders one generic cell for every faced
+    // module's knobs, so the honest post-migration numbers are single digits,
+    // and a floor re-typed to fit them would be a ratchet nobody could reason
+    // about. Anchored on NAMES instead, the way present-lifetime's subject set
+    // is: `ModuleShell` is the ONE render site every faced module's controls go
+    // through, so a walk that cannot see it is measuring the wrong tree, and the
+    // subdirectory leg pins the half a flat readdir loses.
+    const scanned = cardFiles();
+    expect(
+      scanned,
+      'ModuleShell is the single render site for every faced module knob and fader — a scan ' +
+        'that misses it is measuring nothing that matters',
+    ).toContain('ModuleShell.svelte');
+    expect(
+      scanned.filter((f) => f.includes('/')).length,
+      'the walk found NO module subdirectory surfaces — the second level has stopped resolving',
+    ).toBeGreaterThan(0);
+    expect(cardsWithControls, 'surfaces containing Knob/Fader controls').toBeGreaterThan(1);
+    expect(totalControls, 'total Knob/Fader instances scanned').toBeGreaterThan(0);
 
     expect(
       offenders,
@@ -275,9 +315,25 @@ describe('MIDI Learn wiring audit (static scan of every module card)', () => {
       }
     }
 
-    // Sanity: VideoCube's 3 joystick pads (6 axes) are scanned + covered — guards
-    // against a refactor that renames/moves XyPad and makes this test vacuous.
-    expect(totalPads, 'XyPad instances scanned across the module cards').toBeGreaterThanOrEqual(3);
+    // Sanity: the pads are scanned + covered — guards against a refactor that
+    // renames/moves XyPad and makes this test vacuous.
+    //
+    // ⚠ THE FLOOR WAS `>= 3` AND IT MEANT "VideoCube's three joystick pads".
+    // Those three are card instances; the shell renders ONE generic `xy` cell
+    // that every faced module's declared `face.xyPads` goes through, so the
+    // honest post-migration population is that one. Pinning the SITE instead of
+    // the count keeps the claim falsifiable — if the shell's pad stops being
+    // scanned, or stops being wired, this reddens — where a re-typed `>= 1`
+    // would pass on any single pad anywhere.
+    expect(totalPads, 'XyPad instances scanned across the module surfaces').toBeGreaterThan(0);
+    const shellPads = parseXyPads(
+      stripComments(readFileSync(join(__dirname, 'ModuleShell.svelte'), 'utf8')),
+    );
+    expect(
+      shellPads.length,
+      "ModuleShell renders no <XyPad> — every faced module's declared xyPads go through that " +
+        'one cell, so its absence means the pads have no MIDI-assignable render site at all',
+    ).toBeGreaterThan(0);
 
     expect(
       offenders,
@@ -288,19 +344,25 @@ describe('MIDI Learn wiring audit (static scan of every module card)', () => {
   });
 
   it('confirms the joystick / XY-pad controls are NOT expressed as Knob/Fader', () => {
-    // The camera pads + joystick are custom <div> pads, so they should NOT
-    // appear in the Knob/Fader scan at all. If a future refactor turns one
-    // into a Knob/Fader, this test flags it so the author makes a deliberate
-    // decision (wire it, or add it to ALLOWED_UNWIRED).
-    for (const file of ['JoystickCard.svelte', 'WavesculptCard.svelte']) {
-      const path = join(__dirname, file);
-      const src = stripComments(readFileSync(path, 'utf8'));
-      const unwired = parseControls(src).filter((c) => !(c.hasModuleId && c.hasParamId));
-      expect(
-        unwired,
-        `${file}: XY/joystick pads should remain custom <div>s, not Knob/Fader. ` +
-          `If this changed intentionally, update ALLOWED_UNWIRED.`,
-      ).toEqual([]);
-    }
+    // A pad axis is a two-dimensional gesture; expressed as a Knob or a Fader it
+    // becomes two unrelated one-dimensional controls, and MIDI Learn would bind
+    // them as such. If a refactor turns a pad into a Knob/Fader, this flags it
+    // so the author makes a deliberate decision (wire it, or add it to
+    // ALLOWED_UNWIRED).
+    //
+    // ⚠ THIS USED TO NAME `JoystickCard.svelte` AND `WavesculptCard.svelte`, the
+    // two cards that hand-rolled custom `<div>` pads. Every pad now renders
+    // through the shell's ONE `xy` cell, so the subject is that cell: it must
+    // reach `<XyPad>` and must NOT have grown a Knob/Fader standing in for a
+    // pad axis. Naming the surface that actually renders is what keeps this
+    // falsifiable — the two card names would resolve to nothing at all.
+    const shell = stripComments(readFileSync(join(__dirname, 'ModuleShell.svelte'), 'utf8'));
+    expect(parseXyPads(shell).length, 'the shell still renders a real <XyPad>').toBeGreaterThan(0);
+    const unwired = parseControls(shell).filter((c) => !(c.hasModuleId && c.hasParamId));
+    expect(
+      unwired.length,
+      'ModuleShell grew un-wired Knob/Fader instances beyond its allowlisted ones — a pad axis ' +
+        'expressed as a one-dimensional control is two bindings where there should be one gesture',
+    ).toBe(ALLOWED_UNWIRED['ModuleShell.svelte']?.count ?? 0);
   });
 });

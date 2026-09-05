@@ -31,7 +31,7 @@
 // message) so a single bad op cannot hide behind a green aggregate (§6 risk).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from './_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from './_helpers';
 
 type GNode = { id: string; kind: string; layer?: number; x: number; y: number; params?: Record<string, number> };
 type GEdge = { id: string; from: string; to: string; toPort: string };
@@ -55,18 +55,8 @@ type PatchGlobal = {
   __engine?: () => { getDomain: (d: string) => { setParam: (id: string, port: string, v: number) => void } };
 };
 
-const CANVAS = '[data-testid="toybox-canvas"]';
+const CANVAS = '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]';
 
-/** Pin the Svelte Flow viewport so the card body is in the visible region. */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /** The 4 source nodes (one per layer) + an OUTPUT, the common scaffold. */
 function sources(): GNode[] {
@@ -115,7 +105,7 @@ async function freezeUntilLit(page: Page, time: number): Promise<void> {
     ({ time }) => {
       const g = globalThis as unknown as PatchGlobal;
       g.__toyboxFreeze?.(time);
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!c || c.width === 0) return false;
       const ctx = c.getContext('2d', { willReadFrequently: true });
       if (!ctx) return false;
@@ -166,7 +156,7 @@ async function captureMoving(
     await page.evaluate(({ t }) => (globalThis as unknown as PatchGlobal).__toyboxFreeze?.(t), { t });
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
     const lit = await page.evaluate(() => {
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!c || c.width === 0) return false;
       const ctx = c.getContext('2d', { willReadFrequently: true });
       if (!ctx) return false;
@@ -237,7 +227,7 @@ async function settleFreeze(page: Page, time: number): Promise<void> {
 /** Average RGB of the on-card preview canvas. */
 async function average(page: Page): Promise<[number, number, number]> {
   return page.evaluate(() => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     let r = 0, g = 0, b = 0, n = 0;
@@ -252,7 +242,7 @@ async function average(page: Page): Promise<[number, number, number]> {
  *  the LAYOUT — register a measurable change. */
 async function signature(page: Page, S = 6): Promise<number[]> {
   return page.evaluate((S) => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
     const { data, width, height } = ctx.getImageData(0, 0, c.width, c.height);
     const sig: number[] = [];
@@ -343,11 +333,10 @@ test.describe('TOYBOX batch op nodes — registry + menu @webgl-serial', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
     await ensureCombineOpen(page);
 
     // (a) ADD-row buttons (auto-generated from OP_KINDS).
@@ -489,11 +478,10 @@ test.describe('TOYBOX batch op nodes — render + output delta @webgl-serial', (
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
       // ONE boot for the whole batch.
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-      await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-      await pinViewport(page);
+      await openToyboxDock(page);
 
       // PER-ID assertions (a bad op can't hide in the shared boot).
       for (const op of batch.ops) {
@@ -536,11 +524,10 @@ test.describe('TOYBOX batch op nodes — multi-input exercise @webgl-serial', ()
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-      await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-      await pinViewport(page);
+      await openToyboxDock(page);
 
       // Annotated so the ternary's branches don't infer a union of exact
       // literal shapes (whose absent keys type as `undefined` and fail
@@ -583,11 +570,10 @@ test.describe('TOYBOX batch op nodes — multi-input exercise @webgl-serial', ()
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     const out: GNode = { id: 'out', kind: 'output', x: 286, y: 66 };
     const op: GNode = { id: 'op', kind: 'exquisite', x: 120, y: 14, params: { bands: 4, seamBlend: 0 } };
@@ -625,11 +611,10 @@ test.describe('TOYBOX batch op nodes — multi-input exercise @webgl-serial', ()
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     const out: GNode = { id: 'out', kind: 'output', x: 286, y: 66 };
     const op: GNode = { id: 'op', kind: 'exquisite', x: 120, y: 14, params: { bands: 4, seamBlend: 0 } };
@@ -682,11 +667,10 @@ test.describe('TOYBOX batch op nodes — multi-input exercise @webgl-serial', ()
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     const out: GNode = { id: 'out', kind: 'output', x: 286, y: 66 };
 
@@ -742,11 +726,10 @@ test.describe('TOYBOX combine graph — resizable view persists @webgl-serial', 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
     await ensureCombineOpen(page);
 
     const wrap = page.locator('[data-testid="toybox-graph-wrap"]');
@@ -792,13 +775,18 @@ test.describe('TOYBOX combine graph — resizable view persists @webgl-serial', 
         n.data.combineView = { h };
       });
     }, Math.round(persisted));
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
-    await ensureCombineOpen(page);
+    await openToyboxDock(page, 'tb2');
+    // TWO dock panes are open now (tb + tb2) and console testids repeat
+    // pane-to-pane — scope everything to tb2's pane, and open ITS combine tab
+    // directly (an unscoped ensureCombineOpen would see tb's already-open SVG
+    // and do nothing for tb2).
+    const pane2 = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="tb2"]');
+    await pane2.getByTestId('toybox-face-tab-combine').click();
+    await expect(pane2.getByTestId('toybox-face-pane')).toHaveAttribute('data-tab', 'combine');
 
-    // The fresh card's graph panel reflects the persisted height (inline style
-    // bound to the combineViewH derived, read off node.data on mount).
-    const wrap2 = page.locator('[data-testid="toybox-graph-wrap"]');
+    // The fresh console's graph panel reflects the persisted height (inline
+    // style bound to the combineViewH derived, read off node.data on mount).
+    const wrap2 = pane2.locator('[data-testid="toybox-graph-wrap"]');
     await expect(wrap2).toBeVisible();
     await expect
       .poll(() => wrap2.evaluate((el) => {

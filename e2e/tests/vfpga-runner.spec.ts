@@ -5,19 +5,24 @@
 // lives in vfpga-runner-render-smoke.spec.ts (frozen clock + paused rAF, frame-
 // stable — strictly stronger than the old wall-clock sample-once, which was
 // deleted here in the GPU-attest rebuild Phase 3). This file keeps the UNIQUE
-// non-render path: the load-preset menu lists smpte-bars and re-applying it
+// non-render path: the load-preset selector lists smpte-bars and re-applying it
 // hot-swaps without crash/blank, with a renderer-tolerant OUTPUT floor.
+//
+// On the default shell the preset picker is the tile's hero SELECTOR cell
+// (`shell-cell-vfpga-preset` — role=button + listbox popup; its `.val` span is
+// the loaded-name readout), and the OUTPUT pixel read is the videoOut tile's
+// thumb canvas (`video-tile-thumb`, a 2D canvas painted from the engine
+// output — the same downstream chain the old `video-out-canvas` proved).
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-/** OUTPUT canvas pixel stats — the OUTPUT card blits its sampled FBO texture
- *  into the engine canvas then drawImage()s it, so this reads what vfpga-runner
- *  produced through the downstream chain. */
+/** videoOut tile thumb pixel stats — reads what vfpga-runner produced through
+ *  the downstream chain. */
 async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance: number } | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
-  await expect(canvas, 'video-out canvas mounted').toHaveCount(1);
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
+  await expect(canvas, 'videoOut tile thumb mounted').toHaveCount(1);
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -35,6 +40,8 @@ async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance:
 }
 
 test.describe('vfpga-runner host module', () => {
+  // ⚠ The title is verbatim-ledgered (waitfortimeout-ledger keys on it) — the
+  // "menu" is the selector cell's listbox on the shell.
   test('the load-preset menu lists smpte-bars and re-applies it (hot-swap stays valid)', async ({ page, rack }) => {
     test.setTimeout(45_000);
 
@@ -49,15 +56,19 @@ test.describe('vfpga-runner host module', () => {
       ],
     );
 
-    const select = page.locator('[data-testid="vfpga-preset"]');
-    await expect(select).toHaveCount(1);
-    // The menu offers smpte-bars as a loadable preset.
-    await expect(select.locator('option', { hasText: 'SMPTE bars' })).toHaveCount(1);
+    const cell = page.locator('.svelte-flow__node[data-id="vf"] [data-testid="shell-cell-vfpga-preset"]');
+    await expect(cell).toHaveCount(1);
+    await cell.click();
+    // The selector offers smpte-bars as a loadable preset.
+    const option = page.locator('[role="option"]', { hasText: 'SMPTE bars' });
+    await expect(option).toHaveCount(1);
 
-    // Re-apply it (hot-swap to the same effect) — the loaded readout stays put
-    // and the OUTPUT is still the bars (no crash, no blank).
-    await select.selectOption('smpte-bars');
-    await expect(page.locator('[data-testid="vfpga-loaded"]')).toHaveText('SMPTE bars');
+    // Re-apply it (hot-swap to the same effect) — the loaded readout (the
+    // cell's value span) stays put and the OUTPUT is still the bars (no crash,
+    // no blank). Picking an option also closes the listbox (never Escape — the
+    // dock-wide Esc hazard).
+    await option.click();
+    await expect(cell.locator('.val')).toHaveText('SMPTE bars');
 
     let stats = await outputStats(page);
     for (let i = 0; i < 40 && (!stats || stats.nonZeroFrac <= 0.05); i++) {

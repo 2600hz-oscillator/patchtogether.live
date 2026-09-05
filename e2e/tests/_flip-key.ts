@@ -12,7 +12,7 @@
 //
 // ⚠ A spec that wants NATIVE TAB semantics has exactly two sanctioned forms:
 // Tab while a typing target holds focus (blur/advance out of the field — see
-// in-card-title.spec.ts) and Shift-Tab. A bare Tab anywhere else IS a flip.
+// module-rename.spec.ts) and Shift-Tab. A bare Tab anywhere else IS a flip.
 
 import type { Page } from '@playwright/test';
 import { RACK_FLIP_KEY } from '../../packages/web/src/lib/graph/workflow-pins';

@@ -47,9 +47,9 @@
 //     here until someone adds it — which is the honest state, not a claim of
 //     completeness. `card-primitive-parity.test.ts` is what enumerates the
 //     primitive roster; this gate does not.
-//   * LEGACY CARDS. `Fader.svelte`, `Knob.svelte` and the ~200 hand-authored
-//     cards print values and are untouched by the ruling, which was about
-//     FACEPLATES. Sweeping them would be a different (much larger) decision.
+//   * THE PRIMITIVES THEMSELVES. `Fader.svelte` and `Knob.svelte` print values
+//     on drag/hover and are untouched by the ruling, which was about what a
+//     faceplate paints AT REST.
 //   * PIXELS. It cannot tell whether the removal LOOKS right. The VRT dock
 //     baselines are the only thing that can, and they are a separate lane.
 //   * A NUMBER ARRIVING THROUGH `format`. It cannot, by construction —
@@ -559,8 +559,8 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
   // and indexes them 0..3, and NOTHING says which controller is in which slot
   // until you select one and read `pad.id` back. `Player 1` would be a fact the
   // API does not provide; a device name would be a runtime value this label
-  // cannot hold. The index IS the state, it is what the legacy card's four
-  // buttons have always printed, and it is what a player says out loud ("try
+  // cannot hold. The index IS the state, it is what this module's four buttons
+  // have always printed, and it is what a player says out loud ("try
   // slot 2").
   //
   // ⚠ AND THE ROSTER EXISTS FOR SELECTABILITY, NOT DECORATION — the moog962
@@ -579,7 +579,7 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
       + 'and identifies them ONLY by index; nothing reports which controller sits in which slot '
       + 'until one is selected and its `pad.id` is read back, so there is no name for this state '
       + 'that is not the integer and inventing one ("Player 1") would assert a fact the platform '
-      + 'does not provide. The legacy card has always printed exactly these four glyphs.',
+      + 'does not provide. This module has always printed exactly these four glyphs.',
   })),
   // ── MAPPY · `surfaceCount` (2026-09-01, wave 4) ──────────────────────────
   //
@@ -597,8 +597,9 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
   // declined.
   //
   // ⚠ AND THE ROSTER EXISTS FOR THE READOUT AND THE AFFORDANCE TOGETHER. The
-  // legacy card paints the live count as a number between its −/+ buttons
-  // (`mappy-count-n`), and `paintsReadout` refuses a `format` — so WITHOUT the
+  // module has always painted the live count as a number between its −/+
+  // buttons (`mappy-count-n`), and `paintsReadout` refuses a `format` — so
+  // WITHOUT the
   // roster the promoted lane tile would show a dial with no number on it, and
   // the count would be reachable and unreadable. With it the dock paints a
   // six-state `Segmented` row (the honest replacement for a stepper) and the
@@ -613,7 +614,7 @@ const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: s
         `a SURFACE COUNT — ${o.label} is not a reading of the dial, it is what the state IS: `
         + `${o.label} live projection surface${o.label === '1' ? '' : 's'}, each warped onto its own `
         + 'quad and fed by its own input. A player says the number out loud while aligning a venue, '
-        + 'the legacy card prints exactly this glyph between its −/+ buttons, and there is no name '
+        + 'this module prints exactly this glyph between its −/+ buttons, and there is no name '
         + 'for "three surfaces" that is not the integer.',
     })),
 ];

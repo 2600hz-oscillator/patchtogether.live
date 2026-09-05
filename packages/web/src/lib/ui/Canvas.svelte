@@ -208,37 +208,40 @@
   // boot the engine once a restored graph with video in it has loaded, so the
   // render loop starts WITHOUT a manual add/delete.
   import { shouldBootEngineForRestoredVideo } from '$lib/ui/restored-video-boot';
-  // Meta-domain registry — sticky notes etc. (no engine binding).
+  // Meta-domain registry — defs with no engine factory (the reconciler skips
+  // `domain === 'meta'` before engine.addNode). Its ORGANISATIONAL inhabitants
+  // were GROUP! and STICKY and both are deleted; what remains is the roaming
+  // CADILLAC sprite plus the MIDI/control surfaces (control-surface,
+  // electra-control, launchpad-control, matrixmix, push2-control), so the
+  // registry is still populated and still glob-derived.
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
-  import '$lib/meta/modules'; // auto-registers stickyDef
+  import '$lib/meta/modules';
   // Module cards are resolved GLOB-DRIVEN from $lib/ui/modules/*Card.svelte
-  // via $lib/ui/modules-card-map — no hand-maintained per-card import list
-  // (that append-edit was a top cross-PR conflict source). A new module just
-  // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
-  // convention, or declaring `card` on its def) and is picked up automatically.
-  import { buildNodeTypes } from '$lib/ui/modules-card-map';
-  // P0.3b — the legacy-fallback MIGRATION bridge: a pure derivation deciding
-  // which node component a module renders as in its workflow lane (legacy card /
-  // curated ModuleShell / uniform placeholder / dock stub). Gated behind the
-  // `?shell=1` opt-in preview flag so it's a strict no-op until owner sign-off.
-  import { laneRenderKind, emittedTypeFor, isShellSwappable, dockRailRendersFace, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
-  import { migrated } from '$lib/ui/workflow/strict-faces';
-  // TEST SEAM (#2068): force a PROMOTED type back onto the un-migrated render
-  // path. Dev/VITE_E2E_HOOKS builds only — see `laneMigrated` below.
-  import { forcedUnmigrated, installForcedPlaceholderHook } from '$lib/dev/forced-placeholder.svelte';
+  // ⚠ THE GLOB-DRIVEN CARD MAP IS GONE. `buildNodeTypes()` resolved every
+  // registered def to its `XyzCard.svelte` and handed SvelteFlow a `nodeTypes`
+  // entry per module; the three entries below are the whole map now, and none of
+  // them is a module def. A new module does not register a node component at all
+  // — it declares a `face`, and `ModuleShell` renders it.
+  // The lane-render derivation: which node component a module renders as in its
+  // workflow lane — its own roaming surface, the faceplate tile, or the dock
+  // stub that stands in for it while it is docked.
+  import { laneRenderKind, emittedTypeFor, isLaneNative, NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
   // DOM-SOURCE seam: a video module whose source lives on its CARD stays alive
   // in an off-screen host when the shell swaps its lane card away.
-  import { HEADLESS_MOUNT_LANE_TYPES, DOM_SOURCE_LANE_TYPES, CARD_PRODUCER_LANE_TYPES, FACE_MOUNTS_PRODUCER, needsHeadlessSourceMount } from '$lib/ui/workflow/dom-source-modules';
   import { cameraStatus } from '$lib/ui/media/camera-status-registry';
   import { loopbackStatus } from '$lib/ui/media/loopback-status-registry';
   import { archivistStatus } from '$lib/ui/media/archivist-status-registry';
   import { loopbackCropPump } from '$lib/ui/media/loopback-crop-pump';
-  import { groupCardHostsChildCard } from '$lib/ui/modules/group-viz-hosts';
   import { nodeMedia } from '$lib/ui/media/node-media-registry';
   import { nodeExtras } from '$lib/ui/media/node-extras';
   import { nodeVideoSource } from '$lib/ui/media/node-video-source.svelte';
   import { nodeVarispeed } from '$lib/ui/media/node-varispeed.svelte';
   import { nodeHlsSource } from '$lib/ui/media/node-hls-source.svelte';
+  import { nodeLoopbackSource } from '$lib/ui/media/node-loopback-source.svelte';
+  import { nodeCameraSource } from '$lib/ui/media/node-camera-source.svelte';
+  import { nodeArchivistSource } from '$lib/ui/media/node-archivist-source.svelte';
+  import { nodeFrameProducers } from '$lib/ui/media/node-frame-producers';
+  import { NODE_VIZ_SURFACE_TYPES } from '$lib/ui/media/node-viz-surfaces';
   import { nodePresent } from '$lib/ui/modules/node-present-registry.svelte';
   import { createFullscreen } from '$lib/ui/modules/use-fullscreen.svelte';
   import { resolveVideoEngine } from '$lib/ui/modules/use-present.svelte';
@@ -273,7 +276,6 @@
   // Canvas no longer renders the label directly.
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import { canAddModule } from '$lib/doom/doom-gating';
-  import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
   import { MODULE_DOCS } from '$lib/docs/module-docs.generated';
   import { isAnnotating, toggleAnnotate, clearAnnotate } from '$lib/ui/annotate-mode.svelte';
@@ -291,33 +293,6 @@
   } from '$lib/ui/stereo-jack-expansion.svelte';
   import { resolveVerboseLabel } from '$lib/ui/patch-panel-labels';
   import { buildUnpatchPlan, type UnpatchPlan, type UnpatchTarget } from '$lib/ui/unpatch-menu';
-  import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
-  import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
-  import ExposedControlsModal from '$lib/ui/ExposedControlsModal.svelte';
-  import LassoOverlay from '$lib/ui/LassoOverlay.svelte';
-  import {
-    buildPortCandidates,
-    buildExposedPorts,
-    planCreateGroup,
-    planUngroup,
-    planEditExposed,
-    planDuplicateGroup,
-    type PortCandidate,
-    type PortLookupModule,
-  } from '$lib/graph/group-actions';
-  import type { ExposedPort, ExposedControl, GroupData } from '$lib/graph/group-projection';
-  import { resolveExposedPort } from '$lib/graph/group-projection';
-  import { listExposableControls, validateExposedControls } from '$lib/graph/group-controls';
-  import {
-    nextGroupNameForNewGroup,
-    planDefaultGroupNames,
-    LEGACY_GROUP_PLACEHOLDER,
-  } from '$lib/graph/group-naming';
-  import {
-    extractSavedGroupPayload,
-    resurrectSavedGroup,
-  } from '$lib/graph/saved-group-resurrect';
-  import type { SavedGroup } from '$lib/server/saved-groups';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import { assetLinks } from '$lib/media/asset-links.svelte';
   import { mediaLibrary } from '$lib/media/library.svelte';
@@ -331,13 +306,6 @@
     type ModuleEntry,
   } from '$lib/ui/port-patch-helpers';
   import AwarenessLayer from '$lib/ui/AwarenessLayer.svelte';
-  import {
-    setLocalGroupBuildingSelection,
-    readRemoteGroupBuilding,
-    indexRemoteGroupBuildingByNode,
-    overlapsRemoteGroupBuilding,
-    type RemoteGroupBuilding,
-  } from '$lib/multiplayer/group-building-presence';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
   import { createAudioHealthMonitor } from '$lib/audio/audio-health.svelte';
@@ -398,6 +366,7 @@
     hasExternalClock as hasWorkflowExternalClock,
     isDinAssigned,
   } from '$lib/ui/workflow/workflow-surfaces';
+  import { timelordeFaceTap } from '$lib/ui/modules/timelorde/face-tap';
   import {
     listWorkflowCameras,
     workflowCameraAtCap,
@@ -408,17 +377,16 @@
   // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
   // dock store.
   import DockRail from '$lib/ui/dock/DockRail.svelte';
+  import type { NodeTypes } from '@xyflow/svelte';
   import DockStubCard from '$lib/ui/dock/DockStubCard.svelte';
-  // P0.3b — the workflow-shell lane components: the curated skeleton (migrated
-  // modules) + the uniform placeholder (un-migrated). Registered as node types
-  // alongside dockStub; emitted only under the `?shell=1` preview.
+  // The workflow lane tile: one faceplate component every module renders as,
+  // registered as a node type alongside dockStub.
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
-  import ModuleShellPlaceholder from '$lib/ui/modules/ModuleShellPlaceholder.svelte';
-  // P0.3b re-spec — the bottom-drawer EXPANDED full-view faceplate (its own
+  // The bottom-drawer EXPANDED full-view faceplate (its own
   // full-width RACKLINE faceplate, NOT routed through DockCardHost's card flex).
   import DockFullView from '$lib/ui/dock/DockFullView.svelte';
   // Off-screen lifecycle host for DOM-source video modules the shell swapped out.
-  import HeadlessSourceHost from '$lib/ui/workflow/HeadlessSourceHost.svelte';
+  import NodeVizSurfaceHost from '$lib/ui/media/NodeVizSurfaceHost.svelte';
   import { SHELL_TILE_W, SHELL_TILE_H_SLOT, SHELL_VIDEO_ZONE_TILE_INSET_Y, videoZonePackedXs, spineCableVar } from '$lib/ui/workflow/module-shell-model';
   // DOCKING P2.5b: the pan-gesture screen-space cable tail (stub → rail).
   import DockPanTail, { type DockTailSpec } from '$lib/ui/dock/DockPanTail.svelte';
@@ -531,44 +499,6 @@
     scratchSeeded = undefined,
   }: Props = $props();
 
-  /** THE ONE UI SWITCH. Faceplates in the lane are the DEFAULT and need no
-   *  querystring; `?shell=legacy` is the single escape hatch, rendering each
-   *  module's verbatim *Card.svelte inside the same shell.
-   *
-   *  This was `shellPreview`, an opt-in `?shell=1` preview. The preview became
-   *  the product, so the flag INVERTED: the default arm is now the new look and
-   *  the flag selects the old one. Anything other than exactly `legacy` (including a
-   *  stale `?shell=1` bookmark) resolves to faceplates. */
-  let shellFaces = $derived(page.url?.searchParams?.get('shell') !== 'legacy');
-
-  /**
-   * STRICT_FACES membership AS THE RENDER PATH MUST READ IT — the single
-   * promotion question this component asks, everywhere it asks it.
-   *
-   * It is `migrated(type)` in every build a user can reach. The second term is
-   * the FORCED-PLACEHOLDER TEST SEAM (#2068): under DEV / `VITE_E2E_HOOKS=1` a
-   * spec may name types that must render through the UN-MIGRATED path even
-   * though they are promoted, so a test whose subject is that path (the graph
-   * MIDI dispatch fallback, the dock's verbatim-card branch) keeps a subject
-   * after the last un-promoted module is gone. `forcedUnmigrated` re-reads the
-   * same gate and constant-folds to `false` in a production build, so this is
-   * `migrated(type)` there by construction — see
-   * `$lib/dev/forced-placeholder.svelte.ts` for both ends of the guard.
-   *
-   * ⚠ CANVAS IS THE ONE EVALUATION SITE and that is load-bearing here.
-   * `DockFullView`, `DockCardHost` and `AudioIoSurface` all take an INJECTED
-   * `migrated` boolean rather than calling `migrated()` themselves (see
-   * `dockRailRendersFace`'s header), so routing every read through this helper
-   * makes a forced type indistinguishable from an un-promoted one on EVERY
-   * surface at once — the lane tile, the dock full view, the rail tray and the
-   * 🎧 panel. A seam that moved only the lane would leave the dock painting a
-   * faceplate with no legacy card to drive, which is the half of the subject
-   * these specs actually need.
-   */
-  function laneMigrated(type: string): boolean {
-    return migrated(type) && !forcedUnmigrated(type);
-  }
-
   /** `?seed=none` — A TEST-ONLY EMPTY RACK. Suppresses the four one-shot
    *  SEEDERS below (the pinned M/E/C + surface singletons, the default
    *  MIXMSTRS→AUDIO OUT wire, the default videoOut, and the video-zone
@@ -592,7 +522,7 @@
    *  links to it and no user-facing behaviour branches on it.
    *
    *  It suppresses SEEDING ONLY. The shell chrome, the lane geometry, the dock
-   *  and `shellFaces` are all untouched — a `?seed=none` rack is the same UI,
+   *  are all untouched — a `?seed=none` rack is the same UI,
    *  just without the starter content. */
   let seedShellDefaults = $derived(
     !(testHooksEnabled() && page.url?.searchParams?.get('seed') === 'none'),
@@ -606,7 +536,7 @@
    *  call is byte-identical. NEVER threaded into a PERSISTED write (drop-spawn x/y,
    *  the videoOut/A-V-defaults spawn, the grow-up push-ups all keep COLUMN_W), so
    *  the persisted graph + collab convergence are untouched — pure render deriv. */
-  let wcolPitch = $derived(columnPitch(shellFaces));
+  let wcolPitch = $derived(columnPitch());
 
   /** The flow-space Y the flush lane/send stacks bottom-anchor to. Under the
    *  `?shell=1` preview the stacks lift SHELL_LANE_BADGE_CLEARANCE_Y above the
@@ -616,7 +546,7 @@
    *  drag-reorder sibling centers, and the in-lane drop-spawn position (which,
    *  like the pitch, persists the RENDERED frame under the preview so the tile
    *  never flashes at the un-lifted slot). */
-  let wcolStackAnchorY = $derived(shellFaces ? shellStackAnchorY() : COLUMN_BASELINE_Y);
+  let wcolStackAnchorY = $derived(shellStackAnchorY());
 
   // The header shows "Sign in" only when we're confident the user is signed
   // out. On the public `/` canvas (no client ClerkProvider) that signal is
@@ -639,29 +569,16 @@
   // module needs no edit here. Built once at module scope (the registries
   // self-register on the barrel imports above, so the lists are populated).
   const nodeTypes = {
-    ...buildNodeTypes([
-      ...listModuleDefs(),
-      ...listVideoModuleDefs(),
-      ...listMetaModuleDefs(),
-    ]),
-    // DOCKING P2.5a: the canvas-side stub a docked module's card swaps to
-    // (same node id — cables stay attached). NOT a module def: it never
-    // enters the registries, the card-map glob, or the VRT/per-port sweeps
-    // (dock-by-default OFF is a hard invariant — nothing docks without a
-    // user gesture).
-    dockStub: DockStubCard as unknown as ReturnType<typeof buildNodeTypes>[string],
-    // P0.3b: the workflow-shell lane node types the legacy-fallback bridge
-    // emits under the `?shell=1` preview — the curated skeleton for MIGRATED
-    // modules + the uniform placeholder for UN-MIGRATED ones. Like dockStub,
-    // NOT module defs (never enter the registries / card-map glob / sweeps).
-    moduleShell: ModuleShell as unknown as ReturnType<typeof buildNodeTypes>[string],
-    moduleShellPlaceholder: ModuleShellPlaceholder as unknown as ReturnType<typeof buildNodeTypes>[string],
+    // DOCKING P2.5a: the canvas-side stub a docked module swaps to (same node
+    // id — cables stay attached). NOT a module def: it never enters the
+    // registries or the VRT/per-port sweeps (dock-by-default OFF is a hard
+    // invariant — nothing docks without a user gesture).
+    dockStub: DockStubCard as unknown as NodeTypes[string],
+    // The lane faceplate. `emittedTypeFor` resolves every non-docked module to
+    // this one component; the per-module entries the card-map glob used to add
+    // are gone with the cards.
+    moduleShell: ModuleShell as unknown as NodeTypes[string],
   };
-
-  /** The set of module TYPES that resolve to a real card (the glob-built map,
-   *  minus the non-def helpers above). The legacy-fallback bridge only swaps a
-   *  type that HAS a card — a defless/special node keeps its current render. */
-  const cardTypeSet = new Set(Object.keys(nodeTypes));
 
   // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
   // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
@@ -691,11 +608,13 @@
     // option (c)). Shared with the tier-invariant _module-card.css height rule
     // (--shell-tile-h) so CSS/TS can't drift, and the RESERVED lane slot equals
     // the RENDERED tile (else the baseline number badge floats mid-card).
-    // NON_SHELL_LANE_TYPES (clipplayer / control surfaces / group / sticky) keep
-    // their LEGACY card in the lane, so they reserve their NATIVE rack tier, not
-    // the shell tile. Preview-OFF keeps the per-TYPE rack tier for every type →
-    // byte-identical.
-    if (shellFaces && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
+    // NON_SHELL_LANE_TYPES keeps its member's own native body in the lane, so
+    // such a type reserves its NATIVE rack tier rather than the shell tile. The
+    // set is
+    // down to `cadillac` alone (a roaming overlay sprite that is filtered out of
+    // flowNodes upstream anyway) now that group and sticky are deleted.
+    // Preview-OFF keeps the per-TYPE rack tier for every type → byte-identical.
+    if (!NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_H_SLOT;
     const size = rackSizeByType[type]?.size;
     const u = size ? parseInt(size, 10) || 1 : 1;
     return u * RACK_UNIT;
@@ -705,12 +624,12 @@
    *  preview a shell/placeholder tile is the UNIFORM SHELL_TILE_W (every module the
    *  SAME width — the owner "same-size horizontally" premise), so the reserved
    *  column slot == the rendered tile and band-CENTERING (card center == channel-
-   *  number center) stays exact. NON_SHELL_LANE_TYPES keep their legacy card's
-   *  NATIVE hp width. Preview-OFF (and every type there) uses the per-TYPE hp tier
+   *  number center) stays exact. NON_SHELL_LANE_TYPES keep their own NATIVE hp
+   *  width. Preview-OFF (and every type there) uses the per-TYPE hp tier
    *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies) → byte-
    *  identical. Falls back to one tile. */
   function wcolCardWidthPx(type: string): number {
-    if (shellFaces && !NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
+    if (!NON_SHELL_LANE_TYPES.has(type)) return SHELL_TILE_W;
     return (rackSizeByType[type]?.hp ?? 1) * RACK_UNIT;
   }
 
@@ -765,12 +684,6 @@
   // this body's top level would latch a stale value instead of re-installing.
   if (testHooksEnabled()) {
     onMount(() => {
-      // #2068 — `__forceUnmigrated(types)`: render those types through the
-      // UN-MIGRATED lane/dock path (see `laneMigrated`). Installed here rather
-      // than in the module body so it shares this block's one gate, and it
-      // drains `__forceUnmigratedPending` so an `addInitScript` write placed
-      // before boot is honoured too.
-      installForcedPlaceholderHook();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__patch = patch;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -984,11 +897,7 @@
       (globalThis as any).__connectDragState = connectDragState;
       // Lets E2E tests exercise the connect-commit path directly — the
       // same xyflow `Connection` envelope a real pointer drag would
-      // synthesize. Used by the instrument-exposed-port-patching spec
-      // to assert that dragging onto a group's exposed handle creates
-      // an edge in the patch (the bug it was added to regress against:
-      // pre-fix, group endpoints bailed before the edge was added
-      // because the def lookup returned no group def).
+      // synthesize.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__handleConnect = (c: Connection) => handleConnect(c);
       // Cable-drag drill-down (no-auto-patch) e2e: drive the REAL drag
@@ -1111,39 +1020,6 @@
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__organizeModules = () => organizeModules();
-      // Module-grouping Phase 1: tests need to drive the GroupBuilderModal
-      // open + the commitGroup callback without going through the marquee +
-      // right-click pipeline (which is hard to script reliably across
-      // SvelteFlow's pointer-event handling). The hook takes the selection
-      // ids and seeds the same state `openGroupBuilder` would.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__openGroupBuilder = (ids: string[]) => {
-        selCtxMenuIds = ids;
-        openGroupBuilder();
-      };
-      // Lasso mode test hook — Playwright drives lasso flow via these
-      // entry points instead of synthesizing pointer events (deterministic
-      // across CI + headed runs).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__lasso = {
-        enter: (clientX: number, clientY: number) => enterLassoMode(clientX, clientY),
-        setCursor: (clientX: number, clientY: number) => {
-          if (!flowApi) return;
-          lassoCursorScreen = { x: clientX, y: clientY };
-          lassoCursorFlow = flowApi.screenToFlowPosition({ x: clientX, y: clientY });
-          recomputeLassoHits();
-        },
-        commit: () => {
-          const ids = lassoHitIds.slice();
-          exitLassoMode();
-          if (ids.length < 2) return;
-          selCtxMenuIds = ids;
-          openGroupBuilder();
-        },
-        cancel: () => exitLassoMode(),
-        hits: () => lassoHitIds.slice(),
-        active: () => lassoMode,
-      };
     });
   }
   function loadEnvelopeFromObject(env: unknown) {
@@ -1162,22 +1038,6 @@
   $effect(() => {
     return getDefaultSnapshotBus().subscribe((snap) => {
       snapshot = snap;
-      // Group-name migration runs any time a snapshot surfaces a group
-      // node whose label is blank or the legacy "GROUP!" placeholder.
-      // Triggered per-snapshot (rather than once-per-mount) so a second
-      // group added after the first migration still picks up a name.
-      // planDefaultGroupNames is no-op when every group already has a
-      // real label, so the steady-state cost is one cheap scan.
-      let needsMigration = false;
-      for (const n of snap.nodes) {
-        if (n.type !== 'group') continue;
-        const lbl = (n.data as { label?: unknown } | undefined)?.label;
-        if (typeof lbl !== 'string' || lbl.trim() === '' || lbl === LEGACY_GROUP_PLACEHOLDER) {
-          needsMigration = true;
-          break;
-        }
-      }
-      if (needsMigration) maybeMigrateGroupNames();
     });
   });
 
@@ -1509,7 +1369,7 @@
     // tile top is below the video-zone baseline".
     const waiting = scratchSeeded === false || (provider != null && !providerHasSynced);
     void snapshot.nodes.length; // re-run as the trio materialises
-    if (waiting || !shellFaces) return;
+    if (waiting) return;
     untrack(() => placeVideoZoneDefaults());
   });
 
@@ -1937,6 +1797,38 @@
   // (input/textarea/select/contenteditable — isTypingTarget) and under any
   // modifier. Plain listener (not capture) so capture-phase ESC consumers
   // (pickup-cancel, lasso, the File.. menu) win first.
+  // SPACE = TAP TEMPO for the SELECTED TIMELORDE — the shell's port of the
+  // card-only Space shortcut. The tap cell's own title promises it ("Space
+  // taps it too while TIMELORDE is selected"), but the handler lived in
+  // TimelordeCard's window listener, whose headless-host copy reads xyflow
+  // selection as never-selected — so on the default shell the promise held on
+  // NO shipping surface (S2 parity port). Same guards as the card: no
+  // modifiers, no auto-repeat, not while typing. The external-clock stance is
+  // the face's (face-tap.ts): a tap under an external clock is overwritten by
+  // the follower's next measurement rather than refused here.
+  $effect(() => {
+    function onTapKey(e: KeyboardEvent) {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.repeat) return;
+      if (isTypingTarget(e.target)) return;
+      // ⚠ Selection lives in XYFLOW's internal store (Canvas dropped
+      // bind:nodes) — `flowNodes` objects never learn `.selected`, so the
+      // authoritative read is `flowApi.getNodes()`, same as the lasso.
+      const sel = flowApi
+        ?.getNodes()
+        .find(
+          (n) =>
+            n.selected && (n.data as { node?: { type?: string } })?.node?.type === 'timelorde',
+        );
+      if (!sel) return;
+      e.preventDefault();
+      timelordeFaceTap(sel.id);
+    }
+    window.addEventListener('keydown', onTapKey);
+    return () => window.removeEventListener('keydown', onTapKey);
+  });
+
   $effect(() => {
     function onDockKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -2103,7 +1995,7 @@
   // it never changes the at-rest view a VRT captures). One-shot (a latch).
   let didFrameLanesOnLoad = false;
   $effect(() => {
-    if (!shellFaces || didFrameLanesOnLoad) return;
+    if (didFrameLanesOnLoad) return;
     if (!flowApi || !flowEl) return; // not mounted yet — re-runs when they bind
     // rAF-poll (bounded) until SvelteFlow's on-init fitView has produced a real
     // viewport, then re-frame ONCE onto the lane band (inheriting the fitted
@@ -2229,25 +2121,20 @@
     trace(`undocked ${nodeId} → canvas (${entry.restorePosition.x},${entry.restorePosition.y})`);
   }
 
-  // GC sweep: retire entries whose node vanished (quicksave slot switch,
-  // peer delete) to TOMBSTONES — they revive when the id reappears
-  // (quickload round-trip) — and auto-evict entries whose node a peer
-  // folded into a collapsed group (with a toast; the card has no canvas
-  // presence to stub). Runs per snapshot; untracked so the sweep's own
-  // store writes never loop the effect.
+  // GC sweep: retire entries whose node vanished (quicksave slot switch, peer
+  // delete) to TOMBSTONES — they revive when the id reappears (quickload round
+  // trip). Runs per snapshot; untracked so the sweep's own store writes never
+  // loop the effect.
+  //
+  // ⚠ THE SECOND HALF OF THIS SWEEP IS GONE WITH THE GROUP! MODULE. It
+  // auto-evicted (with a toast) any docked node a peer had folded into a
+  // COLLAPSED GROUP, because such a node had no canvas presence left to stub.
+  // Nothing can put a node in that state any more, so the eviction has no
+  // trigger; `dockStore.sweep` keeps only its tombstone arm.
   $effect(() => {
     const liveIds = new Set(snapshot.nodes.map((n) => n.id));
-    const grouped = new Set<string>();
-    for (const n of snapshot.nodes) {
-      const pg = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
-      if (pg && collapsedGroupIds.has(pg)) grouped.add(n.id);
-    }
-    const names = new Map(snapshot.nodes.map((n) => [n.id, dockDisplayName(n)]));
     untrack(() => {
-      const evicted = dockStore.sweep(liveIds, grouped);
-      for (const id of evicted) {
-        showDockToast(`${names.get(id) ?? id} was grouped — undocked`);
-      }
+      dockStore.sweep(liveIds);
     });
   });
 
@@ -2300,14 +2187,11 @@
     };
   });
 
-  /** One DockRail occupant. `face` is the #1739 promotion decision, evaluated
-   *  HERE (the only place that has `shellFaces`) and injected, never re-derived
-   *  inside the rail. */
+  /** One DockRail occupant. */
   interface DockRailCardSpec {
     node: ModuleNode;
     title: string;
     pinned: boolean;
-    face: boolean;
   }
 
   /** Rail card lists (top/left; bottom adds the pinned occupant below).
@@ -2318,18 +2202,16 @@
     for (const { nodeId } of dockStore.entriesFor(zone)) {
       const node = snapshot.nodes.find((n) => n.id === nodeId);
       if (!node) continue;
-      // ⚠ A USER-DOCKED ENTRY GETS ITS FACE TOO (owner P0, 2026-09-03). This
-      // line used to pass `pinned: false` into a rule that required `pinned`,
-      // so docking a PROMOTED module on the default shell swapped it back to
-      // its verbatim legacy card — the pre-promotion instrument, in the one
-      // place the player had just chosen to keep it. `pinned` stays on the
-      // SPEC (the rail reads it for its own chrome); it is simply no longer an
-      // input to the render decision.
+      // ⚠ `pinned` IS RAIL CHROME, NOT A RENDER INPUT (owner P0, 2026-09-03).
+      // This line used to feed a rule that required `pinned` to render the
+      // module's own faceplate, so docking one swapped it back to the
+      // pre-promotion instrument in the one place the player had just chosen
+      // to keep it. The rail reads `pinned` for its own chrome and nothing
+      // else; there is one thing to render either way.
       out.push({
         node,
         title: dockDisplayName(node),
         pinned: false,
-        face: dockRailRendersFace({ shellFaces, migrated: laneMigrated(node.type) }),
       });
     }
     return out;
@@ -2467,9 +2349,7 @@
     // headroom above the fullest lane's top tile, clamped to the default top
     // (short stacks keep today's look). Legacy (preview OFF) keeps the exact
     // max(default, tallest-stack) math → byte-identical.
-    const height = shellFaces
-      ? computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')))
-      : computeLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
+    const height = computeShellLaneHeightPx(stacks, defaultLaneHeightPx(wcolCardHeightPx('tidyVco')));
     return laneTopYForHeight(height);
   });
 
@@ -2516,9 +2396,8 @@
 
   /** P0.3b — the transient EXPANDED FULL-VIEW occupants (owner extension: up
    *  to TWO side-by-side 50/50 panes, open order = left→right): each is a
-   *  node whose full faceplate is open in the bottom dock (an un-migrated
-   *  module's verbatim legacy card via nodeTypes[type], or a migrated
-   *  module's shell face). NEVER persisted entries — a pane closes to
+   *  node whose full faceplate is open in the bottom dock. NEVER persisted
+   *  entries — a pane closes to
    *  dockStore.closeFullView(id) and keeps the module's lane
    *  placeholder/shell in place (Option #1). */
   let fullViewCards = $derived.by(() => {
@@ -2530,55 +2409,11 @@
     return out;
   });
 
-  /** Modules the shell swapped out of their lane whose ENGINE-VISIBLE state
-   *  lives on their CARD — the nodes <HeadlessSourceHost> must keep mounted.
-   *  Two halves, one union (see $lib/ui/workflow/dom-source-modules):
-   *    - DOM_SOURCE_LANE_TYPES — the card-owned `<video>`/`<img>` must stay
-   *      ATTACHED to the engine handle (node registration is graph-driven and
-   *      already UI-independent, but SOURCE attachment was card-mount-driven,
-   *      so camera/videobox/… → OUTPUT was patched-but-black under `?shell=1`);
-   *    - CARD_PRODUCER_LANE_TYPES (#1587) — the card IS the producer: its rAF
-   *      loop is the only writer of the module's picture/analysis, so
-   *      wavesculpt/timelorde/synesthesia emitted black on a SAVED rack the
-   *      user never touched.
-   *
-   *  Uses the SAME pure lane decision the flowNodes derivation uses, so the two
-   *  can never disagree: 'legacy' (`?shell=legacy`, or a NON_SHELL carve-out
-   *  like cameraInput/videoOut) and 'stub' (real card in the dock rail) both
-   *  render the card SOMEWHERE and are excluded — only 'shell'/'placeholder'
-   *  qualify. Additionally excluded:
-   *    - a node whose full faceplate is OPEN in the dock, BECAUSE DockFullView
-   *      mounts its real card there — a second mount would run two media
-   *      elements for one node and the first to unmount would detach the
-   *      survivor's source.
-   *      ⚠ AND THAT IS A CONDITION, NOT A CONSTANT. `DockFullView` mounts the
-   *      real card only for an UN-MIGRATED module; a promoted one gets
-   *      `<ModuleShell>` and no card at all. So a promoted DOM-source module
-   *      (cameraInput) still needs its host WHILE its faceplate is open — see
-   *      `fullViewShowsFaceInstead` at the site, which is where the argument and
-   *      its deliberate scope live,
-   *    - canvas-hidden nodes (pinned drawer / hiddenCard cameras): those render
-   *      no lane card in preview-off EITHER, so hosting them would ADD engine
-   *      state the shell-off rack doesn't have — the opposite of the parity
-   *      this fix exists to guarantee.
-   *
-   *  ⚠ COLLAPSED-GROUP CHILDREN USED TO BE EXCLUDED HERE TOO, on that same
-   *  parity reasoning, and for the DOM-SOURCE half they still are (see
-   *  `needsHeadlessSourceMount`, which is where the argument now lives). For the
-   *  PRODUCER half the exclusion was a hole (#1721): parity requires the two
-   *  shells to AGREE, and BOTH were dark, because the collapsed-child skip in
-   *  the flowNodes derivation below sits OUTSIDE its `shellFaces` branch.
-   *  Measured on the pre-fix tree, wavesculpt.video_out → VIDEO OUT, 20 rAF
-   *  frames of the module's own drawFrame into a 64×48 probe: `nonBlack
-   *  170/3072, maxLuma 203, 20 distinct signatures` before the group, `0/3072,
-   *  0, 1 signature` after it collapsed — identical in the default shell and
-   *  under `?shell=legacy`.
-   *
-   *  ⚠ SO THIS DERIVATION IS NO LONGER A NO-OP UNDER `?shell=legacy`, and the
-   *  `if (!shellFaces) return []` short-circuit that used to open it had to go.
-   *  It is still a no-op for every arm except the collapsed-group one:
-   *  `laneRenderKind` can only return 'legacy'/'stub' when shellFaces is false,
-   *  and neither mounts. */
+  /* The `headlessSourceNodes` derivation STOOD HERE (legacy-removal S1.5
+   * retired it with `<HeadlessSourceHost>`): it kept a LOAD-BEARING CARD
+   * mounted off-screen for the DOM-source and card-producer modules. Both
+   * populations are node-owned now, so no card mount is engine-visible — see
+   * the retirement record in `$lib/ui/workflow/dom-source-modules.ts`. */
   /** NODE-OWNED MEDIA teardown. A DOM-source module's <video>/<img>, object URL
    *  and MediaStream are owned by $lib/ui/media/node-media-registry so they
    *  survive a CARD unmount (expand/collapse moves the real card between the
@@ -2588,9 +2423,9 @@
    *
    *  Teardown is therefore keyed to GRAPH lifetime instead, and reconciled
    *  against the live node set rather than hooked onto every delete path — a
-   *  node removed by ANY route (context menu, lasso, undo, a peer's CRDT
-   *  delete, Clear, a patch load) is swept here, so no delete site has to
-   *  remember to call disposeNode.
+   *  node removed by ANY route (context menu, Backspace on a selection, undo, a
+   *  peer's CRDT delete, Clear, a patch load) is swept here, so no delete site
+   *  has to remember to call disposeNode.
    *
    *  The NODE-OWNED PROJECTOR ($lib/ui/modules/node-present-registry) is swept
    *  from the same place for the same reason: a "Present on second display"
@@ -2600,9 +2435,9 @@
    *  ...and the NODE-OWNED RECORDING ($lib/ui/modules/node-recorder-registry),
    *  third instance of the identical bug (#1574): collapsing recorderbox ran
    *  `recorder.abandon()` in the card's onDestroy and destroyed the take. Same
-   *  cause, same owner, same sweep — a node deleted by ANY route (menu, lasso,
-   *  undo, a peer's CRDT delete, Clear, a patch load) ends its recording here,
-   *  so no delete site has to remember.
+   *  cause, same owner, same sweep — a node deleted by ANY route (menu,
+   *  Backspace, undo, a peer's CRDT delete, Clear, a patch load) ends its
+   *  recording here, so no delete site has to remember.
    *
    *  ...and the NODE-OWNED SAMSLOOP TAKE ($lib/ui/modules/node-samsloop-registry),
    *  fourth instance (#1588) and the worst of them: SamsloopCard's unmount
@@ -2666,6 +2501,33 @@
     // leave a pump measuring the viewport forever.
     loopbackStatus.sweep(liveIds);
     loopbackCropPump.sweep(liveIds);
+    // ⚠ AND THE CONTROLLER THAT NOW OWNS BOTH OF THOSE (legacy-removal S1).
+    // `nodeLoopbackSource` took getDisplayMedia, the capture state machine, the
+    // engine attach and the pump's start/stop off `LoopbackCard.svelte`, so
+    // loopback left DOM_SOURCE_LANE_TYPES and no longer has a card in the
+    // headless host at all. This row is what stops the MediaStream when the node
+    // leaves the graph — the one place stopping it is right, because a node
+    // leaving IS the content ending.
+    nodeLoopbackSource.sweep(liveIds);
+    // ⚠ AND THE CAMERA CONTROLLER (legacy-removal S1). This row does more than
+    // stop a stream: `dispose` also drops the node's AWARENESS BADGE, which now
+    // tracks the STREAM rather than a card mount. Without it a deleted camera
+    // would leave rack-mates looking at "this user has a camera live here" for a
+    // node that no longer exists.
+    nodeCameraSource.sweep(liveIds);
+    // ⚠ AND THE ARCHIVIST CONTROLLER (legacy-removal S1) — the row that ends two
+    // polling loops (a 33ms gate poll and a 100ms display refresh) for a deleted
+    // node. Both are node-keyed and deliberately outlive every surface, so
+    // nothing else could stop them.
+    nodeArchivistSource.sweep(liveIds);
+    // ⚠ AND THE PER-FRAME PRODUCERS (legacy-removal S1) — the row that stops the
+    // ONE shared rAF ticker when the last producer node leaves the graph. Every
+    // other row here retires a resource; this one retires a LOOP, and it is the
+    // only thing that can, because the loop is deliberately node-keyed and
+    // deliberately outlives every surface (that is the whole point of moving it
+    // off the cards). Without this sweep a deleted scope would leave a ticker
+    // reading `readParam` on a node that no longer exists, forever.
+    nodeFrameProducers.sweep(liveIds);
     // ...and the same status/command seam for ARCHIVIST
     // ($lib/ui/media/archivist-status-registry), the THIRD and last member of
     // DOM_SOURCE_LANE_TYPES to be promoted. Same reason as the two above: its
@@ -2804,132 +2666,101 @@
     nodeHlsSource.sync(snapshot.nodes, engine);
   });
 
-  let headlessSourceNodes = $derived.by<ModuleNode[]>(() => {
-    const collapsed = collapsedGroupIds;
-    const out: ModuleNode[] = [];
-    for (const n of snapshot.nodes) {
-      if (!HEADLESS_MOUNT_LANE_TYPES.has(n.type)) continue;
-      // ⚠ THE CANVAS-HIDDEN ARM OF #1721 — #1754. A canvas-hidden node is
-      // skipped on the premise that SOME OTHER surface mounts its real card.
-      // For the M/E/C drawer trio that premise is true (the dock rail mounts
-      // it). For a CARD PRODUCER it is FALSE, and the measurement is flat:
-      //
-      //   A fresh `/rack` auto-spawns `pinned-timelorde` (`data.pinned: true`,
-      //   `presence: 'type'` — see graph/workflow-pins). MEASURED on this tree,
-      //   BOTH shells: `.mod-card.timelorde-card` = 0 mounts, headless hosts for
-      //   timelorde = 0. Its producer card has never been mounted anywhere, so
-      //   `write(node,'displayFrame')` never runs and `video_out` is the idle
-      //   field forever — `nonBlack 0/3072, maxLuma 8, 1 distinct signature over
-      //   30 frames`, recorded in card-producer-lifetime.spec.ts, which names
-      //   this exclusion as the half it does not cover.
-      //
-      // ⚠ AND IT IS NOT THE PINNED-DRAWER STORY AN EARLIER DRAFT OF THIS COMMENT
-      // TOLD. timelorde is a WORKFLOW_PINNED_SURFACES module, not one of the
-      // M/E/C drawer occupants: it has NO drawer and NO rail, so
-      // `dockRailRendersFace` never fires for it and the defect has nothing to
-      // do with promotion. Gating this on `shellFaces && migrated` would have
-      // fixed exactly half of it — the default shell after the face lands —
-      // and left `?shell=legacy` dark, which is the opposite of the parity the
-      // skip exists to protect. Both shells are equally broken today; both are
-      // fixed here, so they still agree.
-      //
-      // Scoped on CARD_PRODUCER membership, exactly as #2148 scoped its sibling:
-      // hidden CAMERAS are the other kind of canvas-hidden node and are
-      // DOM_SOURCE, so they are untouched, and the trio are not producers.
-      // canvas-hidden ∩ CARD_PRODUCER is {timelorde} today.
-      //
-      // ⚠ AND THE DECISION IS NOT DUPLICATED HERE. The `continue` this replaces
-      // encoded "is this a producer?" in the caller, beside a pure function that
-      // already answers exactly that question for exactly this case:
-      // `needsHeadlessSourceMount`'s `laneOmitsNode` arm returns
-      // `CARD_PRODUCER_LANE_TYPES.has(type)`. So canvas-hidden is folded INTO
-      // `laneOmitsNode` below — it is the same fact ("the lane emits no node at
-      // all for this one") — and the hidden CAMERAS keep their old answer from
-      // the one place that decides it, rather than from a second copy here.
-      // ⚠ THE DOCK FULL VIEW ONLY MOUNTS THE REAL CARD FOR AN UN-MIGRATED
-      // MODULE, and this used to be an unconditional `continue`. See the
-      // `dockFullViewMountsCard` note below — the exclusion moved into
-      // `hostedElsewhere`, which is the input that already means exactly this.
-      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
-      // The lane emits NO node for a collapsed group's child (see the flowNodes
-      // derivation below), in EITHER shell — so `kind` describes a card that is
-      // never reached, and the decision needs to know that rather than infer it.
-      // A CANVAS-HIDDEN node (pinned singleton / `hiddenCard` camera) is the
-      // same fact by a different route: the flowNodes derivation skips it, so
-      // no lane node is emitted for it either, in either shell.
-      const laneOmitsNode =
-        (!!parentGroupId && collapsed.has(parentGroupId)) || isCanvasHiddenNode(n);
-      const kind = laneRenderKind({
-        shellFaces,
-        userDocked: !!dockStore.entryFor(n.id),
-        type: n.type,
-        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: laneMigrated(n.type),
-      });
-      // ⚠ A DOCK FULL VIEW DOES NOT ALWAYS MOUNT THE REAL CARD, and this used
-      // to be an unconditional `continue` that assumed it always does.
-      // `DockFullView.svelte` is `{#if migrated} <ModuleShell/> {:else}
-      // <CardComponent/>`: for a PROMOTED module the tray paints the FACEPLATE,
-      // and the card is nowhere in it.
-      //
-      // The old premise held for every member of this set on the day it was
-      // written, because NO card-owned-source module was promoted yet — a gate
-      // whose precondition was the ABSENCE of the feature. Promoting one turns
-      // it false: expanding the faceplate would unmount the card from every
-      // surface at once, and on a CAPTURE source that is the acquire command's
-      // owner vanishing exactly while the user looks at the surface offering it.
-      //
-      // ⚠ SCOPED TO THE DOM-SOURCE HALF ON PURPOSE. The producer half (cube,
-      // rasterize — the two promoted members today) is left EXACTLY as it was,
-      // and not because hosting them would be wrong: because it would be
-      // UNMEASURED. Their faces mount the producing surface through the hero
-      // cell (`CubeVizSurface` IS cube's renderer, per dom-source-modules.ts),
-      // so they are not dark in the tray, and adding a second mount of a card
-      // that installs a frame drawer is a change that needs its own measurement
-      // rather than a ride-along. This decision is already channel-aware for the
-      // same kind of reason — `needsHeadlessSourceMount`'s `laneOmitsNode` arm
-      // returns `CARD_PRODUCER_LANE_TYPES.has(type)`.
-      //
-      // ⚠ AND ON THE DOM-SOURCE HALF IT CANNOT DOUBLE-MOUNT, which is the exact
-      // hazard the original exclusion existed for: `nodeMedia` adoption is a
-      // TRANSFER with an owner-checked release, so there is one element per
-      // (node, slot), two hosts cannot own two elements, and a stale teardown
-      // cannot strand the live one.
-      // ⚠ THE PRODUCER HALF IS NO LONGER LEFT ALONE, and the paragraph above now
-      // records why it USED to be rather than why it still is. The premise was
-      // that a promoted producer's face mounts its renderer (true of cube and
-      // rasterize, the only two at the time). timelorde is the first whose face
-      // only BLITS what the card produces — so with the dock open the card was
-      // unmounted from every surface and the picture froze on the last pushed
-      // bitmap, or on the idle field if none had been pushed yet. Deny by
-      // default now: a faced producer KEEPS its host, and the two that must not
-      // are named in `FACE_MOUNTS_PRODUCER` with the reason they can.
-      const fullViewShowsFaceInstead =
-        dockStore.isFullView(n.id) &&
-        laneMigrated(n.type) &&
-        (DOM_SOURCE_LANE_TYPES.has(n.type) ||
-          (CARD_PRODUCER_LANE_TYPES.has(n.type) && !FACE_MOUNTS_PRODUCER.has(n.type)));
-      if (
-        needsHeadlessSourceMount({
-          kind,
-          type: n.type,
-          laneOmitsNode,
-          // Two producers of "some other live surface already mounts this
-          // node's REAL card":
-          //   * the DOCK FULL VIEW — unless it is showing a faceplate instead
-          //     (see above), and
-          //   * GroupCard, which hidden-mounts a viz-passthrough child's real
-          //     card for exactly as long as the group is collapsed.
-          hostedElsewhere:
-            (dockStore.isFullView(n.id) && !fullViewShowsFaceInstead) ||
-            (laneOmitsNode && groupCardHostsChildCard(n.type)),
-        })
-      ) {
-        out.push(n);
-      }
-    }
-    return out;
+  /** THE NODE-OWNED LOOPBACK CAPTURE (legacy-removal S1). Same snapshot, same
+   *  reasoning, fourth registry — and the one whose ACQUISITION cannot move
+   *  here, which is why the seam is shaped the way it is.
+   *
+   *  ⚠ `getDisplayMedia` is refused outside a user activation, and unlike
+   *  `getUserMedia` there is no previously-granted state that lets a
+   *  programmatic call through. So this sync can RESTORE a capture and can never
+   *  START one: the surfaces ask, through `loopbackStatus.request(id,
+   *  'acquire')`, from inside a real click handler. What this effect owns is
+   *  everything after the grant — the element, the engine attach, the crop pump
+   *  and the state machine — on the NODE's lifetime instead of a card's. */
+  $effect(() => {
+    nodeLoopbackSource.sync(snapshot.nodes, engine);
   });
+
+  /** THE NODE-OWNED CAMERA CAPTURE (legacy-removal S1). Fifth registry, and the
+   *  one that takes the most OFF a card: getUserMedia, the device roster, the
+   *  saved-device rebind, the permission state machine and the presence badge.
+   *
+   *  ⚠ THE PROVIDER IS PASSED AS A GETTER because the card reached it through
+   *  Svelte CONTEXT, which a plain module cannot read, and because it can be
+   *  attached LATE — the dev-only `__provider` global the @collab specs install
+   *  is exactly that case. Handing the same getter this component already builds
+   *  keeps one answer to "which provider", including the fallback.
+   *
+   *  ⚠ AND THIS EFFECT IS WHAT MAKES A PEER'S CHANGE LAND. The card watched
+   *  `node.data.deviceId` and `params.enabled` with its own effects, so both were
+   *  dead whenever no card was mounted — a rack-mate's device pick sat in the
+   *  document doing nothing, and a rack-mate's pause changed a shader branch
+   *  while the camera light stayed on. Running them off the graph snapshot is the
+   *  same reactivity, taken from the place that still has it. */
+  $effect(() => {
+    nodeCameraSource.sync(snapshot.nodes, engine, () => {
+      if (provider) return provider;
+      const g = globalThis as unknown as { __provider?: HocuspocusProvider | null };
+      return g.__provider ?? null;
+    });
+  });
+
+  /** THE NODE-OWNED ARCHIVIST SOURCE (legacy-removal S1) — sixth registry, and
+   *  the last of the three DOM-source conversions, which leaves
+   *  `DOM_SOURCE_LANE_TYPES` empty.
+   *
+   *  ⚠ RUNNING ON THE SNAPSHOT IS WHAT MAKES A SAVED RACK COME BACK PLAYABLE AND
+   *  A PEER'S TUNE LAND. The card re-attached a saved item in `onMount`, so it
+   *  happened when a CARD mounted rather than when the node appeared — and it
+   *  read `node.data.item` once. A rack-mate searching writes an item into a
+   *  document this controller holds elements for; attaching on a CHANGE of
+   *  identifier is what turns that write into a playing item. */
+  $effect(() => {
+    nodeArchivistSource.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-OWNED PER-FRAME PRODUCERS (legacy-removal S1) — the seventh
+   *  registry, and the first that owns a LOOP rather than a resource.
+   *
+   *  The six above take an ELEMENT, a STREAM or a TRANSPORT off a card. This one
+   *  takes the rAF body: the per-frame read-the-engine-and-write-back that a
+   *  module's own `drawFrame` renders from. `CARD_PRODUCER_LANE_TYPES` solved
+   *  that by keeping the whole card mounted off-screen in
+   *  `<HeadlessSourceHost>`, which works and cannot survive the card's deletion.
+   *
+   *  ⚠ ONE rAF FOR EVERY PRODUCER NODE, NOT ONE PER NODE — see the registry's
+   *  header for the meter-frame argument it inherits and the
+   *  IntersectionObserver gate it deliberately does NOT: a producer must keep
+   *  feeding its downstream chain while its tile is scrolled away, so gating it
+   *  on visibility would re-introduce #1587 through the back door.
+   *
+   *  ⚠ The engine is PASSED, not imported, for the reason `nodeExtras` and
+   *  `nodeVideoSource` record: the registry lives under `$lib/ui/**` and must
+   *  stay hash-transparent to the WebGL attest, which walks `$lib/video/**`
+   *  wholesale. It reaches the engine only through existing public calls. */
+  $effect(() => {
+    nodeFrameProducers.sync(snapshot.nodes, engine);
+  });
+
+  /** THE NODE-MOUNTED VIZ SURFACES (legacy-removal S1) — the eighth registry,
+   *  and the only one whose producer is a COMPONENT.
+   *
+   *  ⚠ WHY IT IS AN `{#each}` AND NOT A `.sync()` LIKE THE SEVEN ABOVE. Those
+   *  own a resource or a loop, so a plain TS controller can `ensure`/`dispose`
+   *  them against the graph. WAVESCULPT's producer is a WebGL2 renderer with a
+   *  persistent GL context, per-node framebuffers and a presentation canvas, and
+   *  it lives in a file whose BYTES are pinned by the WebGL attest basis — so it
+   *  stays the Svelte component it already is and what moves is who MOUNTS it.
+   *  Mount/unmount IS the lifecycle here, which is why the graph drives it
+   *  through a keyed each rather than through a sweep.
+   *
+   *  ⚠ NOT `<HeadlessSourceHost>` WITH A LONGER LIST, either: that host parks a
+   *  whole CARD inside a single-node `<SvelteFlow>` because a card needs a flow
+   *  provider. A viz surface takes a `nodeId` and paints. */
+  let vizSurfaceNodes = $derived(
+    snapshot.nodes.filter((n) => NODE_VIZ_SURFACE_TYPES.has(n.type)),
+  );
+
 
   // A VIDEO-domain module expanded in the dock full-view holds a HARD render
   // lease for as long as the faceplate is open: the dock mount is a live
@@ -2969,19 +2800,14 @@
     // owns its own full-width <DockFullView> faceplate below the bottom rail
     // (P0.3b re-spec); this list holds only the pinned occupant + docked entries.
     if (dockedBottomNode && dockedBottomSpec) {
-      // #1739 — THE PINNED OCCUPANT GETS ITS FACE. The tray is its ONLY surface
-      // (canvas-hidden ⇒ no lane tile, no EXPAND pill, no route to
-      // DockFullView), so without this the `m` key was the one place in the app
-      // where a promoted module still painted its legacy card. Since the
-      // 2026-09-03 P0 the docked entries below get theirs on the same rule.
+      // ⚠ THE TRAY IS THE PINNED OCCUPANT'S ONLY SURFACE — canvas-hidden ⇒ no
+      // lane tile, no EXPAND pill, no route to DockFullView. #1739 is why the
+      // `m` key stopped being the one place in the app that painted a
+      // pre-promotion instrument.
       out.push({
         node: dockedBottomNode,
         title: dockedBottomSpec.label,
         pinned: true,
-        face: dockRailRendersFace({
-          shellFaces,
-          migrated: laneMigrated(dockedBottomNode.type),
-        }),
       });
     }
     out.push(...docked);
@@ -3013,31 +2839,11 @@
   // default won and it mounted `nodeTypes[type]` unconditionally. The rule
   // existed, was correct, and had a caller that did not call it.
   //
-  // ⚠ EVALUATED HERE, INJECTED, NEVER RE-DERIVED IN THE PANEL. `shellFaces` and
-  // `migrated()` are read in ONE place on purpose (see `DockCardHost`'s `face`
-  // prop doc); a second reader inside `AudioIoSurface` is the
-  // two-derivations-of-one-fact class this file's own patch rows were rewritten
-  // to remove.
-  //
-  // ⚠ BOTH ARMS ARE FALSE TODAY (neither type is migrated), and that is the
-  // point rather than a caveat: this is the leg that MOVES the day either module
-  // is promoted. The panel's existing VRT scene drives `?shell=legacy`, so
-  // `shellFaces` is false there and it can never see this arm — the same blind
-  // spot `legacy-fallback.ts` already records for the three drawer specs.
-  let workflowAudioInFace = $derived(
-    !!workflowAudioInNode &&
-      dockRailRendersFace({
-        shellFaces,
-        migrated: laneMigrated(workflowAudioInNode.type),
-      }),
-  );
-  let workflowAudioOutFace = $derived(
-    !!workflowAudioOutNode &&
-      dockRailRendersFace({
-        shellFaces,
-        migrated: laneMigrated(workflowAudioOutNode.type),
-      }),
-  );
+  // ⚠ THE PANEL MOUNTS EACH MODULE'S FACEPLATE BECAUSE THAT IS THE ONLY
+  // SURFACE EITHER HAS: they are canvas-hidden pinned singletons, so there is
+  // no lane tile and no EXPAND pill to reach a second one from. The pair of
+  // booleans that used to say so answered "is there a node", which the host
+  // already knows, so they are gone rather than restated.
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
    *  → tap tempo + tempo knob flip to the externally-clocked state. */
   let workflowExternallyClocked = $derived(
@@ -3078,21 +2884,6 @@
   // get a fresh slot. xyflow honors a `zIndex` field on Node directly.
   let topNodeId = $state<string | null>(null);
 
-  // Module-grouping Phase 1 — build the "collapsed groups" filter once per
-  // snapshot. A child node whose data.parentGroupId points at an existing,
-  // non-expanded GROUP! is hidden from the canvas (its handles + cables
-  // route through the group's exposed ports instead). The group node
-  // itself is always rendered as a single GroupCard.
-  let collapsedGroupIds = $derived.by<Set<string>>(() => {
-    const ids = new Set<string>();
-    for (const n of snapshot.nodes) {
-      if (n.type !== 'group') continue;
-      const expanded = (n.data as { expanded?: boolean } | undefined)?.expanded === true;
-      if (!expanded) ids.add(n.id);
-    }
-    return ids;
-  });
-
   // WORKFLOW MODE P1/P4 — ids of every canvas-hidden node: the pinned
   // drawer/topbar singletons (P1/P2) plus the hiddenCard headless camera
   // instances (P4), for the defensive edge filter below.
@@ -3102,20 +2893,6 @@
       if (isCanvasHiddenNode(n)) ids.add(n.id);
     }
     return ids;
-  });
-
-  // Module-grouping Phase 1 — quick map from child node → its collapsed
-  // group id, for edge-filtering below. Built per snapshot, O(n).
-  let nodeIdToCollapsedGroupId = $derived.by<Map<string, string>>(() => {
-    const map = new Map<string, string>();
-    const collapsed = collapsedGroupIds;
-    for (const n of snapshot.nodes) {
-      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
-      if (parentGroupId && collapsed.has(parentGroupId)) {
-        map.set(n.id, parentGroupId);
-      }
-    }
-    return map;
   });
 
   // ── Per-entry FlowNode/FlowEdge identity reuse (per-commit-cascade fix) ──
@@ -3132,8 +2909,7 @@
   //
   // Reuse rules (per node): the snapshot entry identity, the RESOLVED
   // per-user position (layouts live OUTSIDE the nodes map, so the memo
-  // can't cover them), the remote-grouping badge ref, and the top-z flag
-  // must all be unchanged. class/style/draggable are pure functions of the
+  // can't cover them), and the top-z flag must all be unchanged. class/style/draggable are pure functions of the
   // entry (type + data content), so entry identity covers them.
   //
   // Reuse SOURCE: xyflow's CURRENT `internals.userNode` — after a measure/
@@ -3153,7 +2929,6 @@
     snapNode: ModuleNode;
     x: number;
     y: number;
-    remoteUser: PresenceUser | undefined;
     top: boolean;
     /** DOCKING P2.5a: the type we EMITTED for this node ('dockStub' while
      *  docked, else the snapshot type). The reuse + carry-forward guards
@@ -3201,8 +2976,6 @@
   $effect(() => {
     const snap = snapshot;
     const top = topNodeId;
-    const collapsed = collapsedGroupIds;
-    const remoteByNode = remoteGroupBuildingByNode;
     const next: FlowNode[] = [];
     const nextPrev = new Map<string, PrevFlowNodeEntry>();
     let rebuiltAny = false;
@@ -3265,11 +3038,6 @@
     // position is real, the rack lock owns it, and unlocking makes them drag
     // like anything else.
     for (const n of snap.nodes) {
-      // Skip children belonging to a collapsed group — the group card
-      // stands in for them visually. Phase 2 will flip to inline-rendering
-      // children when data.expanded === true on the parent group.
-      const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
-      if (parentGroupId && collapsed.has(parentGroupId)) continue;
       // CADILLAC renders as a roaming overlay sprite (CadillacOverlay),
       // not as a SvelteFlow card. Filter it out of the node array so
       // xyflow doesn't draw a fallback white box at the spawn point.
@@ -3280,7 +3048,6 @@
       // graph/hidden-card.ts; the P4 camera manager's mapped cameras,
       // whose face is the topbar 📷 menu).
       if (isCanvasHiddenNode(n)) continue;
-      const remoteUser = remoteByNode[n.id];
       // Per-user layouts: getNodePosition returns the user's override
       // (when in multiplayer) or falls back to n.position (when single-
       // user OR when this user has no entry yet).
@@ -3302,11 +3069,9 @@
       // non-docked node ⇒ byte-identical to the old `dockEntry ? 'dockStub' :
       // n.type`. Preview ON ⇒ un-migrated → placeholder, migrated → shell.
       const renderKind = laneRenderKind({
-        shellFaces,
         userDocked: !!dockEntry,
         type: n.type,
-        hasCard: isShellSwappable(n.type, cardTypeSet.has(n.type)),
-        migrated: laneMigrated(n.type),
+        laneNative: isLaneNative(n.type),
       });
       const emittedType = emittedTypeFor(renderKind, n.type);
       const dockZone = dockEntry?.zone ?? null;
@@ -3323,7 +3088,6 @@
         && prev.snapNode === n
         && prev.x === resolved.x
         && prev.y === resolved.y
-        && prev.remoteUser === remoteUser
         && prev.top === isTop
         && prev.emittedType === emittedType
         && prev.dockZone === dockZone
@@ -3344,7 +3108,7 @@
         // stale data payload.
         const reusable = cur && cur.id === n.id && cur.type === emittedType ? cur : prev.obj;
         next.push(reusable);
-        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: reusable });
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, top: isTop, emittedType, dockZone, autoColor, obj: reusable });
         continue;
       }
       rebuiltAny = true;
@@ -3362,25 +3126,17 @@
           node: n,
           // DOCKING P2.5a: the stub face labels its zone + click-to-focus.
           ...(dockZone ? { dockZone } : {}),
-          // Phase 3C: when a remote rack-mate has this node in their
-          // active group-builder selection, expose the user's identity
-          // so the per-card overlay can render the soft-lock badge.
-          ...(remoteUser ? { remoteGrouping: remoteUser } : {}),
         },
-        // Mark the SvelteFlow node with a class our global CSS can dim
-        // via opacity, without each card having to wire its own
-        // remote-state branching.
-        ...(remoteUser ? { className: 'remote-group-building' } : {}),
       };
       // ── THE DOMAIN HUE, ON EVERY CARD HOST (#1794) ────────────────────────
       //
       // The neon control family resolves ONE accent chain —
-      // `var(--ka, var(--domain, var(--accent)))` — and until this line the
-      // LEGACY shell set no `--domain` at all, so every control on a legacy
-      // card fell through to `--accent`. That fallback is `#ffb347`, an ORANGE
-      // reserved for focus rings and hover glow; MEASURED on `?shell=legacy`
-      // before this change, an audio card and a video card both resolved
-      // `rgb(255, 179, 71)`.
+      // `var(--ka, var(--domain, var(--accent)))` — so a surface that sets no
+      // `--domain` sends every control on it through to `--accent`. That
+      // fallback is `#ffb347`, an ORANGE reserved for focus rings and hover
+      // glow. MEASURED before this line existed: an audio module and a video
+      // module both resolved `rgb(255, 179, 71)` — the same orange, on both
+      // domains, which is the bug this sets `--domain` to prevent.
       //
       // ⚠ IT IS NOT ONLY "video is not purple". `ModuleShell` (the lane tile /
       // faceplate) and `.dock-faceplate .video` (the dock full view) BOTH
@@ -3414,7 +3170,7 @@
           node.style = `${node.style ? node.style + ';' : ''}--auto-lane-color:${autoColor}`;
         }
         next.push(node);
-        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: node });
+        nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, top: isTop, emittedType, dockZone, autoColor, obj: node });
         continue;
       }
       // Lift the most-recently-spawned node above its siblings so it's
@@ -3453,7 +3209,7 @@
       }
       if (isTop) node.zIndex = 1000;
       next.push(node);
-      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, remoteUser, top: isTop, emittedType, dockZone, autoColor, obj: node });
+      nextPrev.set(n.id, { snapNode: n, x: resolved.x, y: resolved.y, top: isTop, emittedType, dockZone, autoColor, obj: node });
     }
     prevFlowNodes = nextPrev;
     // No-op short-circuit: if every entry is identity-reused AND the array
@@ -3473,7 +3229,6 @@
   $effect(() => {
     const snap = snapshot;
     const hovered = hoveredNodeId;
-    const childToGroup = nodeIdToCollapsedGroupId;
     const next: FlowEdge[] = [];
     const nextPrev = new Map<string, PrevFlowEdgeEntry>();
     let rebuiltAny = false;
@@ -3495,18 +3250,9 @@
     // `cable-left-only` / `cable-right-only` treatment + an L / R tag.
     const legGroups = computeLegGroups(snap.edges, stereoDefForNode);
     for (const e of snap.edges) {
-      // Skip edges whose endpoint references a hidden child (i.e. a
-      // member of a collapsed group). Internal edges between two children
-      // of the same group are hidden entirely; external edges to a single
-      // hidden child get rewritten at create-group time to terminate on
-      // the group's exposed port, so they'd already point at the group
-      // node here. A leftover edge to a hidden child indicates a
-      // pre-group-creation snapshot — defensive drop.
-      if (childToGroup.has(e.source.nodeId) || childToGroup.has(e.target.nodeId)) continue;
       // Edges touching a CANVAS-HIDDEN node (pinned singleton OR
       // hiddenCard headless camera): the node isn't on the canvas, so the
-      // cable can't render there either (defensive — same rationale as
-      // the hidden-group-child drop above).
+      // cable can't render there either (defensive).
       if (canvasHiddenNodeIds.has(e.source.nodeId) || canvasHiddenNodeIds.has(e.target.nodeId)) continue;
       // The sibling leg of a rendered stereo cable: its partner draws the whole
       // group. An edge MISSING from the map is drawn plainly rather than
@@ -4794,31 +4540,18 @@
     const dstNode = patch.nodes[connection.target];
     if (!srcNode || !dstNode) return;
 
-    // Group endpoints — exposed-port handles stand in for a child {nodeId,
-    // portId}. The Yjs edge is stored with the group node + exposed handle
-    // (so the canvas keeps rendering the cable at the group's boundary);
-    // projectGroups() rewrites the endpoints to the child before the
-    // reconciler runs. For cable-type resolution we read the exposed
-    // port's declared cableType so the engine's resolveConnection picks
-    // the correct splitter/merger/bridge plan when the underlying child
-    // is e.g. video while the cable started life as audio.
-    const srcExposed = resolveExposedPort(srcNode, connection.sourceHandle);
-    const dstExposed = resolveExposedPort(dstNode, connection.targetHandle);
-
     // Phase 0 video spike: a node may belong to either domain registry.
-    // Try audio first (the common case), fall back to video. Meta (group)
-    // is handled above via resolveExposedPort, so a missing def here only
-    // disqualifies a non-meta non-group node — those genuinely can't host
-    // a connection.
+    // Try audio first (the common case), fall back to video. A missing def
+    // disqualifies the node — it genuinely cannot host a connection.
     const srcDef = getModuleDef(srcNode.type) ?? getVideoModuleDef(srcNode.type);
     const dstDef = getModuleDef(dstNode.type) ?? getVideoModuleDef(dstNode.type);
-    if (!srcExposed && !srcDef) return;
-    if (!dstExposed && !dstDef) return;
+    if (!srcDef) return;
+    if (!dstDef) return;
 
-    const srcPort = srcDef?.outputs.find((p) => p.id === connection.sourceHandle);
-    const dstPort = dstDef?.inputs.find((p) => p.id === connection.targetHandle);
-    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
-    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
+    const srcPort = srcDef.outputs.find((p) => p.id === connection.sourceHandle);
+    const dstPort = dstDef.inputs.find((p) => p.id === connection.targetHandle);
+    const sourceType: CableType = srcPort?.type ?? 'audio';
+    const targetType: CableType = dstPort?.type ?? sourceType;
 
     const id = audioEdgeId(
       connection.source,
@@ -4937,11 +4670,10 @@
     // only complete a valid patch.
     const node = patch.nodes[grabbed.nodeId];
     const def = node ? defLookup(node.type) : undefined;
-    const exposed = node ? resolveExposedPort(node, grabbed.handleId) : undefined;
     const direction: 'output' | 'input' =
-      exposed?.direction ?? (grabbed.handleType === 'source' ? 'output' : 'input');
-    let type = exposed?.cableType ?? 'audio';
-    if (!exposed && def) {
+      grabbed.handleType === 'source' ? 'output' : 'input';
+    let type: CableType = 'audio';
+    if (def) {
       const port =
         direction === 'output'
           ? def.outputs.find((p) => p.id === grabbed.handleId)
@@ -5668,7 +5400,6 @@
    * reload does not re-place.
    */
   function placeVideoZoneDefaults(): void {
-    if (!shellFaces) return;
     const present = VIDEO_ZONE_DEFAULTS.filter((spec) => !!patch.nodes[spec.id]);
     if (present.length === 0) return;
     const pending = present.filter((spec) => {
@@ -5818,16 +5549,6 @@
   let ctxMenuAnnotateActive = $derived<boolean>(
     !!ctxMenuNodeId && isAnnotating(ctxMenuNodeId),
   );
-  // Module-grouping Phase 2A — track whether the right-clicked group is
-  // currently expanded so the menu can label the toggle appropriately.
-  let ctxMenuGroupExpanded = $derived.by<boolean>(() => {
-    void snapshot;
-    if (!ctxMenuNodeId) return false;
-    const n = patch.nodes[ctxMenuNodeId];
-    if (!n || n.type !== 'group') return false;
-    return (n.data as { expanded?: boolean } | undefined)?.expanded === true;
-  });
-
   // Virtual-rack Phase 2 — whether the right-clicked node is "screwed down" to
   // its rack slot, so the menu shows "Unlock" instead of "Lock".
   let ctxMenuLocked = $derived.by<boolean>(() => {
@@ -5891,7 +5612,7 @@
   // is tinted by its colour, which IS the automation-lane colour (the
   // per-channel clip colour). Empty ⇒ the whole assignment section is hidden
   // (no clip-player in the rack to hold the automation assignment).
-  // Not offered for groups, clip-players themselves, or dock stubs.
+  // Not offered for clip-players themselves, or dock stubs.
   //
   // ⚠ THE DERIVATION ITSELF LIVES IN `$lib/graph/lane-colors` (#1825). It used
   // to be inline here, which made this menu the de-facto owner of "what colour
@@ -5903,7 +5624,7 @@
     const mid = ctxMenuNodeId;
     if (!mid) return [];
     const n = patch.nodes[mid];
-    if (!n || n.type === 'group' || n.type === 'clipplayer') return [];
+    if (!n || n.type === 'clipplayer') return [];
     return canonicalLaneColors(patch.nodes);
   });
   // THIS module's current automation lane (0-based) on ANY clip-player (lowest
@@ -5921,7 +5642,7 @@
     void snapshot;
     const mid = ctxMenuNodeId;
     const n = mid ? patch.nodes[mid] : undefined;
-    if (!n || n.type === 'group') return false;
+    if (!n) return false;
     const def = defLookup(n.type);
     return !!def && isClipEligible(def);
   });
@@ -5929,7 +5650,7 @@
     void snapshot;
     const mid = ctxMenuNodeId;
     const n = mid ? patch.nodes[mid] : undefined;
-    if (!n || n.type === 'group' || !ctxMenuCanonMixer) return false;
+    if (!n || !ctxMenuCanonMixer) return false;
     const def = defLookup(n.type);
     return !!def && isMixerEligible(def);
   });
@@ -5961,12 +5682,10 @@
         const srcDef = defLookup(srcNode.type);
         const dstDef = defLookup(dstNode.type);
         if (!srcDef || !dstDef) return null;
-        const srcExposed = resolveExposedPort(srcNode, fromPortId);
-        const dstExposed = resolveExposedPort(dstNode, toPortId);
         const srcPort = srcDef.outputs.find((p) => p.id === fromPortId);
         const dstPort = dstDef.inputs.find((p) => p.id === toPortId);
-        const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
-        const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
+        const sourceType: CableType = srcPort?.type ?? 'audio';
+        const targetType: CableType = dstPort?.type ?? sourceType;
         const id = `e-${sourceNodeId}-${fromPortId}-${targetNodeId}-${toPortId}`;
         return {
           id,
@@ -6307,867 +6026,28 @@
     ctxMenuOpen = true;
   }
 
-  // ---------------- Lasso group-select (right-click → Create group) --------
+  // ---------------- MODULE GROUPING + LASSO: DELETED ----------------------
   //
-  // SvelteFlow defaults restored: left-drag empty canvas pans (no marquee).
-  // Grouping discovery now flows through the pane context menu:
-  //   1. right-click empty pane → ModulePalette opens (existing flow)
-  //   2. user clicks "Create group" tool entry → lasso mode engages
-  //   3. cursor drags a bounding-box; nodes inside are previewed-selected
-  //   4. right-click (or left-click) commits → GroupBuilderModal opens
-  //   5. Esc cancels silently
+  // Roughly 860 lines stood here: the right-click marquee LASSO (enter / hit
+  // preview / commit / Esc), the Phase-1 GroupBuilderModal pipeline, Phase-2A
+  // expand+edit, Phase-2B edit-exposed-jacks, Phase-2C duplicate-group, Phase-3C
+  // Y.Awareness soft-lock between two users grouping the same modules, Phase-4
+  // exposed controls, the Instruments-v1 edit/locked layout mode, group naming +
+  // its per-snapshot default-name migration, and the whole saved-groups library
+  // (save to /api/saved-groups, the picker, resurrect-on-insert).
   //
-  // State lives in flow-space coords so pan/zoom mid-lasso keeps the box
-  // anchored to the original click point. The overlay maps back to screen
-  // px each render via flowApi.flowToScreenPosition.
-  let lassoMode = $state(false);
-  let lassoOriginFlow = $state<{ x: number; y: number } | null>(null);
-  let lassoCursorFlow = $state<{ x: number; y: number } | null>(null);
-  let lassoOriginScreen = $state<{ x: number; y: number }>({ x: 0, y: 0 });
-  let lassoCursorScreen = $state<{ x: number; y: number }>({ x: 0, y: 0 });
-  let lassoHitIds = $state<string[]>([]);
-
-  function enterLassoMode(originClientX: number, originClientY: number) {
-    if (!flowApi) return;
-    const flowPt = flowApi.screenToFlowPosition({ x: originClientX, y: originClientY });
-    lassoOriginFlow = flowPt;
-    lassoCursorFlow = flowPt;
-    lassoOriginScreen = { x: originClientX, y: originClientY };
-    lassoCursorScreen = { x: originClientX, y: originClientY };
-    lassoHitIds = [];
-    lassoMode = true;
-  }
-
-  function exitLassoMode() {
-    lassoMode = false;
-    lassoOriginFlow = null;
-    lassoCursorFlow = null;
-    lassoHitIds = [];
-  }
-
-  function recomputeLassoHits(): void {
-    if (!lassoOriginFlow || !lassoCursorFlow || !flowApi) {
-      lassoHitIds = [];
-      return;
-    }
-    const x1 = Math.min(lassoOriginFlow.x, lassoCursorFlow.x);
-    const y1 = Math.min(lassoOriginFlow.y, lassoCursorFlow.y);
-    const x2 = Math.max(lassoOriginFlow.x, lassoCursorFlow.x);
-    const y2 = Math.max(lassoOriginFlow.y, lassoCursorFlow.y);
-    const hits: string[] = [];
-    for (const n of flowApi.getNodes()) {
-      const w =
-        (n as FlowNode & { measured?: { width?: number; height?: number } })
-          .measured?.width ?? (n as FlowNode & { width?: number }).width ?? 0;
-      const h =
-        (n as FlowNode & { measured?: { width?: number; height?: number } })
-          .measured?.height ?? (n as FlowNode & { height?: number }).height ?? 0;
-      const nx1 = n.position.x;
-      const ny1 = n.position.y;
-      const nx2 = nx1 + w;
-      const ny2 = ny1 + h;
-      const overlap = !(nx2 < x1 || nx1 > x2 || ny2 < y1 || ny1 > y2);
-      if (overlap) hits.push(n.id);
-    }
-    lassoHitIds = hits;
-  }
-
-  $effect(() => {
-    if (!lassoMode) return;
-    const onMove = (e: PointerEvent) => {
-      if (!flowApi) return;
-      lassoCursorScreen = { x: e.clientX, y: e.clientY };
-      lassoCursorFlow = flowApi.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      recomputeLassoHits();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        exitLassoMode();
-      }
-    };
-    const commit = (e: MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const ids = lassoHitIds.slice();
-      exitLassoMode();
-      if (ids.length < 2) return;
-      selCtxMenuIds = ids;
-      openGroupBuilder();
-    };
-    const onContextMenu = (e: MouseEvent) => { commit(e); };
-    const onClick = (e: MouseEvent) => { commit(e); };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('keydown', onKey, true);
-    window.addEventListener('contextmenu', onContextMenu, true);
-    window.addEventListener('click', onClick, true);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('contextmenu', onContextMenu, true);
-      window.removeEventListener('click', onClick, true);
-    };
-  });
-
-  // Re-anchor the overlay's screen-space origin whenever flow-space coords
-  // or viewport transform change. Keeps the rectangle glued to its initial
-  // click point even while the user pans/zooms mid-lasso.
-  $effect(() => {
-    if (!lassoMode || !flowApi || !lassoOriginFlow) return;
-    lassoOriginScreen = flowApi.flowToScreenPosition(lassoOriginFlow);
-  });
-
-  // Live highlight preview: mirror lassoHitIds → DOM classes on flow nodes.
-  $effect(() => {
-    if (!flowEl) return;
-    const root = flowEl.querySelector('.svelte-flow');
-    if (!root) return;
-    const prev = root.querySelectorAll('.svelte-flow__node.lasso-hit');
-    prev.forEach((el) => el.classList.remove('lasso-hit'));
-    if (!lassoMode) return;
-    for (const id of lassoHitIds) {
-      const el = root.querySelector(`.svelte-flow__node[data-id="${id}"]`);
-      if (el) el.classList.add('lasso-hit');
-    }
-  });
-
-  // ---------------- Module-grouping Phase 1 ----------------
+  // The owner's ruling deletes GROUP! and STICKY outright — "we may rebuild
+  // these later in a new form but for now we burn it down" — so none of it is
+  // re-pointed. What a rebuild would need to re-derive rather than re-read is
+  // recorded in git, not restated here.
   //
-  // Marquee-selection right-click → SelectionContextMenu (single item:
-  // "Group modules…") → GroupBuilderModal (table of all ports across
-  // the selection, pre-checked for cables crossing the boundary) →
-  // "Create group" → planCreateGroup + ydoc.transact.
-  //
-  // The group is a meta-domain card with no engine binding; the
-  // snapshot-projection layer (group-projection.ts) rewrites edge
-  // endpoints from the group's exposed ports → the real child ports
-  // before the reconciler runs. See packages/web/src/lib/graph/group-projection.ts.
+  // The one thing NOT left to git is the load behaviour, because a saved rack
+  // outlives the code that wrote it: see
+  // `$lib/graph/legacy-group-sticky-load.test.ts`, which pins against a frozen
+  // fixture that a patch carrying group/sticky nodes still LOADS — the nodes and
+  // their cables are dropped, the rest of the rack is intact, and the user is
+  // told through the load diagnostics.
 
-  let selCtxMenuOpen = $state(false);
-  let selCtxMenuPos = $state({ x: 0, y: 0 });
-  let selCtxMenuIds = $state<string[]>([]);
-
-  let groupBuilderOpen = $state(false);
-  let groupBuilderCandidates = $state<PortCandidate[]>([]);
-  let groupBuilderSelectionIds = $state<string[]>([]);
-  let groupBuilderModuleLabels = $state<Map<string, string>>(new Map());
-
-  // ---------------- Module-grouping Phase 3C — soft-lock via Y.Awareness ----
-  //
-  // When the local user opens the group builder, broadcast the selection
-  // ids so remote rack-mates can dim those cards + badge them. Remote
-  // peers' selections likewise flow IN here so we can disable our own
-  // "Group modules…" action when any of our marquee selection overlaps
-  // theirs. The actual rendering of the dim+badge is in AwarenessLayer
-  // (Phase 3C consumes the indexRemoteGroupBuildingByNode helper output).
-  let remoteGroupBuilders = $state<RemoteGroupBuilding[]>([]);
-  $effect(() => {
-    const p = provider;
-    if (!p) {
-      remoteGroupBuilders = [];
-      return;
-    }
-    const awareness = p.awareness;
-    if (!awareness) return;
-    const refresh = () => {
-      remoteGroupBuilders = readRemoteGroupBuilding(awareness, awareness.clientID);
-    };
-    refresh();
-    awareness.on('change', refresh);
-    awareness.on('update', refresh);
-    return () => {
-      awareness.off('change', refresh);
-      awareness.off('update', refresh);
-    };
-  });
-  let remoteGroupBuildingByNode = $derived<Record<string, PresenceUser>>(
-    indexRemoteGroupBuildingByNode(remoteGroupBuilders),
-  );
-  // Sync the local user's group-builder selection out to peers whenever
-  // the modal opens/closes/changes selection. Clearing on close uses
-  // setLocalGroupBuildingSelection(null).
-  $effect(() => {
-    if (groupBuilderOpen && groupBuilderSelectionIds.length > 0) {
-      setLocalGroupBuildingSelection(provider, groupBuilderSelectionIds);
-    } else {
-      setLocalGroupBuildingSelection(provider, null);
-    }
-  });
-
-  function onSelectionContextMenu({ nodes, event }: { nodes: FlowNode[]; event: MouseEvent }) {
-    event.preventDefault();
-    const me = event as MouseEvent;
-    selCtxMenuPos = { x: me.clientX, y: me.clientY };
-    selCtxMenuIds = nodes.map((n) => n.id);
-    selCtxMenuOpen = true;
-  }
-
-  /** Phase 3C — derive the displayName of any remote rack-mate whose
-   *  group-builder selection currently overlaps the local marquee.
-   *  Drives the SelectionContextMenu's lockedByRemote prop so user B
-   *  sees "Alice is grouping…" instead of "Group modules…" when Alice
-   *  is already in the middle of grouping any of those same nodes. */
-  let selCtxMenuLockedByRemote = $derived.by<string | undefined>(() => {
-    if (selCtxMenuIds.length === 0) return undefined;
-    if (!overlapsRemoteGroupBuilding(selCtxMenuIds, remoteGroupBuilders)) return undefined;
-    for (const id of selCtxMenuIds) {
-      const u = remoteGroupBuildingByNode[id];
-      if (u) return u.displayName;
-    }
-    return undefined;
-  });
-
-  function openGroupBuilder() {
-    // Skip any selected nodes that are themselves groups or stickies —
-    // Phase 1 doesn't nest groups; meta-domain non-port cards can't be
-    // grouped meaningfully (sticky has no ports).
-    const eligible = selCtxMenuIds.filter((id) => {
-      const n = patch.nodes[id];
-      if (!n) return false;
-      if (n.type === 'group' || n.type === 'sticky') return false;
-      return true;
-    });
-    if (eligible.length < 2) {
-      trace(`group refused: only ${eligible.length} eligible module(s) selected`);
-      return;
-    }
-    // Phase 3C soft-lock: if any of our eligible nodes intersects a
-    // remote user's active group-builder selection, refuse to open the
-    // modal. Two users would otherwise race-create overlapping groups.
-    if (overlapsRemoteGroupBuilding(eligible, remoteGroupBuilders)) {
-      const overlap = eligible.find((id) => remoteGroupBuildingByNode[id]);
-      const blocker = overlap ? remoteGroupBuildingByNode[overlap] : undefined;
-      const who = blocker?.displayName ?? 'another user';
-      trace(`group refused: selection overlaps ${who}'s active group-builder selection`);
-      const msg = `${who} is currently grouping these modules.`;
-      error = msg;
-      setTimeout(() => {
-        if (error === msg) error = null;
-      }, 4000);
-      return;
-    }
-
-    const modulesById = new Map<string, PortLookupModule>();
-    const labels = new Map<string, string>();
-    for (const id of eligible) {
-      const node = patch.nodes[id];
-      if (!node) continue;
-      const def = defLookup(node.type);
-      if (!def) continue;
-      modulesById.set(id, {
-        id,
-        type: node.type,
-        inputs: def.inputs,
-        outputs: def.outputs,
-        label: def.label,
-      });
-      labels.set(id, def.label ?? node.type);
-    }
-
-    groupBuilderCandidates = buildPortCandidates({
-      selectionIds: eligible,
-      nodes: snapshot.nodes,
-      edges: snapshot.edges,
-      modulesById,
-    });
-    groupBuilderSelectionIds = eligible;
-    groupBuilderModuleLabels = labels;
-    groupBuilderOpen = true;
-  }
-
-  function commitGroup(selectedCandidates: PortCandidate[], label: string) {
-    const ids = groupBuilderSelectionIds;
-    const groupId = `group-${Math.random().toString(36).slice(2, 10)}`;
-    const exposedPorts = buildExposedPorts({ selectedCandidates });
-    // If the user accepted the placeholder name, bump to the next free
-    // GROUP<N> slot so multiple groups in the same rack don't all show
-    // the same label. A real user-typed name passes through untouched.
-    const effectiveLabel =
-      label.trim().length === 0 || label === LEGACY_GROUP_PLACEHOLDER
-        ? nextGroupNameForNewGroup(patch.nodes)
-        : label;
-    const plan = planCreateGroup({
-      groupId,
-      selectionIds: ids,
-      exposedPorts,
-      nodes: snapshot.nodes,
-      edges: snapshot.edges,
-      label: effectiveLabel,
-    });
-
-    ydoc.transact(() => {
-      patch.nodes[plan.groupNode.id] = plan.groupNode;
-      // Instruments v1 — auto-enter edit mode after Create. The user is
-      // expected to immediately drop into "arrange the layout" UX rather
-      // than seeing a locked render they then have to right-click to edit.
-      // Default to an empty layout map; per-element positions get written
-      // as the user drags inside GroupExposedControls.
-      const created = patch.nodes[plan.groupNode.id];
-      if (created) {
-        if (!created.data) created.data = {};
-        (created.data as unknown as GroupData).instrumentLayout = {
-          mode: 'edit',
-          controls: {},
-        };
-      }
-      for (const { childId, parentGroupId } of plan.childParentSets) {
-        const target = patch.nodes[childId];
-        if (!target) continue;
-        if (!target.data) target.data = {};
-        target.data.parentGroupId = parentGroupId;
-      }
-      for (const rw of plan.edges.rewrite) {
-        const target = patch.edges[rw.id];
-        if (!target) continue;
-        if (rw.newSource) target.source = rw.newSource;
-        if (rw.newTarget) target.target = rw.newTarget;
-      }
-      for (const id of plan.edges.deleteIds) {
-        delete patch.edges[id];
-      }
-    }, LOCAL_ORIGIN);
-    trace(`grouped ${ids.length} modules into ${groupId} (${exposedPorts.length} exposed, edit mode)`);
-  }
-
-  // Instruments v1 — flip an instrument between 'edit' and 'locked' modes.
-  // Right-click "Edit Instrument" enters edit mode; the floating
-  // "Save instrument" CTA returns to locked. The same toggle is reused by
-  // ctx-toggle-expanded for backward compatibility with phase-2 tests; we
-  // keep the legacy expanded-card branch (data.expanded) alongside the
-  // new layout mode so neither path regresses.
-  function setInstrumentMode(groupId: string, mode: 'edit' | 'locked') {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    ydoc.transact(() => {
-      const target = patch.nodes[groupId];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      const data = target.data as unknown as GroupData;
-      const existing = data.instrumentLayout;
-      data.instrumentLayout = {
-        mode,
-        controls: existing?.controls ?? {},
-      };
-    }, LOCAL_ORIGIN);
-    trace(`instrument ${groupId} layout-mode → ${mode}`);
-  }
-
-  function ungroupNode(groupId: string) {
-    const groupNode = patch.nodes[groupId];
-    if (!groupNode || groupNode.type !== 'group') {
-      trace(`ungroup refused: ${groupId} is not a group`);
-      return;
-    }
-    const plan = planUngroup({ groupNode: groupNode as unknown as ModuleNode, edges: snapshot.edges });
-    ydoc.transact(() => {
-      for (const rw of plan.rewrite) {
-        const target = patch.edges[rw.id];
-        if (!target) continue;
-        if (rw.newSource) target.source = rw.newSource;
-        if (rw.newTarget) target.target = rw.newTarget;
-      }
-      for (const childId of plan.childrenToClear) {
-        const child = patch.nodes[childId];
-        if (!child || !child.data) continue;
-        delete child.data.parentGroupId;
-      }
-      delete patch.nodes[plan.groupNodeId];
-    }, LOCAL_ORIGIN);
-    trace(`ungrouped ${groupId} (restored ${plan.childrenToClear.length} children)`);
-  }
-
-  // ---------------- Module-grouping Phase 2A — edit-knob-positions ----------------
-  //
-  // Toggling `data.expanded` flips the group from "single GroupCard" mode
-  // into "render children inline" mode. The flowNodes/flowEdges $effects
-  // already respect the flag (children are skipped only when their parent
-  // group is in `collapsedGroupIds`, which excludes expanded groups). The
-  // GroupCard itself notices `expanded` and renders a thin header instead
-  // of its full body. A floating "Update group" button surfaces above
-  // the viewport while any group is expanded — clicking it collapses
-  // all currently-expanded groups so the user can't get stuck.
-  function toggleGroupExpanded(groupId: string) {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    // Instruments v1 — the right-click "Edit instrument" entry now drives
-    // both the legacy expanded-card flag (so the GroupCard's thin-header
-    // chrome flips for the "edit-knob-positions" workflow phase-2 ships)
-    // AND the new instrumentLayout.mode flag so the new layout engine
-    // un-locks. Both flags stay in sync — flipping one without the other
-    // would leave the user with mismatched chrome.
-    const current = (group.data as { expanded?: boolean } | undefined)?.expanded === true;
-    const nextExpanded = !current;
-    ydoc.transact(() => {
-      const target = patch.nodes[groupId];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      (target.data as { expanded?: boolean }).expanded = nextExpanded;
-      const data = target.data as unknown as GroupData;
-      const existing = data.instrumentLayout;
-      data.instrumentLayout = {
-        mode: nextExpanded ? 'edit' : 'locked',
-        controls: existing?.controls ?? {},
-      };
-    }, LOCAL_ORIGIN);
-    trace(`instrument ${groupId} edit → ${nextExpanded}`);
-  }
-
-  /**
-   * Set a group's user-facing name. Empty/whitespace input falls back to
-   * the next free `GROUP<N>` slot so groups can never end up nameless.
-   * The label is stored on `data.label` (already round-tripped by every
-   * existing group code path — same field saved-group `payload.label`
-   * is derived from).
-   */
-  function renameGroup(groupId: string, rawName: string) {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    const trimmed = rawName.trim();
-    const next =
-      trimmed.length === 0 || trimmed === LEGACY_GROUP_PLACEHOLDER
-        ? nextGroupNameForNewGroup(patch.nodes)
-        : trimmed;
-    const currentLabel =
-      typeof (group.data as { label?: unknown } | undefined)?.label === 'string'
-        ? ((group.data as { label?: string }).label ?? '').trim()
-        : '';
-    if (currentLabel === next) return;
-    ydoc.transact(() => {
-      const target = patch.nodes[groupId];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      (target.data as { label?: string }).label = next;
-    }, LOCAL_ORIGIN);
-    trace(`renamed group ${groupId} → "${next}"`);
-  }
-
-  /**
-   * Assign `GROUP<N>` to every group that's currently nameless or stuck on
-   * the legacy "GROUP!" placeholder. Driven by the snapshot subscriber:
-   * the migration runs any time a snapshot exposes a group needing a name,
-   * so a second group added after the first migration still picks up a
-   * fresh slot. The plan is id-sorted so peers running concurrently
-   * produce identical assignments (Y.js conflict-resolution makes the
-   * writes idempotent).
-   */
-  function maybeMigrateGroupNames() {
-    const plan = planDefaultGroupNames(patch.nodes);
-    if (plan.length === 0) return;
-    ydoc.transact(() => {
-      for (const { groupId, name } of plan) {
-        const target = patch.nodes[groupId];
-        if (!target) continue;
-        // Mutate the existing data sub-object so syncedstore propagates the
-        // change through the Y.Map view. Replacing `data` wholesale would
-        // detach any references the caller (or test eval) is holding.
-        if (!target.data || typeof target.data !== 'object') {
-          target.data = { label: name };
-        } else {
-          (target.data as { label?: string }).label = name;
-        }
-      }
-    }, LOCAL_ORIGIN);
-    trace(`group-name migration: assigned default names to ${plan.length} group(s)`);
-  }
-
-  // Collapses every currently-expanded group. Wired to the floating
-  // "Update group" button so a user can exit edit-knob mode in one click
-  // regardless of how many groups they cracked open.
-  function collapseAllExpandedGroups() {
-    ydoc.transact(() => {
-      for (const node of Object.values(patch.nodes)) {
-        if (!node || node.type !== 'group') continue;
-        const data = node.data as { expanded?: boolean } | undefined;
-        if (data?.expanded === true) {
-          (node.data as { expanded?: boolean }).expanded = false;
-        }
-        // Instruments v1 — when the user clicks "Save instrument", also
-        // flip the new instrument layout into 'locked' so the next render
-        // shows the frozen card. We mirror the expanded flip above so
-        // legacy phase-2 tests + the new layout engine stay aligned.
-        const igData = node.data as unknown as GroupData | undefined;
-        if (igData?.instrumentLayout?.mode === 'edit') {
-          (node.data as unknown as GroupData).instrumentLayout = {
-            mode: 'locked',
-            controls: igData.instrumentLayout.controls ?? {},
-          };
-        }
-      }
-    }, LOCAL_ORIGIN);
-    trace('saved every editing instrument');
-  }
-
-  // Snapshot-derived: are there any expanded groups right now? Drives
-  // the floating "Update group" button's visibility.
-  let anyGroupExpanded = $derived.by(() => {
-    void snapshot;
-    for (const n of snapshot.nodes) {
-      if (n.type !== 'group') continue;
-      if ((n.data as { expanded?: boolean } | undefined)?.expanded === true) return true;
-    }
-    return false;
-  });
-
-  // ---------------- Module-grouping Phase 2B — edit-exposed-jacks ----------------
-  //
-  // Right-click → "Edit exposed patch jacks…" re-opens the GroupBuilderModal
-  // in EDIT mode. The modal seeds checked rows from the group's current
-  // exposedPorts list; on commit we diff old vs new via planEditExposed
-  // and update the group + drop any cables to now-removed exposed ports.
-
-  /** Active group-id being edited via the exposed-jacks modal. null when
-   *  the modal is open in create mode. */
-  let editExposedGroupId = $state<string | null>(null);
-  let editExposedExistingPorts = $state<ExposedPort[] | undefined>(undefined);
-  let editExposedExistingLabel = $state<string | undefined>(undefined);
-
-  function openEditExposedJacks(groupId: string) {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    const data = group.data as unknown as GroupData | undefined;
-    if (!data) return;
-    const eligible = data.childIds.filter((id) => Boolean(patch.nodes[id]));
-    if (eligible.length === 0) return;
-
-    const modulesById = new Map<string, PortLookupModule>();
-    const labels = new Map<string, string>();
-    for (const id of eligible) {
-      const node = patch.nodes[id];
-      if (!node) continue;
-      const def = defLookup(node.type);
-      if (!def) continue;
-      modulesById.set(id, {
-        id,
-        type: node.type,
-        inputs: def.inputs,
-        outputs: def.outputs,
-        label: def.label,
-      });
-      labels.set(id, def.label ?? node.type);
-    }
-
-    groupBuilderCandidates = buildPortCandidates({
-      selectionIds: eligible,
-      nodes: snapshot.nodes,
-      edges: snapshot.edges,
-      modulesById,
-    });
-    groupBuilderSelectionIds = eligible;
-    groupBuilderModuleLabels = labels;
-    editExposedGroupId = groupId;
-    editExposedExistingPorts = data.exposedPorts.slice();
-    editExposedExistingLabel = data.label;
-    groupBuilderOpen = true;
-  }
-
-  function commitEditExposed(selectedCandidates: PortCandidate[], label: string) {
-    const groupId = editExposedGroupId;
-    if (!groupId) return;
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    const newExposed = buildExposedPorts({ selectedCandidates });
-    const plan = planEditExposed({
-      group: group as unknown as ModuleNode,
-      edges: snapshot.edges,
-      newExposedPorts: newExposed,
-      newLabel: label,
-    });
-    ydoc.transact(() => {
-      const target = patch.nodes[groupId];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      const data = target.data as unknown as GroupData;
-      data.exposedPorts = plan.mergedExposedPorts;
-      if (plan.newLabel !== undefined) data.label = plan.newLabel;
-      for (const id of plan.deleteEdgeIds) delete patch.edges[id];
-    }, LOCAL_ORIGIN);
-    trace(
-      `group ${groupId} re-exposed (${plan.mergedExposedPorts.length} ports, dropped ${plan.deleteEdgeIds.length} cables)`,
-    );
-  }
-
-  // ---------------- Module-grouping Phase 4 — exposed controls ----------------
-  //
-  // Right-click on a group → "Configure exposed controls…" opens a modal
-  // listing each child module's exposable controls (buttons + knobs the
-  // module def declares). User-checked entries land in data.exposedControls
-  // and surface as bounded boxes on the group bar (GroupExposedControls).
-
-  let configureControlsOpen = $state(false);
-  let configureControlsGroupId = $state<string | null>(null);
-  interface ExposedControlsChildBlock {
-    childId: string;
-    label: string;
-    controls: readonly import('$lib/audio/module-registry').ExposableControl[];
-    /** Instruments v1 — child opts in to "Show step sequence" / "Show score". */
-    canExposeSequence?: boolean;
-    sequenceLabel?: string;
-  }
-  let configureControlsChildren = $state<ExposedControlsChildBlock[]>([]);
-  let configureControlsExisting = $state<ExposedControl[]>([]);
-  let configureControlsExistingSequences = $state<Record<string, boolean>>({});
-
-  function openConfigureExposedControls(groupId: string) {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    const data = group.data as unknown as GroupData | undefined;
-    if (!data) return;
-    const blocks: ExposedControlsChildBlock[] = [];
-    for (const cid of data.childIds) {
-      const child = patch.nodes[cid];
-      if (!child) continue;
-      const def = defLookup(child.type);
-      // exposesSequence is an Audio-domain flag; defLookup returns the
-      // loose ModuleDef so we read it through the audio def lookup too.
-      const audioDef = getModuleDef(child.type) as { exposesSequence?: boolean } | undefined;
-      const controls = listExposableControls(child.type, (t: string) => getModuleDef(t));
-      const canExposeSequence = audioDef?.exposesSequence === true;
-      // Include the child even when it has zero exposable controls, so a
-      // sequencer-with-no-knobs-yet still shows the "Show step sequence"
-      // checkbox as a single-row block.
-      if (controls.length === 0 && !canExposeSequence) continue;
-      // Sequencers/score get a friendlier label than the generic default.
-      const sequenceLabel =
-        child.type === 'score' ? 'Show score' : 'Show step sequence';
-      blocks.push({
-        childId: cid,
-        label: def?.label ?? child.type,
-        controls,
-        canExposeSequence,
-        sequenceLabel,
-      });
-    }
-    configureControlsChildren = blocks;
-    configureControlsExisting = (data.exposedControls ?? []).slice();
-    configureControlsExistingSequences = { ...(data.exposedSequences ?? {}) };
-    configureControlsGroupId = groupId;
-    configureControlsOpen = true;
-  }
-
-  function commitExposedControls(picks: ExposedControl[], sequences: Record<string, boolean>) {
-    const groupId = configureControlsGroupId;
-    if (!groupId) return;
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    // Defensive: revalidate against the live patch in case a child was
-    // deleted between modal-open and Save. validateExposedControls also
-    // guards against any future ExposedControl bug-class like #187.
-    const validated = validateExposedControls(picks, {
-      nodes: patch.nodes as Record<string, ModuleNode | undefined>,
-      defLookup: (t: string) => getModuleDef(t),
-    });
-    // Drop sequence entries pointing at non-existent children or modules
-    // that don't actually declare exposesSequence (defensive against a
-    // stale/buggy payload — matches validateExposedControls' role).
-    const validSeqs: Record<string, boolean> = {};
-    for (const [cid, on] of Object.entries(sequences)) {
-      if (!on) continue;
-      const child = patch.nodes[cid];
-      if (!child) continue;
-      const def = getModuleDef(child.type) as { exposesSequence?: boolean } | undefined;
-      if (def?.exposesSequence !== true) continue;
-      validSeqs[cid] = true;
-    }
-    ydoc.transact(() => {
-      const target = patch.nodes[groupId];
-      if (!target) return;
-      if (!target.data) target.data = {};
-      const data = target.data as unknown as GroupData;
-      data.exposedControls = validated;
-      data.exposedSequences = validSeqs;
-    }, LOCAL_ORIGIN);
-    trace(
-      `instrument ${groupId} exposed controls updated (${validated.length} controls, ${Object.keys(validSeqs).length} sequences)`,
-    );
-  }
-
-  // ---------------- Module-grouping Phase 2C — duplicate group ----------------
-  //
-  // Right-click → "Duplicate" on a group clones the group + every child
-  // into a fresh id space, offsets by 30px down-right (cascading from
-  // the source), and re-creates internal edges. External cables are NOT
-  // cloned. Hits the same maxInstances guard as duplicateNode for each
-  // child type.
-  function duplicateGroupAction(groupId: string) {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') {
-      trace(`duplicate-group refused: ${groupId} is not a group`);
-      return;
-    }
-    const data = group.data as unknown as GroupData | undefined;
-    if (!data) return;
-    const children: ModuleNode[] = [];
-    for (const id of data.childIds) {
-      const n = patch.nodes[id];
-      if (n) children.push(n as unknown as ModuleNode);
-    }
-    // maxInstances preflight: walk the children, running each capped type's
-    // count up from its current patch total (graph/cap.instanceCount) so a
-    // group that adds several of the same type is gated correctly.
-    const typeCounts = new Map<string, number>();
-    for (const child of children) {
-      const def = defLookup(child.type);
-      const cap = def?.maxInstances;
-      if (cap === undefined) continue;
-      const current = typeCounts.get(child.type) ?? instanceCount(patch.nodes, child.type);
-      const willBe = current + 1; // +1 because we're about to add one more
-      if (willBe > cap) {
-        const msg = `${def?.label ?? child.type}: duplicating this group would exceed instance cap (${willBe}/${cap})`;
-        trace(`duplicate-group refused: ${child.type} would exceed cap (${willBe}/${cap})`);
-        error = msg;
-        setTimeout(() => {
-          if (error === msg) error = null;
-        }, 4000);
-        return;
-      }
-      typeCounts.set(child.type, willBe);
-    }
-
-    const plan = planDuplicateGroup({
-      group: group as unknown as ModuleNode,
-      children,
-      edges: snapshot.edges,
-      existingNodeIds: Object.keys(patch.nodes),
-      existingEdgeIds: Object.keys(patch.edges),
-    });
-
-    ydoc.transact(() => {
-      for (const c of plan.newChildren) patch.nodes[c.id] = c;
-      patch.nodes[plan.newGroup.id] = plan.newGroup;
-      for (const e of plan.newEdges) patch.edges[e.id] = e;
-    }, LOCAL_ORIGIN);
-    trace(
-      `duplicated group ${groupId} → ${plan.newGroup.id} (${plan.newChildren.length} children, ${plan.newEdges.length} internal edges)`,
-    );
-    void ensureEngine();
-  }
-
-  // ---------------- Saved-groups library ----------------
-  let savingGroupId = $state<string | null>(null);
-
-  async function saveGroupToLibrary(groupId: string) {
-    const group = patch.nodes[groupId];
-    if (!group || group.type !== 'group') return;
-    if (!currentUserId) {
-      error = 'Sign in to save groups to your library.';
-      setTimeout(() => { if (error?.startsWith('Sign in to save')) error = null; }, 4000);
-      return;
-    }
-    const extracted = extractSavedGroupPayload({
-      group: group as unknown as ModuleNode,
-      nodes: snapshot.nodes,
-      edges: snapshot.edges,
-    });
-    if (!extracted) {
-      trace(`save-group refused: ${groupId} has no group data`);
-      return;
-    }
-    const name = window.prompt('Save group to your library as:', extracted.label);
-    if (name === null) return;
-    const trimmed = name.trim();
-    if (trimmed.length === 0) return;
-
-    savingGroupId = groupId;
-    try {
-      const res = await fetch('/api/saved-groups', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ label: trimmed, payload: extracted.payload }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { message?: string };
-        const msg = body.message ?? `Save failed: ${res.status}`;
-        error = msg;
-        setTimeout(() => { if (error === msg) error = null; }, 5000);
-        trace(`save-group failed: ${msg}`);
-        return;
-      }
-      trace(`saved group ${groupId} to library as "${trimmed}"`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      error = `Save failed: ${msg}`;
-      setTimeout(() => { if (error === `Save failed: ${msg}`) error = null; }, 5000);
-    } finally {
-      savingGroupId = null;
-    }
-  }
-
-  function insertSavedGroup(sg: SavedGroup) {
-    const plan = resurrectSavedGroup({
-      payload: sg.payload,
-      existingNodeIds: Object.keys(patch.nodes),
-      existingEdgeIds: Object.keys(patch.edges),
-      groupPosition: { ...spawnFlowPos },
-    });
-    // maxInstances preflight (see duplicateGroupAction): run each capped
-    // type's count up from its current patch total via graph/cap.instanceCount.
-    const typeCounts = new Map<string, number>();
-    for (const child of plan.newChildren) {
-      const def = defLookup(child.type);
-      const cap = def?.maxInstances;
-      if (cap === undefined) continue;
-      const current = typeCounts.get(child.type) ?? instanceCount(patch.nodes, child.type);
-      const willBe = current + 1;
-      if (willBe > cap) {
-        const msg = `${def?.label ?? child.type}: inserting this saved group would exceed instance cap (${willBe}/${cap})`;
-        error = msg;
-        setTimeout(() => { if (error === msg) error = null; }, 4000);
-        trace(`insert-saved-group refused: ${child.type} would exceed cap`);
-        return;
-      }
-      typeCounts.set(child.type, willBe);
-    }
-    ydoc.transact(() => {
-      for (const c of plan.newChildren) patch.nodes[c.id] = c;
-      patch.nodes[plan.newGroup.id] = plan.newGroup;
-      for (const e of plan.newEdges) patch.edges[e.id] = e;
-    }, LOCAL_ORIGIN);
-    trace(`inserted saved group "${sg.label}" → ${plan.newGroup.id} (${plan.newChildren.length} children, ${plan.newEdges.length} internal edges)`);
-    void ensureEngine();
-  }
-
-  let savedGroupsPickerOpen = $state(false);
-  function openSavedGroupsPicker() {
-    if (!currentUserId) return;
-    savedGroupsPickerOpen = true;
-  }
-
-  // VRT interactions/groups specs drive the saved-groups modal without a
-  // real Clerk session — the production trigger above is currentUserId-
-  // gated, but the modal component itself is mounted unconditionally. This
-  // dev-only hook flips its `open` prop directly so the visual surface can
-  // be captured independently of auth state. Same pattern as the other
-  // `__*` test hooks in this file.
-  if (testHooksEnabled()) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__openSavedGroupsPicker = () => {
-      savedGroupsPickerOpen = true;
-    };
-  }
-
-  function deleteGroupAndChildren(groupId: string) {
-    const groupNode = patch.nodes[groupId];
-    if (!groupNode || groupNode.type !== 'group') return;
-    const data = groupNode.data as { childIds?: string[] } | undefined;
-    const childIds = Array.isArray(data?.childIds) ? [...data!.childIds!] : [];
-    const ok = window.confirm(
-      `Delete this group and its ${childIds.length} module${childIds.length === 1 ? '' : 's'}? This can't be undone.`,
-    );
-    if (!ok) return;
-    ydoc.transact(() => {
-      const doomed = new Set<string>([groupId, ...childIds]);
-      for (const [eid, edge] of Object.entries(patch.edges)) {
-        if (!edge) continue;
-        if (doomed.has(edge.source.nodeId) || doomed.has(edge.target.nodeId)) {
-          delete patch.edges[eid];
-        }
-      }
-      for (const id of doomed) delete patch.nodes[id];
-    }, LOCAL_ORIGIN);
-    noteDockDeletes([groupId, ...childIds]); // explicit delete → hard-drop dock state
-    trace(`deleted group ${groupId} + ${childIds.length} children`);
-  }
 
   // ---------------- Port right-click context menu ("Patch to..." flow) ----------------
   //
@@ -7199,10 +6079,10 @@
   }
 
   function defLookup(type: string): AnyDef | undefined {
-    // Meta defs (sticky etc.) carry inputs/outputs/params shaped
-    // identically to AudioModuleDef / VideoModuleDef; AnyDef is the
-    // shared union. Meta domains never reach the engine, so the lack
-    // of a factory is irrelevant for the patch-panel UI helpers.
+    // Meta defs carry inputs/outputs/params shaped identically to
+    // AudioModuleDef / VideoModuleDef; AnyDef is the shared union. Meta
+    // domains never reach the engine, so the lack of a factory is
+    // irrelevant for the patch-panel UI helpers.
     return getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
   }
 
@@ -8084,12 +6964,10 @@
     const srcDef = defLookup(srcNode.type);
     const dstDef = defLookup(dstNode.type);
     if (!srcDef || !dstDef) return;
-    const srcExposed = resolveExposedPort(srcNode, from.portId);
-    const dstExposed = resolveExposedPort(dstNode, to.portId);
     const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
     const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
-    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
-    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
+    const sourceType: CableType = srcPort?.type ?? 'audio';
+    const targetType: CableType = dstPort?.type ?? sourceType;
     const id = audioEdgeId(from.nodeId, from.portId, to.nodeId, to.portId);
     if (patch.edges[id]) {
       trace(`carry-commit: edge already exists ${id}`);
@@ -8185,16 +7063,10 @@
     const srcDef = defLookup(srcNode.type);
     const dstDef = defLookup(dstNode.type);
     if (!srcDef || !dstDef) return;
-    // Group endpoints — chase the exposed-port → child handoff for the
-    // cable-type fallback; see handleConnect's matching block for the
-    // why. The edge stays addressed to the group endpoint itself; the
-    // snapshot projection rewrites it before the engine sees it.
-    const srcExposed = resolveExposedPort(srcNode, from.portId);
-    const dstExposed = resolveExposedPort(dstNode, to.portId);
     const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
     const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
-    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
-    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
+    const sourceType: CableType = srcPort?.type ?? 'audio';
+    const targetType: CableType = dstPort?.type ?? sourceType;
 
     // The channel the user picked, snapshotted BEFORE the menu closes.
     //
@@ -8470,10 +7342,9 @@
     // double-spawn race for a single client; the engine.addNode rejection is
     // the ultimate defense for multiplayer.
     //
-    // Domain dispatch: try audio, then video, then meta (sticky lives
-    // here). The three registries are kept separate so domain-specific
-    // def shapes don't bleed across; the spawn path just needs `domain`
-    // + `maxInstances`.
+    // Domain dispatch: try audio, then video, then meta. The three
+    // registries are kept separate so domain-specific def shapes don't
+    // bleed across; the spawn path just needs `domain` + `maxInstances`.
     const audioDef = getModuleDef(type);
     const videoDef = !audioDef ? getVideoModuleDef(type) : undefined;
     const metaDef = !audioDef && !videoDef ? getMetaModuleDef(type) : undefined;
@@ -9655,7 +8526,7 @@
   const appVersion = __APP_VERSION__;
 </script>
 
-<div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
+<div class="root" data-testid="canvas-root">
   <!-- THE topbar: the File.. menu. There is no second one — the old
        full-width slot bar + actions cluster was deleted with the second
        shell, and every action it carried lives in this menu (see
@@ -9686,12 +8557,9 @@
     midiclockNode={workflowMidiclockNode}
     audioInNode={workflowAudioInNode}
     audioOutNode={workflowAudioOutNode}
-    audioInFace={workflowAudioInFace}
-    audioOutFace={workflowAudioOutFace}
     externallyClocked={workflowExternallyClocked}
     dinAssigned={workflowDinAssigned}
     nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-    {rackSizeByType}
     onEnsureEngine={ensureEngine}
     currentUserId={currentUserId ?? null}
     cameraNodes={workflowCameraNodes}
@@ -9717,7 +8585,6 @@
   <DockRail
     zone="top"
     cards={topRailCards}
-    nodeTypes={nodeTypes as unknown as Record<string, unknown>}
     {rackSizeByType}
     onUndock={undockNode}
     {rearView}
@@ -9731,7 +8598,6 @@
     <DockRail
       zone="left"
       cards={leftRailCards}
-      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
       {rackSizeByType}
       onUndock={undockNode}
       {rearView}
@@ -9766,7 +8632,6 @@
       onmoveend={onViewportMoveEnd}
       onpanecontextmenu={onPaneContextMenu}
       onnodecontextmenu={onNodeContextMenu}
-      onselectioncontextmenu={onSelectionContextMenu}
     >
       <!-- Base canvas: the fine 16px dot field (legacy look, sets the bg fill). -->
       <Background id="fine" size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
@@ -9847,7 +8712,7 @@
       <FlowBridge bind:api={flowApi} />
       <!-- CHANNEL COLUMNS guide: 8 numbered columns + SEND 1/2 rail, pinned
            to flow space. -->
-      <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={shellFaces} />
+      <ChannelColumnsOverlay columnColors={wcolColumnColors} laneTopY={wcolLaneTopY} tick={wcolViewportTick} pitch={wcolPitch} paneLocalProjection={true} />
       <CadillacOverlay {provider} />
       <!-- 2026-05-27: the per-node editable name label moved INSIDE every
            module card's title chrome (see ModuleTitle.svelte). The floating
@@ -9938,9 +8803,6 @@
           <div class="dock-fullview-pane" data-testid="dock-fullview-pane" data-pane-node={fv.node.id}>
             <DockFullView
               node={fv.node}
-              nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-              rackSize={rackSizeByType[fv.node.type]}
-              migrated={laneMigrated(fv.node.type)}
               title={fv.title}
               onClose={() => dockStore.closeFullView(fv.node.id)}
               onCollapse={() => dockStore.closeFullView(fv.node.id)}
@@ -9956,7 +8818,6 @@
       <DockRail
         zone="bottom"
         cards={bottomRailCards}
-        nodeTypes={nodeTypes as unknown as Record<string, unknown>}
         {rackSizeByType}
         onUndock={undockNode}
         onClosePinned={() => dockStore.close('bottom')}
@@ -9975,17 +8836,22 @@
       {minimapOpen ? '▾ map' : '▴ map'}
     </button>
     <AwarenessLayer {provider} />
-    <!-- `?shell=1` DOM-SOURCE LIFECYCLE: a video module whose pixels come from a
-         card-owned <video>/<img> (camera / videobox / archivist / …) loses its
-         SOURCE when the shell swaps its lane card for a tile — the engine node
-         exists but emits nothing, so the whole downstream chain is black. Keep
-         those cards mounted OFF-SCREEN so `attachExternalSource` still runs and
-         the engine's source set matches preview-off exactly. Renders NOTHING
-         when the list is empty (always, preview-off). -->
-    <HeadlessSourceHost
-      nodes={headlessSourceNodes}
-      nodeTypes={nodeTypes as unknown as Record<string, unknown>}
-    />
+    <!-- `<HeadlessSourceHost>` STOOD HERE (legacy-removal S1.5 retired it):
+         it kept a LOAD-BEARING CARD mounted off-screen for the DOM-source and
+         card-producer modules. Both populations are node-owned now — the
+         registries above and the viz hosts below — so there is no card left
+         whose mount the engine state depends on. See the retirement record in
+         `$lib/ui/workflow/dom-source-modules.ts`. -->
+    <!-- NODE-LIFETIME VIZ SURFACES (legacy-removal S1). One surface per
+         wavesculpt/cube node, parked off-screen, owning the module's
+         cross-domain frame drawer and the DRS step seam — so `video_out`
+         carries a picture on a saved rack with NO faceplate mounted anywhere.
+         A view CLAIMS that element to show it; none creates one. Renders
+         NOTHING when no such
+         node exists. -->
+    {#each vizSurfaceNodes as vs (vs.id)}
+      <NodeVizSurfaceHost nodeId={vs.id} type={vs.type} />
+    {/each}
     <!-- ⚠ #1838 — SUPPRESSED WHILE THE DROP MODAL IS OPEN. Owner: "in this view
          we do not want the dangling dotted patch cable, it's clutter that's not
          helpful." The ghost is `position: fixed` at z-index 1002 and the scrim
@@ -10007,23 +8873,6 @@
         toScreen={flowApi.flowToScreenPosition}
         tick={dockPanTick}
       />
-    {/if}
-    {#if lassoMode && lassoOriginFlow}
-      <LassoOverlay origin={lassoOriginScreen} cursor={lassoCursorScreen} />
-    {/if}
-    {#if anyGroupExpanded}
-      <!-- Module-grouping Phase 2A: floating "Update group" CTA visible
-           whenever any group is expanded. One click collapses every
-           expanded group so the user never gets stuck in edit-knob mode. -->
-      <button
-        type="button"
-        class="update-group-cta"
-        data-testid="update-group-cta"
-        onclick={collapseAllExpandedGroups}
-        title="Finish editing instrument(s)"
-      >
-        Save instrument
-      </button>
     {/if}
     {#if dockToast}
       <!-- DOCKING P2.5a: transient local notice (auto-evict / delete). -->
@@ -10174,8 +9023,6 @@
   isRackOwner={localIsRackOwner}
   onselect={spawnFromPalette}
   onorganize={organizeModules}
-  oncreategroup={() => enterLassoMode(palettePos.x, palettePos.y)}
-  oninsertsavedgroup={currentUserId ? openSavedGroupsPicker : undefined}
   onclose={() => (paletteOpen = false)}
 />
 
@@ -10188,10 +9035,7 @@
   hasDocs={ctxMenuHasDocs}
   annotateActive={ctxMenuAnnotateActive}
   onannotate={() => ctxMenuNodeId && toggleAnnotate(ctxMenuNodeId)}
-  isGroup={ctxMenuNodeType === 'group'}
-  groupExpanded={ctxMenuGroupExpanded}
   locked={ctxMenuLocked}
-  canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
   currentControlColor={ctxMenuControlColor}
   hasCustomControlColor={ctxMenuHasCustomColor}
   onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
@@ -10207,11 +9051,7 @@
   docked={ctxMenuDocked}
   ondock={(zone) => ctxMenuNodeId && dockNode(ctxMenuNodeId, zone)}
   onundock={() => ctxMenuNodeId && undockNode(ctxMenuNodeId)}
-  ondelete={() => {
-    if (!ctxMenuNodeId) return;
-    if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
-    else deleteNode(ctxMenuNodeId);
-  }}
+  ondelete={() => ctxMenuNodeId && deleteNode(ctxMenuNodeId)}
   ondetachdisplay={ctxMenuDetachable && !ctxMenuDetached
     ? () => ctxMenuNodeId && detachDisplayFor(ctxMenuNodeId)
     : undefined}
@@ -10223,63 +9063,7 @@
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
   onlock={() => ctxMenuNodeId && lockNode(ctxMenuNodeId)}
   onunlock={() => ctxMenuNodeId && unlockNode(ctxMenuNodeId)}
-  onungroup={() => ctxMenuNodeId && ungroupNode(ctxMenuNodeId)}
-  ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
-  oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}
-  onconfigurecontrols={() => ctxMenuNodeId && openConfigureExposedControls(ctxMenuNodeId)}
-  onduplicategroup={() => ctxMenuNodeId && duplicateGroupAction(ctxMenuNodeId)}
-  onsavegroup={() => ctxMenuNodeId && void saveGroupToLibrary(ctxMenuNodeId)}
   onclose={() => { ctxMenuOpen = false; ctxMenuNodeId = null; }}
-/>
-
-<SavedGroupsPicker
-  bind:open={savedGroupsPickerOpen}
-  oninsert={(sg) => insertSavedGroup(sg)}
-  onclose={() => (savedGroupsPickerOpen = false)}
-/>
-
-<SelectionContextMenu
-  bind:open={selCtxMenuOpen}
-  x={selCtxMenuPos.x}
-  y={selCtxMenuPos.y}
-  selectionCount={selCtxMenuIds.length}
-  lockedByRemote={selCtxMenuLockedByRemote}
-  ongroup={openGroupBuilder}
-  onclose={() => { selCtxMenuOpen = false; }}
-/>
-
-<GroupBuilderModal
-  bind:open={groupBuilderOpen}
-  candidates={groupBuilderCandidates}
-  selectionIds={groupBuilderSelectionIds}
-  moduleLabels={groupBuilderModuleLabels}
-  existingExposedPorts={editExposedExistingPorts}
-  existingLabel={editExposedExistingLabel}
-  oncreate={(picks, label) => {
-    if (editExposedGroupId) commitEditExposed(picks, label);
-    else commitGroup(picks, label);
-  }}
-  onclose={() => {
-    groupBuilderOpen = false;
-    editExposedGroupId = null;
-    editExposedExistingPorts = undefined;
-    editExposedExistingLabel = undefined;
-  }}
-/>
-
-<ExposedControlsModal
-  bind:open={configureControlsOpen}
-  children={configureControlsChildren}
-  existing={configureControlsExisting}
-  existingSequences={configureControlsExistingSequences}
-  onsave={commitExposedControls}
-  onclose={() => {
-    configureControlsOpen = false;
-    configureControlsGroupId = null;
-    configureControlsChildren = [];
-    configureControlsExisting = [];
-    configureControlsExistingSequences = {};
-  }}
 />
 
 <PortContextMenu
@@ -10452,8 +9236,8 @@
        behind 1600px of empty chrome and parking the ⤡/✕ controls a screen-width
        away from the card they act on.
        `0 1 auto` = never grow, still allowed to shrink; the content's own
-       min-width governs (the 900px kit for curated faces, max-content for a
-       legacy card frame). */
+       min-width governs (the 900px kit for curated faces, max-content
+       otherwise). */
     flex: 0 1 auto;
     min-width: 0;
     display: flex;
@@ -10519,36 +9303,6 @@
   .minimap-toggle.open {
     bottom: 124px;
   }
-  /* Module-grouping Phase 2A: "Update group" floating CTA pinned to the
-   * top-center of the canvas viewport while any group is expanded. */
-  .update-group-cta {
-    position: absolute;
-    top: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 12;
-    background: var(--accent, #60a5fa);
-    color: #0e1116;
-    border: 1px solid var(--accent, #60a5fa);
-    border-radius: 4px;
-    padding: 6px 14px;
-    font-size: 0.8rem;
-    font-family: inherit;
-    cursor: pointer;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-  }
-  .update-group-cta:hover {
-    filter: brightness(1.05);
-  }
-  /* Phase 3C: cards in a remote rack-mate's active group-builder selection
-   * render semi-transparent + with a dashed outline so the local user can
-   * see at a glance which modules are off-limits. */
-  :global(.svelte-flow__node.remote-group-building) {
-    opacity: 0.55;
-    outline: 1px dashed var(--accent, #60a5fa);
-    outline-offset: 2px;
-    transition: opacity 120ms ease-out;
-  }
   /* MODULE-level automation assignment: the ASSIGNED module's card gets a
    * thin border in its lane's colour (--auto-lane-color, inline from the
    * clip-player's autoAssign). Applied at the shared node WRAPPER so it works
@@ -10559,20 +9313,6 @@
     outline: 2px solid var(--auto-lane-color);
     outline-offset: 2px;
     border-radius: 3px;
-  }
-  /* Lasso group-select: live highlight preview while the user drags the
-   * Create-group bounding box. Solid accent outline distinguishes from
-   * the dashed remote-group-building state above. */
-  :global(.svelte-flow__node.lasso-hit) {
-    outline: 2px solid var(--accent, #60a5fa);
-    outline-offset: 2px;
-  }
-  /* Crosshair cursor while lasso mode is active. Class is toggled on
-   * .root via class:lasso-mode in the markup. */
-  .root.lasso-mode :global(.svelte-flow),
-  .root.lasso-mode :global(.svelte-flow__pane),
-  .root.lasso-mode :global(.svelte-flow__node) {
-    cursor: crosshair !important;
   }
   .error {
     margin: 0;

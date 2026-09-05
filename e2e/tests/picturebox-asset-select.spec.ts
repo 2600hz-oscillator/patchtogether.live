@@ -30,15 +30,16 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Mean luminance over a VIDEO-OUT canvas (identified by its node id). */
+/** Mean luminance over a VIDEO-OUT node's tile thumb (the default shell's
+ *  visible pixel surface for a video module). */
 async function meanLuma(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
-  await expect(handle, `VIDEO-OUT ${nodeId} canvas present`).toHaveCount(1);
+  const handle = page.locator(`.svelte-flow__node[data-id="${nodeId}"] canvas[data-testid="video-tile-thumb"]`);
+  await expect(handle, `VIDEO-OUT ${nodeId} thumb present`).toHaveCount(1);
   return await handle.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');

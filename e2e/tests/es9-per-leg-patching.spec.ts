@@ -373,8 +373,10 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
     await page.keyboard.press('Escape');
     await expect(chrome(page, MIX)).toHaveCount(0);
     await page.locator(`.svelte-flow__node[data-id="${MIX}"] [data-testid="patch-trigger"]`).click();
+    // Flat INPUT drill — the card's per-channel sections are a documented
+    // shell-rail delta (#1762, see ModuleShell's PatchPanel mount).
     await chrome(page, MIX)
-      .locator('[data-testid="patch-panel-section-nav"][data-section-label="Ret1"]')
+      .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')
       .click();
     const jack = chrome(page, MIX).locator(
       '[data-testid="patch-panel-port-row"][data-port-id="ret1L"] [data-testid="port-row-jack"]',
@@ -416,8 +418,10 @@ test.describe('ES-9 per-leg patching — the owner\'s send/return rack', () => {
     await expect(chrome(page, MIX)).toHaveCount(0);
     await page.locator(`.svelte-flow__node[data-id="${MIX}"] [data-testid="patch-trigger"]`).click();
     await expect(chrome(page, MIX)).toHaveAttribute('aria-hidden', 'false');
+    // Flat INPUT drill — the card's per-channel sections are a documented
+    // shell-rail delta (#1762, see ModuleShell's PatchPanel mount).
     await chrome(page, MIX)
-      .locator('[data-testid="patch-panel-section-nav"][data-section-label="Ret1"]')
+      .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')
       .click();
     await chrome(page, MIX)
       .locator('[data-testid="patch-panel-port-row"][data-port-id="ret1L"]')

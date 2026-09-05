@@ -1,37 +1,36 @@
 // e2e/tests/vfpga-patchpanel-presets.spec.ts
 //
-// vfpga-runner — two user-reported regressions (review-gated PR):
+// vfpga-runner — two user-reported regressions (review-gated PR), re-pointed at
+// the default shell by the S2 legacy-removal inversion:
 //
-//   BUG 1: the card rendered a raw vertical column of <Handle> side jacks
-//          (VIN1-4, CV2-4, G2-4, …) instead of the post-#767 yellow drill-down
-//          PatchPanel. Fix: convert to <PatchPanel> (all handles collapse to the
-//          top-left affordance corner; NO side-column jacks). We assert the panel
-//          trigger is present AND every rendered handle sits at the SAME corner
-//          point (not spread vertically down a side), and that every declared
-//          port id still renders as a handle (handle-presence sweep parity).
+//   BUG 1: the legacy card once rendered a raw vertical column of <Handle> side
+//          jacks (VIN1-4, CV2-4, G2-4, …) instead of the post-#767 yellow
+//          drill-down PatchPanel. The surviving shell claim: the tile keeps the
+//          PatchPanel drill-down trigger AND every declared port still renders
+//          as a handle, all collapsed at the SAME corner point (not spread down
+//          a side) — the handle-presence sweep parity.
 //
 //   BUG 2: loading a non-default preset still rendered only the smpte-bars test
-//          pattern. Root cause: the card preview pulled a CPU read('snapshot')
-//          that only existed for smpte-bars (null for every other spec → the
-//          canvas kept the last-drawn bars). Fix: the preview now blits THIS
-//          node's real engine output (engine.blitOutputToDrawingBuffer(id) +
-//          a 2D blit of engine.canvas — the OUTPUT card's path), so switching
-//          presets visibly changes the preview/output. We assert the OUTPUT
-//          canvas pixels DIFFER measurably from the smpte baseline after loading
-//          a non-default preset. Pixel reads are gated on a WebGL2 probe (CI's
-//          SwiftShader renders, but we keep the assertion renderer-tolerant —
-//          a structural DIFFERENCE, not exact colours).
+//          pattern. Root cause: the preview pulled a CPU read('snapshot') that
+//          only existed for smpte-bars (null for every other spec → the canvas
+//          kept the last-drawn bars). The preview now blits THIS node's real
+//          engine output, so switching presets visibly changes the
+//          preview/output. We assert the OUTPUT pixels (the videoOut tile
+//          thumb — the downstream chain) DIFFER measurably from the smpte
+//          baseline after loading a non-default preset. Pixel reads are gated
+//          on a WebGL2 probe (CI's SwiftShader renders, but we keep the
+//          assertion renderer-tolerant — a structural DIFFERENCE, not exact
+//          colours).
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-/** Per-channel mean-luma histogram + summary for the OUTPUT canvas. The OUTPUT
- *  card blits its sampled FBO into the engine canvas then drawImage()s it, so
- *  this reads what vfpga-runner produced through the downstream chain. */
+/** videoOut tile thumb stats — reads what vfpga-runner produced through the
+ *  downstream chain. */
 async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance: number; mean: number } | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
-  await expect(canvas, 'video-out canvas mounted').toHaveCount(1);
+  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
+  await expect(canvas, 'videoOut tile thumb mounted').toHaveCount(1);
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -69,27 +68,27 @@ async function spawnHostToOutput(page: Page) {
       { id: 'e1', from: { nodeId: 'vf', portId: 'vout1' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ],
   );
-  await expect(page.locator('[data-testid="vfpga-runner-card"]')).toHaveCount(1);
-  await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="vfpgaRunner"])')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])')).toHaveCount(1);
 }
 
 test.describe('vfpga-runner — PatchPanel + presets', () => {
-  test('BUG 1: card uses PatchPanel — no raw side-column jacks; all handles at the corner', async ({ page, rack }) => {
+  test('BUG 1: the tile keeps the PatchPanel drill-down — no raw side-column jacks; all handles at the corner', async ({ page, rack }) => {
     test.setTimeout(45_000);
     await spawnHostToOutput(page);
 
-    const card = page.locator('.svelte-flow__node-vfpgaRunner');
-    await expect(card).toBeVisible();
+    const wrapper = page.locator('.svelte-flow__node[data-id="vf"]');
+    await expect(wrapper).toBeVisible();
 
-    // The yellow drill-down PatchPanel trigger is present on the card (proves the
-    // card mounts <PatchPanel>, not the legacy raw-<Handle> layout).
-    await expect(card.locator('[data-testid="patch-trigger"]').first()).toHaveCount(1);
+    // The yellow drill-down PatchPanel trigger is present on the tile (proves
+    // the shell mounts the PatchPanel affordance, not a raw-<Handle> layout).
+    await expect(wrapper.locator('[data-testid="patch-trigger"]').first()).toHaveCount(1);
 
-    // Every rendered handle is collapsed at the SAME top-left affordance point —
-    // i.e. NOT spread out in a vertical side column (the old bug). We read every
-    // handle's bounding box and assert their vertical spread is tiny (PatchPanel
-    // stacks them all at one corner). A raw side column would span >100px.
-    const spread = await card.locator('.svelte-flow__handle').evaluateAll((els) => {
+    // Every rendered handle is collapsed at the SAME affordance point — i.e.
+    // NOT spread out in a vertical side column (the old bug). We read every
+    // handle's bounding box and assert their spread is tiny. A raw side column
+    // would span >100px.
+    const spread = await wrapper.locator('.svelte-flow__handle').evaluateAll((els) => {
       if (els.length === 0) return { count: 0, topSpread: 0, leftSpread: 0 };
       const rects = els.map((el) => el.getBoundingClientRect());
       const tops = rects.map((r) => r.top);
@@ -102,7 +101,7 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
     });
     // 14 declared ports (vin1-4, cv1-4, g1-4, vout1, vout2) all render as handles.
     expect(spread.count, `every declared port renders as a handle (got ${spread.count})`).toBe(14);
-    // PatchPanel stacks them at one corner → near-zero spread. A raw vertical
+    // The shell stacks them at one point → near-zero spread. A raw vertical
     // column (old bug) would be > 100px tall. Allow a small tolerance for AA.
     expect(spread.topSpread, `handles are NOT a vertical side column (topSpread=${spread.topSpread})`).toBeLessThan(20);
     expect(spread.leftSpread, `handles are NOT spread horizontally (leftSpread=${spread.leftSpread})`).toBeLessThan(20);
@@ -125,8 +124,10 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
 
     await spawnHostToOutput(page);
 
-    // Default smpte-bars is shown loaded; capture the baseline output.
-    await expect(page.locator('[data-testid="vfpga-loaded"]')).toHaveText('SMPTE bars');
+    // Default smpte-bars is shown loaded (the selector cell's value span is the
+    // loaded readout on the shell); capture the baseline output.
+    const cell = page.locator('.svelte-flow__node[data-id="vf"] [data-testid="shell-cell-vfpga-preset"]');
+    await expect(cell.locator('.val')).toHaveText('SMPTE bars');
     const base = await settleOutput(page);
     expect(base, 'OUTPUT readable on the default preset').not.toBeNull();
     // SMPTE bars fill the frame → high non-black fraction + spatial structure.
@@ -134,12 +135,16 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
     expect(base!.variance, `smpte bars have structure (var=${base!.variance})`).toBeGreaterThan(50);
 
     // Load a NON-default preset (tmds-sparkle renders distinct output even with
-    // no upstream video patched — proven non-flaky in the probe). The card label
-    // tracks the chosen spec.
-    const select = page.locator('[data-testid="vfpga-preset"]');
-    await expect(select.locator('option', { hasText: 'tmds-sparkle' })).toHaveCount(1);
-    await select.selectOption('tmds-sparkle');
-    await expect(page.locator('[data-testid="vfpga-loaded"]')).toHaveText('tmds-sparkle');
+    // no upstream video patched — proven non-flaky in the probe). The cell's
+    // value span tracks the chosen spec. (Positive control, measured: with
+    // 'SMPTE bars' re-selected here instead, the delta assertion below went red
+    // at Δmean=0.0 Δvar=0.0 — the thumb instrument measures the hot-swap, not
+    // its own noise.)
+    await cell.click();
+    const option = page.locator('[role="option"]', { hasText: 'tmds-sparkle' });
+    await expect(option).toHaveCount(1);
+    await option.click();
+    await expect(cell.locator('.val')).toHaveText('tmds-sparkle');
 
     // Poll until the OUTPUT settles on the NEW spec's render, then assert it
     // DIFFERS measurably from the smpte baseline (the engine actually hot-swapped

@@ -1,19 +1,15 @@
 // packages/web/src/lib/audio/modules/vrt-meta.test.ts
 //
-// Coverage self-test for the Playwright VRT suite.
+// Coverage self-test for the Playwright FACE VRT scenes.
 //
-// Asserts every registered audio + video + meta module has:
-//   1. either a VRT baseline (via auto-enrollment from the registry
-//      manifest) OR an explicit entry in EXEMPT_FROM_VRT with a reason
-//   2. a baseline PNG under e2e/vrt/__screenshots__/vrt.spec.ts/.
+// Asserts, in the vitest pass (~1 s) rather than the Playwright pass, that
+//   1. every face-scene AudioContext freeze opt-out is NAMED and not stale, and
+//      every opt-out says what makes the scene deterministic instead;
+//   2. the FACES roster equals the promoted set in BOTH directions, and every
+//      rostered face has a committed baseline for every tier it captures.
 //
-// Catches the "added a new module, forgot the baseline" case in the
-// vitest pass (~1s) rather than in the Playwright pass (~3min on CI),
-// and well before the gallery deploys.
-//
-// EXEMPT_FROM_VRT lives in the shared e2e/vrt/vrt-exemptions.ts so vrt.spec.ts
-// and this self-test agree on the source of truth — no risk of skew between a
-// spec entry and an unaware self-test allowlist.
+// It used to assert the same shape for the per-module LANE sweep. That half is
+// gone with the sweep — see the tombstone below.
 //
 // ── THERE IS ONE BASELINE SET (2026-08-10) ──────────────────────────────────
 // `snapshotPathTemplate` dropped its `{platform}` segment, so a baseline is a
@@ -54,21 +50,11 @@ import { resolve } from 'node:path';
 import '$lib/audio/modules';
 import '$lib/video/modules';
 import '$lib/meta/modules';
-import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
-import { listMetaModuleDefs } from '$lib/meta/module-registry';
 
-// Single source of truth (also imported by e2e/vrt/vrt.spec.ts).
-// vitest's `resolve.alias` doesn't reach across the /e2e/ workspace
-// without explicit config, so we use a relative path here.
-import {
-  EXEMPT_FROM_VRT,
-  ALLOWED_PERMANENT_EXEMPT,
-  STRICT_VRT_MODULES,
-  VRT_MODULE_MASKS,
-} from '../../../../../../e2e/vrt/vrt-exemptions';
+// vitest's `resolve.alias` doesn't reach across the /e2e/ workspace without
+// explicit config, so these use relative paths.
 import { VRT_SCENES } from '../../../../../../e2e/vrt/vrt-scenes';
-import { VRT_LIVE_SURFACES } from '../../../../../../e2e/vrt/vrt-live-surfaces';
 // The hand-maintained face-scene roster + the promoted set it must equal.
 import {
   EXEMPT_FACE_TYPES,
@@ -85,329 +71,23 @@ function repoRoot(): string {
   return resolve(import.meta.dirname, '../../../../../..');
 }
 
-// ONE path per scene — no {platform} segment, matching vrt.config.ts's
-// snapshotPathTemplate. If that template ever regrows a segment this resolves
-// to a file that does not exist and every baseline test below goes red, which
-// is the correct direction for the two to drift in.
-function baselinePath(type: string): string {
-  return resolve(repoRoot(), `e2e/vrt/__screenshots__/vrt.spec.ts/${type}.png`);
-}
 
-describe('VRT coverage self-test', () => {
-  // Force-import the registration barrels so the registries are
-  // populated. The web app's UI does this on first page load; in the
-  // vitest pass we have to import them explicitly.
-  // EXPLICIT TIMEOUT, measured. This is the first test to pull the three module
-  // barrels, so it alone pays the whole registry-population cost: 1.48 s in
-  // isolation, against vitest's 5 s DEFAULT. That is only ~3.4x headroom, and
-  // the unit lane runs ~2.5x slower under parallel load (CLAUDE.md), which puts
-  // the worst case within noise of the budget — it went red exactly once in a
-  // full-suite run here and passed alone and in two re-runs, the signature of a
-  // budget race rather than a hang. 30 s still BOUNDS a genuine hang (20x the
-  // measured cost) while removing the false failure. The later tests in this
-  // file re-import the same barrels from cache and cost nothing.
-  it('imports module barrels so registries are populated', async () => {
-    await import('$lib/audio/modules');
-    await import('$lib/video/modules');
-    await import('$lib/meta/modules');
-    const total =
-      listModuleDefs().length + listVideoModuleDefs().length + listMetaModuleDefs().length;
-    expect(total, 'at least one module is registered').toBeGreaterThan(0);
-  }, 30_000);
-
-  it('every registered module is covered by VRT or exempt with a reason', async () => {
-    await import('$lib/audio/modules');
-    await import('$lib/video/modules');
-    await import('$lib/meta/modules');
-    const registered = [
-      ...listModuleDefs().map((d) => d.type as string),
-      ...listVideoModuleDefs().map((d) => d.type as string),
-      ...listMetaModuleDefs().map((d) => d.type as string),
-    ];
-    // After the manifest-driven rewrite of vrt.spec.ts, "in spec" =
-    // "in the registry AND not in EXEMPT_FROM_VRT". The spec derives
-    // its iteration list from exactly this rule — keeping the test in
-    // lockstep means no module can slip through both gates.
-    const missing: string[] = [];
-    for (const t of registered) {
-      if (EXEMPT_FROM_VRT[t]) continue;
-      // Auto-enrollment via the manifest pass — module shows up in the
-      // VRT spec the moment it's registered. The only way a module
-      // ends up here as "missing" is if vrt-meta + vrt-exemptions
-      // were edited out of sync (the spec ignores an EXEMPT_FROM_VRT
-      // entry, or someone deleted EXEMPT_FROM_VRT without committing
-      // the baselines). Either way, the message points the reader at
-      // the exemption file.
-      if (!existsSync(baselinePath(t))) missing.push(t);
-    }
-    expect(
-      missing,
-      `capture a baseline (\`task vrt:commit\`, which dispatches vrt-update.yml on linux CI) ` +
-        `or add an EXEMPT_FROM_VRT entry in e2e/vrt/vrt-exemptions.ts for: ${missing.join(', ')}`,
-    ).toEqual([]);
-  });
-
-  it('every exempted module has a SUBSTANTIVE reason', () => {
-    // Raised 10 → 40 (2026-08-10) when PERMANENT_EXEMPT_CEILING was deleted.
-    // With the count gone, the NAME plus its reason is the whole review surface
-    // for "this module ships with no visual coverage", so the reason has to
-    // carry weight. 40 is not arbitrary: it is the same bar every other `why`
-    // in the VRT gates already meets, and the shortest live reason today is 46
-    // (cameraInput), so it is a floor under the existing corpus rather than a
-    // migration. A ten-character reason is "no baseline" — the placeholder this
-    // list grew 76 → 81 on.
-    for (const [t, reason] of Object.entries(EXEMPT_FROM_VRT)) {
-      expect(
-        reason.length,
-        `${t}: an EXEMPT_FROM_VRT entry needs a reason that says what covers the ` +
-          `module instead, or why it cannot be captured. Got ${reason.length} chars.`,
-      ).toBeGreaterThan(40);
-    }
-  });
-
-  it('every VRT_SCENES key is a registered module type (no drift)', async () => {
-    await import('$lib/audio/modules');
-    await import('$lib/video/modules');
-    await import('$lib/meta/modules');
-    const registered = new Set([
-      ...listModuleDefs().map((d) => d.type as string),
-      ...listVideoModuleDefs().map((d) => d.type as string),
-      ...listMetaModuleDefs().map((d) => d.type as string),
-    ]);
-    for (const sceneType of Object.keys(VRT_SCENES)) {
-      expect(
-        registered.has(sceneType),
-        `${sceneType} has a VRT scene but isn't a registered module`,
-      ).toBe(true);
-    }
-  });
-
-  it('VRT_SCENES module-under-test id is always "vrt-1" (matches vrt.spec.ts selector)', () => {
-    for (const [type, scene] of Object.entries(VRT_SCENES)) {
-      const hasVrt1 = scene.nodes.some((n) => n.id === 'vrt-1' && n.type === type);
-      expect(hasVrt1, `${type}: scene.nodes must include {id:'vrt-1', type:'${type}'}`).toBe(true);
-    }
-  });
-
-  // -------------------------------------------------------------------
-  // STRICT_VRT_MODULES coverage — the deterministic subset is the gate
-  // inside `task ci`. These invariants keep the gate honest:
-  //   * a strict module MUST ship a committed baseline.
-  //   * a strict module MUST NOT be in VRT_MODULE_MASKS (a mask means
-  //     the canvas is non-deterministic; if we mask it the diff is no
-  //     longer end-to-end semantic — covered by the full lane instead).
-  //   * a strict module MUST NOT be in EXEMPT_FROM_VRT (can't both
-  //     skip + gate).
-  //   * a strict module MUST be a registered module (no drift).
-  // -------------------------------------------------------------------
-  it('every STRICT_VRT_MODULES entry has a committed baseline', () => {
-    const missing = [...STRICT_VRT_MODULES].filter((t) => !existsSync(baselinePath(t)));
-    expect(
-      missing,
-      `STRICT_VRT_MODULES entries gate the required vrt-strict lane, so each needs a ` +
-        `committed baseline. Capture via \`task vrt:commit\` (vrt-update.yml on linux CI): ` +
-        `${missing.join(', ')}`,
-    ).toEqual([]);
-  });
-
-  it('no STRICT_VRT_MODULES entry has a canvas mask (defeats the diff)', () => {
-    // BOTH mask tables, deliberately. This check used to read only
-    // VRT_MODULE_MASKS; once masks could also come from the live-surface
-    // registry (e2e/vrt/vrt-live-surfaces.ts) that made it a gate reading one
-    // side of a two-sided contract — a strict module could be masked via the
-    // registry and this test would have stayed green. Every source of masking
-    // has to be enumerated here or the invariant is fiction.
-    const masked: string[] = [];
-    for (const t of STRICT_VRT_MODULES) {
-      if (t in VRT_MODULE_MASKS) masked.push(`${t} (VRT_MODULE_MASKS)`);
-      if (t in VRT_LIVE_SURFACES) masked.push(`${t} (VRT_LIVE_SURFACES)`);
-    }
-    expect(
-      masked,
-      `STRICT_VRT_MODULES entries with a mask entry have a masked region — the strict-lane ` +
-        `diff would skip semantic content. Either remove the mask (the card is actually ` +
-        `deterministic) or remove the module from STRICT_VRT_MODULES: ${masked.join(', ')}`,
-    ).toEqual([]);
-  });
-
-  it('...and that check can actually SEE a registry mask (negative control)', () => {
-    // Guard the guard. The test above passes when nothing is masked, which is
-    // also what it would do if the VRT_LIVE_SURFACES half were dropped in a
-    // refactor. Run the same predicate over a synthetic strict set that DOES
-    // contain a registry-masked module and require it to flag it.
-    const registryMasked = Object.keys(VRT_LIVE_SURFACES);
-    expect(
-      registryMasked.length,
-      'the live-surface registry is empty, so this control proves nothing',
-    ).toBeGreaterThan(0);
-    const syntheticStrict = new Set<string>([registryMasked[0]]);
-    const flagged = [...syntheticStrict].filter(
-      (t) => t in VRT_MODULE_MASKS || t in VRT_LIVE_SURFACES,
-    );
-    expect(flagged).toEqual([registryMasked[0]]);
-  });
-
-  it('no STRICT_VRT_MODULES entry is also in EXEMPT_FROM_VRT', () => {
-    const conflict: string[] = [];
-    for (const t of STRICT_VRT_MODULES) {
-      if (EXEMPT_FROM_VRT[t]) conflict.push(t);
-    }
-    expect(
-      conflict,
-      `STRICT_VRT_MODULES + EXEMPT_FROM_VRT conflict (can't both skip + gate): ${conflict.join(', ')}`,
-    ).toEqual([]);
-  });
-
-  it('every STRICT_VRT_MODULES entry is a registered module type', async () => {
-    await import('$lib/audio/modules');
-    await import('$lib/video/modules');
-    await import('$lib/meta/modules');
-    const registered = new Set([
-      ...listModuleDefs().map((d) => d.type as string),
-      ...listVideoModuleDefs().map((d) => d.type as string),
-      ...listMetaModuleDefs().map((d) => d.type as string),
-    ]);
-    const ghosts: string[] = [];
-    for (const t of STRICT_VRT_MODULES) {
-      if (!registered.has(t)) ghosts.push(t);
-    }
-    expect(
-      ghosts,
-      `STRICT_VRT_MODULES entries not in the module registry (typo or unregistered module): ${ghosts.join(', ')}`,
-    ).toEqual([]);
-  });
-});
-
-/**
- * ⚠ `STRICT_VRT_MODULES.size >= 48` IS GONE (2026-08-12, the no-ratchets sweep).
- *
- * WHAT IT PROTECTED, traced before deleting rather than assumed: DEMOTION. A
- * card quietly removed from STRICT_VRT_MODULES stops gating the required
- * `vrt-strict` lane, which is a way to make a red visual diff green. None of
- * the four surviving checks above catch that — "every entry has a committed
- * baseline", "no entry has a canvas mask", "no entry is also in
- * EXEMPT_FROM_VRT" and "every entry is a registered module type" all quantify
- * over the set, so every one of them is trivially satisfied by a SMALLER set.
- *
- * WHY IT GOES ANYWAY, and why no successor counter is written. Unlike
- * STRICT_DOCS and STRICT_FACES — whose membership is now DERIVED from a
- * property of the def (complete docs / a declared `face`), so un-promotion is
- * red by construction — strict-VRT membership is an editorial judgement about
- * DETERMINISM that nothing in the tree records, so there is no artifact to
- * anchor to. And the floor was not doing the job anyway: the set was 48 against
- * a floor of 48 at deletion, but the same file's history shows it lagging
- * (49 → 48 for a real deletion), which is the slack that hides the next
- * demotion. What remains is the diff: a demotion is one deleted name in
- * vrt-exemptions.ts, a file the post-merge conflict sweep already watches.
- * This is pre-authorised coverage loss, named in the sweep PR's body rather
- * than absorbed silently.
- *
- * ⚠ IF a DECLARED determinism property ever lands on a def or a VrtScene, this
- * is the check to re-derive membership from — not a new floor.
- */
-
-/**
- * ⚠ `PERMANENT_EXEMPT_CEILING` (81) IS GONE (2026-08-10). It counted the
- * entries of a list this file ALREADY pins name-for-name: the last assertion in
- * this block asserts `[...ALLOWED_PERMANENT_EXEMPT].sort()` EQUALS
- * `Object.keys(EXEMPT_FROM_VRT).sort()`, so the deny-by-default property the
- * ceiling was credited with — "a new module cannot self-exempt" — is carried by
- * the ALLOWLIST, not by the number. Adding an exemption already costs two named
- * edits plus a >40-char reason, all of which appear in the diff; the count added
- * a third place to notice the same thing and a hand-typed literal in a file
- * three concurrent face branches edit. Verified before deleting: with the
- * ceiling removed, the synthetic `someBrandNewModule` in the negative control
- * below is still refused.
- */
-describe('vrt-meta — EXEMPT_FROM_VRT is DENY-BY-DEFAULT (frozen allowlist)', () => {
-  // EXEMPT_FROM_VRT used to be a pure OPT-OUT: any module could remove itself
-  // from visual coverage by adding a key with a >10-char reason. That gate
-  // proved the string was long, never that skipping was justified — so the list
-  // grew 76 → 81 with nothing able to notice. These four assertions are the
-  // brake the vrt-zero-exemptions campaign always assumed existed.
-
-  it('every exempted module is on the frozen allowlist (a new module CANNOT self-exempt)', () => {
-    const unlisted = Object.keys(EXEMPT_FROM_VRT).filter((t) => !ALLOWED_PERMANENT_EXEMPT.has(t));
-    expect(
-      unlisted,
-      `these modules exempted themselves from VRT without an allowlist entry: ${unlisted.join(', ')}.\n` +
-        'Shipping a module with NO visual coverage is a reviewed decision. Either give it a ' +
-        'VRT baseline (the strongly preferred path — see vrt-update.yml), or add it to ' +
-        'ALLOWED_PERMANENT_EXEMPT in e2e/vrt/vrt-exemptions.ts with a reason that says what ' +
-        'covers the module instead, so the exemption shows up in review by NAME.',
-    ).toEqual([]);
-  });
-
-  it('no allowlist entry is STALE (anchored to the artifact, not the list)', () => {
-    // A drained module must not leave a licence to silently re-exempt itself.
-    const stale = [...ALLOWED_PERMANENT_EXEMPT].filter((t) => !(t in EXEMPT_FROM_VRT));
-    expect(
-      stale,
-      `ALLOWED_PERMANENT_EXEMPT names modules that are no longer in EXEMPT_FROM_VRT: ${stale.join(', ')}. ` +
-        'Delete them from the allowlist — a stale licence silently re-exempts the next module ' +
-        'that reuses the name.',
-    ).toEqual([]);
-  });
-
-  it('...and that check can actually SEE an unlisted exemption (negative control)', () => {
-    // Guard against the gate silently reading an empty/short-circuited set —
-    // the exact "green gate that checked nothing" failure this brake exists for.
-    const syntheticExempt = { ...EXEMPT_FROM_VRT, someBrandNewModule: 'a plausible-looking ten-plus-character reason' };
-    const unlisted = Object.keys(syntheticExempt).filter((t) => !ALLOWED_PERMANENT_EXEMPT.has(t));
-    expect(unlisted).toEqual(['someBrandNewModule']);
-    // ...and the stale check must see a phantom allowlist entry too.
-    const syntheticAllow = new Set([...ALLOWED_PERMANENT_EXEMPT, 'aModuleThatWasDrained']);
-    const stale = [...syntheticAllow].filter((t) => !(t in EXEMPT_FROM_VRT));
-    expect(stale).toEqual(['aModuleThatWasDrained']);
-  });
-
-  it('the allowlist is non-empty and matches the live list exactly (no drift in either direction)', () => {
-    expect(ALLOWED_PERMANENT_EXEMPT.size).toBeGreaterThan(0);
-    expect([...ALLOWED_PERMANENT_EXEMPT].sort()).toEqual(Object.keys(EXEMPT_FROM_VRT).sort());
-  });
-});
-
-// ── THE AUDIO FREEZE IS DENY-BY-DEFAULT ──────────────────────────────────────
+// ⚠ THE CARD-SWEEP HALF OF THIS FILE IS GONE, AND SO IS ITS SUBJECT.
 //
-// `bootWithFace` (e2e/vrt/_shell-faces.ts) suspends the AudioContext before it
-// hands the scene back, because a face glyph is an AnalyserNode view of the
-// module's own output and a running graph makes it a moving target. Modules in
-// the roster today are all struck or silent, so a scene that skipped the freeze
-// would look EXACTLY as green as one that took it — right up until the first
-// free-running voice, which then cannot baseline at all.
+// Two describes lived here: `VRT coverage self-test` (every registered module
+// has a `vrt.spec.ts/<type>.png` baseline or an `EXEMPT_FROM_VRT` reason, plus
+// the `STRICT_VRT_MODULES` cross-checks) and `EXEMPT_FROM_VRT is
+// DENY-BY-DEFAULT` (the frozen allowlist that stopped a new module
+// self-exempting). Both were gates on `e2e/vrt/vrt.spec.ts` — the per-module
+// LANE sweep — and on the four tables in `e2e/vrt/vrt-exemptions.ts`
+// that only it applied. The sweep is deleted, the tables with it, and a gate
+// whose artifact does not exist cannot be re-pointed: there is no card baseline
+// for it to be about.
 //
-// That is a gate whose green run means nothing unless opting out is loud. So
-// the opt-out is DENIED BY DEFAULT and enumerated here, per file, with the
-// exact occurrence count — the blind-gates inversion. A filename allowlist
-// would exempt a whole file forever; a count means a NEW opt-out in an
-// ALREADY-LISTED file still reddens.
+// What survives is everything below, and it is the half that guards the surface
+// players actually meet: the face-scene audio freeze, and the face roster's
+// equality with the promoted set plus a committed baseline per captured tier.
 //
-// TWO MECHANISMS can capture a VRT scene off a running graph, and both are
-// counted here rather than one being left to prose:
-//
-//   A. `bootWithFace(…, { freezeAudio: <not true> })` — source-scanned, below.
-//   B. `VRT_SCENES[type].freezeAudio === false` — read STRUCTURALLY off the
-//      imported table (anchored to the artifact, not to source text).
-//
-// ⚠ STATED SCOPE. The mechanism-A scan reads only files that CALL
-// `bootWithFace`, with comments stripped, and matches the property form. It
-// cannot see an options object assembled dynamically (`o.freezeAudio = false`,
-// `o['freezeAudio']`), so those forms are separately asserted at ZERO rather
-// than assumed absent.
-//
-// ⚠ `SCENE_FREEZE_OFF_CEILING = 7` IS GONE (2026-08-10). It counted mechanism
-// B and could say nothing about any individual entry. Mechanism B is now
-// deny-by-default IN THE TYPE — `VrtScene` makes `freezeAudioWhy` required
-// whenever `freezeAudio: false`, so `tsc` refuses an undeclared opt-out before
-// a test ever runs — and the assertion below checks the reason is substantive
-// rather than checking how many there are.
-//
-// ⚠ AND THE TWO MECHANISMS ARE NOT REDUNDANT WITH EACH OTHER, contrary to the
-// plan that scheduled this deletion. `FREEZE_OPT_OUTS` below enumerates
-// `bootWithFace` CALL SITES in the e2e/vrt specs (3 files, 5 sites); the
-// ceiling counted VRT_SCENES TABLE ENTRIES (7 scenes). Disjoint populations,
-// disjoint mechanisms — measured before deleting either.
-
 describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
   const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
 
@@ -676,7 +356,7 @@ describe('face VRT scenes — every promoted face is rostered AND captured', () 
     expect(
       staleScenes,
       'ROSTERED BUT NOT PROMOTED — a scene naming a module that is not in STRICT_FACES ' +
-        'captures a legacy card under a face-scene name, which is a baseline nobody can ' +
+        'captures an unpromoted surface under a face-scene name, which is a baseline nobody can ' +
         `interpret. Remove it or promote the module: ${staleScenes.join(', ')}`,
     ).toEqual([]);
 

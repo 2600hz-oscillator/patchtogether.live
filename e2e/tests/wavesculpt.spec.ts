@@ -126,29 +126,66 @@ async function glPixelsUsable(page: Page): Promise<boolean> {
   });
 }
 
+/** Open the WAVESCULPT dock pane (the renderer's body + the TABBED control
+ *  dock; the canvas itself is NODE-owned — NodeVizSurfaceHost mounts one per
+ *  node on graph lifetime, so `wavesculpt-canvas` exists and paints whether or
+ *  not any surface is open) and return the PANE locator. */
+async function openWsPane(page: import('@playwright/test').Page, id = 'ws') {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId('wavesculpt-output-body')).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
+/** Activate a faceplate tab (inactive pages are display:none — the tabbed-dock
+ *  recipe) so its cells become clickable. */
+async function wsTab(pane: import('@playwright/test').Locator, tab: string): Promise<void> {
+  await pane.locator(`[data-testid="faceplate-tab-${tab}"]`).click();
+}
+
 test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => {
   test('spawns + card + canvas + two joysticks mount, no console errors', async ({ page, rack, errorWatch }) => {
     await spawnPatch(page, [
       { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
 
-    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
+    // Faceplate + the NODE-owned renderer (exactly ONE canvas in the whole
+    // document — a second mount would be a second GL context; the S1 adoption
+    // note in WavesculptOutputBody).
+    await expect(
+      page.locator('.svelte-flow__node[data-id="ws"] [data-testid="module-shell"]'),
+    ).toHaveCount(1);
     await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="wavesculpt-pad"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="wavesculpt-pad-zoomrot"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="wavesculpt-unison"]')).toHaveCount(1);
 
-    // All 4 per-osc strips present with WAV selector + LOAD button.
+    // The dock body carries the camera pad (`control-pos_x` — the XyPad's
+    // testid is its x param) and the camera tab the zoom/rot faders; the
+    // second card joystick died with the card (zoom/rot are ranked faders).
+    const pane = await openWsPane(page);
+    await expect(pane.getByTestId('control-pos_x')).toBeVisible();
+    await wsTab(pane, 'camera');
+    await expect(pane.getByTestId('control-zoom')).toBeVisible();
+    await expect(pane.getByTestId('control-rot')).toBeVisible();
+    await wsTab(pane, 'voicing');
+    await expect(pane.getByTestId('control-unison')).toBeVisible();
+
+    // All 4 per-osc wavetable strips present as declared FILE/SELECTOR cell
+    // families on the WAVETABLES tab (the card's `wavesculpt-osc{n}-*` ids
+    // became `shell-cell-wavesculpt-osc{n}-*`).
+    await wsTab(pane, 'wavetables');
     for (let i = 1; i <= 4; i++) {
-      await expect(page.locator(`[data-testid="wavesculpt-osc-${i}"]`)).toHaveCount(1);
-      // The three pickers carry their CONTROL-FAMILY prefixes now
-      // (`wavesculpt-preset` / `-table` / `-load`), because the strip is three
-      // declared families rather than one opaque cell — see the def. The strip
-      // WRAPPER keeps `wavesculpt-osc-{n}`: it is a layout container, not a
-      // control, and nothing declares it.
-      await expect(page.locator(`[data-testid="wavesculpt-osc${i}-preset"]`)).toHaveCount(1);
-      await expect(page.locator(`[data-testid="wavesculpt-osc${i}-table"]`)).toHaveCount(1);
-      await expect(page.locator(`[data-testid="wavesculpt-osc${i}-load"]`)).toHaveCount(1);
+      await expect(pane.getByTestId(`shell-cell-wavesculpt-osc${i}-preset`)).toBeAttached();
+      await expect(pane.getByTestId(`shell-cell-wavesculpt-osc${i}-table`)).toBeAttached();
+      await expect(pane.getByTestId(`shell-cell-wavesculpt-osc${i}-load`)).toBeAttached();
     }
 
     // Drive exactly 8 deterministic frames so any shader/init failure surfaces
@@ -175,10 +212,15 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
 
     expect(await readUnison()).toBe(0);
 
-    await page.locator('[data-testid="wavesculpt-unison"]').click();
+    const pane = await openWsPane(page);
+    await wsTab(pane, 'voicing');
+    const unison = pane.getByTestId('control-unison');
+    await expect(unison).toHaveAttribute('aria-checked', 'false');
+    await unison.click();
     await expect.poll(readUnison, { message: 'UNISON toggle on' }).toBe(1);
+    await expect(unison).toHaveAttribute('aria-checked', 'true');
 
-    await page.locator('[data-testid="wavesculpt-unison"]').click();
+    await unison.click();
     await expect.poll(readUnison, { message: 'UNISON toggle off again' }).toBe(0);
   });
 
@@ -188,7 +230,9 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     ]);
     await awaitStepSeam(page);
 
-    const pad = page.locator('[data-testid="wavesculpt-pad"]');
+    const pane = await openWsPane(page);
+    // The camera pad lives in the dock body; XyPad's testid is its x param.
+    const pad = pane.getByTestId('control-pos_x');
     await expect(pad).toHaveCount(1);
     const box = await pad.boundingBox();
     expect(box).not.toBeNull();
@@ -227,20 +271,21 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     ]);
     await awaitStepSeam(page);
 
-    const pad = page.locator('[data-testid="wavesculpt-pad-zoomrot"]');
-    await expect(pad).toHaveCount(1);
-    const box = await pad.boundingBox();
-    expect(box).not.toBeNull();
-    if (!box) return;
-
-    // Drag from center to upper-right corner: should bump both zoom AND
-    // rot above their defaults.
-    const tx = box.x + box.width * 0.9;
-    const ty = box.y + box.height * 0.1;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(tx, ty, { steps: 6 });
-    await page.mouse.up();
+    // The second card joystick died with the card: on the face, ZOOM and ROT
+    // are ranked FADERS on the CAMERA tab (click-to-jump tracks). Click near
+    // the top of each track — the fader jumps toward its max.
+    const pane = await openWsPane(page);
+    await wsTab(pane, 'camera');
+    for (const tid of ['control-zoom', 'control-rot']) {
+      const track = pane.getByTestId(tid);
+      await expect(track).toBeVisible();
+      await track.scrollIntoViewIfNeeded();
+      const box = await track.boundingBox();
+      expect(box, `${tid} has a box`).not.toBeNull();
+      // Element-targeted click near the track top (actionability-checked —
+      // an absolute mouse.click can land on faceplate chrome).
+      await track.click({ position: { x: Math.floor(box!.width / 2), y: 3 } });
+    }
 
     const readZoomRot = (): Promise<{ zoom: number; rot: number }> =>
       page.evaluate(() => {
@@ -252,10 +297,10 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       });
 
     await expect
-      .poll(async () => (await readZoomRot()).zoom, { message: 'zoom > 1 after drag right' })
+      .poll(async () => (await readZoomRot()).zoom, { message: 'zoom > 1 after the top-of-track jump' })
       .toBeGreaterThan(1.2);
     await expect
-      .poll(async () => (await readZoomRot()).rot, { message: 'rot > 0 after drag up' })
+      .poll(async () => (await readZoomRot()).rot, { message: 'rot > 0 after the top-of-track jump' })
       .toBeGreaterThan(0.3);
   });
 
@@ -483,7 +528,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
         },
       ],
     );
-    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="ws"] [data-testid="module-shell"]')).toHaveCount(1);
     await awaitStepSeam(page);
 
     // Drive deterministic frames so the alpha_in composite path exercises +
@@ -506,7 +551,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     await spawnPatch(page, [
       { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
-    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="ws"] [data-testid="module-shell"]')).toHaveCount(1);
     await awaitStepSeam(page);
 
     await page.evaluate(() => {
@@ -597,10 +642,14 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     });
     expect(bluePixels, 'SPECTROGRAPH paints a blue-floor heatmap').toBeGreaterThan(20);
 
-    // Sanity: the view-toggle button shows the SPECTRO label when
-    // video_mode = 2 (verifies the UI stays in sync with the param).
-    const label = await page.locator('[data-testid="wavesculpt-view-toggle"]').textContent();
-    expect(label?.trim()).toBe('SPECTRO');
+    // Sanity: the face's VIEW segmented cell marks SPECTROGRAPH selected when
+    // video_mode = 2 (verifies the UI stays in sync with the param). The
+    // card's click-cycle button died with the card; the radiogroup state is
+    // readable without activating its tab (aria, not visibility).
+    const pane = await openWsPane(page);
+    await expect(
+      pane.locator('[data-testid="control-video_mode"] [role="radio"][aria-checked="true"]'),
+    ).toHaveText(/SPECTRO/);
   });
 
   test('view-toggle cycles 3D → BIRDSEYE → SPECTRO → 3D', async ({ page, rack }) => {
@@ -613,8 +662,13 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     ]);
     await awaitStepSeam(page);
 
-    const btn = page.locator('[data-testid="wavesculpt-view-toggle"]');
-    await expect(btn).toHaveCount(1);
+    // The card's single click-cycle button died with the card; the face's
+    // VIEW is a SEGMENTED radiogroup on the LOOK tab — each segment writes its
+    // mode directly, and the checked segment is the state readout.
+    const pane = await openWsPane(page);
+    await wsTab(pane, 'look');
+    const seg = pane.getByTestId('control-video_mode');
+    await expect(seg).toBeVisible();
 
     const readMode = (): Promise<number> => page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -622,21 +676,22 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       };
       return w.__patch.nodes['ws']?.params.video_mode ?? 0;
     });
+    const checked = seg.locator('[role="radio"][aria-checked="true"]');
 
     expect(await readMode(), 'starts at PROXIMITY').toBe(0);
-    expect((await btn.textContent())?.trim()).toBe('3D');
+    await expect(checked).toHaveText('PROXIMITY');
 
-    await btn.click();
-    await expect.poll(readMode, { message: 'after 1st click → BIRDSEYE' }).toBe(1);
-    await expect(btn).toHaveText('BIRDSEYE');
+    await seg.getByRole('radio', { name: 'BIRDSEYE' }).click();
+    await expect.poll(readMode, { message: 'BIRDSEYE segment → mode 1' }).toBe(1);
+    await expect(checked).toHaveText('BIRDSEYE');
 
-    await btn.click();
-    await expect.poll(readMode, { message: 'after 2nd click → SPECTROGRAPH' }).toBe(2);
-    await expect(btn).toHaveText('SPECTRO');
+    await seg.getByRole('radio', { name: /SPECTRO/ }).click();
+    await expect.poll(readMode, { message: 'SPECTROGRAPH segment → mode 2' }).toBe(2);
+    await expect(checked).toHaveText(/SPECTRO/);
 
-    await btn.click();
-    await expect.poll(readMode, { message: 'after 3rd click wraps back to PROXIMITY' }).toBe(0);
-    await expect(btn).toHaveText('3D');
+    await seg.getByRole('radio', { name: 'PROXIMITY' }).click();
+    await expect.poll(readMode, { message: 'PROXIMITY segment → back to mode 0' }).toBe(0);
+    await expect(checked).toHaveText('PROXIMITY');
   });
 
   // NOTE: 'bentscreen wiggle knobs route through the patch store' was deleted
@@ -651,30 +706,34 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     ]);
     await awaitStepSeam(page);
 
-    const btn = page.locator('[data-testid="wavesculpt-blink-toggle"]');
-    await expect(btn).toHaveCount(1);
+    // The card's cycle button + painted mode-name readout died with the card
+    // (resting-text ruling); the face's BLINK is a SEGMENTED radiogroup on the
+    // LOOK tab whose checked segment IS the mode name.
+    const pane = await openWsPane(page);
+    await wsTab(pane, 'look');
+    const seg = pane.getByTestId('control-blink_mode');
+    await expect(seg).toBeVisible();
 
     const readMode = (): Promise<number> => page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
       return w.__patch.nodes['ws']?.params.blink_mode ?? 0;
     });
-    const nameLoc = page.locator('[data-testid="wavesculpt-blink-mode-name"]');
+    const checked = seg.locator('[role="radio"][aria-checked="true"]');
 
-    // Default = mode 0 (today's render); no mode-name shown.
     expect(await readMode(), 'starts at mode 0 (current)').toBe(0);
-    await expect(nameLoc).toHaveCount(0);
+    await expect(checked).toHaveText('RIBBONS');
 
-    await btn.click();
-    await expect.poll(readMode, { message: '1st click → SCOPES TRIAL' }).toBe(1);
-    await expect(nameLoc).toHaveText('SCOPES TRIAL');
+    await seg.getByRole('radio', { name: 'SCOPES TRIAL' }).click();
+    await expect.poll(readMode, { message: 'SCOPES TRIAL segment → mode 1' }).toBe(1);
+    await expect(checked).toHaveText('SCOPES TRIAL');
 
-    await btn.click();
-    await expect.poll(readMode, { message: '2nd click → REALITY BASED COMMUNITY' }).toBe(2);
-    await expect(nameLoc).toHaveText('REALITY BASED COMMUNITY');
+    await seg.getByRole('radio', { name: 'REALITY BASED COMMUNITY' }).click();
+    await expect.poll(readMode, { message: 'REALITY BASED COMMUNITY segment → mode 2' }).toBe(2);
+    await expect(checked).toHaveText('REALITY BASED COMMUNITY');
 
-    await btn.click();
-    await expect.poll(readMode, { message: '3rd click wraps back to 0' }).toBe(0);
-    await expect(nameLoc).toHaveCount(0);
+    await seg.getByRole('radio', { name: 'RIBBONS' }).click();
+    await expect.poll(readMode, { message: 'RIBBONS segment → back to mode 0' }).toBe(0);
+    await expect(checked).toHaveText('RIBBONS');
   });
 
   test('BLINK modes 1 + 2 render the 4-corner scope traces (and differ from each other)', async ({ page, rack }) => {
@@ -719,16 +778,34 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       return { lit, data: out };
     });
 
+    /** Step deterministic frame batches until the traces are LIT (or the
+     *  frame budget runs out) and return the last grab. The scope-data path
+     *  that feeds the corner traces warms ASYNCHRONOUSLY of the render loop —
+     *  a one-shot read after a fixed 5 frames was green on an idle machine
+     *  and deterministically red after this file's earlier tests started
+     *  passing on the shell (each now boots the full renderer, so by this
+     *  test the machine is busier and 5 frames land before the scope data
+     *  does). Frames + a condition, never a wall-clock sleep; the frame
+     *  budget bounds the failure. */
+    const grabUntilLit = async (): Promise<{ lit: number; data: number[] }> => {
+      let last = await grab();
+      for (let i = 0; i < 40 && last.lit <= 2000; i++) {
+        await stepFrames(page, 5);
+        last = await grab();
+      }
+      return last;
+    };
+
     await setup(1);
     if (!(await glPixelsUsable(page))) {
       test.skip(true, 'no usable GL pixel read on this renderer');
       return;
     }
-    const mode1 = await grab();
+    const mode1 = await grabUntilLit();
     expect(mode1.lit, 'SCOPES TRIAL renders traces').toBeGreaterThan(2000);
 
     await setup(2);
-    const mode2 = await grab();
+    const mode2 = await grabUntilLit();
     expect(mode2.lit, 'REALITY BASED COMMUNITY renders tubes').toBeGreaterThan(2000);
 
     // The two modes must look different (tube radial shading vs flat line).
@@ -746,7 +823,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // SHAPES (a bright static test pattern) → wall1 (FRONT face), full
@@ -808,7 +885,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Drive a gate so the ribbons have energy that the feedback loop can
@@ -960,7 +1037,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -973,7 +1050,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       { id: 'e_wall1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'video', targetType: 'video' },
       { id: 'e_wall3', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall3' }, sourceType: 'video', targetType: 'video' },
     ]);
-    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="ws"] [data-testid="module-shell"]')).toHaveCount(1);
     await awaitStepSeam(page);
 
     // Drive the gate + resume audio, then dial lum_depth up via the store.

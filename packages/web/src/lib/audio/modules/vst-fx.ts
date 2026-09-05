@@ -123,7 +123,7 @@ export const vstFxDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Runs one of YOUR installed effect plugins — the AU builds of your VSTs (delays, reverbs, compressors, Apple's AUDelay, …) — as a stereo insert, through the vst-bridge native helper app (macOS, ws://127.0.0.1:9309). Drop it in a channel lane and it slots into the chain like any internal effect: stereo in, stereo out, auto-wired. Pick a plugin on the card, mount it, and OPEN EDITOR raises the plugin's own native window on your machine. The path is 100% wet (use the plugin's own mix control); while nothing is mounted the bridge passes audio through bit-transparently, and if the helper is not running at all the card bypasses locally — a missing helper never mutes the lane. Latency is the transport round trip (~15-25 ms added — the feel of patching through external hardware on a send; the card shows the measured rtt plus the plugin's own reported latency). One card = one plugin instance (helper cap 16); a page refresh re-adopts the running instance, so the plugin and its state survive reloads. Requires the vst-bridge helper running locally (Chromium/Firefox; the card shows status). In a shared patch, the effect renders only on the machine running the helper with the plugin installed.",
+      "Runs one of YOUR installed effect plugins — the AU builds of your VSTs (delays, reverbs, compressors, Apple's AUDelay, …) — as a stereo insert, through the vst-bridge native helper app (macOS, ws://127.0.0.1:9309). Drop it in a channel lane and it slots into the chain like any internal effect: stereo in, stereo out, auto-wired. Pick a plugin on the faceplate, mount it, and OPEN EDITOR raises the plugin's own native window on your machine. The path is 100% wet (use the plugin's own mix control); while nothing is mounted the bridge passes audio through bit-transparently, and if the helper is not running at all the module bypasses locally — a missing helper never mutes the lane. Latency is the transport round trip (~15-25 ms added — the feel of patching through external hardware on a send; the faceplate shows the measured rtt plus the plugin's own reported latency). One module = one plugin instance (helper cap 16); a page refresh re-adopts the running instance, so the plugin and its state survive reloads. Requires the vst-bridge helper running locally (Chromium/Firefox; the faceplate shows status). In a shared patch, the effect renders only on the machine running the helper with the plugin installed.",
     inputs: {
       in_l:
         'Stereo insert input, left — sent to the mounted plugin as its input bus (bit-transparent echo when nothing is mounted; local bypass when the helper is unreachable).',
@@ -132,15 +132,15 @@ export const vstFxDef: AudioModuleDef = {
     },
     outputs: {
       out_l:
-        "The plugin's processed return, left — each returned block carries the sampleTime of the input block that produced it, so the card places it on its own timeline.",
+        "The plugin's processed return, left — each returned block carries the sampleTime of the input block that produced it, so the faceplate places it on its own timeline.",
       out_r:
         "The plugin's processed return, right (stereo-paired with out_l).",
     },
     controls: {
       'vst-connect-{n}':
-        "Opens this card's own session with the vst-bridge helper — one WebSocket, one plugin "
+        "Opens this faceplate's own session with the vst-bridge helper — one WebSocket, one plugin "
         + 'instance, keyed by this node id. It also RESTARTS a live session at the engine\'s current '
-        + 'sample rate, which is the recovery path when another browser tab has claimed this card\'s '
+        + 'sample rate, which is the recovery path when another browser tab has claimed this faceplate\'s '
         + 'instance. The engine already connects on its own when the node is created, so this is for '
         + 'the case where the helper was not running yet, or where you disconnected on purpose. Until '
         + 'it succeeds the insert bypasses locally, so the lane keeps flowing either way.',
@@ -149,7 +149,7 @@ export const vstFxDef: AudioModuleDef = {
         + 'than destroying it (about 90 seconds), so a reconnect re-adopts the same plugin with its '
         + 'state intact. The insert falls back to a local bypass, so the lane keeps its audio; you '
         + 'lose the effect, not the signal. Use it to hand one of the helper\'s sixteen concurrent '
-        + 'instances to another card.',
+        + 'instances to another module.',
     },
   },
 

@@ -41,7 +41,7 @@ import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEF_SRC = resolve(HERE, '../../video/modules/videocube.ts');
-const CARD_SRC = resolve(HERE, './VideocubeCard.svelte');
+const CELLS_SRC = resolve(HERE, '../workflow/shell-cells.ts');
 const ACTIONS_SRC = resolve(HERE, './videocube-slot-actions.ts');
 const BODY_SRC = resolve(HERE, './videocube/VideocubeOutputBody.svelte');
 const read = (p: string): string => readFileSync(p, 'utf8');
@@ -131,11 +131,18 @@ describe('videocube face — the TWO switches that said `linear` (the repair)', 
   });
 
   it('NO param on this face is momentary — every switch here latches', () => {
-    // Asserted rather than assumed: `VideocubeCard.svelte` has no pointer-capture
-    // press-pad at all, unlike FrametableCard's CHAOS. A momentary entry
-    // appearing later would be a real classification change, not a tidy-up.
+    // Asserted rather than assumed: unlike frametable's CHAOS, videocube has no
+    // pointer-capture press-pad anywhere. A momentary entry appearing later
+    // would be a real classification change, not a tidy-up.
+    //
+    // ⚠ THE SECOND HALF READ THE CARD SOURCE for an `onpointerdown`, the
+    // surface-side witness for "no press-pad". The surviving surfaces are the
+    // body and the shell's own cells; the body is read instead, and the shell
+    // renders a momentary cell only for a DECLARED momentary param, which the
+    // line above denies.
     expect([...MOMENTARY], 'videocube declares no press-pads').toEqual([]);
-    expect(read(CARD_SRC).includes('onpointerdown'), 'and the card has no press-pad either').toBe(false);
+    expect(read(BODY_SRC).includes('onpointerdown'), 'the body has no press-pad either')
+      .toBe(false);
   });
 });
 
@@ -164,21 +171,22 @@ describe('videocube face — FIVE rosters, all PROMOTED from shipped names', () 
     }
   });
 
-  it('the two MULTI-STATE rosters are the CARD\'s own arrays, verbatim', () => {
-    // ⚠ ANCHORED TO THE CARD SOURCE. The rule is "promote names that exist in
-    // code, never invent them", and a test that re-typed the strings would be
-    // asserting the invention against itself. `MODES` and `SLICE_VIEWS` are the
-    // card's two literal arrays, so an invented name is RED.
-    const card = read(CARD_SRC);
-    const modes = [...card.matchAll(/VIDEOCUBE_MODE_[A-Z]+, label: '([A-Z]+)'/g)].map((m) => m[1]);
-    expect(modes, 'the card still declares its MODES array').toEqual(['SMOOTH', 'MORPH', 'CHAOS']);
-    expect(param('reader_mode').options?.map((o) => o.label)).toEqual(modes);
-
-    const views = [...card.matchAll(/\{ v: \d+, label: '([A-Z]+)' \}/g)].map((m) => m[1]);
-    expect(views, 'the card still declares its SLICE_VIEWS array').toEqual(['TEX', 'XRAY', 'WEIGHTS']);
-    expect(param('slice_view').options?.map((o) => o.label)).toEqual(views);
-
-    // The reader values are the shader's own mode constants, not 0/1/2 retyped.
+  it('the two MULTI-STATE rosters carry the SHADER\'s own constants, not retyped ordinals', () => {
+    // ⚠ THIS USED TO BE ANCHORED TO THE CARD SOURCE, and what that bought is
+    // worth stating because it is what is lost. The rule is "promote names that
+    // exist in code, never invent them", and a test that re-typed the strings
+    // would be asserting the invention against itself — so the leg derived the
+    // labels from the card's own `MODES` and `SLICE_VIEWS` literals and
+    // compared the def against THEM. The card was the second source; with it
+    // gone the def is the only place these names exist, and no cross-check can
+    // separate a promoted name from an invented one.
+    //
+    // NAMED, so it is not mistaken for a re-point: the LABEL cross-check is a
+    // coverage loss. What survives is the half that was never circular — the
+    // reader's option VALUES are the shader's own mode constants rather than
+    // 0/1/2 retyped, which is the half that could actually mis-drive the shader.
+    expect(param('reader_mode').options?.map((o) => o.label)).toEqual(['SMOOTH', 'MORPH', 'CHAOS']);
+    expect(param('slice_view').options?.map((o) => o.label)).toEqual(['TEX', 'XRAY', 'WEIGHTS']);
     expect(param('reader_mode').options?.map((o) => o.value)).toEqual([
       VIDEOCUBE_MODE_SMOOTH, VIDEOCUBE_MODE_MORPH, VIDEOCUBE_MODE_CHAOS,
     ]);
@@ -259,16 +267,21 @@ describe('videocube face — the SIX ingest cells survive promotion', () => {
     }
   });
 
-  it('every declared testidPrefix is a LITERAL the card emits', () => {
-    // ⚠ THE REASON THE CARD NOW SPELLS THESE THROUGH A MAP. `module-docs-lint`
-    // proves a prefix exists by GREPPING the card source, so a testid built as
-    // a template literal is invisible to it and all six families would read as
-    // undeclared. The rendered testids did not change.
-    const card = read(CARD_SRC);
-    for (const f of videocubeDef.controlFamilies ?? []) {
-      expect(card, `the card source contains the literal ${f.testidPrefix}`).toContain(f.testidPrefix);
-    }
+  // ⚠ 'every declared testidPrefix is a LITERAL the card emits' STOOD HERE, and
+  // it is the clearest example in the tree of a leg whose question stopped
+  // having an answer. `module-docs-lint` proved a prefix existed by GREPPING
+  // card source, so this module had to spell six testids through a map rather
+  // than as template literals — a change made ENTIRELY to satisfy the grep. The
+  // shell stamps `shell-cell-<familyId>` from an interpolation, so there is no
+  // per-family literal to grep for on any surviving surface, and that gate now
+  // resolves each family to a live shell cell instead. The leg below already
+  // asserts exactly that for all six of videocube's families.
+
+  it('all six families are declared, and each resolves to a live cell', () => {
     expect((videocubeDef.controlFamilies ?? []).length, 'three slots x two controls').toBe(6);
+    for (const f of videocubeDef.controlFamilies ?? []) {
+      expect(famCell(`${f.id}-{n}`), `${f.id} has no shell cell`).toBeTruthy();
+    }
   });
 
   it('⚠ all six probe an OUTCOME record, because all six are ENGINE-ONLY', () => {
@@ -296,13 +309,17 @@ describe('videocube face — the SIX ingest cells survive promotion', () => {
     expect(src, 'failures carry the reason').toContain("'video engine not ready'");
   });
 
-  it('⚠ both surfaces call ONE implementation, so they cannot drift', () => {
-    const card = read(CARD_SRC);
-    expect(card, 'the card delegates the LIVE reset').toContain('setVideocubeSlotLive');
-    expect(card, 'and the atlas load').toContain('loadVideocubeSlotFile');
-    // …and no longer owns a second copy of the dataset tagging the factory reads.
-    expect(card.includes('dataset.videocubeClear'), 'the card no longer tags its own clear element')
-      .toBe(false);
+  it('⚠ the surface calls ONE implementation, so a second copy cannot appear', () => {
+    // ⚠ THIS READ THE CARD, because the card and the shell cells were the two
+    // callers and "they cannot drift" needed both. The shell's registry is the
+    // caller now, and it is the one that has to delegate rather than re-derive.
+    const cells = read(CELLS_SRC);
+    expect(cells, 'the shell cells delegate the LIVE reset').toContain('setVideocubeSlotLive(');
+    expect(cells, 'and the atlas load').toContain('loadVideocubeSlotFile(');
+    // …and the shared seam is where the dataset tagging the factory reads lives,
+    // rather than being re-tagged by whichever surface happens to mount.
+    expect(read(ACTIONS_SRC), 'the seam owns the element tagging')
+      .toContain('dataset.videocubeClear');
   });
 });
 

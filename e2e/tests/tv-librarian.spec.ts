@@ -11,6 +11,27 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
+/** Open the dock full view for a TV LIBRARIAN and return its PANE locator.
+ *  The tuner (preview + picker + disclaimer, `data-stream-state` on
+ *  `tv-librarian-face-body`) is `fullViewBody` — dock-only; every locator
+ *  scopes under the pane (testids repeat pane-to-pane). */
+async function openTvPane(page: import('@playwright/test').Page, id: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId('tv-librarian-face-body')).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
 const META = {
   US: { country: 'United States', capital: 'Washington', hasChannels: true, channelCount: 2 },
   FR: { country: 'France', capital: 'Paris', hasChannels: true, channelCount: 1 },
@@ -59,15 +80,16 @@ async function installMocks(page: import('@playwright/test').Page): Promise<void
 test.describe('TV LIBRARIAN — network-mocked source chain', () => {
   test('country list → channel list → select → card reacts; geo marked; youtube-only filtered @video', async ({ page }) => {
     await installMocks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await spawnPatch(page, [{ id: 'tv1', type: 'tvLibrarian', domain: 'video' }]);
 
-    const card = page.getByTestId('tv-librarian-card');
+    const pane = await openTvPane(page, 'tv1');
+    const card = pane.getByTestId('tv-librarian-face-body');
     await expect(card).toBeVisible();
 
     // Switch to the deterministic country LIST view (the map needs pixel clicks).
-    await page.getByTestId('tv-view-list').click();
-    const select = page.getByTestId('tv-country-select');
+    await pane.getByTestId('tv-view-list').click();
+    const select = pane.getByTestId('tv-country-select');
     await expect(select).toBeVisible();
     // Countries populated from the mocked metadata (sorted by name).
     await expect(select.locator('option[value="US"]')).toHaveCount(1);
@@ -75,29 +97,29 @@ test.describe('TV LIBRARIAN — network-mocked source chain', () => {
 
     // Pick the US → its channels load from the mocked country file.
     await select.selectOption('US');
-    const channels = page.getByTestId('tv-channel');
+    const channels = pane.getByTestId('tv-channel');
     // 2 playable (usa1, usa2); the youtube-only usa3 is filtered out.
     await expect(channels).toHaveCount(2);
-    await expect(page.getByText('Mock News USA')).toBeVisible();
-    await expect(page.getByText('Mock Sports USA')).toBeVisible();
-    await expect(page.getByText('Mock Tube USA')).toHaveCount(0);
+    await expect(pane.getByText('Mock News USA')).toBeVisible();
+    await expect(pane.getByText('Mock Sports USA')).toBeVisible();
+    await expect(pane.getByText('Mock Tube USA')).toHaveCount(0);
     // The geo-blocked channel is MARKED (legal posture: honored + visible).
     await expect(card.locator('.chan .badge.geo')).toHaveCount(1);
 
     // Select a channel → it persists to now-playing + the stream attaches (to
     // the stub manifest). Because the stub has no playable media, the card
     // resolves to "unavailable" (never hangs) — that's the graceful path.
-    await page.getByTestId('tv-channel').first().click();
+    await pane.getByTestId('tv-channel').first().click();
     // ⚠ THE STATION NAME IS READ OFF THE PICTURE'S ACCESSIBLE NAME, NOT A PAINTED
     // LABEL. The card's `tv-now-playing` readout is DELETED under the 2026-08-17
     // resting-text ruling (the data is removed, not hidden) — on the CARD as well
     // as the faceplate, so the two surfaces cannot disagree about what this module
     // paints. The assertion did not have to be weakened: aria-valuetext/aria-label
     // is where every face spec proving a module tracks state already reads.
-    await expect(page.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock News USA/);
+    await expect(pane.getByTestId('tv-preview')).toHaveAttribute('aria-label', /Mock News USA/);
 
     // The disclaimer + attribution are present (legal mitigation requirement).
-    await expect(page.getByTestId('tv-disclaimer')).toBeVisible();
+    await expect(pane.getByTestId('tv-disclaimer')).toBeVisible();
     await expect(card.getByText('Famelack')).toBeVisible();
 
     // No live network was contacted: the page never resolved a real famelack
@@ -108,12 +130,13 @@ test.describe('TV LIBRARIAN — network-mocked source chain', () => {
 
   test('selecting persists channel to node.data (syncs to rack-mates) @video', async ({ page }) => {
     await installMocks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await spawnPatch(page, [{ id: 'tv2', type: 'tvLibrarian', domain: 'video' }]);
 
-    await page.getByTestId('tv-view-list').click();
-    await page.getByTestId('tv-country-select').selectOption('US');
-    await page.getByTestId('tv-channel').first().click();
+    const pane = await openTvPane(page, 'tv2');
+    await pane.getByTestId('tv-view-list').click();
+    await pane.getByTestId('tv-country-select').selectOption('US');
+    await pane.getByTestId('tv-channel').first().click();
 
     // node.data carries the selected channel (name + url) so peers tune too.
     const persisted = await page.evaluate(() => {

@@ -295,8 +295,8 @@ export function isMidiOutChannelOverridden(
 
 // ---------------- The CHANNEL roster ----------------
 //
-// Both the legacy card's `<select>` and the faceplate's selector cell offer the
-// SAME sixteen choices, built here once so neither surface re-derives them. The
+// Every picker offers the SAME sixteen choices, built here once so no surface
+// re-derives them. The
 // card used to spell `{#each Array(16)}` and the `i + 1` inline.
 //
 // ⚠ 1-BASED ON BOTH SIDES HERE, unlike MIDI-CV-BUDDY, and the asymmetry is real
@@ -436,9 +436,9 @@ export const midiOutBuddyDef: AudioModuleDef = {
   // ⚠ TWO FAMILIES FOR TWO CELLS, AND THE COUNT IS FORCED BY THE RESOLVER.
   // `resolveFaceControl` resolves a face key to a PARAM id, a family TEMPLATE
   // (`<id>-{n}`) or a legend STATIC — and this module declares `params: []`, so
-  // both of its controls have to arrive as families. Each has a real control on
-  // the legacy card carrying the same `testidPrefix`, which is what
-  // `module-docs-lint`'s card-drift leg checks.
+  // both of its controls have to arrive as families. ⚠ NEITHER PREFIX IS
+  // EMITTED AS A LITERAL BY ANY SURFACE — MEASURED — so `module-docs-lint`
+  // holds them through its CELL arm rather than its source grep.
   controlFamilies: [
     { id: 'midi-out-buddy-connect', label: 'Connect MIDI', kind: 'other', testidPrefix: 'midi-out-buddy-connect' },
     { id: 'midi-out-buddy-channel', label: 'Channel',      kind: 'other', testidPrefix: 'midi-out-buddy-channel' },

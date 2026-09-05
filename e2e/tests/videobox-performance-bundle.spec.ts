@@ -37,7 +37,23 @@
 // remove the render COST, not the checks. (The frozen clock it also sets is a
 // no-op here: this spec reads no pixels.)
 
+//
+// ── ⚠ PER-TEST BOUND, NOT A BUDGET RAISE (2026-09-05) ──────────────────────
+//
+// This file timed out on CI inside a plain action — `locator.waitFor`, 30 s (an API the boot-budget note calls out as having NO timeout of its own) — while passing
+// locally in under 15 s. The action carries no timeout of its own, so it is
+// bounded by the TEST BUDGET and nothing else, and this suite does not
+// override Playwright's 30 s default. That is the documented subject of
+// `SLOW_BOOT_TEST_TIMEOUT_MS`: a BOUND on how long the test waits before
+// calling the app broken, on a spec that ASSERTS nothing about latency.
+//
+// A bound costs wall-clock only when it is exceeded, so a green run is
+// unchanged. Lane COST stays gauged by `--global-timeout`, which is a separate
+// instrument and is untouched here — raising this failure bound cannot hide a
+// cost regression.
+
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
@@ -57,7 +73,7 @@ async function setup(page: Page): Promise<string[]> {
   // round-trip (no pixel reads), so idling the renderer keeps the heavy rack
   // cheap on CI's SwiftShader software renderer without touching any assertion.
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -79,8 +95,34 @@ async function nodeCount(page: Page): Promise<number> {
   });
 }
 
+
+/** Open a node's dock full view and wait for `bodyTestId` — the pickers and
+ *  the state attributes live on the face bodies (fullViewBody; the cards died
+ *  with the fleet). Idempotent. */
+async function openBodyPane(
+  page: import('@playwright/test').Page,
+  id: string,
+  bodyTestId: string,
+): Promise<import('@playwright/test').Locator> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await pane.locator(`[data-testid="${bodyTestId}"]`).waitFor({ state: 'visible', timeout: 60_000 });
+  return pane;
+}
+
 test.describe('Portable Performance Bundle (.zip) round-trip', () => {
   test('exports the whole rack + restores video + image content after a new rack', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const errors = await setup(page);
 
     // ---- 1. Spawn the heavy rack ----
@@ -90,19 +132,19 @@ test.describe('Portable Performance Bundle (.zip) round-trip', () => {
       { id: TOY_ID, type: 'toybox', domain: 'video', position: { x: 840, y: 80 } },
     ]);
 
-    const vidCard = page.locator(`.svelte-flow__node[data-id="${VID_ID}"]`);
-    const picCard = page.locator(`.svelte-flow__node[data-id="${PIC_ID}"]`);
-
-    // ---- 2. Load real assets via the real card pickers ----
+    const vidCard = await openBodyPane(page, VID_ID, 'videobox-face-body');
+    // ---- 2. Load real assets via the real dock pickers ----
     // VIDEOBOX: setInputFiles drives loadFile → registers the export resolver.
     await vidCard.locator('[data-testid="videobox-file-input"]').setInputFiles(AV_FIXTURE);
-    await expect(vidCard.locator('[data-testid="videobox-card"]')).toHaveAttribute(
+    await expect(vidCard.locator('[data-testid="videobox-face-body"]')).toHaveAttribute(
       'data-has-local-file', 'true', { timeout: 10000 },
     );
 
     // PICTUREBOX: setInputFiles drives onFileChange → downscale+encode → imageBytes.
-    await picCard.locator('[data-testid="picturebox-file-input"]').setInputFiles(IMG_FIXTURE);
-    await expect(picCard.locator('[data-testid="picturebox-card"]')).toHaveAttribute(
+    // (`data-has-image` lives on the face CANVAS.)
+    const picCard = await openBodyPane(page, PIC_ID, 'picturebox-assets-body');
+    await picCard.locator('[data-testid="picturebox-face-file-input"]').setInputFiles(IMG_FIXTURE);
+    await expect(picCard.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
       'data-has-image', 'true', { timeout: 10000 },
     );
 
@@ -153,12 +195,15 @@ test.describe('Portable Performance Bundle (.zip) round-trip', () => {
     // IMAGE: restored imageBytes equals the pre-export value (byte-exact).
     const afterImage = await imageBytes(page, PIC_ID);
     expect(afterImage, 'restored PICTUREBOX imageBytes must equal the pre-export bytes').toBe(beforeImage);
-    await expect(page.locator(`.svelte-flow__node[data-id="${PIC_ID}"] [data-testid="picturebox-card"]`))
+    // The clear closed the panes with the nodes — reopen for the restored ones.
+    const picRestored = await openBodyPane(page, PIC_ID, 'picturebox-assets-body');
+    await expect(picRestored.locator('[data-testid="picturebox-face-canvas"]'))
       .toHaveAttribute('data-has-image', 'true', { timeout: 8000 });
 
-    // VIDEO: the card re-acquires the file from the seeded blob handle (the
+    // VIDEO: the node re-acquires the file from the seeded blob handle (the
     // actual bytes travelled in the zip) — no re-pick, fully cross-machine.
-    await expect(page.locator(`.svelte-flow__node[data-id="${VID_ID}"] [data-testid="videobox-card"]`))
+    const vidRestored = await openBodyPane(page, VID_ID, 'videobox-face-body');
+    await expect(vidRestored.locator('[data-testid="videobox-face-body"]'))
       .toHaveAttribute('data-has-local-file', 'true', { timeout: 12000 });
 
     expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);

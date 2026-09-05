@@ -15,15 +15,27 @@
 import { test, expect } from './_fixtures';
 import { spawnPatch, seedKriaGate } from './_helpers';
 
+/** Open the cartesian node's dock full view — the face grid
+ *  (`cart-face-gate/pitch/chord-{i}`) is dock-only on the shell. */
+async function openCartDock(page: import('@playwright/test').Page): Promise<void> {
+  const tile = page
+    .locator('.svelte-flow__node:has([data-shell-type="cartesian"]) [data-testid="module-shell"]')
+    .first();
+  await tile.getByTestId('shell-open-dock').click();
+  await expect(page.getByTestId('dock-full-view')).toBeVisible();
+}
+
+
 test.describe.configure({ mode: 'parallel' });
 
 test('note-entry: typing valid notes into Cartesian pads normalizes display + stores MIDI', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'seq', type: 'cartesian' },
   ]);
+  await openCartDock(page);
 
   // Type 'A4' (uppercase) into pad 0's pitch input. Expect normalized 'a4' on blur.
-  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-face-pitch-0"]');
   await step0.focus();
   await step0.fill('A4');
   await step0.blur();
@@ -39,7 +51,7 @@ test('note-entry: typing valid notes into Cartesian pads normalizes display + st
   expect(seqData).toMatchObject({ midi: 69 });
 
   // Flat form maps to sharp: 'db5' -> displayed as 'c#5', stored as MIDI 73.
-  const step1 = page.locator('[data-testid="cart-pitch-seq-1"]');
+  const step1 = page.locator('[data-testid="cart-face-pitch-1"]');
   await step1.focus();
   await step1.fill('db5');
   await step1.blur();
@@ -52,7 +64,7 @@ test('note-entry: typing valid notes into Cartesian pads normalizes display + st
   expect(step1Data?.midi).toBe(73);
 
   // Whitespace / case-insensitive: ' c # 3 ' -> 'c#3'.
-  const step2 = page.locator('[data-testid="cart-pitch-seq-2"]');
+  const step2 = page.locator('[data-testid="cart-face-pitch-2"]');
   await step2.focus();
   await step2.fill(' c # 3 ');
   await step2.blur();
@@ -63,8 +75,9 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
   await spawnPatch(page, [
     { id: 'seq', type: 'cartesian' },
   ]);
+  await openCartDock(page);
 
-  const step = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const step = page.locator('[data-testid="cart-face-pitch-0"]');
   await step.focus();
   await step.fill('q7');
   // While focused with invalid content, the input has the .invalid class.
@@ -75,16 +88,19 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
-  expect(stored?.midi).toBeNull();
+  expect(stored?.midi ?? null, 'no midi stored (an uncommitted cell may not exist at all on the face path)').toBeNull();
 
-  // After commit, displayed value should be empty (no canonical name for null).
-  await expect(step).toHaveValue('');
+  // After blur the refused text is GONE — the input restores its pre-edit
+  // draft (the face seeds the c3 default on focus; the card restored '').
+  // Either way the garbage never sticks and nothing was committed.
+  await expect(step).not.toHaveValue('q7');
 });
 
 test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
+  await openCartDock(page);
 
-  const step = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const step = page.locator('[data-testid="cart-face-pitch-0"]');
   await step.focus();
   // The valid range is c0..c8 (MIDI 12..108); c#8 (MIDI 109) is one
   // semitone above and must round-trip to null.
@@ -94,21 +110,22 @@ test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page,
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
-  expect(stored?.midi).toBeNull();
+  expect(stored?.midi ?? null, 'no midi stored (an uncommitted cell may not exist at all on the face path)').toBeNull();
 });
 
 test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, rack }) => {
   await spawnPatch(page, [
     { id: 'cart', type: 'cartesian' },
   ]);
+  await openCartDock(page);
 
-  const c0 = page.locator('[data-testid="cart-pitch-cart-0"]');
+  const c0 = page.locator('[data-testid="cart-face-pitch-0"]');
   await c0.focus();
   await c0.fill('a4');
   await c0.blur();
   await expect(c0).toHaveValue('a4');
 
-  const c5 = page.locator('[data-testid="cart-pitch-cart-5"]');
+  const c5 = page.locator('[data-testid="cart-face-pitch-5"]');
   await c5.focus();
   // Range upper bound is c8 (MIDI 108) per the C0..C8 spec; pick c8 here.
   await c5.fill('C8');
@@ -125,8 +142,9 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page, 
 
 test('note-entry: gate button toggles pad.on without touching the pitch input', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
+  await openCartDock(page);
 
-  const pitchEl = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const pitchEl = page.locator('[data-testid="cart-face-pitch-0"]');
   await pitchEl.focus();
   await pitchEl.fill('e4');
   await pitchEl.blur();
@@ -135,7 +153,7 @@ test('note-entry: gate button toggles pad.on without touching the pitch input', 
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;
   });
-  const gate = page.locator('[data-testid="cart-gate-seq-0"]');
+  const gate = page.locator('[data-testid="cart-face-gate-0"]');
   await gate.click();
   const stepData = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
@@ -156,6 +174,7 @@ test('note-entry: an a4 pad drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 
       { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
     ],
   );
+  await openCartDock(page);
 
   // Every pad a4 (MIDI 69), gate on — the clocked walk emits 0.75 V on
   // every step, so the read is step-phase-independent.
@@ -209,6 +228,7 @@ test('hold-cv: pitch port retains last gated V/oct across a rest pad', async ({ 
       { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
     ],
   );
+  await openCartDock(page);
 
   await page.evaluate(() => {
     const w = globalThis as unknown as {
@@ -276,6 +296,7 @@ test('note-entry: invalid pad (midi=null) suppresses gate output even when on=tr
       { id: 'e_clk', from: { nodeId: 'clk', portId: 'gate1' }, to: { nodeId: 'seq', portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
     ],
   );
+  await openCartDock(page);
 
   // Every pad on=true but midi=null — the parser-rejected state. The gate
   // must never fire.

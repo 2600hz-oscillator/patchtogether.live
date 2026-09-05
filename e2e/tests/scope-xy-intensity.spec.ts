@@ -32,7 +32,7 @@ test.describe.configure({ mode: 'parallel' });
 async function scopeStats(page: Page): Promise<{
   lit: number; rows: number; cols: number; width: number; height: number;
 }> {
-  const canvas = page.locator('canvas[data-testid="scope-canvas"]');
+  const canvas = page.locator('canvas[data-testid="scope-face-canvas"]');
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -91,15 +91,22 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
       ],
     );
 
-    const card = page.locator('.svelte-flow__node-scope');
-    await expect(card).toBeVisible();
+    const tile = page.locator('.svelte-flow__node[data-id="scope"] [data-testid="module-shell"]');
+    await expect(tile).toBeVisible();
+    // The trace canvas lives in the DOCK's scope body on the shell.
+    await tile.getByTestId('shell-open-dock').click();
+    await expect(page.getByTestId('dock-full-view')).toBeVisible();
     await page.waitForTimeout(500);
 
-    // Switch to X/Y mode via the on-card button.
-    const xyBtn = card.locator('[data-testid="scope-xy-mode"]');
-    await expect(xyBtn).toHaveCount(1);
-    await xyBtn.click();
-    await expect(xyBtn).toHaveAttribute('aria-pressed', 'true');
+    // Switch to X/Y mode via the dock's SPLIT/XY segmented — the same
+    // `mode` param the card's button wrote, driven by the real gesture.
+    const xySeg = page
+      .getByTestId('dock-full-view')
+      .getByTestId('control-mode')
+      .locator('[role="radio"]')
+      .nth(1);
+    await xySeg.click();
+    await expect(xySeg).toHaveAttribute('aria-checked', 'true');
     await page.waitForTimeout(500);
 
     const s = await scopeStats(page);
@@ -126,8 +133,10 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
       ],
     );
 
-    const card = page.locator('.svelte-flow__node-scope');
-    await expect(card).toBeVisible();
+    const tile = page.locator('.svelte-flow__node[data-id="scope"] [data-testid="module-shell"]');
+    await expect(tile).toBeVisible();
+    await tile.getByTestId('shell-open-dock').click();
+    await expect(page.getByTestId('dock-full-view')).toBeVisible();
     await page.waitForTimeout(400);
 
     // 7:00 (min) — a moving dot. Near-zero trail.

@@ -10,7 +10,7 @@
 //
 // Multiplayer: see /docs/design/game-modules.md §3 (DOOM rack model)
 // and packages/web/src/lib/doom/doom-presence.ts. This factory is
-// agnostic of the multiplayer wiring — the card decides whether this peer
+// agnostic of the multiplayer wiring — the surface decides whether this peer
 // drives its own runtime (joined player) or renders nothing (spectator).
 // The engine here just exposes:
 //   - the GL surface that displays the 640×400 BGRA framebuffer (with
@@ -23,9 +23,9 @@
 //     new VideoNodeHandle.audioSources cross-domain bridge to feed the
 //     audio graph (silent until slice 8 lands).
 //
-// The card connects to the runtime via the handle's `read('extras')`
-// channel — mirrors how PictureboxCard pulls setImage/setFilename out
-// of PICTUREBOX's factory.
+// The surface connects to the runtime via the handle's `read('extras')`
+// channel — mirrors how PICTUREBOX's own face body pulls setImage/setFilename
+// out of its factory.
 //
 // Inputs:
 //   The 9 control gates (up/down/left/right/space/ctrl/alt/esc/enter) are
@@ -117,7 +117,7 @@ uniform vec2 uLetterbox;  // (sx, sy) — UV scale to fit DOOM aspect in engine 
 
 void main() {
   if (uHasFrame < 0.5) {
-    // Idle: dark warm grey + a subtle scanline texture so an empty card
+    // Idle: dark warm grey + a subtle scanline texture so an empty screen
     // still reads as "alive but no signal" rather than "broken".
     float scan = 0.5 + 0.5 * sin(vUv.y * 100.0);
     outColor = vec4(0.04, 0.02, 0.02, 1.0) * scan;
@@ -140,7 +140,7 @@ void main() {
 // Parameters: an audio-gain knob plus the synthetic CV-gate params. There is
 // no user-facing "pause" — DOOM is a true-lockstep netgame, so a local pause
 // would only desync the shared simulation. The runtime always ticks while it
-// is initialized. The card has its own controls (focus / spawn-runtime /
+// is initialized. The surface has its own controls (focus / spawn-runtime /
 // host-indicator). Keep the schema small to keep the module-spec snapshot
 // deterministic.
 interface DoomParams {
@@ -155,30 +155,30 @@ const DEFAULTS: DoomParams = {
   fillMode: 0,
 };
 
-/** Handle-extras: card-facing handle for the runtime + input feedback.
- *  Mirrors PictureboxHandleExtras — the card calls
+/** Handle-extras: the UI-facing handle for the runtime + input feedback.
+ *  Mirrors PictureboxHandleExtras — the surface calls
  *  `engine.read(id, 'extras')` to get this. */
 export interface DoomHandleExtras {
   /** The live runtime (may be null while WASM is still loading or
    *  build-doom-wasm.sh hasn't been run yet). */
   getRuntime(): DoomRuntime | null;
-  /** Card calls this once when the user spawns the module + clicks the
-   *  card to confirm load. Returns an error string if the WASM/WAD
+  /** The surface calls this once when the user spawns the module + clicks
+   *  it to confirm load. Returns an error string if the WASM/WAD
    *  load failed, or null on success. Idempotent. */
   ensureLoaded(): Promise<string | null>;
   /** Push a keyboard event (translated from KeyboardEvent.code by the
-   *  card). Returns true if the code is mapped, false otherwise. */
+   *  surface). Returns true if the code is mapped, false otherwise. */
   pushKeyboardKey(code: string, pressed: boolean): boolean;
   /** Push an already-translated raw doomkey (the Yjs presence relay on the
    *  host side feeds a pure spectator's keystrokes here). */
   pushDoomKey(doomKey: number, pressed: boolean): void;
   /** Bug 4 hard enforcement: gate keyboard-origin input at the runtime
-   *  boundary. The card calls this whenever its CV-gate-patched state flips —
+   *  boundary. The surface calls this whenever its CV-gate-patched state flips —
    *  patched ⇒ inert(true) (keyboard fully ignored + held keyboard keys
    *  released), unpatched ⇒ inert(false). The CV-gate path is never gated.
    *  No-op if the runtime isn't loaded (re-applied on load via ensureLoaded). */
   setKeyboardInert(inert: boolean): void;
-  /** Snapshot the current framebuffer for the card's LOCAL 2D preview blit.
+  /** Snapshot the current framebuffer for the surface's LOCAL 2D preview blit.
    *  Pure local read of this peer's own runtime — null when no WASM is loaded
    *  (a pure spectator), so its preview canvas stays black. NOT used for any
    *  network broadcast (the framebuffer-over-awareness path was removed). */
@@ -208,7 +208,7 @@ export interface DoomHandleExtras {
   /** Slice 4: this peer's own console player position (fixed-point) or
    *  null if not spawned. Used by the e2e per-peer-POV assertion. */
   getConsolePlayerState(): { x: number; y: number; slot: number } | null;
-  /** Slice 5: this peer's freshly-built local ticcmd (the card broadcasts it
+  /** Slice 5: this peer's freshly-built local ticcmd (the surface broadcasts it
    *  each tic for cross-peer visibility), or null if none built yet. */
   readLocalTiccmd(): DoomTiccmd | null;
   /** Slice 5: inject a remote peer's latest ticcmd at its slot so its marine
@@ -237,7 +237,7 @@ export interface DoomHandleExtras {
   /** 32-bit deterministic state digest — the cross-peer lockstep oracle. */
   stateChecksum(): number;
   /** Per-player inputs (#353): set THIS peer's consoleplayer slot so the CV-gate
-   *  path applies ONLY this slot's input group (own-slot-only rule). The card
+   *  path applies ONLY this slot's input group (own-slot-only rule). The surface
    *  calls this when its mySlot changes; null = spectator/unseated (no slot's CV
    *  drives the local sim). Idempotent; safe before WASM loads. */
   setOwnSlot(slot: number | null): void;
@@ -321,7 +321,7 @@ export const doomDef: VideoModuleDef = {
     // strings ("iddqd" / "idkfa"). The cheats apply to THIS peer's local
     // `players[consoleplayer]` (god mode / all keys+weapons+full ammo) and
     // are NOT replicated across peers — same scope as a player who would
-    // have typed the cheat themselves into a keyboard-focused card.
+    // have typed the cheat themselves into a keyboard-focused surface.
     { id: 'iddqd_in', type: 'cv' as const, paramTarget: 'cv_iddqd_in' },
     { id: 'idkfa_in', type: 'cv' as const, paramTarget: 'cv_idkfa_in' },
   ],
@@ -355,7 +355,7 @@ export const doomDef: VideoModuleDef = {
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
     { id: 'fillMode', label: 'Fill', defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
     // Synthetic params for the CV edge detector — one per (slot, gate) port.
-    // Hidden from the card (the gate inputs render as cv-jacks via the standard
+    // Hidden from the faceplate (the gate inputs render as cv-jacks via the standard
     // port-row, and only the local viewer's own group is shown). curve='linear'
     // so setParam values arrive raw.
     ...CV_GATE_PORT_IDS_BY_SLOT.map(({ portId, slot, base }) => ({
@@ -368,7 +368,7 @@ export const doomDef: VideoModuleDef = {
     })),
     // Cheat-gate synthetic params (one per cheat input). Edge-detected in
     // setParam below; on the LOW→HIGH transition we schedule the 5-character
-    // injection. Hidden from the card UI (no param-row); the gate input
+    // injection. Hidden from the faceplate UI (no param-row); the gate input
     // appears in the PatchPanel like the other CV inputs.
     { id: 'cv_iddqd_in', label: 'IDDQD', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
     { id: 'cv_idkfa_in', label: 'IDKFA', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
@@ -467,8 +467,8 @@ export const doomDef: VideoModuleDef = {
 
   // #1726 — the params a player never sets. All 36 per-slot CV-gate targets and
   // both cheat targets are written by their OWN input jack (`paramTarget`), never
-  // by a control: the card never drew a row for one and the faceplate must not
-  // either, or promotion would put a wall of dials on the plate for jacks.
+  // by a control, and the faceplate must NOT draw one either — a row per jack
+  // would put a wall of dials on the plate for things nothing sets.
   // Derived from the same constants the ports are derived from so the two lists
   // cannot disagree.
   noUserControl: [
@@ -496,7 +496,7 @@ export const doomDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: "DOOM runs the 1993 shareware game compiled to WebAssembly (doomgeneric) and renders each peer's OWN first-person view to the video 'out' jack, with the WASM SFX mixer bridged to stereo audio outputs. It is a host-only, single-node module (maxInstances 1, ownerOnly): the rack owner adds one DOOM card, clicks the surface to download/cache the ~4 MB shareware WAD and boot the WASM, then either plays solo or hosts a true-lockstep co-op netgame that up to 3 rack-mates one-click hot-join (4 marines total — the owner is player 1) — every peer runs its own runtime and the deterministic tic stream keeps all marines byte-identical. Play with the keyboard once the card is focused (arrows move/turn, Ctrl/F fire, Space uses doors), or drive it from CV: the per-slot gate inputs p1..p4 act as held keypresses (movement/fire/strafe/menu) so an LFO, sequencer, or GAMEPAD can play the marine — each peer applies only its own seated slot's group (own-slot rule), and in single-player only the p1 group is live. Two extra cheat gates inject IDDQD (god mode) and IDKFA (full arsenal) on a rising edge. Game events feed the audio domain as 10 ms gate pulses — per-player weapon fire, door opens, the any-monster kill plus per-monster-type kills, and per-player deaths — so DOOM's action can trigger synths, drums, or a SCOREBOARD. The card's load button, the Single Player / Host Multiplayer start choice, the guest Join button, the click-to-capture-keyboard hint, and the arbiter's New Game dialog (mode/skill/episode/map custom dropdowns + a Launch / Next Map button) are UI controls, not patchable params. There is no host framebuffer mirror — an unjoined spectator simply shows the dark attract screen until it JOINS.",
+    explanation: "DOOM runs the 1993 shareware game compiled to WebAssembly (doomgeneric) and renders each peer's OWN first-person view to the video 'out' jack, with the WASM SFX mixer bridged to stereo audio outputs. It is a host-only, single-node module (maxInstances 1, ownerOnly): the rack owner adds one DOOM module, clicks its surface to download/cache the ~4 MB shareware WAD and boot the WASM, then either plays solo or hosts a true-lockstep co-op netgame that up to 3 rack-mates one-click hot-join (4 marines total — the owner is player 1) — every peer runs its own runtime and the deterministic tic stream keeps all marines byte-identical. Play with the keyboard once the surface is focused (arrows move/turn, Ctrl/F fire, Space uses doors), or drive it from CV: the per-slot gate inputs p1..p4 act as held keypresses (movement/fire/strafe/menu) so an LFO, sequencer, or GAMEPAD can play the marine — each peer applies only its own seated slot's group (own-slot rule), and in single-player only the p1 group is live. Two extra cheat gates inject IDDQD (god mode) and IDKFA (full arsenal) on a rising edge. Game events feed the audio domain as 10 ms gate pulses — per-player weapon fire, door opens, the any-monster kill plus per-monster-type kills, and per-player deaths — so DOOM's action can trigger synths, drums, or a SCOREBOARD. The faceplate's load button, the Single Player / Host Multiplayer start choice, the guest Join button, the click-to-capture-keyboard hint, and the arbiter's New Game dialog (mode/skill/episode/map custom dropdowns + a Launch / Next Map button) are UI controls, not patchable params. There is no host framebuffer mirror — an unjoined spectator simply shows the dark attract screen until it JOINS.",
     inputs: {
       "p1_up": "Player 1 movement gate: while HIGH, holds DOOM's forward key (ArrowUp) for slot-1's marine; releases on the falling edge. Honored only by the peer in slot 1, and it is the active group in single-player.",
       "p1_down": "Player 1 gate: while HIGH, holds backward (ArrowDown) for slot 1; released when LOW. Applied only by the slot-1 peer (also the active group in single-player).",
@@ -572,46 +572,46 @@ export const doomDef: VideoModuleDef = {
       "evt_p4_dies": "Death gate: a 10 ms HIGH pulse when player 4's marine dies.",
     },
     controls: {
-      "audioGain": "Gain (0..2, linear, default 1): volume trim on the DOOM SFX -> audio_l/audio_r bus, on top of the worklet's fixed makeup gain. Rendered as the card's Volume knob and forwarded live to the PCM worklet on change.",
-      "fillMode": "Fill (0..1, discrete, default 0): output aspect fit — 0 = letterbox/pillarbox preserving DOOM's native 8:5, 1 = fill (cover-crop). Rendered as the card's OUTPUT FIT toggle, not a knob.",
-      "cv_p1_up": "Hidden synthetic param (label 'P1 UP') behind the p1_up gate input; setParam values are hysteresis edge-detected to press/release slot 1's forward key. No card row.",
-      "cv_p1_down": "Hidden synthetic param (label 'P1 DOWN') behind the p1_down gate input; edge-detected to press/release slot 1's backward key. No card row.",
-      "cv_p1_left": "Hidden synthetic param (label 'P1 LEFT') behind the p1_left gate input; edge-detected to press/release slot 1's turn-left key. No card row.",
-      "cv_p1_right": "Hidden synthetic param (label 'P1 RIGHT') behind the p1_right gate input; edge-detected to press/release slot 1's turn-right key. No card row.",
-      "cv_p1_space": "Hidden synthetic param (label 'P1 SPACE') behind the p1_space gate input; edge-detected to press/release slot 1's USE key. No card row.",
-      "cv_p1_ctrl": "Hidden synthetic param (label 'P1 CTRL') behind the p1_ctrl gate input; edge-detected to press/release slot 1's FIRE key. No card row.",
-      "cv_p1_alt": "Hidden synthetic param (label 'P1 ALT') behind the p1_alt gate input; edge-detected to press/release slot 1's strafe modifier. No card row.",
-      "cv_p1_esc": "Hidden synthetic param (label 'P1 ESC') behind the p1_esc gate input; edge-detected to press/release slot 1's ESC (menu) key. No card row.",
-      "cv_p1_enter": "Hidden synthetic param (label 'P1 ENTER') behind the p1_enter gate input; edge-detected to press/release slot 1's ENTER key. No card row.",
-      "cv_p2_up": "Hidden synthetic param (label 'P2 UP') behind the p2_up gate input; edge-detected to press/release slot 2's forward key. No card row.",
-      "cv_p2_down": "Hidden synthetic param (label 'P2 DOWN') behind the p2_down gate input; edge-detected to press/release slot 2's backward key. No card row.",
-      "cv_p2_left": "Hidden synthetic param (label 'P2 LEFT') behind the p2_left gate input; edge-detected to press/release slot 2's turn-left key. No card row.",
-      "cv_p2_right": "Hidden synthetic param (label 'P2 RIGHT') behind the p2_right gate input; edge-detected to press/release slot 2's turn-right key. No card row.",
-      "cv_p2_space": "Hidden synthetic param (label 'P2 SPACE') behind the p2_space gate input; edge-detected to press/release slot 2's USE key. No card row.",
-      "cv_p2_ctrl": "Hidden synthetic param (label 'P2 CTRL') behind the p2_ctrl gate input; edge-detected to press/release slot 2's FIRE key. No card row.",
-      "cv_p2_alt": "Hidden synthetic param (label 'P2 ALT') behind the p2_alt gate input; edge-detected to press/release slot 2's strafe modifier. No card row.",
-      "cv_p2_esc": "Hidden synthetic param (label 'P2 ESC') behind the p2_esc gate input; edge-detected to press/release slot 2's ESC (menu) key. No card row.",
-      "cv_p2_enter": "Hidden synthetic param (label 'P2 ENTER') behind the p2_enter gate input; edge-detected to press/release slot 2's ENTER key. No card row.",
-      "cv_p3_up": "Hidden synthetic param (label 'P3 UP') behind the p3_up gate input; edge-detected to press/release slot 3's forward key. No card row.",
-      "cv_p3_down": "Hidden synthetic param (label 'P3 DOWN') behind the p3_down gate input; edge-detected to press/release slot 3's backward key. No card row.",
-      "cv_p3_left": "Hidden synthetic param (label 'P3 LEFT') behind the p3_left gate input; edge-detected to press/release slot 3's turn-left key. No card row.",
-      "cv_p3_right": "Hidden synthetic param (label 'P3 RIGHT') behind the p3_right gate input; edge-detected to press/release slot 3's turn-right key. No card row.",
-      "cv_p3_space": "Hidden synthetic param (label 'P3 SPACE') behind the p3_space gate input; edge-detected to press/release slot 3's USE key. No card row.",
-      "cv_p3_ctrl": "Hidden synthetic param (label 'P3 CTRL') behind the p3_ctrl gate input; edge-detected to press/release slot 3's FIRE key. No card row.",
-      "cv_p3_alt": "Hidden synthetic param (label 'P3 ALT') behind the p3_alt gate input; edge-detected to press/release slot 3's strafe modifier. No card row.",
-      "cv_p3_esc": "Hidden synthetic param (label 'P3 ESC') behind the p3_esc gate input; edge-detected to press/release slot 3's ESC (menu) key. No card row.",
-      "cv_p3_enter": "Hidden synthetic param (label 'P3 ENTER') behind the p3_enter gate input; edge-detected to press/release slot 3's ENTER key. No card row.",
-      "cv_p4_up": "Hidden synthetic param (label 'P4 UP') behind the p4_up gate input; edge-detected to press/release slot 4's forward key. No card row.",
-      "cv_p4_down": "Hidden synthetic param (label 'P4 DOWN') behind the p4_down gate input; edge-detected to press/release slot 4's backward key. No card row.",
-      "cv_p4_left": "Hidden synthetic param (label 'P4 LEFT') behind the p4_left gate input; edge-detected to press/release slot 4's turn-left key. No card row.",
-      "cv_p4_right": "Hidden synthetic param (label 'P4 RIGHT') behind the p4_right gate input; edge-detected to press/release slot 4's turn-right key. No card row.",
-      "cv_p4_space": "Hidden synthetic param (label 'P4 SPACE') behind the p4_space gate input; edge-detected to press/release slot 4's USE key. No card row.",
-      "cv_p4_ctrl": "Hidden synthetic param (label 'P4 CTRL') behind the p4_ctrl gate input; edge-detected to press/release slot 4's FIRE key. No card row.",
-      "cv_p4_alt": "Hidden synthetic param (label 'P4 ALT') behind the p4_alt gate input; edge-detected to press/release slot 4's strafe modifier. No card row.",
-      "cv_p4_esc": "Hidden synthetic param (label 'P4 ESC') behind the p4_esc gate input; edge-detected to press/release slot 4's ESC (menu) key. No card row.",
-      "cv_p4_enter": "Hidden synthetic param (label 'P4 ENTER') behind the p4_enter gate input; edge-detected to press/release slot 4's ENTER key. No card row.",
-      "cv_iddqd_in": "Hidden synthetic param (label 'IDDQD') behind the iddqd_in cheat gate; a rising-edge setParam injects the 'iddqd' god-mode keypress sequence into the WASM. One-shot, hidden from the card.",
-      "cv_idkfa_in": "Hidden synthetic param (label 'IDKFA') behind the idkfa_in cheat gate; a rising-edge setParam injects the 'idkfa' (all keys/weapons/ammo) keypress sequence. One-shot, hidden from the card.",
+      "audioGain": "Gain (0..2, linear, default 1): volume trim on the DOOM SFX -> audio_l/audio_r bus, on top of the worklet's fixed makeup gain. Rendered as the faceplate's Volume knob and forwarded live to the PCM worklet on change.",
+      "fillMode": "Fill (0..1, discrete, default 0): output aspect fit — 0 = letterbox/pillarbox preserving DOOM's native 8:5, 1 = fill (cover-crop). Rendered as the faceplate's OUTPUT FIT toggle, not a knob.",
+      "cv_p1_up": "Hidden synthetic param (label 'P1 UP') behind the p1_up gate input; setParam values are hysteresis edge-detected to press/release slot 1's forward key. No faceplate row.",
+      "cv_p1_down": "Hidden synthetic param (label 'P1 DOWN') behind the p1_down gate input; edge-detected to press/release slot 1's backward key. No faceplate row.",
+      "cv_p1_left": "Hidden synthetic param (label 'P1 LEFT') behind the p1_left gate input; edge-detected to press/release slot 1's turn-left key. No faceplate row.",
+      "cv_p1_right": "Hidden synthetic param (label 'P1 RIGHT') behind the p1_right gate input; edge-detected to press/release slot 1's turn-right key. No faceplate row.",
+      "cv_p1_space": "Hidden synthetic param (label 'P1 SPACE') behind the p1_space gate input; edge-detected to press/release slot 1's USE key. No faceplate row.",
+      "cv_p1_ctrl": "Hidden synthetic param (label 'P1 CTRL') behind the p1_ctrl gate input; edge-detected to press/release slot 1's FIRE key. No faceplate row.",
+      "cv_p1_alt": "Hidden synthetic param (label 'P1 ALT') behind the p1_alt gate input; edge-detected to press/release slot 1's strafe modifier. No faceplate row.",
+      "cv_p1_esc": "Hidden synthetic param (label 'P1 ESC') behind the p1_esc gate input; edge-detected to press/release slot 1's ESC (menu) key. No faceplate row.",
+      "cv_p1_enter": "Hidden synthetic param (label 'P1 ENTER') behind the p1_enter gate input; edge-detected to press/release slot 1's ENTER key. No faceplate row.",
+      "cv_p2_up": "Hidden synthetic param (label 'P2 UP') behind the p2_up gate input; edge-detected to press/release slot 2's forward key. No faceplate row.",
+      "cv_p2_down": "Hidden synthetic param (label 'P2 DOWN') behind the p2_down gate input; edge-detected to press/release slot 2's backward key. No faceplate row.",
+      "cv_p2_left": "Hidden synthetic param (label 'P2 LEFT') behind the p2_left gate input; edge-detected to press/release slot 2's turn-left key. No faceplate row.",
+      "cv_p2_right": "Hidden synthetic param (label 'P2 RIGHT') behind the p2_right gate input; edge-detected to press/release slot 2's turn-right key. No faceplate row.",
+      "cv_p2_space": "Hidden synthetic param (label 'P2 SPACE') behind the p2_space gate input; edge-detected to press/release slot 2's USE key. No faceplate row.",
+      "cv_p2_ctrl": "Hidden synthetic param (label 'P2 CTRL') behind the p2_ctrl gate input; edge-detected to press/release slot 2's FIRE key. No faceplate row.",
+      "cv_p2_alt": "Hidden synthetic param (label 'P2 ALT') behind the p2_alt gate input; edge-detected to press/release slot 2's strafe modifier. No faceplate row.",
+      "cv_p2_esc": "Hidden synthetic param (label 'P2 ESC') behind the p2_esc gate input; edge-detected to press/release slot 2's ESC (menu) key. No faceplate row.",
+      "cv_p2_enter": "Hidden synthetic param (label 'P2 ENTER') behind the p2_enter gate input; edge-detected to press/release slot 2's ENTER key. No faceplate row.",
+      "cv_p3_up": "Hidden synthetic param (label 'P3 UP') behind the p3_up gate input; edge-detected to press/release slot 3's forward key. No faceplate row.",
+      "cv_p3_down": "Hidden synthetic param (label 'P3 DOWN') behind the p3_down gate input; edge-detected to press/release slot 3's backward key. No faceplate row.",
+      "cv_p3_left": "Hidden synthetic param (label 'P3 LEFT') behind the p3_left gate input; edge-detected to press/release slot 3's turn-left key. No faceplate row.",
+      "cv_p3_right": "Hidden synthetic param (label 'P3 RIGHT') behind the p3_right gate input; edge-detected to press/release slot 3's turn-right key. No faceplate row.",
+      "cv_p3_space": "Hidden synthetic param (label 'P3 SPACE') behind the p3_space gate input; edge-detected to press/release slot 3's USE key. No faceplate row.",
+      "cv_p3_ctrl": "Hidden synthetic param (label 'P3 CTRL') behind the p3_ctrl gate input; edge-detected to press/release slot 3's FIRE key. No faceplate row.",
+      "cv_p3_alt": "Hidden synthetic param (label 'P3 ALT') behind the p3_alt gate input; edge-detected to press/release slot 3's strafe modifier. No faceplate row.",
+      "cv_p3_esc": "Hidden synthetic param (label 'P3 ESC') behind the p3_esc gate input; edge-detected to press/release slot 3's ESC (menu) key. No faceplate row.",
+      "cv_p3_enter": "Hidden synthetic param (label 'P3 ENTER') behind the p3_enter gate input; edge-detected to press/release slot 3's ENTER key. No faceplate row.",
+      "cv_p4_up": "Hidden synthetic param (label 'P4 UP') behind the p4_up gate input; edge-detected to press/release slot 4's forward key. No faceplate row.",
+      "cv_p4_down": "Hidden synthetic param (label 'P4 DOWN') behind the p4_down gate input; edge-detected to press/release slot 4's backward key. No faceplate row.",
+      "cv_p4_left": "Hidden synthetic param (label 'P4 LEFT') behind the p4_left gate input; edge-detected to press/release slot 4's turn-left key. No faceplate row.",
+      "cv_p4_right": "Hidden synthetic param (label 'P4 RIGHT') behind the p4_right gate input; edge-detected to press/release slot 4's turn-right key. No faceplate row.",
+      "cv_p4_space": "Hidden synthetic param (label 'P4 SPACE') behind the p4_space gate input; edge-detected to press/release slot 4's USE key. No faceplate row.",
+      "cv_p4_ctrl": "Hidden synthetic param (label 'P4 CTRL') behind the p4_ctrl gate input; edge-detected to press/release slot 4's FIRE key. No faceplate row.",
+      "cv_p4_alt": "Hidden synthetic param (label 'P4 ALT') behind the p4_alt gate input; edge-detected to press/release slot 4's strafe modifier. No faceplate row.",
+      "cv_p4_esc": "Hidden synthetic param (label 'P4 ESC') behind the p4_esc gate input; edge-detected to press/release slot 4's ESC (menu) key. No faceplate row.",
+      "cv_p4_enter": "Hidden synthetic param (label 'P4 ENTER') behind the p4_enter gate input; edge-detected to press/release slot 4's ENTER key. No faceplate row.",
+      "cv_iddqd_in": "Hidden synthetic param (label 'IDDQD') behind the iddqd_in cheat gate; a rising-edge setParam injects the 'iddqd' god-mode keypress sequence into the WASM. One-shot, hidden from the faceplate.",
+      "cv_idkfa_in": "Hidden synthetic param (label 'IDKFA') behind the idkfa_in cheat gate; a rising-edge setParam injects the 'idkfa' (all keys/weapons/ammo) keypress sequence. One-shot, hidden from the faceplate.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -665,7 +665,7 @@ export const doomDef: VideoModuleDef = {
     let loadPending: Promise<string | null> | null = null;
     let hasFrame = false;
     let lastTicMs = performance.now();
-    // Bug 4: cached keyboard-inert state. The card may flip this (CV gate
+    // Bug 4: cached keyboard-inert state. The surface may flip this (CV gate
     // patched) before the WASM finishes loading, so we hold it here and apply
     // it to the runtime the instant it comes up (and on every later flip).
     let keyboardInert = false;
@@ -699,7 +699,7 @@ export const doomDef: VideoModuleDef = {
      *  delayed key-up for each char in the sequence, spaced
      *  CHEAT_CHAR_INTERVAL_MS apart. Uses `runtime.setKey` directly (NOT
      *  `setKeyForKeyboardCode`) so the injection bypasses the keyboard-inert
-     *  gate — a CV-patched card has its keyboard inert, but a CV-triggered
+     *  gate — a CV-patched module has its keyboard inert, but a CV-triggered
      *  cheat is still expected to take effect. Idempotent against a missing
      *  runtime (no-op until WASM loads). */
     function injectCheat(name: DoomCheatName): void {
@@ -731,7 +731,7 @@ export const doomDef: VideoModuleDef = {
     // ignored locally — those slots arrive only as the consolidated, byte-
     // identical log entries every peer replays. This is what makes per-player CV
     // deterministic + lockstep-safe (no per-peer fan-out, no divergence → no
-    // freeze). The card sets it via extras.setOwnSlot(mySlot); a spectator/
+    // freeze). The surface sets it via extras.setOwnSlot(mySlot); a spectator/
     // unseated peer leaves it null so NO slot's CV drives the local sim.
     let ownSlot: number | null = null;
 
@@ -976,7 +976,7 @@ export const doomDef: VideoModuleDef = {
           return loadError;
         }
         runtime = rt;
-        // Re-apply any keyboard-inert state the card set while WASM was still
+        // Re-apply any keyboard-inert state the surface set while WASM was still
         // loading (a CV gate patched during load must keep the keyboard off).
         rt.setKeyboardInert(keyboardInert);
         loaded = true;
@@ -1004,8 +1004,8 @@ export const doomDef: VideoModuleDef = {
 
     function snapshotFramebuffer(): Uint8ClampedArray | null {
       if (!runtime || !runtime.isInitialized()) return null;
-      // Local-only read for the card's 2D preview blit. The view is into live
-      // HEAPU8 — the card swaps the bytes into ImageData synchronously.
+      // Local-only read for the surface's 2D preview blit. The view is into live
+      // HEAPU8 — the surface swaps the bytes into ImageData synchronously.
       return runtime.getFramebuffer();
     }
 

@@ -59,7 +59,15 @@ import { perPortDriverFor } from './_per-port-drivers';
 // io-spec-consistency.spec.ts SKIP_DEF_VS_UI). For these we skip ALL three dims —
 // the dedicated specs at the cited paths cover their I/O.
 export const SKIP_SPAWN: Record<string, string> = {
-  group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
+  // ⚠ THE `group` ROW IS GONE WITH ITS MODULE (owner ruling: group and sticky
+  // are deleted entirely). It skipped the sweep because a bare spawnPatch of a
+  // GROUP! rendered no flow card without `data.children`, and cited the
+  // grouping phase-1 spec as its coverage. Both halves are now false: the
+  // module is unregistered so the sweep never reaches it, and the spec it
+  // cited is deleted too. The cited filename is deliberately NOT repeated
+  // here — `exemption-coverage-anchors.test.ts` scans this file for spec
+  // names and reds on any that is not in the tree, which is exactly the
+  // check that caught this row.
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
 
@@ -308,6 +316,55 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
+  // ── CAMERAINPUT.out — a DEVICE port with no device, and the sweep only
+  // started saying so when it stopped reading surrounding chrome.
+  //
+  // MEASURED 2026-09-04, CAMERAINPUT -> VIDEOOUT.in, the same patch on the two
+  // surfaces that existed then. The sink's picture is the videoOut IDLE
+  // gradient in both cases: faceplate tile mean 18.95 / variance 1.50 (idle is
+  // 18.95 / 1.50); the retired surface's canvas mean 16.93 / variance 22.82 (an
+  // UNPATCHED videoOut read 22.82 there). Nothing arrived on EITHER surface —
+  // the port has never emitted in this fixture. It was green because the old
+  // floors (`nonBlackFrac > 0.001`, `variance > 0.5`) are cleared by an
+  // unpatched videoOut; see the sweep's video branch for that measurement.
+  //
+  // Chromium runs with `--use-fake-device-for-media-stream`, so a stream is
+  // AVAILABLE — but nothing in a bare spawn asks for one. Camera capture starts
+  // from a user gesture, which is what `camera-input.spec.ts` drives.
+  // Handle-presence + input-accept still pin the port here.
+  'cameraInput.out': 'a camera device port on a bare spawn: nothing requests getUserMedia, so the sink shows its own idle picture — MEASURED identical on BOTH renderers that existed at the time (mean 16.93 against an unpatched 22.82, and 18.95/1.50 against an idle 18.95/1.50), i.e. this port never emitted here and the old floors passed on videoOut idle. Real coverage: camera-input.spec.ts drives the gesture that starts capture',
+  // ── MANDLEBLOT.color_out — the RGB palette output is BLACK at default params.
+  // MEASURED 2026-09-04 with the same patch on both renderers: the older
+  // canvas read nonBlackFrac 0.1612 / mean 1.02 (it cleared `> 0.001` by being
+  // a hair above pure black, in a canvas whose variance came from its chrome),
+  // and the shell tile reads 0.0000 / mean 0.00 — and so does MANDLEBLOT's OWN
+  // tile, so this is the module rendering nothing, not the bridge dropping it.
+  // `mono_out` (the greyscale escape-time field) emits normally from the same
+  // iteration loop and is NOT exempt, which is what keeps the module's emit
+  // test meaningful. Fixing the palette at default params is a module change,
+  // not a sweep change.
+  // ── LOOPBACK.out — a VIEWPORT-CAPTURE port with no capture, and the port
+  // this branch's new differential floor found rather than caused.
+  //
+  // `getDisplayMedia` is refused outside a user activation and, unlike
+  // `getUserMedia`, has NO previously-granted state — the controller's own
+  // header says a call from an effect is refused ALWAYS, so a bare spawn can
+  // never start a capture. What the node emits here is the no-capture
+  // placeholder frame, and its ARRIVAL is not deterministic: MEASURED
+  // 2026-09-05 on darwin, this port failed the differential on 2 of 4 runs at
+  // the 8 s poll and passed on the other 2, with the sink reading identical to
+  // its own idle (delta 0 of 192 cells) when it failed. Scaling the CI bound
+  // does not touch that — it is a coin flip on a fast local machine too.
+  //
+  // ⚠ THE COVERAGE MOVES RATHER THAN GOES. `loopback-shell-source.spec.ts`
+  // stubs `getDisplayMedia`, drives the REAL capture gesture through the face,
+  // and then steps the engine SYNCHRONOUSLY with the rAF loop paused —
+  // `stepAndReadStats(FIXED_STEPS)` + `assertRenderStats` — so its claim is
+  // renderer-independent BY CONSTRUCTION rather than by a poll that has to be
+  // lucky. That is the stronger instrument for the same question, and it is
+  // the one to extend if this port's placeholder ever needs pinning.
+  'loopback.out': 'a viewport-capture port on a bare spawn: getDisplayMedia is refused outside a user activation and has no already-granted state, so no capture ever starts here and only the no-capture placeholder can arrive — MEASURED nondeterministic, 2 of 4 local runs read delta 0 of 192 cells against the sink idle at the 8 s poll. Real coverage: loopback-shell-source.spec.ts drives the stubbed gesture and asserts render stats over FIXED_STEPS with the rAF loop paused',
+  'mandleblot.color_out': 'the RGB-palette output renders black at default params — MEASURED: own tile 0.0000 nonBlack, sink 0.0000, and 0.1612/mean 1.02 on the surface the lane mounted before the faceplate (which is why the 0.001 floor passed). mono_out from the SAME iteration loop still emits and is not exempt',
   // ── CLIPPLAYER audio{N}L/R (slice 5): recorded-audio-clip playback. A
   // lane's audio pair emits only while that lane PLAYS AN AUDIO CLIP, and an
   // audio clip exists only after a real take (OPFS media + an
@@ -560,15 +617,13 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // crash (and an eat) via the controller's _forceCrash / _forceEaten hooks
   // and asserts the gate pulse reaches a downstream SCOPE.
   //
-  // ⚠ THAT SENTENCE WAS TRUE AND SAID NOTHING ABOUT THE SHIPPING SURFACE, and
-  // the `why` strings below now say so. `skifree.spec.ts` boots
-  // `/rack?shell=legacy`, so until #2192 moved the game onto the NODE the cited
-  // coverage existed only on a shell no player meets — and the hooks it drives
-  // were the CARD's controller. Both halves are now node-owned, and
-  // `skifree-face.spec.ts` asserts the same gate → SCOPE path on the DEFAULT
-  // shell with the screen switched OFF, which is the state the sweep's own
-  // exemption is really about.
-  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE, ?shell=legacy) AND e2e/tests/skifree-face.spec.ts (the same path on the DEFAULT shell, with SCREEN OFF)',
+  // ⚠ THAT SENTENCE SAID NOTHING ABOUT THE SURFACE THE HOOKS BELONG TO, and
+  // the `why` strings below now say so. #2192 moved the game — and the
+  // `_forceCrash` / `_forceEaten` hooks the spec drives — onto the NODE, so
+  // both halves are node-owned rather than owned by a mounted surface.
+  // `skifree-face.spec.ts` asserts the same gate → SCOPE path with the screen
+  // switched OFF, which is the state the sweep's own exemption is really about.
+  'skifree.gate': 'fires only on in-game crash/eaten event; covered by e2e/tests/skifree.spec.ts (_forceCrash/_forceEaten → gate → SCOPE) AND e2e/tests/skifree-face.spec.ts (the same path with SCREEN OFF)',
   'skifree.out':  'animated game canvas (rAF self-driven, no still frame); covered by e2e/tests/skifree.spec.ts + skifree.test.ts (CV→cursor + gate hook) + skifree-face.spec.ts (the surfaces that blit it)',
   // ── GIBRIBBON gameplay-conditional gates: evt_hit/miss/fire/kill/gameover
   // fire only on an in-game judgement (a correct ABXY press clears an event /
@@ -677,6 +732,9 @@ export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
 // 'timelorde.1/8').
 export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'buggles.burst', 'buggles.clock',
+  // A device port with no device — see EXEMPT_OUTPUT_EMIT for the both-shells
+  // measurement showing it never emitted here on EITHER surface.
+  'cameraInput.out',
   // clipplayer audio{N}L/R (slice 5) — ONE structural exemption in 16
   // spellings: recorded-take playback, undrivable in a fixture whose lanes
   // already play the note clips the other 24 ports need. ⚠ Its end-to-end leg
@@ -701,7 +759,20 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'gibribbon.evt_fire', 'gibribbon.evt_gameover', 'gibribbon.evt_hit',
   'gibribbon.evt_kill', 'gibribbon.evt_miss', 'gibribbon.health_cv',
   'illogic.and', 'illogic.nand', 'illogic.not', 'illogic.or',
+  // ⚠ ADDED 2026-09-05, AND THIS ARRAY IS WHERE IT GETS REVIEWED. A
+  // viewport-capture port with no capture: `getDisplayMedia` is refused
+  // outside a user activation and has NO already-granted state, so a bare
+  // spawn can never start one and only the no-capture placeholder arrives.
+  // MEASURED nondeterministic — 2 of 4 local runs read delta 0 of 192 cells
+  // against the sink's own idle — so no CI bound fixes it. The coverage MOVES
+  // to `loopback-shell-source.spec.ts`, which drives the stubbed gesture and
+  // asserts render stats over FIXED_STEPS with the rAF loop paused, i.e.
+  // renderer-independent by construction. Full reasoning at the
+  // EXEMPT_OUTPUT_EMIT entry.
+  'loopback.out',
   'mandelbulb.audio_out',
+  // Black at default params — see EXEMPT_OUTPUT_EMIT.
+  'mandleblot.color_out',
   'midiLane.note_gate', 'midiLane.poly',
   // ('moog904a.audio' was here until 2026-09-04. It parked the module's ONLY
   // output, so it parked the whole emit case. UN-PARKED by the mono-fanout fix
@@ -1474,9 +1545,11 @@ export function emitBudgetMs(mod: RegistryModule): number {
   //   PR #1983 (freezeframe.ts PRE-#1971):  20.6 21.9 23.9 24.2 ~24.8 s  (mean 23.1)
   //   PR #1969 (freezeframe.ts POST-#1971): 22.7 24.2 22.2 22.7 ~24.0 s  (mean 23.2)
   //
-  // Same cost either side, so #1971 is not implicated: its 19 deleted lines are
-  // all inside the def's `face:` object (a `hero.readouts` pair), and this sweep
-  // navigates to `?shell=legacy`, which does not render a faceplate at all.
+  // Same cost either side, so #1971 is not implicated — the two-sided
+  // measurement is the whole argument, and it does not depend on which surface
+  // mounts. (Its 19 deleted lines are all inside the def's `face:` object, a
+  // `hero.readouts` pair; the sweep does render faceplates, and still measured
+  // the same mean.)
   //
   // In both, the test needed ~116 s against a 115 s budget and expired on the
   // FIFTH of five iterations. NOT a hang — no step stalled in either trace, and

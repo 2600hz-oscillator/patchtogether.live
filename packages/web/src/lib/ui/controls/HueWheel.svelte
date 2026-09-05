@@ -102,7 +102,11 @@
 
   function onPointerDown(e: PointerEvent): void {
     dragging = true;
-    wheelEl?.setPointerCapture(e.pointerId);
+    // Guarded for the same reason `controls/Button.svelte` is: a capture that
+    // throws must not take the gesture with it. The call sits BEFORE the write
+    // below, so an unguarded throw leaves `dragging` true and the pointer's own
+    // position never applied — the control looks grabbed and does nothing.
+    try { wheelEl?.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
     commit(e);
   }
   function onPointerMove(e: PointerEvent): void {

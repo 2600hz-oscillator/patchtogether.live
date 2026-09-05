@@ -1,17 +1,71 @@
 <script lang="ts">
   // VirtualModule — the LEFT column of the interactive doc page: a REAL, live
-  // module card you can hover + open patch panels on. Because it renders the
-  // ACTUAL card component (via the glob card-map), any faceplate change shows up
-  // here automatically — no screenshot to regenerate.
+  // module FACEPLATE you can hover + open patch panels on. Because it renders
+  // the ACTUAL `<ModuleShell>` the rack renders, fed the same
+  // `{ id, data: { node } }` shape, any face change shows up here
+  // automatically — no screenshot to regenerate.
   //
-  // CLIENT-ONLY. xyflow + the cards touch `window` on mount, and prerender must
-  // never execute them, so the page mounts this only behind `{#if browser}` /
-  // onMount. The card map + SvelteFlow are loaded with a DYNAMIC import in
-  // onMount so the prerender server bundle never pulls the client card code.
+  // ⚠ IT USED TO MOUNT THE LEGACY CARD (`buildNodeTypes` off the glob card-map)
+  // INSIDE A ONE-NODE `<SvelteFlow>`, and BOTH halves of that had to go. The
+  // card-map is being deleted with the fleet, so the doc page needed a face
+  // path either way; the flow wrapper existed only to give the card's
+  // `PatchPanel` a `useStore()`, and it is now actively WRONG for a face:
+  // `_module-card.css` pins `.svelte-flow__node > .module-shell` to a fixed
+  // `--shell-tile-w`/`--shell-tile-h` (192×180) box with `overflow: hidden`, so
+  // a faceplate mounted as a flow node would be CLIPPED to a lane tile — and
+  // the doc page's whole job is that every control is present to hover.
   //
-  // SANDBOX ISOLATION (hard constraint #1 — cards write the GLOBAL patch/ydoc):
-  //   The cards mutate the singleton `patch`/`ydoc` (graph/store + mutate.ts).
-  //   A naive mount would scribble on the user's real rack. So on mount we
+  // WHAT REPLACES IT is not a new host but an EXISTING, shipped one:
+  // `DockCardHost` already mounts `<ModuleShell view='drawer'>` as a plain
+  // child OUTSIDE the SvelteFlow provider, and `PatchPanel` self-gates there
+  // (its `useStore()` capture is guarded — see its DOCK GATE). Everything this
+  // page needs survives that gate: the `patch-trigger`, the portaled drill-down
+  // chrome, and the `data-port-id`/`data-direction` port rows the hover action
+  // resolves against. The only thing the gate drops is the `<Handle>` stack,
+  // which is a CABLE ANCHOR — and a doc page has no cables.
+  //
+  // WHY `view='drawer'` AND NOT `'dock-full'` OR `'lane'`, all three of which
+  // render a face:
+  //   * 'lane'      is the tile view: `curatedFace` applies the LANE TIER CAP
+  //                 and paints the top-N ranked controls only. MEASURED on
+  //                 cloudseed at this host: SIX controls under 'lane' against
+  //                 FORTY-SIX under 'drawer'. Forty of the module's controls
+  //                 would be undocumentable on its own documentation page.
+  //   * 'dock-full' is the full faceplate but drops the jack rail entirely
+  //                 (`jackRail = view !== 'dock-full'`), because DockFullView
+  //                 owns a better patch surface. There is no such surface here,
+  //                 so the port half of this page would simply vanish.
+  //   * 'drawer'    is the full faceplate PLUS the lane `PatchPanel` — and it
+  //                 is ALSO the one view `dockTabPlan` refuses to tab
+  //                 (`if (view === 'drawer') return null`), so a tabbed face
+  //                 renders EVERY band visibly as one scrolling column instead
+  //                 of hiding 7 of its 8 pages behind a rail this page paints
+  //                 no buttons for. Both properties are load-bearing here.
+  //
+  // CLIENT-ONLY. The shell touches `window` on mount and prerender must never
+  // execute it, so the page mounts this only behind `{#if browser}` / onMount,
+  // and the shell + the module registries are loaded with a DYNAMIC import in
+  // onMount so the prerender server bundle never pulls the client graph. (The
+  // registries in particular resolve worklet/wasm `?url` assets — the reason
+  // `module-manifest.ts` parses def SOURCE instead of importing them.)
+  //
+  // ⚠ THE REGISTRATION BARRELS ARE IMPORTED HERE, AND NOTHING ELSE ON THIS
+  // ROUTE WOULD DO IT. `ModuleShell` calls `getModuleDef`/`getVideoModuleDef`/
+  // `getMetaModuleDef` but imports no barrel; on the rack it is `Canvas.svelte`
+  // that does the `import '$lib/audio/modules'` side-effect registration. There
+  // is no Canvas on /docs, so without these three imports every lookup returns
+  // `undefined`, `curatedFace(undefined)` is never called, and the page paints
+  // a faceplate FRAME WITH ZERO CONTROLS — a surface that looks plausible and
+  // explains nothing. See `faceUnavailable` for the guard that makes that
+  // failure name itself instead of timing out on whichever control a probe
+  // happened to pick.
+  //
+  // SANDBOX ISOLATION (hard constraint #1 — the shell writes the GLOBAL
+  // patch/ydoc):
+  //   Faces mutate the singleton `patch`/`ydoc` (graph/store + mutate.ts)
+  //   through the same `cardParams`/`shellParamWrite` seams the cards used —
+  //   the swap does not change this constraint one bit. A naive mount would
+  //   scribble on the user's real rack. So on mount we
   //   `bindRackspace(<throwaway sandbox id>)` — which creates a FRESH, LOCAL
   //   Y.Doc and is provably local-only: bindRackspace does NOT attach the
   //   Hocuspocus relay/provider (that is a SEPARATE attachProvider call made
@@ -23,13 +77,6 @@
   //   We are on a docs route: no real rack is mounted in this JS context (you
   //   left it to navigate here), so rebinding is safe — the real rack's doc is
   //   only live while the rack page is mounted.
-  //
-  // SvelteFlow context (hard constraint #2 — PatchPanel needs useStore()):
-  //   We render the card INSIDE a minimal one-node `<SvelteFlow>`. That gives
-  //   PatchPanel's `useStore()` a real flow store and lets SvelteFlow own the
-  //   node render + handle measurement exactly as on the canvas, so panels open
-  //   and ports get their `data-port-id`/`data-direction` attrs the hover action
-  //   resolves against.
 
   import { onMount, onDestroy } from 'svelte';
   import {
@@ -45,12 +92,10 @@
   import type { ModuleNode } from '$lib/graph/types';
   import type { DocIndex } from '$lib/docs/doc-index';
   import { docHover, type DocHoverState } from './use-doc-hover.svelte';
-  import NodeMeasureGuard from './NodeMeasureGuard.svelte';
 
   interface DefLike {
     type: string;
     domain?: string;
-    card?: string;
     params?: { id: string; defaultValue: number | null }[];
   }
 
@@ -61,17 +106,21 @@
     docIndex: DocIndex;
     /** Reactive hover state (shared with the page's DocHoverPane). */
     hoverState: DocHoverState;
-    /** Minimal def info (params + card override) from the server load —
-     *  prerender-safe (no live-registry import). */
+    /** Minimal def info (params) from the server load — prerender-safe (no
+     *  live-registry import). Seeds the sandbox node's stored param values; the
+     *  face itself reads the LIVE def, resolved client-side in onMount. */
     def: DefLike;
   }
 
   let { type, docIndex, hoverState, def }: Props = $props();
 
-  // Provide a NULL engine: cards read AudioParams via useEngine().get(); a null
-  // engine makes readLive() a no-op (faders fall back to their stored value) and
-  // the worklet/wasm factory never fires (it needs ensureEngine()). So the card
-  // renders + is interactive with zero audio.
+  // Provide a NULL engine: face cells read AudioParams via useEngine().get(); a
+  // null engine makes readLive() a no-op (faders fall back to their stored
+  // value) and the worklet/wasm factory never fires (it needs ensureEngine()).
+  // So the faceplate renders + is interactive with zero audio. Action cells
+  // resolve the engine through `getActiveEngine()`, which is null here too, and
+  // return `false` rather than throwing — the property that made the
+  // macrooscillator STRIKE button sandbox-safe on the card path.
   provideEngineContext(() => null);
 
   // ---- Sandbox bind lifecycle ------------------------------------------------
@@ -81,7 +130,6 @@
   // REMOUNTS rather than mutating this instance's `type`.
   const SANDBOX_ID = `__docs-sandbox__:${type}`;
   let prevBoundId: string | null = null;
-  let bound = $state(false);
 
   function seedSandboxNode() {
     // Defaults straight off the def's params (prerender-safe shape).
@@ -103,61 +151,119 @@
     }, LOCAL_ORIGIN);
   }
 
-  // The live node the card reads from `data.node` — re-read from the sandbox
-  // store so step grids / params that read `patch.nodes[id]` stay consistent.
+  // The live node the shell reads from `data.node` — re-read from the sandbox
+  // store so param cells that read `patch.nodes[id]` stay consistent.
   let demoNode = $state<ModuleNode | null>(null);
 
-  // ---- Card-type map (dynamic, client-only) ---------------------------------
-  let CardComponent = $state<Component | null>(null);
-  // xyflow pieces, loaded dynamically so they never touch the prerender bundle.
-  let Flow = $state<Component | null>(null);
-  let nodeTypes = $state<Record<string, Component>>({});
-  let flowNodes = $state<unknown[]>([]);
-  // The card's OWN readiness: xyflow has measured the demo node and un-hidden
-  // it. `flow-host` existing only means the dynamic import resolved — the node
-  // inside it is `visibility: hidden` until measurement lands (see
-  // NodeMeasureGuard), so anything that needs to SEE the faceplate must wait on
-  // this, not on the host. Surfaced as `data-card-ready` for e2e.
-  let cardMeasured = $state(false);
+  // ---- The shell (dynamic, client-only) -------------------------------------
+  let Shell = $state<Component | null>(null);
+  /** The live def resolved AND carrying a `face` declaration. False is a
+   *  REFUSAL, not a loading state: without it the shell paints a controlless
+   *  frame (see the registration-barrel note in the header). */
+  let faceUnavailable = $state(false);
+  // The FACEPLATE's own readiness: the shell is mounted and has a real box.
+  // `virtual-module-face` existing only means the dynamic import resolved —
+  // the historical CI failure here (run 33567352895) was a spec that waited on
+  // the host and then asserted a control that resolved for ten straight
+  // seconds without ever becoming visible. Surfaced as `data-face-ready` so a
+  // regression fails THERE, naming the faceplate, instead of downstream on
+  // whichever control the probe happened to pick.
+  let facePainted = $state(false);
+  let hostEl: HTMLDivElement | null = $state(null);
 
   onMount(() => {
     let cancelled = false;
     (async () => {
-      // Capture + swap to the throwaway sandbox BEFORE the card mounts.
+      // Capture + swap to the throwaway sandbox BEFORE the shell mounts.
       prevBoundId = getBoundRackspaceId();
       bindRackspace(SANDBOX_ID);
       seedSandboxNode();
       demoNode = patch.nodes[DEMO_ID] as ModuleNode;
 
       // Dynamic imports keep all of this out of the prerender server bundle.
-      const [{ buildNodeTypes }, { SvelteFlow }] = await Promise.all([
-        import('$lib/ui/modules-card-map'),
-        import('@xyflow/svelte'),
+      //
+      // ⚠ THE BARRELS GO FIRST, AND THE ORDER IS A CORRECTNESS REQUIREMENT,
+      // NOT A PREFERENCE. These three imports are SIDE-EFFECT ONLY — they are
+      // what POPULATES the registries the lookups below (and the shell) read.
+      // But `audio/modules/index.ts` also runs `registerAudioModules()` at
+      // module scope, and that walks `Object.entries()` over the namespace of
+      // EVERY globbed module file. Reach the barrel while one of those files
+      // is still initialising and the walk reads a binding in its temporal
+      // dead zone.
+      //
+      // That is not hypothetical: importing `ModuleShell` first threw
+      // `ReferenceError: CLOCKED_RUNNER_DEFAULT_DIVISION is not defined` from
+      // `collectAudioDefs`, because the shell's own import closure
+      // (ModuleShell → shell-cells → clocked-runner-cell-actions →
+      // audio/modules/clocked-runner → livecode/runtime) re-enters the barrel
+      // partway through `clocked-runner.ts`. `Canvas.svelte` is safe from this
+      // only because its `import '$lib/audio/modules'` sits ~200 lines ABOVE
+      // its `import ModuleShell`, so ES source order fully evaluates the
+      // barrel first. Nothing in the repo states that dependency — this route
+      // is the second entry point, and it has to honour it explicitly.
+      await Promise.all([
+        import('$lib/audio/modules'),
+        import('$lib/video/modules'),
+        import('$lib/meta/modules'),
       ]);
       if (cancelled) return;
-      const nt = buildNodeTypes([{ type: def.type, card: def.card }]);
-      CardComponent = nt[def.type] ?? null;
-      nodeTypes = nt;
-      Flow = SvelteFlow as unknown as Component;
-      flowNodes = [
-        {
-          id: DEMO_ID,
-          type: def.type,
-          position: { x: 0, y: 0 },
-          // Mirror the canvas node-prop shape: the card reads `data.node`.
-          data: { node: demoNode },
-          draggable: false,
-          selectable: false,
-          deletable: false,
-          connectable: true,
-        },
-      ];
-      bound = true;
-    })();
+      const [ModuleShellModule, audioRegistry, videoRegistry, metaRegistry] = await Promise.all([
+        import('$lib/ui/modules/ModuleShell.svelte'),
+        import('$lib/audio/module-registry'),
+        import('$lib/video/module-registry'),
+        import('$lib/meta/module-registry'),
+      ]);
+      if (cancelled) return;
+
+      const liveDef =
+        audioRegistry.getModuleDef(type) ??
+        videoRegistry.getVideoModuleDef(type) ??
+        metaRegistry.getMetaModuleDef(type);
+      // A def with no `face` makes `curatedFace` return null and the shell
+      // render zero cells — indistinguishable, on the page, from a face whose
+      // controls failed to paint. Refuse explicitly instead.
+      if (!liveDef || !(liveDef as { face?: unknown }).face) {
+        faceUnavailable = true;
+        return;
+      }
+      Shell = ModuleShellModule.default as unknown as Component;
+    })().catch((e) => {
+      // ⚠ A REJECTION HERE MUST BECOME THE REFUSAL, NOT SILENCE. Uncaught, the
+      // component simply stays on `virtual-module-loading` forever and the only
+      // evidence is a `pageerror` — which is exactly what a chunk that fails to
+      // fetch (seen live: `Failed to fetch dynamically imported module` when the
+      // dev server restarted mid-navigation) produced: a page that says
+      // "loading live module…" indefinitely, and a waiter that burns its whole
+      // timeout before failing on some unrelated control. Routing it to the
+      // refusal arm makes the failure immediate and named on the page; the
+      // console carries the cause, since the refusal text is for a reader.
+      if (cancelled) return;
+      console.error('[VirtualModule] live faceplate unavailable', e);
+      faceUnavailable = true;
+    });
 
     return () => {
       cancelled = true;
     };
+  });
+
+  // FACEPLATE PAINTED — observable state, not a timer and not a frame budget.
+  // ResizeObserver fires once on observe with the current box, so an
+  // already-laid-out shell flips this on the first callback and one that starts
+  // at 0×0 (fonts, a late extension chunk) flips it when it grows. If the shell
+  // element is somehow absent the attribute stays 'false', which is the
+  // observable a waiter should fail on.
+  $effect(() => {
+    const host = hostEl;
+    if (!host || !Shell) return;
+    const shell = host.querySelector<HTMLElement>('[data-testid="module-shell"]');
+    if (!shell) return;
+    const ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box && box.width > 0 && box.height > 0) facePainted = true;
+    });
+    ro.observe(shell);
+    return () => ro.disconnect();
   });
 
   onDestroy(() => {
@@ -193,30 +299,32 @@
   data-module-type={type}
   use:docHover={{ docIndex, state: hoverState }}
 >
-  {#if bound && Flow && CardComponent}
-    {@const FlowC = Flow}
+  {#if Shell && demoNode}
+    {@const ShellC = Shell}
+    {@const node = demoNode}
     <div
-      class="flow-host"
-      data-testid="virtual-module-flow"
-      data-card-ready={cardMeasured ? 'true' : 'false'}
+      class="face-host"
+      data-testid="virtual-module-face"
+      data-face-ready={facePainted ? 'true' : 'false'}
+      bind:this={hostEl}
     >
-      <FlowC
-        nodes={flowNodes}
-        edges={[]}
-        {nodeTypes}
-        fitView
-        colorMode="dark"
-        nodesDraggable={false}
-        nodesConnectable={true}
-        zoomOnScroll={false}
-        zoomOnDoubleClick={false}
-        panOnDrag={false}
-        panOnScroll={false}
-        preventScrolling={false}
-        proOptions={{ hideAttribution: true }}
-      >
-        <NodeMeasureGuard id={DEMO_ID} onmeasured={() => (cardMeasured = true)} />
-      </FlowC>
+      <!-- THE FACEPLATE'S BOX, and why it needs no explicit one. `.rl-tile` is
+           `width:100%; height:100%`, and a percentage resolves as `auto` for
+           its parent's intrinsic sizing — so a `width: max-content` wrapper
+           takes the faceplate's own natural width and the faceplate fills it.
+           Same construction, and the same reasoning, as `.dock-natural-sized`
+           in DockCardHost; the class is local rather than reused because a
+           docs surface should not inherit a dock rail's sizing rules by
+           name. The 150px `.rl-tile` lane floor does not apply: `dock-full`
+           (which `isFaceplateView` stamps for the drawer view too) sets
+           `min-width: 0`. -->
+      <div class="face-natural">
+        <ShellC id={DEMO_ID} data={{ node, view: 'drawer' }} />
+      </div>
+    </div>
+  {:else if faceUnavailable}
+    <div class="vm-unavailable" data-testid="virtual-module-unavailable">
+      no live faceplate for <code>{type}</code>
     </div>
   {:else}
     <div class="vm-loading" data-testid="virtual-module-loading">loading live module…</div>
@@ -227,34 +335,36 @@
   .virtual-module {
     position: relative;
   }
-  .flow-host {
-    /* Dark slate inspector backdrop — SvelteFlow's pane defaults to white,
-       which is jarring against the dark theme. */
+  .face-host {
+    /* Dark slate inspector backdrop — the faceplate is drawn for a dock pane
+       over dark chrome, and a bare docs background reads as a hole around it. */
     --vm-backdrop: #2a2d34;
     position: relative;
-    width: 100%;
-    height: 420px;
+    /* The drawer view is DESIGNED as "the one scrolling column its host can
+       actually scroll" (dock-tabs-model): a tabbed face renders every band at
+       once here, so the tall ones need somewhere to scroll. Bounded rather
+       than free-growing so the hover pane beside it stays on screen while you
+       read down the faceplate — the pane is the other half of this surface.
+       The portaled patch chrome is NOT clipped by this: it renders to <body>. */
+    min-height: 220px;
+    max-height: 70vh;
+    overflow: auto;
+    padding: 10px;
     border: 1px solid var(--doc-border-dim, #062b32);
     border-radius: 6px;
     background: var(--vm-backdrop);
-    --xy-background-color: var(--vm-backdrop);
-    overflow: hidden;
   }
-  /* Override SvelteFlow's pane background (the white that bleeds behind the
-     card) with the gray backdrop. Scoped to this component's flow-host. */
-  .flow-host :global(.svelte-flow),
-  .flow-host :global(.svelte-flow__pane) {
-    background: var(--vm-backdrop);
+  .face-natural {
+    position: relative;
+    width: max-content;
   }
-  /* Keep the card legible in the doc viewport: xyflow's fitView handles scale. */
-  .flow-host :global(.svelte-flow__attribution) {
-    display: none;
-  }
-  .vm-loading {
-    height: 420px;
+  .vm-loading,
+  .vm-unavailable {
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 0.35rem;
     color: var(--doc-fg-dim, #6e7a82);
     border: 1px dashed var(--doc-border-dim, #062b32);
     border-radius: 6px;

@@ -25,6 +25,7 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, openModulePalette } from './_helpers';
+import type { Locator } from '@playwright/test';
 
 interface PatchNode {
   id: string;
@@ -44,7 +45,7 @@ async function readSlots(page: Page, electraId: string) {
 }
 
 async function setup(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'ec-1', type: 'electraControl', position: { x: 700, y: 60 }, domain: 'meta' },
@@ -52,30 +53,52 @@ async function setup(page: Page) {
   ]);
 }
 
+/** The LANE tile's shell for a node. */
+function laneShell(page: Page, nodeId: string): Locator {
+  return page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
+}
+
+/** Open the Electra's dock faceplate — the 6×6 grid is its `fullViewBody`,
+ *  dock-only, carrying the card grid's testids verbatim (near-parity). */
+async function openGrid(page: Page, nodeId = 'ec-1'): Promise<Locator> {
+  const shell = laneShell(page, nodeId);
+  await expect(shell).toBeVisible();
+  await shell.getByTestId('shell-open-dock').click();
+  const dockShell = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
+  await expect(dockShell).toBeVisible();
+  return dockShell;
+}
+
 test('send a control to a fixed (row, knob) slot → grid renders it, label persists, proxy drives source, clear empties', async ({ page }) => {
   await setup(page);
 
-  const card = page.locator('[data-testid="electra-control-card"][data-node-id="ec-1"]');
-  await expect(card).toBeVisible();
+  // Fresh grid first: open the dock, check the deterministic empty 36 slots,
+  // then CLOSE it again — the send flyout starts on the SOURCE tile's knob in
+  // the lane, and an open drawer can intercept lane clicks.
+  {
+    const card = await openGrid(page);
+    // The "Send to Electra" action is a shell ACTION CELL on the faceplate
+    // (idle label; no MIDI on mount).
+    const sendBtn = card.locator('[data-cell-key="electra-connect-button-{n}"] button');
+    await expect(sendBtn).toBeVisible();
+    await expect(sendBtn).toHaveText(/Send to Electra/);
+    // The fixed 36-slot grid is always present, grouped into 3 banks.
+    await expect(card.locator('[data-testid="electra-control-bank-TOP"]')).toBeVisible();
+    await expect(card.locator('[data-testid="electra-control-bank-MID"]')).toBeVisible();
+    await expect(card.locator('[data-testid="electra-control-bank-BOT"]')).toBeVisible();
+    await expect(card.locator('[data-testid^="electra-control-slot-"]')).toHaveCount(36);
+    await expect(card.locator('[data-testid^="electra-control-slot-"][data-filled="true"]')).toHaveCount(0);
+    await expect(card.locator('[data-testid="electra-control-slot-2-2"]')).toHaveAttribute('data-filled', 'false');
+    await page.keyboard.press('Escape'); // close the full view (the dock's own ESC semantics)
+    await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
+  }
 
-  // The "Send to Electra" action lives ON the card now (moved off the topbar).
-  // It renders inside THIS card and shows its idle label (no MIDI on mount).
-  const sendBtn = card.locator('[data-testid="electra-connect-button"]');
-  await expect(sendBtn).toBeVisible();
-  await expect(sendBtn).toHaveText(/Send to Electra/);
-
-  // The fixed 36-slot grid is always present, grouped into 3 banks.
-  await expect(card.locator('[data-testid="electra-control-bank-TOP"]')).toBeVisible();
-  await expect(card.locator('[data-testid="electra-control-bank-MID"]')).toBeVisible();
-  await expect(card.locator('[data-testid="electra-control-bank-BOT"]')).toBeVisible();
-  await expect(card.locator('[data-testid^="electra-control-slot-"]')).toHaveCount(36);
-  // All 36 slots are empty on a fresh ElectraControl.
-  await expect(card.locator('[data-testid^="electra-control-slot-"][data-filled="true"]')).toHaveCount(0);
-  await expect(card.locator('[data-testid="electra-control-slot-2-2"]')).toHaveAttribute('data-filled', 'false');
-
-  // Right-click ADSR Attack → control menu → Send to <electra> → Row2 → 2.
-  const adsr = page.locator('.svelte-flow__node-adsr');
-  const attack = adsr.locator('[role="slider"][aria-label="Attack"]');
+  // Right-click the ADSR tile's attack knob → control menu → Send to
+  // <electra> → Row2 → 2.
+  const adsrShell = laneShell(page, 'adsr-1');
+  const attack = adsrShell.locator('[data-testid="control-attack"]');
   await expect(attack).toBeVisible();
   await attack.click({ button: 'right' });
 
@@ -91,10 +114,23 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
     '7': { moduleId: 'adsr-1', paramId: 'attack' },
   });
 
+  // Assign a SECOND control to Row6 → 6 = slotIndex(6,6) = 35 (rightmost-bottom,
+  // BOTTOM bank), still from the LANE (the drawer stays closed until both
+  // sends are recorded). Use the ADSR's decay control.
+  const decay = adsrShell.locator('[data-testid="control-decay"]');
+  await decay.click({ button: 'right' });
+  await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
+  await page.locator('[data-testid="ctx-electra-ec-1"]').click();
+  await page.locator('[data-testid="ctx-electra-ec-1-row-6"]').click();
+  await page.locator('[data-testid="ctx-electra-ec-1-row-6-knob-6"]').click();
+  await expect.poll(async () => Object.keys((await readSlots(page, 'ec-1')) ?? {}).sort()).toEqual(['35', '7']);
+
   // The (row2, knob2) grid cell now renders the proxied control.
+  const card = await openGrid(page);
   const slot22 = card.locator('[data-testid="electra-control-slot-2-2"]');
   await expect(slot22).toHaveAttribute('data-filled', 'true');
   await expect(slot22.locator('[role="slider"]')).toBeVisible();
+  await expect(card.locator('[data-testid="electra-control-slot-6-6"]')).toHaveAttribute('data-filled', 'true');
 
   // Edit the slot label inline (✎) → the binding's `name` persists in node.data.
   await slot22.locator('[data-testid="electra-control-rename-2-2"]').click();
@@ -104,19 +140,9 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
   await renameInput.press('Enter');
   await expect.poll(async () => await readSlots(page, 'ec-1')).toEqual({
     '7': { moduleId: 'adsr-1', paramId: 'attack', name: 'Punch' },
+    '35': { moduleId: 'adsr-1', paramId: 'decay' },
   });
   await expect(slot22).toContainText('Punch');
-
-  // Assign a SECOND control to Row6 → 6 = slotIndex(6,6) = 35 (rightmost-bottom,
-  // BOTTOM bank). Use the ADSR's Decay control.
-  const decay = adsr.locator('[role="slider"][aria-label="Decay"]');
-  await decay.click({ button: 'right' });
-  await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
-  await page.locator('[data-testid="ctx-electra-ec-1"]').click();
-  await page.locator('[data-testid="ctx-electra-ec-1-row-6"]').click();
-  await page.locator('[data-testid="ctx-electra-ec-1-row-6-knob-6"]').click();
-  await expect.poll(async () => Object.keys((await readSlots(page, 'ec-1')) ?? {}).sort()).toEqual(['35', '7']);
-  await expect(card.locator('[data-testid="electra-control-slot-6-6"]')).toHaveAttribute('data-filled', 'true');
 
   // Proxy proof: push the SOURCE param off-default, reset via the PROXY
   // (double-click) — the source param must change (the proxy writes the source).
@@ -150,8 +176,8 @@ test('SINGLETON: a second ElectraControl is blocked — the palette hides it at 
   await spawnPatch(page, [
     { id: 'ec-1', type: 'electraControl', position: { x: 700, y: 60 }, domain: 'meta' },
   ]);
-  await expect(page.locator('[data-testid="electra-control-card"][data-node-id="ec-1"]')).toBeVisible();
-  await expect(page.locator('.svelte-flow__node-electraControl')).toHaveCount(1);
+  await expect(laneShell(page, 'ec-1')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="electraControl"])')).toHaveCount(1);
 
   // Open the palette and search for it — the at-cap def is dropped by the
   // maxInstances filter (ModulePalette), so the pickable item is absent.
@@ -163,5 +189,5 @@ test('SINGLETON: a second ElectraControl is blocked — the palette hides it at 
 
   // Still exactly one — the palette filter is the user's protection and the
   // spawn guard / engine.addNode are the safety nets behind it.
-  await expect(page.locator('.svelte-flow__node-electraControl')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="electraControl"])')).toHaveCount(1);
 });

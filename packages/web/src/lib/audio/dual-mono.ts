@@ -93,7 +93,7 @@ export type DualMonoClass =
    * the way this repo keeps getting bitten by: INVISIBLY ON A SCOPE, LOUDLY ON
    * EVERY METER. An `AnalyserNode` mono-down-mixes its input, and every level
    * surface in the app is a bare analyser tap — the faceplate `live-audio`
-   * glyph and the legacy card's `createLevelTap` VuMeter both. Two
+   * glyph and every `createLevelTap` VuMeter both. Two
    * same-amplitude sines with an arbitrary relative phase Δφ down-mix to
    * A·|cos(Δφ/2)|: a fresh draw on every spawn, not a measurement.
    *

@@ -37,7 +37,9 @@ interface VizSample {
 }
 
 async function sampleCanvas(page: Page): Promise<VizSample | null> {
-  const canvas = page.locator('canvas[data-testid="wavecel-viz"]');
+  // The 3D wavetable viz lives on the DOCK face panel on the default shell
+  // (same draw function, default vizMode = '3d').
+  const canvas = page.locator('canvas[data-testid="wavecel-face-viz"]');
   await expect(canvas).toHaveCount(1);
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -130,7 +132,7 @@ test.describe('WAVECEL on-card 3D visualizer', () => {
     // Pin the engine clock so any CV modulator the card folds in (readModulatorTap)
     // is constant — the only thing moving the highlight is the morph we set.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -141,7 +143,8 @@ test.describe('WAVECEL on-card 3D visualizer', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-wavecel')).toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])')).toBeVisible();
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('wc'));
 
     // Read A: morph LOW → active frame near the BACK of the 3D stack (high y).
     const low = await setParamAndSettle(page, 'wc', 'morph', 0.15);
@@ -175,7 +178,7 @@ test.describe('WAVECEL on-card 3D visualizer', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -186,7 +189,8 @@ test.describe('WAVECEL on-card 3D visualizer', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-wavecel')).toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])')).toBeVisible();
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('wc'));
 
     // Read A: spread=1 → a single tap, one frame blended toward white. (Re-set
     // morph=0.5 through the store so the on-card render path settles on it

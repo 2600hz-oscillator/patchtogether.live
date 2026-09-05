@@ -136,8 +136,8 @@ async function spawnCameraChain(page: Page): Promise<void> {
   );
 }
 
-test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source', () => {
-  test('the lane paints a FACEPLATE, the real card runs headless, and the source still produces', async ({ page, errorWatch }) => {
+test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned source', () => {
+  test('the lane paints a FACEPLATE, NO card is mounted anywhere, and the source still produces', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
     await installRenderSmokeHooks(page);
@@ -146,9 +146,8 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     });
     await stubMediaDevices(page);
 
-    // ⚠ THE DEFAULT SHELL, NOT `?shell=legacy`. The legacy surface is precisely
-    // the one promotion does not change, so testing it would prove nothing about
-    // this change.
+    // The shipping shell — the only surface this module has, and the whole
+    // subject of this file.
     await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar'))
       .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
@@ -160,48 +159,37 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     await expect(laneNode.getByTestId('module-shell'), 'the lane paints CAMERA\'s faceplate')
       .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
-    // ── 2. THE REAL CARD IS STILL MOUNTED, OFF-SCREEN ──────────────────────
-    // This is the assertion the whole promotion rests on. Without it the card is
-    // gone, `attachExternalSource` never runs, and CAMERA → OUT is black.
+    // ── 2. NO CARD IS MOUNTED ANYWHERE ─────────────────────────────────────
+    //
+    // ⚠ THIS LEG ASSERTED THE OPPOSITE UNTIL 2026-09-03, and the inversion is
+    // the legacy-removal S1 extraction. Until then the promotion rested on
+    // `HeadlessSourceHost` keeping the REAL card mounted off-screen, because the
+    // card owned getUserMedia, the device roster, the permission state machine
+    // and the engine attach. `$lib/ui/media/node-camera-source-registry` owns all
+    // four now, on GRAPH lifetime, so cameraInput left `DOM_SOURCE_LANE_TYPES`
+    // and gets no host.
+    //
+    // ⚠ AND THE OLD LEG-3 STORY INVERTS WITH IT — it is worth reading before
+    // trusting anything below. The first version of that leg was
+    // `toHaveCount(0)` on the lane, and it was rejected because zero is
+    // satisfied BOTH by "swapped and hosted off-screen" (right) and by "not
+    // mounted anywhere at all" (the regression). Zero mounts is now the INTENDED
+    // state, so a mount count separates nothing at all in either direction, and
+    // no rewording of it can. What separates the two worlds is whether the module
+    // still PRODUCES PIXELS with nothing mounted — leg 4. Read that as the gate;
+    // this leg only establishes what leg 4 produced them WITHOUT.
     const host = page.locator(
       '[data-testid="headless-source-host"][data-node-type="cameraInput"]',
     );
-    await expect(host, 'HeadlessSourceHost keeps CAMERA\'s real card alive')
-      .toHaveCount(1, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await expect(
-      host.getByTestId('camera-device-select'),
-      'and it is the REAL card in there, not an empty shell',
-    ).toHaveCount(1);
-
-    // ── 3. …AND THE CARD IS ONLY THERE ─────────────────────────────────────
-    //
-    // ⚠ THE FIRST VERSION OF THIS WAS AN INVERTED GATE, and it is worth keeping
-    // the story because the assertion looked obviously right. It read:
-    //
-    //     expect(page.locator('.svelte-flow__node-cameraInput[data-id=…]'))
-    //       .toHaveCount(0)   // "the lane no longer renders the legacy card"
-    //
-    // `HeadlessSourceHost` mounts the real card inside its OWN single-node
-    // `<SvelteFlow>`, passing `type: node.type` — so the hosted card is also a
-    // `.svelte-flow__node-cameraInput` carrying the same `data-id`. The locator
-    // matched the HOST's copy and the test went red on a correct tree.
-    //
-    // ⚠ AND THE FAILURE WAS THE LUCKY OUTCOME. `toHaveCount(0)` is satisfied by
-    // BOTH "the lane swapped and the card is hosted off-screen" (right) and "the
-    // card is not mounted anywhere at all" (the exact regression this file
-    // exists to catch). It would have gone GREEN in the broken world — a gate
-    // whose passing condition is the defect.
-    //
-    // The repair asserts the card's mount is UNIQUE and INSIDE the host, which
-    // distinguishes the two worlds instead of collapsing them.
-    await expect(
-      host.locator('.svelte-flow__node-cameraInput'),
-      'the real card is mounted inside the headless host',
-    ).toHaveCount(1);
-    await expect(
-      page.locator('.svelte-flow__node-cameraInput'),
-      'and NOWHERE ELSE — exactly one mount, and leg 2 proved which one it is',
-    ).toHaveCount(1);
+    await expect(host, 'cameraInput has no headless host any more — the controller owns the source')
+      .toHaveCount(0, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    // ⚠ TWO FURTHER ABSENCE CHECKS STOOD HERE AND NEITHER CAN FAIL ANY MORE.
+    // `camera-device-select` is emitted by nothing in the tree, and
+    // `.svelte-flow__node-cameraInput` is a per-TYPE xyflow class that stopped
+    // existing when every lane node became `moduleShell` — so both were
+    // satisfied by a page that rendered nothing. The HOST check above is the
+    // falsifiable one (six modules still get hosts), and the source-produces
+    // leg below is the positive statement.
 
     // ── 4. THE SOURCE PRODUCES ─────────────────────────────────────────────
     // Driven synchronously with the engine rAF loop paused: the frame count is
@@ -210,28 +198,27 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     const stats = await stepAndReadStats(page, { nodeId: CAM, steps: FIXED_STEPS });
     assertRenderStats(stats, FIXED_STEPS);
 
-    // ── 5. OPENING THE DOCK FACEPLATE DOES NOT UNMOUNT THE CARD ────────────
-    // ⚠ THE REGRESSION THIS LEG EXISTS FOR. Canvas excluded every full-view node
-    // from the headless host on the premise that "DockFullView already mounts
-    // its real card" — true only for an UN-MIGRATED module, since
-    // `DockFullView` is `{#if migrated} <ModuleShell/> {:else} <CardComponent/>`.
-    // Promoting the first card-owned-source module turns that premise false, and
-    // the failure is silent: the faceplate looks right while the card that owns
-    // getUserMedia has been unmounted from every surface at once.
+    // ── 5. OPENING THE DOCK FACEPLATE DISTURBS NOTHING ─────────────────────
+    // The original worry was that opening the dock unmounted the card from every
+    // surface at once — `DockFullView` being `{#if migrated} <ModuleShell/>
+    // {:else} <CardComponent/>` meant the headless host's exclusion of full-view
+    // nodes silently orphaned a promoted module's source. There is no card to
+    // unmount now, so the leg becomes the same question asked of what replaced
+    // it: the module keeps producing across the dock transition.
     await laneNode.getByTestId('module-shell').getByTestId('shell-open-dock').click();
     await expect(page.getByTestId('dock-full-view'))
       .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
     await expect(
-      host,
-      'the card must STILL be hosted while the faceplate is open — the dock shows the FACE, not the card',
-    ).toHaveCount(1);
+      page.getByTestId('camera-device-select'),
+      'the dock shows the FACE — opening it must not mint a card mount either',
+    ).toHaveCount(0);
 
     const afterDock = await stepAndReadStats(page, { nodeId: CAM, steps: FIXED_STEPS });
     assertRenderStats(afterDock, FIXED_STEPS);
   });
 
-  test('the faceplate carries the ACQUIRE gesture, and the card\'s answer comes back to it', async ({ page, errorWatch }) => {
+  test('the faceplate carries the ACQUIRE gesture, and the controller\'s answer comes back to it', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
     await stubMediaDevices(page);
@@ -299,30 +286,9 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, headless source
     ).toContainText(/site settings/i, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   });
 
-  test('`?shell=legacy` is UNCHANGED — the real card is in the lane and no host exists', async ({ page, errorWatch }) => {
-    // ⚠ THE ESCAPE HATCH IS PART OF THE CONTRACT, and this promotion is exactly
-    // the kind of change that quietly breaks it: the headless host would be a
-    // SECOND mount of a card that is already in the lane, which is the
-    // double-getUserMedia hazard `needsHeadlessSourceMount`'s 'legacy' arm
-    // exists to prevent. Asserting the host is ABSENT is what proves that arm
-    // still fires for this module now that it is promoted.
-    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
-
-    await stubMediaDevices(page);
-    await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar'))
-      .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
-    await spawnCameraChain(page);
-
-    await expect(
-      page.locator(`.svelte-flow__node-cameraInput[data-id="${CAM}"]`),
-      'the verbatim legacy card is the lane surface under ?shell=legacy',
-    ).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-
-    await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-type="cameraInput"]'),
-      'and NO headless host — that would be a second mount of the same card',
-    ).toHaveCount(0);
-  });
+  // A second-renderer leg was DELETED by the S2 inversion: its subject was that
+  // renderer plus the absence of the (since deleted) HeadlessSourceHost.
+  // Node-source ownership on the shell users get is
+  // covered by the tests above and by workflow-shell-video's per-row
+  // card-absence assertions.
 });

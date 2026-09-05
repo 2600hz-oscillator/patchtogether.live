@@ -70,10 +70,9 @@ export interface LaunchpadBinderView {
   outcome: LaunchpadGestureOutcome;
 }
 
-/** The four single-unit roles, by their own names. These are the labels the
- *  legacy card prints on its segment (`LaunchpadControlCard.svelte:122-127`)
- *  and they are OPTION NAMES — the one text class the ruling permits on a
- *  control that has otherwise-identical siblings. */
+/** The four single-unit roles, by their own names. These are OPTION NAMES —
+ *  the one text class the ruling permits on a control that has
+ *  otherwise-identical siblings. */
 export const LAUNCHPAD_VIEWS: readonly { id: SingleView; label: string }[] = [
   { id: 'grid', label: 'GRID' },
   { id: 'clip', label: 'CLIP' },
@@ -124,7 +123,7 @@ export function launchpadClipDetail(v: LaunchpadBinderView): string {
 /**
  * The ERROR line, or null when nothing is wrong.
  *
- * All four branches are the legacy card's, verbatim in substance — an error is
+ * All four branches are carried over verbatim in substance — an error is
  * permitted resting text precisely because it is ABSENT at rest.
  */
 export function launchpadErrorLine(v: LaunchpadBinderView): string | null {
@@ -183,7 +182,7 @@ export function launchpadEmptyLine(v: LaunchpadBinderView): string | null {
  * LAMP, whose whole job is to be a picture and which must not be able to
  * smuggle a measurement through `lit ? 'LATE 3' : 'OK'`. `Bind` and `Unbind`
  * are two different actions; a control that named only one of them would lie
- * half the time. This is the shape the legacy card already ships (`:176`).
+ * half the time. This is the shape that was already shipping before the face.
  */
 export function launchpadBindLabel(v: LaunchpadBinderView): string {
   return v.boundNode ? 'Unbind clip-player' : 'Bind to clip-player';

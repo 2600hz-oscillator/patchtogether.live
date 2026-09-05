@@ -150,12 +150,10 @@ test.describe('TV LIBRARIAN face — the promotion is what makes it tunable', ()
     await gotoShell(page);
     await spawnPatch(page, [{ id: 'tvf1', type: 'tvLibrarian', domain: 'video' }]);
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON. On the default shell the
-    // legacy card is not rendered — and for THIS module it is not parked
-    // off-screen either, because it left DOM_SOURCE_LANE_TYPES. If this ever
-    // starts finding a card, the rest of the file stops proving anything about
-    // the face and would go green for the wrong reason.
-    await expect(page.getByTestId('tv-librarian-card')).toHaveCount(0);
+    // ⚠ A PRECONDITION GATE RAN HERE AND IS DELETED. It required
+    // `tv-librarian-card` to be absent; nothing in the tree emits that testid,
+    // so the matcher was satisfied by a page that rendered nothing at all. The
+    // positive assertions below are what hold this file up.
 
     const dock = await openDock(page, 'tvf1');
     const body = dock.getByTestId('tv-librarian-face-body');

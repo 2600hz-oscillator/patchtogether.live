@@ -82,7 +82,6 @@ export const push2ControlDef: MetaModuleDef = {
   domain: 'meta',
   label: 'push 2 control',
   category: 'tools',
-  card: 'Push2ControlCard',
   // 2u: the card now carries a 960×160 PUSH-CARD PREVIEW (CSS-scaled to the card
   // width) plus the card-flip row above the lane buttons, which takes its natural
   // height past the 180 px a 1u allows. `card-control-overflow` measured 201 px
@@ -115,10 +114,11 @@ export const push2ControlDef: MetaModuleDef = {
   // select, the card flip or the view segment here would force them into cells
   // they cannot be, for the mechanical reasons the face comment below gives.
   //
-  // The `testidPrefix` is a literal the LEGACY CARD already emits
-  // (`Push2ControlCard.svelte`, the Connect button), which is what
-  // module-docs-lint's card grep checks — so a rename on either surface is RED.
-  // The card file survives promotion: `?shell=legacy` still renders it.
+  // ⚠ THE `testidPrefix` IS NOT EMITTED AS A LITERAL BY ANY SURFACE —
+  // MEASURED. The shell stamps this family generically from the declaration, so
+  // module-docs-lint holds it through the CELL arm (`push2-control-connect-{n}`
+  // ranked on the face plan and resolving to a live shell cell), never a source
+  // grep.
   controlFamilies: [
     {
       id: 'push2-control-connect',

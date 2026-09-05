@@ -85,7 +85,7 @@ test('KARPLUS real chain: SEQUENCER gate+pitch → pluck → AUDIOOUT — audibl
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-karplus');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="karplus"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText(/KARPLUS/);
 

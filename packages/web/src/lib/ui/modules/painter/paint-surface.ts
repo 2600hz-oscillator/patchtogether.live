@@ -2,14 +2,13 @@
 //
 // THE PAINTER INTERACTION SEAM — one write path, two mounts.
 //
-// ⚠ WHY THIS FILE EXISTS AT ALL. PAINTER's promotion gives the module a SECOND
-// drawing surface: `PainterEditorBody.svelte` (the `fullViewBody` a promoted
-// module paints its dock faceplate from) beside `PainterCard.svelte` (still
-// reachable under `?shell=legacy` while the migration is live). Both accept
-// pointer gestures, both replay the SAME Y.Doc op log, and both must produce
-// BYTE-IDENTICAL `PaintOp`s for the same drag — otherwise a stroke drawn on the
-// face and a stroke drawn on the card are different pictures on every peer, and
-// nothing in the tree would notice, because the log is valid either way.
+// ⚠ WHY THIS FILE EXISTS AT ALL. PAINTER's drawing surface accepts pointer
+// gestures and replays a shared Y.Doc op log, and the moment a SECOND one
+// exists the two must produce BYTE-IDENTICAL `PaintOp`s for the same drag —
+// otherwise a stroke drawn on one and a stroke drawn on the other are different
+// pictures on every peer, and nothing in the tree would notice, because the log
+// is valid either way. The arithmetic lives here rather than in
+// `PainterEditorBody.svelte` so that the second surface is a call, not a copy.
 //
 // The module-surfaces skill states the rule this file implements: "One-shot
 // behavior belongs in one plain TypeScript action seam called by both legacy

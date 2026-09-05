@@ -23,9 +23,9 @@
 // `$lib/ui/media/node-hls-source-registry` on GRAPH lifetime, created and swept
 // from Canvas's own effects, with no surface involved at any point. What a
 // SURFACE owns is the search box's debounce and rate limit, and forwarding
-// gestures through `nodeHlsSource.request(...)` — and since the wave-4 face
-// promotion there are two of them (the faceplate's `fullViewBody` and, at
-// `?shell=legacy`, the card), sharing ONE `PeerTubePicker.svelte`.
+// gestures through `nodeHlsSource.request(...)`, which the faceplate's
+// `fullViewBody` does through `PeerTubePicker.svelte` — the same picker
+// ARCHIVIST's browse controls mount, so the two cannot drift.
 //
 // The factory is DOM-free + multiplayer-agnostic. It owns the FBO + the frame
 // uploader (shared video-frame-upload pump) + the audio splitter + the gate/CV
@@ -111,7 +111,6 @@ export const peertubeDef: VideoModuleDef = {
   // Explicit card override: the convention PascalCase('peertube') = 'PeertubeCard'
   // would lower-case the 'T'; the card file keeps the brand casing 'PeerTube', so
   // we name it here (lives on this def — zero shared-file edits).
-  card: 'PeerTubeCard',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'peertube',
@@ -190,7 +189,7 @@ export const peertubeDef: VideoModuleDef = {
   // the TRUE one.
   //
   // ⚠ IT IS NOT COSMETIC BEYOND THE FACEPLATE, and the PR body says so:
-  // `group-controls.ts` drops a `noUserControl` param from
+  // `exposable-controls.ts` drops a `noUserControl` param from
   // `listExposableControls` and `push-card-schema.ts` drops it from the Push 2
   // card. peertube has no explicit `PUSH_CARD_CONTROLS` entry, so its push card
   // is resolved from the live def and re-ranks itself from three params to one.
@@ -216,9 +215,9 @@ export const peertubeDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: `A federated-video SOURCE that streams public videos from the PeerTube fediverse. Type a term into the search box (debounced ~350ms, rate-limited to ~50 calls / 10s) and the node's tuner queries Sepia Search — the CORS-open meta-index of the PeerTube federation — for a results list (title, channel@host, duration, thumbnail). Click a result and it hits that instance's video-details API to resolve the HLS master playlist (.m3u8), then attaches it via hls.js (or progressive MP4 / Safari-native HLS) to a NODE-owned crossorigin video element (the element, its demuxer, the engine attach, the audio wire, the catalogue and both trigger polls belong to $lib/ui/media/node-hls-source-registry on GRAPH lifetime — no surface owns any of it). The engine samples that element into a WebGL framebuffer; the fragment shader is a straight passthrough of the live frame (and draws a dim near-black idle gradient when nothing is loaded), so the video out is a genuine downstream-usable texture, not play-only. Unlike ARCHIVIST (which is VIDEO-ONLY because archive.org's final media hop is CORS-tainted, so its audio jacks are dead), PeerTube sends Access-Control-Allow-Origin:* on the master playlist + segments, so the texture is UNTAINTED and the stereo audio track is fully extractable and patchable on audio_l/audio_r (split from a MediaElementSource via a 2-channel splitter, with a silent gain-0 keep-alive bridged to the destination that keeps the element decoding at full rate even when audio isn't patched). Frames upload at the source's decode cadence (requestVideoFrameCallback; Firefox falls back to a currentTime-advance check) downscaled to the engine resolution so a high-bitrate stream doesn't flood GPU texture traffic. Only the selection (selected host, video uuid, name) plus the last search term are persisted to the node so rack-mates resolve the SAME stream; ~1/6 instances misconfigure CORS (raw S3, no ACAO) and a stream that taints, errors, or stalls past a 14s timeout is marked "display unavailable" and auto-skips to the next result after a short beat rather than hanging. The faceplate ranks ONE control (GAIN, as a fader) and carries everything else on its dock full-view body (none of these are module params): the search input, a "↻ next" button, the live 16:9 preview of the module's OWN engine output with a SCREEN on/off switch, a Play/Pause transport with a playhead bar, the scrollable results list, an attribution link to the selected video's watch page on its home instance, and the Sepia Search / PeerTube attribution disclaimer. The legacy card (?shell=legacy) mounts the same search-and-roster component over its own preview of the node's video element, and adds a corner-drag resize of its rack tile (persisted size; default 360x540, min 360x360). Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next_trigger to channel-surf the results hands-free, and patch the loaded/ended event outs or playhead CV downstream to sequence around the playback.`,
+    explanation: `A federated-video SOURCE that streams public videos from the PeerTube fediverse. Type a term into the search box (debounced ~350ms, rate-limited to ~50 calls / 10s) and the node's tuner queries Sepia Search — the CORS-open meta-index of the PeerTube federation — for a results list (title, channel@host, duration, thumbnail). Click a result and it hits that instance's video-details API to resolve the HLS master playlist (.m3u8), then attaches it via hls.js (or progressive MP4 / Safari-native HLS) to a NODE-owned crossorigin video element (the element, its demuxer, the engine attach, the audio wire, the catalogue and both trigger polls belong to $lib/ui/media/node-hls-source-registry on GRAPH lifetime — no surface owns any of it). The engine samples that element into a WebGL framebuffer; the fragment shader is a straight passthrough of the live frame (and draws a dim near-black idle gradient when nothing is loaded), so the video out is a genuine downstream-usable texture, not play-only. Unlike ARCHIVIST (which is VIDEO-ONLY because archive.org's final media hop is CORS-tainted, so its audio jacks are dead), PeerTube sends Access-Control-Allow-Origin:* on the master playlist + segments, so the texture is UNTAINTED and the stereo audio track is fully extractable and patchable on audio_l/audio_r (split from a MediaElementSource via a 2-channel splitter, with a silent gain-0 keep-alive bridged to the destination that keeps the element decoding at full rate even when audio isn't patched). Frames upload at the source's decode cadence (requestVideoFrameCallback; Firefox falls back to a currentTime-advance check) downscaled to the engine resolution so a high-bitrate stream doesn't flood GPU texture traffic. Only the selection (selected host, video uuid, name) plus the last search term are persisted to the node so rack-mates resolve the SAME stream; ~1/6 instances misconfigure CORS (raw S3, no ACAO) and a stream that taints, errors, or stalls past a 14s timeout is marked "display unavailable" and auto-skips to the next result after a short beat rather than hanging. The faceplate ranks ONE control (GAIN, as a fader) and carries everything else on its dock full-view body (none of these are module params): the search input, a "↻ next" button, the live 16:9 preview of the module's OWN engine output with a SCREEN on/off switch, a Play/Pause transport with a playhead bar, the scrollable results list, an attribution link to the selected video's watch page on its home instance, and the Sepia Search / PeerTube attribution disclaimer. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next_trigger to channel-surf the results hands-free, and patch the loaded/ended event outs or playhead CV downstream to sequence around the playback.`,
     inputs: {
-      play_trigger: "Trigger (gate cable, edge:'trigger'): a rising edge toggles the current video between play and pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the card polls + edge-detects (<0.5 -> >=0.5); it fires once per rising edge, not while held. Patch a clock or any gate here for hands-free transport.",
+      play_trigger: "Trigger (gate cable, edge:'trigger'): a rising edge toggles the current video between play and pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the faceplate polls + edge-detects (<0.5 -> >=0.5); it fires once per rising edge, not while held. Patch a clock or any gate here for hands-free transport.",
       next_trigger: "Trigger (gate cable, edge:'trigger'): a rising edge advances to the NEXT result in the search list (wrapping to the first; if the list is empty it re-runs the last search). Routed through the CV bridge as the synthetic cv_next_trigger param and edge-detected by the card; fires once per rising edge, not while held. Patch a clock here to channel-surf the results in time.",
     },
     outputs: {
@@ -232,8 +231,8 @@ export const peertubeDef: VideoModuleDef = {
     },
     controls: {
       gain: "Gain — output level for the picture (0 to 2, linear; default 1.0). The passthrough shader multiplies the sampled RGB by this (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). It scales the VIDEO only — the audio_l/audio_r outs are unaffected.",
-      cv_play_trigger: "Play trigger (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the play_trigger input's gate level here; the card polls readParam and edge-detects a rising edge (<0.5 -> >=0.5) to toggle play/pause. Not a user-facing knob.",
-      cv_next_trigger: "Next trigger (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next_trigger input's gate level here; the card polls readParam and edge-detects a rising edge to load the next search result. Not a user-facing knob.",
+      cv_play_trigger: "Play trigger (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the play_trigger input's gate level here; the faceplate polls readParam and edge-detects a rising edge (<0.5 -> >=0.5) to toggle play/pause. Not a user-facing knob.",
+      cv_next_trigger: "Next trigger (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next_trigger input's gate level here; the faceplate polls readParam and edge-detects a rising edge to load the next search result. Not a user-facing knob.",
     },
   },
   factory(ctx, node): VideoNodeHandle {

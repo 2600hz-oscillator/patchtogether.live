@@ -78,16 +78,13 @@ describe('TIMELORDE swingSource range is declared in FIVE places and must agree'
     expect(dspMax, 'swingSource descriptor not found in packages/dsp/src/timelorde.ts').not.toBeNull();
     expect(Number(dspMax![1]), 'worklet parameterDescriptors swingSource maxValue').toBe(want);
 
-    // 3. the card's Knob — a card can silently disagree with its def and no
-    //    runtime gate sees it (CLAUDE.md, backdraft XyPad).
-    const card = readRepo('packages/web/src/lib/ui/modules/TimelordeCard.svelte');
-    const knob = /<Knob[^>]*paramId="swingSource"[^>]*\/>/.exec(card)
-      ?? /max=\{(\d+)\}[^>]*label="Src"/.exec(card);
-    expect(knob, 'the SRC Knob was not found in TimelordeCard.svelte').not.toBeNull();
-    const cardMaxLine = card.split('\n').find((l) => l.includes('label="Src"'))!;
-    const cardMax = /max=\{(\d+)\}/.exec(cardMaxLine);
-    expect(cardMax, 'no max={…} on the SRC Knob').not.toBeNull();
-    expect(Number(cardMax![1]), 'TimelordeCard SRC Knob max').toBe(want);
+    // 3. ⚠ A THIRD SITE STOOD HERE AND IT WAS THE CARD'S OWN KNOB — a surface
+    //    can silently disagree with its def and no runtime gate sees it
+    //    (CLAUDE.md, backdraft XyPad), so the SRC `<Knob max={…}>` was read and
+    //    compared to the same `want`. The shell resolves a knob's bound from
+    //    the ParamDef, so the third copy is gone rather than merely agreeing:
+    //    what is left below is the def and the worklet, which are the two that
+    //    can still drift apart from each other.
 
     // 4. the card's SRC list (what the footer prints) — and this site was PAID
     //    OFF rather than kept in agreement, 2026-08-23.
@@ -99,16 +96,13 @@ describe('TIMELORDE swingSource range is declared in FIVE places and must agree'
     // option-less discrete param prints a bare integer), and once they were
     // there, keeping a second copy on the card would have been the
     // `sampleHold`/`moog904b` shape with a gate wrapped around it. So the card
-    // now IMPORTS the derived roster and the clause asserts the DUPLICATE IS
+    // now IMPORTED the derived roster and the clause asserted the DUPLICATE WAS
     // GONE, which is strictly stronger than asserting two copies agree.
-    expect(
-      /const SRC_LABELS\s*=\s*\[/.test(card),
-      'TimelordeCard re-declares SRC_LABELS as a literal array — that is the duplicate the ' +
-        'derived roster removed, and a literal here can disagree with the def about which ' +
-        'index is `1/12` while this gate (which only ever counted entries) stays green',
-    ).toBe(false);
-    expect(card, 'the card no longer imports the derived roster').toContain('TIMELORDE_SWING_SOURCES');
-    // …and the roster it imports really is n long, read off the LIVE def.
+    //
+    // ⚠ AND THE SURFACE THAT HELD THE DUPLICATE IS ITSELF GONE. The names have
+    // ONE home — the def's own `TIMELORDE_SWING_SOURCES` — with no second
+    // surface able to hold a copy, so what is asserted is the roster itself:
+    // read off the LIVE def, n long, and TOTAL over the param's range.
     expect(p.options?.length, 'the derived swingSource roster').toBe(n);
     expect(
       p.options?.map((o) => o.value),

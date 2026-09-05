@@ -101,15 +101,27 @@ test.describe('VRT: COLOUR OF MAGIC per-block recolorization', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
       await spawnPatch(page, buildNodes(scene.params, !!scene.override), buildEdges(!!scene.override));
 
-      const card = page.locator('.svelte-flow__node-colourofmagic').first();
+      // ⚠ THE PICTURE IS IN THE DOCK BODY, NOT IN THE LANE. This scene used to
+      // photograph the lane node and assert `colourofmagic-canvas` inside it — a canvas the
+      // module's pre-promotion surface painted. The faceplate paints the same
+      // picture in its `fullViewBody`, so the scene opens the pane and captures
+      // THAT: same module, same params, same subject, at full size.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'com',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="com"]`)
+        .getByTestId('colourofmagic-output-body');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
-      await expect(page.locator('canvas[data-testid="colourofmagic-canvas"]')).toHaveCount(1);
+      await expect(card.locator('canvas[data-testid="colourofmagic-face-canvas"]')).toHaveCount(1);
 
       // Let the frozen frame settle into the preview.
       await page.waitForTimeout(700);

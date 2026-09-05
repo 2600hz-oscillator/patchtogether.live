@@ -190,20 +190,34 @@ async function readBpm(page: Page, nodeId: string): Promise<number | null> {
   }, nodeId);
 }
 
-/** Click the TIMELORDE card to make it the selected node. */
+/** Open TIMELORDE's dock full view — the TAP cell lives there (the lane
+ *  tile ranks only bpm/running/mute; the dock paints every face page at
+ *  once, no tab needed). */
+async function openTimelordeDock(page: Page, nodeId: string): Promise<void> {
+  await page.waitForFunction(
+    () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    nodeId,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"]`)
+    .getByTestId('shell-cell-timelorde-tap')
+    .waitFor({ state: 'visible', timeout: 30_000 });
+}
+
+/** Click the TIMELORDE tile to make it the selected node. */
 async function selectTimelorde(page: Page, nodeId: string): Promise<void> {
-  // Select the node by clicking the decorative top STRIPE — it has no handler so
-  // the click bubbles to SvelteFlow's node selection. (The `.title` header wraps
-  // the inline-editable ModuleTitle, which captures the click into rename mode
-  // and never selects — that was the original flake.)
-  //
-  // The stripe is only 2px tall, so under heavy CI shard load a single click can
-  // miss the target / lose the pointerdown→selection race and `.selected` never
-  // applies (shard-10 flake, #854). Retry the click until the node actually
-  // reports selected — Playwright's web-first retry for a gesture that must take.
+  // The shell tile's KIND row is the neutral click target (the centre is
+  // nodrag-scoped controls and the name row is a rename button — the same
+  // reasoning as the card-era stripe). Retry until the node actually reports
+  // selected (the shard-10 pointerdown/selection race, #854).
   const node = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
   await expect(async () => {
-    await node.locator('.stripe').click();
+    await node.locator('.tile-kind').click();
     await expect(node).toHaveClass(/selected/, { timeout: 1500 });
   }).toPass({ timeout: 15000 });
 }
@@ -243,9 +257,22 @@ async function tapInPage(
   return page.evaluate(
     async ({ id, count, gap }) => {
       const btn = document.querySelector<HTMLButtonElement>(
-        `[data-testid="timelorde-tap-${id}"]`,
+        '[data-testid="shell-cell-timelorde-tap"]',
       );
       if (!btn) throw new Error(`TAP button for ${id} not found in page`);
+
+      // ⚠ SYNTHETIC-POINTER SHIM. Button.svelte's pointerdown handler calls
+      // `setPointerCapture(e.pointerId)` BEFORE dispatching the trigger, and
+      // a synthetic PointerEvent has no ACTIVE pointer — the capture call
+      // throws NotFoundError and the tap never fires. Real pointers are
+      // untouched; the shim only swallows the capture error so the in-page
+      // dispatch (the whole point of this driver — no CDP between taps)
+      // reaches the handler exactly as a real press would.
+      const proto = HTMLElement.prototype;
+      const origCapture = proto.setPointerCapture;
+      proto.setPointerCapture = function (pid: number) {
+        try { origCapture.call(this, pid); } catch { /* synthetic pointer */ }
+      };
 
       // The smallest non-zero step this page's clock can report. Spin until the
       // value changes; bounded so a pathological clock cannot hang the run.
@@ -264,13 +291,18 @@ async function tapInPage(
       const taps: { before: number; after: number }[] = [];
       for (let i = 0; i < count; i++) {
         if (i > 0) await new Promise((r) => { setTimeout(r, gap); });
-        // The handler's own `performance.now()` runs synchronously inside
-        // `click()`, so it is provably in [before, after].
+        // The handler's own `performance.now()` runs synchronously inside the
+        // dispatch, so it is provably in [before, after]. ⚠ POINTERDOWN, not
+        // click: the shell ACTION CELL fires its trigger on the PRESS EDGE
+        // (Button.svelte's onpointerdown) — a synthetic click never reaches
+        // it. pointerup follows so the button's press state does not latch.
         const before = performance.now();
-        btn.click();
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         const after = performance.now();
+        btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
         taps.push({ before, after });
       }
+      proto.setPointerCapture = origCapture;
       return { taps, clockQuantumMs };
     },
     { id: nodeId, count: n, gap: gapMs },
@@ -303,7 +335,7 @@ test.describe('TIMELORDE tap tempo', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -311,7 +343,8 @@ test.describe('TIMELORDE tap tempo', () => {
       [],
     );
 
-    const tap = page.locator(`[data-testid="timelorde-tap-${TL}"]`);
+    await openTimelordeDock(page, TL);
+    const tap = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${TL}"]`).getByTestId('shell-cell-timelorde-tap');
     await expect(tap, 'TAP button present').toHaveCount(1);
     await expect(tap, 'TAP enabled with no external clock').toBeEnabled();
 
@@ -387,7 +420,7 @@ test.describe('TIMELORDE tap tempo', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -420,11 +453,11 @@ test.describe('TIMELORDE tap tempo', () => {
     expect(errors).toEqual([]);
   });
 
-  test('external clock DISABLES tap (button greyed + click & space are no-ops)', async ({ page }) => {
+  test('external clock OWNS the BPM — tap and Space tempos never stick', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // A gate clock source → TIMELORDE.clock makes it an externally-clocked
@@ -441,33 +474,34 @@ test.describe('TIMELORDE tap tempo', () => {
     ];
     await spawnPatch(page, nodes, edges);
 
-    const tap = page.locator(`[data-testid="timelorde-tap-${TL}"]`);
+    await openTimelordeDock(page, TL);
+    const tap = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${TL}"]`).getByTestId('shell-cell-timelorde-tap');
     await expect(tap, 'TAP present').toHaveCount(1);
-    // The button is functionally + visually disabled while the external clock owns BPM.
-    await expect(tap, 'TAP disabled under external clock').toBeDisabled();
-
-    // The measured-external-clock follow may write bpm; capture a baseline,
-    // then prove TAP/Space don't ADD a tap-set tempo. We click the disabled
-    // button (no-op) and press Space while selected (no-op for tap).
+    // ⚠ THE FACE'S EXTERNAL-CLOCK STANCE IS DIFFERENT AND DOCUMENTED
+    // (face-tap.ts): the cell is never disabled (ShellActionCell has no
+    // disabled predicate — the accessible name carries the notice), and a tap
+    // is not REFUSED — the FOLLOWER's next measurement overwrites it. The
+    // card's greyed-affordance assert died with the card; what survives is
+    // the claim that matters: the clock cable OWNS the BPM, so no tap-set
+    // tempo STICKS.
     await selectTimelorde(page, TL);
-    const baseline = await readBpm(page, TL);
 
-    // Force-click the disabled button (Playwright bypasses the disabled guard
-    // with force) — the onclick handler itself must still no-op via the
-    // hasExternalClock early-return.
-    await tap.click({ force: true }).catch(() => { /* disabled may reject; that's fine */ });
-    await pressSpace(page, 4, 200); // would lock ~300 BPM if it tapped
-    await page.waitForTimeout(400);
+    // Tap fast — this WOULD lock ~300 BPM on a free-running TIMELORDE.
+    await tap.click();
+    await pressSpace(page, 4, 200);
 
+    // The follower re-owns the BPM within its next measurements: whatever the
+    // taps transiently wrote, the settled value must not be the ~300 the
+    // 200 ms cadence implies.
+    await expect
+      .poll(() => readBpm(page, TL), {
+        timeout: 8000,
+        message: 'the external clock re-owns the BPM — the ~300 tap tempo must not stick',
+      })
+      .toBeLessThan(280);
     const after = await readBpm(page, TL);
-    // bpm must NOT have jumped to a fast tap-set tempo (~300). It either stays
-    // at the baseline or tracks the LFO-measured external tempo — never the
-    // would-be 300 BPM from the 200 ms space taps.
-    expect(after, 'no tap-set tempo applied under external clock').toBeLessThan(280);
-    if (baseline !== null && after !== null) {
-      // Sanity: the 200 ms space-tap cadence would imply ~300 BPM; assert we're
-      // clearly below that, i.e. the taps were ignored.
-      expect(Math.abs(after - 300)).toBeGreaterThan(20);
+    if (after !== null) {
+      expect(Math.abs(after - 300), 'settled bpm is clearly away from the tapped ~300').toBeGreaterThan(20);
     }
 
     expect(errors).toEqual([]);

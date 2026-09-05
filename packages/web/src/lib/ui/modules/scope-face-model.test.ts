@@ -42,6 +42,8 @@ import { glyphBinding, primaryAudioOutPortId } from '$lib/ui/workflow/shell-glyp
 import { laneGlyphFor, hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
 import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import { RAW_WRITE_LEDGER } from '$lib/graph/raw-write-ledger';
+import { NODE_FRAME_PRODUCER_TYPES } from '$lib/ui/media/frame-producers';
+import { CARD_PRODUCER_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import {
   resolvePushCardControls,
   pushCardParams,
@@ -58,8 +60,12 @@ function param(id: string) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'scope/ScopeScreenBody.svelte');
-const CARD_SRC = resolve(HERE, 'ScopeCard.svelte');
 const DRAW_SRC = resolve(HERE, '../../audio/modules/scope-draw.ts');
+/** THE trace — one renderer for the card, this body and `GroupCard`'s
+ *  viz-passthrough mount (legacy-removal S1). */
+const SURFACE = readFileSync(resolve(HERE, 'scope/ScopeTraceSurface.svelte'), 'utf8');
+/** The node-lifetime owner of the cvCombined push the surfaces used to run. */
+const PRODUCERS_SRC = readFileSync(resolve(HERE, '../media/frame-producers.ts'), 'utf8');
 
 const ALL_PARAM_IDS = scopeDef.params.map((p) => p.id);
 
@@ -241,48 +247,85 @@ describe('scope face — the glyph is LIVE, GREEN, AND FALSE', () => {
   it('routes the trace through a fullViewBody — the only seam that reaches it', () => {
     expect(def.face?.extension).toBe('scope');
     const body = readFileSync(BODY_SRC, 'utf8');
-    expect(body).toMatch(/read\(n, 'snapshot'\)/);
-    expect(body).toMatch(/<canvas/);
+    // ⚠ THE BODY MOUNTS THE TRACE, IT DOES NOT DRAW IT (legacy-removal S1). The
+    // read/paint pair moved to `scope/ScopeTraceSurface.svelte`, so asserting
+    // `read(n,'snapshot')` here would now be asserting a re-implementation.
+    expect(body).toMatch(/<ScopeTraceSurface/);
+    expect(body).toMatch(/import ScopeTraceSurface from '\.\/ScopeTraceSurface\.svelte'/);
   });
 
-  it("the body draws through the MODULE's own pure function, not a second plot", () => {
-    // Three surfaces share `drawScope`: the legacy card, the cross-domain
-    // `drawFrame` that feeds the `out` texture, and this body. Re-implementing
-    // the trace here is how they would drift.
-    const body = readFileSync(BODY_SRC, 'utf8');
-    expect(body).toMatch(/import \{ drawScope/);
-    expect(body).toMatch(/drawScope\(/);
+  it("the trace draws through the MODULE's own pure function, not a second plot", () => {
+    // ⚠ FOUR SURFACES SHARED `drawScope` AND NOW ONE FILE CALLS IT. The legacy
+    // card, this body and `GroupCard`'s viz-passthrough mount each carried their
+    // own copy of the seed/snapshot/paint trio — one pasted from the next,
+    // agreeing exactly because of that. `ScopeTraceSurface` is the only caller
+    // outside the module's own cross-domain `drawFrame` now, so the "how would
+    // they drift" question has one fewer way to be answered.
+    expect(SURFACE).toMatch(/import \{ drawScope/);
+    expect(SURFACE).toMatch(/drawScope\(/);
+    // ...and the two former call sites really did stop drawing.
+    expect(readFileSync(BODY_SRC, 'utf8')).not.toMatch(/drawScope\(/);
   });
 
-  it('the body honours the SAME VRT seed the card does — else the face is unbaselinable', () => {
-    const body = readFileSync(BODY_SRC, 'utf8');
-    const card = readFileSync(CARD_SRC, 'utf8');
-    expect(body).toMatch(/__scopeVrtSeed/);
-    expect(card).toMatch(/__scopeVrtSeed/);
-    // Same SHAPE and same DEFAULTS, not merely the same global — a body that
-    // read the seed but defaulted differently would paint a different figure
-    // from the card under the identical harness.
+  it('the trace honours the VRT seed — one surface, so the card and face CANNOT diverge', () => {
+    // ⚠ THIS LEG USED TO COMPARE TWO IMPLEMENTATIONS AND NOW ANCHORS ONE. It
+    // asserted the body and the card read the SAME global with the SAME
+    // defaults, because a body that seeded differently would paint a different
+    // figure from the card under the identical harness — and `_shell-faces.ts`
+    // pins `simPin: __scopeVrtSeed` on both. With a single renderer that class
+    // of divergence is structurally gone; what still has to be true is that the
+    // renderer honours the seed at all, or every scope baseline — card AND face
+    // — goes nondeterministic on an unlocked Lissajous.
+    expect(SURFACE).toMatch(/__scopeVrtSeed/);
     for (const frag of ['ch1Freq ?? 220', 'ch2Freq ?? 330', 'ch2Phase ?? 0']) {
-      expect(body, `body seed default '${frag}'`).toContain(frag);
-      expect(card, `card seed default '${frag}'`).toContain(frag);
+      expect(SURFACE, `surface seed default '${frag}'`).toContain(frag);
     }
   });
 
-  it('the body PUSHES cvCombined before it reads — a latched CV param would go stale', () => {
+  it('⚠ NOTHING ON THE FACE PATH PUSHES cvCombined — the NODE owns it now', () => {
+    // ⚠ THE INVERSION OF WHAT THIS LEG USED TO ASSERT, and the reason is worth
+    // reading rather than diffing. It required the body to PUSH the combined
+    // (knob + CV) params before reading them back, because a param that was
+    // under CV when the pump stopped LATCHES at its last modulated value — so a
+    // docked scope with a patched TIME cable would draw on a stale timebase.
+    //
+    // That was correct while the push was a SURFACE's job, and it made the body
+    // the SECOND writer of one engine channel (the card was the first). The push
+    // is `$lib/ui/media/frame-producers`' `SCOPE_FRAME_PRODUCER` now, running on
+    // GRAPH lifetime, so there is exactly one writer and no surface can stop it.
+    // Two writers agreeing is not a property; one writer is.
     const body = stripSourceComments(readFileSync(BODY_SRC, 'utf8'));
-    expect(body).toMatch(/readParam\(/);
-    expect(body).toMatch(/write\(n, 'cvCombined'/);
-    expect(body).toMatch(/read\(n, 'drawParams'\)/);
+    for (const [name, src] of [['body', body], ['surface', stripSourceComments(SURFACE)]] as const) {
+      expect(src, `${name} must not write cvCombined — the node producer owns it`)
+        .not.toMatch(/cvCombined/);
+    }
+    // ANCHOR: the owner really exists and really is registered, so this leg
+    // cannot pass by the push having been DELETED rather than MOVED.
+    expect(NODE_FRAME_PRODUCER_TYPES.has('scope'), 'scope has a node-lifetime producer').toBe(true);
+    expect(
+      CARD_PRODUCER_LANE_TYPES.has('scope'),
+      'and it therefore left the card-producer set — the two halves are one change',
+    ).toBe(false);
+    expect(PRODUCERS_SRC, 'the producer pushes the combined record it reads')
+      .toMatch(/write\(node, 'cvCombined', combined\)/);
+    expect(PRODUCERS_SRC, 'from `readParam`, which is knob PLUS the engine CV tap')
+      .toMatch(/readParam\(node, p\.id\)/);
   });
 
-  it('and it repaints through onMeterFrame, NOT a raw rAF', () => {
+  it('and the trace repaints through onMeterFrame, NOT a raw rAF', () => {
     // `RasterizeOutputBody`'s ungated loop is exempt because its painter is
     // advanced INSIDE the engine read. Scope has no such inversion — reading a
     // snapshot mutates nothing — so copying that exemption would ship an
     // ungated full-canvas redraw on a collapsed dock.
-    const body = stripSourceComments(readFileSync(BODY_SRC, 'utf8'));
-    expect(body).toMatch(/onMeterFrame\(/);
-    expect(body).not.toMatch(/requestAnimationFrame/);
+    //
+    // ⚠ AND THE GATE IS RIGHT *HERE* WHILE BEING WRONG FOR THE PRODUCER, which
+    // is the distinction the extraction turns on. `onMeterFrame` skips a
+    // subscriber whose element is off-screen: correct for a PAINT, and fatal for
+    // a push that feeds a downstream chain. That is why the surface keeps the
+    // gate and the node producer runs on an ungated shared ticker.
+    const surface = stripSourceComments(SURFACE);
+    expect(surface).toMatch(/onMeterFrame\(/);
+    expect(surface).not.toMatch(/requestAnimationFrame/);
   });
 });
 
@@ -430,19 +473,28 @@ describe('scope face — the SCREEN switch: required by the ruling, invisible to
     expect(body).not.toMatch(/previewCollapsed\s*=\s*\$state/);
   });
 
-  it('⚠ keeps RENDERING while OFF — it skips the PAINT, never the loop or the push', () => {
-    // The owner's floor. The module's own video-out `drawFrame` reads the same
-    // shadows the push feeds, so stopping the push on collapse would desync the
-    // `out` texture from the controls — a real regression, not a saved frame.
-    // Asserted by ORDER: the cvCombined push must appear BEFORE the collapse
-    // early-return, and the snapshot read after it.
-    const pushAt = body.indexOf("write(n, 'cvCombined'");
-    const bailAt = body.indexOf('if (previewCollapsed) return;');
-    const snapAt = body.indexOf("read(n, 'snapshot')");
-    expect(pushAt, 'the push exists').toBeGreaterThan(-1);
-    expect(bailAt, 'the collapse bail exists').toBeGreaterThan(-1);
-    expect(pushAt, 'the push runs BEFORE the collapse bail').toBeLessThan(bailAt);
-    expect(snapAt, 'the paint work runs after it').toBeGreaterThan(bailAt);
+  it('⚠ keeps RENDERING while OFF — and it is now STRUCTURAL, not an ordering', () => {
+    // The owner's floor, satisfied a different way (legacy-removal S1) and the
+    // change is worth reading rather than diffing.
+    //
+    // WHAT THIS ASSERTED BEFORE: the body ran the cvCombined push and the
+    // module's own `drawFrame` reads the same shadows that push fills — so
+    // stopping the loop on collapse would have desynced the `out` texture from
+    // the controls, a preview toggle acting as a producer kill switch. The only
+    // way to state that in source was an ORDER: push, then bail, then paint.
+    //
+    // WHAT IT ASSERTS NOW: the body cannot reach `out` at all. The producer is
+    // `$lib/ui/media/frame-producers` on GRAPH lifetime, so SCREEN OFF may
+    // unmount the whole trace and the texture is unaffected by construction. An
+    // ordering assertion over code that no longer writes anything would be a
+    // gate with nothing behind it.
+    expect(body, 'the collapse really does remove the picture')
+      .toMatch(/\{#if !previewCollapsed\}/);
+    expect(body, 'and the body writes NOTHING to the engine — no push to order')
+      .not.toMatch(/\.write\(/);
+    // ANCHOR: the producer that took it over exists and is registered, so this
+    // leg cannot pass because the push was DELETED rather than MOVED.
+    expect(NODE_FRAME_PRODUCER_TYPES.has('scope')).toBe(true);
   });
 
   it('and carries no watch mark, because there is no pull set to fall out of', () => {
@@ -556,22 +608,23 @@ describe('scope face — the TUNER moved INTO the instrument', () => {
   });
 });
 
-describe('scope face — the CARD DEBT is paid by editing the CARD', () => {
-  it('the XY toggle now writes through setNodeParam, like the range toggle beside it', () => {
-    // A bare proxy assignment runs with origin `null`; the UndoManager tracks
-    // only LOCAL_ORIGIN, so the old write was not undoable and not tagged for
-    // collaborators — while `toggleRange`, three lines down, always was.
-    const card = stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
-    expect(card).toMatch(/function toggleXY\(\)\s*\{\s*setNodeParam\(id, 'mode'/);
-    expect(card, 'no bare proxy assignment survives')
-      .not.toMatch(/\.params\.mode\s*=/);
-  });
-
-  it('⚠ and the ledger entry is DELETED in the same diff — the anchor runs both ways', () => {
-    // Deleting the entry without editing the card is RED; editing the card
-    // without deleting the entry is RED too. #2025 argued a face pays this by
-    // construction — `raw-write-ledger.ts` refutes that by name, because
-    // promotion does not delete the card and `?shell=legacy` still renders it.
+describe('scope face — the RAW-WRITE DEBT stays paid', () => {
+  // ⚠ 'the XY toggle now writes through setNodeParam' STOOD HERE, reading the
+  // card for `function toggleXY() { setNodeParam(id, 'mode'` and denying a bare
+  // `.params.mode =` beside it. A bare proxy assignment runs with origin
+  // `null`; the UndoManager tracks only LOCAL_ORIGIN, so that write was neither
+  // undoable nor tagged for collaborators, while `toggleRange` three lines down
+  // always was. The surface that carried it is gone, and the shell writes every
+  // param through `shellParamWrite` — so the untracked write has no
+  // module-local place to come back to, and `mutate.guard.test.ts` holds the
+  // rule tree-wide.
+  //
+  // The LEDGER half is kept, because a ledger entry naming a paid debt is the
+  // thing that rots. It is asserted below, and it is worth noting WHY #2025's
+  // argument was wrong at the time and is right now: it claimed a face paid
+  // this debt by construction, and `raw-write-ledger.ts` refuted that by name,
+  // because promotion did not delete the card. The fleet deletion does.
+  it('⚠ the ledger names no scope card entry', () => {
     expect(Object.keys(RAW_WRITE_LEDGER)).not.toContain('ui/modules/ScopeCard.svelte');
   });
 });

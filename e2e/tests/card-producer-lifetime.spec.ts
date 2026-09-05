@@ -152,30 +152,62 @@ const LANE_SETS_SRC = readFileSync(
  *  header and then runs on to the WRONG array — which is exactly what it did on
  *  the first run here, silently substituting the DOM-source set for the producer
  *  set and enrolling nine modules nobody asked for. */
-function parseLaneSet(name: string): string[] {
+function parseLaneSet(name: string, opts: { mayBeEmpty?: boolean } = {}): string[] {
   const re = new RegExp(`export const ${name}[^[]*\\[([\\s\\S]*?)\\]`);
   const block = re.exec(LANE_SETS_SRC);
   if (!block) throw new Error(`could not parse ${name} — has the shape changed?`);
   const types = [...block[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
-  if (types.length === 0) throw new Error(`${name} parsed EMPTY — refusing to pass vacuously`);
+  // ⚠ EMPTINESS IS A DEFECT FOR SOME SETS AND A FACT FOR OTHERS, and conflating
+  // them cost the WHOLE E2E LANE (legacy-removal S1, 2026-09-03). This threw
+  // unconditionally, which was right while every set had members. When
+  // `DOM_SOURCE_LANE_TYPES` legitimately emptied — all five members converted to
+  // node-scoped controllers — the throw fired at COLLECTION time, and a
+  // collection-time throw in ONE spec makes Playwright list ZERO tests in ZERO
+  // files across the entire project. Not one red spec: an empty run that reports
+  // success in some readers.
+  //
+  // ⚠ AND NO FOCUSED RUN CAN SEE IT. `task e2e:one -- <spec>` still COLLECTS
+  // every file, so the failure is lane-wide the moment it exists; the thing that
+  // caught it was `scripts/ci-selection-audit.test.ts`, which shells out to
+  // `playwright test --list`. Worth knowing where that alarm comes from.
+  //
+  // So the guard is now per-set, and the caller says which it is.
+  if (types.length === 0 && !opts.mayBeEmpty) {
+    throw new Error(`${name} parsed EMPTY — refusing to pass vacuously`);
+  }
   return types;
 }
 
-/** The producers whose FACE mounts the producing surface itself, so their
- *  headless host stands down while the dock full view is open. Parsed from the
- *  same shared source as the lane sets — a hand-typed copy here would be the
- *  second source of truth for a rule whose whole point is that a module leaves
- *  the default BY NAME. */
-const FACE_MOUNTS_PRODUCER = new Set(parseLaneSet('FACE_MOUNTS_PRODUCER'));
+// ⚠ `FACE_MOUNTS_PRODUCER` WAS PARSED HERE AND IS RETIRED (legacy-removal
+// S1.5) with the headless host, `needsHeadlessSourceMount` and the export
+// itself: with `CARD_PRODUCER_LANE_TYPES` empty there is no producer whose
+// dock state could need the exemption, and the `keepsHeadlessWhileDocked`
+// subject field that consumed it went with it. The retirement record lives on
+// dom-source-modules.ts.
 
 /** The producer subjects, derived from the shared source. */
 function cardProducerTypes(): string[] {
-  const producers = parseLaneSet('CARD_PRODUCER_LANE_TYPES');
+  // ⚠ MAY BE EMPTY, AND IS — the terminal state of the extractions
+  // (legacy-removal S1.5: rasterize -> RASTERIZE_FRAME_PRODUCER, cube ->
+  // NodeVizSurfaceHost). Every leg the first half derives from this list
+  // vanishes with the population, which is exactly why the node-owner halves
+  // below live in THIS file: the same modules, the same instruments, the
+  // OPPOSITE claim. A type re-entering the set re-derives its four legs here
+  // with no edit.
+  const producers = parseLaneSet('CARD_PRODUCER_LANE_TYPES', { mayBeEmpty: true });
   // PARSE SELF-CHECK, and it is not decoration: the two sets are asserted
   // DISJOINT by dom-source-modules.test.ts, so any overlap here means this
   // parse grabbed the wrong array literal — the one failure mode a regex over
   // source has, and one that otherwise shows up as nine mysterious subjects.
-  const domSource = new Set(parseLaneSet('DOM_SOURCE_LANE_TYPES'));
+  // ⚠ MAY BE EMPTY, AND IS. This is a PARSE SELF-CHECK, not a subject list: it
+  // exists only to prove the regex above grabbed the right array literal. An
+  // empty DOM-source set makes the overlap check trivially pass, which is
+  // correct — there is nothing to overlap WITH — and the check's real value was
+  // always the day the regex matched the wrong literal, which an empty result
+  // cannot hide (a wrong-literal match would return the PRODUCER names here and
+  // the overlap would be total). See `dom-source-modules.ts` for why the set is
+  // empty and what its emptiness does and does not assert.
+  const domSource = new Set(parseLaneSet('DOM_SOURCE_LANE_TYPES', { mayBeEmpty: true }));
   const overlap = producers.filter((t) => domSource.has(t));
   if (overlap.length > 0) {
     throw new Error(
@@ -192,14 +224,13 @@ const SUBJECTS = cardProducerTypes().map((type) => {
   return {
     type,
     domain: mod.domain,
-    /** What the shell renders in the lane INSTEAD of the real card. DERIVED
-     *  from the manifest's own `strictFace`, never declared here (#1724): a
-     *  MIGRATED module gets `<ModuleShell>`, an un-migrated one the uniform
-     *  `<ModuleShellPlaceholder>`. Both are `needsHeadlessSourceMount` kinds, so
-     *  the claim below is the same either way — but hard-coding the placeholder
-     *  made the assertion silently un-satisfiable for the first migrated
-     *  producer to join this set, which is exactly what CUBE is. */
-    laneTestId: mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder',
+    /** The lane tile every producer renders. It used to be DERIVED from the
+     *  manifest's `strictFace` (#1724), because a faced producer and an un-faced
+     *  one painted different tiles and hard-coding one made the assertion
+     *  silently un-satisfiable for the first faced producer to join the set —
+     *  which is exactly what CUBE was. There is one tile now, so the derivation
+     *  is gone and the constant is honest. */
+    laneTestId: 'module-shell' as const,
     /** Every video-carrying OUTPUT port. Which of them actually carries the
      *  card-produced picture is DERIVED at runtime (a port that shows nothing
      *  even with the card mounted — SYNESTHESIA's per-band rasters with no
@@ -234,8 +265,13 @@ const SUBJECTS = cardProducerTypes().map((type) => {
      * producer. Only the place it lives now depends on the module.
      */
     migrated: mod.strictFace === true,
-    keepsHeadlessWhileDocked:
-      mod.strictFace === true && !FACE_MOUNTS_PRODUCER.has(type),
+    // ⚠ CONSTANT-FALSE SINCE S1.5: FACE_MOUNTS_PRODUCER and the headless host
+    // it modulated are retired, so no subject can keep a host in any dock
+    // state. Left as a field (rather than deleted from the legs) so a type
+    // re-entering the set derives its four legs unchanged — and REDS on the
+    // host assertions, which is correct: the repair for a returning producer
+    // is a node-scoped owner, never a host revival.
+    keepsHeadlessWhileDocked: false,
   };
 });
 
@@ -558,33 +594,6 @@ async function cardMounts(page: Page, nodeId: string): Promise<{ headless: numbe
 }
 
 /**
- * EVERY host that can hold this node's real card while the lane shows nothing
- * for it, counted from the DOM rather than from a list of module types.
- *
- * ⚠ THIS IS THE POINT OF READING IT THIS WAY. There are two such hosts and
- * which one takes a given node is a property of the module, not of this test:
- * `<HeadlessSourceHost>` holds a CARD_PRODUCER, while `GroupCard` hidden-mounts
- * a viz-passthrough child's card itself (SCOPE — $lib/ui/modules/group-viz-hosts).
- * Asserting the SUM is 1 is the claim that matters in both directions at once —
- * somebody is running the pump, and nobody is running it twice — and it needs no
- * hand-maintained list to say so, so a future opt-in changes nothing here.
- */
-async function collapsedCardHosts(
-  page: Page,
-  nodeId: string,
-): Promise<{ headless: number; groupViz: number; total: number }> {
-  return page.evaluate((id) => {
-    const headless = document.querySelectorAll(
-      `[data-testid="headless-source-host"][data-node-id="${id}"]`,
-    ).length;
-    const groupViz = document.querySelectorAll(
-      `[data-testid="viz-hidden-mount"][data-child-id="${id}"]`,
-    ).length;
-    return { headless, groupViz, total: headless + groupViz };
-  }, nodeId);
-}
-
-/**
  * How many xyflow nodes the MAIN LANE renders for this node id.
  *
  * ⚠ THE EXCLUSION IS THE WHOLE POINT. Both off-lane hosts mount the card inside
@@ -602,49 +611,6 @@ async function laneNodeCount(page: Page, nodeId: string): Promise<number> {
   }, nodeId);
 }
 
-/** Wrap `childId` in a freshly-created GROUP. A group is created COLLAPSED
- *  (`data.expanded` absent ⇒ falsy ⇒ `collapsedGroupIds` contains it), so this
- *  single mutation IS the collapse — the same state a SAVED rack loads in, and
- *  the same one `graph/group-actions.ts` commits from the marquee gesture. */
-async function groupChild(page: Page, groupId: string, childId: string): Promise<void> {
-  await page.evaluate(({ gid, cid }) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, unknown> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      w.__patch.nodes[gid] = {
-        id: gid,
-        type: 'group',
-        domain: 'meta',
-        position: { x: 40, y: 40 },
-        params: {},
-        data: { childIds: [cid], exposedPorts: [], label: 'producer group' },
-      };
-      const child = w.__patch.nodes[cid] as { data?: Record<string, unknown> } | undefined;
-      if (!child) throw new Error(`groupChild: no node ${cid}`);
-      if (!child.data) child.data = {};
-      (child.data as { parentGroupId?: string }).parentGroupId = gid;
-    });
-  }, { gid: groupId, cid: childId });
-}
-
-/** Un-collapse the group (the user's expand click, driven through the graph so
- *  the test does not depend on the group card's chrome). */
-async function expandGroup(page: Page, groupId: string): Promise<void> {
-  await page.evaluate((gid) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, unknown> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__ydoc.transact(() => {
-      const g = w.__patch.nodes[gid] as { data?: Record<string, unknown> } | undefined;
-      if (!g?.data) throw new Error(`expandGroup: no group ${gid}`);
-      (g.data as { expanded?: boolean }).expanded = true;
-    });
-  }, groupId);
-}
-
 /** Is the module's engine handle still publishing this video source? */
 async function hasVideoSource(page: Page, nodeId: string, port: string): Promise<boolean> {
   return page.evaluate(({ id, p }) => {
@@ -655,16 +621,17 @@ async function hasVideoSource(page: Page, nodeId: string, port: string): Promise
   }, { id: nodeId, p: port });
 }
 
-async function boot(page: Page, shell: Shell = 'default'): Promise<void> {
-  // Plain /rack — the DEFAULT faceplate shell, which is the whole point of the
-  // #1587 legs: under `?shell=legacy` the real card renders in the lane and the
-  // shell-swap bug is invisible. The #1721 leg passes 'legacy' as well, because
-  // ITS defect is not shell-shaped (see there).
-  await page.goto(shell === 'legacy' ? '/rack?shell=legacy' : '/rack');
+async function boot(page: Page): Promise<void> {
+  // Plain /rack — the shipping faceplate shell, which is the whole point of the
+  // #1587 legs: with the module's own surface pinned in the lane the shell-swap
+  // bug is invisible.
+  //
+  // ⚠ THIS FUNCTION TOOK A `shell` ARGUMENT AND NO CALLER PASSED ONE. Its other
+  // value selected a second renderer that no longer exists, so the parameter
+  // and its type went with the arm.
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
 }
-
-type Shell = 'default' | 'legacy';
 
 for (const subject of SUBJECTS) {
   const { type, domain, videoOuts, laneTestId, migrated, keepsHeadlessWhileDocked } = subject;
@@ -760,8 +727,7 @@ for (const subject of SUBJECTS) {
       await cardMounts(page, nodeId),
       `${type} must have EXACTLY ONE surface running its producer while its dock full view is ` +
         `open. It is ${keepsHeadlessWhileDocked ? '' : 'NOT '}a module that keeps its headless ` +
-        `host while docked (migrated=${migrated}` +
-        `, faceMountsProducer=${FACE_MOUNTS_PRODUCER.has(type)}), so the headless host must be ` +
+        `host while docked (migrated=${migrated}), so the headless host must be ` +
         `${expectedHeadless}: ${keepsHeadlessWhileDocked
           ? 'its face only BLITS, so unmounting the card would leave a stale or black picture'
           : 'either the dock holds the real card, or the face mounts the producing surface itself'}`,
@@ -940,198 +906,882 @@ for (const subject of SUBJECTS) {
     expect(providerErrors, `provider throw(s) during the lifecycle: ${providerErrors.join(' | ')}`).toEqual([]);
   });
 
-  // ── #1721 — THE GROUP-COLLAPSE LEG, IN BOTH SHELLS ─────────────────────────
+  // ── #1721 — THE GROUP-COLLAPSE LEG IS DELETED WITH ITS SUBJECT ────────────
   //
-  // The legs above are all about the SHELL swapping a lane card for a tile. This
-  // one is not, and that is the whole reason it exists: Canvas's `flowNodes`
-  // derivation drops a COLLAPSED GROUP'S CHILDREN outside its `shellFaces`
-  // branch, so a producer inside a collapsed group has no card in EITHER shell
-  // — the first member of the #1583 family that is not a default-shell-only
-  // exposure. `?shell=legacy` is therefore a REAL second subject here, not the
-  // ceremonial no-op it is for the tests above.
+  // This block ran every CARD_PRODUCER through "wrapped in a COLLAPSED GROUP,
+  // in BOTH renderers" and asserted the module kept its picture, that its
+  // surface was mounted EXACTLY ONCE across every host that could hold it, and
+  // that an expand put the child back in the lane. Its trigger was Canvas's
+  // `flowNodes` derivation dropping a collapsed group's children BEFORE the
+  // lane decision ran — the one member of the #1583 family that was not
+  // specific to one renderer, which is why the second one was a real subject
+  // here.
   //
-  // NO CLICK, AND THAT IS THE TRIGGER UNDER TEST. A group is created COLLAPSED,
-  // so wrapping the node in one IS the collapse — the same state a SAVED rack
-  // loads in, with no user action against the producer at all. The expand leg at
-  // the end then exercises the other direction.
+  // The GROUP! module is deleted (owner ruling: group and sticky are deleted
+  // entirely), so `collapsedGroupIds` and the `parentGroupId` lane filter are
+  // gone with it and there is no longer any way for a producer to be dropped
+  // from the lane by grouping. The leg is not re-pointed anywhere: its subject
+  // is the mechanism, not the modules.
   //
-  // THE VACUITY GUARDS, since an equality between two probes of the same dead
-  // thing passes:
-  //   * phase 1 (UNGROUPED) must itself carry a MOVING picture, asserted, before
-  //     anything is compared against it — the permanent positive control;
-  //   * the port SET must match, not merely "something is non-black";
-  //   * the movement check is re-run after the collapse and exits ON THE EVENT
-  //     (TIMELORDE's stale-bitmap shape reads non-black forever while frozen —
-  //     measured on the pre-fix tree: `nonBlack 2944/3072` unchanged, `1 distinct
-  //     signature in 20 frames`, i.e. dead but bright);
-  //   * and the card must be mounted EXACTLY ONCE across every host that can
-  //     hold it, which fails both if nobody took it and if two hosts did.
-  //
-  // ⚠ WHAT THIS LEG STRUCTURALLY CANNOT SEE. It reads the module's own
-  // `drawFrame`, so a producer whose engine-visible state is NOT a picture is
-  // invisible to it — SYNESTHESIA's `video_levels_a/b` writes and SCOPE's /
-  // RASTERIZE's `cvCombined` writes are covered by the mount-count assertion and
-  // by dom-source-modules.test.ts, never by these pixels. And it covers only the
-  // COLLAPSED-GROUP arm of the exclusion it fixes: the CANVAS-HIDDEN arm
-  // (`isCanvasHiddenNode` — pinned singletons + `hiddenCard` cameras) is a
-  // different subject.
-  //
-  // ⚠ THAT ARM IS NOW FIXED AND COVERED ELSEWHERE — #1754, 2026-08-23. The
-  // pinned TIMELORDE every rack auto-spawns is a CARD_PRODUCER that was sitting
-  // in it: measured on a default rack, `nonBlack 0/3072, maxLuma 8` (its idle
-  // #07090d field), `1 distinct signature over 30 frames`, with zero card mounts
-  // ANYWHERE, in both shells. `headlessSourceNodes` now routes canvas-hidden
-  // nodes through `needsHeadlessSourceMount`'s `laneOmitsNode` arm — which
-  // returns `CARD_PRODUCER_LANE_TYPES.has(type)`, so hidden cameras are
-  // unchanged — and `e2e/tests/timelorde-pinned-source.spec.ts` is the leg that
-  // proves it, with the same in-page drawFrame probe this file uses.
-  for (const shell of ['default', 'legacy'] as const) {
-    test(`${type} [${shell} shell]: its card survives its GROUP being COLLAPSED (#1721)`, async ({ page }) => {
-      test.setTimeout(SLOW_RENDER ? 240_000 : 120_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
+  // ⚠ NAMED COVERAGE LOSS, stated rather than absorbed. What went with it is the
+  // DOUBLE-MOUNT half — `GroupCard` hidden-mounting a viz-passthrough child's
+  // real card (SCOPE, via $lib/ui/modules/group-viz-hosts) while
+  // `<HeadlessSourceHost>` also held it. That host is deleted too, so the
+  // hazard is gone by construction rather than merely untested; the surviving
+  // single-host claim is still made by the `laneOmitsNode` legs above and by
+  // `timelorde-pinned-source.spec.ts` for the canvas-hidden arm.
+}
 
-      await boot(page, shell);
-      const groupId = `producer-group-${type}`;
-      await spawnPatch(
-        page,
-        [
-          { id: nodeId, type, domain },
-          { id: 'producer-out', type: 'videoOut', domain: 'video' },
-        ],
-        [
-          {
-            id: 'producer-edge',
-            from: { nodeId, portId: videoOuts[0]! },
-            to: { nodeId: 'producer-out', portId: 'in' },
-            sourceType: 'mono-video',
-            targetType: 'video',
-          },
-        ],
-        { mountTimeout: 30_000 },
-      );
+// ─────────────────────────────────────────────────────────────────────────────
+// THE OTHER HALF: producers the NODE owns (legacy-removal S1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ WHY THIS LIVES IN THIS FILE AND NOT A NEW ONE. Everything above is derived
+// from `CARD_PRODUCER_LANE_TYPES`, so a module LEAVING that set does not turn a
+// test red — it removes four of them, silently, and the lane stays green with
+// less coverage than it had. That is the "a control over a population that
+// reaches zero stops controlling anything" shape this repo keeps meeting, and
+// the answer it keeps reaching is to re-point the control rather than to let the
+// subject evaporate. These subjects are the SAME modules, measured with the SAME
+// instruments, making the OPPOSITE claim: no card anywhere, no host anywhere,
+// and the producer still running.
+//
+// (It also keeps the CI lane: the filename decides which job a spec runs in, and
+// `**/card-producer-lifetime.spec.ts` is on the webgl-heavy list. A new file
+// would have needed a glob edit to run at all.)
+//
+// ⚠ AND THE LIVENESS PROBE IS NOT PIXELS FOR THESE, WHICH IS THE POINT. The
+// legs above measure a picture MOVING, and record that SCOPE is structurally
+// invisible to that instrument: its trace is drawn inside the module from its
+// own analysers, so it reads `distinct=1 over 300 frames` even with a card
+// mounted (an idle rack draws a static grid). Its producer writes DISPLAY
+// PARAMS, not pixels — so the honest progress assertion is the one that reads
+// the channel that actually moved: patch a modulator at a display param and
+// require the module's own `drawParams` to follow it, with no card in the
+// document. A dead producer leaves that number pinned at the knob forever.
 
-      // ── 1. UNGROUPED — the permanent positive control ────────────────────
-      const beforeReady = await waitForProducerRegistration(page, nodeId, videoOuts);
-      const beforeSettle = await waitForCoverageToSettle(page, nodeId, videoOuts);
-      const beforeSamples = await samplePorts(page, nodeId, videoOuts);
-      const liveBefore = livePorts(beforeSamples);
+/** The node-lifetime producers, parsed from their own source.
+ *
+ *  ⚠ ANCHORED ON `= [`, NOT ON THE FIRST `[` — the sibling parser's
+ *  `[^[]*\[` idiom is wrong here for the reason `extras-producer-lifetime`
+ *  records: the type annotation is `readonly FrameProducer[]`, so `[^[]*` stops
+ *  at the annotation's own bracket pair and the capture comes back EMPTY. */
+const FRAME_PRODUCERS_SRC = readFileSync(
+  fileURLToPath(
+    new URL('../../packages/web/src/lib/ui/media/frame-producers.ts', import.meta.url),
+  ),
+  'utf8',
+);
 
-      // A subject with no pixel coverage even ungrouped has no picture to lose
-      // here (SYNESTHESIA's per-band rasters need a video source patched in).
-      // Skip LOUDLY — and only after the phase-1 probe has actually run, so a
-      // broken probe fails instead of quietly becoming a skip.
-      test.skip(
-        liveBefore.length === 0,
-        `${type} shows no picture on any video output even UNGROUPED, so there is nothing here ` +
-          `to lose: ${digest(beforeSamples)} (producer ready=${beforeReady.ready} after ` +
-          `${beforeReady.waitedFrames} frames; coverage settled=${beforeSettle.settled}). Its ` +
-          'producer lifetime is covered by the headless-mount test above.',
-      );
-
-      const witness = liveBefore[0]!;
-      const movedBefore = await framesToChange(page, nodeId, witness);
-
-      // ── 2. COLLAPSE — wrap it in a group, which is created collapsed ──────
-      await groupChild(page, groupId, nodeId);
-      // The group's own card is what the lane now shows for the whole set…
-      await expect(page.locator(`.svelte-flow__node[data-id="${groupId}"]`)).toHaveCount(1, {
-        timeout: 20_000,
-      });
-      // …and the child's own lane node is gone, in BOTH shells. This is the
-      // premise of the whole leg, so it is asserted rather than assumed: if the
-      // lane still rendered the card there would be no defect to guard.
-      await expect
-        .poll(async () => laneNodeCount(page, nodeId), {
-          message:
-            `[${shell}] the collapsed group's child must have NO lane node of its own — ` +
-            'otherwise this leg is measuring nothing',
-          timeout: 20_000,
-        })
-        .toBe(0);
-
-      // EXACTLY ONE host holds the real card. Fails on 0 (the #1721 defect) and
-      // on 2 (a double mount), and does not care WHICH host it is.
-      await expect
-        .poll(async () => (await collapsedCardHosts(page, nodeId)).total, {
-          message:
-            `[${shell}] ${type}'s real card must be mounted EXACTLY ONCE while its group is ` +
-            'collapsed — in <HeadlessSourceHost>, or in GroupCard\'s hidden viz mount for a ' +
-            'viz-passthrough child',
-          timeout: 20_000,
-        })
-        .toBe(1);
-
-      const afterReady = await waitForProducerRegistration(page, nodeId, videoOuts);
-      const afterSettle = await waitForCoverageToSettle(page, nodeId, videoOuts);
-      const afterSamples = await samplePorts(page, nodeId, videoOuts);
-      const hosts = await collapsedCardHosts(page, nodeId);
-
-      expect(
-        livePorts(afterSamples),
-        `#1721 [${shell} shell]: the ports carrying a picture must be the same whether or not ` +
-          `${type} sits in a COLLAPSED GROUP. Its card is the pump, and a collapsed group is UI ` +
-          'state.\n' +
-          `  ungrouped: ${digest(beforeSamples)} (producer ready=${beforeReady.ready} after ` +
-          `${beforeReady.waitedFrames} frames; coverage settled=${beforeSettle.settled} in ` +
-          `${beforeSettle.rounds} rounds at peak ${beforeSettle.peak})\n` +
-          `  collapsed: ${digest(afterSamples)} (producer ready=${afterReady.ready} after ` +
-          `${afterReady.waitedFrames} frames; coverage settled=${afterSettle.settled} in ` +
-          `${afterSettle.rounds} rounds at peak ${afterSettle.peak}; hosts=${JSON.stringify(hosts)})`,
-      ).toEqual(liveBefore);
-
-      // MOVEMENT, on the same witness port and with the same event-exit probe
-      // used ungrouped — so the two phases are one instrument. Skipped only when
-      // the subject was ALREADY static ungrouped (SCOPE / RASTERIZE draw their
-      // picture inside the module; the card only refines WHICH display params).
-      if (movedBefore.changed) {
-        const movedAfter = await framesToChange(page, nodeId, witness);
-        expect(
-          movedAfter.changed,
-          `#1721 [${shell} shell]: ${type}.${witness} must still emit a MOVING picture inside a ` +
-            'collapsed group. A frozen-but-bright surface is exactly what a dead producer looks ' +
-            `like here.\n  ungrouped: ${fmtChange(movedBefore)}\n  collapsed: ${fmtChange(movedAfter)}`,
-        ).toBe(true);
-      }
-
-      // ── 3. EXPAND — the other direction, so the guard is not one-sided ────
-      // The child returns to the lane, and the picture must survive that
-      // handoff too: whichever host held it during the collapsed window has to
-      // let go without taking the producer down with it.
-      //
-      // ⚠ WHAT IS NOT ASSERTED HERE, AND WHY. GroupCard's own `expanded` chrome
-      // does NOT react to `data.expanded` flipping — measured on origin/main
-      // with the unmodified tree, twice, once after a dev-server restart
-      // (#1753: grouping-phase2 "Phase 2A", grouping-phase3 "expand mode" and
-      // save-group-and-naming "group rename" are all RED there, all reading a
-      // stale `data-expanded="false"` / stale label while the children DO
-      // re-appear inline). So its hidden viz mount is still present after an
-      // expand. That is a live GroupCard reactivity defect that predates this
-      // leg; it is not what #1721 is about, and asserting it here would make
-      // this leg fail for someone else's bug. Canvas's `collapsedGroupIds` DOES
-      // react — which is why the lane-node assertion below is meaningful and is
-      // the one kept.
-      await expandGroup(page, groupId);
-      await expect
-        .poll(async () => laneNodeCount(page, nodeId), {
-          message: `[${shell}] the expanded group's child returns to the lane`,
-          timeout: 20_000,
-        })
-        .toBe(1);
-      await waitForProducerRegistration(page, nodeId, videoOuts);
-      await waitForCoverageToSettle(page, nodeId, videoOuts);
-      const expandedSamples = await samplePorts(page, nodeId, videoOuts);
-      expect(
-        livePorts(expandedSamples),
-        `[${shell}] ${type} must still carry the same picture once the group is EXPANDED again: ` +
-          `${digest(expandedSamples)}`,
-      ).toEqual(liveBefore);
-
-      const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
-      expect(
-        providerErrors,
-        `provider throw(s) across the group collapse/expand: ${providerErrors.join(' | ')}`,
-      ).toEqual([]);
-    });
+function nodeFrameProducerTypes(): string[] {
+  const declared = [
+    ...FRAME_PRODUCERS_SRC.matchAll(
+      /const\s+(\w+):\s*FrameProducer\s*=\s*\{\s*\n\s*type:\s*'([^']+)'/g,
+    ),
+  ].map((m) => ({ constName: m[1]!, type: m[2]! }));
+  const arr = /export const FRAME_PRODUCERS[^=]*=\s*\[([\s\S]*?)\]/.exec(FRAME_PRODUCERS_SRC);
+  if (!arr) throw new Error('could not parse FRAME_PRODUCERS — has the shape changed?');
+  const registered = new Set(
+    [...arr[1]!.matchAll(/(\w+)/g)].map((m) => m[1]!).filter((n) => n.endsWith('PRODUCER')),
+  );
+  // BOTH DIRECTIONS, because each hides a different real hole: a producer
+  // DECLARED but never registered never runs (and nothing else would notice); a
+  // name registered with no declaration means this parse missed one and the
+  // subject list is short.
+  const orphan = declared.filter((d) => !registered.has(d.constName)).map((d) => d.constName);
+  if (orphan.length > 0) {
+    throw new Error(`FrameProducer(s) declared but NOT in FRAME_PRODUCERS: ${orphan.join(', ')}`);
   }
+  const missing = [...registered].filter((n) => !declared.some((d) => d.constName === n));
+  if (missing.length > 0) {
+    throw new Error(`FRAME_PRODUCERS names with no declaration parsed: ${missing.join(', ')}`);
+  }
+  if (declared.length === 0) {
+    throw new Error('FRAME_PRODUCERS parsed EMPTY — refusing to pass vacuously');
+  }
+  return declared.map((d) => d.type);
+}
+
+/**
+ * How a given producer is DRIVEN and what number must move because of it.
+ *
+ * DENY BY DEFAULT: a producer with no fixture throws at collection, so adding
+ * one to `frame-producers.ts` without saying how to observe it cannot land
+ * silently green. The same discipline `extras-producer-lifetime.spec.ts` uses.
+ */
+interface FrameProducerFixture {
+  /** Extra nodes to spawn beside the subject. Omitted when the module drives
+   *  ITSELF — timelorde's owl pulses off its own transport. */
+  readonly driver?: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
+  /** Params the SUBJECT needs for its producer to have anything to do. */
+  readonly params?: Record<string, number>;
+  /** The edge that makes the subject's producer have something to report.
+   *  Present exactly when `driver` is. */
+  readonly edge?: { fromPort: string; toPort: string; sourceType: string; targetType: string };
+  /**
+   * THE PROGRESS PROBE — exactly one of these two, and which one is a fact about
+   * the module rather than a preference.
+   *
+   * `read` — `engine.read(node, key)` → a record; `field` (optionally indexed)
+   * is the number that must move. For producers whose output is NOT a picture:
+   * scope pushes display PARAMS, synesthesia pushes channel LEVELS, and this
+   * page's own pixel instrument is documented as blind to both.
+   *
+   * `pixelPort` — the module's own video output, measured with `framesToChange`
+   * (distinct frame signatures, exiting on the first change). For a producer
+   * whose product IS the picture, that is the honest probe and a number would
+   * be a proxy for it.
+   */
+  readonly read?: { key: string; field: string; index?: number };
+  readonly pixelPort?: string;
+  /**
+   * Params that must make the picture GO STILL — the negative control for a
+   * `pixelPort` probe, and the module's own semantics rather than a trick:
+   * timelorde's owl pulses off the transport, so stopping the transport is the
+   * one state where a live producer legitimately stops moving.
+   */
+  readonly stillWhen?: Record<string, number>;
+  /**
+   * Does the channel return to the KNOB when the cable is pulled?
+   *
+   * ⚠ NOT UNIVERSAL, AND THE DIFFERENCE IS THE MODULE'S SEMANTICS RATHER THAN
+   * A TEST DETAIL. `cvCombined` is an OVERRIDE of a knob, so an un-patched
+   * param must come back to that knob or it has latched. `video_levels_*` is a
+   * SAMPLE-AND-HOLD into a worklet: with nothing patched the producer pushes
+   * NOTHING (which is correct — "no source" must not be reported as zeros), so
+   * the held value staying put is the specified behaviour, not a latch.
+   */
+  readonly unlatchesToKnob?: true;
+  /** Why this is the channel the producer actually owns. */
+  readonly why: string;
+}
+
+const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
+  foxy: {
+    // ⚠ NO DRIVER, AND THE PRODUCT IS NOT A PICTURE. FOXY's three rasters are
+    // painted by the module's own SWOLEVCO oscillators, so the subject drives
+    // itself; what the producer owns is the WAVETABLE those rasters are folded
+    // into, which the internal `wavecel` worklet then PLAYS. So the probe reads
+    // a sample out of the live table rather than any of the module's three video
+    // outs — and that is the honest choice, not a convenience: `scope_out`,
+    // `wave3d_out` and `combined_out` all render from the last table anyone
+    // built, so a dead producer would keep serving a picture (the timelorde
+    // failure mode: bright and frozen) while the module went SILENT.
+    read: { key: 'wavetableFrames', field: '0', index: 8 },
+    why:
+      "the module's audio IS this table: `bridgeTick()` paints the rasters, folds them into the "
+      + '3-axis field and posts a rebuilt wavetable to the worklet, and nothing else calls it. '
+      + 'The only reachable caller used to be a preview-drawing surface reading its rasters, so '
+      + 'the sound had a component lifetime — MEASURED at the moment it was found, FOXY -> SCOPE.ch1 '
+      + 'on one patch: maxPeak 1.0000 with that surface mounted and 0.0000 without it, over '
+      + 'a 6 s window. A sample of the table moving frame to frame is the closest observable to '
+      + '"the oscillator has something new to play"; the pixel probe cannot see it.',
+  },
+  scope: {
+    driver: { id: 'producer-driver', type: 'lfo', domain: 'audio' },
+    edge: {
+      fromPort: 'phase0',
+      toPort: 'ch1Offset',
+      sourceType: 'cv',
+      targetType: 'cv',
+    },
+    read: { key: 'drawParams', field: 'ch1Offset' },
+    unlatchesToKnob: true,
+    why:
+      'the producer reads `readParam` (knob PLUS the engine per-port CV tap) and pushes the ' +
+      'combined record back through cvCombined — the ONLY path a same-domain cv cable has to a ' +
+      'display param, because addEdge connects to the AudioParam and never calls setParam. ' +
+      '`read("drawParams")` is the inverse of that push and is what the module\'s own drawFrame ' +
+      'renders `out` from, so a number that follows the LFO proves the whole chain end to end.',
+  },
+  synesthesia: {
+    // A SELF-RUNNING video source, so the frame keeps changing without anything
+    // in this test driving it — the same driver `synesthesia-video-mode.spec.ts`
+    // uses for the same reason.
+    driver: { id: 'producer-driver', type: 'acidwarp', domain: 'video' },
+    // Copy A in VIDEO mode. Without it the producer correctly does nothing —
+    // in AUDIO mode the worklet's own spectral bands are the levels.
+    params: { a_mode: 1 },
+    edge: { fromPort: 'out', toPort: 'a_video_in', sourceType: 'video', targetType: 'video' },
+    read: { key: 'snapshot', field: 'levelsA', index: 0 },
+    why:
+      'in VIDEO mode the four lanes ARE the patched frame\'s R/G/B/Luma channels, and only the ' +
+      'main thread can sample a frame — the worklet has no canvas. The producer resolves the ' +
+      'upstream source, blits one frame into a 64×48 scratch, averages it and hands the numbers ' +
+      'to the worklet, which sample-and-holds them through the env/gate/meter stage. ' +
+      '`read("snapshot").levelsA` is what comes back out, and it is what all 48 of this ' +
+      'module\'s outputs carry in that mode.',
+  },
+  rasterize: {
+    driver: { id: 'producer-driver', type: 'lfo', domain: 'audio' },
+    edge: {
+      fromPort: 'phase0',
+      toPort: 'cursor',
+      sourceType: 'cv',
+      targetType: 'cv',
+    },
+    read: { key: 'drawParams', field: 'cursor' },
+    unlatchesToKnob: true,
+    why:
+      'scope\'s seam on a different module, plus the module\'s own heartbeat: the painter is ' +
+      "advanced INSIDE read('imageData') and the bridge only pulls drawFrame when a downstream " +
+      'video edge exists, so the producer both pushes cvCombined (the only path a same-domain ' +
+      'cv cable has to the picture) and reads the frame (the only advance when nothing is ' +
+      "patched downstream). `read('drawParams')` is the inverse of the push — the combined " +
+      'values the painter actually draws with — so a number that follows the LFO proves the ' +
+      'chain with no surface mounted anywhere. ⚠ The obvious pixel probe is BLIND here by ' +
+      'construction: sampling the video out calls drawFrame, which itself advances the painter, ' +
+      'so a dead producer would still show a moving picture to the instrument that asks.',
+  },
+  timelorde: {
+    // ⚠ NO DRIVER, AND THAT IS THE MODULE. The owl's eyes and border pulse off
+    // TIMELORDE's own transport at its own BPM, so the subject drives itself and
+    // a patched source would only replace the picture under test.
+    params: { running: 1, bpm: 120 },
+    pixelPort: 'video_out',
+    // The transport is the switch: `beatPulse` returns a flat 0 when `running`
+    // is 0, so a stopped clock is the one state in which a LIVE producer is
+    // legitimately still. That makes it a negative control the module itself
+    // defines rather than one the test invents.
+    stillWhen: { running: 0 },
+    why:
+      'the composite is pushed into the node and `video_out`\'s own drawFrame blits the LATEST ' +
+      'one, so this port IS the producer\'s product. And "not black" cannot judge it: drawFrame ' +
+      'keeps serving the last bitmap anyone pushed, so a dead producer reads BRIGHT and FROZEN ' +
+      '(measured: nonBlack 47034/48400 from a card that was already gone). Only motion can tell ' +
+      'a live producer from a stale leftover.',
+  },
+};
+
+/** Every mount of this node's REAL card, anywhere in the document. */
+async function anyCardMounts(page: Page, nodeId: string, type: string): Promise<number> {
+  return page.evaluate(({ id, t }) => {
+    const inHosts = document.querySelectorAll(
+      `[data-testid="headless-source-host"][data-node-id="${id}"], ` +
+        `[data-testid="viz-hidden-mount"][data-child-id="${id}"]`,
+    ).length;
+    const cards = document.querySelectorAll(`[data-testid="${t}-card"], .mod-card.${t}-card`).length;
+    return inHosts + cards;
+  }, { id: nodeId, t: type });
+}
+
+/** Sample `read(node, key)[field]` (or `[field][index]`) once per rAF frame, in
+ *  the page, and report how many DISTINCT values were seen. One evaluate, never
+ *  a Playwright poll — a poll would starve the very loop it is measuring. */
+async function sampleProducerChannel(
+  page: Page,
+  nodeId: string,
+  read: { key: string; field: string; index?: number },
+  frames: number,
+): Promise<{ frames: number; distinct: number; first: number | null; values: number[] }> {
+  return page.evaluate(
+    async ({ id, key, field, index, n }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { read: (i: string, k: string) => unknown } };
+        __patch: { nodes: Record<string, unknown> };
+      };
+      const seen: number[] = [];
+      const next = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      for (let i = 0; i < n; i++) {
+        let v: number | null = null;
+        try {
+          const rec = w.__engine!().getDomain('audio').read(id, key) as
+            | Record<string, unknown>
+            | undefined;
+          const slot = rec?.[field];
+          const raw =
+            index === undefined
+              ? slot
+              : (slot as ArrayLike<number> | undefined)?.[index];
+          if (typeof raw === 'number' && Number.isFinite(raw)) v = raw;
+        } catch {
+          /* engine not ready — recorded as a gap, never as a value */
+        }
+        if (v !== null) seen.push(v);
+        await next();
+      }
+      return {
+        frames: n,
+        distinct: new Set(seen.map((x) => Math.round(x * 1e4))).size,
+        first: seen.length > 0 ? seen[0]! : null,
+        values: seen.slice(0, 12),
+      };
+    },
+    { id: nodeId, key: read.key, field: read.field, index: read.index, n: frames },
+  );
+}
+
+const CHANNEL_FRAMES = 90;
+
+for (const type of nodeFrameProducerTypes()) {
+  const fixture = FRAME_PRODUCER_FIXTURES[type];
+  if (!fixture) {
+    throw new Error(
+      `${type} is a node-lifetime FrameProducer with no fixture in this spec. Add one saying ` +
+        'how it is DRIVEN and which number must move — a producer nothing observes is a producer ' +
+        'that can stop running without any gate noticing.',
+    );
+  }
+  // Deny-by-default on the FIXTURE'S OWN SHAPE, too: exactly one progress probe,
+  // and a driver iff there is an edge for it. A fixture that declared neither
+  // probe would run every structural leg below and observe nothing at all.
+  if ((fixture.read === undefined) === (fixture.pixelPort === undefined)) {
+    throw new Error(`${type}: a fixture declares EXACTLY ONE of \`read\` or \`pixelPort\``);
+  }
+  if ((fixture.driver === undefined) !== (fixture.edge === undefined)) {
+    throw new Error(`${type}: \`driver\` and \`edge\` are declared together or not at all`);
+  }
+  if (fixture.pixelPort !== undefined && fixture.stillWhen === undefined) {
+    throw new Error(
+      `${type}: a \`pixelPort\` probe needs a \`stillWhen\` — a movement claim with no state ` +
+        'that stops the movement cannot tell a producer from a noisy instrument',
+    );
+  }
+  const mod = REGISTRY.find((m) => m.type === type);
+  if (!mod) throw new Error(`${type} has a node producer but is not in the registry manifest`);
+  const nodeId = `nodeproducer-${type}`;
+
+  test(`${type}: the producer runs with NO card mounted anywhere — no host, no lane card, no dock`, async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 180_000 : 90_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await boot(page);
+    await spawnPatch(
+      page,
+      [
+        { id: nodeId, type, domain: mod.domain, ...(fixture.params ? { params: fixture.params } : {}) },
+        ...(fixture.driver ? [fixture.driver] : []),
+      ],
+      fixture.driver && fixture.edge
+        ? [
+            {
+              id: 'nodeproducer-edge',
+              from: { nodeId: fixture.driver.id, portId: fixture.edge.fromPort },
+              to: { nodeId, portId: fixture.edge.toPort },
+              sourceType: fixture.edge.sourceType,
+              targetType: fixture.edge.targetType,
+            },
+          ]
+        : [],
+      { mountTimeout: 30_000 },
+    );
+
+    // The lane shows the shell's tile for a faced module…
+    await expect(
+      page.locator(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="${
+          'module-shell'
+        }"]`,
+      ),
+    ).toHaveCount(1, { timeout: 20_000 });
+
+    // …and its REAL card is nowhere: not in the lane, not in a headless host,
+    // not in a group's hidden mount, not in the dock. THIS is the claim the
+    // card-producer legs above make in reverse, and it is the one that lets the
+    // file be deleted in S4.
+    await expect
+      .poll(async () => anyCardMounts(page, nodeId, type), {
+        message:
+          `${type}'s card must not be mounted ANYWHERE — its producer is node-lifetime ` +
+          '($lib/ui/media/frame-producers), so a card mount would be a second owner',
+        timeout: 20_000,
+      })
+      .toBe(0);
+
+    // ⚠ THE PROGRESS LEG. Everything above is satisfiable by a producer that is
+    // registered, swept, counted and completely silent — which is exactly the
+    // failure shape the archivist extraction shipped, where every assertion
+    // about state was green while the media made no progress at all.
+    if (fixture.pixelPort) {
+      // THE PICTURE ITSELF, with `framesToChange` — the same instrument the
+      // card-producer legs above use, exiting on the first CHANGED frame with a
+      // frame cap that only bounds the failure. "Not black" is refused on
+      // purpose here: this module's drawFrame keeps blitting the last bitmap
+      // anyone pushed, so a dead producer reads bright and frozen.
+      const moved = await framesToChange(page, nodeId, fixture.pixelPort);
+      expect(
+        moved.changed,
+        `${type}.${fixture.pixelPort} must emit a MOVING picture with no card anywhere. ` +
+          `${fixture.why}\n  ${fmtChange(moved)}`,
+      ).toBe(true);
+
+      // NEGATIVE CONTROL on the instrument, defined by the MODULE: the state in
+      // which a live producer legitimately stops moving. Without it, a probe
+      // that reported change for any reason at all would pass the leg above on a
+      // producer that was never running.
+      await page.evaluate(({ id, params }) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params?: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes[id];
+          if (!n) throw new Error(`stillWhen: no node ${id}`);
+          if (!n.params) n.params = {};
+          for (const [k, v] of Object.entries(params)) n.params[k] = v;
+        });
+      }, { id: nodeId, params: fixture.stillWhen! });
+      await expect
+        .poll(async () => (await framesToChange(page, nodeId, fixture.pixelPort!)).changed, {
+          message:
+            `${type}: in the state that must STOP the picture ` +
+            `(${JSON.stringify(fixture.stillWhen)}) the same probe still reports motion — a ` +
+            'picture that moves whatever the module is doing cannot be evidence that the ' +
+            'producer is running',
+          timeout: 30_000,
+        })
+        .toBe(false);
+    } else {
+      const read = fixture.read!;
+      const driven = await sampleProducerChannel(page, nodeId, read, CHANNEL_FRAMES);
+      expect(
+        driven.distinct,
+        `${type}: ${read.key}.${read.field} must FOLLOW the patched modulator with ` +
+          `no card anywhere. ${fixture.why}\n  saw ${driven.distinct} distinct value(s) over ` +
+          `${driven.frames} frames; first ${driven.first}; sample ${driven.values.join(', ')}`,
+      ).toBeGreaterThan(1);
+
+      // NEGATIVE CONTROL on the instrument itself: with the modulator UNPATCHED
+      // the same probe must go still. Without this, a probe that reported noise —
+      // or read a field that jitters for unrelated reasons — would pass the leg
+      // above on a dead producer.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { edges: Record<string, unknown> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          delete w.__patch.edges['nodeproducer-edge'];
+        });
+      });
+      await expect
+        .poll(
+          async () => (await sampleProducerChannel(page, nodeId, read, 30)).distinct,
+          {
+            message:
+              `${type}: with the modulator unpatched the same probe must settle — a channel that ` +
+              'keeps moving on its own cannot be evidence that the producer is running',
+            timeout: 30_000,
+          },
+        )
+        .toBe(1);
+    }
+
+    // ⚠ AND THE UN-LATCH, which is the half a "does it move" leg cannot see —
+    // for the producers whose channel HAS that semantics (see the fixture
+    // field). `cv-shadow` clears the combined value only on a KNOB MOVE, so a
+    // producer that stopped pushing would leave the param frozen at whatever the
+    // modulator happened to be at: bright, moving, completely stale. The settled
+    // value must be the KNOB, which is only true if the push is still running
+    // after the cable is gone.
+    if (fixture.unlatchesToKnob && fixture.read) {
+      const knob = await page.evaluate(({ id, f }) => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params?: Record<string, number> }> } };
+        return w.__patch.nodes[id]?.params?.[f];
+      }, { id: nodeId, f: fixture.read.field });
+      const settled = await sampleProducerChannel(page, nodeId, fixture.read, 20);
+      expect(
+        settled.first,
+        `${type}: after the cable is pulled, ${fixture.read.field} must return to the KNOB ` +
+          `(${knob}) rather than LATCHING at its last modulated value — the producer is what ` +
+          `overwrites it. Saw ${settled.first}.`,
+      ).toBeCloseTo(typeof knob === 'number' ? knob : 0, 3);
+    }
+
+    // ── DELETE — the node leaves the graph and the producer goes with it ─────
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        for (const [eid, e] of Object.entries(w.__patch.edges)) {
+          const edge = e as { source?: { nodeId?: string }; target?: { nodeId?: string } } | undefined;
+          if (edge?.source?.nodeId === id || edge?.target?.nodeId === id) delete w.__patch.edges[eid];
+        }
+        delete w.__patch.nodes[id];
+      });
+    }, nodeId);
+    // DERIVED from the manifest, never named here — the port that carries this
+    // module's picture is a property of the module.
+    const videoOut = mod.outputs.find((p) => p.type === 'video' || p.type === 'mono-video')?.id;
+    if (videoOut) {
+      await expect
+        .poll(async () => hasVideoSource(page, nodeId, videoOut), {
+          message: `${type}'s engine handle must be gone after the node is deleted`,
+          timeout: 20_000,
+        })
+        .toBe(false);
+    }
+
+    const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
+    expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE THIRD SHAPE: a producer the NODE MOUNTS AS A SURFACE (legacy-removal S1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Same file, same reason as the block above: subjects here are modules LEAVING
+// `CARD_PRODUCER_LANE_TYPES`, so a departure removes four tests from the first
+// half silently, with the lane green and less coverage than it had. And the
+// filename decides the CI job — `**/card-producer-lifetime.spec.ts` is on the
+// webgl-heavy list, so a new file would have run in no job at all.
+//
+// ⚠ WHAT IS DIFFERENT FROM THE `FrameProducer` HALF, because a reader will look
+// for a copy and find a different shape. Those producers are CALLBACKS on a
+// shared ticker. WAVESCULPT's is a WebGL2 renderer with a persistent GL context
+// and a presentation canvas, in a file whose BYTES are pinned by the attest
+// basis — so the component stayed a component and the NODE mounts it
+// (`$lib/ui/media/NodeVizSurfaceHost`). That makes ONE extra claim testable and
+// necessary, and it is the one this block exists for beyond "the producer runs":
+// there is exactly ONE `wavesculpt-canvas` element in the document at all times,
+// and the views ADOPT it rather than mounting their own.
+//
+// ⚠ THE PROGRESS PROBE IS MOTION *AND* A BLACK FLOOR, WHICH IS NOT THE MIX
+// TIMELORDE USES, AND THE DIFFERENCE IS THE MODULE. timelorde's dead producer
+// reads BRIGHT and FROZEN (drawFrame blits the last bitmap anyone pushed), so
+// "not black" proves nothing there and only motion can judge it. WAVESCULPT's
+// dead state is a literal `fillRect('#000')` in `wavesculpt.ts`'s own drawFrame
+// when no drawer is installed — so here BOTH readings are evidence, and they
+// fail in different ways: a producer that never installed reads black AND
+// still, a renderer that installed and then died reads lit AND still.
+//
+// ⚠ AND THE NEGATIVE CONTROL THIS MODULE CANNOT OFFER, STATED RATHER THAN
+// FAKED. The `pixelPort` fixtures above require a `stillWhen` — a module-defined
+// state in which a LIVE producer legitimately stops moving — and wavesculpt has
+// none: its shader clock advances every frame in every view mode, which is
+// exactly why the VRT scenes need `__wavesculptVrtFreeze` and why this file's
+// own `waitForCoverageToSettle` says its ribbon "would never satisfy
+// unchanged". Inventing one (pinning the test-only freeze flag) would control
+// the INSTRUMENT with a test hook rather than with the module. What stands in
+// its place: the BLACK FLOOR is an independent second reading of the same
+// frame, the DELETE leg shows the probe reports nothing for nothing, and the
+// extraction was verified with a measured POSITIVE control — with the node
+// host's surface suppressed, the movement leg goes red and the port reads
+// `nonBlack 0`. That control is a build-time measurement, not a shipped leg,
+// and saying so is the honest version.
+
+const VIZ_SURFACES_SRC = readFileSync(
+  fileURLToPath(
+    new URL('../../packages/web/src/lib/ui/media/node-viz-surfaces.ts', import.meta.url),
+  ),
+  'utf8',
+);
+
+/** The node-mounted viz surfaces, parsed from their own roster.
+ *
+ *  ⚠ ANCHORED ON `= [` AND CLOSED ON `\n];`, for the reason the sibling parser
+ *  records: the type annotation is `readonly VizSurfaceProducer[]`, so a lazy
+ *  `[^[]*\[` stops at the annotation's own bracket pair and captures nothing. */
+function nodeVizSurfaceTypes(): string[] {
+  const arr = /export const VIZ_SURFACE_PRODUCERS[^=]*=\s*\[([\s\S]*?)\n\];/.exec(VIZ_SURFACES_SRC);
+  if (!arr) throw new Error('could not parse VIZ_SURFACE_PRODUCERS — has the shape changed?');
+  const types = [...arr[1]!.matchAll(/\btype:\s*'([^']+)'/g)].map((m) => m[1]!);
+  if (types.length === 0) {
+    throw new Error('VIZ_SURFACE_PRODUCERS parsed EMPTY — refusing to pass vacuously');
+  }
+  return types;
+}
+
+/**
+ * Per-type facts the shared viz legs need — the deny-by-default discipline the
+ * `FrameProducer` half already uses: a roster member with no fixture throws at
+ * collection, so adding a surface to `node-viz-surfaces.ts` without saying how
+ * to observe it cannot land silently green.
+ */
+interface VizSurfaceFixture {
+  /** The surface's OWN testid on its headline element — the one every selector
+   *  in the tree assumes is unique per document. */
+  readonly canvasTestId: string;
+  /** The legacy card's claim-hold testid (where the adopted element lands). */
+  readonly cardHoldTestId: string;
+  /** The DRS step-seam globals the surface installs (`ownsVideoOut` default). */
+  readonly stepGlobal: string;
+  readonly stepCountGlobal: string;
+  /** Extra nodes/edges that make the picture MOVE. wavesculpt free-runs (its
+   *  shader clock advances every frame); cube is param-driven and STILL at
+   *  rest — that stillness is its VRT-determinism licence (`zdet`, see
+   *  `_shell-faces.ts`), so the movement probe must drive a param. */
+  readonly drive?: {
+    readonly node: { id: string; type: string; domain: 'audio' | 'video' | 'meta' };
+    readonly edge: { fromPort: string; toPort: string; sourceType: string; targetType: string };
+  };
+  readonly why: string;
+}
+
+const VIZ_SURFACE_FIXTURES: Record<string, VizSurfaceFixture> = {
+  wavesculpt: {
+    canvasTestId: 'wavesculpt-canvas',
+    cardHoldTestId: 'wavesculpt-screen-wrap',
+    stepGlobal: '__wavesculptStep',
+    stepCountGlobal: '__wavesculptStepCount',
+    why:
+      'free-running WebGL2 ribbon — the shader clock advances every frame in every view mode, ' +
+      'so motion needs no driver and stillness cannot be commanded (the block comment above ' +
+      'records why that negative control is deliberately absent).',
+  },
+  cube: {
+    canvasTestId: 'cube-3d-viz',
+    cardHoldTestId: 'cube-viz-hold',
+    stepGlobal: '__cubeStep',
+    stepCountGlobal: '__cubeStepCount',
+    // slice_ry is a cv INPUT; an LFO through it rotates the slicing plane, so
+    // the volume render provably ADVANCES. At rest cube is legitimately STILL
+    // (no time-varying view — every frame is recomputed from params), which is
+    // what `vrt-determinism-probe.spec.ts` pins from the other side.
+    drive: {
+      node: { id: 'nodeviz-driver', type: 'lfo', domain: 'audio' },
+      edge: { fromPort: 'phase0', toPort: 'slice_ry', sourceType: 'cv', targetType: 'cv' },
+    },
+    why:
+      'param-driven WebGL2 volume — the picture is a pure function of the params and tables, ' +
+      'so a moving picture needs a moving param (the LFO into slice_ry) and an idle cube being ' +
+      'still is the module working, not the producer dead. The lit floor is what separates a ' +
+      'still cube from a black one: with no drawer installed cube.ts fills SOLID BLACK (#1724).',
+  },
+};
+
+/** Where a node's viz-surface element currently LIVES, by landmark. The whole
+ *  adoption mechanism is a DOM move, so the assertion is about ancestry. */
+async function vizCanvasHome(
+  page: Page,
+  nodeId: string,
+  fixture: VizSurfaceFixture,
+): Promise<{ count: number; parked: boolean; inCard: boolean; inDock: boolean; hosts: number }> {
+  return page.evaluate(({ id, canvasTestId, cardHoldTestId }) => {
+    const all = [...document.querySelectorAll(`[data-testid="${canvasTestId}"]`)];
+    // Per-node filtering uses the surface's own data-node-id where it stamps
+    // one (wavesculpt); cube's canvases carry none (its surface is byte-pinned
+    // and predates the attribute), so ancestry against the park's data-node-id
+    // does the same job — every leg here spawns ONE node of the type anyway.
+    const mine = all.filter((c) => {
+      const stamped = c.getAttribute('data-node-id');
+      if (stamped !== null) return stamped === id;
+      return true;
+    });
+    const el = mine[0] ?? null;
+    const closest = (sel: string) => !!el?.closest(sel);
+    return {
+      // EVERY such element in the document, not just this node's — a second
+      // mount for ANY node is the defect this leg exists for.
+      count: all.length,
+      parked: closest(`[data-testid="node-viz-surface"][data-node-id="${id}"]`),
+      inCard: closest(`[data-testid="${cardHoldTestId}"]`),
+      inDock: closest('[data-testid="dock-full-view"]'),
+      hosts: document.querySelectorAll(`[data-testid="node-viz-surface"][data-node-id="${id}"]`).length,
+    };
+  }, { id: nodeId, canvasTestId: fixture.canvasTestId, cardHoldTestId: fixture.cardHoldTestId });
+}
+
+for (const type of nodeVizSurfaceTypes()) {
+  const fixture = VIZ_SURFACE_FIXTURES[type];
+  if (!fixture) {
+    throw new Error(
+      `${type} is a node-mounted viz surface with no fixture in this spec. Add one naming its ` +
+        'canvas testid, its card hold, its DRS seam globals and how its picture is DRIVEN — a ' +
+        'renderer nothing observes is a renderer that can stop running without any gate noticing.',
+    );
+  }
+  const mod = REGISTRY.find((m) => m.type === type);
+  if (!mod) throw new Error(`${type} has a node viz surface but is not in the registry manifest`);
+  const pixelPort = mod.outputs.find((p) => p.type === 'video' || p.type === 'mono-video')?.id;
+  if (!pixelPort) {
+    throw new Error(
+      `${type} is a node-mounted viz surface with no video output — its producer's product is a ` +
+        'picture, so a module with nowhere to put one cannot be what this registry is for',
+    );
+  }
+  const nodeId = `nodeviz-${type}`;
+
+  test(`${type}: the renderer runs with NO card mounted anywhere, and there is exactly ONE of it`, async ({ page }) => {
+    test.setTimeout(SLOW_RENDER ? 180_000 : 90_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await boot(page);
+    await spawnPatch(
+      page,
+      [
+        { id: nodeId, type, domain: mod.domain },
+        ...(fixture.drive ? [fixture.drive.node] : []),
+      ],
+      fixture.drive
+        ? [
+            {
+              id: 'nodeviz-drive-edge',
+              from: { nodeId: fixture.drive.node.id, portId: fixture.drive.edge.fromPort },
+              to: { nodeId, portId: fixture.drive.edge.toPort },
+              sourceType: fixture.drive.edge.sourceType,
+              targetType: fixture.drive.edge.targetType,
+            },
+          ]
+        : [],
+      { mountTimeout: 30_000 },
+    );
+
+    // The lane shows the shell's tile for a faced module…
+    await expect(
+      page.locator(
+        `.svelte-flow__node[data-id="${nodeId}"] [data-testid="${
+          'module-shell'
+        }"]`,
+      ),
+    ).toHaveCount(1, { timeout: 20_000 });
+
+    // …its REAL card is nowhere…
+    await expect
+      .poll(async () => anyCardMounts(page, nodeId, type), {
+        message:
+          `${type}'s card must not be mounted ANYWHERE — its renderer is node-lifetime, so a ` +
+          'card mount would be a second owner of the frame drawer',
+        timeout: 20_000,
+      })
+      .toBe(0);
+
+    // …and the ONE surface is parked in its node host, claimed by nobody.
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).hosts, { timeout: 20_000 })
+      .toBe(1);
+    const cold = await vizCanvasHome(page, nodeId, fixture);
+    expect(
+      cold.count,
+      `exactly one ${type} canvas must exist in the document. Two means a view MOUNTED the ` +
+        'surface instead of claiming it — two GL contexts for one node, and two elements ' +
+        'carrying one data-testid, which every selector in this tree assumes is unique. ' +
+        `Saw ${JSON.stringify(cold)}`,
+    ).toBe(1);
+    expect(cold.parked, 'with no view claiming it the canvas sits in the node host').toBe(true);
+
+    // ⚠ THE PROGRESS LEG. Everything above is satisfiable by a surface that
+    // mounted, published, was counted — and rendered nothing at all.
+    const moved = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      moved.changed,
+      `${type}.${pixelPort} must emit a MOVING picture with no card and no faceplate anywhere. ` +
+        `${fmtChange(moved)}`,
+    ).toBe(true);
+    expect(
+      moved.nonBlackMax,
+      `${type}.${pixelPort} must be LIT, not merely changing. With no frame drawer installed ` +
+        "this module's own drawFrame fills SOLID BLACK, so a zero here is the exact #1587 " +
+        `defect — the node mounted no renderer. ${fmtChange(moved)}`,
+    ).toBeGreaterThan(0);
+
+    // ── THE ADOPTION HANDOFF, which is this shape's own failure mode ─────────
+    // A dock full view CLAIMS the canvas out of the node host. That is a DOM
+    // move on a live element, and the claim it must not break is that the
+    // producer never stops — so sample EVERY frame across the move.
+    const openPending = probeEveryFrame(page, nodeId, pixelPort);
+    await page.evaluate((id) => {
+      (globalThis as unknown as { __openDockFullView: (i: string) => void }).__openDockFullView(id);
+    }, nodeId);
+    const openHandoff = await openPending;
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(1, { timeout: 30_000 });
+    expect(
+      openHandoff.longestBlackRun,
+      `${type}.${pixelPort} lost its picture while the dock full view CLAIMED its canvas, for ` +
+        `${openHandoff.longestBlackRun} consecutive frames of ${openHandoff.frames} sampled. ` +
+        `Series (nonBlack px/frame): ${openHandoff.series.join(',')}`,
+    ).toBeLessThan(MAX_BLACK_RUN_FRAMES);
+
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).inDock, {
+        message: 'the dock body must ADOPT the node canvas, not mount a second surface',
+        timeout: 20_000,
+      })
+      .toBe(true);
+    const docked = await vizCanvasHome(page, nodeId, fixture);
+    expect(docked.count, `still exactly one canvas with the dock open: ${JSON.stringify(docked)}`)
+      .toBe(1);
+    expect(docked.parked, 'the claimed canvas has LEFT the node host').toBe(false);
+    // ...and still no card, anywhere: the whole point of the extraction is that
+    // a faced producer no longer needs one kept alive behind the faceplate.
+    expect(
+      await anyCardMounts(page, nodeId, type),
+      'a node-owned renderer needs no headless host while its faceplate is open',
+    ).toBe(0);
+
+    // ── AND BACK. Closing the pane releases the claim; the canvas returns to the
+    // node host rather than being destroyed, and the picture never stops.
+    const closePending = probeEveryFrame(page, nodeId, pixelPort);
+    await page.getByTestId('faceplate-collapse').first().click();
+    const closeHandoff = await closePending;
+    await expect(page.locator('[data-testid="dock-full-view"]')).toHaveCount(0, { timeout: 20_000 });
+    expect(
+      closeHandoff.longestBlackRun,
+      `${type}.${pixelPort} lost its picture when the dock RELEASED its canvas, for ` +
+        `${closeHandoff.longestBlackRun} consecutive frames of ${closeHandoff.frames} sampled. ` +
+        `Series (nonBlack px/frame): ${closeHandoff.series.join(',')}`,
+    ).toBeLessThan(MAX_BLACK_RUN_FRAMES);
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).parked, {
+        message: 'a released claim parks the canvas back with the node host',
+        timeout: 20_000,
+      })
+      .toBe(true);
+    const after = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      after.changed && after.nonBlackMax > 0,
+      `${type}.${pixelPort} must still be lit and moving after the claim round-trip. ` +
+        `${fmtChange(after)}`,
+    ).toBe(true);
+
+    // ── DELETE — the node leaves the graph and the renderer goes with it. This
+    // is also the instrument's own negative control: the same probe, on a
+    // subject that is gone, must report nothing.
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        for (const [eid, e] of Object.entries(w.__patch.edges)) {
+          const edge = e as { source?: { nodeId?: string }; target?: { nodeId?: string } } | undefined;
+          if (edge?.source?.nodeId === id || edge?.target?.nodeId === id) delete w.__patch.edges[eid];
+        }
+        delete w.__patch.nodes[id];
+      });
+    }, nodeId);
+    await expect
+      .poll(async () => hasVideoSource(page, nodeId, pixelPort), {
+        message: `${type}'s engine handle must be gone after the node is deleted`,
+        timeout: 20_000,
+      })
+      .toBe(false);
+    await expect
+      .poll(async () => (await vizCanvasHome(page, nodeId, fixture)).count, {
+        message: 'the node host unmounts with the node, so no canvas is left behind',
+        timeout: 20_000,
+      })
+      .toBe(0);
+    const gone = await framesToChange(page, nodeId, pixelPort);
+    expect(
+      gone.changed || gone.nonBlackMax > 0,
+      `the probe reports a live picture for a node that no longer exists — it is measuring ` +
+        `something other than this producer. ${fmtChange(gone)}`,
+    ).toBe(false);
+
+    const providerErrors = errors.filter((e) => /useStore|SvelteFlowProvider/i.test(e));
+    expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
+  });
+
+  // ⚠ A SECOND ARM IS DELETED WITH THE SURFACE IT PHOTOGRAPHED, and it was the
+  // LAST thing in `e2e/tests/` that booted the pre-inversion renderer.
+  //
+  // It asserted that the module's own surface ADOPTS the node-owned canvas — one
+  // element, one renderer — because the two-mount alternative would have put the
+  // DRS step seam on a surface nobody was looking at: stepping would freeze the
+  // seam owner while the photographed element free-ran. `wavesculpt.spec.ts`
+  // (17 tests) and `cube.spec.ts` consume that construction.
+  //
+  // ⚠ WHAT IS LOST, STATED RATHER THAN IMPLIED: the ADOPTION half. There is no
+  // second host to adopt INTO, so "the card holds it, not the node host" is not
+  // a claim that can be made or broken. What the consuming suites actually need
+  // — that the seam owner and the photographed element are ONE mount — is now
+  // true by construction and is asserted positively by the surviving arm above
+  // ("the renderer runs with NO card mounted anywhere, and there is exactly ONE
+  // of it"), which counts the canvases and reads `hosts === 1`.
 }

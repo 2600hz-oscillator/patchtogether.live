@@ -182,6 +182,260 @@ export async function pollScopePeak(
   );
 }
 
+/** What the gate-pulse probe returns: the latched reading plus how it was driven. */
+export interface GatePulsePollResult extends ScopePollResult {
+  /** `forcePulse()` calls the PAGE actually made. */
+  pulses: number;
+  /** Did `extras.forcePulse` resolve at all? `false` with `pulses: 0` is a
+   *  missing hook, which is a different failure from a silent bridge. */
+  hookFound: boolean;
+}
+
+/**
+ * Drive a module's GATE output with `extras.forcePulse(port)` and latch the
+ * highest `|ch1|` the downstream scope ever shows. Both the pulsing and the
+ * sampling run IN THE PAGE, on independent timers.
+ *
+ * ── ⚠ THE RACE THIS EXISTS TO END ──────────────────────────────────────────
+ *
+ * Two specs hand-rolled this, and both wrote the defect down without naming it
+ * as one. `doom-per-type-death-gates.spec.ts`: "a 10ms pulse against ~43ms
+ * analyser refresh is borderline, so we re-fire until the snapshot lands during
+ * a HIGH window." `gibribbon.spec.ts` called `forcePulse` and read the snapshot
+ * in the SAME synchronous tick, which reads the analyser ring BEFORE the pulse
+ * has been rendered into it.
+ *
+ * Both shapes require a COINCIDENCE — the pulse must still be inside the
+ * analyser's window at the moment that particular round trip reads it — and
+ * each round trip is a CDP hop on the same main thread as the audio graph. On a
+ * loaded shard the coincidence stops happening, and the failure MOVES: gibribbon
+ * lost `evt_hit` on one run and `evt_kill` + `evt_miss` on the next, out of an
+ * identical five-port loop, while DOOM's `evt_kill_demon` failed the same way.
+ * A failure that rotates between interchangeable members is a probe defect, not
+ * five separate bridge defects.
+ *
+ * ── WHY LATCHING IS THE FIX, NOT A BIGGER CEILING ──────────────────────────
+ *
+ * `best.peak` here is MONOTONE: once any sample sees the pulse, no later sample
+ * can un-see it. So the pulse no longer has to land in the same round trip that
+ * reads it — it only has to be caught ONCE, by any sample, ever. Raising a
+ * timeout only buys more coincidences; latching removes the need for one.
+ *
+ * The two timers are deliberately independent and the SAMPLER STARTS FIRST, so
+ * there is no window in which a pulse could fire before the latch is armed.
+ *
+ * ── ⚠ THE NEGATIVE CONTROL IS BUILT IN ─────────────────────────────────────
+ *
+ * `pulseEveryMs: 0` runs this identical probe — same latch, same sampler, same
+ * reduction — and NEVER pulses. A gate that never fires must still read as
+ * never-fired, and a latch is exactly the kind of instrument that could quietly
+ * stop being able to say so. Callers pin both directions with the same helper;
+ * see `gibribbon.spec.ts`.
+ */
+export async function pollGatePulsePeak(
+  page: Page,
+  opts: {
+    /** The module whose `extras.forcePulse` is driven. */
+    sourceNodeId: string;
+    /** The gate port id to pulse. Ignored when `pulseEveryMs` is 0. */
+    port: string;
+    /** The scope whose ch1 is latched. */
+    scopeNodeId: string;
+    threshold: number;
+    boundMs: number;
+    /** In-page sampler cadence. The analyser refills on the audio clock at
+     *  ~43 ms, so this over-samples deliberately — a re-reduction of unchanged
+     *  bytes is cheap and costs no round trip. */
+    sampleEveryMs?: number;
+    /** In-page pulse cadence. Spaced wider than the sampler so successive
+     *  pulses land in DIFFERENT analyser windows. 0 = never pulse (control). */
+    pulseEveryMs?: number;
+  },
+): Promise<GatePulsePollResult> {
+  const {
+    sourceNodeId,
+    port,
+    scopeNodeId,
+    threshold,
+    boundMs,
+    sampleEveryMs = 20,
+    pulseEveryMs = 60,
+  } = opts;
+  return page.evaluate(
+    ([srcId, prt, scpId, thr, bound, every, pulseEvery]) =>
+      new Promise<GatePulsePollResult>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const t0 = performance.now();
+        let best: ScopeStats = { peak: 0, rms: 0, nonzeroSamples: 0, total: 0 };
+        let samples = 0;
+        let pulses = 0;
+        let hookFound = false;
+        const done = (reachedThreshold: boolean): void => {
+          clearInterval(sampleTimer);
+          if (pulseTimer !== undefined) clearInterval(pulseTimer);
+          resolve({
+            ...best,
+            samples,
+            pulses,
+            hookFound,
+            elapsedMs: performance.now() - t0,
+            reachedThreshold,
+          });
+        };
+        const read = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[scpId as string];
+          const snap =
+            eng && node
+              ? (eng.read(node, 'snapshot') as { ch1: Float32Array } | undefined)
+              : undefined;
+          if (snap?.ch1) {
+            let peak = 0;
+            let energy = 0;
+            let nonzero = 0;
+            for (let i = 0; i < snap.ch1.length; i++) {
+              const v = snap.ch1[i]!;
+              const a = Math.abs(v);
+              if (a > peak) peak = a;
+              energy += v * v;
+              if (a > 1e-6) nonzero++;
+            }
+            samples++;
+            // THE LATCH. Monotone by construction: a pulse that any sample saw
+            // cannot be erased by a later, quieter one.
+            if (peak > best.peak) {
+              best = {
+                peak,
+                rms: Math.sqrt(energy / snap.ch1.length),
+                nonzeroSamples: nonzero,
+                total: snap.ch1.length,
+              };
+            }
+            if (best.peak > (thr as number)) return done(true);
+          }
+          if (performance.now() - t0 >= (bound as number)) done(false);
+        };
+        const firePulse = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[srcId as string];
+          if (!eng || !node) return;
+          const extras = eng.read(node, 'extras') as
+            | { forcePulse?: (p: string) => void }
+            | undefined;
+          if (!extras || typeof extras.forcePulse !== 'function') return;
+          hookFound = true;
+          extras.forcePulse(prt as string);
+          pulses++;
+        };
+        // ⚠ SAMPLER FIRST. Arming the latch before anything can fire is what
+        // makes "caught once, ever" true rather than nearly true.
+        const sampleTimer = setInterval(read, every as number);
+        read();
+        const pulseTimer =
+          (pulseEvery as number) > 0 ? setInterval(firePulse, pulseEvery as number) : undefined;
+        if (pulseTimer !== undefined) firePulse();
+      }),
+    [sourceNodeId, port, scopeNodeId, threshold, boundMs, sampleEveryMs, pulseEveryMs] as const,
+  );
+}
+
+/** One-line provenance for a gate-pulse assertion message. */
+export function gatePulseMsg(label: string, r: GatePulsePollResult): string {
+  return (
+    `${label}: peak ${r.peak.toFixed(4)} from ${r.samples} sample(s) / ${r.pulses} pulse(s) ` +
+    `over ${r.elapsedMs.toFixed(0)} ms (hook ${r.hookFound ? 'found' : 'MISSING'})`
+  );
+}
+
+/** What the stereo poller returns: BOTH channel peaks plus provenance. */
+export interface StereoPollResult {
+  peakL: number;
+  peakR: number;
+  samples: number;
+  elapsedMs: number;
+  reachedThreshold: boolean;
+}
+
+/**
+ * Poll BOTH scope channels (ch1 + ch2) until each peak exceeds `threshold`,
+ * or `boundMs` elapses. Tracks the best reading PER CHANNEL, so a channel that
+ * crossed early stays crossed while the loop waits on the other one.
+ *
+ * Exists for the stereo-pair gates (AUDIO IN L/R, ES-9 pairs): the
+ * Playwright-side `expect.poll` shape it replaces did one CDP round trip per
+ * sample on the thread being measured and read a constant near-zero on a
+ * healthy chain.
+ */
+export async function pollScopeStereoPeaks(
+  page: Page,
+  scopeNodeId: string,
+  threshold: number,
+  boundMs: number,
+  sampleEveryMs = 25,
+): Promise<StereoPollResult> {
+  return page.evaluate(
+    ([id, thr, bound, every]) =>
+      new Promise<StereoPollResult>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+        };
+        const t0 = performance.now();
+        let bestL = 0;
+        let bestR = 0;
+        let samples = 0;
+        const done = (reachedThreshold: boolean): void => {
+          clearInterval(timer);
+          resolve({
+            peakL: bestL,
+            peakR: bestR,
+            samples,
+            elapsedMs: performance.now() - t0,
+            reachedThreshold,
+          });
+        };
+        const read = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          const snap =
+            eng && node
+              ? (eng.read(node, 'snapshot') as
+                  | { ch1?: Float32Array; ch2?: Float32Array }
+                  | undefined)
+              : undefined;
+          if (snap?.ch1 || snap?.ch2) {
+            const peak = (buf?: Float32Array): number => {
+              if (!buf) return 0;
+              let p = 0;
+              for (let i = 0; i < buf.length; i++) {
+                const a = Math.abs(buf[i]!);
+                if (a > p) p = a;
+              }
+              return p;
+            };
+            const l = peak(snap.ch1);
+            const r = peak(snap.ch2);
+            samples++;
+            if (l > bestL) bestL = l;
+            if (r > bestR) bestR = r;
+            if (bestL > (thr as number) && bestR > (thr as number)) return done(true);
+          }
+          if (performance.now() - t0 >= (bound as number)) done(false);
+        };
+        const timer = setInterval(read, every as number);
+        read();
+      }),
+    [scopeNodeId, threshold, boundMs, sampleEveryMs] as const,
+  );
+}
+
 /** What the RMS pollers return: the reading PLUS how it was taken. */
 export interface RmsPollResult {
   rms: number;

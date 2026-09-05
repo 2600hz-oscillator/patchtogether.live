@@ -40,20 +40,41 @@ import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './
 
 const FIXED_STEPS = 6;
 
-/** Read the OUTPUT canvas pixel statistics (non-black fraction + variance). The
- *  OUTPUT card blits its FBO texture into the engine canvas then drawImage()s it
- *  — so reading the visible canvas reads what the WorkerProxyHandle texture
- *  produced through the downstream chain. */
+/** Read the OUTPUT sink's engine-surface pixel statistics (non-black fraction
+ *  + variance) via `vid.outputTexture('out')` + readPixels — the texture every
+ *  present path blits (the card-era probe read the `video-out-canvas` card
+ *  chrome, which does not mount on the default shell). Reading the SINK's own
+ *  surface reads what the WorkerProxyHandle texture produced through the
+ *  downstream chain — the claim is unchanged. */
 async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance: number; mean: number } | null> {
-  const canvas = page.locator('[data-testid="video-out-canvas"]');
-  await expect(canvas, 'video-out canvas mounted').toHaveCount(1);
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    if (!w.__engine) return null;
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    const tex = vid.outputTexture('out');
+    if (!tex) return null;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const data = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+    if (!complete) return null;
     let n = 0, sum = 0, sumSq = 0, nonZero = 0;
-    for (let i = 0; i < data.length; i += 16) {
+    for (let i = 0; i < data.length; i += 4 * 16) {
       const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
       sum += v; sumSq += v * v; n++;
       if (v > 8) nonZero++;
@@ -106,7 +127,7 @@ test.describe('Fix E render worker — acidwarp', () => {
       (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = true;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -120,8 +141,14 @@ test.describe('Fix E render worker — acidwarp', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-acidwarp'), 'acidwarp node present').toBeVisible();
-    await expect(page.locator('[data-testid="video-out-card"]'), 'video-out card present').toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="aw"] [data-testid="module-shell"]'),
+      'acidwarp faceplate present',
+    ).toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]'),
+      'video-out faceplate present',
+    ).toHaveCount(1);
 
     const workerSupported = await page.evaluate(() =>
       typeof Worker !== 'undefined' &&
@@ -186,7 +213,7 @@ test.describe('Fix E render worker — acidwarp', () => {
     });
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -200,7 +227,7 @@ test.describe('Fix E render worker — acidwarp', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Kill switch → workerFramesDelivered must be 0 (no worker path at all).
     expect(await workerFramesDelivered(page, 'aw'), 'no worker frames with the kill switch').toBe(0);
@@ -223,7 +250,7 @@ test.describe('Fix E render worker — acidwarp', () => {
   test('DEFAULT (no flag): worker path engages where capable; clean fallback otherwise @webgl-smoke', async ({ page, errorWatch }) => {
     test.setTimeout(60_000);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -236,7 +263,7 @@ test.describe('Fix E render worker — acidwarp', () => {
         { id: 'e1', from: { nodeId: 'aw', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Capability-aware readiness, same shape as the explicit-ON test: worker
     // active + ≥2 delivered bitmaps, OR inactive (SwiftShader) + non-black
@@ -284,7 +311,7 @@ test.describe('Fix E render worker — acidwarp', () => {
       g.__videoEngineFreezeTime = 2.0;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -297,7 +324,7 @@ test.describe('Fix E render worker — acidwarp', () => {
         { id: 'e1', from: { nodeId: 'aw', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Wait until SOME path painted the OUTPUT non-black (worker or fallback).
     await expect

@@ -78,7 +78,6 @@ const EXT = code(readFileSync(new URL('./skifree/shell-extension.ts', import.met
 const SCREEN = code(readFileSync(new URL('./skifree/SkifreeScreen.svelte', import.meta.url), 'utf8'));
 const SLOPE = code(readFileSync(new URL('./skifree/SkifreeSlopeBody.svelte', import.meta.url), 'utf8'));
 const TILE = code(readFileSync(new URL('./skifree/SkifreeTileBody.svelte', import.meta.url), 'utf8'));
-const CARD = code(readFileSync(new URL('./SkifreeCard.svelte', import.meta.url), 'utf8'));
 const DEF_SRC = code(readFileSync(new URL('../../audio/modules/skifree.ts', import.meta.url), 'utf8'));
 const EMBED = code(readFileSync(
   new URL('../../../../native/skifree/embed.js', import.meta.url),
@@ -239,8 +238,8 @@ describe('skifree — CLAIM 3: the blit is a SCALE, and the 3-arg form was a CRO
     expect(EMBED).toMatch(/dpr = \(typeof window !== 'undefined' && window\.devicePixelRatio\)/);
   });
 
-  it('BOTH surfaces name a destination rect DERIVED FROM THE SOURCE', () => {
-    for (const [name, src] of [['card', CARD], ['face screen', SCREEN]] as const) {
+  it('the face screen names a destination rect DERIVED FROM THE SOURCE', () => {
+    for (const [name, src] of [['face screen', SCREEN] as const]) {
       expect(src, `${name}: the destination must be named, not assumed`)
         .toMatch(/drawImage\(\s*src,\s*0,\s*0,\s*src\.width,\s*src\.height,\s*0,\s*0,\s*dst\.width,\s*dst\.height\s*\)/);
       expect(src, `${name}: pixel art must never be box-filtered`)
@@ -251,7 +250,7 @@ describe('skifree — CLAIM 3: the blit is a SCALE, and the 3-arg form was a CRO
   it('NEGATIVE CONTROL: neither surface still makes the CROPPING call', () => {
     // The exact shape of the old one. Without this leg the assertion above
     // would pass if someone added a second, wrong `drawImage` beside the right.
-    for (const [name, src] of [['card', CARD], ['face screen', SCREEN]] as const) {
+    for (const [name, src] of [['face screen', SCREEN] as const]) {
       expect(src, `${name}: the 3-argument form paints the source at NATIVE size`)
         .not.toMatch(/drawImage\(\s*src,\s*0,\s*0\s*\)/);
     }
@@ -261,7 +260,6 @@ describe('skifree — CLAIM 3: the blit is a SCALE, and the 3-arg form was a CRO
     // The source size is the BUNDLE's to choose. Deriving the rect from our own
     // constant is the same false premise the old comment made, one layer down.
     expect(SCREEN).not.toMatch(/drawImage\([^)]*SKIFREE_CANVAS_SIZE/);
-    expect(CARD).not.toMatch(/drawImage\([^)]*SKIFREE_CANVAS_SIZE/);
   });
 });
 
@@ -281,15 +279,15 @@ describe('skifree — CLAIM 4: the surfaces own the MOUSE, and enableMouse is de
     expect(DEF_SRC, 'the game canvas must stay detached').not.toMatch(/appendChild\(gameCanvas\)/);
   });
 
-  it('NO SURFACE CALLS IT ANY MORE — neither the card nor the face', () => {
-    for (const [name, src] of [['card', CARD], ['face screen', SCREEN]] as const) {
+  it('NO SURFACE CALLS IT ANY MORE', () => {
+    for (const [name, src] of [['face screen', SCREEN] as const]) {
       expect(src, `${name}: enableMouse steers from a zero rect`).not.toMatch(/\.enableMouse\(/);
       expect(src, `${name}: and there is nothing left to disable`).not.toMatch(/\.disableMouse\(/);
     }
   });
 
   it('both map their OWN element\'s rect through the def\'s pure helper', () => {
-    for (const [name, src] of [['card', CARD], ['face screen', SCREEN]] as const) {
+    for (const [name, src] of [['face screen', SCREEN] as const]) {
       expect(src, `${name}: must import the shared map`).toMatch(/pointerToCanvasCoord/);
       expect(src, `${name}: must measure the element it is drawn on`)
         .toMatch(/el\.getBoundingClientRect\(\)/);
@@ -297,7 +295,7 @@ describe('skifree — CLAIM 4: the surfaces own the MOUSE, and enableMouse is de
     }
     // ⚠ AND THE OLD ARITHMETIC IS GONE, not merely unused: a bare
     // `clientX - rect.left` anywhere here would be the defect re-typed by hand.
-    for (const [name, src] of [['card', CARD], ['face screen', SCREEN]] as const) {
+    for (const [name, src] of [['face screen', SCREEN] as const]) {
       expect(src, `${name}: a raw offset is the bug, whoever writes it`)
         .not.toMatch(/clientX\s*-\s*\w*[Rr]ect/);
     }
@@ -309,7 +307,6 @@ describe('skifree — CLAIM 4: the surfaces own the MOUSE, and enableMouse is de
     // the face has no reason to reach for a single un-keyed global.
     expect(SCREEN).toMatch(/if \(!steerable \|\| cvDriven\) return;/);
     expect(SCREEN).toMatch(/snapshot\?\.cvDriven === true/);
-    expect(CARD).toMatch(/return focused && !ensureBridge\(\)\.cvDriven;/);
   });
 });
 
@@ -317,7 +314,7 @@ describe('skifree — CLAIM 5: SCREEN OFF stops the PICTURE, never the game', ()
   it('the game is created in the FACTORY, so no surface owns its lifetime', () => {
     expect(DEF_SRC).toMatch(/SkiFree\.create\(\{/);
     expect(DEF_SRC).toMatch(/getSchedulerClock\(\)\.subscribe\(tickFn\)/);
-    for (const [name, src] of [['face screen', SCREEN], ['card', CARD]] as const) {
+    for (const [name, src] of [['face screen', SCREEN] as const]) {
       expect(src, `${name}: a surface must never build the game`).not.toMatch(/SkiFree\.create/);
     }
   });

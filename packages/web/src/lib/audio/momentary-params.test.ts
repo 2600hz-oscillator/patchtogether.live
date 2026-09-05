@@ -146,8 +146,9 @@ describe('the REAL defs that declare a press-pad', () => {
     // here, rather than joining silently.
     //
     // bluebox (2026-08-09) is the first member that is ENTIRELY press-pads:
-    // twelve keys, no values. Its legacy card writes the held 1 through
-    // `setNodeParam`, so a rack closed mid-hold saves a stuck key — the tomtom
+    // twelve keys, no values. A surface that wrote the held 1 through
+    // `setNodeParam` would let a rack closed mid-hold save a stuck key — the
+    // tomtom
     // failure mode exactly, ×12 — and the loop below now asserts the repair on
     // all twelve.
     // moog956 (2026-09-02) is the first member whose pad is HALF OF A GESTURE

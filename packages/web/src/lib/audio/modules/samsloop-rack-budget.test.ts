@@ -172,53 +172,53 @@ describe('the rack ceiling, against a REAL Y.Doc', () => {
 
 // ---------------------------------------------------------------------------
 
-describe('SamsloopCard BINDS the ceiling to the DOM — source-anchored', () => {
-  // A gate that reads only the logic cannot see a card that computes the right
-  // number and renders none of it. These assertions are deliberately about the
-  // CARD SOURCE, and each one names the specific defect it prevents.
-  const CARD = new URL('../../ui/modules/SamsloopCard.svelte', import.meta.url);
-  const src = readFileSync(CARD, 'utf8');
-
-  it('subscribes the rack ledger to docVersion() — the regression that shipped', () => {
-    // THE ONE THAT ACTUALLY BROKE. Without this the derived tracks nothing
-    // across nodes and the readout goes stale on a full rack, silently.
-    const derived = src.match(/let rackLedger = \$derived\.by\(\(\) => \{[\s\S]{0,400}?\}\);/);
-    expect(derived, 'rackLedger is no longer a $derived.by — re-check the subscription').not.toBeNull();
-    expect(
-      derived![0],
-      'rackLedger must call docVersion() to track OTHER nodes; without it the ' +
-        'readout advertises a full-length take on a full rack',
-    ).toContain('docVersion()');
-    expect(derived![0]).toContain('samsloopRackLedger(patch.nodes, id)');
-  });
-
-  it('renders the rack note, and only when the RACK is the binding cap', () => {
-    expect(src).toContain('data-testid="samsloop-rack-budget-note"');
-    expect(src, 'the note must be gated on bindingCap === rack, not shown always')
-      .toMatch(/\{#if bindingCap === 'rack'\}/);
-  });
-
-  it('the max-seconds readout is fed the rack headroom, not just the settings', () => {
-    // Passing only (rate, bits, channels) would print a number this rack
-    // cannot deliver — the readout IS the primary visible surface.
-    expect(src).toMatch(/samsloopMaxSeconds\(\s*achievedRate,\s*recBits,\s*recChannels,\s*rackLedger\.freeBytes\s*\)/);
-    expect(src).toMatch(/samsloopMaxSecondsExact\(\s*achievedRate,\s*recBits,\s*recChannels,\s*rackLedger\.freeBytes\s*\)/);
-  });
-
-  it('disables REC when full — but never while recording, or STOP is unreachable', () => {
-    expect(src).toMatch(/recButtonDisabled = \$derived\([^)]*rackFull && !isRecording[^)]*\)/);
-  });
+describe('the SEAM binds the ceiling to the arm gesture — source-anchored', () => {
+  // ⚠ THIS DESCRIBE READ `SamsloopCard.svelte`, and the reason it read SOURCE at
+  // all is unchanged: a gate that reads only the logic cannot see a surface that
+  // computes the right number and renders none of it.
+  //
+  // The card was the surface that rendered it. `samsloop-face-actions.ts` is the
+  // seam the faceplate's REC cell drives, and it is where the arm-time
+  // re-read, the refusal message and the capture sizing live now — so the legs
+  // that were about the DECISION move here, and the legs that were about the
+  // card's own DOM are recorded below as losses.
+  const SEAM = new URL('../../ui/modules/samsloop-face-actions.ts', import.meta.url);
+  const src = readFileSync(SEAM, 'utf8');
 
   it('the arm guard re-reads the ledger FRESH and prints the refusal', () => {
-    // Trusting the $derived here would let a peer's write race the click.
-    const fn = src.slice(src.indexOf('function startRecording()'), src.indexOf('function onTapChunk'));
-    expect(fn, 'startRecording must re-read the ledger, not use the derived')
-      .toContain('samsloopRackLedger(patch.nodes, id)');
-    expect(fn, 'the refusal must surface the shared message').toContain('samsloopRackFullMessage');
-    expect(fn).toContain('SAMSLOOP_MIN_RECORD_SECONDS');
+    // Trusting a cached derived here would let a peer's write race the press.
+    expect(src, 'the seam must re-read the ledger at arm time')
+      .toContain('samsloopRackLedger(patch.nodes, nodeId)');
+    expect(src, 'the refusal must surface the shared message')
+      .toContain('samsloopRackFullMessage');
+    expect(src).toContain('SAMSLOOP_MIN_RECORD_SECONDS');
   });
 
   it('the capture buffer is sized with the rack allowance, so nothing is trimmed later', () => {
-    expect(src).toMatch(/samsloopMaxCaptureFrames\([\s\S]{0,120}?liveLedger\.freeBytes/);
+    expect(src).toMatch(/samsloopMaxCaptureFrames\([\s\S]{0,160}?liveLedger\.freeBytes/);
   });
+
+  it('the max-seconds figure is fed the rack headroom, not just the settings', () => {
+    // Computing from (rate, bits, channels) alone would produce a number this
+    // rack cannot deliver, which is the whole point of the ledger.
+    expect(src).toMatch(/liveLedger\.freeBytes/);
+  });
+
+  // ⚠ FOUR LEGS ARE GONE WITH THE CARD, AND TWO OF THEM ARE REAL LOSSES.
+  //
+  //   * "subscribes the rack ledger to docVersion()" — THE ONE THAT ACTUALLY
+  //     BROKE. Without it the derived tracked nothing across nodes and the
+  //     readout went stale on a full rack, silently. It was a property of a
+  //     COMPONENT's `$derived.by`; the seam re-reads at arm time instead, which
+  //     is asserted above and is strictly fresher.
+  //   * "disables REC when full — but never while recording, or STOP is
+  //     unreachable" — a `recButtonDisabled` derived on the card. The face's REC
+  //     cell has no such disable, so the refusal path is what a player meets.
+  //   * ⚠ NAMED COVERAGE LOSS: "renders the rack note, and only when the RACK is
+  //     the binding cap" (`data-testid="samsloop-rack-budget-note"`) and "the
+  //     max-seconds READOUT". Both were PAINTED on the card and are painted on
+  //     no surviving surface — the face reports `delivered: false` with nowhere
+  //     to show it, which is the gap the build brief's S1 "Samsloop REC refusal
+  //     surface" item exists to close. Recorded here so the two halves are
+  //     visibly the same finding.
 });

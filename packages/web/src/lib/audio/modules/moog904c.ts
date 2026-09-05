@@ -44,7 +44,6 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 export const moog904cDef: AudioModuleDef = {
   type: 'moog904c',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog904cCard',
   domain: 'audio',
   label: '904c voltage controlled filter coupler',
   category: 'filters',

@@ -21,7 +21,7 @@
 //
 // A scoped capture cannot silently UNDER-capture in the population that gates:
 // if the change moved a baseline the grep did not cover, `vrt-strict` —
-// REQUIRED, 4 shards, `vrt.spec.ts` (STRICT_VRT_MODULES) + every face in
+// REQUIRED, 4 shards, every face in
 // `workflow-shell-faces.spec.ts` — goes RED on the next CI run and NAMES the
 // file. The worst case is one extra round trip, not a stale baseline shipping
 // green.
@@ -517,7 +517,7 @@ function decide(args) {
   const sel = selectionFor(d.token, tests);
   if (sel.tests.length === 0) {
     report += `\n  NOTHING TO CAPTURE — the diff implicates '${d.token}', which no VRT test renders\n`;
-    report += `  (exempt in e2e/vrt/vrt-exemptions.ts, or it has no scene).\n`;
+    report += `  (it has no scene).\n`;
     report += `  Dispatch anyway with GREP=<token> or ALL=1 if you believe otherwise.\n`;
     process.stderr.write(report);
     process.exit(3);

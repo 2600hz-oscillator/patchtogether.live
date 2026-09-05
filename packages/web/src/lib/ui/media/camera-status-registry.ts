@@ -28,16 +28,24 @@
 //     browser is refusing frames is worse than no lamp.
 //
 // WHY A REGISTRY AND NOT A SECOND PERMISSION MACHINE. `getUserMedia`, the
-// `MediaStream` and the state machine have ONE owner — `CameraInputCard.svelte`
-// — and that must not change: two callers would be two owners, and whichever
-// tore down last would strand the survivor. So this file moves no ownership. The
-// card PUBLISHES what it knows and REGISTERS its acquire command; another
-// surface READS the status and INVOKES the command. It is a remote control, not
-// a second machine.
+// `MediaStream` and the state machine have ONE owner —
+// `$lib/ui/media/node-camera-source-registry`, on GRAPH lifetime — and that must
+// not change: two callers would be two owners, and whichever tore down last
+// would strand the survivor. So this file moves no ownership. The owner
+// PUBLISHES what it knows and REGISTERS its acquire command; any surface READS
+// the status and INVOKES the command. It is a remote control, not a second
+// machine.
+//
+// ⚠ THE OWNER USED TO BE A COMPONENT, AND THE DIFFERENCE IS THE WHOLE POINT OF
+// THIS SEAM NOW. While the capture lived in a mounted card, "one owner" and
+// "one surface" were the same sentence, and a module with no surface on screen
+// had no capture. Ownership moved to the node (graph lifetime), so a camera
+// streams whether or not anything is mounted for it — which is exactly what a
+// mapped, canvas-hidden camera in the topbar 📷 manager needs.
 //
 // ⚠ WHY THE STATUS IS BROWSER-LOCAL AND NEVER TOUCHES Yjs. A permission grant is
-// a property of ONE person's browser. `CameraInputCard`'s own header says so
-// ("permission grants are browser-instance-local"), and the def repeats it.
+// a property of ONE person's browser — permission grants are
+// browser-instance-local, and the def repeats it.
 // Syncing `permission-denied` would assert something false about every other
 // participant's machine. This registry is process-wide and per-tab by
 // construction: there is no transport in it.
@@ -274,8 +282,10 @@ export function createCameraStatusRegistry(): CameraStatusRegistry {
 /**
  * The process-wide capture-status registry.
  *
- * `CameraInputCard.svelte` publishes into it and registers its acquire command;
- * `CameraInputOutputBody.svelte` (the dock faceplate's extension body) reads and
- * invokes. Per-tab by construction — see the Yjs paragraph in the header.
+ * `$lib/ui/media/node-camera-source` publishes into it and registers the
+ * acquire command; every surface that shows a camera — the lane tile's
+ * `CameraInputTileBody`, the dock faceplate's `CameraInputOutputBody`, and the
+ * topbar 📷 manager's host — reads and invokes. Per-tab by construction; see
+ * the Yjs paragraph in the header.
  */
 export const cameraStatus: CameraStatusRegistry = createCameraStatusRegistry();

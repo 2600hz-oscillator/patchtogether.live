@@ -114,11 +114,15 @@
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onclose();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // CAPTURE + stopPropagation — this menu opens over dock controls, and the
+    // dock's own plain Escape listener would otherwise close the full view on
+    // the same press (the ToyboxNodeMenu class, same seam).
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   });
 
   function pickLearn() { onlearn(); onclose(); }

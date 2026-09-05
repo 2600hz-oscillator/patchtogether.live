@@ -4,25 +4,39 @@
 // promotion could ship.
 //
 // WHAT PROMOTION CHANGED. `loopback` was un-faced, so the lane painted a
-// `ModuleShellPlaceholder`. Now it paints a FACEPLATE. In BOTH states the real
-// card runs inside `<HeadlessSourceHost>` — parked at `left:-9999px`,
-// `pointer-events: none`, `aria-hidden` — because `needsHeadlessSourceMount`
-// covers the 'placeholder' and 'shell' lane kinds alike. That is worth stating
-// plainly, because the tempting story ("the face moved the card off-screen") is
-// wrong and would misattribute everything below.
+// `ModuleShellPlaceholder`. Now it paints a FACEPLATE.
+//
+// ⚠ AND WHAT THE LEGACY-REMOVAL EXTRACTION CHANGED (S1, 2026-09-03), because
+// this header used to assert the opposite as the thing "the whole promotion
+// rests on". Until then the real card ran inside `<HeadlessSourceHost>` —
+// parked at `left:-9999px`, `pointer-events: none`, `aria-hidden` — because the
+// CARD owned getDisplayMedia, the `<video>` and the engine attach, so something
+// had to keep it mounted. `$lib/ui/media/node-loopback-source-registry` owns all
+// three now, on GRAPH lifetime. loopback has left `DOM_SOURCE_LANE_TYPES`,
+// there is no headless host for it, and NO LoopbackCard is mounted anywhere at
+// all under the default shell.
+//
+// That inversion is why the legs below read the way they do, and it moves where
+// the gate's weight sits. When a card was hosted off-screen, a mount COUNT was
+// the discriminator between "swapped and hosted" (right) and "not mounted
+// anywhere" (broken). Zero mounts is the intended state now, so a mount count
+// separates nothing. What separates them is whether the module still PRODUCES
+// PIXELS with nothing mounted — leg 4 of the first test. Read that as the gate;
+// legs 2 and 3 only establish what it produced them WITHOUT.
 //
 // Two things follow, and they are DIFFERENT problems that every existing gate
 // conflates:
 //
-//   1. THE SOURCE must survive the swap. It does, by a mechanism that already
-//      existed: loopback ∈ `DOM_SOURCE_LANE_TYPES`, and the `<video>` +
-//      MediaStream are node-owned (#1583). Every unit assertion about that is
-//      pure set membership — NOTHING in the unit lane proves Canvas wires it or
-//      that a frame arrives. This file does.
+//   1. THE SOURCE must survive the swap. It does — and now for a stronger
+//      reason than before: it never depended on a surface at all. Every unit
+//      assertion about that is pure set membership plus a fake-driven
+//      controller — NOTHING in the unit lane proves Canvas wires it or that a
+//      frame arrives. This file does.
 //
 //   2. THE AFFORDANCES do NOT survive it, and keeping the source alive does not
-//      keep the module usable. An off-screen host is unclickable, so the card's
-//      "Start capture" is gone unless something carries it.
+//      keep the module usable. The controller cannot start a capture on its own
+//      (no gesture), so "Start capture" is gone unless a reachable surface
+//      carries it.
 //
 //      ⚠ AND HERE THAT IS TOTAL, WHICH IS THE ONE PLACE THIS FILE IS NOT A COPY
 //      OF `camerainput-shell-source.spec.ts`. cameraInput's card auto-acquires
@@ -34,8 +48,16 @@
 //      that way behind a fully green gate set, because every existing gate
 //      reads the SOURCE. `$lib/ui/media/loopback-status-registry` carries the
 //      gesture; this file proves the carry works IN BOTH DIRECTIONS through the
-//      real DOM (a click reaches the card, and the card's resulting state
+//      real DOM (a click reaches the controller, and the resulting state
 //      reaches the face).
+//
+//      ⚠ THE EXTRACTION MADE THAT CARRY MORE FRAGILE, NOT LESS, WHICH IS WHY
+//      THE LEG STAYED. The user activation that makes `getDisplayMedia` legal is
+//      consumed by the first `await` on the call path, and the path now has one
+//      more hop in it (face → status registry → controller → acquire). Every
+//      hop is synchronous and has to stay that way; an `await` inserted anywhere
+//      along it leaves the counter at 0, the lamp idle and no error at all —
+//      indistinguishable from a user who dismissed the picker.
 //
 // ⚠ NO PICKER, NO PROMPT, NO CAPABILITY PROBE — BY CONSTRUCTION. A display
 // capture cannot be granted headlessly, and a probe-and-skip here would be a
@@ -60,19 +82,22 @@
 // with the rAF loop paused, so there is no renderer-dependent wait anywhere in
 // this file — not a millisecond budget, not a frame count standing in for one.
 //
-// ⚠ SCOPED SELECTORS THROUGHOUT (`canvasNode`, and `host.locator(...)` for the
-// hosted copy). `HeadlessSourceHost` mounts the real card inside its OWN
-// `<SvelteFlow>`, so a bare `.svelte-flow__node[data-id=…]` matches TWO
-// elements and Playwright's `toBeVisible` is satisfied by one at
-// `left:-9999px`. That measured trap bit four tests on the camera promotion;
-// `MAIN_CANVAS`'s child combinator is the discriminator and this file uses it
-// from the first line rather than after a red.
+// ⚠ SCOPED SELECTORS THROUGHOUT (`canvasNode`). `HeadlessSourceHost` mounts a
+// hosted card inside its OWN `<SvelteFlow>`, so a bare
+// `.svelte-flow__node[data-id=…]` matches TWO elements and Playwright's
+// `toBeVisible` is satisfied by one at `left:-9999px`. That measured trap bit
+// four tests on the camera promotion. It no longer applies to LOOPBACK under
+// LOOPBACK any more — it has no host — but it DOES still apply to every sibling
+// module that is hosted, so the discipline stays rather than being relaxed one
+// file at a time.
 //
 // ⚠ ARMED WITH `errorWatch`, WHICH IS PART OF THE ASSERTION HERE RATHER THAN
 // HYGIENE. The status registry notifies its subscribers SYNCHRONOUSLY from
-// inside the card's publish `$effect`, and the subscriber is a DIFFERENT
-// component (the dock body) writing its own `$state`. A clean console is the
-// evidence that the notify/subscribe direction is sound.
+// inside the publishing effect, and the subscriber is a DIFFERENT component
+// (the dock body) writing its own `$state`. A clean console is the evidence
+// that the notify/subscribe direction is sound — and after the extraction the
+// publisher is a plain module rather than a component, which is one fewer
+// reactive owner in that chain, not one more.
 import { test, expect, type Page } from './_fixtures';
 import { spawnPatch, canvasNode } from './_helpers';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
@@ -203,8 +228,8 @@ async function bootRack(page: Page, url = '/rack'): Promise<void> {
 
 const HOST = '[data-testid="headless-source-host"][data-node-type="loopback"]';
 
-test.describe('LOOPBACK under the DEFAULT shell — promoted lane, headless source', () => {
-  test('the lane paints a FACEPLATE, the real card runs headless, and the source still produces', async ({ page, errorWatch }) => {
+test.describe('LOOPBACK under the DEFAULT shell — promoted lane, node-owned source', () => {
+  test('the lane paints a FACEPLATE, NO card is mounted anywhere, and the source still produces', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
     await installRenderSmokeHooks(page);
@@ -213,9 +238,8 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, headless sour
     });
     await stubDisplayMedia(page);
 
-    // ⚠ THE DEFAULT SHELL, NOT `?shell=legacy`. Every test in `loopback.spec.ts`
-    // pins `?shell=legacy`, which is precisely the surface promotion does not
-    // change — so that whole file, useful as it is, proves nothing about this.
+    // The shipping shell. `loopback.spec.ts` was written against the
+    // pre-promotion surface, so useful as it is, it proves nothing about this.
     await bootRack(page);
     await spawnLoopbackChain(page);
 
@@ -224,36 +248,43 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, headless sour
     await expect(laneNode.getByTestId('module-shell'), 'the lane paints LOOPBACK\'s faceplate')
       .toBeVisible({ timeout: BOOT_MS });
 
-    // ── 2. THE REAL CARD IS STILL MOUNTED, OFF-SCREEN ──────────────────────
-    // This is the assertion the whole promotion rests on. Without it the card is
-    // gone, `attachExternalSource` never runs, and LOOPBACK → OUT is black.
-    const host = page.locator(HOST);
-    await expect(host, 'HeadlessSourceHost keeps LOOPBACK\'s real card alive')
-      .toHaveCount(1, { timeout: BOOT_MS });
-    await expect(
-      host.getByTestId('loopback-start-capture'),
-      'and it is the REAL card in there, not an empty shell',
-    ).toHaveCount(1);
-
-    // ── 3. …AND THE CARD IS ONLY THERE ─────────────────────────────────────
+    // ── 2. NO CARD IS MOUNTED ANYWHERE ─────────────────────────────────────
     //
-    // ⚠ ASSERTED AS UNIQUENESS-PLUS-LOCATION, NEVER AS `toHaveCount(0)` ON THE
-    // LANE. The camera promotion wrote that inverted gate first and recorded
-    // why it was wrong: `toHaveCount(0)` is satisfied BOTH by "the lane swapped
-    // and the card is hosted off-screen" (right) and by "the card is not
-    // mounted anywhere at all" (the exact regression this file exists to
-    // catch). It would go GREEN in the broken world.
-    await expect(
-      host.locator('.svelte-flow__node-loopback'),
-      'the real card is mounted inside the headless host',
-    ).toHaveCount(1);
-    await expect(
-      page.locator('.svelte-flow__node-loopback'),
-      'and NOWHERE ELSE — exactly one mount, and leg 2 proved which one it is',
-    ).toHaveCount(1);
+    // ⚠ THIS LEG USED TO ASSERT THE OPPOSITE, and the inversion is the point of
+    // the legacy-removal extraction rather than a relaxation of the gate. Until
+    // 2026-09-03 the promotion rested on `HeadlessSourceHost` keeping the REAL
+    // card mounted off-screen, because the card owned getDisplayMedia, the
+    // element and the engine attach. `$lib/ui/media/node-loopback-source-registry`
+    // owns all three now, on GRAPH lifetime, so loopback left
+    // `DOM_SOURCE_LANE_TYPES` and there is no headless host for it at all.
+    //
+    // ⚠ AND THAT MAKES LEG 4 LOAD-BEARING RATHER THAN CONFIRMATORY — say so
+    // here, because this is exactly the shape the camera promotion warned
+    // about. `toHaveCount(0)` is satisfied by "the controller owns the source
+    // and no card is needed" (right) AND by "everything is broken and nothing
+    // is mounted" (the regression). What separates them is no longer a mount
+    // count anywhere; it is whether the module still PRODUCES PIXELS with
+    // nothing mounted. Leg 4 is the whole gate now, and legs 2/3 only say what
+    // it produced them WITHOUT.
+    const host = page.locator(HOST);
+    await expect(host, 'loopback has no headless host any more — the controller owns the source')
+      .toHaveCount(0, { timeout: BOOT_MS });
+    // ⚠ TWO FURTHER ABSENCE CHECKS STOOD HERE AND NEITHER CAN FAIL ANY MORE.
+    // `loopback-start-capture` is emitted by nothing in the tree, and
+    // `.svelte-flow__node-loopback` is a per-TYPE xyflow class that stopped
+    // existing when every lane node became `moduleShell` — so both were
+    // satisfied by a page that rendered nothing. The HOST check above is the
+    // falsifiable one, and the parked-<video> leg below is the positive
+    // statement.
 
-    // ── 3b. THE NODE-OWNED <video> IS HOSTED, NOT MERELY RESCUED ───────────
-    expect(await videoWhere(page)).toEqual({ present: true, count: 1, where: 'host' });
+    // ── 3. THE NODE-OWNED <video> EXISTS AND IS PARKED ─────────────────────
+    //
+    // ⚠ `parking` IS THE INTENDED ANSWER NOW, and it used to be the failure
+    // signal. The element is `ensure`d by the controller with no host at all, so
+    // it exists (and is attached to the engine) with no surface mounted. The
+    // reading still has three distinguishable outcomes — `absent` is the real
+    // failure here, and it is what a controller that never ran would produce.
+    expect(await videoWhere(page)).toEqual({ present: true, count: 1, where: 'parking' });
 
     // ── 4. THE SOURCE PRODUCES ─────────────────────────────────────────────
     // Driven synchronously with the engine rAF loop paused: the frame count is
@@ -262,31 +293,28 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, headless sour
     const stats = await stepAndReadStats(page, { nodeId: LOOP, steps: FIXED_STEPS });
     assertRenderStats(stats, FIXED_STEPS);
 
-    // ── 5. OPENING THE DOCK FACEPLATE DOES NOT UNMOUNT THE CARD ────────────
-    // ⚠ THE REGRESSION THIS LEG EXISTS FOR, inherited from the camera lane:
-    // Canvas excluded every full-view node from the headless host on the premise
-    // that "DockFullView already mounts its real card" — true only for an
-    // UN-MIGRATED module, since `DockFullView` is `{#if migrated} <ModuleShell/>
-    // {:else} <CardComponent/>`. Promotion turns that premise false, and the
-    // failure is silent: the faceplate looks right while the card that owns the
-    // capture has been unmounted from every surface at once.
+    // ── 5. OPENING THE DOCK FACEPLATE DISTURBS NOTHING ─────────────────────
+    // The original worry here was that opening the dock unmounted the card from
+    // every surface at once. There is no card to unmount now, so the leg becomes
+    // the same question asked of the thing that replaced it: the element stays
+    // where it is and the module keeps producing across the dock transition.
     await laneNode.getByTestId('module-shell').getByTestId('shell-open-dock').click();
     await expect(page.getByTestId('dock-full-view')).toBeVisible({ timeout: BOOT_MS });
 
     await expect(
-      host,
-      'the card must STILL be hosted while the faceplate is open — the dock shows the FACE, not the card',
-    ).toHaveCount(1);
+      page.getByTestId('loopback-start-capture'),
+      'the dock shows the FACE — opening it must not mint a card mount either',
+    ).toHaveCount(0);
     expect(
       await videoWhere(page),
-      'and the <video> is still in the host — `parking` would mean the card is unmounted everywhere',
-    ).toEqual({ present: true, count: 1, where: 'host' });
+      'and the <video> is still the one parked element — `absent` would mean the controller lost it',
+    ).toEqual({ present: true, count: 1, where: 'parking' });
 
     const afterDock = await stepAndReadStats(page, { nodeId: LOOP, steps: FIXED_STEPS });
     assertRenderStats(afterDock, FIXED_STEPS);
   });
 
-  test('the faceplate carries BOTH capture gestures, and the card\'s answer comes back', async ({ page, errorWatch }) => {
+  test('the faceplate carries BOTH capture gestures, and the controller\'s answer comes back', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
 
     await stubDisplayMedia(page);
@@ -348,41 +376,54 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, headless sour
         + 'what "reachable" means and what the off-screen host can never satisfy',
     ).toBe(true);
 
-    // ⚠ THE PERMANENT NEGATIVE CONTROL. If the two mounts ever became
-    // indistinguishable, the leg above would start passing on the hosted copy
-    // and certify a module nobody can click. Asserting the host is OFF-canvas
-    // makes that go RED instead of quietly green.
-    const hostedBox = await page.locator(`${HOST} [data-testid="loopback-start-capture"]`).boundingBox();
-    expect(hostedBox, 'the hosted card must exist for this control to mean anything').not.toBeNull();
-    expect(
-      hostedBox!.x,
-      'the HOSTED copy is parked off-canvas — if this ever goes >= 0 the reachability leg above is blind',
-    ).toBeLessThan(0);
+    // ⚠ THE PERMANENT NEGATIVE CONTROL, RE-ANCHORED (legacy-removal S1). It used
+    // to assert that the HOSTED card's copy of this button sat at a negative x,
+    // so a reachability leg that accidentally resolved to the off-screen mount
+    // would go red rather than certify a module nobody can click. There is no
+    // hosted card any more — but the worry it guarded is not gone, it just
+    // changed shape: the leg above must be reading the ONE button a user can
+    // press, and nothing else may be offering the same affordance somewhere
+    // unreachable. Asserted directly.
+    await expect(
+      page.getByTestId('loopback-face-acquire'),
+      'exactly ONE acquire affordance exists — two would make the reachability leg ambiguous',
+    ).toHaveCount(1);
+    await expect(
+      page.getByTestId('loopback-start-capture'),
+      'and no card copy of it exists anywhere — the old off-canvas control\'s subject, inverted',
+    ).toHaveCount(0);
 
     await acquire.click();
 
-    // ── DIRECTION ONE: the click REACHED the card ──────────────────────────
-    // The card is off-screen and pointer-events:none, so the ONLY path from this
-    // button to getDisplayMedia is the registry's command slot. An acquire
-    // writes nothing to the graph, so this counter is the only observable there
-    // is.
+    // ── DIRECTION ONE: the click REACHED the controller ────────────────────
+    // The ONLY path from this button to getDisplayMedia is the status
+    // registry's command slot, which `node-loopback-source.svelte.ts` owns. An
+    // acquire writes nothing to the graph, so this counter is the only
+    // observable there is.
+    //
+    // ⚠ AND IT PROVES THE GESTURE SURVIVED THE MOVE, which is the one thing the
+    // extraction could plausibly have broken. `getDisplayMedia` is refused
+    // outside a user activation, and the activation is consumed by the first
+    // `await` on the path — so an extra hop that awaited anywhere would leave
+    // this counter at 0 with no error and no lamp change, looking exactly like
+    // a user who dismissed the picker.
     await expect
       .poll(() => gdmCalls(page), {
-        message: 'the faceplate button must reach the headless card\'s getDisplayMedia',
+        message: 'the faceplate button must reach the node controller\'s getDisplayMedia',
         timeout: BOOT_MS,
       })
       .toBe(1);
 
-    // ── DIRECTION TWO: the card's ANSWER reached the face ──────────────────
-    // The stub rejects with NotReadableError, so the card lands in 'error' with
-    // its recovery text. Both must arrive back here — a one-way seam would leave
-    // the lamp cheerfully idle over a failed capture, and on this module the
-    // lamp has NOTHING in the graph it could fall back to reading.
-    await expect(lamp, 'the lamp shows the card\'s REAL failure, not a graph guess')
+    // ── DIRECTION TWO: the controller's ANSWER reached the face ────────────
+    // The stub rejects with NotReadableError, so the controller lands in 'error'
+    // with its recovery text. Both must arrive back here — a one-way seam would
+    // leave the lamp cheerfully idle over a failed capture, and on this module
+    // the lamp has NOTHING in the graph it could fall back to reading.
+    await expect(lamp, 'the lamp shows the controller\'s REAL failure, not a graph guess')
       .toHaveAttribute('data-lamp', 'error', { timeout: BOOT_MS });
     await expect(
       body.getByTestId('loopback-face-error'),
-      'and the card\'s message arrives with it',
+      'and the controller\'s message arrives with it',
     ).toContainText(/NotReadableError/i, { timeout: BOOT_MS });
 
     // ── AND THE FAILURE IS RETRYABLE ───────────────────────────────────────
@@ -438,35 +479,9 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, headless sour
     ).toBe(true);
   });
 
-  test('`?shell=legacy` is UNCHANGED — the real card is in the lane and no host exists', async ({ page, errorWatch }) => {
-    // ⚠ THE ESCAPE HATCH IS PART OF THE CONTRACT, and this promotion is exactly
-    // the kind of change that quietly breaks it: the headless host would be a
-    // SECOND mount of a card that is already in the lane, which is the
-    // double-capture hazard `needsHeadlessSourceMount`'s 'legacy' arm exists to
-    // prevent. Asserting the host is ABSENT is what proves that arm still fires
-    // for this module now that it is promoted.
-    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
-
-    await stubDisplayMedia(page);
-    await bootRack(page, '/rack?shell=legacy');
-    await spawnLoopbackChain(page);
-
-    await expect(
-      page.locator(`.svelte-flow__node-loopback[data-id="${LOOP}"]`),
-      'the verbatim legacy card is the lane surface under ?shell=legacy',
-    ).toBeVisible({ timeout: BOOT_MS });
-
-    await expect(
-      page.locator(HOST),
-      'and NO headless host — that would be a second mount of the same card',
-    ).toHaveCount(0);
-
-    // The card's own buttons are the reachable ones here — the legacy surface
-    // owes the same affordances the faceplate now carries.
-    await expect(page.getByTestId('loopback-start-capture')).toHaveCount(1);
-    expect(
-      await videoWhere(page),
-      'the node-owned <video> lives in the LANE card under the legacy shell',
-    ).toEqual({ present: true, count: 1, where: 'lane' });
-  });
+  // A second-renderer leg was DELETED by the S2 inversion: its subject was that
+  // renderer plus the absence of the (since deleted) HeadlessSourceHost.
+  // Node-source ownership on the shell users get is
+  // covered by the tests above and by workflow-shell-video's per-row
+  // card-absence assertions.
 });

@@ -264,7 +264,7 @@ const sinkNode: SpawnNode = { id: 'f-out', type: 'videoOut', position: { x: 980,
 
 async function bootRack(page: Page): Promise<void> {
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 }
 
@@ -285,7 +285,7 @@ async function spawnSolidChain(
     ],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('.svelte-flow__node-posterbox'), 'POSTERBOX visible').toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="posterbox"])'), 'POSTERBOX visible').toBeVisible();
 }
 
 /** ramp → posterbox(params) → out. */
@@ -297,7 +297,7 @@ async function spawnRampChain(page: Page, params: Record<string, number>): Promi
     [feedEdge('e-in', 'f-crush', 'in'), videoEdge('e-o', 'f-crush', 'out', 'f-out', 'in')],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('.svelte-flow__node-posterbox'), 'POSTERBOX visible').toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="posterbox"])'), 'POSTERBOX visible').toBeVisible();
 }
 
 const centreProbe = { nodeId: 'f-crush', u: 0.5, v: 0.5 } as const;

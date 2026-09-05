@@ -4,11 +4,11 @@
 //
 // ── WHY THIS FILE EXISTS, WHICH IS THE FINDING ─────────────────────────────
 //
-// `dockRailRendersFace` decides whether a dock-rail occupant renders its
-// promoted faceplate or its verbatim legacy card. `AudioIoSurface.svelte` —
-// which hosts the pinned AUDIO IN and AUDIO OUT through the same
-// `DockCardHost` the dock rails use — NEVER CALLED IT. Both mounts passed six
-// props and no `face`, so the host's `face = false` default won and it mounted
+// A dock-rail occupant used to CHOOSE between its promoted faceplate and its
+// pre-promotion surface. `AudioIoSurface.svelte` — which hosts the pinned AUDIO
+// IN and AUDIO OUT through the same `DockCardHost` the dock rails use — never
+// asked. Both mounts passed six props and no `face`, so the host's
+// `face = false` default won and it mounted
 // `nodeTypes[node.type]` unconditionally.
 //
 // That matters more here than anywhere else, because of what those two nodes
@@ -22,18 +22,16 @@
 // their tray. Promoting either module without the prop would have merged green
 // and changed nothing a normal user can reach: the ADDED-on-canvas instance
 // would get a face, and the pinned one — the one `workflow-pins.ts` spawns into
-// every rackspace, the one every user has in every session — would keep the
-// legacy card forever.
+// every rackspace, the one every user has in every session — would keep the old
+// surface forever.
 //
 // ── AND THE PANEL'S OWN WATCHER COULD NOT SEE IT ───────────────────────────
 //
 // `e2e/vrt/workflow-audio-io-composite.spec.ts` is the scene written for this
 // exact surface, for the owner-reported class *"this should have been caught
-// with vrt analysis"*. It drives `/rack?shell=legacy`. Under that flag
-// `shellFaces` is false, so `dockRailRendersFace` is false **even with the prop
-// threaded** — that scene can never show a face in this panel, before or after
-// the fix. It is not re-pointed here: its legacy-arm assertion is the escape
-// hatch's only coverage and re-pointing it would delete that.
+// with vrt analysis"*. It was written against the PRE-INVERSION renderer, under
+// which the panel's own rule was false **even with the prop threaded** — so
+// that scene could never show a face in this panel, before or after the fix.
 //
 // `legacy-fallback.ts:200-204` already records this exact shape for the
 // NEIGHBOURING surface — *"the three shipped drawer specs cannot see this
@@ -44,36 +42,34 @@
 //
 // ── WHAT IT ASSERTS, AND WHY IT IS NOT A TYPED EXPECTATION ─────────────────
 //
-// Nothing here says "audioOut renders a legacy card". It says: EACH OCCUPANT
-// RENDERS WHAT ITS MIGRATION SAYS IT SHOULD, in both directions, with the
-// migration read off the registry manifest's own `strictFace` — the same
+// Nothing here names a surface by hand. It says: EACH OCCUPANT RENDERS WHAT
+// ITS MIGRATION SAYS IT SHOULD, with the migration read off the registry
+// manifest's own `strictFace` — the same
 // property `migrated()` keys on (`STRICT_FACES` is "every def that declares a
 // `face`", asserted both ways in the unit lane).
 //
-// So on the day this landed both occupants were un-migrated and both legs took
-// the legacy arm — AND THAT IS THE POINT. This is the leg that MOVES when
-// either module is promoted: the assertion flips itself, and a promotion that
-// failed to reach the pinned instance is a red test rather than a silent
-// no-op. A typed `expect(legacy)` would have had to be edited by the very PR
-// it exists to check.
+// On the day this landed both occupants were un-migrated, and the two-armed
+// shape was what made it the leg that MOVED when either was promoted: a
+// promotion that failed to reach the pinned instance was a red test rather than
+// a silent no-op. Both are migrated now, so the branch is gone and the
+// migration is ASSERTED instead — a demotion has to say so by name rather than
+// quietly take the other arm.
 //
-// ⚠ A CONSTANT-FALSE PREDICATE WOULD PASS THAT, so the face arm is exercised
-// too — by the POSITIVE control at the end of the first test, which drives the
-// SAME `DockCardHost` face branch on the SAME kind of occupant (a pinned,
+// ⚠ THE FACE ARM IS STILL EXERCISED FROM A SECOND DIRECTION — by the POSITIVE
+// control at the end of the first test, which drives the SAME `DockCardHost`
+// through the drawer rather than the panel, on the SAME kind of occupant (a pinned,
 // canvas-hidden singleton) that IS migrated today. Without it, "the face arm
 // renders a face" would be an untested claim in a file whose whole subject is
 // the face arm.
 //
 // ── WHAT THIS SPEC STRUCTURALLY CANNOT SEE ────────────────────────────────
 //
-//   * PIXELS. The only baseline over this panel is the `?shell=legacy` one
-//     named above; there is deliberately no default-shell capture, because a
+//   * PIXELS. The only baseline over this panel is the one named above; there
+//     is deliberately no shipping-shell capture, because a
 //     page-level shot of `/rack` includes the seeded video zone painting live
 //     faceplate glyphs (the enumerated VRT-entropy class), and `?seed=none` —
 //     which would make it deterministic — suppresses the pinned ensure at
 //     `Canvas.svelte`, so the panel would have no occupants to photograph.
-//   * The `?shell=legacy` arm — that is the composite VRT scene and
-//     `audio-in.spec.ts`.
 //   * AUDIO IN's `getUserMedia` lifecycle. This file never grants, denies or
 //     asserts a capture; it only asserts which COMPONENT is mounted, which is
 //     capability-independent by construction.
@@ -88,23 +84,19 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // bound, not an assertion — see ../_helpers/boot-budget.ts.
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
-/** The panel's two columns: the pinned node `workflow-pins.ts` spawns, the host
- *  testid `AudioIoSurface` stamps, and one testid that exists ONLY on that
- *  module's legacy card (so "the legacy arm rendered" is a positive statement
- *  about the card, not merely the absence of a shell). */
+/** The panel's two columns: the pinned node `workflow-pins.ts` spawns and the
+ *  host testid `AudioIoSurface` stamps.
+ *
+ *  ⚠ EACH ROW CARRIED A `legacyOnly` TESTID and it is gone with its subject.
+ *  The pair was `audioin-device-select` / `audioout-device-select` — ids the
+ *  pre-promotion surfaces emitted and `AudioInSourceControls.svelte` still
+ *  refuses BY NAME, so "the old arm rendered" could be stated positively rather
+ *  than as the absence of a shell. Nothing emits either id now, so asserting
+ *  their absence would be true of a host that rendered NOTHING. The migration
+ *  assertion below is the anchor instead. */
 const OCCUPANTS = [
-  {
-    type: 'audioIn',
-    nodeId: 'pinned-audioIn',
-    host: 'workflow-io-audioin-host',
-    legacyOnly: 'audioin-device-select',
-  },
-  {
-    type: 'audioOut',
-    nodeId: 'pinned-audioOut',
-    host: 'workflow-io-audioout-host',
-    legacyOnly: 'audioout-device-select',
-  },
+  { type: 'audioIn', nodeId: 'pinned-audioIn', host: 'workflow-io-audioin-host' },
+  { type: 'audioOut', nodeId: 'pinned-audioOut', host: 'workflow-io-audioout-host' },
 ] as const;
 
 /**
@@ -185,7 +177,7 @@ async function openAudioIoPanel(page: Page) {
 }
 
 test.describe('workflow · the 🎧 audio-I/O panel honours the migration rule (default shell)', () => {
-  test('each hosted occupant renders the surface its MIGRATION says it should — both arms', async ({
+  test('each hosted occupant renders the surface its MIGRATION says it should', async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -200,45 +192,35 @@ test.describe('workflow · the 🎧 audio-I/O panel honours the migration rule (
       await expect(card, `${occ.type}: DockCardHost must mount the pinned node`).toBeVisible();
 
       const shell = card.locator('[data-testid="module-shell"]');
-      const legacy = card.getByTestId(occ.legacyOnly);
-      const faced = isFaced(occ.type);
 
-      if (faced) {
-        // THE FACE ARM. `view='drawer'` specifically — a shell that fell back to
-        // the lane view would still be "a module-shell" while painting a
-        // fraction of the faceplate.
-        await expect(
-          shell,
-          `${occ.type} declares a curated face, so this panel — its ONLY surface — must render it`,
-        ).toBeVisible();
-        await expect(shell).toHaveAttribute('data-shell-type', occ.type);
-        await expect(shell).toHaveAttribute('data-shell-view', 'drawer');
-        await expect(
-          legacy,
-          `${occ.type}: the verbatim legacy card must be GONE from this host once the face renders`,
-        ).toHaveCount(0);
-      } else {
-        // THE LEGACY ARM — asserted positively (the card's own control is here),
-        // not merely as "no shell", so a host that rendered NOTHING is red.
-        await expect(
-          legacy,
-          `${occ.type} declares no curated face, so this panel must still mount its verbatim card`,
-        ).toBeVisible();
-        await expect(
-          shell,
-          `${occ.type}: an un-migrated occupant must not render a faceplate`,
-        ).toHaveCount(0);
-      }
+      // ⚠ THE MIGRATION IS ASSERTED, NOT BRANCHED ON. This loop used to pick an
+      // arm from `isFaced(occ.type)`, which made a DEMOTION indistinguishable
+      // from a pass: the un-migrated arm would simply have run instead. Both
+      // occupants are migrated and the panel is their only surface, so the
+      // honest shape is a claim.
+      expect(
+        isFaced(occ.type),
+        `${occ.type} is no longer in STRICT_FACES. This panel is its ONLY surface, so a demotion ` +
+          `deletes the module for every workflow user — fix the demotion, do not re-branch here.`,
+      ).toBe(true);
+
+      // `view='drawer'` specifically — a shell that fell back to the lane view
+      // would still be "a module-shell" while painting a fraction of the
+      // faceplate.
+      await expect(
+        shell,
+        `${occ.type} declares a curated face, so this panel — its ONLY surface — must render it`,
+      ).toBeVisible();
+      await expect(shell).toHaveAttribute('data-shell-type', occ.type);
+      await expect(shell).toHaveAttribute('data-shell-view', 'drawer');
     }
 
     // ── POSITIVE CONTROL: the face arm of this very rule, on this very host ──
     //
-    // Everything above is satisfied by a `dockRailRendersFace` that returns
-    // false forever — which is the pre-fix behaviour. This leg drives the same
-    // `DockCardHost` `face` branch, on the same occupant class (pinned,
-    // canvas-hidden, `pinned: true`), on the same default shell, for a type
-    // that IS migrated. If the face arm cannot render, this file is red even
-    // while both audio occupants are un-migrated.
+    // A THIRD occupant of the same class (pinned, canvas-hidden), reached
+    // through a DIFFERENT route — the `m` drawer rather than the 🎧 panel — so
+    // this file still fails if the shared host stops rendering faceplates for a
+    // reason specific to one panel's plumbing rather than to the host.
     expect(
       isFaced(FACE_CONTROL.type),
       `the face-arm control is '${FACE_CONTROL.type}' (${FACE_CONTROL.why}). It is no longer ` +
@@ -258,8 +240,8 @@ test.describe('workflow · the 🎧 audio-I/O panel honours the migration rule (
     const controlShell = controlCard.locator('[data-testid="module-shell"]');
     await expect(
       controlShell,
-      `POSITIVE CONTROL: a pinned MIGRATED occupant must render its face through DockCardHost. ` +
-        `If this is red the face arm is broken and the legacy-arm legs above prove nothing.`,
+      `POSITIVE CONTROL: a pinned MIGRATED occupant must render its face through DockCardHost, ` +
+        `reached from the drawer rather than from the 🎧 panel.`,
     ).toBeVisible();
     await expect(controlShell).toHaveAttribute('data-shell-view', 'drawer');
 
@@ -271,10 +253,10 @@ test.describe('workflow · the 🎧 audio-I/O panel honours the migration rule (
     // outside `DockCardHost`, derived from the live def through the same
     // `collapseStereoPorts` the PatchPanel uses — so promotion must not touch
     // them in either direction. The shipped assertion for this
-    // (`audio-in.spec.ts`, "the pinned AUDIO OUT exposes a source picker") is
-    // on `/rack?shell=legacy`, i.e. an arm promotion never moves. It proves
-    // nothing about the surface this PR changes; this is that same claim on the
-    // arm that does move.
+    // (`audio-in.spec.ts`, "the pinned AUDIO OUT exposes a source picker") was
+    // written against the PRE-PROMOTION renderer, i.e. an arm promotion never
+    // moves. It proves nothing about the surface this PR changes; this is that
+    // same claim on the arm that does move.
     const errors = collectErrors(page);
     await gotoDefaultShell(page);
     await waitForPins(page, [...OCCUPANTS.map((o) => o.nodeId)]);

@@ -13,8 +13,8 @@
 //
 // ⚠ EVERY LEG RUNS ON THE DEFAULT SHELL, WITH NO CARD. That is not a variation
 // on the existing videovarispeed specs — it is the surface those specs
-// structurally cannot reach. Six of the seven pre-existing ones boot
-// `?shell=legacy` (the surface promotion does not change), and the seventh
+// structurally cannot reach. Six of the seven pre-existing ones were written
+// against the PRE-PROMOTION surface, and the seventh
 // asserts the CV path with nothing mounted. None of them can see the faceplate,
 // so without this file the promotion would ship with the operated surface
 // untested.
@@ -26,7 +26,7 @@
 //      you cannot give a file to" failure.
 //   2. The BLIT-NEVER-ADOPT invariant: the node-owned <video> is PARKED while
 //      this module's dock pane is open. A body that adopted it would take the
-//      element out from under the legacy card's mount under `?shell=legacy`.
+//      element out from under the NODE-lifetime owner that keeps it alive.
 //   3. The deleted resting readout STAYS deleted, and its replacement carries
 //      the information (`aria-valuetext`).
 //   4. SCREEN OFF collapses the picture and does NOT pause the clip.
@@ -58,8 +58,7 @@ const MIN_PROGRESS_S = 0.4;
 const VVS = 'fvv1';
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The legacy specs' `?shell=legacy` is
-  // precisely the surface promotion does not change.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
@@ -165,11 +164,10 @@ test.describe('VIDEOVARISPEED face — the promotion is what makes it loadable',
       mountTimeout: BOOT_MS,
     });
 
-    // THE PROMOTION ITSELF: the default shell mounts no card anywhere.
-    await expect(
-      page.locator('[data-testid="videovarispeed-card"]'),
-      'a legacy card is mounted on the default shell — the shell did not replace it',
-    ).toHaveCount(0);
+    // ⚠ A "THE PROMOTION ITSELF" GATE RAN HERE AND IS DELETED. It required
+    // `videovarispeed-card` to be absent; nothing in the tree emits that
+    // testid, so the matcher was satisfied by a page that rendered nothing at
+    // all. The positive assertions below are what hold this file up.
 
     const dock = await openDock(page, VVS);
     const body = dock.locator('[data-testid="videovarispeed-face-body"]');
@@ -197,8 +195,8 @@ test.describe('VIDEOVARISPEED face — the promotion is what makes it loadable',
     await expect(body).toHaveAttribute('data-is-playing', 'true');
 
     // ── LEG: BLIT, NEVER ADOPT ────────────────────────────────────────────
-    // The element has ONE parent and `?shell=legacy` mounts a card that adopts
-    // it; a body that adopted it here would move it out from under that mount.
+    // The element has ONE parent and a NODE-lifetime owner; a body that adopted
+    // it here would move it out from under that owner.
     const placed = await mediaState(page);
     expect(placed, 'no node-owned <video> exists at all').not.toBeNull();
     expect(

@@ -18,7 +18,7 @@
 // are DISTINCT, which is the property the wrong implementation cannot have.
 //
 // Runs on /rack (no DB, no relay) — the normal e2e lane. The faceplate shell is
-// the DEFAULT rack since #1459; `?shell=legacy` is the escape hatch, not this.
+// the rack since #1459.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';

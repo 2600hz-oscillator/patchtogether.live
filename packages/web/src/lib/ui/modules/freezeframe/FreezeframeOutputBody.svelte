@@ -6,17 +6,16 @@
   //
   // ⚠ WHY THIS FILE EXISTS (#1934, the #1928 class). This module's SCREEN
   // toggle shipped on `FreezeframeCard.svelte` in the same change that promoted
-  // freezeframe into `STRICT_FACES` — and promotion is exactly what stops that
-  // card from rendering: `migrated(type)` becomes true and
-  // `DockFullView.svelte:319` mounts `<ModuleShell>` instead. The required
-  // control was therefore deleted by the promotion meant to keep it, on both
-  // surfaces, leaving the ruling satisfied only where nobody can reach it.
+  // freezeframe into `STRICT_FACES` — and the promotion is exactly what stopped
+  // that surface from rendering. The required control was therefore deleted by
+  // the change meant to deliver it, leaving the ruling satisfied only where
+  // nobody could reach it.
   //
   // ⚠ AND NOTHING WOULD HAVE CAUGHT IT: `previewCollapsed` appears in ZERO
   // shell files, so there is no generic affordance to fall back on, and the
-  // spec that proved the toggle worked was pinned to `?shell=legacy` — the one
-  // surface promotion does not change — so it passed and would have gone on
-  // passing. `video-face-screen-source.test.ts` (#1935) is the gate that now
+  // spec that proved the toggle worked was pinned to the one surface the
+  // promotion did not change — so it passed and would have gone on passing.
+  // `video-face-screen-source.test.ts` (#1935) is the gate that now
   // refuses this shape by name; this file is what makes freezeframe PASS it
   // rather than need an exemption.
   //

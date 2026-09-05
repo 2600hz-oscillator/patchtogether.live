@@ -66,10 +66,6 @@ function bodySrc(): string {
     readFileSync(resolve(HERE, 'blood/BloodScreenBody.svelte'), 'utf8'),
   );
 }
-function cardSrc(): string {
-  return stripSourceComments(readFileSync(resolve(HERE, 'BloodCard.svelte'), 'utf8'));
-}
-
 /**
  * The body's CODE with runs of whitespace collapsed — for the two PROXIMITY
  * probes below ("`markWatched` is inside the collapsed branch", "`autoBootBlood`
@@ -209,11 +205,13 @@ describe('⚠ blood — the BODY BOOTS THE ENGINE (the promotion hazard)', () =>
     ).toBe(true);
   });
 
-  it('BOTH surfaces boot through the SAME seam — neither re-implements it', () => {
-    // The `livecode` shape. If either surface grew its own `ensureLoaded()` call
-    // the two could disagree about what booting means (the IndexedDB restore,
-    // the resetLoad ordering), and only one of them is covered by e2e.
-    for (const [name, src] of [['body', bodySrc()], ['card', cardSrc()]] as const) {
+  it('the surface boots through the SHARED seam — it does not re-implement it', () => {
+    // The `livecode` shape. A surface that grew its own `ensureLoaded()` call
+    // would have its own idea of what booting means (the IndexedDB restore, the
+    // resetLoad ordering) — and when there were two surfaces, only one of them
+    // was covered by e2e. That is why this reads the seam import rather than
+    // trusting the boot to happen.
+    for (const [name, src] of [['body', bodySrc()] as const]) {
       expect(src, `${name} must import the shared boot seam`).toContain('$lib/blood/blood-boot');
       expect(
         /extras\??\.\s*ensureLoaded\(/.test(src),

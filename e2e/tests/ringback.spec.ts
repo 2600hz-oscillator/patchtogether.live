@@ -41,7 +41,7 @@ test('RINGBACK: VCO → stereo in → stereo out has audible RMS on BOTH channel
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-ringback');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="ringback"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText('RINGBACK');
 

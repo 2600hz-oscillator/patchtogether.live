@@ -132,10 +132,22 @@
   });
 
   // ── Params ────────────────────────────────────────────────────────────────
-  let startA = $derived(node?.params.start_a ?? defaultFor('start_a'));
-  let endA = $derived(node?.params.end_a ?? defaultFor('end_a'));
-  let startB = $derived(node?.params.start_b ?? defaultFor('start_b'));
-  let endB = $derived(node?.params.end_b ?? defaultFor('end_b'));
+  // ⚠ FRESH READS — the `nodeData()` rule above, applied to params. An
+  // untouched twotracks has NO start_/end_ keys, so a `$derived` seeded from
+  // the absent key memoises the DEFAULT with nothing to invalidate on: the
+  // first write that CREATES the key from outside this surface (a rack-mate —
+  // or any store write that isn't this component's own setNodeParam) leaves
+  // the clamps and the picture reading the stale default forever. MEASURED:
+  // store-write end_a=0.3, then drag START to 0.85 → the clamp saw end=1 and
+  // wrote start_a=0.85, sailing straight past END. The paint stays live
+  // because the meter pump's per-frame $state changes re-run the draw effect;
+  // these accessors just make every read reach the store.
+  const paramFresh = (k: string): number =>
+    ((patch.nodes[nodeId]?.params as Record<string, number> | undefined)?.[k]) ?? defaultFor(k);
+  const startA = () => paramFresh('start_a');
+  const endA = () => paramFresh('end_a');
+  const startB = () => paramFresh('start_b');
+  const endB = () => paramFresh('end_b');
 
   let bufLenA = $derived(nodeData()?.bufLenA ?? 0);
   let bufLenB = $derived(nodeData()?.bufLenB ?? 0);
@@ -160,17 +172,17 @@
 
   function viewFor(reel: TwotracksReel): TwotracksReelView {
     return reel === 'a'
-      ? { peaks: peaksA, bufLen: bufLenA, playheadFrac: shownPlayheadA, startFrac: startA, endFrac: endA }
-      : { peaks: peaksB, bufLen: bufLenB, playheadFrac: shownPlayheadB, startFrac: startB, endFrac: endB };
+      ? { peaks: peaksA, bufLen: bufLenA, playheadFrac: shownPlayheadA, startFrac: startA(), endFrac: endA() }
+      : { peaks: peaksB, bufLen: bufLenB, playheadFrac: shownPlayheadB, startFrac: startB(), endFrac: endB() };
   }
 
   function setStart(reel: TwotracksReel, frac: number): void {
-    if (reel === 'a') setNodeParam(nodeId, 'start_a', clampLoopStart(frac, endA, rollingA ? shownPlayheadA : null));
-    else setNodeParam(nodeId, 'start_b', clampLoopStart(frac, endB, rollingB ? shownPlayheadB : null));
+    if (reel === 'a') setNodeParam(nodeId, 'start_a', clampLoopStart(frac, endA(), rollingA ? shownPlayheadA : null));
+    else setNodeParam(nodeId, 'start_b', clampLoopStart(frac, endB(), rollingB ? shownPlayheadB : null));
   }
   function setEnd(reel: TwotracksReel, frac: number): void {
-    if (reel === 'a') setNodeParam(nodeId, 'end_a', clampLoopEnd(frac, startA, rollingA ? shownPlayheadA : null));
-    else setNodeParam(nodeId, 'end_b', clampLoopEnd(frac, startB, rollingB ? shownPlayheadB : null));
+    if (reel === 'a') setNodeParam(nodeId, 'end_a', clampLoopEnd(frac, startA(), rollingA ? shownPlayheadA : null));
+    else setNodeParam(nodeId, 'end_b', clampLoopEnd(frac, startB(), rollingB ? shownPlayheadB : null));
   }
 
   function canvasFor(reel: TwotracksReel): HTMLCanvasElement | null {

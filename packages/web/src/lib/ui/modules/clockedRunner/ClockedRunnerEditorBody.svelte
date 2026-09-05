@@ -46,10 +46,10 @@
   // the dock pane (`DockFullView`'s own `max-height` + scroll region) and a lane
   // tile is a fixed 192 px, so a grip here would be a control that moves numbers
   // nothing reads. videoOut settled the same question the same way on the owner's
-  // instruction ("the card does not need the arbitrary resizing"). The card keeps
-  // its grip — `?shell=legacy` still renders it — and `node.data.width` is still
-  // READ, by the spawn geometry in `livecode-cell-actions`, so a saved rack's new
-  // modules land exactly where they always did.
+  // instruction ("it does not need the arbitrary resizing"). ⚠ `node.data.width`
+  // IS STILL READ, by the spawn geometry in `livecode-cell-actions`, so a saved
+  // rack's new modules land exactly where they always did — dropping the grip
+  // does not make the key dead.
   //
   // ⚠ THE DIVISION IS NOT HERE. It is the ranked `selector` cell in the band
   // below, which is what puts it on the LANE TILE too — the whole point of making

@@ -25,7 +25,7 @@
 // would be a black tile with no game, no keyboard and no netgame, while every
 // def-reading gate stayed green. Hence one SHARED surface rather than a second
 // implementation: `doom/DoomSurface.svelte`, mounted by the card with
-// `variant="card"` and by `DoomBody` with `variant="face"`.
+// by `DoomBody`, which is this module's `fullViewBody`.
 
 import type { ShellExtension } from '$lib/ui/workflow/shell-extensions';
 import DoomBody from './DoomBody.svelte';

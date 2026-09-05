@@ -21,9 +21,9 @@
 // half is NODE-lifetime: `$lib/ui/media/extras-producers` (`rasterizeRichText`),
 // driven by `node-extras-registry`, is the ONLY writer of `setTextCanvas`, so a
 // saved rack shows your text with no UI mounted at all. What a UI surface owns
-// is `node.data.richText` — the MODEL — which the legacy card and (since the
-// face) `TextmarqueeEditorBody` both write through the shared serializer in
-// `$lib/graph/textmarquee-editor`.
+// is `node.data.richText` — the MODEL — which `TextmarqueeEditorBody` writes
+// through the shared serializer in `$lib/graph/textmarquee-editor`, so a second
+// editor is a call rather than a copy.
 //
 // Until something pushes a canvas, the factory renders its OWN default
 // placeholder canvas (so a freshly-spawned node is never a dead black frame —

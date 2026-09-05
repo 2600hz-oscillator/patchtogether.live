@@ -120,7 +120,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     test.setTimeout(60_000);
 
     await freezeB3ntb0x(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -136,9 +136,12 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-b3ntb0x'), 'B3NTB0X node visible').toBeVisible();
-    await expect(page.locator('[data-testid="b3ntb0x-card"]'), 'card present').toHaveCount(1);
-    await expect(page.locator('[data-testid="b3ntb0x-canvas"]'), 'canvas mounted').toHaveCount(1);
+    // Presence on the default shell: the faceplate tile (the card's CRT-front
+    // canvas is card chrome; the FBO reads below are the real instrument).
+    await expect(
+      page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]'),
+      'B3NTB0X faceplate visible',
+    ).toBeVisible();
 
     // Drive a FIXED burst synchronously, read B3NTB0X's OWN CRT-front FBO once.
     // The decoded NTSC frame is non-black with spatial structure (the
@@ -159,7 +162,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     test.setTimeout(60_000);
 
     await freezeB3ntb0x(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // ONE page-load (was two full goto+spawn captures): spawn CLEAN, read a
@@ -177,7 +180,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
         { id: 'e_src', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bb', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('[data-testid="b3ntb0x-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]')).toHaveCount(1);
 
     const clean = await stepAndReadStats(page, { nodeId: 'bb', steps: FIXED_STEPS });
     assertRenderStats(clean, FIXED_STEPS);
@@ -246,7 +249,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     // degenerate t=0). One page-load: spawn CLEAN once, read a frozen baseline,
     // then flip ONE control at a time and read again.
     await freezeB3ntb0x(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Clean baseline: every audited control at its inert value, tbc=1 (steady,
@@ -268,7 +271,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
         { id: 'e_src', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bb', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('[data-testid="b3ntb0x-canvas"]'), 'canvas mounted').toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]'), 'faceplate mounted').toHaveCount(1);
 
     // Frozen baseline: assert the CLEAN frame is a real structured decode first
     // (so a per-control diff isn't measured against a black/broken frame), then

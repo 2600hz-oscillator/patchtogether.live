@@ -28,7 +28,7 @@
 
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
+import { spawnPatch, canvasNode, type SpawnNode, type SpawnEdge } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 interface ScopeCase {
@@ -113,7 +113,7 @@ test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -128,7 +128,10 @@ test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
 
       await spawnPatch(page, c.nodes, c.edges);
 
-      const card = page.locator('.svelte-flow__node-scope').first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'vrt-1');
       await card.waitFor({ state: 'visible', timeout: 10_000 });
 
       await page.waitForTimeout(c.settleMs);

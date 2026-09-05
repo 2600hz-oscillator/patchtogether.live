@@ -22,7 +22,7 @@ import { controlSurfaceDef } from '$lib/meta/modules/control-surface';
 import { CONTROL_SURFACE_TYPE } from '$lib/graph/control-surface';
 import { curatedFace, laneOrder, type FaceDefLike } from '$lib/ui/workflow/curated-face';
 import { STRICT_FACES, migrated } from '$lib/ui/workflow/strict-faces';
-import { NON_SHELL_LANE_TYPES, laneRenderKind, dockRailRendersFace } from '$lib/ui/workflow/legacy-fallback';
+import { NON_SHELL_LANE_TYPES, laneRenderKind } from '$lib/ui/workflow/legacy-fallback';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 const DEF = controlSurfaceDef as unknown as FaceDefLike;
@@ -51,13 +51,7 @@ describe('controlSurface face — the promotion', () => {
   it('is NOT in NON_SHELL_LANE_TYPES — the carve-out and the promotion cannot coexist', () => {
     expect(NON_SHELL_LANE_TYPES.has(CONTROL_SURFACE_TYPE)).toBe(false);
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: CONTROL_SURFACE_TYPE,
-        hasCard: true,
-        migrated: true,
-      }),
+      laneRenderKind({ userDocked: false, type: CONTROL_SURFACE_TYPE, laneNative: false }),
       'the lane renders the shell, not the verbatim card',
     ).toBe('shell');
   });
@@ -65,48 +59,39 @@ describe('controlSurface face — the promotion', () => {
   // ⚠ THE NEGATIVE CONTROL: the rule still honours a carve-out for a type that
   // keeps one, so "the entry is gone" and "the rule stopped consulting the set"
   // cannot look alike.
-  // (⚠ The subject has now moved twice: it was `controlSurface`, whose own
-  // promotion drained that membership on 2026-09-01, then `clipplayer`, whose
-  // promotion drained the set of its LAST MODULE CARD. It re-points at `sticky`
-  // — organizational chrome, which is what `NON_SHELL_LANE_TYPES` now holds
-  // exclusively, and which no face programme can promote away. That makes this
-  // the last re-point the control can ever need.)
+  // (⚠ The subject has now moved THREE times, and the last move is the one that
+  // ends the sequence. It was `controlSurface`, whose own promotion drained that
+  // membership on 2026-09-01; then `clipplayer`, whose promotion drained the set
+  // of its LAST MODULE CARD; then `sticky`, chosen because organizational chrome
+  // "no face programme can promote away" — a claim this file made and which was
+  // WRONG WITHIN DAYS, because the owner DELETED the chrome outright rather than
+  // promoting it. The subject is now `cadillac`, and the argument is finally
+  // structural rather than a prediction: it renders as a full-canvas overlay
+  // sprite and has no SvelteFlow node body at all, so there is nothing a face
+  // could replace. Read the earlier claim as the warning it turned out to be —
+  // "this is the last re-point" is a forecast, and forecasts about a list this
+  // small keep being falsified by a route nobody was watching.)
   it('the rule still honours a carve-out for the types that keep one', () => {
     expect(
-      laneRenderKind({
-        shellFaces: true,
-        userDocked: false,
-        type: 'sticky',
-        hasCard: false,
-        migrated: false,
-      }),
-    ).toBe('legacy');
-    expect(NON_SHELL_LANE_TYPES.has('sticky'), 'a real member remains').toBe(true);
+      laneRenderKind({ userDocked: false, type: 'cadillac', laneNative: true }),
+    ).toBe('native');
+    expect(NON_SHELL_LANE_TYPES.has('cadillac'), 'a real member remains').toBe(true);
   });
 
-  // ⚠ THE USER-DOCKED RESIDUAL IS GONE (owner P0, 2026-09-03). This leg used to
-  // assert `.toBe(false)` — controlSurface is not a pinned singleton, so the
-  // rail kept the VERBATIM legacy card — and cited that card's own prune
-  // `$effect` and lock button as the reason nothing was lost. What the
-  // reasoning missed is that the rail then painted a DIFFERENT INSTRUMENT from
-  // the lane, for the same node, on the default shell. The rail renders the
-  // face now: the prune side effect lives on the `tileBody` (node-on-canvas
-  // lifetime) and the LOCK is a ranked cell, so both survive the swap.
-  it('a user-docked node renders the FACE in the dock rail', () => {
-    expect(dockRailRendersFace({ shellFaces: true, migrated: migrated(CONTROL_SURFACE_TYPE) })).toBe(true);
-    // …and the `?shell=legacy` escape hatch still gets the verbatim card, which
-    // is what keeps `control-surface.spec.ts` meaningful rather than merely
-    // passing.
-    expect(
-      laneRenderKind({
-        shellFaces: false,
-        userDocked: false,
-        type: CONTROL_SURFACE_TYPE,
-        hasCard: true,
-        migrated: true,
-      }),
-    ).toBe('legacy');
-  });
+  // ⚠ THE USER-DOCKED RESIDUAL LEG IS GONE, AND SO IS THE DEFECT IT DESCRIBED.
+  // It asserted `dockRailRendersFace(...) === false` — controlSurface is not a
+  // pinned singleton, so a user-docked node's rail occupant kept its
+  // pre-faceplate surface — and argued that nothing was lost because that
+  // surface carried its own prune `$effect` and lock button. The owner filed
+  // exactly this as a
+  // P0 on 2026-09-03: the rail painted a DIFFERENT INSTRUMENT from the lane for
+  // the same node. Main fixed it by dropping the `pinned` term (#2358); here
+  // all three terms lost their subject at once — no second renderer, nothing to
+  // fall back to, every faced module in STRICT_FACES — so the rule is deleted
+  // outright and the rail renders the faceplate unconditionally. The
+  // prune side effect lives on the `tileBody` (node-on-canvas lifetime) and the
+  // LOCK is a ranked cell, so both survive; what the leg protected is now
+  // protected by there being ONE surface.
 });
 
 describe('controlSurface face — the ONE ranked cell', () => {
@@ -157,17 +142,19 @@ describe('controlSurface face — the ONE ranked cell', () => {
     expect(controlSurfaceDef.params).toEqual([]);
   });
 
-  // The def is the ONE place the testid lives; module-docs-lint asserts the
-  // prefix appears in real UI source (the legacy card's lock button emits it),
-  // so a rename on either surface is red.
-  it('the family testidPrefix is the literal the card lock button emits', () => {
+  // The def is the ONE place the testid lives. ⚠ NO SURFACE EMITS IT AS A
+  // LITERAL — the board body builds `control-surface-lock-{n}` per slot, so
+  // module-docs-lint holds the prefix through the CELL arm rather than a source
+  // grep. `control-surface.ts` records the same thing beside the declaration.
+  it('the family testidPrefix is the literal the lock cells are built from', () => {
     expect(controlSurfaceDef.controlFamilies![0]!.testidPrefix).toBe('control-surface-lock');
   });
 });
 
 describe('controlSurface tileBody — the prune, on the surface that outlives the dock', () => {
   // ⚠ THE STOP-2 OF THIS PROMOTION. `pruneSurfaceDangling` had exactly ONE
-  // production caller in the tree — the legacy card's `$effect` — and
+  // production caller in the tree — an `$effect` on the surface being replaced
+  // — and
   // controlSurface is in neither half of `HEADLESS_MOUNT_LANE_TYPES`, so a
   // promotion that only built the board would have stopped it silently with
   // every registry test green (a dangling binding lingers in node.data and the

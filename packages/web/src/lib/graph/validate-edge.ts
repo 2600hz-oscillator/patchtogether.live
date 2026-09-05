@@ -30,12 +30,10 @@
 //
 // PURITY — no Svelte / SvelteFlow / Yjs imports. This is a model-layer file
 // so it ports straight into the native core. It imports only the data-model
-// types + canConnect from graph/types.ts and the resolveExposedPort helper
-// from group-projection.ts (both already pure).
+// types + canConnect from graph/types.ts.
 
 import type { Edge, ModuleNode, CableType, PortDef } from './types';
 import { canConnectToPort } from './types';
-import { resolveExposedPort } from './group-projection';
 import { effectiveOutputType, makeAdoptionGraph, type AdoptionGraph } from './adopted-type';
 
 export type { AdoptionGraph };
@@ -70,16 +68,16 @@ export interface ValidateResult {
 /**
  * Resolve one edge endpoint to a concrete {cableType, direction}:
  *
- *   1. GROUP exposed port FIRST — mirror handleConnect (Canvas.svelte
- *      ~1424-1425): a cable to a saved group's exposed handle is resolved via
- *      resolveExposedPort, which yields the exposed port's declared cableType
- *      + direction. So a cable to a group's exposed port validates correctly
- *      without the group node needing a module def.
- *   2. Otherwise look the port up on the node's module def, in the requested
- *      direction (output for a source endpoint, input for a target endpoint).
+ * Look the port up on the node's module def, in the requested direction
+ * (output for a source endpoint, input for a target endpoint).
  *
- * Returns null when neither path resolves the handle — the caller turns that
- * into a validation failure with an appropriate reason.
+ * ⚠ A FIRST STEP IS GONE: a GROUP! exposed-port handle used to be resolved
+ * BEFORE any def was consulted (via `resolveExposedPort`), because a group node
+ * has no module def but does carry its own jacks. The GROUP! module is deleted,
+ * so every endpoint now resolves through a def or not at all.
+ *
+ * Returns null when the handle does not resolve — the caller turns that into a
+ * validation failure with an appropriate reason.
  */
 function resolveEndpoint(
   node: ModuleNode,
@@ -88,16 +86,6 @@ function resolveEndpoint(
   resolveDef: ResolveDef,
   adoption?: AdoptionGraph,
 ): { cableType: CableType; accepts?: readonly CableType[] } | null {
-  // 1) Group exposed port — resolve BEFORE consulting any module def.
-  const exposed = resolveExposedPort(node, portId);
-  if (exposed) {
-    // The exposed port carries its own direction. A source endpoint must be
-    // an exposed OUTPUT; a target endpoint an exposed INPUT.
-    if (exposed.direction !== want) return null;
-    return { cableType: exposed.cableType };
-  }
-
-  // 2) Regular module port via the def.
   const def = resolveDef(node.type);
   if (!def) return null;
   const ports = want === 'output' ? def.outputs : def.inputs;
@@ -125,10 +113,10 @@ function resolveEndpoint(
  * Rules enforced (in order, returning the first failure):
  *   1. The source node exists.
  *   2. The target node exists.
- *   3. The source handle resolves as an OUTPUT (declared output port, or an
- *      exposed-output group port). An input-as-source is rejected here.
- *   4. The target handle resolves as an INPUT (declared input port, or an
- *      exposed-input group port). An output-as-target is rejected here.
+ *   3. The source handle resolves as a declared OUTPUT port. An
+ *      input-as-source is rejected here.
+ *   4. The target handle resolves as a declared INPUT port. An
+ *      output-as-target is rejected here.
  *   5. canConnect(sourceType, targetType) passes — domain/type compatibility.
  *
  * `edge.sourceType` / `edge.targetType` are IGNORED for compatibility — we
@@ -203,10 +191,16 @@ export interface FragmentValidation {
  * reconciler).
  *
  *   * Drops nodes whose module type is NOT registered (resolveDef returns
- *     undefined). Group nodes are kept — they have no module def but ARE the
- *     domain of resolveExposedPort, so they are exempt from the type-registered
- *     check. (The reconciler's `domain === 'meta'` skip keeps them out of
- *     engine.addNode regardless.)
+ *     undefined).
+ *
+ *     ⚠ THERE USED TO BE ONE EXEMPTION AND IT IS GONE: `node.type === 'group'`
+ *     was KEPT unconditionally, because a group node has no module def but was
+ *     legitimate. With the GROUP! module deleted that clause would have done the
+ *     opposite of its purpose — preserving an unrenderable node past the type's
+ *     removal — so it goes with the module. Note the patch LOADER never ran
+ *     through this function (`loadEnvelopeIntoStore` gates on `isKnownModuleType`
+ *     directly), so the exemption was never on a saved-rack path; see
+ *     $lib/graph/legacy-group-sticky-load.test.ts, which pins that behaviour.
  *   * Drops edges failing validateEdge. Edges are validated against the
  *     SURVIVING node set (after the unregistered-type drop), so an edge whose
  *     endpoint references a node we just dropped fails validateEdge's
@@ -227,12 +221,6 @@ export function validateGraphFragment(
   const validNodes: ModuleNode[] = [];
 
   for (const node of fragment.nodes) {
-    // Group nodes have no module def but are legitimate (they carry exposed
-    // ports). Keep them; gate only real (audio/video) module types.
-    if (node.type === 'group') {
-      validNodes.push(node);
-      continue;
-    }
     if (!resolveDef(node.type)) {
       droppedNodes.push({ node, reason: `module type ${node.type} is not registered` });
       continue;

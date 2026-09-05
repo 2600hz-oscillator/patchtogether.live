@@ -136,7 +136,14 @@ async function buildChain(page: import('@playwright/test').Page, prefix: string)
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
+  // The scene-repeat flair lives on the DOCK face's scene row on the default
+  // shell — open it once per test so the UI mirror is on screen.
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    `${prefix}-cp`,
+  );
+  await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${prefix}-cp"]`)).toBeVisible();
 }
 
 /** Seed 4-step note clips at flat indices (stride-64: index = lane*64 + slot). */

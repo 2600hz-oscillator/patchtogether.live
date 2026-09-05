@@ -12,9 +12,9 @@
   // ⚠ EVERY `data-testid` IS KEPT DELIBERATELY — `matrixmix-grid`,
   // `matrixmix-grid-scroll`, `matrixmix-dot`, `matrixmix-cell-{rowdir}-{rowport}-
   // {coldir}-{colport}`, `matrixmix-empty`. `e2e/tests/matrixmix.spec.ts` drives
-  // all of them and there is no reason for a rename; the spec proves the CARD
-  // (it boots `?shell=legacy`) and a face leg proves this body, and both read
-  // the same ids.
+  // all of them against this body and there is no reason for a rename — the ids
+  // outlived the surface that first emitted them, which is the point of keeping
+  // them.
   //
   // ⚠ THE `aria-label` ON EVERY CELL IS THE MODULE'S SEMANTICS AND MUST SURVIVE
   // VERBATIM. The visual is a coloured dot or a ✕; the SENTENCE is what the cell

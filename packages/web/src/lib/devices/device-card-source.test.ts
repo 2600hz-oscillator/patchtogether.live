@@ -20,93 +20,64 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const CARD = fileURLToPath(
-  new URL('../ui/modules/ChromaconsoleCard.svelte', import.meta.url),
-);
+import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
+import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
-/** The card source with `<script>` blocks and HTML comments removed, so only
- *  the RENDERED template is inspected (mirrors card-def-agreement's own
- *  preprocessing — a range mentioned in a comment is not a range the user
- *  can touch). */
-function template(): string {
-  return readFileSync(CARD, 'utf8')
-    .replace(/<script[\s\S]*?<\/script>/g, '')
-    .replace(/<!--[\s\S]*?-->/g, '');
+// ⚠ THIS FILE READ `ChromaconsoleCard.svelte`'s RENDERED TEMPLATE, and both of
+// its subjects moved when the surface did.
+//
+//   1. "NO range prop is a numeric literal — every one reads the def via
+//      paramSpec". The card was the only place a bound could be re-typed; the
+//      shell resolves a cell's range from the `ParamDef` itself, so the
+//      divergence is unspellable rather than untested. NAMED COVERAGE LOSS: the
+//      card-scoped range grep, which is the same disposition
+//      `card-range-source` gets.
+//   2. "makes no claim about the device state". THAT one has a successor and it
+//      is a better one. The device is RECEIVE-ONLY, so any affordance implying
+//      the surface mirrors the pedal is false — the single most misleading
+//      thing this module could show. What a player reads now is the cell TITLES
+//      and the def's own docs, both of which are checked below on the live
+//      declarations rather than on markup.
+
+/** The words that would claim the pedal reports its state back. */
+const FORBIDDEN_CLAIMS = ['in sync', 'synced', 'up to date', 'matches device'];
+
+/** Every string a player can read on this module's faceplate: the cell labels
+ *  and titles the shell renders, plus the def's authored docs. */
+function playerFacingText(): string {
+  const parts: string[] = [];
+  for (const f of chromaconsoleDef.controlFamilies ?? []) {
+    const cell = shellCellFor('chromaconsole', { kind: 'family', key: `${f.id}-{n}` } as never) as
+      { label?: string; title?: string } | null;
+    expect(cell, `${f.id} has no shell cell`).toBeTruthy();
+    parts.push(cell?.label ?? '', cell?.title ?? '');
+  }
+  const docs = chromaconsoleDef.docs;
+  parts.push(docs?.explanation ?? '');
+  for (const v of Object.values(docs?.controls ?? {})) parts.push(String(v));
+  return parts.join('\n');
 }
 
-/** Range-ish props any control primitive accepts. */
-const RANGE_PROPS = ['min', 'max', 'defaultValue', 'xMin', 'xMax', 'yMin', 'yMax', 'valueMin', 'valueMax'];
-
-describe('ChromaconsoleCard sources every range from the DEF', () => {
-  it('the card file is readable and non-trivial (vacuity floor)', () => {
-    // Without this, a renamed/moved card would make every assertion below pass
-    // against an empty string.
-    const src = template();
-    expect(src.length, 'card template resolved').toBeGreaterThan(500);
-    expect(src, 'the slot control is present').toMatch(/KnobConic/);
+describe('chromaconsole makes no claim about the device state', () => {
+  it('the player-facing text is non-trivial (vacuity floor)', () => {
+    // Without this, a resolver that returned nothing would make every denial
+    // below pass against an empty string — the shape the card version guarded
+    // with its own "card template resolved" floor.
+    const text = playerFacingText();
+    expect(text.length, 'the faceplate text resolved').toBeGreaterThan(500);
   });
 
-  it('NO range prop is a numeric literal — every one reads the def via paramSpec', () => {
-    const src = template();
-    const offenders: string[] = [];
-    for (const prop of RANGE_PROPS) {
-      // `min={0}` / `min="0"` / `min={-1}` — a hardcoded bound.
-      const literal = new RegExp(`\\b${prop}\\s*=\\s*(\\{\\s*-?[\\d.]+\\s*\\}|"-?[\\d.]+")`, 'g');
-      for (const m of src.matchAll(literal)) offenders.push(`${prop}: ${m[0]}`);
-    }
-    expect(
-      offenders,
-      'a hardcoded range on a device card is the backdraft bug class: the control would ' +
-        'write values the def forbids, the model would clamp them silently, and no runtime ' +
-        'gate could see it. Read the bound from paramSpec(chromaconsoleDef, slotId) instead.\n  ' +
-        offenders.join('\n  '),
-    ).toEqual([]);
-  });
-
-  it('the slot control binds min/max/defaultValue/curve to the def spec', () => {
-    const src = template();
-    // Positive form: not merely "no literals" (which an empty card satisfies)
-    // but "the def-sourced bindings are actually present".
-    for (const binding of ['min={spec.min}', 'max={spec.max}', 'defaultValue={spec.defaultValue}', 'curve={spec.curve}']) {
-      expect(src, `slot control binds ${binding}`).toContain(binding);
+  it('claims no "synced"/"in sync" state anywhere a player reads', () => {
+    const text = playerFacingText().toLowerCase();
+    for (const banned of FORBIDDEN_CLAIMS) {
+      expect(text, `The faceplate must not claim "${banned}"`).not.toContain(banned);
     }
   });
 
-  it('NEGATIVE CONTROL: the literal-range scan really fires', () => {
-    // Perturb the thing the instrument measures. If this regex stopped
-    // matching, the test above would pass on a card full of hardcoded ranges.
-    const bad = '<KnobConic min={-1} max={1} paramId={slotId} />';
-    const hits: string[] = [];
-    for (const prop of RANGE_PROPS) {
-      const literal = new RegExp(`\\b${prop}\\s*=\\s*(\\{\\s*-?[\\d.]+\\s*\\}|"-?[\\d.]+")`, 'g');
-      for (const m of bad.matchAll(literal)) hits.push(m[0]);
-    }
-    expect(hits.sort()).toEqual(['max={1}', 'min={-1}']);
-  });
-
-  it('NEGATIVE CONTROL: a def-sourced binding is NOT mistaken for a literal', () => {
-    const good = '<KnobConic min={spec.min} max={spec.max} paramId={slotId} />';
-    const hits: string[] = [];
-    for (const prop of RANGE_PROPS) {
-      const literal = new RegExp(`\\b${prop}\\s*=\\s*(\\{\\s*-?[\\d.]+\\s*\\}|"-?[\\d.]+")`, 'g');
-      for (const m of good.matchAll(literal)) hits.push(m[0]);
-    }
-    expect(hits, 'the scan must not flag the CORRECT form').toEqual([]);
-  });
-});
-
-describe('ChromaconsoleCard makes no claim about the device state', () => {
-  it('renders no "synced"/"in sync" affordance', () => {
-    // The device is receive-only. Any indicator implying the card mirrors the
-    // pedal is false, and it is the single most misleading thing this card
-    // could show.
-    const src = template().toLowerCase();
-    for (const banned of ['in sync', 'synced', 'up to date', 'matches device']) {
-      expect(src, `card must not claim "${banned}"`).not.toContain(banned);
-    }
-  });
-
-  it('states the send-only limitation in the rendered template', () => {
-    expect(template()).toMatch(/send-only/i);
+  it('states the receive-only limitation where a player will meet it', () => {
+    // The card said "send-only" in its template; the def says "receive-only"
+    // in the explanation AND in the PUSH ALL control's own blob, which is the
+    // place the limitation actually bites.
+    expect(playerFacingText()).toMatch(/receive-only/i);
   });
 });

@@ -69,13 +69,6 @@ export const scopeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'scope',
   category: 'utilities',
-  // Module-grouping Phase 3B: SCOPE's on-card 2D canvas is hoisted into
-  // the parent GroupCard's body when SCOPE is collapsed inside a group.
-  // The card's <canvas data-viz-passthrough> element is portaled (i.e.
-  // appendChild-moved) into the GroupCard so the same draw loop drives
-  // both render paths without re-mounting the card. See GroupCard.svelte
-  // for the portal mechanics + ScopeCard.svelte for the canvas marker.
-  vizPassthrough: true,
 
   // CV inputs mirror every param 1:1 — port id == param id. Two different
   // paths deliver a cable here, and the factory's shadows are what make
@@ -400,7 +393,7 @@ export const scopeDef: AudioModuleDef = {
     outputs: {
       ch1_out: "Clean passthrough of the channel-1 input — the scope adds no processing, so you can chain it inline.",
       ch2_out: "Clean passthrough of the channel-2 input.",
-      out: "A video output carrying the same waveform image the on-card screen shows — patch it into the video domain (OUTPUT, a video mixer) to put the trace on screen.",
+      out: "A video output carrying the same waveform image the faceplate's screen shows — patch it into the video domain (OUTPUT, a video mixer) to put the trace on screen.",
     },
     controls: {
       timeMs: "The time window drawn across the screen width (1 to 200 ms, log, default 20): smaller values zoom in on a few cycles, larger values show a longer slice. The TIME CV input modulates this.",

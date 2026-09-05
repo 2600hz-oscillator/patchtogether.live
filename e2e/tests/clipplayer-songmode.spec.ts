@@ -5,6 +5,11 @@
 // the clip player free-runs (transportRunning true) at the 120bpm fallback, so
 // songBeat advances and the engine records/plays. Asserts the SYNCED data
 // (node.data.arrangement / clipMode / playing) — the observable contract.
+//
+// On the default shell the deck (record/mode chips) and the launch grid live in
+// the DOCK FULL VIEW, and the arrangement timeline is the full-window ARRANGE
+// editor (`cliparrange-editor`) opened from the deck — the card's inline
+// `.song-tl` view died with the card; the pop-out is the one timeline surface.
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -23,14 +28,6 @@ type CPData = {
 type W = {
   __patch: { nodes: Record<string, { data?: CPData }> };
   __ydoc: { transact: (fn: () => void) => void };
-};
-
-const NOTE_CLIP = {
-  kind: 'note',
-  lengthSteps: 4,
-  root: 48,
-  loop: true,
-  steps: [{ step: 0, midi: 72, velocity: 127, lengthSteps: 1 }],
 };
 
 /** Seed note clips at the given flat indices (clipIndex = lane*64 + slot,
@@ -63,8 +60,28 @@ async function readData(page: Page, nodeId: string): Promise<CPData> {
   }, nodeId);
 }
 
-// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-// NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 4 branch(es) in the
+/** Open the clip player's dock full view — the shell home of deck + grid. */
+async function openDock(page: Page) {
+  const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  return dock;
+}
+
+/** Open the full-window ARRANGE editor from the deck. */
+async function openArrange(page: Page, dock: import('@playwright/test').Locator) {
+  await dock.getByTestId('clipplayer-arrange-open-cp').scrollIntoViewIfNeeded();
+  await dock.getByTestId('clipplayer-arrange-open-cp').click();
+  const dialog = page.getByTestId('cliparrange-editor');
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body was re-pointed at the
+// dock full view by the S2 legacy-removal inversion (same assertions, shell
+// surface). NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 4 branch(es) in the
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the capture half of song mode: arming RECORD writes clip launches into node.data.arrangement instead of dropping them.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
@@ -75,16 +92,17 @@ test.fixme('song mode: arming RECORD captures clip launches into the arrangement
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
   await seedClips(page, 'cp', [0, 64]); // lane0/slot0 + lane1/slot0
+  const dock = await openDock(page);
 
   // Arm RECORD (the engine clears the log + restarts song time on the rising edge).
-  await page.getByTestId('clipplayer-record-cp').click();
+  await dock.getByTestId('clipplayer-record-cp').click();
   await expect.poll(async () => (await readData(page, 'cp')).clipMode ?? 'session').toBe('session');
   await page.waitForTimeout(150); // let the clear-on-arm tick land first
 
   // Launch lane 0, then lane 1, spaced in time so they record at different beats.
-  await page.locator('.svelte-flow__node-clipplayer [data-clip="0"]').click();
+  await dock.locator('[data-clip="0"]').click();
   await page.waitForTimeout(500);
-  await page.locator('.svelte-flow__node-clipplayer [data-clip="64"]').click();
+  await dock.locator('[data-clip="64"]').click();
   await page.waitForTimeout(500);
 
   const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
@@ -96,14 +114,16 @@ test.fixme('song mode: arming RECORD captures clip launches into the arrangement
   for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
 });
 
-// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-// NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 4 branch(es) in the
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body was re-pointed at the
+// dock full view by the S2 legacy-removal inversion (same assertions, shell
+// surface). NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 4 branch(es) in the
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: that the SES/ARR button flips clipMode in synced state — the mode switch the other two song-mode assertions depend on.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
 test.fixme('song mode: the SES/ARR button flips clipMode', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 7 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
-  const modeBtn = page.getByTestId('clipplayer-mode-cp');
+  const dock = await openDock(page);
+  const modeBtn = dock.getByTestId('clipplayer-mode-cp');
   await expect(modeBtn).toHaveText('SES');
   await modeBtn.click();
   await expect(modeBtn).toHaveText('ARR');
@@ -112,7 +132,8 @@ test.fixme('song mode: the SES/ARR button flips clipMode', { annotation: { type:
   await expect(modeBtn).toHaveText('SES');
 });
 
-// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body is UNCHANGED by the S2
+// legacy-removal inversion (it drives no module DOM at all — pure Y.Doc + engine).
 // NONDETERMINISM: 4 recovered-on-retry observation(s) across 4 SHA(s) / 3 branch(es) in the
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: arrangement playback — that the recorded launch log actually re-launches lanes, which is the entire point of song mode.
@@ -148,7 +169,7 @@ test.fixme('song mode: ARRANGEMENT playback launches lanes from the recorded log
     .toBe(true);
 });
 
-test('song view: renders blocks + select/delete edits the arrangement', async ({ page, rack }) => {
+test('arrange view: renders blocks + select/delete edits the arrangement', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 64]);
   // lane 0: slot 0 [0,8) then slot 1 [8,16); lane 1: slot 0 [0,16) → 3 blocks.
@@ -170,13 +191,15 @@ test('song view: renders blocks + select/delete edits the arrangement', async ({
     });
   });
 
-  const blocks = page.locator('.song-block');
+  const dock = await openDock(page);
+  const dialog = await openArrange(page, dock);
+  const blocks = dialog.locator('.block');
   await expect(blocks).toHaveCount(3);
 
   // Select the first block, then delete it → its launch event is removed.
   await blocks.first().click();
   await expect(blocks.first()).toHaveClass(/\bsel\b/);
-  await page.getByTestId('clipplayer-song-del').click();
+  await page.getByTestId('cliparrange-editor-del').click();
 
   await expect(blocks).toHaveCount(2);
   const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
@@ -189,6 +212,7 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
   await seedClips(page, 'cp', [0, 64]); // lane0/slot0 + lane1/slot0
+  const dock = await openDock(page);
 
   // Pre-seed a lane-2 launch + set OVERDUB mode (the arm must KEEP this take).
   await page.evaluate(() => {
@@ -204,14 +228,14 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
       (n.data as { recordMode?: string }).recordMode = 'overdub';
     });
   });
-  await expect(page.getByTestId('clipplayer-recmode-cp')).toHaveText('OVR');
+  await expect(dock.getByTestId('clipplayer-recmode-cp')).toHaveText('OVR');
 
   // Arm RECORD (overdub: does NOT clear), then launch lane 0 + lane 1 in time.
-  await page.getByTestId('clipplayer-record-cp').click();
+  await dock.getByTestId('clipplayer-record-cp').click();
   await page.waitForTimeout(150);
-  await page.locator('.svelte-flow__node-clipplayer [data-clip="0"]').click();
+  await dock.locator('[data-clip="0"]').click();
   await page.waitForTimeout(400);
-  await page.locator('.svelte-flow__node-clipplayer [data-clip="64"]').click();
+  await dock.locator('[data-clip="64"]').click();
   await page.waitForTimeout(300);
 
   const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
@@ -229,6 +253,7 @@ test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', a
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
   ]);
   await seedClips(page, 'cp', [0]);
+  const dock = await openDock(page);
 
   // Pre-seed a take; recordMode is REPLACE (default/absent) → arming clears it.
   await page.evaluate(() => {
@@ -243,9 +268,9 @@ test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', a
       } as never;
     });
   });
-  await expect(page.getByTestId('clipplayer-recmode-cp')).toHaveText('RPL');
+  await expect(dock.getByTestId('clipplayer-recmode-cp')).toHaveText('RPL');
 
-  await page.getByTestId('clipplayer-record-cp').click();
+  await dock.getByTestId('clipplayer-record-cp').click();
   // The engine clears the log on the arm rising edge.
   await expect
     .poll(async () => ((await readData(page, 'cp')).arrangement?.events ?? []).length, { timeout: 3000 })
@@ -273,11 +298,13 @@ test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)
     });
   });
 
-  const svg = page.locator('.song-tl');
+  const dock = await openDock(page);
+  await openArrange(page, dock);
+  const svg = page.getByTestId('cliparrange-editor-tl');
   await expect(svg).toBeVisible();
   const box = (await svg.boundingBox())!;
   // The beat-8 block (slot 1) sits at svg-x = (8/16)*width = mid; drag it to the
-  // bar-4 position (beat 4 = quarter-width). The card svg width == lengthBeats px
+  // bar-4 position (beat 4 = quarter-width). The timeline width == lengthBeats
   // mapping is proportional to the rendered box width.
   const fromX = box.x + box.width * (8 / 16) + 6; // a few px inside the block
   const toX = box.x + box.width * (4 / 16);
@@ -322,10 +349,9 @@ test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', 
     });
   });
 
-  // Open the full-window editor.
-  await page.getByTestId('clipplayer-arrange-open-cp').click();
-  const dialog = page.getByTestId('cliparrange-editor');
-  await expect(dialog).toBeVisible();
+  // Open the full-window editor from the dock deck.
+  const dock = await openDock(page);
+  const dialog = await openArrange(page, dock);
 
   // Select a block + delete it → the SHARED synced arrangement shrinks by one.
   const before = ((await readData(page, 'cp')).arrangement?.events ?? []).length;
@@ -335,7 +361,8 @@ test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', 
     .poll(async () => ((await readData(page, 'cp')).arrangement?.events ?? []).length, { timeout: 3000 })
     .toBe(before - 1);
 
-  // Esc closes the overlay.
+  // Esc closes the overlay. (⚠ It also closes the dock full view underneath —
+  // the shared dock Esc — which is why this is the LAST gesture of the test.)
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });

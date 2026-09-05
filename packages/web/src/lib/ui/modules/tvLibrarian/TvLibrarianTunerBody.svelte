@@ -15,13 +15,13 @@
   // ⚠ THE PICTURE IS BLITTED FROM THE ENGINE AND THE `<video>` IS NEVER ADOPTED
   // HERE — the same constraint `LoopbackOutputBody` and `CameraInputOutputBody`
   // carry, reached for a different reason and with a different upside. A DOM node
-  // has exactly one parent, and the node's element may be adopted by the LEGACY
-  // card at the same moment (`?shell=legacy`, or a dock rail occupant): adopting
-  // it here would move it out from under that mount. `blitOutputForPreview` reads
-  // the module's OWN output texture instead, which is what every other video face
-  // does — and here it is strictly more honest, because the output is what `gain`
-  // scales and what downstream modules actually receive. The card's preview shows
-  // the raw element and therefore cannot show `gain` at all.
+  // has exactly one parent, and this one belongs to a NODE-lifetime owner that
+  // keeps it alive with nothing mounted: adopting it here would move it out from
+  // under that owner. `blitOutputForPreview` reads the module's OWN output
+  // texture instead, which is what every other video face does — and here it is
+  // strictly more honest, because the output is what `gain` scales and what
+  // downstream modules actually receive. A raw-element preview cannot show
+  // `gain` at all.
   //
   // ⚠ NOT A SECOND OWNER. The stream, its hls.js demuxer, the engine attach, the
   // audio wire, the catalogue and the trigger loop are all

@@ -29,7 +29,7 @@
 // boot). See the "picking a SURFACE source ..." test below.
 //
 // GPU-attest rebuild Phase 3 (SwiftShader-cheap conversion): this spec reads the
-// MAIN-THREAD toybox 2D canvas (`toybox-canvas`) — NOT worker-rendered pixels. It
+// MAIN-THREAD toybox 2D canvas (`toybox-face-canvas`) — NOT worker-rendered pixels. It
 // does NOT set `__videoWorkerEnabled` — TOYBOX is `renderLocus:
 // 'worker-experimental'` (PR V2), so the DEFAULT flag state keeps it on the
 // main thread (engine factory path, not the OffscreenCanvas worker
@@ -52,7 +52,7 @@
 // no longer fights a background render loop on the software renderer.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 type Layer = {
@@ -68,17 +68,6 @@ type PatchGlobal = {
   __toyboxPrevSig?: string;
 };
 
-/** Pin the viewport at scale 1 so the canvas DOM box is stable. */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
-
 async function selectEd(page: Page, testid: string, value: string): Promise<void> {
   await page.locator(`[data-testid="${testid}"]`).selectOption(value, { force: true, noWaitAfter: true });
 }
@@ -90,7 +79,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     ({ time }) => {
       const g = globalThis as unknown as PatchGlobal;
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -110,7 +99,7 @@ async function frozenAverage(page: Page, time: number): Promise<[number, number,
     { timeout: 15_000 },
   );
   return page.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const c2d = canvas.getContext('2d')!;
     const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
     let r = 0, gg = 0, b = 0, n = 0;
@@ -143,16 +132,14 @@ async function spawnToybox(page: Page): Promise<void> {
   // UV-vs-projective delta / surface-source / projection-map assertion below still
   // reads the SAME real main-thread GPU render as before.
   await installRenderSmokeHooks(page, 1.0);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-toybox').first();
-  await card.waitFor({ state: 'visible', timeout: 10_000 });
-  await pinViewport(page);
+  await openToyboxDock(page);
 }
 
 test.describe('TOYBOX input layer kinds (#39)', () => {

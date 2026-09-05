@@ -1,9 +1,8 @@
 <script lang="ts">
-  // WavesculptVizSurface — THE wavesculpt renderer, extracted from
-  // WavesculptCard.svelte so the legacy card and (next) the faceplate body
-  // paint the SAME picture from the SAME code. It was ~1900 lines living
-  // inside a 3644-line card; nothing in it was card-specific except where the
-  // presentation canvas was sized.
+  // WavesculptVizSurface — THE wavesculpt renderer, extracted so that every view
+  // paints the SAME picture from the SAME code. It was ~1900 lines living
+  // inside a 3644-line surface; nothing in it belonged to that surface except
+  // where the presentation canvas was sized.
   //
   // ⚠ WHY EXTRACTED RATHER THAN RE-DRAWN, AND WHY NOT A BLIT. Two cheaper
   // routes were rejected. A second WebGL2 context in the body would be a
@@ -101,8 +100,8 @@
     /**
      * Called once per rendered frame, BEFORE the frame is drawn.
      *
-     * ⚠ THIS IS A CADENCE GUARANTEE, NOT A CONVENIENCE. The legacy card polls
-     * the camera CV here to move its joystick dots, and that poll rides rAF
+     * ⚠ THIS IS A CADENCE GUARANTEE, NOT A CONVENIENCE. A viewer polls the
+     * camera CV here to move its joystick dots, and that poll rides rAF
      * for a measured reason: as a standalone setInterval(30ms) it was STARVED
      * and coalesced behind this renderer on a busy main thread, so a
      * gamepad-driven dot updated far too slowly to reach the stick's extremes.
@@ -1039,6 +1038,17 @@ void main() {
   }
   const VRT_FIXED_TSEC = 2.0;       // pinned uTime
   const VRT_FIXED_WAVE_PHASE = 0.0; // pinned per-osc wavetable scroll
+  // ⚠ PINNED BECAUSE ITS ABSENCE COST A MASK. `boltPhase` drives the three
+  // travelling electric arc heads along each ribbon; unpinned they sit at a
+  // different point on every capture, and MEASURED (2026-08-01) that took the
+  // two blink_mode-0 scenes to "13 consecutive settle attempts differing
+  // 11 812-24 677 px, then Failed to take two consecutive stable screenshots".
+  // Those two scenes were MASKED instead — 84.8 % of the frame, the most
+  // expensive mask in the roster — and the mask's own note named this line as
+  // the fix, blocked on a real-GPU re-attest that has now been paid. So the pin
+  // ships and both masks are deleted. 0.35 is arbitrary-but-fixed, exactly as
+  // VRT_FIXED_WAVE_PHASE and the wiggle phase below are.
+  const VRT_FIXED_BOLT_PHASE = 0.35;
 
   // ---- DRS card-step seam (deterministic render-smoke; e2e only) ----
   // Independent of __wavesculptVrtFreeze (which only pins shader time for a VRT
@@ -1818,7 +1828,9 @@ void main() {
     // drawScopes() read the same phase. rate + magnitude ∝ pitch.
     const wiggleTilt: number[] = [0, 0, 0, 0];
     for (let i = 0; i < 4; i++) {
-      boltPhase[i] = (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
+      boltPhase[i] = vrtFrozen()
+        ? VRT_FIXED_BOLT_PHASE
+        : (boltPhase[i]! + BOLT_SPEED * dt) % 1.0;
       // Effective osc frequency from knobs (pitch_cv input is dynamic
       // and would require an engine-side modulator-tap read — skipped
       // here; the visual still scrolls correctly when the user drives

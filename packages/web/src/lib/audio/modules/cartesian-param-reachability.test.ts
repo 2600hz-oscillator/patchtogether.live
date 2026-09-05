@@ -33,12 +33,6 @@ import { cartesianDef } from './cartesian';
 function cartesianSource(): string {
   return readFileSync(fileURLToPath(new URL('./cartesian.ts', import.meta.url)), 'utf8');
 }
-function cardSource(): string {
-  return readFileSync(
-    fileURLToPath(new URL('../../ui/modules/CartesianCard.svelte', import.meta.url)),
-    'utf8',
-  );
-}
 
 /** Declared param ids whose value the factory never fetches. Cartesian's
  *  factory live-reads every param through `readParam('<id>', fallback)` on each
@@ -75,16 +69,18 @@ describe('cartesian: declared controls and consumed controls are the same set', 
     expect(Object.keys(cartesianDef.docs?.controls ?? {})).not.toContain('mode');
   });
 
-  it('the card writes only params the def declares', () => {
-    const written = paramsWrittenByCard(cardSource());
-    expect(written.length, 'the card writes params at all').toBeGreaterThan(0);
-    const undeclared = written.filter((id) => !declared.includes(id));
-    expect(
-      undeclared,
-      'params the CARD writes that the DEF does not declare — the other half ' +
-        'of the same contract, and how a deleted param leaves a live button behind',
-    ).toEqual([]);
-  });
+  // ⚠ 'the card writes only params the def declares' STOOD HERE. It was the
+  // OTHER HALF of the same contract — the unread-param sweep above catches a
+  // param nothing consumes, this caught a surface writing a param nothing
+  // declares, which is how a deleted param leaves a live button behind. Its
+  // subject was `CartesianCard.svelte`'s `set('<id>')(…)` calls.
+  //
+  // The surviving surface is the shell: a face cell writes through
+  // `shellParamWrite`, keyed by a face.order entry that
+  // `module-face-lint`'s consistency clause already requires to resolve to a
+  // real param or family — so a write to an undeclared id has no route. The
+  // predicate itself is kept and negative-controlled below, because it is what
+  // a future bespoke surface would be measured with.
 
   // PERMANENT NEGATIVE CONTROLS, calling the SAME predicates the checks call.
   it('the unread-param probe catches a dead param and spares a live one', () => {

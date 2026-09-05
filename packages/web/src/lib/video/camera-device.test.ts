@@ -123,121 +123,129 @@ describe('savedDeviceMissing — show "saved camera not found" + skip the doomed
 // ⚠ AND IT DENIES THE THING THAT REGRESSED, not a proxy for it: it does not
 // assert that an `$effect` merely EXISTS (this card has several), but that the
 // saved-id reader is CALLED FROM INSIDE one.
-describe('CAMERA card — the saved device id is TRACKED, not hydrated once', () => {
-  const src = readFileSync(
-    new URL('../ui/modules/CameraInputCard.svelte', import.meta.url),
+describe('CAMERA — the saved device id is TRACKED, not hydrated once', () => {
+  // ⚠ THE SUBJECT MOVED FILES ON 2026-09-03 AND THE DEFECT SHAPE MOVED WITH IT.
+  // This gate used to read `CameraInputCard.svelte`, because the card owned the
+  // saved-device reader. `$lib/ui/media/node-camera-source-registry` owns it now
+  // (legacy-removal S1), so the gate reads the controller — and the SHAPE of the
+  // bug it guards is different enough that the old predicate would have passed
+  // vacuously rather than merely gone stale.
+  //
+  // THE ORIGINAL DEFECT: the card hydrated `node.data.deviceId` ONCE in
+  // `onMount`, so a device chosen anywhere other than that card's own `<select>`
+  // — by a collaborator, or on a second picker surface — was saved and never
+  // acted on until a remount. The first fix's gate was GREEN AND BLIND: "is the
+  // reader called inside an `$effect`?" answers TRUE for the buggy card too,
+  // because the buggy code DID call it in an effect, wrapped in `untrack(...)`.
+  // That wrapper IS the bug — an untracked read establishes no dependency.
+  //
+  // ⚠ THE NEW OWNER CANNOT HAVE THAT SHAPE AT ALL, and that is why the predicate
+  // is replaced rather than re-pointed. A controller is a plain module: it has no
+  // `$effect` and therefore no `untrack` to hide a read inside. Its reactivity is
+  // Canvas's sync effect, which re-runs on every `snapshot.nodes` change. So the
+  // equivalent defect is not "the read is untracked" but "the read happens only
+  // when the CONTROLLER IS CREATED" — hydrate-once, one layer down, and the exact
+  // thing a reader porting this logic would do by accident.
+  //
+  // Both directions are pinned against synthetic fixtures below, so the predicate
+  // itself is controlled rather than trusted.
+
+  const controllerSrc = readFileSync(
+    new URL('../ui/media/node-camera-source-registry.ts', import.meta.url),
     'utf-8',
   );
 
-  // ⚠ THE FIRST VERSION OF THIS PREDICATE WAS GREEN AND BLIND, and the only
-  // thing that caught it was running it against the REAL pre-fix file instead
-  // of a synthetic fixture. "Is the reader called inside an `$effect`?" answers
-  // TRUE for the buggy card too — because the old code DID call it in an
-  // effect, wrapped in `untrack(...)`. That wrapper is the entire bug: an
-  // untracked read establishes no dependency, so the effect never re-runs when
-  // the saved id changes. A hand-written "mount-only" fixture used `onMount`
-  // and so never reproduced the shape that actually shipped.
-  //
-  // The real property is therefore: is the reader called from a TRACKED
-  // position — i.e. does a call survive after every `untrack(...)` body is
-  // removed? Both directions of this are pinned below against the genuine
-  // pre-fix source, not against prose about it.
-
-  /** Remove every `untrack( … )` body, matching parens so nested calls are safe. */
-  function stripUntracked(s: string): string {
-    let out = '';
-    let i = 0;
-    while (i < s.length) {
-      const at = s.indexOf('untrack(', i);
-      if (at === -1) { out += s.slice(i); break; }
-      out += s.slice(i, at);
-      let depth = 0;
-      let j = at + 'untrack'.length;
-      for (; j < s.length; j++) {
-        if (s[j] === '(') depth++;
-        else if (s[j] === ')') { depth--; if (depth === 0) { j++; break; } }
-      }
-      i = j;
+  /** The body of the registry's `sync(...)` method, or '' if it cannot be found. */
+  function syncBody(s: string): string {
+    const at = s.indexOf('sync(nodes, engine) {');
+    if (at === -1) return '';
+    let depth = 0;
+    let i = s.indexOf('{', at);
+    const start = i;
+    for (; i < s.length; i++) {
+      if (s[i] === '{') depth++;
+      else if (s[i] === '}') { depth--; if (depth === 0) return s.slice(start, i + 1); }
     }
-    return out;
+    return '';
   }
 
-  /** Does any `$effect` read the saved id from a TRACKED position? */
-  function callsReaderInEffect(s: string): boolean {
-    return s
-      .split('$effect(')
-      .slice(1)
-      .some((e) => stripUntracked(e.slice(0, 900)).includes('readSavedDeviceId()'));
+  /** Is the saved id re-read on every SYNC, rather than only at creation? */
+  function readsSavedIdPerSync(s: string): boolean {
+    return syncBody(s).includes('savedDeviceId(');
   }
 
-  it('reads the saved device id from a REACTIVE position, not only on mount', () => {
-    // ANCHORED: if the reader is renamed this must go RED rather than pass
+  it('re-reads the saved device id on every SYNC, not only when the controller is built', () => {
+    // ANCHORED: if the dep is renamed this goes RED rather than passing
     // vacuously against a file that no longer has the concept.
-    expect(src, 'readSavedDeviceId() is gone — this gate is anchored to that name')
-      .toContain('function readSavedDeviceId()');
-
+    expect(controllerSrc, 'savedDeviceId is gone — this gate is anchored to that name')
+      .toContain('savedDeviceId(nodeId: string)');
     expect(
-      callsReaderInEffect(src),
-      'no $effect calls readSavedDeviceId() — the card is back to hydrate-once, so a device ' +
-        'picked by a collaborator — or on any second picker surface — is saved and never acted ' +
-        'on until the ' +
-        'card remounts',
+      readsSavedIdPerSync(controllerSrc),
+      'sync() never reads savedDeviceId — the controller is back to hydrate-once, so a device ' +
+        'picked by a collaborator (or on any other surface) is saved and never acted on',
     ).toBe(true);
   });
 
   it('re-acquires through the SHARED guard, not a second copy of the rule', () => {
-    // The states that refuse a re-acquire on a local pick must refuse it on a
-    // tracked one too. Sharing the predicate makes that true by construction; a
+    // The states that refuse a re-acquire on a local pick must refuse it on an
+    // external one too. Sharing the predicate makes that true by construction; a
     // hand-rolled state list would drift from the one this file already tests,
     // which is the whole reason `shouldReacquireOnPick` is exported.
-    const tracking = src
-      .split('$effect(')
-      .slice(1)
-      .find((e) => e.slice(0, 600).includes('readSavedDeviceId()'));
-    expect(tracking, 'no tracking effect to check').toBeTruthy();
     expect(
-      tracking!.slice(0, 600),
-      'the tracking effect re-acquires without shouldReacquireOnPick — it will fire in states a ' +
-        'local pick correctly refuses (requesting / unsupported)',
+      syncBody(controllerSrc),
+      'sync() re-acquires without shouldReacquireOnPick — it will fire in states a local pick ' +
+        'correctly refuses (requesting / unsupported)',
     ).toContain('shouldReacquireOnPick');
   });
 
-  it('POSITIVE CONTROL: the predicate says NO to the shape that actually shipped', () => {
-    // ⚠ THIS IS THE LEG THAT CAUGHT THE FIRST VERSION OF THIS GATE. The buggy
-    // form is not "no effect" — it is an effect whose read is wrapped in
-    // `untrack`, which is why a synthetic `onMount` fixture certified a
-    // predicate that would have passed on the bug. This fixture is copied from
-    // the pre-fix card, so the gate is pinned to the real defect shape.
-    const shippedBug = `
-      $effect(() => {
-        if (!supported) return;
-        untrack(() => {
-          selectedDeviceId = readSavedDeviceId();
-        });
-        refreshDevices();
-      });
+  it('POSITIVE CONTROL: the predicate says NO to hydrate-once, one layer down', () => {
+    // ⚠ THE SHAPE A PORT OF THIS LOGIC PRODUCES BY ACCIDENT: the saved id is read
+    // where the controller is BUILT, which happens once per node, and `sync`
+    // never looks again. Every runtime assertion about a fresh camera stays
+    // green; only a peer's change is lost.
+    const hydrateOnce = `
+      function createController(node) {
+        const saved = deps.doc.savedDeviceId(node.id);
+        return { node, status: { selectedDeviceId: saved } };
+      }
+      return {
+        sync(nodes, engine) {
+          for (const n of nodes) {
+            const existing = controllers.get(n.id);
+            if (!existing) { controllers.set(n.id, createController(n)); continue; }
+            existing.node = n;
+          }
+        },
+      };
     `;
     expect(
-      callsReaderInEffect(shippedBug),
-      'the predicate reads the SHIPPED hydrate-once shape as tracked — it is blind to the very ' +
-        'bug it exists to catch (an untracked read inside an effect establishes no dependency)',
+      readsSavedIdPerSync(hydrateOnce),
+      'the predicate reads a hydrate-once controller as tracked — it is blind to the very bug it ' +
+        'exists to catch',
     ).toBe(false);
   });
 
-  it('NEGATIVE CONTROL: it still says YES to a genuinely tracked read', () => {
-    // The other direction, on the SAME predicate — so a "fix" that makes the
-    // gate always-false (and therefore always-red-proof) fails here.
-    const tracked = `
-      $effect(() => {
-        const saved = readSavedDeviceId();
-        if (!saved) return;
-        untrack(() => { selectedDeviceId = saved; });
-      });
+  it('NEGATIVE CONTROL: it still says YES to a genuinely per-sync read', () => {
+    // The other direction, on the SAME predicate — so a "fix" that makes the gate
+    // always-false (and therefore always-red-proof) fails here.
+    const perSync = `
+      return {
+        sync(nodes, engine) {
+          for (const n of nodes) {
+            const saved = deps.doc.savedDeviceId(n.id);
+            if (saved !== existing.status.selectedDeviceId) act();
+          }
+        },
+      };
     `;
-    expect(callsReaderInEffect(tracked), 'a tracked read must read as tracked').toBe(true);
+    expect(readsSavedIdPerSync(perSync), 'a per-sync read must read as per-sync').toBe(true);
+  });
 
-    // And an untracked read is only disqualifying INSIDE the wrapper: a call
-    // that also appears outside one still counts.
-    expect(stripUntracked('a(untrack(() => x(1)))b'), 'paren matching is off').toBe('a()b');
+  it('NEGATIVE CONTROL: the body extractor fails LOUDLY rather than returning everything', () => {
+    // A brace-matcher that fell back to the whole file would make every leg above
+    // pass on any source containing the string anywhere — the classic way a
+    // source gate goes green and blind.
+    expect(syncBody('no sync method here at all')).toBe('');
+    expect(readsSavedIdPerSync('savedDeviceId( outside any sync')).toBe(false);
   });
 });

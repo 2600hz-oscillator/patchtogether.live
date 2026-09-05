@@ -59,7 +59,7 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -79,8 +79,8 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-loopback'), 'LOOPBACK visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="loopback"])'), 'LOOPBACK visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
     const a = await stepAndReadStats(page, { nodeId: 'v-loop', steps: FIXED_STEPS });
     assertRenderStats(a, FIXED_STEPS);
@@ -99,7 +99,7 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // One LOOPBACK node sampling the synthetic frame; toggle `crop` between the
@@ -109,7 +109,7 @@ test.describe('LOOPBACK (deterministic render smoke)', () => {
       { id: 'v-loop', type: 'loopback', position: { x: 80, y: 60 }, domain: 'video' },
     ]);
 
-    await expect(page.locator('.svelte-flow__node-loopback').first(), 'LOOPBACK visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="loopback"])').first(), 'LOOPBACK visible').toBeVisible();
 
     await setVideoParam(page, 'v-loop', 'crop', 0); // whole tab
     const full = await stepAndReadStats(page, { nodeId: 'v-loop', steps: FIXED_STEPS });
@@ -142,7 +142,7 @@ test.describe('LOOPBACK -> RECORDERBOX (real chain)', () => {
     await installRenderSmokeHooks(page);
     await installLoopbackTestFrame(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -162,8 +162,8 @@ test.describe('LOOPBACK -> RECORDERBOX (real chain)', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-loopback'), 'LOOPBACK visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-recorderbox'), 'RECORDERBOX visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="loopback"])'), 'LOOPBACK visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="recorderbox"])'), 'RECORDERBOX visible').toBeVisible();
 
     // RECORDERBOX renders its `in` input into its OWN FBO (monitor + passthrough)
     // each frame. Reading that FBO non-black + structured proves the LOOPBACK

@@ -65,7 +65,6 @@ export const electraControlDef: MetaModuleDef = {
   domain: 'meta',
   label: 'electra control',
   category: 'tools',
-  card: 'ElectraControlCard',
   inputs: [],
   outputs: [],
   params: [],
@@ -96,11 +95,11 @@ export const electraControlDef: MetaModuleDef = {
   // their rename fields here would force them into cells they cannot be, for
   // the addressability reason the extension file gives in full.
   //
-  // The `testidPrefix` is a literal the LEGACY BUTTON already emits
-  // (`ElectraConnectButton.svelte`, `data-testid="electra-connect-button"`),
-  // which is what module-docs-lint's card grep checks — so a rename on either
-  // surface is RED. The card file survives promotion: `?shell=legacy` still
-  // renders it, and `electra-control.spec.ts` still drives it there.
+  // The `testidPrefix` is a literal `ElectraConnectButton.svelte` really emits
+  // (`data-testid="electra-connect-button"`), which is what module-docs-lint's
+  // SOURCE arm checks — so renaming it there without renaming it here is RED.
+  // This is one of the few families that arm still holds; most are held by the
+  // cell arm, because the shell stamps a family generically.
   controlFamilies: [
     {
       id: 'electra-connect-button',

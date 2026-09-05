@@ -201,7 +201,7 @@ const sinkNode: SpawnNode = { id: 'f-out', type: 'videoOut', position: { x: 900,
 
 async function bootRack(page: Page): Promise<void> {
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 }
 
@@ -227,7 +227,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-split', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-fader'), 'FADER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="fader"])'), 'FADER visible').toBeVisible();
     // Push the split params through the live chain (ydoc → reconciler →
     // setParam) — deliberately NOT via spawn params, so this fixture keeps
     // covering the live-mutation path (the F-F1 test covers spawn-time init).
@@ -283,7 +283,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-split', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-fader'), 'FADER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="fader"])'), 'FADER visible').toBeVisible();
 
     const [left, right] = await stepAndSample(page, [
       { nodeId: 'f-split', u: 0.25, v: 0.5 },
@@ -312,7 +312,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
       ],
       [feedEdge('e-in', 'f-luma', 'in'), videoEdge('e-o', 'f-luma', 'out', 'f-out', 'in')],
     );
-    await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="luma"])'), 'LUMA visible').toBeVisible();
 
     // Documented chain at gamma=2, posterize 16 = BYPASS (the probes are also
     // quantizer fixed points, so these exact values pinned the OLD 16-level
@@ -365,7 +365,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
       ],
       [feedEdge('e-in', 'f-luma', 'in'), videoEdge('e-o', 'f-luma', 'out', 'f-out', 'in')],
     );
-    await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="luma"])'), 'LUMA visible').toBeVisible();
     const [hi, lo] = await stepAndSample(page, [
       { nodeId: 'f-luma', u: 0.95, v: 0.5 },  // in 242 → out 242 (pre-fix: crushed to 255)
       { nodeId: 'f-luma', u: 0.06, v: 0.5 },  // in 15  → out 15  (pre-fix: crushed to 0)
@@ -394,7 +394,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-lk', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-lumakey'), 'LUMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="lumakey"])'), 'LUMAKEY visible').toBeVisible();
 
     const [dark, mid, bright] = await stepAndSample(page, [
       { nodeId: 'f-lk', u: 0.25, v: 0.5 },
@@ -436,7 +436,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
       ],
       [feedEdge('e-fg', 'f-lk', 'fg'), videoEdge('e-o', 'f-lk', 'out', 'f-out', 'in')],
     );
-    await expect(page.locator('.svelte-flow__node-lumakey'), 'LUMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="lumakey"])'), 'LUMAKEY visible').toBeVisible();
     const [dark, bright] = await stepAndSample(page, [
       { nodeId: 'f-lk', u: 0.25, v: 0.5 },
       { nodeId: 'f-lk', u: 0.75, v: 0.5 },
@@ -474,7 +474,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-ck', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chromakey"])'), 'CHROMAKEY visible').toBeVisible();
     await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
     await setNodeParam(page, 'f-split', 'fader', 0.5);
 
@@ -530,7 +530,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-ck', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chromakey"])'), 'CHROMAKEY visible').toBeVisible();
     await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
     await setNodeParam(page, 'f-split', 'fader', 0.5);
 
@@ -581,7 +581,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-ck', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chromakey"])'), 'CHROMAKEY visible').toBeVisible();
     await setNodeParam(page, 'f-split', 'abTransition', 1); // WIPE
     await setNodeParam(page, 'f-split', 'fader', 0.5);
 
@@ -623,7 +623,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-ck', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chromakey"])'), 'CHROMAKEY visible').toBeVisible();
     const [noSpill] = await stepAndSample(page, [{ nodeId: 'f-ck', u: 0.5, v: 0.5 }]);
     // sanity: pixel is kept and green-dominant at spill=0.
     expect(noSpill![1], `kept spill pixel G ${fmt(noSpill!)}`).toBeGreaterThanOrEqual(215);
@@ -655,7 +655,7 @@ test.describe('keyer functional validation (theory-derived pixels)', () => {
         videoEdge('e-o', 'f-fx', 'out', 'f-out', 'in'),
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chroma').nth(0), 'CHROMA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chroma"])').nth(0), 'CHROMA visible').toBeVisible();
 
     const [rot] = await stepAndSample(page, [{ nodeId: 'f-fx', u: 0.5, v: 0.5 }]);
     // theory: hue 0° (red) + 120° = 120° (green), s/v preserved.

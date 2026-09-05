@@ -11,6 +11,40 @@
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, seedKriaWith, buildKriaMidiData, seedKriaGate } from './_helpers';
+
+/** Open the dx7 node's dock full view and return the preset SELECTOR cell
+ *  (`shell-cell-dx7-preset-select`, aria-label 'preset: <name>'). The card's
+ *  <select> died with the card; the cell's popup listbox is the gesture. */
+async function openDx7Dock(page: Page, id: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const dock = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${id}"]`);
+  await expect(dock).toBeVisible({ timeout: 60_000 });
+  return dock.getByTestId('shell-cell-dx7-preset-select');
+}
+
+/** Pick a built-in voice through the selector cell's popup listbox. NEVER
+ *  Escape here — with the dock open it would close the whole full view. */
+async function pickPreset(page: Page, presetSel: import('@playwright/test').Locator, name: string) {
+  await presetSel.scrollIntoViewIfNeeded();
+  await presetSel.click();
+  const listbox = page.locator('[role="listbox"]');
+  await expect(listbox).toBeVisible();
+  await listbox.locator('[role="option"]', { hasText: name }).first().click();
+  await expect(listbox).toBeHidden();
+  await expect(presetSel).toHaveAttribute('aria-label', `preset: ${name}`);
+}
 import { captureScopeTimbre, pollScopeRms, scopePollMsg, timbreDistance } from '../_helpers/scope-poll';
 
 /** Window the timbre fingerprint averages over — several note cycles at the
@@ -30,27 +64,24 @@ test.describe.configure({ mode: 'parallel' });
 test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);
 
-  // Card renders.
-  const card = page.locator('[data-testid="dx7-card"]');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('DX7');
+  // Faceplate renders.
+  const tile = page.locator('.svelte-flow__node[data-id="dx"]');
+  await expect(tile.locator('[data-testid="module-shell"]')).toBeVisible();
+  await expect(tile, 'tile carries the module name').toContainText(/DX7/i);
 
-  // Preset selector is present and defaults to E.PIANO 1.
-  const presetSel = page.locator('[data-testid="dx7-preset-select"]');
-  await expect(presetSel).toBeVisible();
-  await expect(presetSel).toHaveValue('E.PIANO 1');
-
-  // Algo display shows two-digit numeric.
-  const algoDisplay = page.locator('[data-testid="dx7-algo-display"]');
-  await expect(algoDisplay).toBeVisible();
-  await expect(algoDisplay).toContainText(/ALG \d{2}/);
-
-  // .syx file input exists.
-  await expect(page.locator('[data-testid="dx7-syx-input"]')).toBeAttached();
-
-  // 4 handles total: poly + pitch_cv + gate (inputs) + out (output).
-  const handles = await card.locator('.svelte-flow__handle').count();
+  // 4 handles total: poly + pitch_cv + gate (inputs) + out (output). Node-level
+  // chrome, unchanged by promotion.
+  const handles = await tile.locator('.svelte-flow__handle').count();
   expect(handles).toBe(4);
+
+  // The dock carries the preset SELECTOR cell (defaulting to E.PIANO 1), the
+  // algorithm picture-state chip (`control-algorithm` — the card's two-digit
+  // ALG display died with the card; the chip IS the algorithm's face), and the
+  // .syx upload FILE cell.
+  const presetSel = await openDx7Dock(page, 'dx');
+  await expect(presetSel).toHaveAttribute('aria-label', 'preset: E.PIANO 1');
+  await expect(page.locator('[data-testid="control-algorithm"]').first()).toBeVisible();
+  await expect(page.locator('[data-testid="shell-cell-dx7-syx-input"]')).toBeAttached();
 });
 
 test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({ page, rack }) => {
@@ -237,12 +268,11 @@ test.fixme('dx7: switching algorithm changes the audible scope content', { annot
 test('dx7: changing preset updates the dropdown value', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);
 
-  const presetSel = page.locator('[data-testid="dx7-preset-select"]');
-  await expect(presetSel).toHaveValue('E.PIANO 1');
+  const presetSel = await openDx7Dock(page, 'dx');
+  await expect(presetSel).toHaveAttribute('aria-label', 'preset: E.PIANO 1');
 
-  // Switch to BASS 1 via the dropdown.
-  await presetSel.selectOption('BASS 1');
-  await expect(presetSel).toHaveValue('BASS 1');
+  // Switch to BASS 1 via the selector cell's popup.
+  await pickPreset(page, presetSel, 'BASS 1');
 
   // The patch graph should reflect the new preset.
   const stored = await page.evaluate(() => {
@@ -335,7 +365,7 @@ async function readStamp(page: Page, nodeId: string) {
 
 test.describe('dx7 preset stamp — persistence', () => {
   // Opt IN to the IndexedDB scratch replica (see scratch-persist.spec.ts):
-  // /rack?shell=legacy&seed=none disables it under the e2e harness by default, and it is what makes a
+  // /rack?seed=none disables it under the e2e harness by default, and it is what makes a
   // real `page.reload()` a meaningful assertion instead of a fresh empty doc.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -344,7 +374,7 @@ test.describe('dx7 preset stamp — persistence', () => {
   });
 
   test('a preset change stamps 5 values and survives a real browser reload', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(() => typeof indexedDB !== 'undefined' && indexedDB !== null);
@@ -353,20 +383,19 @@ test.describe('dx7 preset stamp — persistence', () => {
     await spawnPatch(page, [{ id: 'dx-stamp', type: 'dx7', position: { x: 180, y: 160 } }]);
     await expect(page.locator('.svelte-flow__node[data-id="dx-stamp"]')).toBeVisible();
 
-    const presetSel = page.locator('[data-testid="dx7-preset-select"]');
-    await expect(presetSel).toHaveValue('E.PIANO 1');
+    const presetSel = await openDx7Dock(page, 'dx-stamp');
+    await expect(presetSel).toHaveAttribute('aria-label', 'preset: E.PIANO 1');
     // Row count BEFORE the stamp, so the flush wait below is a real delta and
     // not "the DB exists" (which the spawn alone already satisfies).
     const rowsBefore = await replicaRows(page);
 
-    // THE GESTURE — the real <select>, i.e. the shared action the shell cell
-    // calls too. WIRE LEAD is the deliberate choice: it is the one built-in
-    // that differs from E.PIANO 1 (alg 5 / fb 4) in BOTH stamped params
-    // (alg 1 / fb 7), AND its feedback differs from the def's own default of
-    // 4 — so neither param assertion can pass on a value that was already
-    // there. TUB BELLS would have been a trap: its feedback IS 4.
-    await presetSel.selectOption('WIRE LEAD');
-    await expect(presetSel).toHaveValue('WIRE LEAD');
+    // THE GESTURE — the selector cell's popup, i.e. the shared action the
+    // card's <select> used to call. WIRE LEAD is the deliberate choice: it is
+    // the one built-in that differs from E.PIANO 1 (alg 5 / fb 4) in BOTH
+    // stamped params (alg 1 / fb 7), AND its feedback differs from the def's
+    // own default of 4 — so neither param assertion can pass on a value that
+    // was already there. TUB BELLS would have been a trap: its feedback IS 4.
+    await pickPreset(page, presetSel, 'WIRE LEAD');
 
     const before = await readStamp(page, 'dx-stamp');
     expect(before.preset).toBe('WIRE LEAD');
@@ -388,7 +417,8 @@ test.describe('dx7 preset stamp — persistence', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('.svelte-flow__node[data-id="dx-stamp"]')).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[data-testid="dx7-preset-select"]')).toHaveValue('WIRE LEAD');
+    const presetSelAfter = await openDx7Dock(page, 'dx-stamp');
+    await expect(presetSelAfter).toHaveAttribute('aria-label', 'preset: WIRE LEAD');
 
     const after = await readStamp(page, 'dx-stamp');
     expect(after, 'every stamped value came back byte-for-byte').toEqual(before);
@@ -401,9 +431,8 @@ test.describe('dx7 preset stamp — persistence', () => {
     // encode/decode of the stamped buffer, which is the half of "reaches a
     // peer" that does not need a second browser context or a relay.
     await spawnPatch(page, [{ id: 'dx-wire', type: 'dx7' }]);
-    const presetSel = page.locator('[data-testid="dx7-preset-select"]');
-    await presetSel.selectOption('BRASS 1');
-    await expect(presetSel).toHaveValue('BRASS 1');
+    const presetSel = await openDx7Dock(page, 'dx-wire');
+    await pickPreset(page, presetSel, 'BRASS 1');
     const before = await readStamp(page, 'dx-wire');
     expect(before.voiceName).toBe('BRASS 1');
 

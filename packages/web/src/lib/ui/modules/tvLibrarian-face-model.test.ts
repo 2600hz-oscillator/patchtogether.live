@@ -20,11 +20,11 @@
 //      and `module-face-lint`'s dead-glyph clause would NOT catch it. On
 //      picturebox or acidwarp the rule enforces itself; here nothing does.
 //
-//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>`. A DOM node has one
-//      parent and the LEGACY card adopts that element under `?shell=legacy`, so
-//      a body that adopted it too would move it out from under that mount. No
-//      gate can see this; the body blits the module's own OUTPUT texture
-//      instead, and that is asserted at the source.
+//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>`. A DOM node has ONE
+//      parent, and that element belongs to the node-owned media registry — so a
+//      body that adopted it would move it out from under its real owner and
+//      take the stream down with it. No gate can see this; the body blits the
+//      module's own OUTPUT texture instead, and that is asserted at the source.
 //
 //   4. THE VRT ENTRY RESTS ON THE IDLE PICTURE BEING TIME-INVARIANT. Its
 //      argument for a real baseline (rather than a FACES_WITHOUT_SCENES
@@ -63,14 +63,12 @@ const defSource = readFileSync(
 );
 const bodySource = read('tvLibrarian/TvLibrarianTunerBody.svelte');
 const pickerSource = read('tvLibrarian/TvLibrarianPicker.svelte');
-const cardSource = read('TvLibrarianCard.svelte');
 
 // The code-only views. A raw grep cannot tell code from a comment, and several
 // legs below forbid a construct whose natural explanation NAMES it — this file's
 // own comments say `nodeMedia.adopt` and `tv-now-playing` out loud.
 const bodyCode = stripSourceComments(bodySource);
 const pickerCode = stripSourceComments(pickerSource);
-const cardCode = stripSourceComments(cardSource);
 
 /** The LIVE `ParamDef` — `FaceDefLike` narrows params to what curation reads. */
 function param(id: string) {
@@ -226,10 +224,9 @@ describe('the noUserControl declaration, driven in BOTH directions', () => {
 
 describe('the two surfaces agree, and the body is not a second owner', () => {
   it('the BODY never adopts the node-owned <video>', () => {
-    // ⚠ NO GATE SEES THIS. The element has exactly one parent, and the legacy
-    // card adopts it under ?shell=legacy or as a dock rail occupant. A body that
-    // adopted it too would move it out from under that mount — silently, and
-    // only in the arrangement where both are alive.
+    // ⚠ NO GATE SEES THIS. The element has exactly one parent and a
+    // NODE-lifetime owner that keeps it alive with nothing mounted. A body that
+    // adopted it would move it out from under that owner — silently.
     expect(bodyCode).not.toMatch(/nodeMedia/);
     expect(bodyCode).not.toMatch(/\.adopt\(/);
   });
@@ -242,34 +239,39 @@ describe('the two surfaces agree, and the body is not a second owner', () => {
     expect(bodyCode).toMatch(/<canvas/);
   });
 
-  it('the CARD still adopts it — promotion did not move the element', () => {
-    expect(cardCode).toMatch(/nodeMedia\.adopt\(/);
-  });
+  // ⚠ 'the CARD still adopts it — promotion did not move the element' STOOD
+  // HERE, asserting `nodeMedia.adopt(` on the card so that promotion could be
+  // shown NOT to have moved the <video>. The element belongs to
+  // `node-hls-source-registry` on graph lifetime — which card-media-lifetime
+  // holds — and there is no second adopter left to move it away.
 
-  it('the browse surface is ONE component, mounted by both', () => {
-    // Two copies of a picker is how the two surfaces drift, and this module has
-    // a documented instance of correctness travelling by hand-copy and arriving
-    // late (the `muted = false` audio trap).
-    expect(cardCode).toMatch(/<TvLibrarianPicker[\s/>]/);
+  it('the browse surface is the SHARED component, not a copy of it', () => {
+    // Two copies of a picker is how surfaces drift, and this module has a
+    // documented instance of correctness travelling by hand-copy and arriving
+    // late (the `muted = false` audio trap). The card was the other mount; the
+    // property that outlives it is that the surviving mount is the shared
+    // component rather than a fork, which is what a future second surface would
+    // be measured against.
     expect(bodyCode).toMatch(/<TvLibrarianPicker[\s/>]/);
+    expect(pickerCode, 'the shared picker really carries the browse affordance')
+      .toMatch(/data-testid=/);
   });
 });
 
 describe('resting text — the readout is REMOVED, and what makes that safe', () => {
-  it('neither surface paints a NOW PLAYING readout', () => {
-    // Owner ruling, 2026-08-17: the data is REMOVED, not hidden. Deleted on the
-    // CARD as well as the faceplate — a card and a faceplate disagreeing about
+  it('no surface paints a NOW PLAYING readout', () => {
+    // Owner ruling, 2026-08-17: the data is REMOVED, not hidden. It was deleted
+    // on the card as well as the faceplate — two surfaces disagreeing about
     // what a module paints is exactly the drift the shared picker exists to
-    // prevent.
-    expect(cardCode).not.toMatch(/tv-now-playing/);
+    // prevent — and the surviving surface is asserted here.
     expect(bodyCode).not.toMatch(/tv-now-playing/);
+    expect(pickerCode).not.toMatch(/tv-now-playing/);
   });
 
-  it('the station name survives on the picture’s accessible name, on BOTH surfaces', () => {
-    for (const [name, code] of [['card', cardCode], ['body', bodyCode]] as const) {
-      expect(code, `${name} must expose the station name`).toMatch(/aria-label=\{pictureLabel\}/);
-      expect(code, `${name} must build it from the tuned channel`).toMatch(/channel\.name/);
-    }
+  it('the station name survives on the picture’s accessible name', () => {
+    expect(bodyCode, 'the body must expose the station name')
+      .toMatch(/aria-label=\{pictureLabel\}/);
+    expect(bodyCode, 'the body must build it from the tuned channel').toMatch(/channel\.name/);
   });
 
   it('the roster scrolls its selected row into view — the thing that makes the removal safe', () => {

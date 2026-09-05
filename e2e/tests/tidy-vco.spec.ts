@@ -77,7 +77,7 @@ test('TIDY VCO poly chain: POLYSEQZ chord bus → voices → AUDIOOUT — audibl
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-tidyVco');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="tidyVco"])');
   await expect(card).toHaveCount(1);
   await expect(card).toContainText(/TIDY ?VCO/);
 

@@ -1,6 +1,6 @@
 // e2e/tests/workflow-camera.spec.ts
 //
-// The camera manager on /rack?shell=legacy:
+// The camera manager on /rack:
 //
 //   📷 topbar slot → ＋ maps a HEADLESS camera (a FULL cameraInput module
 //   carrying the `hiddenCard` node-data flag — NO canvas card anywhere,
@@ -17,7 +17,7 @@
 //   (renderer-tolerant: SwiftShader vs real GPU both clear them), never a
 //   wall-clock pixel race.
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Collaborator
 // visibility (the flag is synced node data) is covered at unit level
 // against real Y.Docs (graph/hidden-card.test.ts), not by a multi-context
@@ -62,7 +62,7 @@ async function mappedCameras(page: Page): Promise<PatchNode[]> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
@@ -128,12 +128,25 @@ test.describe('workflow camera manager (P4)', () => {
     await expect(page.locator(`.flow .svelte-flow__node[data-id="${cam.id}"]`)).toHaveCount(0);
     await expect(page.locator('.flow .svelte-flow__node[data-id="fx"]')).toBeVisible();
 
-    // ＋ also opened the new camera's SOURCE PICKER: the hosted REAL
-    // CameraInputCard (its own device dropdown = the module's existing
-    // source-selection seam, nothing forked).
+    // ＋ also opened the new camera's SOURCE PICKER: the hosted REAL faceplate
+    // (its own device dropdown = the module's existing source-selection seam,
+    // nothing forked).
+    //
+    // ⚠ THE TESTID MOVED WITH THE SURFACE, and the rename is the point rather
+    // than noise. `camera-device-select` was the deleted card's id; the face
+    // mounts `CameraSourceControls` twice — once in the lane tile and once in
+    // the dock full view, which can be on screen SIMULTANEOUSLY — so each mount
+    // passes its own `testidPrefix` and a single shared id would resolve to two
+    // elements and throw on every strict locator. This host renders the TILE
+    // body, hence `cameraInput-tile-*`.
     const host = page.locator(`[data-testid="workflow-camera-host"][data-node-id="${cam.id}"]`);
     await expect(host).toHaveAttribute('data-shown', 'true');
-    await expect(host.getByTestId('camera-device-select')).toBeVisible();
+    await expect(
+      host.getByTestId('cameraInput-tile-device-select'),
+      'the topbar camera host must paint the module\'s real source picker — this host is the only '
+        + 'place a mapped (hiddenCard) camera has a surface at all, so a blank one leaves the '
+        + 'player with a streaming camera and no way to see or change its device',
+    ).toBeVisible();
 
     // The menu lists it ("camera 1" — no locally-resolvable device label
     // in this headless run).
@@ -234,7 +247,7 @@ test.describe('workflow camera manager (P4)', () => {
 
     // Never a canvas card, whatever the count.
     expect(
-      await page.locator('.flow .svelte-flow__node-cameraInput').count(),
+      await page.locator('.flow .svelte-flow__node:has([data-shell-type="cameraInput"])').count(),
     ).toBe(0);
 
     // PERSISTENCE ROUND-TRIP: quicksave slot 1 → full reload → quickload.
@@ -271,7 +284,7 @@ test.describe('workflow camera manager (P4)', () => {
     await expect(page.getByTestId('workflow-camera-label').nth(1)).toHaveText(/camera 3/);
     // …and they are still headless — zero camera cards on the canvas.
     expect(
-      await page.locator('.flow .svelte-flow__node-cameraInput').count(),
+      await page.locator('.flow .svelte-flow__node:has([data-shell-type="cameraInput"])').count(),
     ).toBe(0);
   });
 });

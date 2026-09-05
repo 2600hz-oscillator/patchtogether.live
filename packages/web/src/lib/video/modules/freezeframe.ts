@@ -841,7 +841,7 @@ export const freezeframeDef: VideoModuleDef = {
     { id: 'quant_b',    label: 'QUANT B',    defaultValue: DEFAULTS.quant_b,    min: 0, max: 1, curve: 'linear' },
     { id: 'quant_luma', label: 'QUANT LUMA', defaultValue: DEFAULTS.quant_luma, min: 0, max: 1, curve: 'linear' },
     // PHOSPHOR DECAY. `curve: 'discrete', min 0, max 1` is the repo's canonical
-    // switch shape (looksLikeToggle, $lib/graph/group-controls) — the card
+    // switch shape (looksLikeToggle, $lib/graph/exposable-controls) — the card
     // renders these with <Toggle>, the Push generic tier demotes them below the
     // continuous params, and the auto-expose bar agrees with both.
     { id: 'decay',        label: 'DECAY',      defaultValue: DEFAULTS.decay,        min: 0, max: 1, curve: 'discrete' },
@@ -955,20 +955,17 @@ export const freezeframeDef: VideoModuleDef = {
 
     // ⚠ THE SCREEN ON/OFF SWITCH ARRIVES THROUGH THIS SLOT, AND IT HAD TO
     // (#1934, the #1928 class). The 2026-08-18 owner ruling gives every video
-    // module a screen on/off toggle. This module shipped one — on
-    // `FreezeframeCard.svelte` — in the SAME change that promoted it into
-    // STRICT_FACES, and promotion is precisely what stops both surfaces from
-    // rendering that card (`migrated()` becomes true;
-    // `DockFullView.svelte:319` mounts `<ModuleShell>` instead). The required
-    // control was therefore deleted by the promotion meant to keep it.
+    // module a screen on/off toggle. This module shipped one, on a surface the
+    // SAME change then stopped rendering by promoting the module into
+    // STRICT_FACES — the required control was deleted by the change meant to
+    // deliver it.
     //
     // ⚠ AND THE SPEC THAT PROVED IT WORKED COULD NOT HAVE CAUGHT THAT: it was
-    // pinned to `/rack?shell=legacy`, the one surface promotion does not
-    // change, so it passed and would have gone on passing while the shipping UI
-    // had no toggle at all. Both halves are covered now —
-    // `freezeframe-screen-toggle.spec.ts` exercises the legacy CARD and the
-    // faced DOCK surface, and `video-face-screen-source.test.ts` (#1935)
-    // refuses this shape by name so the next module cannot repeat it.
+    // pinned to the one surface the promotion did not change, so it passed and
+    // would have gone on passing while the shipping UI had no toggle at all.
+    // `freezeframe-screen-toggle.spec.ts` now drives the FACE surface — the one
+    // that ships — and `video-face-screen-source.test.ts` (#1935) refuses this
+    // shape by name so the next module cannot repeat it.
     //
     // There is no generic affordance to fall back on — `previewCollapsed`
     // appears in ZERO shell files — so it comes through `fullViewBody`, the
@@ -989,7 +986,7 @@ export const freezeframeDef: VideoModuleDef = {
       gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough. Patched, the image is FROZEN while the level is LOW. Each RISING EDGE updates EXACTLY ONE frame, so a trigger pulse re-samples once and then holds still. A gate HELD HIGH gets that edge frame too, and then updates CONTINUOUSLY once the level has stood high for about 75 ms — three reports of the ~25 ms patch bridge, which is the soonest a held gate can be told apart from a trigger at all, since until the level is re-reported the two are identical. A high shorter than that window reads as a TRIGGER: notably a 50 ms gate derived from a trigger by GATEMAIDEN, which is why inserting GATEMAIDEN does not change the frame count. Both readings come from this one jack — patch a held gate or slow square LFO for live-while-open, or a clock/trigger for one frame per tick.",
     },
     outputs: {
-      video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The card's on-screen preview shows this output.",
+      video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The faceplate\'s on-screen preview shows this output.",
       r_out: "The posterized RED channel alone, rendered as a grey intensity image (R copied to all three channels).",
       g_out: "The posterized GREEN channel alone, rendered as a grey intensity image.",
       b_out: "The posterized BLUE channel alone, rendered as a grey intensity image.",

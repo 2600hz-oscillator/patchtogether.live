@@ -12,7 +12,6 @@ import {
   type ValidatorDef,
   type ResolveDef,
 } from './validate-edge';
-import type { GroupData } from './group-projection';
 import type { ModuleNode, Edge, CableType } from './types';
 
 // ---- fixtures -------------------------------------------------------------
@@ -21,7 +20,7 @@ function n(id: string, type = 'analogVco', data?: Record<string, unknown>): Modu
   return {
     id,
     type,
-    domain: type === 'group' ? 'meta' : 'audio',
+    domain: 'audio',
     position: { x: 0, y: 0 },
     params: {},
     data,
@@ -183,66 +182,12 @@ describe('validateEdge', () => {
     const res = validateEdge(e('x', 'lfo', 'out', 'flt', 'cutoff'), nodes, localResolve);
     expect(res.ok).toBe(true);
   });
-
-  describe('group exposed ports (resolved FIRST, mirroring handleConnect)', () => {
-    const groupData: GroupData = {
-      childIds: ['flt-1'],
-      exposedPorts: [
-        { id: 'OUT--AUDIO', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
-        { id: 'IN--CV', childId: 'flt-1', childPortId: 'cutoff', direction: 'input', cableType: 'cv' },
-        { id: 'IN--VIDEO', childId: 'vid-1', childPortId: 'in', direction: 'input', cableType: 'video' },
-      ],
-    };
-
-    it('accepts a cable from a group exposed OUTPUT port to a real input', () => {
-      const nodes = [
-        n('g-1', 'group', groupData as unknown as Record<string, unknown>),
-        n('flt', 'filter'),
-      ];
-      const res = validateEdge(e('x', 'g-1', 'OUT--AUDIO', 'flt', 'in'), nodes, resolveDef);
-      expect(res.ok).toBe(true);
-    });
-
-    it('accepts a cable from a real output to a group exposed INPUT port', () => {
-      const nodes = [
-        n('osc', 'osc'),
-        n('g-1', 'group', groupData as unknown as Record<string, unknown>),
-      ];
-      // osc.out (audio) → group IN--CV (cv): canConnect rejects audio→cv, so
-      // use a cv source to prove the group input resolves + type-checks.
-      const cvDef: ValidatorDef = { inputs: [], outputs: [{ id: 'out', type: 'cv' }] };
-      const localResolve: ResolveDef = (t) => (t === 'lfo' ? cvDef : DEFS[t]);
-      const lfoNodes = [
-        n('lfo', 'lfo'),
-        n('g-1', 'group', groupData as unknown as Record<string, unknown>),
-      ];
-      const res = validateEdge(e('x', 'lfo', 'out', 'g-1', 'IN--CV'), lfoNodes, localResolve);
-      expect(res.ok).toBe(true);
-      // sanity: the audio source variant IS rejected by type-compat
-      const bad = validateEdge(e('y', 'osc', 'out', 'g-1', 'IN--CV'), nodes, resolveDef);
-      expect(bad.ok).toBe(false);
-    });
-
-    it('rejects using a group exposed INPUT port as a SOURCE (direction)', () => {
-      const nodes = [
-        n('g-1', 'group', groupData as unknown as Record<string, unknown>),
-        n('flt', 'filter'),
-      ];
-      const res = validateEdge(e('x', 'g-1', 'IN--CV', 'flt', 'in'), nodes, resolveDef);
-      expect(res.ok).toBe(false);
-      expect(res.reason).toMatch(/not a declared output port/);
-    });
-
-    it('rejects an unknown group exposed handle id', () => {
-      const nodes = [
-        n('g-1', 'group', groupData as unknown as Record<string, unknown>),
-        n('flt', 'filter'),
-      ];
-      const res = validateEdge(e('x', 'g-1', 'NO--SUCH--PORT', 'flt', 'in'), nodes, resolveDef);
-      expect(res.ok).toBe(false);
-      expect(res.reason).toMatch(/not a declared output port/);
-    });
-  });
+  // ⚠ THE `group exposed ports (resolved FIRST, mirroring handleConnect)` BLOCK
+  // IS DELETED WITH ITS SUBJECT. It covered `resolveEndpoint`'s first step: a
+  // GROUP! node has no module def, so a cable to one of its `data.exposedPorts`
+  // handles was resolved through `resolveExposedPort` before any def lookup —
+  // with direction and cable-type checks of its own. That step no longer exists;
+  // every endpoint resolves through a def or fails.
 });
 
 // ---- validateGraphFragment ------------------------------------------------
@@ -279,23 +224,11 @@ describe('validateGraphFragment', () => {
     expect(res.droppedEdges).toHaveLength(1);
     expect(res.droppedEdges[0].edge.id).toBe('e1');
   });
-
-  it('keeps group nodes (no module def required) and validates cables to them', () => {
-    const groupData: GroupData = {
-      childIds: ['flt-1'],
-      exposedPorts: [
-        { id: 'OUT--AUDIO', childId: 'flt-1', childPortId: 'out', direction: 'output', cableType: 'audio' },
-      ],
-    };
-    const nodes = [
-      n('g-1', 'group', groupData as unknown as Record<string, unknown>),
-      n('flt', 'filter'),
-    ];
-    const edges = [e('e1', 'g-1', 'OUT--AUDIO', 'flt', 'in')];
-    const res = validateGraphFragment({ nodes, edges }, resolveDef);
-    expect(res.droppedNodes).toHaveLength(0);
-    expect(res.validEdges.map((x) => x.id)).toEqual(['e1']);
-  });
+  // ⚠ ONE CASE IS DELETED WITH ITS SUBJECT: 'keeps group nodes (no module def
+  // required) and validates cables to them'. `validateGraphFragment` carried an
+  // explicit `node.type === 'group'` KEEP exemption; the GROUP! module is gone
+  // and so is the exemption, so an unregistered type is now dropped without
+  // exception — which the two cases above already assert.
 });
 
 // ── CONNECT-TIME ADOPTION (PortDef.adoptsUpstreamFrom) ──────────────────────

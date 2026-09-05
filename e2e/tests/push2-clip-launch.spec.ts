@@ -139,7 +139,7 @@ test('@push2 a simulated pad press launches a clip → audible RMS at the clippl
     ],
   );
 
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 
   // Seed a clip in lane 0 / slot 0 (drives pitch1/gate1). Launched via the PUSH.
   await page.evaluate(() => {
@@ -229,7 +229,7 @@ test('@push2 Play toggles transport; a LANE select shows that lane\u2019s PUSH C
       n.data.channel = 1;
     });
   });
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 
   const installed = await page.evaluate(async () => {
     const w = globalThis as unknown as { __push2TestInstall?: (id: string) => Promise<boolean> };

@@ -23,6 +23,10 @@
 #                       ZERO CI runs while every @collab test passed.
 #   * dashboard/+page.server.ts  catches, warns, returns [] → saved-groups
 #                       coverage was vacuous: an empty library either way.
+#                       (That consumer is GONE — the saved-groups library was
+#                       deleted with the GROUP! module. The journal case above
+#                       is the live example; this one is kept because the
+#                       argument needs BOTH, and it is the clearer of the two.)
 #
 # A hand-copied list at 14 sites cannot be kept correct; the fix is to stop
 # keeping a list. This script reads the DIRECTORY, so a new migration is picked

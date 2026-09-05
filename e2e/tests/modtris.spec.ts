@@ -51,26 +51,10 @@ async function readModtrisSnapshot(page: Page, nodeId: string): Promise<ModtrisS
   }, nodeId);
 }
 
-test('modtris: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(page, [{ id: 'm', type: 'modtris', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-modtris');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('MODTRIS');
-  const canvas = card.locator('[data-testid="modtris-canvas"]');
-  await expect(canvas).toBeVisible();
-  const size = await canvas.evaluate((el: Element) => {
-    const c = el as HTMLCanvasElement;
-    return { w: c.width, h: c.height };
-  });
-  expect(size.w).toBeGreaterThan(0);
-  expect(size.h).toBeGreaterThan(0);
-  expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
-});
+// ⚠ The legacy "card mounts" test folded in the S2 legacy-removal inversion:
+// its subject (the module spawns, its screen paints, no console errors) is
+// covered on the shipping surface by the FACE describe below (the dock body
+// paints a LIVE board + errorWatch). S2 manifest.
 
 test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'm', type: 'modtris', position: { x: 200, y: 200 } }]);
@@ -141,8 +125,8 @@ test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolutio
 // THE FACE, ON THE DEFAULT SHELL.
 //
 // ⚠ NOTHING IN THIS SUITE HAD EVER OBSERVED MODTRIS UNDER THE SHIPPING SHELL.
-// Every test above drives `?shell=legacy` (and the shared `rack` fixture is
-// `?shell=legacy` by construction), so the surface a player actually gets was
+// Every test above once drove the PRE-INVERSION renderer (the shared `rack`
+// fixture flipped to the shipping shell in S2), so the surface a player gets was
 // unexercised — which is how modtris sat for months rendering a BLANK
 // PLACEHOLDER in the lane while its game ran and pulsed gates underneath.
 // These legs navigate the DEFAULT shell deliberately.
@@ -235,10 +219,6 @@ async function openModtrisFace(page: Page, params?: Record<string, number>) {
   await expect(shell, 'the promoted face renders a ModuleShell tile in the lane — before this '
     + 'promotion the shipping shell rendered a BLANK PLACEHOLDER here')
     .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-  await expect(
-    page.locator('.svelte-flow__node[data-id="m"] [data-testid="module-shell-placeholder"]'),
-    'and the placeholder is GONE — the two must not coexist',
-  ).toHaveCount(0);
   await shell.getByTestId('shell-open-dock').click();
   const faceplate = page.getByTestId('dock-full-view');
   await expect(faceplate).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });

@@ -252,7 +252,7 @@ export const peakstateDef: VideoModuleDef = {
     },
     outputs: {
       mono_out: "Monochrome video out (mono-video cable): the white pen trail (#eee) on black, no hue cycling. The cleanest line-art view of the kaleidoscope, ideal for keying or feeding a colouriser downstream.",
-      rgb_out: "Full-colour video out (video cable) and the module's primary/preview surface: the same mandala stroked in an HSL hue that cycles at the Color rate. This is what the on-card preview screen shows.",
+      rgb_out: "Full-colour video out (video cable) and the module's primary/preview surface: the same mandala stroked in an HSL hue that cycles at the Color rate. This is what the faceplate\'s preview screen shows.",
       out_3d: "Pseudo-3D video out (video cable): the same mandala drawn with a fixed ~15° pitch tilt plus a continuous rotation (omega = Speed·0.3 rad/s, ~20s/turn) and a dimmed vertically-mirrored bowl twin, so it reads as a rotating sculpture on a horizon. Slightly desaturated and with faster trail decay than RGB.",
     },
     controls: {

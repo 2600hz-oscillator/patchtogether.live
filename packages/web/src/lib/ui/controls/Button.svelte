@@ -71,7 +71,29 @@
   function pointerdown(e: PointerEvent) {
     if (e.button !== 0 || disabled) return;
     pressed = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    // ⚠ CAPTURE IS AN OPTIMISATION; THE FIRE IS THE POINT. `setPointerCapture`
+    // throws `NotFoundError` for a pointer the element cannot capture, and the
+    // dispatch used to sit AFTER it with nothing between — so a failed capture
+    // ate the press entirely while `pressed` (already set, one line up) lit the
+    // button. That is the worst shape a control can fail in: it looks held and
+    // does nothing, on a module whose whole job is "hold it and hear the tone".
+    //
+    // MEASURED on `bluebox.spec.ts`: the BLUEBOX and REDBOX legs dispatch their
+    // pointerdown with `pointerId: 2` and read 0.0000 at every band, while the
+    // digit leg one test earlier uses `pointerId: 1` — Chrome's live mouse
+    // pointer — and sounds normally. Same component, same param shape, same
+    // dock: the only difference was whether the capture call threw.
+    //
+    // Capture is still attempted, because it is what keeps a drag off the
+    // button releasing the pad (`lostpointercapture` -> gate low). Losing it
+    // costs a release edge in an edge case; losing the FIRE costs the press.
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* not capturable (a synthetic pointer, or one already captured elsewhere)
+         — the window-level panic listeners in $lib/audio/momentary-params are
+         what guarantee the release either way. */
+    }
     dispatch(buttonPointerFire(momentary, 'down'));
   }
   function pointerup(e: PointerEvent) {

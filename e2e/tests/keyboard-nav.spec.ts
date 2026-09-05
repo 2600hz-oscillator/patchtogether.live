@@ -13,6 +13,17 @@
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
+/** Open the cartesian node's dock full view — the face grid
+ *  (`cart-face-gate/pitch/chord-{i}`) is dock-only on the shell. */
+async function openCartDock(page: import('@playwright/test').Page): Promise<void> {
+  const tile = page
+    .locator('.svelte-flow__node:has([data-shell-type="cartesian"]) [data-testid="module-shell"]')
+    .first();
+  await tile.getByTestId('shell-open-dock').click();
+  await expect(page.getByTestId('dock-full-view')).toBeVisible();
+}
+
+
 test.describe.configure({ mode: 'parallel' });
 
 test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', async ({ page, rack }) => {
@@ -20,9 +31,10 @@ test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', 
   // the surviving 2-role ['gate','pitch'] grid card. The behaviour under test
   // is grid-nav.ts's, which both cards shared verbatim.
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
+  await openCartDock(page);
 
   // Type a note into step 0's pitch input.
-  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-face-pitch-0"]');
   await step0.focus();
   await step0.fill('c3');
 
@@ -38,13 +50,13 @@ test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', 
 
   // Now ArrowRight should move focus to step 1's pitch.
   await step0.press('ArrowRight');
-  const step1 = page.locator('[data-testid="cart-pitch-seq-1"]');
+  const step1 = page.locator('[data-testid="cart-face-pitch-1"]');
   await expect(step1).toBeFocused();
 
   // ArrowUp from a pitch input should focus the SAME cell's gate (gate is
   // rendered above the input).
   await step1.press('ArrowUp');
-  const gate1 = page.locator('[data-testid="cart-gate-seq-1"]');
+  const gate1 = page.locator('[data-testid="cart-face-gate-1"]');
   await expect(gate1).toBeFocused();
 
   // Space toggles the gate.
@@ -57,12 +69,12 @@ test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', 
 
   // ArrowRight from gate moves to next gate.
   await gate1.press('ArrowRight');
-  const gate2 = page.locator('[data-testid="cart-gate-seq-2"]');
+  const gate2 = page.locator('[data-testid="cart-face-gate-2"]');
   await expect(gate2).toBeFocused();
 
   // ArrowDown from gate to pitch of same cell.
   await gate2.press('ArrowDown');
-  const step2 = page.locator('[data-testid="cart-pitch-seq-2"]');
+  const step2 = page.locator('[data-testid="cart-face-pitch-2"]');
   await expect(step2).toBeFocused();
 
   // ArrowUp from gate clamps (top of grid) — focus must stay on gate2.
@@ -74,13 +86,14 @@ test('keyboard-nav Cartesian: arrow keys never move caret + jump gate<->pitch', 
 
 test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
+  await openCartDock(page);
 
   const seq = ['c3', 'd3', 'e3', 'f3'];
-  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-face-pitch-0"]');
   await step0.focus();
 
   for (let i = 0; i < seq.length; i++) {
-    const cur = page.locator(`[data-testid="cart-pitch-seq-${i}"]`);
+    const cur = page.locator(`[data-testid="cart-face-pitch-${i}"]`);
     await expect(cur).toBeFocused();
     await cur.fill(seq[i]!);
     if (i < seq.length - 1) {
@@ -89,7 +102,7 @@ test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)
   }
   // Commit the final cell — the in-progress edit only flushes on blur or
   // navigation, so a "last step" without a follow-up arrow stays in the buffer.
-  await page.locator(`[data-testid="cart-pitch-seq-${seq.length - 1}"]`).blur();
+  await page.locator(`[data-testid="cart-face-pitch-${seq.length - 1}"]`).blur();
 
   const stored = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
@@ -101,21 +114,22 @@ test('keyboard-nav Cartesian: rapid-add scenario (type, right, type, right, ...)
 
 test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);
+  await openCartDock(page);
 
   // Cell idx 5 (row 1, col 1). Pitch -> Up -> gate of idx 5 -> Up -> pitch
   // of idx 1 (cell directly above) -> Up -> gate of idx 1.
-  const p5 = page.locator('[data-testid="cart-pitch-cart-5"]');
+  const p5 = page.locator('[data-testid="cart-face-pitch-5"]');
   await p5.focus();
   await p5.press('ArrowUp');
-  const g5 = page.locator('[data-testid="cart-gate-cart-5"]');
+  const g5 = page.locator('[data-testid="cart-face-gate-5"]');
   await expect(g5).toBeFocused();
 
   await g5.press('ArrowUp');
-  const p1 = page.locator('[data-testid="cart-pitch-cart-1"]');
+  const p1 = page.locator('[data-testid="cart-face-pitch-1"]');
   await expect(p1).toBeFocused();
 
   await p1.press('ArrowUp');
-  const g1 = page.locator('[data-testid="cart-gate-cart-1"]');
+  const g1 = page.locator('[data-testid="cart-face-gate-1"]');
   await expect(g1).toBeFocused();
 
   // ArrowUp from top-row gate clamps.
@@ -125,8 +139,9 @@ test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell di
 
 test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'seq', type: 'cartesian' }]);
+  await openCartDock(page);
 
-  const step0 = page.locator('[data-testid="cart-pitch-seq-0"]');
+  const step0 = page.locator('[data-testid="cart-face-pitch-0"]');
   await step0.focus();
   await step0.fill('a4');
 
@@ -151,9 +166,10 @@ test('keyboard-nav: caret never moves inside the pitch input on arrow keys', asy
 
 test('keyboard-nav: default value of new cartesian cell is c3', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian' }]);
+  await openCartDock(page);
 
   for (const i of [0, 5, 15]) {
-    const c = page.locator(`[data-testid="cart-pitch-cart-${i}"]`);
+    const c = page.locator(`[data-testid="cart-face-pitch-${i}"]`);
     await expect(c).toHaveValue('c3');
   }
 });

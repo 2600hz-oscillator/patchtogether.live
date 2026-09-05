@@ -6,8 +6,9 @@
 // ⚠ WHY THIS FILE EXISTS, and it is the #1929/#1934 lesson applied BEFORE the
 // fact rather than after it. foxy already had two e2e specs and BOTH stay green
 // through this promotion — `foxy.spec.ts` and
-// `foxy-freeze-locks-wavetable.spec.ts` open `/rack?shell=legacy`, which is
-// precisely the surface promotion does NOT change. The second one is described
+// `foxy-freeze-locks-wavetable.spec.ts` were written against the PRE-PROMOTION
+// surface, which is precisely the one promotion does NOT change. The second is
+// described
 // in its own header as the parity proof for the FREEZE toggles and the EXPORT
 // button; after promotion it proves those things about a card that neither
 // default surface renders any more (`DockFullView.svelte` mounts `<ModuleShell>`
@@ -15,9 +16,8 @@
 // pointing at what users see — "a gate whose precondition is the defect cannot
 // fail on the defect", one step upstream.
 //
-// So this file tests the FACE. The legacy specs are KEPT, not replaced: the
-// card is still a real surface while `?shell=legacy` exists, and deleting them
-// would trade one blind spot for another.
+// So this file tests the FACE. The older specs were KEPT rather than replaced:
+// deleting them would have traded one blind spot for another.
 //
 // ⚠ WHAT IS DELIBERATELY *NOT* HERE. The claim that foxy KEEPS BUILDING while
 // SCREEN is off cannot be observed from this side: the rasters advance inside

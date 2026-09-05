@@ -13,9 +13,9 @@
 // established, and it cannot be swept in by a future glob named after the
 // module.
 //
-// ⚠ `painter.spec.ts` BOOTS `?shell=legacy` (the `rack` fixture), so all three
-// of its tests stay green after the promotion while covering a surface no
-// player meets any more. This file is the default-shell leg they owe.
+// ⚠ `painter.spec.ts` WAS WRITTEN AGAINST THE PRE-PROMOTION SURFACE, so all
+// three of its tests stay green after the promotion while covering a surface no
+// player meets any more. This file is the shipping-shell leg they owe.
 //
 // `painter-face-model.test.ts` pins the ranking, the empty face, the glyph, the
 // `$effect`-keyed setup and the lease handshake at the SOURCE.
@@ -69,8 +69,7 @@ type PatchGlobal = {
 };
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. `painter.spec.ts`'s `?shell=legacy` is
-  // precisely the surface promotion does not change.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

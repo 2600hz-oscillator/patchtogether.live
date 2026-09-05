@@ -41,23 +41,15 @@ import { STRICT_FACES } from '$lib/ui/workflow/strict-faces';
 import {
   CARD_PRODUCER_LANE_TYPES,
   DOM_SOURCE_LANE_TYPES,
-  HEADLESS_MOUNT_LANE_TYPES,
-  needsHeadlessSourceMount,
 } from '$lib/ui/workflow/dom-source-modules';
 import { NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
 import { EXTRAS_PRODUCER_TYPES } from '$lib/ui/media/extras-producers';
-import {
-  MIGRATION_BLOCKERS,
-  inventoryEntry,
-  migrationBlockers,
-} from '$lib/ui/workflow/face-migration-inventory';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string): string => readFileSync(resolve(HERE, rel), 'utf8');
 
 const def = toyboxDef as unknown as FaceDefLike & { type: string };
 
-const cardSource = read('ToyboxCard.svelte');
 const consoleSource = read('toybox/ToyboxConsole.svelte');
 const bodySource = read('toybox/ToyboxConsoleBody.svelte');
 const extSource = read('toybox/shell-extension.ts');
@@ -65,7 +57,6 @@ const extSource = read('toybox/shell-extension.ts');
 // Comment-stripped views. Every "the source does NOT contain X" leg below reads
 // one of these, because this module's files are heavily commented and several of
 // those comments quote the very strings being refused.
-const cardCode = stripSourceComments(cardSource);
 const consoleCode = stripSourceComments(consoleSource);
 const bodyCode = stripSourceComments(bodySource);
 
@@ -117,28 +108,27 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
   // The distinction matters because all three promotions landed in one week and
   // the arguments do not transfer. archivist IS a DOM source and needed a
   // status/command registry so its parked card could stay the sole owner.
-  it('toybox is in NEITHER half of HEADLESS_MOUNT_LANE_TYPES', () => {
+  it('toybox is in NEITHER card-owned half', () => {
     expect(DOM_SOURCE_LANE_TYPES.has('toybox')).toBe(false);
     expect(CARD_PRODUCER_LANE_TYPES.has('toybox')).toBe(false);
-    expect(HEADLESS_MOUNT_LANE_TYPES.has('toybox')).toBe(false);
   });
 
-  it('so NO card is mounted anywhere after promotion — there is no headless host', () => {
-    // Both shell kinds, and the two arms that could still produce a mount.
-    for (const kind of ['shell', 'placeholder'] as const) {
-      expect(needsHeadlessSourceMount({ kind, type: 'toybox' })).toBe(false);
-    }
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'toybox', laneOmitsNode: true })).toBe(false);
-    // POSITIVE CONTROL on the same predicate, so a passing row above cannot be
-    // the function having stopped answering: archivist really does need one.
-    expect(needsHeadlessSourceMount({ kind: 'shell', type: 'archivist' })).toBe(true);
+  it('so NO card is mounted anywhere after promotion — the headless host is GONE', () => {
+    // ⚠ This leg used to enumerate `needsHeadlessSourceMount` and carry a
+    // derived positive control, whose own failure message said what to do when
+    // the union emptied: "the host itself should be gone". legacy-removal S1.5
+    // emptied it and deleted the host and the decision, so "no card is mounted
+    // anywhere" is now structural for EVERY module rather than a per-type
+    // answer — the strongest form the claim can take. What remains checkable
+    // here is that the populations that would resurrect a host stay empty.
+    expect(DOM_SOURCE_LANE_TYPES.size).toBe(0);
+    expect(CARD_PRODUCER_LANE_TYPES.size).toBe(0);
   });
 
   it('the card never calls attachExternalSource — its layers reach the engine through the module’s OWN extras', () => {
     // This is the mechanical reason for the membership above, and it is what
     // `dom-source-modules.test.ts` derives the set from. Both files, because
     // the console is where the call would now live.
-    expect(cardCode).not.toContain('attachExternalSource');
     expect(consoleCode).not.toContain('attachExternalSource');
     expect(consoleCode).toContain('attachLayerVideo');
   });
@@ -157,50 +147,43 @@ describe('⚠ THE MEDIA BLOCKER WAS FALSE FOR THIS MODULE — recorderbox’s ar
     expect(EXTRAS_PRODUCER_TYPES.has('toybox')).toBe(true);
   });
 
-  it('the inventory entry is generic-face and names no blocker', () => {
-    const entry = inventoryEntry('toybox');
-    expect(entry?.disposition).toBe('generic-face');
-    expect(migrationBlockers(entry!)).toEqual([]);
-  });
-
-  it('and toybox was the LAST citer, so the blocker registry is now empty', () => {
-    // ⚠ NOT a claim that #1511 shipped — it has not, and
-    // HEADLESS_MOUNT_LANE_TYPES is non-empty right below. The registry is empty
-    // because nothing is WAITING, which is the disposal the inventory's own
-    // anchor gate asks for.
-    expect(Object.keys(MIGRATION_BLOCKERS)).toEqual([]);
-    expect([...HEADLESS_MOUNT_LANE_TYPES].length).toBeGreaterThan(0);
-  });
+  // ⚠ TWO INVENTORY LEGS STOOD HERE AND THEY READ THE MIGRATION INVENTORY.
+  // "the inventory entry is generic-face and names no blocker"
+  // (`inventoryEntry('toybox')` / `migrationBlockers`) and "toybox was the LAST
+  // citer, so the blocker registry is now empty"
+  // (`Object.keys(MIGRATION_BLOCKERS)`). The second one was the interesting
+  // half: it recorded that nothing was waiting on a capability AND that the
+  // capability had genuinely shipped.
+  //
+  // `face-migration-inventory` is MIGRATION machinery — it exists to say which
+  // modules still need a face — and it retires with the fleet it was counting.
+  // What survives is not a smaller version of that claim but a stronger one, and
+  // it is already asserted at the top of this file: toybox is in STRICT_FACES,
+  // which is what actually swaps the surfaces. A module cannot be promoted and
+  // blocked at the same time once there is no un-promoted surface to fall back
+  // to.
 });
 
-describe('⚠ ONE CONSOLE, TWO MOUNTS — the no-drift property, pinned in both directions', () => {
-  it('the CARD and the BODY import the SAME console component', () => {
-    expect(cardCode).toContain("from './toybox/ToyboxConsole.svelte'");
+describe('⚠ ONE CONSOLE — the no-drift property, pinned in both directions', () => {
+  // ⚠ THIS DESCRIBE WAS "ONE CONSOLE, TWO MOUNTS" AND THE SECOND MOUNT IS GONE.
+  // The card was a ~120-line frame around `ToyboxConsole`, and three legs here
+  // read it: that it imported the shared console, that it mounted it with
+  // `layout="card"`, and that it had grown back none of the five zones' own
+  // controls. All three were guarding ONE property — the console is not forked
+  // — and the surviving half of that property is asserted on the body below.
+  //
+  // ⚠ `ToyboxConsoleLayout` STILL DECLARES 'card', and this file is deliberately
+  // NOT the place that changes: the layout union is the console's own prop
+  // contract, and retiring the 'card' arm is a product edit for the removal
+  // commit, not a test rewrite. The leg below reads it as-is so that whichever
+  // way it goes, the test states what the console really offers.
+  it('the BODY imports the SAME console component', () => {
     expect(bodyCode).toContain("from './ToyboxConsole.svelte'");
   });
 
-  it('each host mounts it with its OWN layout, and only those two exist', () => {
-    expect(cardCode).toMatch(/<ToyboxConsole[^>]*layout="card"/s);
+  it('the host mounts it with its OWN layout, out of the console-declared set', () => {
     expect(bodyCode).toMatch(/<ToyboxConsole[^>]*layout="face"/s);
-    expect(consoleCode).toContain("type ToyboxConsoleLayout = 'card' | 'face'");
-  });
-
-  it('the CARD owns NO control — every affordance moved, none was copied', () => {
-    // A representative control from each of the five zones. If any of these
-    // comes back into the card file, the console has been forked.
-    for (const marker of [
-      'toybox-canvas',
-      'toybox-preset-select',
-      'toybox-layer-tabs',
-      'toybox-kind-select',
-      'toybox-graph-svg',
-      'toybox-cv-rows',
-    ]) {
-      expect(cardCode, `${marker} is back in the card — the console has been forked`)
-        .not.toContain(marker);
-    }
-    // …and it calls no graph mutator of its own.
-    expect(cardCode).not.toContain('$lib/graph/toybox-');
+    expect(consoleCode).toMatch(/type ToyboxConsoleLayout = [^\n;]*'face'/);
   });
 
   it('the BODY owns NO control either — it is a host plus the SCREEN switch', () => {
@@ -218,35 +201,44 @@ describe('⚠ ONE CONSOLE, TWO MOUNTS — the no-drift property, pinned in both 
     expect(bodyCode).not.toContain('$lib/graph/toybox-');
   });
 
-  it('EVERY zone is a snippet rendered by BOTH layouts — a zone cannot be host-specific', () => {
+  it('EVERY zone is a snippet rendered by EVERY layout — a zone cannot be host-specific', () => {
     // The structural guarantee behind "capability parity". A zone rendered in
-    // one branch and not the other would be an affordance the promotion
+    // one layout branch and not another would be an affordance the promotion
     // deleted, and this is the leg that says so by name.
+    //
+    // ⚠ THE RENDER COUNT IS DERIVED FROM THE LAYOUT UNION, not typed as `2`.
+    // The literal used to mean "card and face"; deriving it means the leg keeps
+    // meaning "every layout the console declares" whichever arms the union has
+    // when the removal commit is done with it.
+    const layouts = /type ToyboxConsoleLayout = ([^\n;]*)/.exec(consoleCode)?.[1] ?? '';
+    const layoutCount = (layouts.match(/'/g) ?? []).length / 2;
+    expect(layoutCount, 'the console must declare at least one layout').toBeGreaterThan(0);
     const zones = ['screenZone', 'presetZone', 'layerZone', 'combineZone', 'cvZone'];
     for (const z of zones) {
       expect(consoleCode, `${z} is not defined as a snippet`).toContain(`{#snippet ${z}()}`);
       const renders = consoleCode.split(`{@render ${z}()}`).length - 1;
-      expect(renders, `${z} is rendered ${renders}×; it must be rendered by BOTH layouts`).toBe(2);
+      expect(
+        renders,
+        `${z} is rendered ${renders}×; it must be rendered by all ${layoutCount} layout(s)`,
+      ).toBe(layoutCount);
     }
   });
 
-  it('the CARD frame keeps only what is outside the console’s subtree', () => {
-    // Svelte scopes CSS per component, so a rule left behind whose element
-    // moved stops applying SILENTLY. These four are the only rules whose
-    // subject is the card's own frame.
-    expect(cardSource).toContain('.mod-card {');
-    expect(cardSource).toContain('.stripe {');
-    expect(cardSource).toContain(':global(.svelte-flow__node:hover) .mod-card');
-    // …and the pairs that would die if split are all on the console's side.
+  // ⚠ 'the CARD frame keeps only what is outside the console's subtree' STOOD
+  // HERE. Svelte scopes CSS per component, so a rule left behind whose element
+  // moved stops applying SILENTLY, and that leg read the card's four
+  // frame-scoped rules and denied the console's four. The card frame is gone,
+  // so only the positive half has a subject — kept below, because a rule that
+  // travelled the wrong way is still silent.
+  it('the rules whose subject lives in the console are ON the console', () => {
     for (const rule of [
       '.cable-hit:hover + .cable',
       '.graph-wrap {',
       '.input-picker .filename',
       '.preset-section .sync-hint',
     ]) {
-      expect(consoleSource, `${rule} was left behind in the card — its subject moved`).toContain(rule);
-      expect(cardCode, `${rule} is in the card, whose subtree no longer contains its subject`)
-        .not.toContain(rule);
+      expect(consoleSource, `${rule} is not on the component whose subtree holds its subject`)
+        .toContain(rule);
     }
   });
 });
@@ -266,9 +258,14 @@ describe('⚠ THE FACE MOUNTS NO `control-*` TESTID — the faces-parity identit
     ).toBe(paramIds.length);
   });
 
-  it('the override is FACE-ONLY, so the legacy card keeps its shipped ids', () => {
+  it('the override is UNCONDITIONAL — every knob gets the module id', () => {
+    // ⚠ THIS USED TO PIN A TERNARY. The other arm returned `undefined` so a
+    // second host fell through to Knob's own `control-*` default; that host is
+    // gone, and a ternary with one reachable arm is a branch nobody can test.
+    // The property is unchanged and now total: every knob carries the override,
+    // so none of them can emit `control-*` into the faces-parity multiset.
     expect(consoleCode).toMatch(
-      /function knobTestid\([^)]*\)[^{]*\{\s*return layout === 'face' \? `toybox-dial-\$\{paramId\}` : undefined;/,
+      /function knobTestid\([^)]*\): string \{\s*return `toybox-dial-\$\{paramId\}`;/,
     );
   });
 
@@ -291,7 +288,7 @@ describe('⚠ SCREEN ON/OFF — on the shared key, and it keeps the watch mark',
   it('the canvas is the conventional <prefix>-face-canvas and is REMOVED by the collapse', () => {
     // `face-screen-render-suite` looks for that testid, and the suite's whole
     // subject is that the space is RECLAIMED — `hidden` would not do.
-    expect(consoleCode).toContain("'toybox-face-canvas'");
+    expect(consoleCode).toContain('data-testid="toybox-face-canvas"');
     expect(consoleCode).toMatch(/\{#if screenOn\}\s*\{@render screenZone\(\)\}/);
   });
 
@@ -302,9 +299,11 @@ describe('⚠ SCREEN ON/OFF — on the shared key, and it keeps the watch mark',
     // DATAMOSH ops carry history between frames.
     expect(consoleCode).toMatch(/function renewWatchMark\(\)/);
     expect(consoleCode).toMatch(/markWatched\?\.\(id\)/);
-    // …and it is called BEFORE the screen gate, not inside it.
+    // …and it is called BEFORE the screen gate, not inside it. (It used to be
+    // guarded on the host, because a second arrangement did its own blitting;
+    // with one host the guard was a branch that could never be false.)
     expect(consoleCode).toMatch(
-      /if \(layout === 'face'\) renewWatchMark\(\);\s*if \(screenOn\) blitOnce\(\);/,
+      /\n\s*renewWatchMark\(\);\s*\n\s*if \(screenOn\) blitOnce\(\);/,
     );
   });
 
@@ -330,22 +329,26 @@ describe('⚠ THE TAB RAIL IS THE TWO SECTION COLLAPSES, RESTYLED', () => {
     expect(consoleCode).not.toMatch(/data\.faceTab/);
   });
 
-  it('ONE predicate answers "is this section showing" for both hosts', () => {
-    expect(consoleCode).toMatch(
-      /let editorVisible = \$derived\(layout === 'face' \? faceTab === 'combine' : editorOpen\)/,
-    );
-    expect(consoleCode).toMatch(
-      /let cvVisible = \$derived\(layout === 'face' \? faceTab === 'cv' : cvOpen\)/,
-    );
+  it('ONE predicate answers "is this section showing", and the TAB is it', () => {
+    // ⚠ THIS LEG USED TO PIN A TWO-ARMED DERIVATION — `layout === 'face' ?
+    // faceTab === … : <collapse state>` — because the console was arranged by
+    // two hosts and each had its own section control. The second host is gone
+    // with the surface it belonged to, so the tab rail is the ONLY control and
+    // the predicate is the tab. What the leg protects is unchanged: ONE
+    // predicate, so a section cannot be shown by one route and hidden by
+    // another.
+    expect(consoleCode).toMatch(/let editorVisible = \$derived\(faceTab === 'combine'\)/);
+    expect(consoleCode).toMatch(/let cvVisible = \$derived\(faceTab === 'cv'\)/);
+    expect(consoleCode).toMatch(/let presetsVisible = \$derived\(faceTab === 'presets'\)/);
   });
 
-  it('the card KEEPS its ▾ toggles and the face does not double them up', () => {
-    // Capability parity in the direction that is easy to lose: the legacy card
-    // must not lose a control the face happens not to need.
-    expect(consoleCode).toContain('toybox-combine-toggle');
-    expect(consoleCode).toContain('toybox-cv-toggle');
-    expect(consoleCode).toMatch(/\{#if layout === 'card'\}\s*<button[\s\S]{0,400}?toybox-combine-toggle/);
-    expect(consoleCode).toMatch(/\{#if layout === 'card'\}\s*<button[\s\S]{0,400}?toybox-cv-toggle/);
+  it('there is NO second hide-control beside the tab rail', () => {
+    // The other half of the same property, asserted as an absence with a real
+    // subject: two ways to hide one panel is how each strands the other.
+    expect(consoleCode).not.toContain('toybox-combine-toggle');
+    expect(consoleCode).not.toContain('toybox-cv-toggle');
+    expect(consoleCode).not.toMatch(/\beditorOpen\b/);
+    expect(consoleCode).not.toMatch(/\bcvOpen\b/);
   });
 
   it('an INACTIVE tab costs nothing — the scopes stop on the same predicate', () => {

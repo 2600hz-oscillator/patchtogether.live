@@ -14,13 +14,12 @@
   //
   // ⚠ THE PICTURE IS BLITTED FROM THE ENGINE AND THE `<video>` IS NEVER ADOPTED
   // HERE — the TvLibrarianTunerBody constraint, reached for the same two
-  // reasons. A DOM node has exactly one parent, and the node's element may be
-  // adopted by the LEGACY card at the same moment (`?shell=legacy`, or a dock
-  // rail occupant): adopting it here would move it out from under that mount.
-  // `blitOutputForPreview` reads the module's OWN output texture instead, which
-  // is also strictly more honest — the output is what `gain` scales and what
-  // downstream modules receive, and the card's raw-element preview structurally
-  // cannot show `gain` at all.
+  // reasons. A DOM node has exactly one parent, and this one belongs to a
+  // NODE-lifetime owner that keeps it alive with nothing mounted: adopting it
+  // here would move it out from under that owner. `blitOutputForPreview` reads
+  // the module's OWN output texture instead, which is also strictly more honest
+  // — the output is what `gain` scales and what downstream modules receive, and
+  // a raw-element preview structurally cannot show `gain` at all.
   //
   // ⚠ NOT A SECOND OWNER. The stream, its hls.js demuxer, the engine attach,
   // the audio wire, the search catalogue and both trigger polls are all
@@ -152,7 +151,15 @@
   });
 </script>
 
-<div class="pt-browse-body" data-testid="peertube-face-body" data-stream-state={streamState}>
+<!-- State attributes ride the body root (the archivist/varispeed face-body
+     pattern): `data-has-selection` is the same `uuid !== null` fact the card
+     stamps, kept on both surfaces so neither can drift silently. -->
+<div
+  class="pt-browse-body"
+  data-testid="peertube-face-body"
+  data-stream-state={streamState}
+  data-has-selection={uuid !== null}
+>
   <div
     class="preview-wrap"
     data-testid="peertube-face-preview"

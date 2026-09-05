@@ -1028,8 +1028,8 @@ export function audioRecState(
 /** How the pad at flat `index` paints, FROM STORED DATA ALONE.
  *
  *  PURE, and deliberately store-free: a plain function of a plain object, so
- *  both the legacy card and the v2 face project the identical state and neither
- *  needs a browser to test it. See the block comment above for why this is one
+ *  every surface projects the identical state and none of them needs a browser
+ *  to test it. See the block comment above for why this is one
  *  function and not two. */
 export function clipPadState(data: ClipPlayerData | undefined, index: number): ClipPadState {
   const lane = laneOf(index);

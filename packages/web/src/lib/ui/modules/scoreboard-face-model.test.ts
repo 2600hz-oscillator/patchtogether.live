@@ -221,19 +221,34 @@ describe('scoreboard — the body, and the non-finding worth recording', () => {
       ),
     ).replace(/\s+/g, ' ');
 
-  it('⚠ the CARD paints no resting derived text, so the face deletes nothing', () => {
+  it('⚠ the SURFACE paints no resting derived text, so the face deletes nothing', () => {
     // Unlike the other faces in this wave there was nothing to remove. Pinned
     // as a fact rather than left implicit, so a future reader does not go
-    // hunting for a readout that was never there — and so that ADDING one to
-    // the card later is visible here.
-    const card = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), 'ScoreboardCard.svelte'),
-      'utf8',
-    );
-    expect(card.length).toBeGreaterThan(1000);
-    expect(/<button/.test(card), 'the card has no buttons').toBe(false);
-    expect(/<select/.test(card), 'the card has no selects').toBe(false);
-    expect(/class="[^"]*readout/.test(card), 'the card paints no readout element').toBe(false);
+    // hunting for a readout that was never there — and so that ADDING one is
+    // visible here.
+    //
+    // ⚠ THE SUBJECT WAS THE CARD, which was the surface that would have carried
+    // such a readout at the time, and its three denials were "no buttons, no
+    // selects, no readout element". Only the THIRD transfers unchanged: the body
+    // carries the SCREEN toggle, which is the shell's own on/off affordance under
+    // the owner's video-screen ruling rather than a control the module invented,
+    // so denying every `<button>` here would forbid the platform. The claim that
+    // still means what it meant is that no DERIVED TEXT is painted.
+    //
+    // The button is therefore NAMED rather than forbidden, and pinned twice —
+    // that there is exactly ONE, and that it is the screen switch. Either alone
+    // is escapable: a count says nothing about which button it is, and a name
+    // says nothing about a SECOND one appearing beside it.
+    const body = bodySrc();
+    expect(body.length).toBeGreaterThan(500);
+    expect(/class="[^"]*readout/.test(body), 'the body paints no readout element').toBe(false);
+    expect(/<select/.test(body), 'the body has no selects').toBe(false);
+    expect((body.match(/<button/g) ?? []).length, 'the body carries exactly one button').toBe(1);
+    const buttons = [...body.matchAll(/data-testid="([^"]*)"/g)].map((m) => m[1]);
+    expect(
+      buttons.filter((t) => t.endsWith('-screen-toggle')).length,
+      'the only interactive element here is the SCREEN switch',
+    ).toBe(1);
   });
 
   it('the collapsed branch marks the node watched BEFORE it returns', () => {

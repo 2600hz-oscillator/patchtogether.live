@@ -19,7 +19,23 @@
 //
 // Fixtures are SMALL + committed: e2e/fixtures/av-clip.webm + tiny.png.
 
+//
+// ── ⚠ PER-TEST BOUND, NOT A BUDGET RAISE (2026-09-05) ──────────────────────
+//
+// This file timed out on CI inside a plain action — `locator.waitFor`, 30 s (an API the boot-budget note calls out as having NO timeout of its own) — while passing
+// locally in 6.9 s. The action carries no timeout of its own, so it is
+// bounded by the TEST BUDGET and nothing else, and this suite does not
+// override Playwright's 30 s default. That is the documented subject of
+// `SLOW_BOOT_TEST_TIMEOUT_MS`: a BOUND on how long the test waits before
+// calling the app broken, on a spec that ASSERTS nothing about latency.
+//
+// A bound costs wall-clock only when it is exceeded, so a green run is
+// unchanged. Lane COST stays gauged by `--global-timeout`, which is a separate
+// instrument and is untouched here — raising this failure bound cannot hide a
+// cost regression.
+
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 
@@ -33,7 +49,7 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -53,26 +69,66 @@ async function nodeCount(page: Page): Promise<number> {
   });
 }
 
+
+/** Open a videovarispeed node's dock full view — every transport affordance
+ *  (file input, PLAY/LOOP, slots, crop) is its `fullViewBody`; the SAME
+ *  `videovarispeed-*` testids the card carried render there, including the
+ *  state attributes, which live on `videovarispeed-face-body`. Idempotent
+ *  (openFullView de-dupes). */
+async function openVvsPane(page: import('@playwright/test').Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="videovarispeed-face-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
+}
+
+/** Open PICTUREBOX's dock full view (its file input + bank are its
+ *  `fullViewBody`; `data-has-image` lives on `picturebox-assets-body`). */
+async function openPicPane(page: import('@playwright/test').Page, id: string): Promise<void> {
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="picturebox-assets-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
+}
+
 test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
   test('restores the videovarispeed video + picturebox image after a new rack', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const errors = await setup(page);
 
     await spawnPatch(page, [
       { id: VVS_ID, type: 'videovarispeed', domain: 'video', position: { x: 80, y: 80 } },
       { id: PIC_ID, type: 'picturebox', domain: 'video', position: { x: 520, y: 80 } },
     ]);
+    await openVvsPane(page, VVS_ID);
 
-    const vvsCard = page.locator(`.svelte-flow__node[data-id="${VVS_ID}"]`);
-    const picCard = page.locator(`.svelte-flow__node[data-id="${PIC_ID}"]`);
+    const vvsCard = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${VVS_ID}"]`);
 
-    // Load a real video + image via the real card pickers. setInputFiles drives
+    // Load a real video + image via the real dock pickers. setInputFiles drives
     // loadFile → (for VVS now) registers the export resolver + stamps handleId.
     await vvsCard.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
-    await expect(vvsCard.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(vvsCard.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-has-local-file', 'true', { timeout: 10000 },
     );
-    await picCard.locator('[data-testid="picturebox-file-input"]').setInputFiles(IMG_FIXTURE);
-    await expect(picCard.locator('[data-testid="picturebox-card"]')).toHaveAttribute(
+    // Two panes at once — the pic pane joins the vvs pane; scope by node.
+    await openPicPane(page, PIC_ID);
+    const picCard = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${PIC_ID}"]`);
+    await picCard.locator('[data-testid="picturebox-face-file-input"]').setInputFiles(IMG_FIXTURE);
+    // `data-has-image` lives on the face CANVAS (not the body root).
+    await expect(picCard.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
       'data-has-image', 'true', { timeout: 10000 },
     );
 
@@ -120,10 +176,12 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     const afterImage = await imageBytes(page, PIC_ID);
     expect(afterImage, 'restored PICTUREBOX imageBytes must equal the pre-export bytes').toBe(beforeImage);
 
-    // VIDEO: the VVS card re-acquires its file from the seeded blob handle — the
+    // VIDEO: the VVS node re-acquires its file from the seeded blob handle — the
     // actual bytes travelled in the zip + were re-attached (no re-pick). THIS is
-    // the fix: before it, data-has-local-file stayed false on load.
-    await expect(page.locator(`.svelte-flow__node[data-id="${VVS_ID}"] [data-testid="videovarispeed-card"]`))
+    // the fix: before it, data-has-local-file stayed false on load. (The clear
+    // closed the pane with the node; reopen it for the restored node.)
+    await openVvsPane(page, VVS_ID);
+    await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${VVS_ID}"] [data-testid="videovarispeed-face-body"]`))
       .toHaveAttribute('data-has-local-file', 'true', { timeout: 12000 });
 
     expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
@@ -135,20 +193,18 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     await spawnPatch(page, [
       { id: VVS_ID, type: 'videovarispeed', domain: 'video', position: { x: 80, y: 80 } },
     ]);
+    await openVvsPane(page, VVS_ID);
 
-    const vvsCard = page.locator(`.svelte-flow__node[data-id="${VVS_ID}"]`);
+    const vvsCard = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${VVS_ID}"]`);
 
     // Slot 0 via the main picker.
     await vvsCard.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
-    await expect(vvsCard.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(vvsCard.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-has-local-file', 'true', { timeout: 10000 },
     );
 
-    // Open the "Load multiple…" panel (right-click) + load slot 1.
-    // dispatchEvent (not .click) — the videovarispeed card repaints from its
-    // transport loop so Playwright's actionability "stable" check never settles;
-    // a dispatched contextmenu bubbles to onCardContextMenu regardless.
-    await vvsCard.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
+    // The 7-slot bank is ALWAYS-ON in the dock face (the card's right-click
+    // reveal died with the card).
     await expect(vvsCard.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 5000 });
     await vvsCard.locator('[data-testid="videovarispeed-slot-input-1"]').setInputFiles(AV_FIXTURE);
     // Slot 1 holds LOCAL bytes (data-slot-local=true), not just synced meta.
@@ -190,16 +246,17 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
 
     await expect.poll(() => nodeCount(page), { timeout: 8000 }).toBe(1);
 
-    // Slot 0 re-acquires (active slot → data-has-local-file true).
-    await expect(page.locator(`.svelte-flow__node[data-id="${VVS_ID}"] [data-testid="videovarispeed-card"]`))
+    // Slot 0 re-acquires (active slot → data-has-local-file true). (The clear
+    // closed the pane; reopen for the restored node.)
+    await openVvsPane(page, VVS_ID);
+    await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${VVS_ID}"] [data-testid="videovarispeed-face-body"]`))
       .toHaveAttribute('data-has-local-file', 'true', { timeout: 12000 });
 
-    // Slot 1 re-acquires too: open the panel + assert slot 1 holds LOCAL bytes
-    // again (data-slot-local=true), proving the per-slot reload pulled the seeded
-    // blob handle — NOT merely that the synced slotMeta name survived. THIS is
-    // the Fix B repair: before it, slot 1 bytes were never in the bundle.
-    const restored = page.locator(`.svelte-flow__node[data-id="${VVS_ID}"]`);
-    await restored.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
+    // Slot 1 re-acquires too: the always-on bank shows slot 1 holding LOCAL
+    // bytes again (data-slot-local=true), proving the per-slot reload pulled
+    // the seeded blob handle — NOT merely that the synced slotMeta name
+    // survived. THIS is the Fix B repair.
+    const restored = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${VVS_ID}"]`);
     await expect(restored.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 5000 });
     await expect(restored.locator('[data-testid="videovarispeed-slot-1"]'))
       .toHaveAttribute('data-slot-local', 'true', { timeout: 12000 });

@@ -80,8 +80,8 @@
   // ⚠ THE SAME KEYS THE CARD USES, deliberately. A rack saved before this
   // promotion already carries `hideControls` / `resizedWidth` / `resizedHeight`,
   // and reading a different key would silently forget every monitor a player
-  // already had open. It also means the two surfaces agree while both exist: a
-  // monitor opened on `?shell=legacy` is still open on the faceplate.
+  // already had open — the promotion is invisible to a rack that was saved
+  // before it.
   let previewCollapsed = $derived<boolean>(
     (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
   );

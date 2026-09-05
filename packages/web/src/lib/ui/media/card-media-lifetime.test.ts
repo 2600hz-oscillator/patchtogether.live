@@ -12,12 +12,21 @@
 // card-testid grep and the `attachExternalSource` grep in the tree: when the
 // only observable is in the SOURCE, guard the source.
 //
-// DENY BY DEFAULT + AUTO-ENROLLING. The subject set is DERIVED from the card
-// sources, as the UNION of the two private card<->node channels:
-//   * `attachExternalSource(` — the card hands the node a DOM element;
-//   * `read(id, 'extras')`    — the card drives the node's *HandleExtras.
-// Either one means the node's behaviour depends on a card being mounted, which
-// is the precondition for every bug in this class.
+// DENY BY DEFAULT + AUTO-ENROLLING. The subject set is DERIVED from the MODULE
+// SURFACE sources, as the UNION of the two private surface<->node channels:
+//   * `attachExternalSource(` — the surface hands the node a DOM element;
+//   * `read(id, 'extras')`    — the surface drives the node's *HandleExtras.
+// Either one means the node's behaviour depends on a surface being mounted,
+// which is the precondition for every bug in this class.
+//
+// ⚠ THE SUBJECT IS THE MODULE, AND THE WALK IS THE WHOLE SURFACE TREE. Both
+// used to be narrower — one verdict per `*Card.svelte`, resolved by a flat
+// readdir — and the cost is written all over this file: gibribbon, nibbles,
+// doom, toybox and archivist each dropped out of the roster when a face PR
+// moved the extras call into a shared surface, every time with the note "the
+// substance is unchanged", which was true and was the problem. MEASURED at the
+// widening: the flat card-only walk saw TWO files on either channel, the tree
+// walk sees EIGHT.
 //
 // ⚠ IT USED TO DERIVE FROM DOM_SOURCE_LANE_TYPES, AND THAT WAS TOO NARROW.
 // That set is itself sound — dom-source-modules.test.ts holds it exhaustive by
@@ -76,13 +85,13 @@
 // All four now have a NODE-LIFETIME producer ($lib/ui/media/node-extras-registry),
 // so the gate is widened the way its own scope note said it would have to be:
 //
-//   EVERY CARD ON THE EXTRAS CHANNEL MUST DECLARE WHO OWNS ITS PUSH.
+//   EVERY MODULE ON THE EXTRAS CHANNEL MUST DECLARE WHO OWNS ITS PUSH.
 //
-// Deny by default, one entry per CARD, each carrying its `why` in a REQUIRED
-// type field, and each `owner` cross-checked against the artifact that is
-// supposed to implement it. Anchored in BOTH directions: a card on the channel
-// with no entry is RED, and an entry naming a card that is no longer on the
-// channel is RED.
+// Deny by default, one entry per MODULE TYPE, each carrying its `why` in a
+// REQUIRED type field, and each `owner` cross-checked against the artifact that
+// is supposed to implement it. Anchored in BOTH directions: a module on the
+// channel with no entry is RED, and an entry naming a module that is no longer
+// on the channel is RED.
 //
 // ⚠⚠ WHAT THIS GATE STILL CANNOT SEE, stated so nobody reads a green run as
 // more than it is. It reads SOURCE and DECLARATIONS. It cannot observe a pixel,
@@ -102,6 +111,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import '$lib/audio/modules';
 import '$lib/video/modules';
@@ -110,44 +120,158 @@ import '$lib/meta/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
-import { conventionalCardName, type CardDefLike } from '$lib/ui/modules-card-map';
-import {
-  DOM_SOURCE_LANE_TYPES,
-  HEADLESS_MOUNT_LANE_TYPES,
-} from '$lib/ui/workflow/dom-source-modules';
+import { DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import { EXTRAS_PRODUCER_TYPES } from '$lib/ui/media/extras-producers';
 
 const CARD_DIR = fileURLToPath(new URL('../modules/', import.meta.url));
 
-/** Channel 1: the card hands the node a DOM element. */
+/** Channel 1: the surface hands the node a DOM element. */
 const ATTACH_RE = /attachExternalSource\s*\(/;
-/** Channel 2: the card drives the node's *HandleExtras. */
+/** Channel 2: the surface drives the node's *HandleExtras. */
 const EXTRAS_RE = /read\s*\(\s*[^,)]+,\s*['"]extras['"]\s*\)/;
 
-/** Card basenames on either private card<->node channel — the gate's subjects,
- *  derived from the artifact so a new module enrols the day it is written. */
-function subjectCards(): string[] {
-  const out: string[] = [];
-  for (const file of readdirSync(CARD_DIR)) {
-    if (!file.endsWith('Card.svelte')) continue;
-    const code = stripComments(readFileSync(new URL(file, `file://${CARD_DIR}`), 'utf8'));
-    if (ATTACH_RE.test(code) || EXTRAS_RE.test(code)) out.push(file.replace(/\.svelte$/, ''));
+/**
+ * Every module-owned source this gate can judge: the flat `lib/ui/modules/*`
+ * files AND one level of module directory beneath them, `.svelte` and plain
+ * `.ts` alike.
+ *
+ * ⚠ THE WALK USED TO BE FLAT AND `*Card.svelte`-FILTERED, AND THIS FILE'S OWN
+ * COMMENTS ARE THE EVIDENCE AGAINST THAT: five modules — gibribbon, nibbles,
+ * doom, toybox, archivist — left the EXTRAS_OWNERS roster not because their
+ * behaviour changed but because a face PR moved the `read(…, 'extras')` call
+ * out of a `*Card.svelte` and into a shared surface the scan could not see.
+ * Each departure was written up as "the substance is unchanged", which is true
+ * and is exactly the problem: the gate's subject set emptied for that module
+ * while the hazard stayed. MEASURED at this widening: the flat card-only walk
+ * saw TWO files on either channel; the tree walk sees EIGHT, and six of them
+ * are surfaces that no card-shaped scan could ever have reached.
+ *
+ * One level is deliberate rather than a full recursive walk: it is the depth
+ * the shell-extension glob itself loads from, so the subject set is the same
+ * population the shell can actually mount — the identical boundary, and the
+ * identical reasoning, as `card-preview-gate`'s walk.
+ */
+let SOURCE_CACHE: Array<{ name: string; code: string }> | null = null;
+function moduleSourceFiles(): Array<{ name: string; code: string }> {
+  // MEMOISED, and not as an optimisation for its own sake: the walk reads ~660
+  // files through a character-by-character comment stripper, and the teardown
+  // leg asks for the channel members once PER SUBJECT MODULE. Re-walking per
+  // question took the leg from 2.7 s to over the 5 s default timeout — a test
+  // that fails on wall clock rather than on its claim, which is the one failure
+  // mode a source gate must never have.
+  if (SOURCE_CACHE) return SOURCE_CACHE;
+  const wanted = (f: string): boolean =>
+    f.endsWith('.svelte') || (f.endsWith('.ts') && !f.endsWith('.test.ts'));
+  const out: Array<{ name: string; code: string }> = [];
+  for (const entry of readdirSync(CARD_DIR, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const inner of readdirSync(join(CARD_DIR, entry.name))) {
+        if (!wanted(inner)) continue;
+        const rel = `${entry.name}/${inner}`;
+        out.push({ name: rel, code: stripComments(readFileSync(join(CARD_DIR, rel), 'utf8')) });
+      }
+      continue;
+    }
+    if (!wanted(entry.name)) continue;
+    out.push({
+      name: entry.name,
+      code: stripComments(readFileSync(join(CARD_DIR, entry.name), 'utf8')),
+    });
   }
-  return out.sort();
+  SOURCE_CACHE = out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return SOURCE_CACHE;
 }
 
-/** Card basenames on the EXTRAS channel specifically — the subjects of the
- *  never-INITIALISES half of this gate (#1720). A strict subset of
- *  `subjectCards()`; the attach-only cards (cameraInput, frametable, loopback,
- *  videocube) are judged by the teardown patterns and owe no owner entry. */
-function extrasChannelCards(): string[] {
-  const out: string[] = [];
-  for (const file of readdirSync(CARD_DIR)) {
-    if (!file.endsWith('Card.svelte')) continue;
-    const code = stripComments(readFileSync(new URL(file, `file://${CARD_DIR}`), 'utf8'));
-    if (EXTRAS_RE.test(code)) out.push(file.replace(/\.svelte$/, ''));
+/** Every registered module type, all three domains. */
+let TYPES_CACHE: Set<string> | null = null;
+function registeredTypes(): Set<string> {
+  TYPES_CACHE ??= new Set([
+    ...listModuleDefs().map((d) => d.type),
+    ...listVideoModuleDefs().map((d) => d.type),
+    ...listMetaModuleDefs().map((d) => d.type),
+  ]);
+  return TYPES_CACHE;
+}
+
+/**
+ * The module TYPE that owns a surface file, or null.
+ *
+ * ⚠ ATTRIBUTION IS BY DIRECTORY, which is the shell-extension glob's own
+ * convention (`modules/<id>/…`, the same string a def declares as
+ * `face.extension`) — so the verdict below is about the MODULE rather than
+ * about whichever file currently happens to carry the call. That is the whole
+ * repair: a roster keyed by filename lost an entry every time a surface moved,
+ * and none of those moves changed who pushes when nothing is mounted.
+ *
+ * Two FLAT branches exist beside it, both derived from the registry rather than
+ * from a second hand-maintained map:
+ *   * a `<Type>Card.svelte` resolves to the registered type whose id matches
+ *     its basename, case-insensitively. TRANSITIONAL — it exists only while the
+ *     legacy fleet does.
+ *   * a `<type>-<what>.ts` action seam resolves to the LONGEST registered type
+ *     its basename is prefixed by. This is the repo's own flat-seam convention
+ *     (`frametable-file-actions.ts`, `videocube-slot-actions.ts`,
+ *     `nibbles-game-actions.ts` — the last of which is a file this gate's own
+ *     comments record losing a module to), and longest-match is what keeps
+ *     `videocube-…` from being read as `videobox`'s or `videoOut`'s.
+ */
+function typeForSurface(name: string, types: ReadonlySet<string>): string | null {
+  const slash = name.indexOf('/');
+  if (slash !== -1) {
+    const dir = name.slice(0, slash);
+    return types.has(dir) ? dir : null;
   }
-  return out.sort();
+  const card = /^(.*)Card\.svelte$/.exec(name);
+  if (card) {
+    const base = card[1]!.toLowerCase();
+    for (const t of types) if (t.toLowerCase() === base) return t;
+    return null;
+  }
+  const stem = name.replace(/\.(svelte|ts)$/, '');
+  let best: string | null = null;
+  for (const t of types) {
+    if (stem !== t && !stem.startsWith(`${t}-`)) continue;
+    if (!best || t.length > best.length) best = t;
+  }
+  return best;
+}
+
+interface ChannelHit {
+  readonly file: string;
+  readonly type: string | null;
+  readonly extras: boolean;
+}
+
+/** Files on either private surface<->node channel, with the module each one
+ *  belongs to — the gate's subjects, derived from the artifact so a new module
+ *  enrols the day it is written. */
+let HITS_CACHE: ChannelHit[] | null = null;
+function channelHits(): ChannelHit[] {
+  if (HITS_CACHE) return HITS_CACHE;
+  const types = registeredTypes();
+  const out: ChannelHit[] = [];
+  for (const { name, code } of moduleSourceFiles()) {
+    const extras = EXTRAS_RE.test(code);
+    if (!extras && !ATTACH_RE.test(code)) continue;
+    out.push({ file: name, type: typeForSurface(name, types), extras });
+  }
+  HITS_CACHE = out;
+  return out;
+}
+
+/** Module types on either channel. */
+function subjectTypes(): string[] {
+  return [...new Set(channelHits().map((h) => h.type).filter((t): t is string => !!t))].sort();
+}
+
+/** Module types on the EXTRAS channel specifically — the subjects of the
+ *  never-INITIALISES half of this gate (#1720). A subset of
+ *  `subjectTypes()`; the attach-only modules are judged by the teardown
+ *  patterns and owe no owner entry. */
+function extrasChannelTypes(): string[] {
+  return [
+    ...new Set(channelHits().filter((h) => h.extras).map((h) => h.type).filter((t): t is string => !!t)),
+  ].sort();
 }
 
 /**
@@ -159,9 +283,12 @@ type ExtrasOwner =
   /** $lib/ui/media/node-extras-registry reproduces the push from persisted
    *  `node.data`. Cross-checked: the type must be in EXTRAS_PRODUCER_TYPES. */
   | 'node-lifetime-producer'
-  /** <HeadlessSourceHost> keeps the real card alive off-screen. Cross-checked:
-   *  the type must be in HEADLESS_MOUNT_LANE_TYPES. */
-  | 'headless-card-mount'
+  // ⚠ `'headless-card-mount'` WAS HERE AND IS RETIRED (legacy-removal S1.5)
+  // with `<HeadlessSourceHost>` itself: no entry declared it any more (the two
+  // prose notes below record the last ones leaving), and a verdict whose
+  // cross-check set is retired would be undeclarable anyway. If a card ever
+  // regrows an extras push the honest owners are the checkable
+  // 'node-lifetime-producer' or the trusted 'module-renders-itself'.
   /** The module's own draw is unconditional and the extras channel carries only
    *  HUMAN INPUT (keys, a boot gesture, a reset) — there is nothing a registry
    *  could reproduce, and "no picture until someone plays it" is the designed
@@ -178,193 +305,119 @@ interface ExtrasOwnerVerdict {
 }
 
 /**
- * DENY BY DEFAULT, one entry per CARD on the extras channel (#1720). A card on
- * the channel with no entry FAILS; an entry naming a card that is no longer on
- * the channel FAILS. Both directions asserted below, so this cannot rot into a
- * list of names nobody re-reads.
+ * DENY BY DEFAULT, one entry per MODULE TYPE on the extras channel (#1720). A
+ * module on the channel with no entry FAILS; an entry naming a module that is
+ * no longer on the channel FAILS. Both directions asserted below, so this
+ * cannot rot into a list of names nobody re-reads.
+ *
+ * ⚠ IT IS KEYED BY MODULE, NOT BY FILE, AND THAT IS THE REPAIR THIS ROSTER
+ * NEEDED. It used to hold one entry per `*Card.svelte`, and five modules left
+ * it — gibribbon, nibbles, doom, toybox, archivist — every one of them because
+ * a face PR moved the `read(…, 'extras')` call into a shared surface the
+ * card-shaped scan could not see. Each departure was recorded as "the substance
+ * is unchanged", which was true and was the problem: the verdict is a claim
+ * about WHO PUSHES WHEN NOTHING IS MOUNTED, which is a property of the module,
+ * and keying it on whichever file currently carries the call meant the roster
+ * emptied every time a surface moved while the hazard stayed exactly where it
+ * was. Four of the five are back below, under their own type ids, carrying the
+ * verdicts this file had already written for them.
+ *
+ * ⚠ ARCHIVIST IS THE ONE THAT IS GENUINELY GONE, and it left for the opposite
+ * reason: the element, the attach and the extras reads all moved to
+ * `$lib/ui/media/node-archivist-source-registry`, which holds them on GRAPH
+ * lifetime. No archivist surface reads extras at all any more, so the scan
+ * correctly finds the module off the channel — the owner it named does not
+ * exist, rather than having moved to a file the scan cannot see.
+ *
+ * ⚠ TEXTMARQUEE and PICTUREBOX are deliberately ABSENT for the same kind of
+ * reason: their push paths were DELETED (not duplicated) when the producer took
+ * over, so no textmarquee or picturebox surface touches `read(id, 'extras')`
+ * and neither module is on this channel. The anchoring leg below is what proved
+ * it — it reddened on exactly those two the first time it ran. Their producers
+ * are anchored instead by `EXTRAS_PRODUCERS`, which is the artifact that
+ * actually implements them.
+ *
+ * ⚠ VIDEOBOX, VIDEOVARISPEED, PEERTUBE and TVLIBRARIAN all left by a THIRD
+ * route worth keeping distinct from the two above: each carried
+ * `owner: 'headless-card-mount'` — "the DOM-source rule already keeps this card
+ * mounted off-screen" — and that verdict was true for the LANE and false
+ * everywhere else, since a collapsed-group or canvas-hidden node had no card in
+ * any surface and no host either, i.e. the mount the verdict named as the owner
+ * did not exist. Their elements and loops moved to
+ * `$lib/ui/media/node-video-source-registry` / `node-hls-source-registry` on
+ * graph lifetime, and each surface's `getExtras()` helper was DELETED rather
+ * than left unused — which is load-bearing in the way this file cares about: a
+ * surface that cannot reach the handle cannot tear it down, so the defect
+ * becomes unspellable rather than merely absent.
  */
-//
-// ⚠ TEXTMARQUEE and PICTUREBOX are deliberately ABSENT, and their absence is
-// the fix rather than an oversight: their card-side push paths were DELETED
-// (not duplicated) when the producer took over, so neither card touches
-// `read(id, 'extras')` any more and neither is on this channel at all. The
-// anchoring leg below is what proved it — it reddened on exactly those two the
-// first time it ran. Their producers are anchored instead by
-// `EXTRAS_PRODUCERS` (see the producer-anchoring leg), which is the artifact
-// that actually implements them.
-//
-// ⚠ VIDEOBOX (P1) AND VIDEOVARISPEED (P2) ARRIVED FROM THE OTHER DIRECTION
-// (LEG-02, #1511). The other two never had a media element; videobox did, and its
-// entry read `owner: 'headless-card-mount'` — "the DOM-source rule already keeps
-// this card mounted off-screen". That verdict was TRUE and is now false: the
-// element's attach, its audio wiring and its three loops moved to
-// `$lib/ui/media/node-video-source-registry` on graph lifetime, so nothing keeps
-// a videobox card alive anywhere and nothing needs to.
-//
-// The card's `getExtras()` helper was DELETED rather than left unused, which is
-// what took it off this channel — and that deletion is load-bearing in the way
-// this file cares about: a card that cannot reach the handle cannot tear it
-// down, so the defect this gate exists for becomes unspellable rather than
-// merely absent. This leg reddened on exactly that entry, which is the anchoring
-// working as designed: the verdict could not quietly outlive the mechanism it
-// described.
-//
-// ⚠ PEERTUBE AND TVLIBRARIAN LEFT THE SAME WAY IN P3, and their departure is
-// worth reading as a pattern rather than two more names. Both entries said
-// `owner: 'headless-card-mount'` — "the DOM-source rule already keeps this card
-// mounted off-screen" — and that verdict was true for the LANE and false
-// everywhere else: `needsHeadlessSourceMount` returns FALSE on the
-// `laneOmitsNode` arm for a non-producer, so a collapsed-group or canvas-hidden
-// tuner had no card in any surface and no host either, i.e. the very mount this
-// verdict named as the owner did not exist. `getExtras()` was DELETED from both
-// cards rather than left unused, which is what took them off this channel;
-// `$lib/ui/media/node-hls-source-registry` reaches the handle now, on graph
-// lifetime.
 const EXTRAS_OWNERS: Readonly<Record<string, ExtrasOwnerVerdict>> = {
-  PainterCard: {
+  painter: {
     owner: 'node-lifetime-producer',
     why: "the picture is the deterministic replay of node.data.ops; unmounted it read a blank white page (meanRGB 255,255,255) against the drawing's 255,0,0",
   },
-  // ⚠ ToyboxCard LEFT THIS ROSTER 2026-09-02 (the face promotion), through the
-  // SAME scan boundary GibribbonCard and NibblesCard left by — the THIRD time a
-  // face PR has moved a card's `read(…, 'extras')` call out of a `*Card.svelte`
-  // and silently emptied this gate's subject set for that module. Here the card
-  // became a ~120-line frame around the shared
-  // `$lib/ui/modules/toybox/ToyboxConsole.svelte`, which the legacy card and the
-  // faceplate body both mount, and the extras call went with the console — a
-  // file this `*Card.svelte`-only scan cannot see. Its verdict read:
-  // "node-lifetime-producer — an IMAGE layer is node.data.layers[i].imageBytes
-  // decoded — picturebox wearing a layer index; the VIDEO half is a local file
-  // no reload can reconstruct and its attach already survives an unmount".
-  //
-  // THE SUBSTANCE IS UNCHANGED AND NOW STRONGER, which is why this is a
-  // deletion and not a move. Both halves of that verdict are still true and
-  // still gated elsewhere: the image half is a `node-extras-registry` producer
-  // (toybox is in `EXTRAS_PRODUCER_TYPES`, anchored by this file's own
-  // NODE-LIFETIME PRODUCER leg), so an image layer is reproduced from
-  // `node.data` with no surface mounted at all; and the video half's elements,
-  // object-URLs and camera tracks live in `$lib/ui/media/node-media-registry`
-  // on GRAPH lifetime since #1589, with `nodeMedia.sweep(...)` from Canvas as
-  // the only teardown. What promotion changed is only WHERE the console lives.
-  //
-  // ⚠ AND THE never-INITIALISES half (#1720) does not apply either, for a
-  // structural reason rather than a careful one: `toybox.ts`'s factory renders
-  // all four layers from `node.data` every frame — shader, mesh and image
-  // layers all come back from the graph — so a rack reopened with no dock ever
-  // opened paints its patch. What crosses the extras channel is the two things
-  // the GRAPH genuinely cannot hold: a decoded ImageBitmap (a cache of bytes
-  // that ARE in the graph) and a local `<video>` element (a file no reload can
-  // reconstruct, whose absence the console reports in words — "not loaded in
-  // this session — re-pick the file").
-  ArchivistCard: {
-    owner: 'headless-card-mount',
-    why: 'the extras channel rides alongside a card-owned DOM media element the engine holds via attachExternalSource, so the card must stay mounted for the SOURCE regardless',
-  },
-  BloodCard: {
+  blood: {
     owner: 'module-renders-itself',
     why: 'the extras channel carries a WASM boot gesture and raw Build scancodes; blood.ts runs the frame and uploads its own framebuffer, and paints a deliberate "alive, no signal" dark-red scanline idle field until a human plays it',
   },
-  // ⚠ DoomCard LEFT THIS ROSTER 2026-09-02 (the face promotion), through the
-  // SAME `*Card.svelte`-only scan boundary GibribbonCard and NibblesCard left by
-  // — the THIRD time a face PR has moved a card's `read(…, 'extras')` call out
-  // of a `*Card.svelte` and silently emptied this gate's subject set for that
-  // module, and by now the repetition is the finding rather than the footnote.
-  // Here the call moved into `$lib/ui/modules/doom/DoomSurface.svelte`, the ONE
-  // surface component the legacy card and the faceplate body both mount, so the
-  // scan can no longer see it. Its verdict read:
+  // ⚠ THE VERDICT BELOW IS THIS FILE'S OWN, RE-ATTACHED — not a new decision
+  // about DOOM. It was written for `DoomCard` and recorded verbatim in this
+  // file when the card left the roster; the widened scan finds the same
+  // `read(…, 'extras')` call in `doom/DoomSurface.svelte`, the ONE surface
+  // component both the legacy card and the faceplate body mount, so the module
+  // is on the channel again and owes the entry it always owed.
   //
-  //     DoomCard: { owner: 'module-renders-itself', why: 'the LIVE half
-  //     (session, netcode, lockstep, pump) is already node-owned by
-  //     node-doom-session-registry (#1590); what still crosses extras is a user
-  //     boot gesture and keypresses, and doom.ts paints its own "alive but no
-  //     signal" idle field' }
-  //
-  // The SUBSTANCE of that verdict is unchanged and is now STRONGER, because the
-  // promotion is what made the node-ownership load-bearing rather than merely
-  // true. `nodeDoomSession` (#1590) already owned the netcode, the lockstep
-  // transport, the launch state and the frame pump, and it keeps them running
-  // with NO card and NO face mounted — that registry exists precisely because a
-  // card unmount used to starve every peer's lockstep barrier. What crosses the
-  // extras channel is still only human input and one boot gesture, and
-  // `doom.ts` still paints its own idle field from `surface.draw` whether or not
-  // anything is watching (it is a pull ROOT unconditionally —
-  // `VideoEngine.isPullExempt` names DOOM in its own comment, via a non-empty
-  // `audioSources` map). So there is nothing here a registry could reproduce and
-  // nothing an unmount can tear down — and the surface's `onDestroy` still,
-  // deliberately, tears down NO session state.
-  // ⚠ GibribbonCard LEFT THIS ROSTER 2026-08-29 (the rewrite), and the reason
-  // is a scan-boundary fact worth recording: the card became a thin bridge
-  // mounting the SHARED $lib/ui/modules/gibribbon/GibribbonScreen.svelte (one
-  // playfield for the card AND the dock face body), and the `read(…,'extras')`
-  // call moved into that component — which this file's `*Card.svelte`-only
-  // scan cannot see (the same structural boundary dom-source-modules.test.ts
-  // declares for its own `.svelte` subtree). The SUBSTANCE of the old verdict
-  // is unchanged and now stronger: the rewritten module renders itself
-  // unconditionally (the game steps on the shared scheduler clock in the
-  // FACTORY), and the extras channel carries only human input (keyboard
-  // presses, a reset) — there is nothing a registry could reproduce and
-  // nothing an unmount can tear down.
-  // ⚠ NibblesCard LEFT THIS ROSTER 2026-09-02 (the face promotion), through the
-  // SAME scan boundary GibribbonCard left by one entry up — and the repetition
-  // is the point: this is now the second time a face PR has moved a card's
-  // `read(…, 'extras')` call out of a `*Card.svelte` and silently emptied the
-  // gate's own subject set for that module. Here the call moved into the plain
-  // `$lib/ui/modules/nibbles-game-actions.ts`, the ONE gesture seam the legacy
-  // card, the faceplate body and the shell's RESET action cell all share, so
-  // the `*Card.svelte`-only scan can no longer see it.
-  //
-  // The SUBSTANCE of the old verdict is unchanged and stronger. `nibbles.ts`
-  // paints and uploads a frame BEFORE any card exists (`paintFrame();
-  // uploadFramebuffer();` run at factory construction) and ticks its own clock
-  // inside `surface.draw`, with a built-in greedy bot under AUTO; what crosses
-  // the extras channel is human input only — four arrow directions and a reset
-  // — so there is nothing a registry could reproduce and nothing an unmount can
-  // tear down. The card has no `onDestroy` teardown of node state at all: it
-  // clears its own `setInterval` and nothing else.
-  //
-  // ⚠ AND THE OPPOSITE FAILURE MODE (a module that never INITIALISES, the
-  // #1720 half this file was widened for) does not apply either, for a reason
-  // that is structural rather than careful: the module is PULL-EXEMPT via its
-  // non-empty `audioSources` map (`VideoEngine.isPullExempt` names NIBBLES in
-  // its own comment), so it renders with nothing mounted and nothing watching.
+  // The substance is unchanged and is now STRONGER, because the promotion made
+  // the node-ownership load-bearing rather than merely true. `nodeDoomSession`
+  // (#1590) already owned the netcode, the lockstep transport, the launch state
+  // and the frame pump, and keeps them running with NO card and NO face mounted
+  // — that registry exists precisely because a card unmount used to starve
+  // every peer's lockstep barrier. `doom.ts` still paints its own idle field
+  // from `surface.draw` whether or not anything is watching (it is a pull ROOT
+  // unconditionally — `VideoEngine.isPullExempt` names DOOM in its own
+  // comment, via a non-empty `audioSources` map), and the surface's `onDestroy`
+  // still, deliberately, tears down NO session state.
+  doom: {
+    owner: 'module-renders-itself',
+    why: 'the LIVE half (session, netcode, lockstep, pump) is already node-owned by node-doom-session-registry (#1590); what still crosses extras is a user boot gesture and keypresses, and doom.ts paints its own "alive but no signal" idle field',
+  },
+  gibribbon: {
+    owner: 'module-renders-itself',
+    why: 'the rewritten module renders itself unconditionally — the game steps on the shared scheduler clock in the FACTORY — and the extras channel carries only human input (keyboard presses, a reset), so there is nothing a registry could reproduce and nothing an unmount can tear down',
+  },
+  nibbles: {
+    owner: 'module-renders-itself',
+    why: 'nibbles.ts paints and uploads a frame BEFORE any surface exists (paintFrame(); uploadFramebuffer(); run at factory construction) and ticks its own clock inside surface.draw, with a greedy bot under AUTO; extras carries human input only — four arrow directions and a reset — and the module is PULL-EXEMPT via its non-empty audioSources map, so it renders with nothing mounted and nothing watching',
+  },
+  toybox: {
+    owner: 'node-lifetime-producer',
+    why: 'an IMAGE layer is node.data.layers[i].imageBytes decoded — picturebox wearing a layer index — and toybox.ts renders all four layers from node.data every frame; the VIDEO half is a local file no reload can reconstruct, whose elements and object-URLs live in node-media-registry on GRAPH lifetime since #1589 and whose absence the console reports in words',
+  },
 };
 
-/** The module TYPE a card basename resolves to, or null. */
-function typeForCard(base: string): string | null {
-  for (const [type, cardBase] of typeToCardName()) if (cardBase === base) return type;
-  return null;
-}
-
-/** The owner verdicts a card FAILS, given its declared entry. Exported shape is
- *  a list of strings so both the real check and the negative controls call the
- *  SAME predicate. */
-function ownerOffenders(cards: readonly string[]): string[] {
+/** The owner verdicts a module TYPE fails, given its declared entry. Exported
+ *  shape is a list of strings so both the real check and the negative controls
+ *  call the SAME predicate. */
+function ownerOffenders(types: readonly string[]): string[] {
+  const registered = registeredTypes();
   const out: string[] = [];
-  for (const base of cards) {
-    const verdict = EXTRAS_OWNERS[base];
+  for (const type of types) {
+    const verdict = EXTRAS_OWNERS[type];
     if (!verdict) {
       out.push(
-        `${base}: on the EXTRAS channel with no declared owner. Add an EXTRAS_OWNERS entry ` +
-          "saying who pushes when no card is mounted — a node-lifetime producer, a headless " +
-          'card mount, or a module that renders itself.',
+        `${type}: on the EXTRAS channel with no declared owner. Add an EXTRAS_OWNERS entry ` +
+          'saying who pushes when no surface is mounted — a node-lifetime producer, or a ' +
+          'module that renders itself.',
       );
       continue;
     }
-    const type = typeForCard(base);
-    if (!type) {
-      out.push(`${base}: declares an extras owner but resolves to no registered module def`);
+    if (!registered.has(type)) {
+      out.push(`${type}: declares an extras owner but resolves to no registered module def`);
       continue;
     }
     if (verdict.owner === 'node-lifetime-producer' && !EXTRAS_PRODUCER_TYPES.has(type)) {
       out.push(
-        `${base}: declares 'node-lifetime-producer' but '${type}' has no entry in ` +
+        `${type}: declares 'node-lifetime-producer' but it has no entry in ` +
           'EXTRAS_PRODUCERS ($lib/ui/media/extras-producers)',
-      );
-    }
-    if (verdict.owner === 'headless-card-mount' && !HEADLESS_MOUNT_LANE_TYPES.has(type)) {
-      out.push(
-        `${base}: declares 'headless-card-mount' but '${type}' is not in ` +
-          'HEADLESS_MOUNT_LANE_TYPES, so nothing keeps its card alive',
       );
     }
   }
@@ -383,19 +436,6 @@ function ownerOffenders(cards: readonly string[]): string[] {
 // and leave no replacement counter"). An empty allowlist kept around for the
 // next occupant is an invitation, and a reviewer cannot tell an empty one from a
 // forgotten one.
-
-/** module type id -> card component basename (explicit `def.card` wins, else
- *  the PascalCase convention) — the same resolution buildNodeTypes uses. */
-function typeToCardName(): Map<string, string> {
-  const defs: CardDefLike[] = [
-    ...(listModuleDefs() as unknown as CardDefLike[]),
-    ...(listVideoModuleDefs() as unknown as CardDefLike[]),
-    ...(listMetaModuleDefs() as unknown as CardDefLike[]),
-  ];
-  const map = new Map<string, string>();
-  for (const def of defs) map.set(def.type, def.card ?? conventionalCardName(def.type));
-  return map;
-}
 
 /**
  * Strip line + block comments, leaving string and template-literal contents
@@ -502,53 +542,81 @@ const FORBIDDEN: { name: string; re: RegExp; why: string }[] = [
   },
 ];
 
-/** The FORBIDDEN pattern names a card trips in its unmount path. */
-function violationsFor(cardBase: string): string[] {
-  const src = readFileSync(new URL(`${cardBase}.svelte`, `file://${CARD_DIR}`), 'utf8');
+/** The FORBIDDEN pattern names a MODULE trips in an unmount path — read across
+ *  every one of its surfaces that is on a channel, so a teardown is caught
+ *  wherever the module happens to keep it. */
+function violationsFor(type: string): string[] {
+  const files = channelHits().filter((h) => h.type === type);
   const hits = new Set<string>();
-  for (const body of unmountBodies(src)) {
-    for (const f of FORBIDDEN) if (f.re.test(body)) hits.add(f.name);
+  for (const { file } of files) {
+    const src = readFileSync(join(CARD_DIR, file), 'utf8');
+    for (const body of unmountBodies(src)) {
+      for (const f of FORBIDDEN) if (f.re.test(body)) hits.add(`${file}: ${f.name}`);
+    }
   }
   return [...hits];
 }
 
-describe('cards on a private node channel must not tear their media down on UNMOUNT', () => {
-  const subjects = subjectCards();
+describe('surfaces on a private node channel must not tear their media down on UNMOUNT', () => {
+  const subjects = subjectTypes();
 
-  it('derives a non-trivial subject set from BOTH card<->node channels', () => {
+  it('derives a non-trivial subject set from BOTH surface<->node channels', () => {
     // A broken predicate resolves nothing and must not pass vacuously.
-    expect(subjects.length, 'no subject cards resolved — the predicates are broken').toBeGreaterThan(0);
+    expect(subjects.length, 'no subject modules resolved — the predicates are broken')
+      .toBeGreaterThan(0);
+    // …and the WALK itself reaches both levels, which is the half that emptied
+    // five times without anything saying so. A flat-only walk would still
+    // resolve subjects (the legacy cards are flat) and still be blind to every
+    // shared surface a face PR moves the call into.
+    const onChannel = channelHits().map((h) => h.file);
+    expect(
+      onChannel.filter((f) => f.includes('/')).length,
+      'NOT ONE module-subdirectory surface is on either channel — the second level of the walk ' +
+        'has stopped resolving, which is exactly how gibribbon, nibbles, doom, toybox and ' +
+        'archivist each fell out of this gate one at a time',
+    ).toBeGreaterThan(0);
     // Superset check against the (sound but narrower) attachExternalSource set:
-    // every DOM-source type's card must appear, or the union has regressed.
-    const byType = typeToCardName();
-    const missing = [...DOM_SOURCE_LANE_TYPES]
-      .map((t) => byType.get(t))
-      .filter((base): base is string => !!base && !subjects.includes(base));
-    expect(missing, `DOM_SOURCE_LANE_TYPES cards absent from the union: ${missing.join(', ')}`)
+    // every DOM-source type must appear, or the union has regressed.
+    const missing = [...DOM_SOURCE_LANE_TYPES].filter((t) => !subjects.includes(t));
+    expect(missing, `DOM_SOURCE_LANE_TYPES modules absent from the union: ${missing.join(', ')}`)
       .toEqual([]);
   });
 
-  it('every card on the EXTRAS channel declares WHO owns its push (#1720)', () => {
-    // THE NEVER-INITIALISES HALF. Deny by default: a card that drives a node's
-    // *HandleExtras must say what pushes when NO card is mounted, because under
-    // the faceplate shell that is the COMMON case, not an edge case. Two of the
-    // three verdicts are cross-checked against the artifact that implements
-    // them, so a declaration cannot outlive its mechanism.
-    const cards = extrasChannelCards();
-    expect(cards.length, 'no card resolved on the extras channel — the predicate is broken')
-      .toBeGreaterThan(0);
-    expect(ownerOffenders(cards)).toEqual([]);
+  it('every file on a channel is ATTRIBUTABLE to a registered module (fail-closed)', () => {
+    // A surface whose owning module cannot be resolved is invisible to the
+    // owner verdict below — it would carry a live extras push that no entry has
+    // to account for. Report it rather than skip it.
+    const orphans = channelHits().filter((h) => !h.type).map((h) => h.file);
+    expect(
+      orphans,
+      'These files are on a private surface<->node channel but no registered module owns them:\n' +
+        `  ${orphans.join('\n  ')}\n` +
+        "Put the file in its module's own directory (lib/ui/modules/<type>/), which is the " +
+        'convention the shell-extension glob and `face.extension` already use.',
+    ).toEqual([]);
   });
 
-  it('an EXTRAS_OWNERS entry naming a card NOT on the channel is RED (anchored)', () => {
+  it('every module on the EXTRAS channel declares WHO owns its push (#1720)', () => {
+    // THE NEVER-INITIALISES HALF. Deny by default: a module whose surface drives
+    // its node's *HandleExtras must say what pushes when NO surface is mounted,
+    // because under the faceplate shell that is the COMMON case, not an edge
+    // case. One of the two verdicts is cross-checked against the artifact that
+    // implements it, so a declaration cannot outlive its mechanism.
+    const types = extrasChannelTypes();
+    expect(types.length, 'no module resolved on the extras channel — the predicate is broken')
+      .toBeGreaterThan(0);
+    expect(ownerOffenders(types)).toEqual([]);
+  });
+
+  it('an EXTRAS_OWNERS entry naming a module NOT on the channel is RED (anchored)', () => {
     // The other direction, and the one a list of names always rots in: an entry
-    // for a card that was renamed, deleted, or has stopped using extras reads as
-    // coverage while covering nothing. Anchored to the ARTIFACT.
-    const onChannel = new Set(extrasChannelCards());
-    const stale = Object.keys(EXTRAS_OWNERS).filter((base) => !onChannel.has(base));
+    // for a module that was renamed, deleted, or has stopped using extras reads
+    // as coverage while covering nothing. Anchored to the ARTIFACT.
+    const onChannel = new Set(extrasChannelTypes());
+    const stale = Object.keys(EXTRAS_OWNERS).filter((type) => !onChannel.has(type));
     expect(
       stale,
-      `EXTRAS_OWNERS entr(ies) for card(s) no longer on the extras channel: ${stale.join(', ')}`,
+      `EXTRAS_OWNERS entr(ies) for module(s) no longer on the extras channel: ${stale.join(', ')}`,
     ).toEqual([]);
   });
 
@@ -583,14 +651,15 @@ describe('cards on a private node channel must not tear their media down on UNMO
     expect(thin, `EXTRAS_OWNERS entr(ies) with a stub reason: ${thin.join(', ')}`).toEqual([]);
   });
 
-  it('no subject card revokes urls, stops tracks or detaches in an unmount path', () => {
+  it('no subject surface revokes urls, stops tracks or detaches in an unmount path', () => {
     // UNCONDITIONAL. There is no exemption list to consult — see the note above
-    // FORBIDDEN. Every subject card is judged by every pattern.
+    // FORBIDDEN. Every subject module is judged by every pattern, on every one
+    // of its surfaces that is on a channel.
     const offenders: string[] = [];
-    for (const card of subjects) {
-      for (const name of violationsFor(card)) {
-        const f = FORBIDDEN.find((x) => x.name === name)!;
-        offenders.push(`${card}: ${name} — ${f.why}`);
+    for (const type of subjects) {
+      for (const hit of violationsFor(type)) {
+        const f = FORBIDDEN.find((x) => hit.endsWith(x.name))!;
+        offenders.push(`${type} / ${hit} — ${f.why}`);
       }
     }
     expect(offenders).toEqual([]);
@@ -620,44 +689,47 @@ describe('cards on a private node channel must not tear their media down on UNMO
     expect(hits, 'if this now reports a hit, the gate grew a capability the header denies').toEqual([]);
   });
 
-  it('NEGATIVE CONTROL, both directions: the owner check fires on an undeclared card and not on a declared one', () => {
+  it('NEGATIVE CONTROL, both directions: the owner check fires on an undeclared module and not on a declared one', () => {
     // PERMANENT, and it calls the SAME predicate the real check calls — an
     // instrument that only ever returns [] is indistinguishable from one that
     // never looked.
     //
-    // DENY direction: a card on the channel with no entry is an offender.
+    // DENY direction: a module on the channel with no entry is an offender.
     expect(
-      ownerOffenders(['NoSuchExtrasCard']).length,
-      'an undeclared extras card must be reported',
+      ownerOffenders(['noSuchExtrasModule']).length,
+      'an undeclared extras module must be reported',
     ).toBe(1);
-    // ALLOW direction: a real, declared card is not.
-    expect(ownerOffenders(['PainterCard'])).toEqual([]);
+    // ALLOW direction: a real, declared module is not.
+    expect(ownerOffenders(['painter'])).toEqual([]);
   });
 
   it("SCOPE: 'module-renders-itself' is taken at its word — this gate reads no pixels", () => {
-    // The residual blindness, asserted rather than left in prose. Two of the
-    // three verdicts have an artifact to check against; this one does not, by
+    // The residual blindness, asserted rather than left in prose. One of the
+    // two verdicts has an artifact to check against; this one does not, by
     // construction — "the module's own draw is unconditional" is a claim about
-    // RENDERING, and nothing in a source grep can confirm it. So a card could
+    // RENDERING, and nothing in a source grep can confirm it. So a module could
     // declare it falsely and this gate would stay green.
     //
     // What that costs is bounded and stated: the verdict is only reachable for a
-    // card whose module is in NEITHER structural set, and the `why` must name
-    // the module's own idle-field paint. The behavioural net is
+    // module in NEITHER structural set, and the `why` must name the module's own
+    // idle-field paint. The behavioural net is
     // e2e/tests/extras-producer-lifetime.spec.ts, which reads the actual output
     // texture — and it can only cover the types that HAVE a producer, which is
     // precisely why the other verdict needs a human on it.
+    const registered = registeredTypes();
     const trusted = Object.entries(EXTRAS_OWNERS)
       .filter(([, v]) => v.owner === 'module-renders-itself')
-      .map(([base]) => base);
-    for (const base of trusted) {
-      const type = typeForCard(base);
-      expect(type, `${base} must resolve to a registered module def`).toBeTruthy();
+      .map(([type]) => type);
+    for (const type of trusted) {
+      expect(registered.has(type), `${type} must resolve to a registered module def`).toBe(true);
       // If one of these ever gains a structural owner, the verdict is no longer
       // the trusted kind and must be re-declared as the checkable kind.
+      // (The headless-mount union used to be the second structural owner this
+      // checked; it is retired — extras pushes are the only structural owner
+      // kind left for this channel.)
       expect(
-        EXTRAS_PRODUCER_TYPES.has(type!) || HEADLESS_MOUNT_LANE_TYPES.has(type!),
-        `${base} declares 'module-renders-itself' but '${type}' now HAS a structural owner — ` +
+        EXTRAS_PRODUCER_TYPES.has(type),
+        `${type} declares 'module-renders-itself' but it now HAS a structural owner — ` +
           're-declare it as that owner so the check stops being a judgement',
       ).toBe(false);
     }
@@ -687,13 +759,19 @@ describe('cards on a private node channel must not tear their media down on UNMO
     );
   });
 
-  it('the ACTUAL ToyboxCard unmount body is what the hostile control models (#1589)', () => {
+  it("the ACTUAL toybox unmount bodies are what the hostile control models (#1589)", () => {
     // A POSITIVE control on the subject that motivated the pattern: the exact
     // teardown above is what ToyboxCard.onDestroy contained, verbatim in shape.
-    // Asserting it is now clean pins the fix to this gate rather than to a
+    // Asserting toybox is now clean pins the fix to this gate rather than to a
     // commit message — and because `subjects` is derived, a rename cannot
     // silently drop it (the leg above fails first).
-    expect(violationsFor('ToyboxCard')).toEqual([]);
+    //
+    // ⚠ IT ASKS THE MODULE, NOT THE FILE, which is what makes it survive the
+    // move that took toybox off this gate once already: the console left
+    // `ToyboxCard.svelte` for `toybox/ToyboxConsole.svelte` and a file-keyed
+    // control would have been asserting about a file with nothing in it.
+    expect(subjects, 'toybox must still be a subject at all').toContain('toybox');
+    expect(violationsFor('toybox')).toEqual([]);
   });
 
   it('the predicate does NOT fire on a clean unmount body (negative control)', () => {

@@ -1012,6 +1012,27 @@ test('@trails TRIG strikes a real kick ONCE PER STEP while GATE holds the drone'
   errorWatch.assertClean();
 });
 
+/** Open TRAILS' dock full view and return the PANE — the pad mirror, MON,
+ *  LINK lamp and status all live on the dock face body (the card died with
+ *  the fleet); the CONNECT cell is ranked on the tile too, so everything here
+ *  is pane-scoped. */
+async function openTrailsPane(page: Page, id = 'tr') {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId(`trails-face-body-${id}`)).toBeVisible({ timeout: 30_000 });
+  return pane;
+}
+
 test('@trails MON reports the traffic the module does NOT understand', async ({
   page,
   errorWatch,
@@ -1025,14 +1046,15 @@ test('@trails MON reports the traffic the module does NOT understand', async ({
   // `rack` fixture, because this one asserts on the CARD'S DOM and TRAILS is a
   // bespoke surface — the card is the surface, so the spec should name the
   // shell it is reading instead of inheriting one.
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'tr', type: 'trails', position: { x: 200, y: 200 }, domain: 'audio' },
   ]);
   expect(await installSim(page)).toBe(true);
 
-  await page.getByTestId('trails-mon-tr').click();
+  const pane = await openTrailsPane(page);
+  await pane.getByTestId('trails-face-mon-tr').click();
 
   await page.evaluate(() => {
     const w = globalThis as unknown as { __trailsSim?: TrailsLoopSim };
@@ -1044,7 +1066,7 @@ test('@trails MON reports the traffic the module does NOT understand', async ({
     for (let i = 0; i < 5; i++) sim.send([0xb0, 47, 0x40]);
   });
 
-  const log = page.getByTestId('trails-mon-text-tr');
+  const log = pane.getByTestId('trails-face-mon-text-tr');
   await expect(log).toContainText('ch1[1X] CC47', { timeout: 10_000 });
   // ⚠ THE COUNT, not the words. The header prints "N not decoded" even when N
   // is zero, so asserting the bare phrase would pass on a monitor that had
@@ -1086,20 +1108,22 @@ test('@trails spawning the module requests NO Web MIDI access', async ({ page, e
   // permission prompt. The access request is gesture-gated on the card's
   // CONNECT button and lives nowhere else.
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tr', type: 'trails', position: { x: 200, y: 200 }, domain: 'audio' }]);
 
-  await expect(page.getByTestId('trails-card-tr')).toBeVisible();
+  const pane = await openTrailsPane(page);
   const calls = await page.evaluate(() => {
     const w = globalThis as unknown as { __mockMidi: { accessCallCount(): number } };
     return w.__mockMidi.accessCallCount();
   });
   expect(calls, 'the factory must never ask for MIDI access').toBe(0);
 
-  // The resting card names the state rather than sitting blank.
-  await expect(page.getByTestId('trails-status-tr')).toContainText(/CONNECT/i);
-  await expect(page.getByTestId('trails-pad-tr')).toBeVisible();
+  // The resting face names the state rather than sitting blank — the hint
+  // line under the LINK lamp carries the press-CONNECT prompt (the card's
+  // status row died with the card; the error flavour keeps the testid).
+  await expect(pane.getByTestId('trails-face-body-tr').locator('.hint, [data-testid="trails-face-status-tr"]')).toContainText(/CONNECT/i);
+  await expect(pane.getByTestId('trails-face-pad-tr')).toBeVisible();
 
   errorWatch.assertClean();
 });
@@ -1111,13 +1135,14 @@ test('@trails CONNECT with no Trails plugged in EXPLAINS the no rather than goin
   // The mock's one input is named "Mock MIDI Input", which /trails/i must not
   // match — so this is also the port matcher's negative control on a real page.
   await installMidiMock(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tr', type: 'trails', position: { x: 200, y: 200 }, domain: 'audio' }]);
 
-  await page.getByTestId('trails-connect-tr').click();
+  const pane = await openTrailsPane(page);
+  await pane.getByTestId('shell-cell-trails-connect').click();
 
-  const status = page.getByTestId('trails-status-tr');
+  const status = pane.getByTestId('trails-face-status-tr');
   await expect(status).toContainText(/USB-C/, { timeout: 10_000 });
   await expect(status).toHaveAttribute('role', 'alert');
 

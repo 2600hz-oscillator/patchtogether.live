@@ -147,7 +147,6 @@ export const fourPlexVidDef: VideoModuleDef = {
   // Type id is '4plexvid'. ModuleType accepts arbitrary strings.
   type: '4plexvid',
   palette: { top: 'Video modules', sub: 'Utilities' },
-  card: 'FourPlexVidCard',
   domain: 'video',
   label: '4plexvid',
   category: 'utilities',
@@ -215,8 +214,8 @@ export const fourPlexVidDef: VideoModuleDef = {
   // `gate1..4` exist so the cross-domain CV bridge has somewhere to write a raw
   // 0..1 gate swing that `setParam` edge-detects; they are an edge detector's
   // cached level, not a value anyone sets. That was true before this face and
-  // it was true of the LEGACY CARD too — which is exactly why the declaration
-  // lives on the def rather than inside `face`.
+  // it is a fact about the MODULE rather than about any one surface — which is
+  // exactly why the declaration lives on the def rather than inside `face`.
   //
   // ⚠ IT IS A LIVE DEFECT TODAY, NOT A FACE PREREQUISITE. Measured on the real
   // resolver: `listExposableControls('4plexvid')` returns all EIGHT params, so
@@ -282,7 +281,7 @@ export const fourPlexVidDef: VideoModuleDef = {
       gate4: "Gate CV for output 4, edge-triggered (paramTarget gate4). Each rising edge rotates the sel4 selector to the next input, wrapping; held-high fires once via the same hysteresis edge detector.",
     },
     outputs: {
-      out1: "Video output 1 — a discrete tap carrying exactly the input chosen by the sel1 selector (black if that input is unpatched). Also the canonical single-texture surface and the card's live OUT 1 preview.",
+      out1: "Video output 1 — a discrete tap carrying exactly the input chosen by the sel1 selector (black if that input is unpatched). Also the canonical single-texture surface and the faceplate's live OUT 1 preview.",
       out2: "Video output 2 — a discrete tap carrying exactly the input chosen by the sel2 selector (black if that input is unpatched).",
       out3: "Video output 3 — a discrete tap carrying exactly the input chosen by the sel3 selector (black if that input is unpatched).",
       out4: "Video output 4 — a discrete tap carrying exactly the input chosen by the sel4 selector (black if that input is unpatched).",

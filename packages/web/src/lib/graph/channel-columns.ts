@@ -70,8 +70,13 @@ export const SHELL_COLUMN_W = 225;
  *  under the `?shell=1` preview, else the app-scale COLUMN_W (34hp / 765px). The
  *  Canvas calls this and threads the result into the pure geometry fns so those
  *  stay flag-free (preview-off passes COLUMN_W → identical math). */
-export function columnPitch(shellFaces: boolean): number {
-  return shellFaces ? SHELL_COLUMN_W : COLUMN_W;
+export function columnPitch(): number {
+  // ⚠ IT TOOK A `shellFaces` ARGUMENT AND ANSWERED `COLUMN_W` (765) FOR THE
+  // LEGACY ARM. There is no legacy arm: the escape hatch is gone and every lane
+  // node is a uniform shell tile, so the wide per-card pitch has no renderer to
+  // be the pitch OF. `COLUMN_W` itself stays — `SEND_BOX_W` is defined from it
+  // and the send rail still measures in those units.
+  return SHELL_COLUMN_W;
 }
 
 /** Each aux-send box is one column wide; the two boxes sit SIDE BY SIDE to the

@@ -129,8 +129,18 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
     (globalThis as unknown as { __testSyx: Uint8Array }).__testSyx = out;
   });
 
-  // Use the file input handle to upload the synthesized SYX.
-  const fileInput = page.locator('[data-testid="dx7-syx-input"]');
+  // The SYX upload cell lives on the dock ladder on the shell; the cell IS
+  // the file input.
+  // Programmatic dock open (the same call the tile's EXPAND button makes) —
+  // the five-node layout can put the dx tile outside the viewport, and
+  // scrollIntoView cannot pan an xyflow-transformed canvas.
+  await page.evaluate((id) => {
+    const w = globalThis as unknown as { __openDockFullView?: (n: string) => void };
+    w.__openDockFullView?.(id);
+  }, 'dx');
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  const fileInput = dock.getByTestId('shell-cell-dx7-syx-input');
   const buffer = await page.evaluate(() => {
     const bytes = (globalThis as unknown as { __testSyx: Uint8Array }).__testSyx;
     return Array.from(bytes);
@@ -141,18 +151,22 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
     buffer: Buffer.from(buffer),
   });
 
-  // Status should report 32 voices loaded.
-  const status = page.locator('[data-testid="dx7-syx-status"]');
-  await expect(status).toContainText('loaded 32 voices', { timeout: 5000 });
+  // The load's visible receipt on the shell is the preset selector cell
+  // auto-flipping to USER_00 (the card's `dx7-syx-status` text died with it —
+  // manifest); the roster proof is the popup's option count.
+  const presetSel = dock.getByTestId('shell-cell-dx7-preset-select');
+  await presetSel.scrollIntoViewIfNeeded();
+  await expect(presetSel).toHaveAttribute('aria-label', 'preset: USER_00', { timeout: 5000 });
 
-  // The preset selector should now show the 32 user voices (in addition to
-  // the 9 builtins). Count <option> elements.
-  const presetSel = page.locator('[data-testid="dx7-preset-select"]');
-  const optionCount = await presetSel.locator('option').count();
+  await presetSel.click();
+  const listbox = page.locator('[role="listbox"]');
+  await expect(listbox).toBeVisible();
+  const optionCount = await listbox.locator('[role="option"]').count();
   expect(optionCount, '32 user voices + 9 builtins = 41 options').toBeGreaterThanOrEqual(32);
-
-  // After upload, Card auto-selects USER_00. Wait for audio to settle.
-  await expect(presetSel).toHaveValue('USER_00', { timeout: 5000 });
+  // Close by re-selecting the current voice — Esc here would close the whole
+  // dock full view out from under the test (the documented dock-Esc hazard).
+  await listbox.locator('[role="option"]', { hasText: 'USER_00' }).first().click();
+  await expect(listbox).toBeHidden();
   let frameUser00: number[] = [];
   let deadline = Date.now() + 6000;
   while (Date.now() < deadline) {
@@ -181,8 +195,10 @@ test('dx7: uploading a 32-voice SYX populates the dropdown + selecting different
 
   // Switch to USER_15 — a deliberately-different patch (different algorithm,
   // different operator ratios per the synthetic generator above).
-  await presetSel.selectOption('USER_15');
-  await expect(presetSel).toHaveValue('USER_15');
+  await presetSel.click();
+  await expect(listbox).toBeVisible();
+  await listbox.locator('[role="option"]', { hasText: 'USER_15' }).click();
+  await expect(presetSel).toHaveAttribute('aria-label', 'preset: USER_15');
 
   // Give the worklet ~1.5s to clear voices, retrigger, and refill the scope.
   await page.waitForTimeout(1500);

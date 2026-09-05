@@ -70,7 +70,7 @@ async function expectGraph(page: Page, expected: string[]) {
  * menu row works without force / elementFromPoint instrumentation.
  */
 async function spawnRig(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'vco', type: 'analogVco', position: { x: 80, y: 120 } },

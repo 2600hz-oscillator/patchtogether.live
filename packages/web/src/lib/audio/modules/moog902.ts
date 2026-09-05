@@ -61,8 +61,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 /**
  * The RESPONSE switch's two positions.
  *
- * ⚠ THESE TWO STRINGS USED TO EXIST NOWHERE BUT THE LEGACY CARD.
- * `Moog902VcaCard.svelte` built its `role="radiogroup"` from a local
+ * ⚠ THESE TWO STRINGS USED TO EXIST NOWHERE BUT IN ONE SURFACE'S OWN MARKUP,
+ * which built its `role="radiogroup"` from a local
  * `MODE_POS` array, so `LIN` and `EXP` were card-only literals and the def
  * knew the param only as a bare 0..1 discrete. Promoting the module to a
  * def-driven faceplate would have deleted the only names the mode has, which
@@ -84,7 +84,6 @@ export const MOOG902_MODE_OPTIONS: readonly ParamOption[] = [
 export const moog902Def: AudioModuleDef = {
   type: 'moog902',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog902VcaCard',
   domain: 'audio',
   label: '902 vca',
   category: 'utilities',

@@ -32,7 +32,7 @@ type Page = import('@playwright/test').Page;
 //     → the engine reconciles the node
 //     → the video engine's rAF draw composites MAPPY's surfaces into its FBO
 //     → VideoOutCard's OWN rAF blit copies the engine drawing buffer into
-//       canvas[data-testid="video-out-canvas"] (VideoOutCard.svelte)
+//       the videoOut LANE TILE THUMB (the card canvas died with the fleet)
 // and only then does `getImageData` see the new composite.
 //
 // ⚠ This used to be `waitForTimeout(500…600)`, which is not one assertion — it
@@ -49,8 +49,16 @@ const SPAWN_FRAMES = 16;
 
 // Tint per input so each surface is a separable colour (LINES is mono; CHROMA
 // tints it). Mirrors the QUADRALOGICAL e2e's TINTS.
-const TINT_RED = { tintR: 1, tintG: 0, tintB: 0, tintMix: 1 };
-const TINT_GREEN = { tintR: 0, tintG: 1, tintB: 0, tintMix: 1 };
+//
+// ⚠ tintMix 0.6, NOT 1 — measured at the ENGINE seam. The reworked CHROMA's
+// documented contract is "1 = PURE tint": a flat colour fill that destroys the
+// LINES structure entirely (variance 0 at chroma.out AND mappy.out, both
+// boots). The legacy run stayed green only because the CARD canvas letterboxed
+// the flat frame — the variance the old assert measured was ITS OWN BLACK
+// BARS, not the composite. 0.6 keeps the tint dominant for the channel checks
+// while the source's structure survives the blend.
+const TINT_RED = { tintR: 1, tintG: 0, tintB: 0, tintMix: 0.6 };
+const TINT_GREEN = { tintR: 0, tintG: 1, tintB: 0, tintMix: 0.6 };
 
 type Node = { id: string; type: string; position: { x: number; y: number }; domain: 'video'; params?: Record<string, number> };
 type Edge = { id: string; from: { nodeId: string; portId: string }; to: { nodeId: string; portId: string }; sourceType: string; targetType: string };
@@ -68,10 +76,16 @@ function source(idx: number, tint: Record<string, number>, y: number): { nodes: 
   };
 }
 
-/** Coarse, renderer-tolerant stats over the videoOut canvas. */
+/** Coarse, renderer-tolerant stats over the videoOut LANE TILE THUMB (the
+ *  card's `video-out-canvas` does not mount on the default shell — the thumb
+ *  is the fleet's 2D-readable read surface, node-scoped because every video
+ *  tile paints one). */
 async function readStats(page: Page) {
-  const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-  await expect(canvas, 'videoOut canvas present').toHaveCount(1);
+  const canvas = page.locator('.svelte-flow__node[data-id="v-out"] canvas[data-testid="video-tile-thumb"]');
+  // Generous: the thumb mounts once frames flow, and a loaded desktop can
+  // hold the first blit past the 5s default (load ~7 measured while this
+  // flaked 3/7 at the default bound).
+  await expect(canvas, 'videoOut tile thumb present').toHaveCount(1, { timeout: 30_000 });
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -164,11 +178,30 @@ async function setFit(page: Page, mappyId: string, idx1: number, fit: boolean) {
   }, { mappyId, surfaceIdx: idx1 - 1, fit });
 }
 
+/** Open MAPPY's dock full view and return the PANE (the map body: canvas,
+ *  handles, MAP ⤢ button). */
+async function openMappyPane(page: Page, id = 'mappy') {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.locator('[data-testid="mappy-map-body"]')).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -196,16 +229,24 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     ];
     await spawnPatch(page, nodes, edges);
 
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="mappy-canvas"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    const pane = await openMappyPane(page);
+    await expect(pane.locator('[data-testid="mappy-face-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] canvas[data-testid="video-tile-thumb"]')).toHaveCount(1, { timeout: 30_000 });
     await waitFrames(page, SPAWN_FRAMES);
 
     // 1) Full-frame surface 1 → the whole composite shows the (red) live source.
+    // POLLED: the thumb blit and the LINES pattern both ramp in — a one-shot
+    // read right after spawn caught a flat first frame (variance 0 with a lit
+    // field, measured).
+    await expect
+      .poll(async () => (await readStats(page))?.variance ?? 0, {
+        timeout: 15_000,
+        message: 'composite develops spatial structure (live LINES on the thumb)',
+      })
+      .toBeGreaterThan(15);
     const full = await readStats(page);
     expect(full, 'composite readable').not.toBeNull();
     expect(full!.nonZeroFrac, 'composite NOT all-black (in1 drives full frame)').toBeGreaterThan(0.1);
-    expect(full!.variance, 'composite has spatial structure (live LINES)').toBeGreaterThan(15);
     expect(full!.r, 'in1 is red-tinted: R dominates G').toBeGreaterThan(full!.g + 6);
     expect(full!.r, 'in1 is red-tinted: R dominates B').toBeGreaterThan(full!.b + 6);
 
@@ -241,7 +282,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
       { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ];
     await spawnPatch(page, nodes, edges);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    await openMappyPane(page);
 
     // INVARIANT: for a FULL-FRAME quad the homography is identity, so the
     // back-projected source uv == the texel's own output uv. FIT samples at the
@@ -348,7 +389,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
       { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ];
     await spawnPatch(page, nodes, edges);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    await openMappyPane(page);
     await waitFrames(page, SPAWN_FRAMES);
 
     // 1) the default single surface renders its grid → non-blank + structured
@@ -381,10 +422,11 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
       { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ];
     await spawnPatch(page, nodes, edges);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    await openMappyPane(page);
 
-    // open the full-window editor
-    await page.locator('[data-testid="mappy-open-editor"]').click();
+    // open the full-window editor from the face's MAP ⤢ button (the SAME
+    // MappyEditor component — every mappy-editor-* testid unchanged)
+    await page.locator('[data-testid="mappy-face-open-editor"]').click();
     await expect(page.locator('[data-testid="mappy-editor"]')).toBeVisible();
     await expect(page.locator('[data-testid="mappy-editor-canvas"]')).toHaveCount(1);
     // one surface to start → tab 1 present, tab 2 absent
@@ -419,14 +461,14 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
       { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
     ];
     await spawnPatch(page, nodes, edges);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    await openMappyPane(page);
 
     // surface 1 → visual top-left quadrant: x∈[0.05,0.5], visual-y∈[0.05,0.5]
     // (v∈[0.5,0.95], v high = top).
     await warpSurface(page, 'mappy', 1, [[0.05, 0.95], [0.5, 0.95], [0.5, 0.5], [0.05, 0.5]]);
     await waitFrames(page, SPAWN_FRAMES);
 
-    const b = await page.locator('canvas[data-testid="video-out-canvas"]').evaluate((el) => {
+    const b = await page.locator('.svelte-flow__node[data-id="v-out"] canvas[data-testid="video-tile-thumb"]').evaluate((el) => {
       const c = el as HTMLCanvasElement;
       const ctx = c.getContext('2d');
       if (!ctx) return null;
@@ -478,18 +520,18 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
       { id: 'mappy', type: 'mappy', position: { x: 560, y: 60 }, domain: 'video' },
     ];
     await spawnPatch(page, nodes, []);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    await openMappyPane(page);
 
     // a clearly-off-centre quad so a flip/offset would be unmissable
     await warpSurface(page, 'mappy', 1, [[0.1, 0.9], [0.6, 0.9], [0.6, 0.45], [0.1, 0.45]]);
     await waitFrames(page, SPAWN_FRAMES);
 
-    const canvasBox = await page.locator('[data-testid="mappy-canvas"]').boundingBox();
-    expect(canvasBox, 'card preview canvas present').not.toBeNull();
+    const canvasBox = await page.locator('[data-testid="mappy-face-canvas"]').boundingBox();
+    expect(canvasBox, 'face preview canvas present').not.toBeNull();
     // handle-box in canvas-fractional coords (from the 4 SVG handle centres)
     let hMinX = 1, hMaxX = 0, hMinY = 1, hMaxY = 0;
     for (let i = 0; i < 4; i++) {
-      const hb = await page.locator(`[data-testid="mappy-handle-1-${i}"]`).boundingBox();
+      const hb = await page.locator(`[data-testid="mappy-face-handle-1-${i}"]`).boundingBox();
       expect(hb, `handle ${i} present`).not.toBeNull();
       const fx = (hb!.x + hb!.width / 2 - canvasBox!.x) / canvasBox!.width;
       const fy = (hb!.y + hb!.height / 2 - canvasBox!.y) / canvasBox!.height;
@@ -497,7 +539,7 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
       hMinY = Math.min(hMinY, fy); hMaxY = Math.max(hMaxY, fy);
     }
     // rendered grid bbox from the card preview pixels
-    const r = await page.locator('[data-testid="mappy-canvas"]').evaluate((el) => {
+    const r = await page.locator('[data-testid="mappy-face-canvas"]').evaluate((el) => {
       const c = el as HTMLCanvasElement;
       const ctx = c.getContext('2d');
       if (!ctx) return null;

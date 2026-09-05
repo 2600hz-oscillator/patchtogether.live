@@ -21,7 +21,7 @@ import { zipSync, strToU8 } from 'fflate';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock, openToyboxFaceTab } from './_helpers';
 
 type Layer = Record<string, unknown>;
 type PatchGlobal = {
@@ -30,16 +30,6 @@ type PatchGlobal = {
   };
   __ydoc: { transact: (fn: () => void) => void };
 };
-
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 // SvelteFlow nodes carry a CSS transform + a drag-pane overlay that makes
 // strict actionability flag in-card controls "not visible / unstable" and can
@@ -67,11 +57,12 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 15_000 });
-  await pinViewport(page);
+  await openToyboxDock(page);
+  // The preset section lives on the faceplate presets tab.
+  await openToyboxFaceTab(page, 'presets');
   // Cold SwiftShader can take well over 5s to first-render the toybox card; wait
   // generously for the PRESET section before interacting.
   await page.locator('[data-testid="toybox-preset-section"]').waitFor({ state: 'visible', timeout: 30_000 });

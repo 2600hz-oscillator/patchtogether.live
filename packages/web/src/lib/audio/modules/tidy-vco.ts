@@ -137,7 +137,7 @@ export const tidyVcoDef: AudioModuleDef = {
     { id: 'detune', label: 'Detune', defaultValue: 6, min: -50, max: 50, curve: 'linear', units: '¢' },
     // `options` NAMES the three octave states (PF-1). This param is `-1..1
     // discrete`, so `looksLikeSwitch` (0..1-at-0) never sees it and it fell
-    // through to a bare rotary printing `0.00` — and the legacy card's Fader is
+    // through to a bare rotary printing `0.00` — and the Fader it replaces was
     // exactly as uninformative, so the face INHERITS this weakness rather than
     // causing it. Contract-transparent: contract-signature projects only
     // id/min/max/curve/default/units, so naming a value cannot move
@@ -358,8 +358,8 @@ export const tidyVcoDef: AudioModuleDef = {
     ],
     glyph: 'waveform',
     // MOMENTARY: `hold` is a PRESS-PAD, not a latching switch. Everything that
-    // touches it agrees and always has — the legacy card drives it with
-    // pointerdown/pointerup (TidyVcoCard `hold-pad`), the worklet ORs it into
+    // touches it agrees and always has — a `hold-pad` drove it with
+    // pointerdown/pointerup, the worklet ORs it into
     // the mono gate exactly like tomtom's declared-momentary `strike`
     // (packages/dsp/src/tidy-vco.ts: `monoGate = max(gateIn, hold)`), and the
     // authored doc below says "released = note-off (no latch)". Only the shell

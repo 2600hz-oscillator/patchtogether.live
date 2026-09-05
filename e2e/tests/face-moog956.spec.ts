@@ -124,13 +124,13 @@ async function pressStripAt(page: Page, strip: ReturnType<Page['locator']>, frac
 test.describe('MOOG 956 RIBBON — the FACE (default shell)', () => {
   test('the lane tile paints the ranked cells AND its own strip; the dock paints both, once each', async ({
     page,
-    rackDefault,
+    rack,
     errorWatch,
   }) => {
     // `errorWatch` is this spec's pageerror guard: a derivation repaired on
     // ModuleShellPlaceholder can still throw in ModuleShell, and only promoting
     // reveals it — the guard fails the leg on any page error.
-    void rackDefault;
+    void rack;
     await spawnPatch(page, [
       { id: 'mg', type: 'moog956', position: { x: 220, y: 120 }, domain: 'audio' },
     ]);
@@ -140,7 +140,6 @@ test.describe('MOOG 956 RIBBON — the FACE (default shell)', () => {
       tile.locator('[data-testid="module-shell"]'),
       'the promoted face renders a ModuleShell tile, not the placeholder',
     ).toBeVisible();
-    await expect(tile.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
     // Rank 1 paints at every tier, so it is the tier-independent claim (the
     // ptzcam lesson — never assert a specific tier's cell COUNT from the
@@ -188,10 +187,10 @@ test.describe('MOOG 956 RIBBON — the FACE (default shell)', () => {
 
   test('the REAL SOURCE CHAIN: a finger on the tile strip gates a VCA and pitches a VCO', async ({
     page,
-    rackDefault,
+    rack,
     errorWatch,
   }) => {
-    void rackDefault;
+    void rack;
     await spawnPatch(
       page,
       [

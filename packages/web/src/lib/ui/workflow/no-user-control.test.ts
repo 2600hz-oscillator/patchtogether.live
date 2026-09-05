@@ -37,7 +37,7 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { NoUserControlDefLike } from '$lib/graph/types';
-import { listExposableControls } from '$lib/graph/group-controls';
+import { listExposableControls } from '$lib/graph/exposable-controls';
 import { resolvePushCardControls, pushCardParams } from '$lib/control/push2/push-card-schema';
 import {
   cvWritersOf,

@@ -21,7 +21,20 @@
 // face would produce two copies that drift, and the drifting copy would be the
 // one that silently records over a full rack — the exact two-sided-contract
 // class CLAUDE.md's backdraft section is about, applied to a PROCEDURE instead
-// of a number. So the card now calls this, and so does the face.
+// of a number.
+//
+// ⚠ AND THE DRIFT ALREADY EXISTS — this header used to end "so the card now
+// calls this, and so does the face", which is FALSE in the tree and was
+// measured false on 2026-09-03. `SamsloopCard.svelte` imports nothing from this
+// file: its `startRecording()` is a SECOND copy of the guard below, and the two
+// have already diverged in one place — the card DISCARDS `nodeSamsloop.start`'s
+// boolean, so the third refusal path ("Recording could not start.") is
+// unreachable on the card even though the card is the surface that has an error
+// line. The face is the caller; the card is the copy. It is left alone here on
+// purpose (it is deleted by the legacy-removal branch, and editing a surface
+// with days of life left buys risk and no player anything) — recorded rather
+// than silently tidied, because a comment claiming a shared seam that is not
+// shared is what makes the next author trust the wrong file.
 //
 // ── WHAT IS DELIBERATELY *NOT* HERE ─────────────────────────────────────────
 //
@@ -39,6 +52,7 @@ import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
 import { recordAudition } from './audition-ledger';
 import { nodeSamsloop, type SamsloopTap } from './node-samsloop-registry.svelte';
+import { setSamsloopRecRefusal } from './samsloop/samsloop-rec-refusal.svelte';
 import {
   loadSamsloopWav,
   SAMSLOOP_WINDOW_RANGE,
@@ -66,9 +80,17 @@ import {
  *  FACE can record an audition from the same one call. */
 export interface SamsloopTakeResult {
   ok: boolean;
-  /** User-facing refusal text, or null on success. The card renders this in
-   *  `samsloop-rec-error`; the face has nowhere to paint it (a faceplate paints
-   *  no derived-state text) and reports `delivered: false` instead. */
+  /** User-facing refusal text, or null on success.
+   *
+   *  The card renders this in `samsloop-rec-error`. THE FACE NOW RENDERS IT TOO
+   *  — `toggleSamsloopRecord` routes it into
+   *  `./samsloop/samsloop-rec-refusal.svelte.ts` and `SamsloopOutputBody`
+   *  paints it as `samsloop-face-rec-error`. This doc used to say the faceplate
+   *  had nowhere to put it and reported `delivered: false` instead; that was
+   *  true and it was also the bug — `delivered` is a TEST instrument, so the
+   *  three refusal paths reached the audition ledger and no human. A refusal
+   *  nobody can read is the same failure as a silent one, which is the reason
+   *  `samsloopRackFullMessage` was exported in the first place. */
   error: string | null;
 }
 
@@ -175,14 +197,28 @@ export function samsloopIsRecording(nodeId: string): boolean {
  * resolved and the registry accepted the take. A no-engine press is RECORDED as
  * `delivered: false`, never dropped — "never pressed" and "pressed and reached
  * nothing" have to stay distinguishable.
+ *
+ * ⚠ AND THE LEDGER IS NOT A SURFACE. `delivered: false` is how a GATE learns the
+ * press reached nothing; it is not how the PLAYER learns it. Until this seam
+ * existed the three refusal paths (engine-not-ready, rack-full,
+ * could-not-start) were silent no-ops on the faceplate: the button moved, the
+ * ledger recorded a miss, and nothing on screen changed. `setSamsloopRecRefusal`
+ * is the human half — read by `SamsloopOutputBody`, which is where the take
+ * would have been drawn.
+ *
+ * ⚠ EVERY EXIT WRITES THE SEAM, INCLUDING THE SUCCESSFUL ONES. A refusal that
+ * only ever gets set is a refusal that stays on screen while a take is running.
+ * Arming and stopping both clear it.
  */
 export function toggleSamsloopRecord(nodeId: string): boolean {
   if (samsloopIsRecording(nodeId)) {
     stopSamsloopTake(nodeId);
+    setSamsloopRecRefusal(nodeId, null);
     recordAudition({ nodeId, seam: 'engine-message', delivered: true });
     return true;
   }
   const r = startSamsloopTake(nodeId);
+  setSamsloopRecRefusal(nodeId, r.error);
   recordAudition({ nodeId, seam: 'engine-message', delivered: r.ok });
   return r.ok;
 }

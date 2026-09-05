@@ -25,8 +25,8 @@
   // the existing `data.name` channel so we don't break LIVECODE addressing,
   // the rename uniqueness validator, or the migration. Both fields end up
   // round-tripped through Y.Doc the same way, so peer-rename sync still
-  // works. GroupCard continues to use `data.label` for the group-specific
-  // rename UX (see carve-out note in the PR description).
+  // works. (`data.label` was the group-specific rename channel — a deliberate
+  // carve-out from this one — and went with the GROUP! module.)
   //
   // FOCUS / DRAG: ModuleNameLabel itself stopPropagation's pointer events
   // on the input and applies `.nodrag` so SvelteFlow doesn't treat a label

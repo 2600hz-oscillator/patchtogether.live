@@ -132,8 +132,8 @@ void main() {
  *  in the module's DESCRIPTIONS entry. */
 export const VIDEOVARISPEED_MAX_SLOT_BYTES = 100 * 1024 * 1024; // 100 MB
 
-/** Persisted shape on node.data. The NODE's controller is the writer (the legacy card
- *  and the faceplate body both originate gestures through it). */
+/** Persisted shape on node.data. The NODE's controller is the writer — every
+ *  surface originates its gestures through it, never by writing here. */
 export interface VideoVarispeedData {
   /** Metadata about the file the loader picked. Null until a file is picked.
    *  Local-only player, but we keep it on data so it survives reload. This is
@@ -236,7 +236,6 @@ const DEFAULTS: VideoVarispeedParams = {
 export const videoVarispeedDef: VideoModuleDef = {
   type: 'videovarispeed',
   palette: { top: 'Video modules', sub: 'Sources' },
-  card: 'VideoVarispeedCard',
   domain: 'video',
   label: 'videovarispeed',
   category: 'sources',
@@ -388,7 +387,7 @@ export const videoVarispeedDef: VideoModuleDef = {
   // its OWN input port's `paramTarget`, which makes `'cv-port'` the only legal
   // writer (`'internal'` is RED at no-user-control.ts) and also the true one.
   //
-  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `group-controls.ts` drops a
+  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `exposable-controls.ts` drops a
   // `noUserControl` param from `listExposableControls` and `push-card-schema`
   // drops it from the Push 2 card, which re-ranks itself from twelve params to
   // three — an improvement (raw gate levels and a V/oct cache had no business

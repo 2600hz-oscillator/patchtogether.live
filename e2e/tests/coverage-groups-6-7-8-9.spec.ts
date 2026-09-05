@@ -192,7 +192,12 @@ interface PixelStats {
 }
 
 async function readVideoOutCanvasStats(page: Page): Promise<PixelStats | null> {
-  const handle = page.locator('canvas[data-testid="video-out-canvas"]').first();
+  // The videoOut TILE THUMB (160×120, 2D-readable) — the fleet recipe. The
+  // card's `video-out-canvas` does not mount on the default shell (MEASURED:
+  // count 0 after spawn), so every read here was silently red at HEAD once
+  // videoOut was promoted; the thumb is the same drawPreviewDownscaled seam
+  // video-preview-downscale pins.
+  const handle = page.locator('canvas[data-testid="video-tile-thumb"]').first();
   return handle.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -329,7 +334,7 @@ test('cameraInput: spawns without errors (no live camera in headless CI; just sm
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // Just spawn it — getUserMedia will fail in headless Chromium and
@@ -338,7 +343,7 @@ test('cameraInput: spawns without errors (no live camera in headless CI; just sm
   // be inert without a camera handle.)
   await spawnPatch(page, [{ id: 'cam', type: 'cameraInput', domain: 'video' }]);
 
-  const card = page.locator('.svelte-flow__node-cameraInput');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="cameraInput"])');
   await expect(card).toBeVisible();
 
   // The "Camera permission denied" message logs to console.warn/info,
@@ -349,7 +354,7 @@ test('cameraInput: spawns without errors (no live camera in headless CI; just sm
 test('picturebox: spawns without errors (no image loaded; verify card mounts)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'pb', type: 'picturebox', domain: 'video' }]);
 
-  const card = page.locator('.svelte-flow__node-picturebox');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="picturebox"])');
   await expect(card).toBeVisible();
 
 });

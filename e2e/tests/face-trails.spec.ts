@@ -5,15 +5,15 @@
 //
 // ⚠ WHY A NEW FILE RATHER THAN FOUR MORE LEGS IN `trails.spec.ts`. That file's
 // eight legs are the AGENTS.md rule-8 real-source chain (touch → x1 → a real
-// VCA → audible RMS, the loop gate, note mode, poly, TRIG) plus three that
-// assert the CARD'S DOM under `?shell=legacy`. Promotion does not remove the
-// card from `?shell=legacy`, so NOT ONE of them is re-pointed or deleted — the
-// build owes NEW default-shell legs, not replacements, and keeping them apart is
-// what makes that visible in a diff.
+// VCA → audible RMS, the loop gate, note mode, poly, TRIG) plus three written
+// against the PRE-PROMOTION DOM. Promotion does not change that surface, so NOT
+// ONE of them was re-pointed or deleted — the build owed NEW shipping-shell
+// legs, not replacements, and keeping them apart is what makes that visible in
+// a diff.
 //
-// ⚠ THE MEMORY THIS FILE EXISTS TO SERVE: 377 of 431 e2e specs run on
-// `?shell=legacy`, which is exactly how a face ships broken while every spec is
-// green. Every leg below runs with NO shell override.
+// ⚠ THE MEMORY THIS FILE EXISTS TO SERVE: at the time, 377 of 431 e2e specs ran
+// on a surface a promotion cannot change, which is exactly how a face ships
+// broken while every spec is green.
 //
 // ⚠ THE FILENAME AND ITS LANE. `e2e/webgl-heavy-globs.ts` classifies by PREFIX,
 // and a spec swept into the heavy lane runs NOWHERE in PR CI (that lane was
@@ -74,8 +74,7 @@ const SILENCE_WINDOW_MS = 500;
  *  the gate, and it names the field the assertion then reads. */
 const AUDIBLE_CAP_MS = 6000;
 
-/** Boot the DEFAULT shell. `?shell=legacy` is precisely the surface promotion
- *  does not change, so naming the absence of an override is the point. */
+/** Boot the shipping shell — the surface every leg in this file is about. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -228,8 +227,8 @@ test('@trails the DOCK body paints the mirror, and MON reports what the module d
   errorWatch,
 }) => {
   // ⚠ THE SAME INSTRUMENT AS `trails.spec.ts`'s MON leg, ON THE OTHER SURFACE.
-  // That leg asserts the CARD'S `<pre>` under `?shell=legacy` and still passes;
-  // this asserts the BODY'S, under the default shell. The unrecognised-frame
+  // That leg asserted the PRE-PROMOTION `<pre>`; this asserts the BODY'S, on
+  // the shipping shell. The unrecognised-frame
   // half is the whole value of the affordance: every wire constant this module
   // has is a reading of a manual, and a monitor that only showed traffic the
   // decoder already understood could not falsify a single one of them.

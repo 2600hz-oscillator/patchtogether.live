@@ -251,8 +251,15 @@ describe('the collab lane (#2294): armed, with ONE named skip', () => {
     expect(KNOWN_LANES.filter((l) => l === 'collab')).toEqual(['collab']);
   });
 
-  it('admits the ONE legitimate skip: in-card-title\'s task #101 quarantine', () => {
-    // The `50 passed / 1 skipped` measured on 2026-09-01 is this row.
+  it('admits NO skip at all — the task #101 quarantine died with in-card-title.spec.ts', () => {
+    // Until the S2 legacy-removal inversion the lane had exactly ONE admitted
+    // skip (in-card-title's task #101 @collab rename-sync quarantine — the
+    // `50 passed / 1 skipped` measured on 2026-09-01). That spec was deleted
+    // as legacy-card coverage, its quarantined case with it (a NAMED coverage
+    // loss in the S2 ledger), so the lane's budget is now EMPTY: any runtime
+    // skip that materializes on collab is a violation. The deleted row is fed
+    // back in as the control — an entry someone resurrects for a file that no
+    // longer exists must redden, not be admitted.
     const rows = [
       {
         file: 'in-card-title.spec.ts',
@@ -262,7 +269,13 @@ describe('the collab lane (#2294): armed, with ONE named skip', () => {
           + 'root-cause the A→relay→B propagation stall, add a regression test, then un-fixme',
       },
     ];
-    expect(budgetViolations(rows, 'collab')).toEqual([]);
+    const v = budgetViolations(rows, 'collab');
+    expect(v.length).toBe(1);
+    expect(v[0]!.violation).toMatch(/no budget entry/);
+    // And the collab lane declares no admitted specs anywhere in the budget
+    // beyond lanes:[] leak guards.
+    const admitted = SKIP_BUDGET.filter((e) => e.lanes.includes('collab'));
+    expect(admitted).toEqual([]);
   });
 
   it('⚠ REDDENS a DOOM asset skip — the eleven-tests-go-dark regression this lane exists to catch', () => {

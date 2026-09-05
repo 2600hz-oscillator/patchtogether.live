@@ -53,7 +53,6 @@ interface SelMessage {
 export const fourplexerDef: AudioModuleDef = {
   type: 'fourplexer',
   palette: { top: 'Audio modules', sub: 'Utility' },
-  card: 'FourPlexerCard',
   domain: 'audio',
   label: '4plexer',
   category: 'utility',
@@ -195,7 +194,7 @@ export const fourplexerDef: AudioModuleDef = {
       out4: "Output 4 — carries the single input selected by OUT 4.",
     },
     controls: {
-      sel1: "Which input (1–4) output 1 carries. Turn it to route by hand; GATE 1's rising edges also advance it. Its four positions are NAMED states rather than bare numbers, so the control reads out the source it currently points at (e.g. 'IN 2') on the card and on the faceplate alike. Note what no single selector can tell you: whether some input is now arriving at several outputs at once, or at none at all — the faceplate prints both.",
+      sel1: "Which input (1–4) output 1 carries. Turn it to route by hand; GATE 1's rising edges also advance it. Its four positions are NAMED states rather than bare numbers, so the control reads out the source it currently points at (e.g. 'IN 2') on the faceplate and on the faceplate alike. Note what no single selector can tell you: whether some input is now arriving at several outputs at once, or at none at all — the faceplate prints both.",
       sel2: "Which input (1–4) output 2 carries — set by hand or advanced by GATE 2.",
       sel3: "Which input (1–4) output 3 carries — set by hand or advanced by GATE 3.",
       sel4: "Which input (1–4) output 4 carries — set by hand or advanced by GATE 4.",

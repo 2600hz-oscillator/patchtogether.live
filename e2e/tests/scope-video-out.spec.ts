@@ -140,7 +140,7 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     // Pause the engine rAF loop (the test owns the exact frame count) + pin the
     // engine clock BEFORE boot. No __scopeVrtFreeze: drawScope has no clock term.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // DETERMINISTIC source: ANALOG-VCO (a fixed-pitch audio oscillator) → SCOPE
@@ -173,12 +173,12 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-scope'), 'SCOPE visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="scope"])'), 'SCOPE visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
     // SCOPE card must render the new `out` handle (io-spec consistency covers
     // this elsewhere; cheap sanity here too).
-    const scopeCard = page.locator('.svelte-flow__node-scope');
+    const scopeCard = page.locator('.svelte-flow__node:has([data-shell-type="scope"])');
     const outHandle = scopeCard.locator('[data-handleid="out"]');
     await expect(outHandle, 'scope.out handle present').toHaveCount(1);
 
@@ -231,7 +231,7 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -247,8 +247,8 @@ test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
         { id: 'e-scope-out',   from: { nodeId: 'a-scope', portId: 'out' },  to: { nodeId: 'v-out',   portId: 'in' },  sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-scope'), 'SCOPE visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="scope"])'), 'SCOPE visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
     // Baseline (split mode): assert a real structured trace first (so the XY
     // diff isn't measured against a black/broken frame), then capture the

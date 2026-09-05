@@ -91,8 +91,6 @@ export function stepScale(scale: number, direction: 1 | -1): number {
 export interface SweepResult {
   entries: Record<string, DockEntry>;
   tombstones: Record<string, DockTombstone>;
-  /** nodeIds evicted THIS sweep because a peer grouped them (toast these). */
-  evictedGrouped: string[];
   /** nodeIds revived from tombstones this sweep (entry restored). */
   revived: string[];
   /** True when anything changed (persist + re-render only when so). */
@@ -102,10 +100,17 @@ export interface SweepResult {
 /**
  * One GC sweep against the live snapshot:
  *  - docked id absent            → retire to tombstone (absentSweeps=0)
- *  - docked id under a collapsed group → EVICT (hard-drop; caller toasts)
  *  - tombstoned id present again → revive (entry restored verbatim)
  *  - tombstoned id still absent  → age; hard-drop past
  *    TOMBSTONE_MAX_ABSENT_SWEEPS or beyond TOMBSTONE_CAP (oldest first).
+ *
+ * ⚠ A THIRD ARM IS GONE: `groupedIds` used to EVICT (hard-drop, caller toasts)
+ * any docked id a peer had folded into a COLLAPSED GROUP, because such a node
+ * had no canvas presence left to stub. The GROUP! module is deleted, so nothing
+ * can produce that state and the parameter had no possible non-empty value.
+ * Removed rather than left as a permanently-empty set — a control over a
+ * population that reaches zero stops controlling anything, and leaving it would
+ * read as live behaviour to the next reader.
  *
  * Pure: returns fresh maps (inputs untouched) + what changed.
  */
@@ -113,22 +118,13 @@ export function sweepDockState(
   entries: Readonly<Record<string, DockEntry>>,
   tombstones: Readonly<Record<string, DockTombstone>>,
   liveIds: ReadonlySet<string>,
-  groupedIds: ReadonlySet<string>,
 ): SweepResult {
   const nextEntries: Record<string, DockEntry> = {};
   const nextTombstones: Record<string, DockTombstone> = {};
-  const evictedGrouped: string[] = [];
   const revived: string[] = [];
   let changed = false;
 
   for (const [id, entry] of Object.entries(entries)) {
-    if (groupedIds.has(id)) {
-      // A peer (or the local user) folded the node into a collapsed group:
-      // the card has no canvas presence to stub — evict outright.
-      evictedGrouped.push(id);
-      changed = true;
-      continue;
-    }
     if (!liveIds.has(id)) {
       nextTombstones[id] = { entry, absentSweeps: 0 };
       changed = true;
@@ -164,10 +160,10 @@ export function sweepDockState(
     const kept: Record<string, DockTombstone> = {};
     for (const id of keep) kept[id] = nextTombstones[id];
     changed = true;
-    return { entries: nextEntries, tombstones: kept, evictedGrouped, revived, changed };
+    return { entries: nextEntries, tombstones: kept, revived, changed };
   }
 
-  return { entries: nextEntries, tombstones: nextTombstones, evictedGrouped, revived, changed };
+  return { entries: nextEntries, tombstones: nextTombstones, revived, changed };
 }
 
 // ---------------- Persistence (guarded parse) ----------------

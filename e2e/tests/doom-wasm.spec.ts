@@ -18,12 +18,13 @@
 // that never sampled is "never looked", not "frozen", and the two are
 // indistinguishable from the number alone).
 //
-// Asserts that the DOOM card renders real gameplay pixels — i.e. that
+// Asserts that the DOOM faceplate renders real gameplay pixels — i.e. that
 // CI built the emcc WASM blob + downloaded the shareware WAD, not just
 // the "DOOM WASM not built" overlay. The test:
 //
 //   1. Spawns a DOOM module via the same __patch / __ydoc dev hook
-//      everything else uses.
+//      everything else uses, then opens its dock faceplate — the surface
+//      that owns the runtime, the blit and the load gesture.
 //   2. Clicks the "Click to load DOOM" overlay button.
 //   3. Waits for the load to finish — either ready, or error (with a
 //      diagnostic asserting the WASM is actually on disk).
@@ -45,8 +46,25 @@
 // The skip stays in e2e/tests/per-module.spec.ts:SKIP_OUTPUT_ALIVE
 // for `doom` until that slice lands.
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the `__doomCards` hook, the keyboard
+ *  capture, the blit and the "Click to load DOOM" gesture, so every DOOM spec
+ *  opens the faceplate before it can drive anything. */
+const SURFACE = 'doom-face-surface';
+
+/** Open a node's dock faceplate through the app's own hook, and wait for the
+ *  surface to mount (the dock boot is sequential — it does not overlap the
+ *  page load, so this is a real wait rather than a formality). */
+async function openDoomFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
 
 // Larger overall budget: cold-start of the WASM init + 4 MB WAD fetch +
 // emscripten cache prime can take ~10–20 s on a CI runner. The
@@ -65,7 +83,7 @@ test.describe('DOOM — WASM gameplay renders real pixels in CI', () => {
       if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Pre-flight: make sure /doom/doom.js exists on the dev server. If
@@ -92,13 +110,14 @@ test.describe('DOOM — WASM gameplay renders real pixels in CI', () => {
       { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
     ]);
 
-    const card = page.locator('[data-testid="doom-card"]');
-    await expect(card, 'DOOM card mounts').toHaveCount(1);
+    await openDoomFace(page, 'v-doom');
+    const card = page.locator(`[data-testid="${SURFACE}"]`);
+    await expect(card, 'DOOM surface mounts').toHaveCount(1);
 
     const canvas = page.locator('[data-testid="doom-canvas"]');
     await expect(canvas, 'DOOM canvas mounts').toHaveCount(1);
 
-    // The card boots in `loadStatus === 'idle'` — a "Click to load DOOM"
+    // The surface boots in `loadStatus === 'idle'` — a "Click to load DOOM"
     // overlay button covers the canvas until clicked. Click it to kick
     // off the WASM + WAD load path (avoids autoplay races; users do the
     // same thing manually).
@@ -115,7 +134,7 @@ test.describe('DOOM — WASM gameplay renders real pixels in CI', () => {
       'load overlay clears (either success or error → assertion below)',
     ).toHaveCount(0, { timeout: 25_000 });
 
-    // If load errored, the card would show an .overlay.error block —
+    // If load errored, the surface would show an .overlay.error block —
     // which the above expects to be gone. So at this point we should
     // be in the `loadStatus === 'ready'` state and the rAF blit loop
     // should be actively painting frames into the 2D canvas.
@@ -218,7 +237,7 @@ interface FrameProbe {
  * quantity with a Playwright-side poll loop — move the accumulator into the
  * page and report frames/elapsedMs alongside the value.
  *
- * Only the RED byte of every 4th pixel is compared (skip alpha, which the card
+ * Only the RED byte of every 4th pixel is compared (skip alpha, which the blit
  * always writes 255) — enough signal for a flicker without walking a megabyte
  * twice per frame.
  */

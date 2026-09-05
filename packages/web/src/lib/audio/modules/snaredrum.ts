@@ -144,7 +144,7 @@ export const snaredrumDef: AudioModuleDef = {
   // ── RACKLINE face (P1 total-rework — UI CURATION only, NOT the I/O
   // contract; see ModuleFace in $lib/graph/types). DESIGNED from the voice's
   // intent + the KICK DRUM sibling's producer-intent banding, not transcribed
-  // from the legacy card.
+  // from the surface it replaced.
   //
   // ⚠ `order` and `pages` ANSWER DIFFERENT QUESTIONS AND MAY DISAGREE. `order`
   // is a PRIORITY ranking, consumed by the tiers that show a SUBSET; `pages` is

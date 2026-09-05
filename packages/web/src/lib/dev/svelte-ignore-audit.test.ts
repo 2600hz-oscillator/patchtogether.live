@@ -65,8 +65,14 @@ describe('svelte-ignore comments are honest exemption records', () => {
       'the walk found svelte-ignore comments to audit',
     ).toBeGreaterThan(0);
     expect(
-      files.some((f) => f.endsWith('ToyboxCard.svelte')),
+      files.some((f) => f.endsWith('ui/modules/ModuleShell.svelte')),
       'the walk descends into lib/ui/modules',
+    ).toBe(true);
+    // …and one level FURTHER, into a module's own surface directory, which is
+    // where every face body lives and which a flat walk would miss.
+    expect(
+      files.some((f) => /ui\/modules\/[^/]+\/[^/]+\.svelte$/.test(f)),
+      'the walk descends into a module surface subdirectory',
     ).toBe(true);
   });
 });

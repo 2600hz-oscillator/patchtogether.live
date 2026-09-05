@@ -30,7 +30,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-clap.spec.ts/<id>.png
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 test.describe.configure({ mode: 'default' });
@@ -72,7 +72,7 @@ test.describe('VRT: CLAP composite control states', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -84,7 +84,10 @@ test.describe('VRT: CLAP composite control states', () => {
         [],
       );
 
-      const card = page.locator('.svelte-flow__node-clap').first();
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      const card = canvasNode(page, 'vrt-clap');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
       // The faders poll readLive each rAF; give the card a couple of frames
       // to settle on the spawned param values before snapping.

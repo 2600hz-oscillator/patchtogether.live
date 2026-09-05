@@ -154,11 +154,11 @@ class NodeAudioInputRegistry {
    * per node, and only from `idle`.
    *
    * ⚠ THIS IS THE PROMOTION'S IRREVERSIBLE HAZARD, AND IT IS WHY THE GUARD IS
-   * HERE RATHER THAN IN A COMPONENT. Before the face, exactly one surface
-   * (`AudioinCard`) ever ran the returning-visitor auto-acquire, in its own
-   * `onMount`. A faced AUDIO IN has THREE — the lane tile's `tileBody`, the dock
-   * full view's `fullViewBody` and the card itself under `?shell=legacy` — and a
-   * player who expands a module is looking at two of them at once. `request()`
+   * HERE RATHER THAN IN A COMPONENT. Before the face, exactly one surface ever
+   * ran the returning-visitor auto-acquire, in its own `onMount`. A faced AUDIO
+   * IN has TWO — the lane tile's `tileBody` and the dock full view's
+   * `fullViewBody` — and a player who expands a module is looking at both at
+   * once. `request()`
    * calls `#releaseTracks` FIRST, and `MediaStreamTrack.stop()` cannot be
    * undone, so two surfaces each auto-acquiring would tear each other's capture
    * down mid-performance: the #1590 failure through a new door, with the mount

@@ -2,8 +2,8 @@
   // packages/web/src/lib/ui/modules/archivist/ArchivistBrowseControls.svelte
   //
   // THE ARCHIVIST BROWSE + TRANSPORT SURFACE — the search this module IS, and
-  // the transport for whatever it found. ONE component, THREE mounts: the
-  // legacy card, the dock `fullViewBody` and the lane `tileBody`.
+  // the transport for whatever it found. ONE component, TWO mounts: the dock
+  // `fullViewBody` and the lane `tileBody`.
   //
   // ⚠ WHY ONE COMPONENT RATHER THAN A CARD COPY AND A FACE COPY. The pair would
   // have to agree about the year-bound parse, the disabled rules on ↻ next, the
@@ -26,10 +26,9 @@
   // element and calls no engine method.
   //
   // ⚠ THE SEARCH INPUTS ARE LOCAL `$state` REHYDRATED ONCE AT MOUNT, NOT A
-  // REACTIVE `patch` READ, and the shape is forced by having a mount inside the
-  // LEGACY CARD subtree — where `patch.nodes[…]` reads are NOT reactive
-  // (the repo's `patch-reads-are-not-reactive-in-the-legacy-card-subtree`
-  // rule). A one-shot `onMount` read is the only shape that is correct in BOTH
+  // REACTIVE `patch` READ. The shape was forced by a mount whose subtree did
+  // not make `patch.nodes[…]` reads reactive; that mount is gone, and the shape
+  // is KEPT because a one-shot `onMount` read is correct in BOTH
   // subtrees, which is the same argument `PeerTubePicker` records for its own
   // search box. Everything DERIVED FROM THE ITEM arrives as a LEAF PROP instead
   // — never the `data` object, whose SyncedStore proxy has a stable identity a
@@ -204,8 +203,8 @@
    * gesture says "another one like the last", so it must not restate what the
    * last one was. Nothing is lost by omitting it: a term typed here and then
    * re-rolled has already reached the graph through the input's own `onchange`,
-   * which fires on the blur the button click causes. The legacy card's ↻ next
-   * never wrote them either — this restores that.
+   * which fires on the blur the button click causes. The ↻ next button never
+   * wrote them before the faceplate either — this preserves that.
    */
   function nextRandom(): void {
     archivistStatus.request(nodeId, { kind: 'next' });

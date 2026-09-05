@@ -124,34 +124,38 @@ test.describe('CUBE v4 — reload / screen-off / initial render', () => {
       { id: 'cb', type: 'cube', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
 
-    const select = page.locator('[data-testid="cube-floor-select"]');
-    await expect(select).toHaveCount(1);
-
-    const optionValues = await select.locator('option').evaluateAll((opts) =>
-      opts.map((o) => (o as HTMLOptionElement).value).filter((v) => v.startsWith('factory:')),
-    );
-    expect(optionValues.length, 'need ≥2 factory tables for the reload test').toBeGreaterThanOrEqual(2);
+    // The FLOOR loader on the shell is the dock's TABLE STACK panel: factory
+    // tables are one-click PICK buttons (`cube-stack-floor-{i}`), writing the
+    // same `data.floor.source = 'factory:<id>'` the card's <select> wrote.
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('cb'));
+    const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="cb"]');
+    await expect(pane).toBeVisible();
+    const pick0 = pane.locator('[data-testid="cube-stack-floor-0"]');
+    const pick1 = pane.locator('[data-testid="cube-stack-floor-1"]');
+    await expect(pick0).toHaveCount(1);
+    await expect(pick1, 'need ≥2 factory tables for the reload test').toHaveCount(1);
 
     const readFloorSource = () => page.evaluate(() => {
       const w = globalThis as unknown as PatchGlobal;
       return w.__patch.nodes['cb']?.data?.floor?.source ?? null;
     });
 
-    const firstPick = optionValues[0]!;
-    const secondPick = optionValues.find((v) => v !== firstPick)!;
-    expect(secondPick).not.toBe(firstPick);
-
-    // First reload — writes node.data.floor.source. Poll the store (deterministic
-    // settle) rather than sleeping.
-    await select.selectOption(firstPick);
-    await expect.poll(readFloorSource, { message: 'first reload wrote floor.source' }).toBe(firstPick);
+    // First reload — writes node.data.floor.source. Poll the store
+    // (deterministic settle) rather than sleeping.
+    await pick0.scrollIntoViewIfNeeded();
+    await pick0.click();
+    await expect.poll(readFloorSource, { message: 'first reload wrote floor.source' }).toMatch(/^factory:/);
+    const firstPick = (await readFloorSource()) as string;
 
     // Second, DIFFERENT reload — THIS is the load that used to no-op.
-    await select.selectOption(secondPick);
-    await expect.poll(readFloorSource, { message: 'second/different reload replaced the table' }).toBe(secondPick);
+    await pick1.click();
+    await expect.poll(readFloorSource, { message: 'second/different reload replaced the table' }).not.toBe(firstPick);
+    const secondPick = (await readFloorSource()) as string;
+    expect(secondPick).toMatch(/^factory:/);
 
-    // And switch BACK to the first — re-selecting an already-seen value still works.
-    await select.selectOption(firstPick);
+    // And switch BACK to the first — re-picking an already-seen table still
+    // works (the reload that used to no-op).
+    await pick0.click();
     await expect.poll(readFloorSource, { message: 'reload back to the first table works' }).toBe(firstPick);
   });
 
@@ -160,11 +164,14 @@ test.describe('CUBE v4 — reload / screen-off / initial render', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'cb', type: 'cube', position: { x: 200, y: 100 }, domain: 'audio' },
     ]);
+    // SCRN on the shell = the dock ladder's screen_on toggle.
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('cb'));
+    await expect(page.locator('[data-testid="dock-fullview-pane"][data-pane-node="cb"]')).toBeVisible();
 
     const readScreen = () => page.evaluate(() => {
       const w = globalThis as unknown as PatchGlobal;
@@ -183,8 +190,10 @@ test.describe('CUBE v4 — reload / screen-off / initial render', () => {
       expect(litOn, 'live cube fills the canvas when the screen is ON').toBeGreaterThan(2000);
     }
 
-    const btn = page.locator('[data-testid="cube-screen-toggle"]');
+    const btn = page
+      .locator('[data-testid="dock-fullview-pane"][data-pane-node="cb"] [data-testid="control-screen_on"]');
     await expect(btn).toHaveCount(1);
+    await btn.scrollIntoViewIfNeeded();
     await btn.click();
     await expect.poll(readScreen, { message: 'screen toggled OFF' }).toBe(0);
 

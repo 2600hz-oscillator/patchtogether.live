@@ -65,7 +65,7 @@ interface CellStats {
 /** Sample the OUTPUT canvas interior and return cel-shade stats. We sample
  *  the centre 70% so the video-out 4:3 letterbox bars can't inflate counts. */
 async function readCellStats(page: Page): Promise<CellStats> {
-  const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+  const canvas = page.locator('.svelte-flow__node[data-id="vout"] canvas[data-testid="video-tile-thumb"]');
   await expect(canvas).toHaveCount(1);
   const stats = await canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -103,7 +103,7 @@ async function captureCell(
   page: Page,
   params: { threshold?: number; thickness?: number; bits?: number },
 ): Promise<CellStats> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -119,8 +119,8 @@ async function captureCell(
     ],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
-  await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="cellshade"])'), 'CELLSHADE visible').toBeVisible();
+  await expect(page.locator('.svelte-flow__node[data-id="vout"] [data-testid="module-shell"]')).toHaveCount(1);
   // A handful of rAFs so the ACIDWARP -> CELLSHADE -> OUTPUT chain renders —
   // COUNTED, not guessed. The comment always said "rAFs"; the code said
   // milliseconds, which is ~48 frames on a local GPU and ~6 under CI's
@@ -191,7 +191,7 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
       [],
       { mountTimeout: HEAVY_MOUNT_TIMEOUT },
     );
-    await expect(page.locator('[data-testid="cellshade-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="cellshade"])')).toHaveCount(1);
 
     await page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -230,9 +230,11 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
       )
       .toEqual({ th: 0.42, wk: 5, bits: 3, soft: 0.6, smo: 0.8, ink: 0.4 });
 
-    // The card's BANDS readout reflects the 6-band step (data-testid kept on
-    // the readout). Renderer-agnostic DOM assertion (no canvas read needed).
-    await expect(page.locator('[data-testid="cellshade-bits-readout"]'))
-      .toContainText('6 BANDS');
+    // The card's BANDS readout died with the card (readout ruling); the def's
+    // roster now feeds the FACE control's accessible value — the tile knob
+    // speaks the band count in aria-valuetext. Renderer-agnostic DOM assert.
+    await expect(
+      page.locator('.svelte-flow__node:has([data-shell-type="cellshade"]) [data-testid="control-bits"]'),
+    ).toHaveAttribute('aria-valuetext', /6/);
   });
 });

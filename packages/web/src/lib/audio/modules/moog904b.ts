@@ -58,7 +58,6 @@ export const MOOG904B_RANGE_OPTIONS = [
 export const moog904bDef: AudioModuleDef = {
   type: 'moog904b',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog904bVcfCard',
   domain: 'audio',
   label: '904b vcf',
   category: 'filters',

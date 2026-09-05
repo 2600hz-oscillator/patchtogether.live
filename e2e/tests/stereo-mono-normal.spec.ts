@@ -262,7 +262,7 @@ test.describe('stereo modules: an unpatched R output follows L (mono normal)', (
       // ── LEG 1: NOTHING PATCHED. The permanent negative control. If the probe
       //    manufactured signal of its own, or the module self-oscillated, leg 2
       //    would pass no matter what the factory did.
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await spawnPatch(page, [{ id: SUT, type: sut.type, ...(sut.openPath ? { params: sut.openPath } : {}) }]);
       await installProbe(page, sut);
       const idle = await measure(page, WINDOW_MS);
@@ -284,7 +284,7 @@ test.describe('stereo modules: an unpatched R output follows L (mono normal)', (
       //    the stereo auto-wire correctly writes ONE edge — the exact patch the
       //    defect made half-silent. Nothing is connected to the R input, so the
       //    DSP's own normal is the only thing that can make OUT R speak.
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await spawnPatch(
         page,
         [

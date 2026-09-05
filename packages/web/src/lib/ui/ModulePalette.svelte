@@ -37,14 +37,6 @@
     /** Optional: triggered by the Organize modules entry. When provided the
      *  entry is shown; the palette closes after invoking. */
     onorganize?: () => void;
-    /** Optional: triggered by the Create group entry. When provided the
-     *  entry is shown; the palette closes after invoking. The parent then
-     *  enters lasso mode anchored at the click point. */
-    oncreategroup?: () => void;
-    /** Optional: triggered by the Insert-saved-group entry. When provided
-     *  the entry is shown; the palette closes after invoking. Canvas only
-     *  passes this for signed-in users. */
-    oninsertsavedgroup?: () => void;
   }
 
   let {
@@ -55,8 +47,6 @@
     onselect,
     onclose,
     onorganize,
-    oncreategroup,
-    oninsertsavedgroup,
   }: Props = $props();
 
   /** Count instances of a module type currently in the patch. */
@@ -162,16 +152,6 @@
     onclose();
   }
 
-  function pickCreateGroup() {
-    oncreategroup?.();
-    onclose();
-  }
-
-  function pickInsertSavedGroup() {
-    oninsertsavedgroup?.();
-    onclose();
-  }
-
   function toggleTop(t: TopCategory) {
     if (openTop === t) {
       openTop = null;
@@ -216,27 +196,15 @@
       spellcheck="false"
     />
     <div class="palette-body">
-      {#if onorganize || oncreategroup || oninsertsavedgroup}
+      <!-- ⚠ TWO TOOL ENTRIES ARE GONE WITH THE GROUP! MODULE: "Create
+           instrument" (which armed the lasso) and "Insert saved instrument…"
+           (which opened the saved-groups library picker). `onorganize` is the
+           only tool left, so it gates the section header on its own. -->
+      {#if onorganize}
         <div class="category">tools</div>
-        {#if oncreategroup}
-          <button class="item tool" onclick={pickCreateGroup} data-testid="palette-create-group">
-            Create instrument
-          </button>
-        {/if}
-        {#if oninsertsavedgroup}
-          <button
-            class="item tool"
-            onclick={pickInsertSavedGroup}
-            data-testid="palette-insert-saved-group"
-          >
-            Insert saved instrument…
-          </button>
-        {/if}
-        {#if onorganize}
-          <button class="item tool" onclick={pickOrganize} data-testid="palette-organize">
-            Organize modules
-          </button>
-        {/if}
+        <button class="item tool" onclick={pickOrganize} data-testid="palette-organize">
+          Organize modules
+        </button>
       {/if}
 
       {#if search}

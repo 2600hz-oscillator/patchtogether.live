@@ -1,17 +1,17 @@
 // e2e/tests/samsloop-record.spec.ts
 //
-// SAMSLOOP audio-input record path:
-//   1. Spawn NOISE → samsloop.audio_l_in. Click REC, wait, click STOP.
-//      Assert the button label flips REC → STOP → REC across the click
-//      sequence.
+// SAMSLOOP audio-input record path, on the DEFAULT shell (S2 re-point —
+// the dock REC cell + the __samsloopRecording registry probe replace the
+// card's REC/STOP label flip):
+//   1. Spawn NOISE → samsloop.audio_l_in. Press REC, wait, press again;
+//      the registry probe tracks armed → stopped.
 //   2. node.data.sample.bytes is non-empty (recorded SOMETHING) AND ≤
 //      the 3 MB byte budget.
 //   3. The waveform canvas has non-trivial luma variance during/after
 //      the recording (we drew something, not a blank canvas).
-//   4. Settings switches: the max-seconds readout tracks CHAN/BITS/RATE.
-//   5. CHAN / BITS / RATE buttons are disabled while a recording is in
-//      flight (settings change mid-recording should stop the recording
-//      cleanly — separately exercised in the unit-level state-machine).
+//   4. The three dock SELECTOR cells write the take settings, a take
+//      honors them, and a settings change UNDER an armed take stops it
+//      cleanly (the face's replacement for disabled-while-recording).
 //   6. ⚠ THE ONE THAT MATTERS, AND THE ONE THAT WAS MISSING:
 //      **the recording PLAYS.** Record → trigger → audible RMS at `out`.
 //   7. The take's DURATION is the wall-clock time REC was held, and its
@@ -39,7 +39,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
-import { expectedAchievedRate, readContextSampleRate, readSample } from './_samsloop-helpers';
+import { expectedAchievedRate, openSamsloopPane, readContextSampleRate, readSample, samsloopIsRecording } from './_samsloop-helpers';
 
 /** The record byte budget (SAMSLOOP_RECORD_BUDGET_BYTES). Restated rather
  *  than imported because the e2e workspace does not resolve `$lib`; the
@@ -52,7 +52,7 @@ async function setupPage(page: Page) {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('domcontentloaded');
   return errors;
 }
@@ -77,9 +77,10 @@ test.describe('SAMSLOOP audio-input record', () => {
       ],
     );
 
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    const pane = await openSamsloopPane(page, 's');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await expect(rec).toBeVisible();
-    await expect(rec).toContainText('REC');
+    expect(await samsloopIsRecording(page, 's')).toBe(false);
 
     const ctxRate = await readContextSampleRate(page);
     expect(ctxRate, 'audio engine must be up before REC').toBeGreaterThan(0);
@@ -94,11 +95,11 @@ test.describe('SAMSLOOP audio-input record', () => {
     // structurally sound instead of a bet on poll latency.
     const heldFrom = Date.now();
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 3000 });
-    // Settings buttons get disabled while recording.
-    await expect(page.locator('[data-testid="samsloop-chan-stereo"]')).toBeDisabled();
-    await expect(page.locator('[data-testid="samsloop-bits-16"]')).toBeDisabled();
-    await expect(page.locator('[data-testid="samsloop-rate-48k"]')).toBeDisabled();
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
+    // (The card DISABLED the format buttons while recording; the face's
+    // selector cells stay live and a change STOPS the take cleanly instead —
+    // pushRecSetting, unit-pinned. The freeze invariant survives, the
+    // disabled-chrome sub-claims died with the card.)
 
     // Capture ~700 ms of noise (the polls above are also inside the bracket —
     // the recorder is live during them, and that is now counted, not leaked).
@@ -108,10 +109,7 @@ test.describe('SAMSLOOP audio-input record', () => {
     // the label read-back below is OUTSIDE it (the recorder is already off).
     await rec.click();
     const heldMs = Date.now() - heldFrom;
-    await expect(rec).toContainText('REC');
-
-    // Settings re-enable.
-    await expect(page.locator('[data-testid="samsloop-chan-stereo"]')).toBeEnabled();
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
 
     // node.data.sample populated and within the byte budget.
     const sample = await readSample(page, 's');
@@ -156,7 +154,7 @@ test.describe('SAMSLOOP audio-input record', () => {
     // (the live-record peak trace, or the static decoded preview after
     // stop). "Non-trivial" = stdev of the red-channel pixel intensity
     // across the canvas > 5 (a blank canvas has stdev ≈ 0).
-    const variance = await page.locator('[data-testid="samsloop-waveform"]').evaluate((el) => {
+    const variance = await pane.getByTestId('samsloop-face-canvas').evaluate((el) => {
       const c = el as HTMLCanvasElement;
       const ctx = c.getContext('2d');
       if (!ctx) return 0;
@@ -205,14 +203,15 @@ test.describe('SAMSLOOP audio-input record', () => {
       `pre-record peak ${beforeRec.peak} — samsloop must be silent with no sample and no trigger`,
     ).toBeLessThan(0.02);
 
-    // (b) Record ~700 ms of noise.
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    // (b) Record ~700 ms of noise (dock REC cell + registry probe).
+    const pane = await openSamsloopPane(page, 's');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await expect(rec).toBeVisible();
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
     await page.waitForTimeout(700);
     await rec.click();
-    await expect(rec).toContainText('REC');
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
 
     // The bytes landed — asserted here too so a failure below is diagnosable
     // as "recorded but does not play" rather than "did not record".
@@ -234,7 +233,7 @@ test.describe('SAMSLOOP audio-input record', () => {
     // (d) THE ASSERTION THE MODULE SHIPPED WITHOUT: trigger it and listen.
     //     Renderer-tolerant — a max-held peak over a window with a generous
     //     floor, because the claim is "audible vs silent", not a level.
-    await page.locator('[data-testid="samsloop-trigger-button"]').click();
+    await pane.getByTestId('shell-cell-samsloop-trigger').click();
     const playing = await readScopePeakOverWindow(page, 'scp', 1500);
     expect(
       playing.peak,
@@ -245,45 +244,83 @@ test.describe('SAMSLOOP audio-input record', () => {
   });
 
   test('max-seconds readout reflects settings, at the rate the machine can produce', async ({ page }) => {
+    // ⚠ REWRITTEN FOR THE FACE. The card's derived `samsloop-max-seconds`
+    // string died with the card (readout ruling; the budget→seconds VALUES are
+    // unit-owned — see the rack-budget note below). What SURVIVES here is the
+    // behavioural half the string was derived from: the three dock SELECTOR
+    // cells write the take settings into node.data, a take HONORS them, and —
+    // the face's own documented semantics — changing a setting UNDER an armed
+    // take stops it cleanly (pushRecSetting) rather than re-formatting it.
     const errors = await setupPage(page);
-    await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
+    // A live input edge: a take with NO input pulls zero frames and commits
+    // nothing, so the honors-check below needs real audio like every other
+    // recording leg here.
+    await spawnPatch(
+      page,
+      [
+        { id: 'n', type: 'noise', position: { x: 100, y: 200 } },
+        { id: 's', type: 'samsloop', position: { x: 400, y: 200 } },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'n', portId: 'white' }, to: { nodeId: 's', portId: 'audio_l_in' },
+          sourceType: 'noise', targetType: 'samsloop' },
+      ],
+    );
 
-    const budget = page.locator('[data-testid="samsloop-max-seconds"]');
     const ctxRate = await readContextSampleRate(page);
-    expect(ctxRate, 'audio engine must be up to derive the readout').toBeGreaterThan(0);
-
-    // The readout is derived, not looked up: min(3 MB / bytes-per-second,
-    // 60 s), at the ACHIEVED rate. Computing the expectation the same way the
-    // card does is the only version of this test that is not an assertion
-    // about which sample rate the runner happens to use.
-    const expectSeconds = (switchRate: number, bits: number, channels: number) => {
-      const rate = expectedAchievedRate(ctxRate, switchRate);
-      const exact = Math.min(3_000_000 / (rate * (bits / 8) * channels), 60);
-      return (Math.round(exact * 100) / 100).toFixed(2);
+    expect(ctxRate, 'audio engine must be up to record').toBeGreaterThan(0);
+    const pane = await openSamsloopPane(page, 's');
+    const pick = async (cell: string, option: string) => {
+      await pane.getByTestId(cell).click();
+      await page.getByRole('option', { name: option, exact: true }).click();
     };
+    const recSettings = () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: { recChannels?: number; recBits?: number; recRate?: number } }> };
+        };
+        const d = w.__patch.nodes['s']?.data ?? {};
+        return { chan: d.recChannels ?? null, bits: d.recBits ?? null, rate: d.recRate ?? null };
+      });
 
-    // Defaults: MONO / 16-bit / 48 kHz.
-    await expect(budget).toContainText(`${expectSeconds(48_000, 16, 1)}s`);
+    // Mono / 8-bit / 22 kHz reaches node.data. (Mono IS the default, and
+    // picking the already-selected option fires no change — hop through
+    // stereo first so the mono write is a real write.)
+    await pick('shell-cell-samsloop-chan', 'stereo');
+    await pick('shell-cell-samsloop-chan', 'mono');
+    await pick('shell-cell-samsloop-bits', '8');
+    await pick('shell-cell-samsloop-rate-select', '22k');
+    await expect.poll(recSettings).toEqual({ chan: 1, bits: 8, rate: 22_050 });
 
-    // Mono / 8-bit / 22 kHz — the 60 s LENGTH cap binds here, not the bytes.
-    await page.locator('[data-testid="samsloop-chan-mono"]').click();
-    await page.locator('[data-testid="samsloop-bits-8"]').click();
-    await page.locator('[data-testid="samsloop-rate-22k"]').click();
-    await expect(budget).toContainText(`${expectSeconds(22_050, 8, 1)}s`);
-    await expect(budget).toContainText('60.00s');
+    // …and a take HONORS them: record ~400 ms (silence is fine — format is
+    // format) and the persisted sample carries the picked bits/channels at
+    // the rate this machine can actually produce.
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
+    await rec.click();
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
+    // pacing: the LENGTH OF THE TAKE — a real-time capture, so the wall clock
+    // IS the subject; shortening this shortens the RECORDING, not a wait.
+    await page.waitForTimeout(400);
+    await rec.click();
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
+    // The encode-and-commit on stop is async — poll for the persisted take.
+    await expect
+      .poll(async () => (await readSample(page, 's')) !== null, { message: 'take committed' })
+      .toBe(true);
+    const sample = await readSample(page, 's');
+    expect(sample!.bits).toBe(8);
+    expect(sample!.channels).toBe(1);
+    expect(sample!.rate).toBe(expectedAchievedRate(ctxRate, 22_050));
 
-    // Stereo / 16-bit / 48 kHz — the tightest combination on offer.
-    await page.locator('[data-testid="samsloop-chan-stereo"]').click();
-    await page.locator('[data-testid="samsloop-bits-16"]').click();
-    await page.locator('[data-testid="samsloop-rate-48k"]').click();
-    await expect(budget).toContainText(`${expectSeconds(48_000, 16, 2)}s`);
-
-    // NEGATIVE CONTROL on the readout: the three switches must actually move
-    // it. If `expectSeconds` and the card were both wrong in the same way,
-    // every assertion above would still pass — this one fails unless the
-    // control does something.
-    await page.locator('[data-testid="samsloop-chan-mono"]').click();
-    await expect(budget).not.toContainText(`${expectSeconds(48_000, 16, 2)}s`);
+    // Changing a setting UNDER an armed take STOPS it (the face's replacement
+    // for the card's disabled-while-recording buttons).
+    await rec.click();
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 're-armed' }).toBe(true);
+    await pick('shell-cell-samsloop-chan', 'stereo');
+    await expect
+      .poll(() => samsloopIsRecording(page, 's'), { message: 'a settings change ends the take' })
+      .toBe(false);
+    await expect.poll(recSettings).toMatchObject({ chan: 2 });
 
     expect(errors, errors.join('; ')).toEqual([]);
   });
@@ -293,22 +330,44 @@ test.describe('SAMSLOOP audio-input record', () => {
     // 44.1). The old card silently stored the request anyway; now the card
     // says so and stores the truth. Which switch position is honest depends on
     // the machine, so DERIVE which one to check rather than assuming.
+    // ⚠ REWRITTEN FOR THE FACE. The card's `samsloop-rate-note` string died
+    // with the card (readout ruling); the TRUTH it narrated — the stored tag
+    // is what the samples ARE, whatever the switch requested — is asserted
+    // directly here, per switch position, on a real take each time.
     const errors = await setupPage(page);
-    await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
+    await spawnPatch(
+      page,
+      [
+        { id: 'n', type: 'noise', position: { x: 100, y: 200 } },
+        { id: 's', type: 'samsloop', position: { x: 400, y: 200 } },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'n', portId: 'white' }, to: { nodeId: 's', portId: 'audio_l_in' },
+          sourceType: 'noise', targetType: 'samsloop' },
+      ],
+    );
     const ctxRate = await readContextSampleRate(page);
     expect(ctxRate).toBeGreaterThan(0);
+    const pane = await openSamsloopPane(page, 's');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
 
-    const note = page.locator('[data-testid="samsloop-rate-note"]');
     for (const switchRate of [22_050, 44_100, 48_000]) {
-      await page.locator(`[data-testid="samsloop-rate-${Math.round(switchRate / 1000)}k"]`).click();
+      await pane.getByTestId('shell-cell-samsloop-rate-select').click();
+      await page
+        .getByRole('option', { name: `${Math.round(switchRate / 1000)}k`, exact: true })
+        .click();
+      await rec.click();
+      await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
+      // pacing: the LENGTH OF THE TAKE — real-time capture, wall clock is the subject.
+      await page.waitForTimeout(250);
+      await rec.click();
+      await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
       const achieved = expectedAchievedRate(ctxRate, switchRate);
-      if (achieved === switchRate) {
-        await expect(note, `${switchRate} IS achievable at ctx ${ctxRate} — no note expected`)
-          .toHaveCount(0);
-      } else {
-        await expect(note, `${switchRate} is NOT achievable at ctx ${ctxRate} — the card must say so`)
-          .toContainText(`${(achieved / 1000).toFixed(1)}k`);
-      }
+      await expect
+        .poll(async () => (await readSample(page, 's'))?.rate ?? null, {
+          message: `switch ${switchRate} at ctx ${ctxRate} must STORE ${achieved} — the tag is what the samples are`,
+        })
+        .toBe(achieved);
     }
 
     expect(errors, errors.join('; ')).toEqual([]);
@@ -331,19 +390,25 @@ test.describe('SAMSLOOP audio-input record', () => {
           sourceType: 'noise', targetType: 'samsloop' },
       ],
     );
-    const card = page.locator('.svelte-flow__node[data-id="s"]');
-    const rec = card.locator('[data-testid="samsloop-rec-button"]');
-
-    await expect(card.locator('[data-testid="samsloop-rack-budget-note"]')).toHaveCount(0);
+    // On the face the budget narration is the REC REFUSAL live region
+    // (`samsloop-face-rec-error`, absent at rest — face-samsloop-rec-refusal
+    // covers the full-rack arm); a free rack shows no refusal and records.
+    // (The card's max-seconds / budget-note readouts died with the card; the
+    // budget→seconds VALUES are unit-owned, see the note below.)
+    const pane = await openSamsloopPane(page, 's');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
+    await expect(pane.getByTestId('samsloop-face-rec-error')).toHaveCount(0);
     await expect(rec).toBeEnabled();
-    await expect(card.locator('[data-testid="samsloop-max-seconds"]')).toHaveText(/^\d+\.\d\ds max$/);
 
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms on a free rack' }).toBe(true);
     await page.waitForTimeout(400);
     await rec.click();
-    await expect(rec).toContainText('REC');
-    expect((await readSample(page, 's'))?.bytesLen ?? 0).toBeGreaterThan(0);
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
+    await expect
+      .poll(async () => (await readSample(page, 's'))?.bytesLen ?? 0, { message: 'take committed' })
+      .toBeGreaterThan(0);
+    await expect(pane.getByTestId('samsloop-face-rec-error')).toHaveCount(0);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });
@@ -402,18 +467,34 @@ test.describe('SAMSLOOP audio-input record', () => {
       ],
     );
 
-    const dl = page.locator('[data-testid="samsloop-download-button"]');
-    await expect(dl).toBeDisabled();
+    // ⚠ The face's EXPORT cell is never disabled (enablement was card
+    // chrome); the guarded behaviour survives as a SUCCESSFUL NO-OP — a press
+    // with nothing to export starts NO download, and the same press after a
+    // take does. Both directions asserted, so the leg keeps its name's claim.
+    const pane = await openSamsloopPane(page, 's');
+    const dl = pane.getByTestId('shell-cell-samsloop-download');
+
+    let sawDownload = false;
+    page.on('download', () => { sawDownload = true; });
+    await dl.click();
+    // pacing: bounding a NEGATIVE claim — the no-op resolves synchronously in
+    // the handler, and only wall clock can prove no download event follows.
+    await page.waitForTimeout(500);
+    expect(sawDownload, 'an empty samsloop must export NOTHING').toBe(false);
 
     // Record briefly.
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await rec.click();
-    await expect(rec).toContainText('STOP');
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
     await page.waitForTimeout(400);
     await rec.click();
-    await expect(rec).toContainText('REC');
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
+    await expect
+      .poll(async () => (await readSample(page, 's')) !== null, { message: 'take committed' })
+      .toBe(true);
 
-    await expect(dl).toBeEnabled({ timeout: 2000 });
+    const [download] = await Promise.all([page.waitForEvent('download'), dl.click()]);
+    expect(download.suggestedFilename()).toMatch(/\.wav$/);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });

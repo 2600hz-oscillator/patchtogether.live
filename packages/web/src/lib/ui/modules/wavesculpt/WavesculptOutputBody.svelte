@@ -4,21 +4,34 @@
   // The WAVESCULPT dock full-view body: THE renderer, the camera pad that flies
   // it, the SCREEN switch and the MONITOR resize.
   //
-  // ⚠ IT MOUNTS THE RENDERER; IT DOES NOT RE-DRAW IT. `WavesculptVizSurface` is
-  // the same component `WavesculptCard` mounts, so the legacy card and this
-  // faceplate are two mounts of ONE renderer rather than two renderers drifting
-  // against one DSP. That is the whole reason the extraction was its own PR.
+  // ⚠ IT ADOPTS THE RENDERER; IT DOES NOT MOUNT ONE, AND IT NEVER RE-DRAWS ONE.
+  // Since legacy-removal S1 the NODE owns `WavesculptVizSurface` — one mount per
+  // node, parked off-screen by `$lib/ui/media/NodeVizSurfaceHost` on GRAPH
+  // lifetime — and this body CLAIMS its canvas into the pad below. So the
+  // faceplate, the legacy card and every module downstream see one renderer's
+  // pixels by construction, and the picture exists before either surface does.
   //
-  // ⚠ THE SURFACE IS NEVER UNMOUNTED BY THE SCREEN SWITCH, AND THIS IS THE ONE
-  // THING NOT TO "TIDY UP". Turning SCREEN off hides the picture with CSS; it
-  // does NOT `{#if}` the surface away, the way `RasterizeOutputBody` may drop
-  // its canvas. Unmounting here would run the surface's `onDestroy` — which
-  // disposes the GL context AND uninstalls the cross-domain frame drawer — so
-  // `video_out` would go BLACK for every module downstream the moment a player
-  // collapsed a preview they were not even looking at. The module's own
-  // `drawFrame` fills the canvas solid black with no drawer installed (measured
-  // elsewhere in the tree: nonBlack 0/3072 px, maxLuma 0), so this is not a
-  // theoretical tidiness point. SKIP THE VIEW, NEVER THE RENDER.
+  // ⚠ ADOPTION IS FORCED, NOT PREFERRED. A DOM element has one parent, and the
+  // surface stamps `data-testid="wavesculpt-canvas"` on its own canvas: a second
+  // mount here would put TWO of them in the document — `wavesculpt.spec.ts`
+  // asserts exactly one, fifteen times, as does the VRT surface roster
+  // (`expectCount: 1`) — and would run a second GL context for one node.
+  //
+  // ⚠ THE CLAIM IS RANKED, NOT LAST-WINS (`VIZ_CLAIM_PRIORITY.dock`). More than
+  // one view can be looking at one wavesculpt, and the surface the player
+  // deliberately opened is the one that should hold the picture; closing this
+  // pane releases the claim and the next standing one gets the canvas back with
+  // no remount.
+  //
+  // ⚠ THE CLAIM IS NEVER DROPPED BY THE SCREEN SWITCH, AND THIS IS THE ONE THING
+  // NOT TO "TIDY UP". Turning SCREEN off hides the picture with CSS; it does NOT
+  // `{#if}` the host away, the way `RasterizeOutputBody` may drop its canvas.
+  // The stakes are lower than they were — the renderer now belongs to the node,
+  // so dropping the claim would only park the canvas, not dispose the GL context
+  // or uninstall the frame drawer — but a released claim is a BLANK PAD with the
+  // crosshair and dot still drawn on it, which reads as a broken surface. Hiding
+  // the wrapper keeps the picture exactly where the pad's gesture expects it.
+  // SKIP THE VIEW, NEVER THE CLAIM.
   //
   // ⚠ WHY CSS RATHER THAN A `blit` PROP ON THE SURFACE. Telling the surface to
   // skip its presentation blit would be marginally cheaper — but the surface is
@@ -39,7 +52,10 @@
   import { patch } from '$lib/graph/store';
   import { mutateNode, setNodeParam } from '$lib/graph/mutate';
   import { clampJoy } from '$lib/audio/modules/joystick';
-  import WavesculptVizSurface from './WavesculptVizSurface.svelte';
+  // ⚠ THE RENDERER IS NOT IMPORTED HERE. `NodeVizSurfaceHost` mounts it once per
+  // node; this body claims its canvas.
+  import { nodeVizSurfaces } from '$lib/ui/media/node-viz-surfaces';
+  import { VIZ_CLAIM_PRIORITY } from '$lib/ui/media/node-viz-surface-registry';
   import { WAVESCULPT_MONITOR_BOX, WAVESCULPT_RESTING } from './monitor-box';
 
   interface Props {
@@ -96,6 +112,22 @@
   /** The picture's box in CSS px. MONITOR mode is the only user-sized state. */
   let viewW = $derived(monitor ? boxW : WAVESCULPT_RESTING.w);
   let viewH = $derived(monitor ? boxH : WAVESCULPT_RESTING.h);
+
+  // ---- The NODE's picture, claimed into the pad ----
+  //
+  // ⚠ NOTHING HERE OWNS THE RENDER, WHICH IS WHY COLLAPSING THIS PANE IS SAFE.
+  // The claim is a view lease: releasing it parks the canvas back with the node
+  // host, where the GL context, the `video_out` frame drawer and the DRS step
+  // seam all stay installed. `video_out` is untouched by anything this body
+  // does — the property the SCREEN switch's owner floor asks for, made
+  // structural instead of asserted.
+  let vizHost = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    const host = vizHost;
+    if (!host) return;
+    const claim = nodeVizSurfaces.claim(nodeId, host, VIZ_CLAIM_PRIORITY.dock);
+    return () => claim.release();
+  });
 
   let resizing = $state(false);
   function onResizeStart(ev: PointerEvent): void {
@@ -202,44 +234,26 @@
       onpointerup={onPointerUp}
       onpointercancel={onPointerUp}
     >
-      <!-- ⚠ ALWAYS MOUNTED — see the header. SCREEN off hides it, never
-           unmounts it, because unmounting disposes the GL context and
-           uninstalls the video_out frame drawer. -->
-      <!-- ⚠ `ownsVideoOut={false}` IS LOAD-BEARING — THIS IS THE SECOND MOUNT.
-           wavesculpt is a faced producer that is NOT in FACE_MOUNTS_PRODUCER,
-           so its real card stays alive in <HeadlessSourceHost> while this dock
-           full view is open (`keepsHeadlessWhileDocked`). That card is the
-           mount that OWNS `video_out`; this one is the viewer the surface's
-           own prose calls "a second, viewer-only mount"
-           (WavesculptVizSurface.svelte:88-99: "Exactly ONE mounted surface per
-           node should" own the seam).
+      <!-- ⚠ ALWAYS CLAIMED — see the header. SCREEN off hides the wrapper with
+           CSS; it never releases the claim, because a released claim parks the
+           canvas and leaves a blank pad with a live crosshair drawn on it.
+           Empty in markup on purpose: the canvas is `appendChild`ed here by the
+           claim, so declaring a child would give Svelte something to manage in
+           a container the registry re-parents into.
 
-           Without it BOTH mounts default to `ownsVideoOut = true` and the node
-           goes permanently black on COLLAPSE. ⚠ THE DEFECT IS ON THE INSTALL
-           SIDE, NOT THE RELEASE SIDE, and the distinction is the whole reason
-           this prop is the fix rather than a stronger guard:
-
-             * install (`wavesculpt.ts:101-103`) is a BARE
-               `FRAME_DRAWERS.set(nodeId, fn)` — no owner check, last writer
-               silently wins. So this mount does not race the card at teardown;
-               it STEALS ownership at MOUNT, orphaning a drawer whose card is
-               still live and still visible.
-             * release (`:121-124`) IS owner-checked (#1587), and the check is
-               genuinely active — the surface passes `myFrameDrawer`. When this
-               mount later unmounts, the entry really is its own, the check
-               correctly passes, and the map is emptied. Nothing restores the
-               card's drawer.
-
-           #1587 hardened exactly half of this seam and the hardened half is not
-           the half that failed: an owner-checked RELEASE cannot defend against
-           a silent ownership STEAL at INSTALL. Measured before this prop: 9
-           live frames, then 81 consecutive black (788 ms) with no recovery.
-
-           The picture here is unaffected — the flag gates the cross-domain
-           registry and the DRS step seam, never this mount's own render. -->
-      <div class="viz" class:hidden={previewCollapsed}>
-        <WavesculptVizSurface {nodeId} ownsVideoOut={false} />
-      </div>
+           ⚠ THE `ownsVideoOut={false}` THAT USED TO LIVE HERE IS GONE WITH THE
+           SECOND MOUNT IT EXISTED FOR, and the defect it fixed is worth keeping
+           on the record because the fix is now STRUCTURAL rather than a flag.
+           `installWavesculptFrameDrawer` is a BARE `FRAME_DRAWERS.set(nodeId,
+           fn)` — no owner check, last writer silently wins — so a second mount
+           did not race the card at teardown, it STOLE ownership at MOUNT and
+           orphaned a drawer whose card was still live and still visible.
+           Measured before that flag: 9 live frames, then 81 consecutive black
+           (788 ms) with no recovery. #1587 had hardened the RELEASE side, and
+           an owner-checked release cannot defend against a silent steal at
+           install. With one mount per node there is no second installer at all,
+           which is the class of fix this whole slice is made of. -->
+      <div class="viz" class:hidden={previewCollapsed} bind:this={vizHost}></div>
 
       <!-- The gesture, ON TOP of its own feedback: crosshair + dot. -->
       <div class="cross-h"></div>

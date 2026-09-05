@@ -29,11 +29,39 @@ import { waitFrames } from '../_helpers/frames';
  * waiting on the exact event the sleep was standing in for, so it is correct on
  * a fast machine and on a starved CI shard alike.
  */
-const cardConnected = (page: Page) =>
-  expect(
-    page.locator('[data-testid="gamepad-card"] .status.on'),
-    'the GAMEPAD card status never reported a connected pad — the rAF poll did not see the injected fake',
-  ).toBeVisible();
+/** Open the GAMEPAD dock pane (the mapping board — sticks, remap surface,
+ *  calibration, save/load — is `fullViewBody`, dock-only; testids are
+ *  node-suffixed) and return the BOARD locator. Idempotent. */
+async function openGpBoard(page: Page) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'gp',
+  );
+  const board = page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="gp"]')
+    .getByTestId('gamepad-body-gp');
+  await expect(board).toBeVisible({ timeout: 60_000 });
+  return board;
+}
+
+/** READINESS, not a duration (#1523): the PAD lamp lights the first time the
+ *  board's rAF poll sees the injected fake (`data-lit` — the card's `.status
+ *  .on` line became the StatusLed). Returns the board. */
+const cardConnected = async (page: Page) => {
+  const board = await openGpBoard(page);
+  await expect(
+    board.getByTestId('gamepad-led-pad-gp'),
+    'the GAMEPAD PAD lamp never reported a connected pad — the rAF poll did not see the injected fake',
+  ).toHaveAttribute('data-lit', '1');
+  return board;
+};
 
 /** Inject a fake gamepad into navigator.getGamepads(). Call BEFORE
  *  spawning the GAMEPAD module — the factory's rAF poll picks it up
@@ -98,13 +126,13 @@ test.describe('GAMEPAD module', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    await expect(page.locator('[data-testid="gamepad-card"]')).toBeVisible();
-    await expect(page.locator('[data-testid="gamepad-card"] .status')).toContainText(
-      /press any button/i,
-    );
+    const board = await openGpBoard(page);
+    // No pad: the PAD lamp is dark and the empty state carries the prompt.
+    await expect(board.getByTestId('gamepad-led-pad-gp')).toHaveAttribute('data-lit', '0');
+    await expect(board).toContainText(/press any button/i);
     expect(errors.filter((e) => !e.includes('DEP0040')), errors.join('; ')).toEqual([]);
   });
 
@@ -211,7 +239,7 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(posX, { timeout: 5_000 }).toBeGreaterThan(0.5);
   });
 
-  test('GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x + moves the on-card joystick dot', async ({ page, rack }) => {
+  test('GAMEPAD stick reaches BOTH extremes of WAVESCULPT.pos_x', async ({ page, rack }) => {
     // Regression: the gamepad-driven camera joystick couldn't reach the
     // stick's extremes and the dot updated horribly slowly (the live-poll
     // was on a setInterval that got starved behind the card's WebGL render;
@@ -246,22 +274,19 @@ test.describe('GAMEPAD module', () => {
       if (!eng || !ws) return -99;
       return (eng.readParam(ws, 'pos_x') as number | undefined) ?? -99;
     });
-    // The dot's `left` (px) within the 110px pad: full-left ≈ 0, full-right ≈ 110.
-    const dotLeftPx = () => page.evaluate(() => {
-      const dot = document.querySelector('[data-testid="wavesculpt-pad"] .dot') as HTMLElement | null;
-      if (!dot) return -1;
-      return parseFloat(dot.style.left || '-1');
-    });
+    // (The card-dot leg died with the card, and NOT as lost coverage: the
+    // face's camera pad deliberately shows the PARAM while CV moves the
+    // PICTURE — WavesculptOutputBody: "do not 'fix' the pad to follow CV",
+    // a known owner-listed defect the face does not build on. The full-range
+    // engine read below is the whole surviving claim.)
 
-    // Full RIGHT → pos_x near +1 → dot near the right edge (>80% of the pad).
+    // Full RIGHT → pos_x near +1.
     await updateFakeGamepad(page, { axes: [1, 0, 0, 0] });
     await expect.poll(readPosX, { timeout: 2000 }).toBeGreaterThan(0.9);
-    await expect.poll(dotLeftPx, { timeout: 2000 }).toBeGreaterThan(88);
 
-    // Full LEFT → pos_x near -1 → dot near the left edge (<20% of the pad).
+    // Full LEFT → pos_x near -1.
     await updateFakeGamepad(page, { axes: [-1, 0, 0, 0] });
     await expect.poll(readPosX, { timeout: 2000 }).toBeLessThan(-0.9);
-    await expect.poll(dotLeftPx, { timeout: 2000 }).toBeLessThan(22);
   });
 
   test('calibrate left stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page, rack }) => {
@@ -272,7 +297,7 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
 
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
     const readLx = () => page.evaluate(() => {
       const w = globalThis as unknown as {
         __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
@@ -291,10 +316,11 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(readLx, { timeout: 2000 }).toBeLessThan(0.7);
 
     // Enter calibration mode.
-    await card.getByTestId('gamepad-calibrate-start').click();
-    await expect(card.getByTestId('gamepad-calib-mode')).toBeVisible();
+    await card.getByTestId('gamepad-calibrate-left-gp').click();
+    // In-mode: the calib row swaps to COMPLETE / CANCEL.
+    await expect(card.getByTestId('gamepad-calibrate-complete-gp')).toBeVisible();
     // "complete" starts disabled (no usable sweep yet).
-    await expect(card.getByTestId('gamepad-calibrate-complete')).toBeDisabled();
+    await expect(card.getByTestId('gamepad-calibrate-complete-gp')).toBeDisabled();
 
     // Sweep the reduced range several times: hit each extreme on both axes.
     const sweepPts: [number, number][] = [
@@ -314,14 +340,14 @@ test.describe('GAMEPAD module', () => {
     }
     // Now the sweep is usable → "complete" enables.
     await expect.poll(
-      () => card.getByTestId('gamepad-calibrate-complete').isEnabled(),
+      () => card.getByTestId('gamepad-calibrate-complete-gp').isEnabled(),
       { timeout: 2000 },
     ).toBe(true);
 
     // Complete → mode exits, calibrated badge appears, range persisted to data.
-    await card.getByTestId('gamepad-calibrate-complete').click();
-    await expect(card.getByTestId('gamepad-calib-mode')).toBeHidden();
-    await expect(card.getByTestId('gamepad-calibrated')).toBeVisible();
+    await card.getByTestId('gamepad-calibrate-complete-gp').click();
+    await expect(card.getByTestId('gamepad-calibrate-complete-gp')).toHaveCount(0);
+    await expect(card.getByTestId('gamepad-led-cal-left-gp')).toHaveAttribute('data-lit', '1');
 
     // The calibration was written ONCE to node.data (single committed value).
     const cal = await page.evaluate(() => {
@@ -346,7 +372,7 @@ test.describe('GAMEPAD module', () => {
   test('clear calibration reverts the left stick to the fixed-deadzone path', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     // Seed a calibration directly via node.data (the committed shape), then
     // assert the clear affordance removes it.
@@ -358,9 +384,9 @@ test.describe('GAMEPAD module', () => {
       if (!gp.data) gp.data = {};
       gp.data.leftStickCalibration = { minX: -0.6, maxX: 0.6, minY: -0.6, maxY: 0.6, deadzone: 0.1 };
     });
-    await expect(card.getByTestId('gamepad-calibrated')).toBeVisible();
-    await card.getByTestId('gamepad-calibrate-clear').click();
-    await expect(card.getByTestId('gamepad-calibrated')).toBeHidden();
+    await expect(card.getByTestId('gamepad-led-cal-left-gp')).toHaveAttribute('data-lit', '1');
+    await card.getByTestId('gamepad-calibrate-clear-left-gp').click();
+    await expect(card.getByTestId('gamepad-led-cal-left-gp')).toHaveAttribute('data-lit', '0');
     const cleared = await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { data?: { leftStickCalibration?: unknown } }> };
@@ -398,7 +424,7 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     // Baseline: the `a` output follows physical A (button 0). Pressing X
     // (button 2) does NOT light `a` yet.
@@ -415,8 +441,13 @@ test.describe('GAMEPAD module', () => {
     await waitFrames(page, 3);
 
     // Arm the `a` output's remap (right-click its LED) → banner appears.
-    await card.getByTestId('gamepad-remap-a').click({ button: 'right' });
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await card.getByTestId('gamepad-remap-a-gp').click({ button: 'right' });
+    // The card's banner became the ARMED state on the control itself.
+    await expect(card.getByTestId('gamepad-remap-a-gp')).toHaveClass(/armed/);
+    // The armed listener seeds its baseline on the NEXT poll tick — give it
+    // frames before the stimulus (the gamepad-face recipe; a press that lands
+    // before the seed is captured INTO the baseline and never diffs).
+    await waitFrames(page, 3);
 
     // Press physical X (button 2) → detector binds `a` → physical X.
     await updateFakeGamepad(page, { buttons: pressX });
@@ -424,8 +455,8 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(() => readBindings(page), { timeout: 3000 }).not.toBeNull();
     const bindings = await readBindings(page);
     expect(bindings?.a).toEqual({ kind: 'button', index: 2 });
-    // Banner clears once bound.
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+    // The armed state clears once bound.
+    await expect(card.getByTestId('gamepad-remap-a-gp')).not.toHaveClass(/armed/);
 
     // The `a` output now FOLLOWS physical X: holding X reads 1…
     await expect.poll(() => readGp(page, 'a'), { timeout: 2000 }).toBe(1);
@@ -439,18 +470,19 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     // Arm the left-stick X remap (the user-preferred separate "Remap X" button).
-    await card.getByTestId('gamepad-remap-lx').click();
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await card.getByTestId('gamepad-remap-lx-gp').click();
+    await expect(card.getByTestId('gamepad-remap-lx-gp')).toHaveClass(/armed/);
+    await waitFrames(page, 3); // baseline seeds on the next poll tick
 
     // Move the RIGHT-stick X axis (index 2) fully → detector binds lx → axis 2.
     await updateFakeGamepad(page, { axes: [0, 0, 0.95, 0] });
     await expect.poll(() => readBindings(page), { timeout: 3000 }).not.toBeNull();
     const bindings = await readBindings(page);
     expect(bindings?.lx).toEqual({ kind: 'axis', index: 2 });
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+    await expect(card.getByTestId('gamepad-remap-lx-gp')).not.toHaveClass(/armed/);
 
     // The lx OUTPUT now follows axis 2: moving axis 2 drives lx, while the
     // original axis 0 no longer does.
@@ -464,13 +496,18 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
-    await card.getByTestId('gamepad-remap-b').click({ button: 'right' });
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
-    // Cancel via Esc.
+    await card.getByTestId('gamepad-remap-b-gp').click({ button: 'right' });
+    await expect(card.getByTestId('gamepad-remap-b-gp')).toHaveClass(/armed/);
+    // Cancel via Esc. ⚠ The body claims the key CAPTURE-phase while a remap is
+    // armed (the menu-Esc pattern), so the dock full view must survive the
+    // press — an Esc that also unmounted this board would "cancel" any remap
+    // by killing the listener, which is what made this assert pass vacuously
+    // before the fix.
     await page.keyboard.press('Escape');
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+    await expect(card.getByTestId('gamepad-remap-b-gp')).not.toHaveClass(/armed/);
+    await expect(card, 'the dock pane survived the armed-remap Esc').toBeVisible();
     // Now press a button — it must NOT bind anything (listener disarmed).
     const pressX = [...Array(17).fill(0)]; pressX[2] = 1;
     await updateFakeGamepad(page, { buttons: pressX });
@@ -488,12 +525,13 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     // FIRST remap: arm the left-stick X (left-click, the axis path → no context
     // menu) and move axis 1 → binds lx→axis1.
-    await card.getByTestId('gamepad-remap-lx').click();
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await card.getByTestId('gamepad-remap-lx-gp').click();
+    await expect(card.getByTestId('gamepad-remap-lx-gp')).toHaveClass(/armed/);
+    await waitFrames(page, 3); // baseline seeds on the next poll tick
     await updateFakeGamepad(page, { axes: [0, 0.95, 0, 0] }); // only axis 1 moves
     await expect.poll(async () => (await readBindings(page))?.lx ?? null, { timeout: 3000 }).not.toBeNull();
     expect((await readBindings(page))?.lx).toEqual({ kind: 'axis', index: 1 });
@@ -506,12 +544,13 @@ test.describe('GAMEPAD module', () => {
     // SECOND remap (the one that broke): arm the right-stick X, move axis 0 →
     // binds rx→axis0. The shipped code threw out of the rAF poll HERE (the
     // bindings map already existed), killing the module. It must NOT throw.
-    await card.getByTestId('gamepad-remap-rx').click();
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await card.getByTestId('gamepad-remap-rx-gp').click();
+    await expect(card.getByTestId('gamepad-remap-rx-gp')).toHaveClass(/armed/);
+    await waitFrames(page, 3); // baseline seeds on the next poll tick
     await updateFakeGamepad(page, { axes: [0.95, 0, 0, 0] }); // only axis 0 moves
     await expect.poll(async () => (await readBindings(page))?.rx ?? null, { timeout: 3000 }).not.toBeNull();
     expect((await readBindings(page))?.rx).toEqual({ kind: 'axis', index: 0 });
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+    await expect(card.getByTestId('gamepad-remap-rx-gp')).not.toHaveClass(/armed/);
 
     // The module is STILL ALIVE: rx now follows axis 0 (push axis 0 hard-right)…
     await updateFakeGamepad(page, { axes: [1, 0, 0, 0] });
@@ -529,15 +568,15 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     // Baseline: right-stick X (axis 2) hard-right → rx ≈ +1 (no invert).
     await updateFakeGamepad(page, { axes: [0, 0, 1, 0] });
     await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeGreaterThan(0.8);
 
     // Toggle INVERT on rx → the SAME hard-right deflection now reads ≈ -1.
-    await card.getByTestId('gamepad-invert-rx').click();
-    await expect(card.getByTestId('gamepad-invert-rx')).toHaveAttribute('aria-pressed', 'true');
+    await card.getByTestId('gamepad-invert-rx-gp').click();
+    await expect(card.getByTestId('gamepad-invert-rx-gp')).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeLessThan(-0.8);
     // Persisted on node.data.invert (synced).
     const inv = await page.evaluate(() => {
@@ -549,8 +588,8 @@ test.describe('GAMEPAD module', () => {
     expect(inv?.rx).toBe(true);
 
     // Toggle OFF → back to +1.
-    await card.getByTestId('gamepad-invert-rx').click();
-    await expect(card.getByTestId('gamepad-invert-rx')).toHaveAttribute('aria-pressed', 'false');
+    await card.getByTestId('gamepad-invert-rx-gp').click();
+    await expect(card.getByTestId('gamepad-invert-rx-gp')).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeGreaterThan(0.8);
 
     // Invert COMPOSES with a remap: remap rx → axis 0, invert it, push axis 0.
@@ -559,12 +598,13 @@ test.describe('GAMEPAD module', () => {
     // detector would pick axis 2 = rx's own default).
     await updateFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeCloseTo(0, 1);
-    await card.getByTestId('gamepad-remap-rx').click();
-    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await card.getByTestId('gamepad-remap-rx-gp').click();
+    await expect(card.getByTestId('gamepad-remap-rx-gp')).toHaveClass(/armed/);
+    await waitFrames(page, 3); // baseline seeds on the next poll tick
     await updateFakeGamepad(page, { axes: [0.95, 0, 0, 0] }); // only axis 0 moves
     await expect.poll(async () => (await readBindings(page))?.rx ?? null, { timeout: 3000 }).not.toBeNull();
     expect((await readBindings(page))?.rx).toEqual({ kind: 'axis', index: 0 });
-    await card.getByTestId('gamepad-invert-rx').click();
+    await card.getByTestId('gamepad-invert-rx-gp').click();
     await updateFakeGamepad(page, { axes: [1, 0, 0, 0] }); // axis 0 hard-right, remapped→rx, inverted
     await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeLessThan(-0.8);
   });
@@ -595,7 +635,7 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
 
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
     const readRx = () => page.evaluate(() => {
       const w = globalThis as unknown as {
         __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
@@ -613,10 +653,12 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(readRx, { timeout: 2000 }).toBeLessThan(0.7);
 
     // Enter RIGHT-stick calibration mode.
-    await card.getByTestId('gamepad-calibrate-start-right').click();
-    await expect(card.getByTestId('gamepad-calib-mode')).toBeVisible();
-    await expect(card.getByTestId('gamepad-calib-mode')).toContainText(/right/i);
-    await expect(card.getByTestId('gamepad-calibrate-complete')).toBeDisabled();
+    await card.getByTestId('gamepad-calibrate-right-gp').click();
+    // In-mode: the calib row swaps to COMPLETE / CANCEL, and the RIGHT stick
+    // pad is the armed one (the mode indicator moved off text onto the pad).
+    await expect(card.getByTestId('gamepad-calibrate-complete-gp')).toBeVisible();
+    await expect(card.getByTestId('gamepad-stick-right-gp')).toHaveClass(/armed/);
+    await expect(card.getByTestId('gamepad-calibrate-complete-gp')).toBeDisabled();
 
     // Sweep the RIGHT stick's reduced range (axes 2,3) several times.
     const sweepPts: [number, number][] = [
@@ -632,14 +674,14 @@ test.describe('GAMEPAD module', () => {
       }
     }
     await expect.poll(
-      () => card.getByTestId('gamepad-calibrate-complete').isEnabled(),
+      () => card.getByTestId('gamepad-calibrate-complete-gp').isEnabled(),
       { timeout: 2000 },
     ).toBe(true);
 
     // Complete → mode exits, RIGHT calibrated badge appears, range persisted.
-    await card.getByTestId('gamepad-calibrate-complete').click();
-    await expect(card.getByTestId('gamepad-calib-mode')).toBeHidden();
-    await expect(card.getByTestId('gamepad-calibrated-right')).toBeVisible();
+    await card.getByTestId('gamepad-calibrate-complete-gp').click();
+    await expect(card.getByTestId('gamepad-calibrate-complete-gp')).toHaveCount(0);
+    await expect(card.getByTestId('gamepad-led-cal-right-gp')).toHaveAttribute('data-lit', '1');
 
     const cal = await page.evaluate(() => {
       const w = globalThis as unknown as {
@@ -673,7 +715,7 @@ test.describe('GAMEPAD module', () => {
   test('save mapping triggers a .json download of the current control config', async ({ page, rack }) => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     // Seed some config so the saved mapping is non-trivial.
     await page.evaluate(() => {
@@ -688,7 +730,7 @@ test.describe('GAMEPAD module', () => {
 
     // Click "save mapping" and capture the triggered download.
     const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
-    await card.getByTestId('gamepad-save-mapping').click();
+    await card.getByTestId('gamepad-save-mapping-gp').click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/\.json$/);
 
@@ -700,8 +742,9 @@ test.describe('GAMEPAD module', () => {
     expect(json.bindings?.a).toEqual({ kind: 'button', index: 2 });
     expect(json.invert?.rx).toBe(true);
 
-    // A status line confirms the save.
-    await expect(card.getByTestId('gamepad-mapping-status')).toContainText(/saved/i);
+    // The MAPPING lamp latches the outcome (its detail rides the aria-label —
+    // the card's status toast became a StatusLed).
+    await expect(card.getByTestId('gamepad-led-mapping-gp')).toHaveAttribute('aria-label', /saved/i);
   });
 
   test('load preset "NXT Gladiator" applies WITHOUT killing the module (rAF poll stays alive)', async ({ page }) => {
@@ -712,12 +755,12 @@ test.describe('GAMEPAD module', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     const readGp = (port: string) => page.evaluate((p) => {
       const w = globalThis as unknown as {
@@ -732,12 +775,12 @@ test.describe('GAMEPAD module', () => {
 
     // The preset dropdown is pre-populated with "NXT Gladiator".
     await expect(
-      card.getByTestId('gamepad-preset-select').locator('option', { hasText: 'NXT Gladiator' }),
+      card.getByTestId('gamepad-preset-gp').locator('option', { hasText: 'NXT Gladiator' }),
     ).toHaveCount(1);
 
     // Select it → applies the placeholder (default) mapping; status confirms.
-    await card.getByTestId('gamepad-preset-select').selectOption('NXT Gladiator');
-    await expect(card.getByTestId('gamepad-mapping-status')).toContainText(/NXT Gladiator/);
+    await card.getByTestId('gamepad-preset-gp').selectOption('NXT Gladiator');
+    await expect(card.getByTestId('gamepad-led-mapping-gp')).toHaveAttribute('aria-label', /NXT Gladiator/);
 
     // The module is STILL ALIVE: the rAF poll keeps pushing values. Push axis 0
     // hard-right and the lx output follows it (default mapping → lx = axis 0).
@@ -755,7 +798,7 @@ test.describe('GAMEPAD module', () => {
     await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
     await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
     await cardConnected(page);
-    const card = page.locator('[data-testid="gamepad-card"]');
+    const card = await openGpBoard(page);
 
     const readGp = (port: string) => page.evaluate((p) => {
       const w = globalThis as unknown as {
@@ -770,7 +813,7 @@ test.describe('GAMEPAD module', () => {
 
     // Load a mapping that binds the `a` output to physical X (button 2).
     const mapping1 = JSON.stringify({ bindings: { a: { kind: 'button', index: 2 } } });
-    await card.getByTestId('gamepad-load-mapping-input').setInputFiles({
+    await card.getByTestId('gamepad-load-mapping-gp').setInputFiles({
       name: 'm1.json',
       mimeType: 'application/json',
       buffer: Buffer.from(mapping1, 'utf-8'),
@@ -792,7 +835,7 @@ test.describe('GAMEPAD module', () => {
     // Load a SECOND mapping (the over-existing path) — must not throw out of the
     // rAF poll. This one inverts rx instead.
     const mapping2 = JSON.stringify({ invert: { rx: true } });
-    await card.getByTestId('gamepad-load-mapping-input').setInputFiles({
+    await card.getByTestId('gamepad-load-mapping-gp').setInputFiles({
       name: 'm2.json',
       mimeType: 'application/json',
       buffer: Buffer.from(mapping2, 'utf-8'),
@@ -811,12 +854,12 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(() => readGp('rx'), { timeout: 2000 }).toBeLessThan(-0.8);
 
     // Loading GARBAGE JSON is ignored gracefully (no throw, module still alive).
-    await card.getByTestId('gamepad-load-mapping-input').setInputFiles({
+    await card.getByTestId('gamepad-load-mapping-gp').setInputFiles({
       name: 'junk.json',
       mimeType: 'application/json',
       buffer: Buffer.from('not json at all {{{', 'utf-8'),
     });
-    await expect(card.getByTestId('gamepad-mapping-status')).toContainText(/ignored/i);
+    await expect(card.getByTestId('gamepad-led-mapping-gp')).toHaveAttribute('aria-label', /ignored/i);
     // rx invert is unchanged + the poll still drives output.
     await updateFakeGamepad(page, { axes: [0, 0, 1, 0] });
     await expect.poll(() => readGp('rx'), { timeout: 2000 }).toBeLessThan(-0.8);

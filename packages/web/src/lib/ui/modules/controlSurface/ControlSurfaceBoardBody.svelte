@@ -2,17 +2,16 @@
   // CONTROL SURFACE BOARD BODY — the free-form pointer board, at the head of
   // the dock full view (`ShellExtension.fullViewBody`).
   //
-  // This is `ControlSurfaceCard.svelte`'s board block — the group boxes, the
-  // proxied Knobs, the passthrough colour stripes, the per-knob rename and the
-  // drag layout — lifted with its `cardVersion` pump intact. The title bar does
-  // NOT come with it (the shell owns that), and neither does the LOCK button —
-  // that is the ranked faceplate cell now (`control-surface-lock-{n}` in
-  // shell-cells.ts), which is what puts the lock on the lane tile too.
+  // The board block — the group boxes, the proxied Knobs, the passthrough
+  // colour stripes, the per-knob rename and the drag layout — ported with its
+  // `cardVersion` pump intact. The title bar is not part of it (the shell owns
+  // that), and neither is the LOCK button — that is the ranked faceplate cell
+  // now (`control-surface-lock-{n}` in shell-cells.ts), which is what puts the
+  // lock on the lane tile too.
   //
-  // ⚠ PORTED, NOT REDESIGNED. Three renderers proxy this module's pointers —
-  // this body, the legacy card (still live under `?shell=legacy` and in the
-  // dock rail for a USER-DOCKED node) and the Electra flash pipeline — and
-  // every write goes through the SAME in-place mutators
+  // ⚠ PORTED, NOT REDESIGNED. Two renderers proxy this module's pointers — this
+  // body and the Electra flash pipeline — and every write goes through the SAME
+  // in-place mutators
   // ($lib/graph/control-surface): `setSurfaceGroupPosition`, `setBindingName`,
   // `resolveSurfaceParam().set`. Nothing here spreads a live Yjs array — the
   // "Type already integrated" crash class the graph module's CRITICAL note

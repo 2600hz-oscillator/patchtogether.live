@@ -1,6 +1,6 @@
 // e2e/tests/workflow-surfaces.spec.ts
 //
-// WORKFLOW MODE P2 — the topbar surface trio on /rack?shell=legacy:
+// WORKFLOW MODE P2 — the topbar surface trio on /rack:
 //
 //   🕐 clock — TIMELORDE's face: live BPM readout, the REAL tempo knob,
 //      TAP tempo (shared TapTempo core), and click-driven patch-out rows
@@ -12,7 +12,7 @@
 //   (The 🎧 audio-I/O surface needs the fake-mic browser flags, so its e2e
 //   lives in audio-in.spec.ts under the chromium-audio-in project.)
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Web MIDI is faked
 // via addInitScript (a deterministic single-input access object): CI
 // runners have no MIDI hardware, and the bridge's device handling starts
@@ -85,7 +85,7 @@ async function setBpm(page: Page, bpm: number): Promise<void> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await waitForPins(page);
 }
@@ -132,14 +132,31 @@ test.describe('workflow clock surface (🕐 TIMELORDE face)', () => {
       await expect(canvasNode(page, id)).toHaveCount(0);
     }
     // …and the ABSENCE above is not the absence of the node from the PAGE, which
-    // is a different and much weaker claim. `pinned-timelorde` really is mounted
-    // — off-canvas, in its host — because its card is the sole writer of
-    // `video_out`. Pinning that here keeps the leg above honest: if the host ever
-    // stops existing, this fails rather than the one above quietly getting easier.
+    // is a different and much weaker claim.
+    //
+    // ⚠ WHAT PINNED IT HAS CHANGED, AND THE LEG IS STRONGER FOR IT
+    // (legacy-removal S1). This used to assert `pinned-timelorde` was mounted
+    // off-canvas in a `headless-source-host`, because its CARD was the sole
+    // writer of `video_out`. The composite is node-owned now
+    // ($lib/ui/media/frame-producers), so there is no host and no card at all —
+    // and the honest anchor is the NODE, which really is in the graph while
+    // nothing renders it on the canvas. If the node ever stops existing, this
+    // fails rather than the count-zero leg above quietly getting easier.
+    expect(
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch?: { nodes: Record<string, { type?: string } | undefined> };
+        };
+        return w.__patch?.nodes['pinned-timelorde']?.type ?? null;
+      }),
+      'the pinned clock node is not in the graph, so the canvas-absence above is the absence of ' +
+        'the whole module rather than of its canvas tile',
+    ).toBe('timelorde');
     await expect(
       page.locator('[data-testid="headless-source-host"][data-node-type="timelorde"]'),
-      'the pinned clock has no headless host — its producer would be dead (#1754)',
-    ).toHaveCount(1);
+      'a headless host is keeping a timelorde card alive — its producer is node-lifetime now, so ' +
+        'that mount would be a second owner of one display frame',
+    ).toHaveCount(0);
 
     await page.getByTestId('workflow-topbar-slot-clock').click();
     const menu = page.getByTestId('workflow-clock-menu');

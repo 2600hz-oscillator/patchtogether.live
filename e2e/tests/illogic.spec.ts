@@ -49,7 +49,7 @@ async function readScopeStats(page: Page, scopeNodeId: string): Promise<ScopeSta
 
 test('illogic: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'il', type: 'illogic', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-illogic');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="illogic"])');
   await expect(card).toBeVisible();
   await expect(card).toContainText('ILLOGIC');
 });

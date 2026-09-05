@@ -50,7 +50,7 @@
 
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 
 // Every composite pair lands on SCOPE.ch1 as the consumer — its analyser-
 // driven canvas renders the bridged signal as a visible trace excursion
@@ -233,7 +233,7 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
         });
       }
 
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -300,9 +300,12 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
         height: 540,
       };
 
-      await page.locator(`.svelte-flow__node-${pair.source.type}`).first()
+      // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+      // and every lane node is `moduleShell`, so a per-module class matches
+      // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+      await canvasNode(page, sourceId)
         .waitFor({ state: 'visible', timeout: 10_000 });
-      await page.locator('.svelte-flow__node-scope').first()
+      await canvasNode(page, consumerId)
         .waitFor({ state: 'visible', timeout: 10_000 });
 
       // Engine + analyser settle.

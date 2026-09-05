@@ -23,7 +23,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 
-const RACK = '/rack?shell=legacy&seed=none';
+const RACK = '/rack?seed=none';
 
 interface PatchWindow {
   __patch: {
@@ -66,8 +66,6 @@ async function seed(page: Page, types: readonly string[]): Promise<Record<string
   return out;
 }
 
-const card = (page: Page, id: string) =>
-  page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="video-out-card"]`);
 const picture = (page: Page, id: string) =>
   page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="video-out-fs-wrap"]`);
 const panel = (page: Page) => page.locator('[data-testid="detached-display"]');
@@ -154,203 +152,12 @@ const undoDepth = (page: Page): Promise<number> =>
     return w.__undoManager?.undoStack.length ?? -1;
   });
 
-test.describe('videoOut — detach display', () => {
-  test('right-click → detach floats a resizable, draggable picture that is NOT a flow node', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    const { videoOut } = await seed(page, ['videoOut']);
-    await expect(card(page, videoOut)).toBeVisible();
-
-    await expect(panel(page), 'nothing floats before the gesture').toHaveCount(0);
-    await picture(page, videoOut).click({ button: 'right' });
-    await expect(page.getByTestId('video-canvas-context-menu')).toBeVisible();
-    await page.getByTestId('ctx-detach-display').click();
-
-    await expect(panel(page)).toHaveCount(1);
-    await expect(panel(page)).toHaveAttribute('data-node-id', videoOut);
-
-    // ⚠ NO PATCH WIRES — asserted STRUCTURALLY, not by looking for absent lines.
-    // The panel is mounted outside <SvelteFlow>, so it is not a flow node: there
-    // is no handle for a cable to attach to and nothing for the edge layer to
-    // draw. A styled-away wire would pass a "no visible edge" check; this cannot.
-    expect(
-      await page.evaluate(
-        () => !!document.querySelector('[data-testid="detached-display"]')?.closest('.svelte-flow__node'),
-      ),
-      'the detached display must not be a flow node',
-    ).toBe(false);
-    await expect(panel(page).locator('.svelte-flow__handle')).toHaveCount(0);
-
-    // THE VIOLET BORDER COMES FROM THE DOMAIN CHAIN. Asserted against the token
-    // the app resolves for the VIDEO cable rather than a literal, so re-tuning
-    // the skin re-tunes this test with it instead of reddening it.
-    const want = await page.evaluate(() =>
-      getComputedStyle(document.documentElement).getPropertyValue('--cable-video').trim(),
-    );
-    const got = await panel(page).evaluate((el) => getComputedStyle(el).borderTopColor);
-    const asRgb = await page.evaluate((hex) => {
-      const d = document.createElement('div');
-      d.style.color = hex;
-      document.body.appendChild(d);
-      const v = getComputedStyle(d).color;
-      d.remove();
-      return v;
-    }, want);
-    expect(got, `panel border should be --cable-video (${want})`).toBe(asRgb);
-
-    // RESIZE via the corner grip — a real pointer drag.
-    const before = (await panel(page).boundingBox())!;
-    const grip = page.getByTestId('detached-display-resize');
-    const gb = (await grip.boundingBox())!;
-    await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
-    await page.mouse.down();
-    for (let i = 1; i <= 8; i++) {
-      await page.mouse.move(gb.x + (150 * i) / 8, gb.y + (110 * i) / 8);
-    }
-    await page.mouse.up();
-    await expect
-      .poll(async () => (await panel(page).boundingBox())!.width, {
-        message: 'CSS px — the grip must grow the panel',
-      })
-      .toBeGreaterThan(before.width);
-
-    // DRAG by the header.
-    const mid = (await panel(page).boundingBox())!;
-    const bar = page.getByTestId('detached-display-bar');
-    const bb = (await bar.boundingBox())!;
-    await page.mouse.move(bb.x + 40, bb.y + bb.height / 2);
-    await page.mouse.down();
-    for (let i = 1; i <= 8; i++) {
-      await page.mouse.move(bb.x + 40 - (180 * i) / 8, bb.y + bb.height / 2 + (100 * i) / 8);
-    }
-    await page.mouse.up();
-    await expect
-      .poll(async () => (await panel(page).boundingBox())!.x, { message: 'CSS px — the header drags the panel' })
-      .toBeLessThan(mid.x);
-
-    expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
-  });
-
-  test('RE-ATTACH is reachable from BOTH the floating output and the underlying card', async ({ page }) => {
-    // The owner asked for both entries. They are the same menu component with
-    // the same handler, but "the same code" is the CLAIM — this is the check.
-    const { videoOut } = await seed(page, ['videoOut']);
-    await expect(card(page, videoOut)).toBeVisible();
-
-    // (a) from the FLOATING OUTPUT.
-    await picture(page, videoOut).click({ button: 'right' });
-    await page.getByTestId('ctx-detach-display').click();
-    await expect(panel(page)).toHaveCount(1);
-    await page.getByTestId('detached-display-wrap').click({ button: 'right' });
-    await expect(page.getByTestId('ctx-reattach-display')).toBeVisible();
-    await page.getByTestId('ctx-reattach-display').click();
-    await expect(panel(page), 're-attach from the panel').toHaveCount(0);
-    await expect(page.getByTestId('video-out-detached-plate')).toHaveCount(0);
-
-    // (b) from the UNDERLYING CARD, which while detached shows the plate the
-    // right-click lands on.
-    await picture(page, videoOut).click({ button: 'right' });
-    await page.getByTestId('ctx-detach-display').click();
-    await expect(panel(page)).toHaveCount(1);
-    await expect(page.getByTestId('video-out-detached-plate')).toHaveCount(1);
-    await picture(page, videoOut).click({ button: 'right' });
-    await expect(page.getByTestId('ctx-reattach-display')).toBeVisible();
-    await page.getByTestId('ctx-reattach-display').click();
-    await expect(panel(page), 're-attach from the card').toHaveCount(0);
-
-    // (c) THE PANEL'S OWN BUTTON — the route a user actually reaches for, and
-    // the one that shipped broken (#2237): it did nothing at all, so the panel
-    // could not be dismissed from itself.
-    //
-    // ⚠ (a) AND (b) CANNOT CATCH IT, which is the whole reason this leg exists.
-    // Both go through the context menu, and every layer they exercise — the
-    // handler, the prop, the mutation, the derivation — was already correct.
-    // What was broken is that the button never received a `click`: the bar IS
-    // the drag handle, `onDragStart` calls `preventDefault()` on `pointerdown`,
-    // and that suppresses the compatibility mouse events which follow. Only
-    // pressing the button can see it, and asserting on the FLAG rather than the
-    // panel says which half failed if it regresses.
-    await picture(page, videoOut).click({ button: 'right' });
-    await page.getByTestId('ctx-detach-display').click();
-    await expect(panel(page)).toHaveCount(1);
-    await page.getByTestId('detached-display-reattach').click();
-    await expect(panel(page), 're-attach from the panel BUTTON').toHaveCount(0);
-    // The flag itself, not just the panel: a panel that vanished for any other
-    // reason would pass the line above while leaving the node still detached.
-    await expect
-      .poll(
-        () => page.evaluate(
-          (id) => {
-            const w = window as unknown as { __ydoc?: { getMap(k: string): { get(k: string): unknown } } };
-            const n = w.__ydoc?.getMap('nodes').get(id) as { toJSON?: () => { data?: Record<string, unknown> } } | undefined;
-            return n?.toJSON?.().data?.detached ?? null;
-          },
-          videoOut,
-        ),
-        { message: 'the detached flag must be CLEARED, not merely hidden' },
-      )
-      .toBeFalsy();
-  });
-
-  test('DELETING THE CARD takes the floating output with it', async ({ page }) => {
-    // Direction 1 of 2. ⚠ Both directions are tested because a half-wired
-    // version looks correct from whichever side you happen to try first.
-    const { videoOut } = await seed(page, ['videoOut']);
-    await expect(card(page, videoOut)).toBeVisible();
-    await picture(page, videoOut).click({ button: 'right' });
-    await page.getByTestId('ctx-detach-display').click();
-    await expect(panel(page)).toHaveCount(1);
-
-    // Delete through the NODE's own menu — the ordinary way a user removes a
-    // module, with no knowledge of the detached panel anywhere in that path.
-    await nodeMenu(page, videoOut);
-    await deleteViaNodeMenu(page);
-
-    await expect.poll(() => nodeIds(page)).not.toContain(videoOut);
-    await expect(panel(page), 'the floating output goes with the card').toHaveCount(0);
-  });
-
-  test('DELETING FROM THE FLOATING OUTPUT takes the card with it', async ({ page }) => {
-    // Direction 2 of 2.
-    const { videoOut } = await seed(page, ['videoOut']);
-    await expect(card(page, videoOut)).toBeVisible();
-    await picture(page, videoOut).click({ button: 'right' });
-    await page.getByTestId('ctx-detach-display').click();
-    await expect(panel(page)).toHaveCount(1);
-
-    await page.getByTestId('detached-display-wrap').click({ button: 'right' });
-    await page.getByTestId('ctx-delete-module').click();
-
-    await expect.poll(() => nodeIds(page)).not.toContain(videoOut);
-    await expect(panel(page)).toHaveCount(0);
-    await expect(card(page, videoOut), 'the card goes with the floating output').toHaveCount(0);
-  });
-
-  test('detaching MOVES the picture rather than cloning it — the card stops blitting', async ({ page }) => {
-    // ⚠ THE #1802 LEG. A detached display is a second live surface; if the card
-    // kept its own preview blit the node would pay the GL readback twice for one
-    // picture. The observable is the card's own state flag, which gates the blit
-    // in `draw()` — asserted both ways so a flag that never moves cannot pass.
-    const { videoOut } = await seed(page, ['videoOut']);
-    await expect(picture(page, videoOut)).toHaveAttribute('data-detached', 'false');
-    await picture(page, videoOut).click({ button: 'right' });
-    await page.getByTestId('ctx-detach-display').click();
-    await expect(picture(page, videoOut)).toHaveAttribute('data-detached', 'true');
-    await page.getByTestId('detached-display-wrap').click({ button: 'right' });
-    await page.getByTestId('ctx-reattach-display').click();
-    await expect(picture(page, videoOut)).toHaveAttribute('data-detached', 'false');
-  });
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', () => {
-  // ⚠ WHY THIS DESCRIBE EXISTS. Everything above drives `?shell=legacy`, which
-  // renders `VideoOutCard` — the surface this PR REPLACES. A green run there is
-  // structurally unable to see the shipping path: the `ModuleShell` lane tile,
-  // and `VideoOutBody`'s own detach button and detached plate. That is the
-  // blind-gate shape (a gate whose subject is not the thing that ships), and it
-  // matters extra because `strict-faces.ts` cites this file as what covers the
+  // ⚠ WHY THIS DESCRIBE IS THE ONE THAT MATTERS. It drives the shipping path —
+  // the `ModuleShell` lane tile, and `VideoOutBody`'s own detach button and
+  // detached plate — and `strict-faces.ts` cites this file as what covers the
   // face. These legs are what make that citation true.
 
   async function seedDefaultShell(page: Page): Promise<string> {
@@ -395,6 +202,41 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
     await page.locator(`.svelte-flow__node[data-id="${id}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
     await page.getByTestId('ctx-reattach-display').click();
     await expect(panel(page)).toHaveCount(0);
+  });
+
+  test('DELETING THE NODE takes the floating output with it', async ({ page }) => {
+    // Direction 1 of 2. ⚠ Both directions are tested because a half-wired
+    // version looks correct from whichever side you happen to try first.
+    const id = await seedDefaultShell(page);
+    await page.locator(`.svelte-flow__node[data-id="${id}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+
+    // Delete through the NODE's own menu — the ordinary way a user removes a
+    // module, with no knowledge of the detached panel anywhere in that path.
+    await nodeMenu(page, id);
+    await deleteViaNodeMenu(page);
+
+    await expect.poll(() => nodeIds(page)).not.toContain(id);
+    await expect(panel(page), 'the floating output goes with the node').toHaveCount(0);
+  });
+
+  test('DELETING FROM THE FLOATING OUTPUT takes the node with it', async ({ page }) => {
+    // Direction 2 of 2.
+    const id = await seedDefaultShell(page);
+    await page.locator(`.svelte-flow__node[data-id="${id}"]`).click({ button: 'right', position: { x: 6, y: 6 } });
+    await page.getByTestId('ctx-detach-display').click();
+    await expect(panel(page)).toHaveCount(1);
+
+    await page.getByTestId('detached-display-wrap').click({ button: 'right' });
+    await page.getByTestId('ctx-delete-module').click();
+
+    await expect.poll(() => nodeIds(page)).not.toContain(id);
+    await expect(panel(page)).toHaveCount(0);
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="${id}"]`),
+      'the lane node goes with the floating output',
+    ).toHaveCount(0);
   });
 
   test("the FACEPLATE's own detach button works, and the faceplate shows the detached plate", async ({ page }) => {

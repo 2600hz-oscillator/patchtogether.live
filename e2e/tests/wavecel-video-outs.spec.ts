@@ -111,7 +111,7 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
     // Pin the engine clock + pause the rAF loop BEFORE boot so the test owns the
     // exact frame count and any patched modulator can't drift the frame.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -134,10 +134,10 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-wavecel'), 'WAVECEL visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])'), 'WAVECEL visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'), 'OUTPUT visible').toBeVisible();
 
-    const wavecelCard = page.locator('.svelte-flow__node-wavecel');
+    const wavecelCard = page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])');
     await expect(
       wavecelCard.locator('[data-handleid="scope_out"]'),
       'scope_out handle present',
@@ -198,7 +198,7 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -218,9 +218,11 @@ test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () =>
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-wavecel'), 'WAVECEL visible').toBeVisible();
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="wavecel"])'), 'WAVECEL visible').toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node:has([data-shell-type="videoOut"])'),
+      'OUTPUT tile present (the pixel reads below are engine-FBO, not DOM)',
+    ).toHaveCount(1);
 
     // First confirm the decode is a real structured non-black frame...
     const stats = await stepAndReadStats(page, { nodeId: 'v-out', steps: FIXED_STEPS });

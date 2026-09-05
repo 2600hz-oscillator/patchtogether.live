@@ -31,10 +31,6 @@ import { paramCellKind, SEGMENTED_MAX_OPTIONS } from '$lib/ui/workflow/shell-con
 import { dockFacePlan, dockPlanControls, laneOrder, curatedFace } from '$lib/ui/workflow/curated-face';
 import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
 import {
-  EXEMPT_FROM_VRT,
-  ALLOWED_PERMANENT_EXEMPT,
-} from '../../../../../../e2e/vrt/vrt-exemptions';
-import {
   PAD_PX,
   dotX,
   dotY,
@@ -45,7 +41,6 @@ import {
 } from './gamepad/gamepad-board-model';
 
 const BODY = fileURLToPath(new URL('./gamepad/GamepadMappingBody.svelte', import.meta.url));
-const CARD = fileURLToPath(new URL('./GamepadCard.svelte', import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf8');
 
 const FACE = () => gamepadDef.face!;
@@ -185,34 +180,24 @@ describe('gamepad face — the SLOT cell is SELECTABLE, and PRESENT at every tie
     expect(SLOT().max).toBe(GAMEPAD_SLOT_MAX);
   });
 
-  it('the CARD renders the DEF\'s roster — one place, not two', () => {
-    // The backdraft class, applied to a roster rather than a range: no runtime
-    // gate reads a literal in a `.svelte` file, so it is guarded at SOURCE. The
-    // card used to carry `{#each [0, 1, 2, 3] …}`, which would have silently
-    // disagreed with the def the day a fifth slot became legal.
-    const card = read(CARD);
-    expect(card, 'the card imports the def roster').toContain('GAMEPAD_SLOT_OPTIONS');
-    expect(
-      /\{#each\s*\[\s*0\s*,\s*1\s*,\s*2\s*,\s*3\s*\]/.test(card),
-      'the card re-types the slot roster as a literal array',
-    ).toBe(false);
-  });
-
-  it('the SLOT write goes through `setNodeParam`, not a bare proxy assignment', () => {
-    // ⚠ A LIVE DEFECT THIS PR FIXED, PINNED SO IT CANNOT COME BACK. The card
-    // wrote `patch.nodes[id].params.padIndex = …` with no `ydoc.transact` and no
-    // `LOCAL_ORIGIN`, while every `node.data` write on the same file correctly
-    // used `mutateNode` — so the change synced to collaborators but never
-    // reached the UndoManager and Cmd-Z could not undo a slot change. The face's
-    // segmented cell commits through `shell-param-writes`, which IS
-    // `setNodeParam`, so both surfaces now write identically.
-    const card = read(CARD);
-    expect(card).toContain('setNodeParam(');
-    expect(
-      /\.params\.padIndex\s*=/.test(card),
-      'a bare proxy write to params.padIndex is outside undo and outside the reconciler',
-    ).toBe(false);
-  });
+  // ⚠ TWO CARD-SOURCE LEGS STOOD HERE, and both are unspellable now.
+  //
+  //   * "the CARD renders the DEF's roster — one place, not two". The backdraft
+  //     class applied to a roster: the card used to carry `{#each [0,1,2,3] …}`,
+  //     which would have silently disagreed with the def the day a fifth slot
+  //     became legal. The segmented cell resolves its options straight off the
+  //     ParamDef, so there is no second roster to disagree — and the def's own
+  //     `GAMEPAD_SLOT_OPTIONS` is asserted above.
+  //   * "the SLOT write goes through `setNodeParam`". A LIVE DEFECT: the card
+  //     wrote `patch.nodes[id].params.padIndex = …` with no `ydoc.transact` and
+  //     no `LOCAL_ORIGIN`, so the change synced to collaborators but never
+  //     reached the UndoManager and Cmd-Z could not undo a slot change. The
+  //     face's segmented cell commits through `shell-param-writes`, which IS
+  //     `setNodeParam`; the bare-proxy form has no module-local place left, and
+  //     `mutate.guard.test.ts` holds the rule tree-wide.
+  //
+  // NAMED: the module-local witness for that raw write is gone with the file
+  // that carried it.
 });
 
 describe('gamepad face — the MAPPING BODY', () => {
@@ -384,14 +369,15 @@ describe('gamepad — the sweep EXTENT is a picture of the deleted readout', () 
 });
 
 describe('gamepad — the VRT drain', () => {
-  it('is drained from BOTH lists, and the anchor holds in both directions', () => {
-    // ⚠ A ONE-SIDED DELETE IS RED IN `vrt-meta.test.ts`, which is what makes a
-    // drain a two-line edit rather than a policy discussion. Restated here with
-    // the reason, because this module's exemption is the one whose PREMISE was
-    // true and whose CONCLUSION did not follow.
-    expect('gamepad' in EXEMPT_FROM_VRT, 'the card scene is captured now').toBe(false);
-    expect(ALLOWED_PERMANENT_EXEMPT.has('gamepad'), 'no stale licence left behind').toBe(false);
-  });
+  // ⚠ THE TWO-LIST ANCHOR IS GONE BECAUSE THE LISTS ARE. This block opened with
+  // a leg asserting `gamepad` was absent from BOTH `EXEMPT_FROM_VRT` and
+  // `ALLOWED_PERMANENT_EXEMPT` — the drain's own bookkeeping, restated here so a
+  // one-sided delete reddened twice. Both tables lived in
+  // `e2e/vrt/vrt-exemptions.ts` and existed only to steer the per-module LEGACY
+  // CARD sweep; that sweep is deleted and the tables with it, so there is no
+  // list left to be absent from. The leg BELOW is the one that mattered anyway:
+  // it holds the drain's PREMISE (the disconnected surface is a pure function of
+  // the code) against the code itself, which no roster edit can fake.
 
   it('the DISCONNECTED surface is a pure function of the code — the drain\'s premise', () => {
     // The exemption said the live `navigator.getGamepads()` poll defeats

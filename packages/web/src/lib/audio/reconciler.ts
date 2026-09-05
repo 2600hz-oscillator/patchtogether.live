@@ -21,7 +21,6 @@ import {
   getDefaultSnapshotBus,
   type PatchSnapshot,
 } from '$lib/graph/snapshot';
-import { projectGroups } from '$lib/graph/group-projection';
 
 interface ReconcilerHandle {
   /** Run a reconcile pass immediately against the current snapshot. */
@@ -80,22 +79,24 @@ export function attachReconciler(
     return next;
   }
 
-  async function doReconcile(rawSnap: PatchSnapshot): Promise<void> {
-    // Module-grouping Phase 1 — project the snapshot through any GROUP!
-    // nodes BEFORE the reconciler reads it. Edge endpoints that name a
-    // group's exposed port are rewritten to point at the real child port,
-    // so the engine never knows groups exist. Empty fast-path: when no
-    // group nodes are present, projectGroups returns the snapshot
-    // unchanged (same reference) → zero overhead for the common case.
-    const snap = projectGroups(rawSnap);
-
-    // Meta-domain nodes (e.g. STICKY notes, GROUP! collapses) are pure-UI
-    // cards with no engine binding. Filter them out of every map this
-    // reconciler builds so PatchEngine.addNode + setParam never see them
-    // — there's no DomainEngine registered for 'meta' and the dispatch
-    // would throw. Edges referencing meta nodes are dropped too; the type
-    // system already forbids cables to/from sticky (no ports), and
-    // projectGroups has already rewritten edges to/from groups.
+  async function doReconcile(snap: PatchSnapshot): Promise<void> {
+    // ⚠ THE GROUP PROJECTION PASS IS GONE. `projectGroups(rawSnap)` used to run
+    // FIRST, rewriting every edge endpoint that named a GROUP!'s exposed port
+    // into the real child port so the engine never learned groups existed. The
+    // GROUP! module is deleted, so there is nothing to project and the snapshot
+    // is read directly.
+    //
+    // Meta-domain nodes are defs with no engine binding. Filter them out of
+    // every map this reconciler builds so PatchEngine.addNode + setParam never
+    // see them — there's no DomainEngine registered for 'meta' and the dispatch
+    // would throw. Edges referencing meta nodes are dropped too.
+    //
+    // ⚠ THIS FILTER IS ALSO HALF THE GRACEFUL-DEGRADATION STORY for a saved rack
+    // that still carries group/sticky nodes: both saved with `domain: 'meta'`,
+    // so even if one reached the live store (a peer on an older bundle) it is
+    // skipped here before any factory is looked up. The other half is the
+    // per-node try/catch around addNode below. See
+    // $lib/graph/legacy-group-sticky-load.test.ts.
     const isMeta = (n: ModuleNode): boolean => n.domain === 'meta';
     const currentNodes = new Map<string, ModuleNode>();
     for (const n of snap.nodes) {

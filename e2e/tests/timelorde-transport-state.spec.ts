@@ -26,9 +26,27 @@ import { spawnPatch } from './_helpers';
 
 const TL = 'tl';
 
-/** The strip's machine-readable state id. */
+/** The FACE's visible transport state, recombined from the two tile readouts
+ *  (the card's one-strip `data-transport-state` died with the card; the def
+ *  formatter feeds `readout-running` RUNNING/STOPPED and
+ *  `readout-muteOutputs` GATES LIVE/MUTED, and the PAIR is the four-state
+ *  discrimination a player reads). Returns the same machine ids the shared
+ *  derivation names, or null while either readout is missing. */
 async function stripState(page: Page): Promise<string | null> {
-  return page.locator(`[data-testid="timelorde-transport-${TL}"]`).getAttribute('data-transport-state');
+  return page.evaluate((id) => {
+    const tile = document.querySelector(
+      `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`,
+    );
+    const run = tile?.querySelector('[data-testid="readout-running"]')?.textContent?.trim() ?? null;
+    const mute = tile?.querySelector('[data-testid="readout-muteOutputs"]')?.textContent?.trim() ?? null;
+    if (run === null || mute === null) return null;
+    const running = run === 'RUNNING';
+    const muted = mute === 'MUTED';
+    if (running && !muted) return 'running';
+    if (!running && !muted) return 'stopped';
+    if (running && muted) return 'muted';
+    return 'stopped-muted';
+  }, TL);
 }
 
 /** What the ENGINE thinks the state is — read('transportState') off the live
@@ -69,7 +87,7 @@ async function setParam(page: Page, key: string, value: number): Promise<void> {
 }
 
 async function spawnClock(page: Page, params: Record<string, number> = {}): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -84,9 +102,11 @@ test.describe('TIMELORDE transport state', () => {
     page.on('pageerror', (e) => errors.push(e.message));
 
     await spawnClock(page);
-    const strip = page.locator(`[data-testid="timelorde-transport-${TL}"]`);
-    await expect(strip, 'the transport strip is always mounted').toHaveCount(1);
-    await expect(strip).toBeVisible();
+    // The two readouts are always mounted on the lane tile (the card's strip
+    // died with the card; the readout PAIR carries the same four states).
+    const tile = page.locator(`.svelte-flow__node[data-id="${TL}"] [data-testid="module-shell"]`);
+    await expect(tile.getByTestId('readout-running'), 'RUN readout always mounted').toBeVisible();
+    await expect(tile.getByTestId('readout-muteOutputs'), 'MUTE readout always mounted').toBeVisible();
 
     // (running, muteOutputs) → the id the strip must publish. Four inputs, four
     // DIFFERENT answers — which is the whole point, because all but the first
@@ -150,7 +170,7 @@ test.describe('TIMELORDE transport state', () => {
     // it does not fight a MIDICLOCK — and that removes the RUN button, i.e. the
     // only pre-existing hint that the transport is stopped disappears in exactly
     // the case where a hardware stop is the likely cause.
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -164,20 +184,21 @@ test.describe('TIMELORDE transport state', () => {
       ],
     );
 
-    await expect(
-      page.locator(`[data-testid="timelorde-run-${TL}"]`),
-      'the RUN button steps aside for an external transport',
-    ).toHaveCount(0);
-
-    const strip = page.locator(`[data-testid="timelorde-transport-${TL}"]`);
-    await expect(strip, 'the transport strip does NOT step aside').toBeVisible();
+    // ⚠ FACE DELTA, measured: the CARD hid its RUN button while slaved; the
+    // face keeps `control-running` rendered (a param cell does not step
+    // aside). What the card's hiding protected — the transport state staying
+    // LEGIBLE when a hardware stop is the likely cause — is exactly what the
+    // readouts below assert, on the surface a player actually reads.
+    const tile = page.locator(`.svelte-flow__node[data-id="${TL}"] [data-testid="module-shell"]`);
+    await expect(tile.getByTestId('control-running'), 'the RUN control stays rendered on the face').toBeVisible();
+    await expect(tile.getByTestId('readout-running'), 'the readout does NOT step aside').toBeVisible();
 
     await setParam(page, 'running', 0);
     await expect
       .poll(() => stripState(page), { timeout: 4000, message: 'a slaved stop must still be reported' })
       .toBe('stopped');
-    // …and it says so in words a player reads, not only in an attribute.
-    await expect(strip).toContainText('STOPPED');
+    // …and it says so in words a player reads, not only in a derived id.
+    await expect(tile.getByTestId('readout-running')).toHaveText('STOPPED');
   });
 
   test('the ENGINE and the CARD agree about the state', async ({ page }) => {

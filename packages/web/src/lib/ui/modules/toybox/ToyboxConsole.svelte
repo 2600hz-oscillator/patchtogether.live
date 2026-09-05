@@ -1,12 +1,11 @@
 <script lang="ts">
   // ToyboxConsole — THE TOYBOX CONSOLE, and the ONLY one.
   //
-  // ⚠ ONE COMPONENT TREE, TWO MOUNTS. This file is the whole of TOYBOX's
-  // operable surface: the screen, the layer band, the combine-graph editor, the
-  // CV rail and the preset store. `../ToyboxCard.svelte` (legacy, reachable at
-  // `?shell=legacy`) and `./ToyboxConsoleBody.svelte` (the v2 faceplate's
-  // `fullViewBody`) are both THIN HOSTS around it — neither owns a control, a
-  // mutator call, or a frame of the preview pull.
+  // ⚠ ONE COMPONENT TREE, HOSTED. This file is the whole of TOYBOX's operable
+  // surface: the screen, the layer band, the combine-graph editor, the CV rail
+  // and the preset store. `./ToyboxConsoleBody.svelte` (the faceplate's
+  // `fullViewBody`) is a THIN HOST around it — it owns no control, no mutator
+  // call, and no frame of the preview pull.
   //
   // That is structural rather than tidy. TOYBOX is the deepest module in the
   // rack — a layer editor over six kinds, a 17-op EDITABLE node graph, six
@@ -20,10 +19,9 @@
   // `layout` is the ONLY difference between the two mounts, and it moves
   // ARRANGEMENT, never capability:
   //
-  //   * 'card' — the legacy three-column body (preview + layer editor | combine
-  //     graph | CV rail) with both section collapses. Byte-identical markup to
-  //     what shipped before the extraction, so the legacy VRT baselines and the
-  //     20 `?shell=legacy` toybox specs keep their subject unchanged.
+  //   (A second arrangement — a three-column body with per-section collapses —
+  //   was kept byte-identical through the extraction for the surface this
+  //   module had before its face. Nothing mounts that host, so it is gone.)
   //   * 'face' — the owner-ruled dock layout (2026-08-28): *"i'd want to
   //     generally keep what we have while migrating to our new look&feel. and
   //     putting cv-mod, combine graph, preset controls on 3 tabs, all below a
@@ -211,19 +209,25 @@
     missingVideoLayers,
   } from '../toybox-export-guard';
 
-  /** Which host is mounting this console. See the header — ARRANGEMENT only. */
-  type ToyboxConsoleLayout = 'card' | 'face';
+  /** Which host is mounting this console. See the header — ARRANGEMENT only.
+   *
+   *  ⚠ ONE MEMBER TODAY. A second arm rendered a three-column body for the
+   *  surface this module had before its face; nothing mounts that host any
+   *  more. The union stays a union because the console is designed to be
+   *  arranged by its host, and the next host declares itself here. */
+  type ToyboxConsoleLayout = 'face';
 
   interface Props {
     /** The TOYBOX node id. Stable for this component's whole lifetime. */
     nodeId: string;
-    /** The legacy card's xyflow snapshot wrapper. ⚠ THE CARD PASSES IT AND THE
-     *  FACE CANNOT, and that asymmetry is the reason `extRev` below exists
-     *  rather than a preference: the card's reactivity has always keyed off
-     *  this wrapper's FRESH IDENTITY per snapshot, and a faceplate body is not
-     *  rendered by xyflow so no such wrapper reaches it. */
+    /** An xyflow snapshot wrapper for the node. ⚠ NO CALLER PASSES ONE ANY
+     *  MORE — a faceplate body is not rendered by xyflow, so no such wrapper
+     *  reaches it and this is always `undefined`. It is left in place rather
+     *  than removed because `extRev` below reads it, and the removal is a code
+     *  change this branch is deliberately not making after its attest; it is
+     *  named here so the next editor deletes both together. */
     nodeSnapshot?: ModuleNode | undefined;
-    /** 'card' (legacy 3-column) or 'face' (screen + layer band + tab rail). */
+    /** 'face' (screen + layer band + tab rail) — the only layout. */
     layout?: ToyboxConsoleLayout;
     /**
      * Is the SCREEN switched ON? Owned by the HOST, because the fleet's video
@@ -238,7 +242,7 @@
      * producer class, #1721/#1728). Off changes what is PAINTED, never what is
      * PRODUCED.
      *
-     * Defaults TRUE so the legacy card is unchanged: it has no switch.
+     * Defaults TRUE, so a host that does not offer the switch always blits.
      */
     screenOn?: boolean;
   }
@@ -246,7 +250,7 @@
   let {
     nodeId,
     nodeSnapshot = undefined,
-    layout = 'card',
+    layout = 'face',
     screenOn = true,
   }: Props = $props();
 
@@ -283,8 +287,8 @@
   // rounds one way on one boot and the other way on the next), so the face's
   // screen is a FIXED 480×360 rather than a percentage of a pane whose width is
   // itself `max-content`.
-  let CANVAS_W = $derived(layout === 'face' ? 480 : 200);
-  let CANVAS_H = $derived(Math.round(CANVAS_W * (ENGINE_H / ENGINE_W))); // 150 / 360
+  const CANVAS_W = 480;
+  const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 360
 
   // ----- Content + model catalogs (loaded from the static manifest) -----
   let catalog: ToyboxContent[] = $state([]);
@@ -556,12 +560,12 @@
    * silently make twenty controls un-learnable on the surface that replaced the
    * card. The override changes the NAME and keeps the binding.
    *
-   * The LEGACY card keeps `control-*` verbatim (returns `undefined` → Knob's
-   * own default), because its ids are what the shipped `?shell=legacy` specs
-   * and every saved MIDI binding already address.
+   * ⚠ THE MIDI BINDING IS UNAFFECTED. `bindingKey` is `${moduleId}:${paramId}`,
+   * so the override changes the NAME a locator uses and nothing a saved binding
+   * addresses.
    */
-  function knobTestid(paramId: string): string | undefined {
-    return layout === 'face' ? `toybox-dial-${paramId}` : undefined;
+  function knobTestid(paramId: string): string {
+    return `toybox-dial-${paramId}`;
   }
 
   // ───────────────────── IMAGE / VIDEO INPUT LAYERS (#39) ─────────────────────
@@ -1089,11 +1093,6 @@
     };
   }
 
-  // Editor interaction state. Default OPEN: the wide 3-column card has a dedicated
-  // CENTER column for the combine graph, so it shows by default (no longer a
-  // space-saving collapse in the old single-column card).
-  let editorOpen = $state(true);
-
   // ───────────────────── THE FACE'S TAB RAIL (layout === 'face') ─────────────
   //
   // Owner ruling 2026-08-28: "putting cv-mod, combine graph, preset controls on
@@ -1106,11 +1105,11 @@
   // inside `fullViewBody` — they adopt the rail's LOOK and import no shell tab
   // model.
   //
-  // ⚠ THE TAB RAIL *IS* THE TWO SECTION COLLAPSES. On the card, COMBINE GRAPH
-  // and CV/MOD each have a ▸/▾ toggle (`editorOpen` / `cvOpen`); on the face a
-  // tab shows one and hides the others, which is the same capability with one
-  // control instead of two. `editorVisible` / `cvVisible` below are what the
-  // rest of this file reads, so no zone has to know which host it is in.
+  // ⚠ THE TAB RAIL *IS* THE SECTION COLLAPSE. COMBINE GRAPH and CV/MOD used to
+  // carry a ▸/▾ toggle each; a tab shows one and hides the others, which is the
+  // same capability with one control instead of two. `editorVisible` /
+  // `cvVisible` below are what the rest of this file reads, so no zone has to
+  // know how it was reached.
   //
   // LOCAL per collaborator, exactly like `activeLayer`: which tab you are on is
   // not something a rack-mate should be able to change under your hands, and it
@@ -1122,11 +1121,11 @@
   // surface that moves under you.)
   let faceTab = $state<ToyboxFaceTab>('cv');
 
-  /** Is the COMBINE GRAPH editor on screen right now, in either host? */
-  let editorVisible = $derived(layout === 'face' ? faceTab === 'combine' : editorOpen);
-  /** Is the PRESET store on screen right now? The card shows it always. */
-  let presetsVisible = $derived(layout === 'face' ? faceTab === 'presets' : true);
-  // (`cvVisible` is declared beside `cvOpen`, which this file defines later.)
+  /** Is the COMBINE GRAPH editor on screen right now? */
+  let editorVisible = $derived(faceTab === 'combine');
+  /** Is the PRESET store on screen right now? */
+  let presetsVisible = $derived(faceTab === 'presets');
+  // (`cvVisible` is declared further down, beside the scope tick it gates.)
   /** A pending output port we clicked first (click-port-then-port connect). */
   let pendingFrom = $state<string | null>(null);
   /** The currently-selected op node (its params show in the side strip). */
@@ -1533,21 +1532,15 @@
   // route through the Yjs mutator (graph/toybox-cv-routes.ts); the factory's
   // setParam(cvN) resolves + re-scales each sample into the live param.
 
-  // Default OPEN: the 6-input CV/MOD section is the headline of the wide card +
-  // lives in its own RIGHT column, so it shows by default (the always-on scopes
-  // are only useful when visible).
-  let cvOpen = $state(true);
-
   /**
-   * Is the CV/MOD rail on screen right now, in either host? (The face's CV-MOD
-   * tab; the card's ▾ collapse.)
+   * Is the CV/MOD rail on screen right now?
    *
    * ⚠ IT GATES `tickScopes()`, so the six inline scopes stop their per-frame
-   * work whenever the rail is not showing — on the face that means an inactive
-   * tab costs nothing, which is the one behaviour a tab rail owes over a
-   * collapse. `freezeScopes()` (VRT) is unaffected: it draws once, on demand.
+   * work whenever the rail is not showing — an inactive tab costs nothing,
+   * which is the one behaviour a tab rail owes over a collapse.
+   * `freezeScopes()` (VRT) is unaffected: it draws once, on demand.
    */
-  let cvVisible = $derived(layout === 'face' ? faceTab === 'cv' : cvOpen);
+  let cvVisible = $derived(faceTab === 'cv');
 
   /** The live layers + combine the dropdowns enumerate targets/params from.
    *  Read through the live-proxy readers (#60) so the target/param OPTIONS
@@ -2430,11 +2423,11 @@
    * bring the picture back black or stale when the screen came on again — the
    * collapse-kills-the-producer class (#1721, #1728).
    *
-   * Card layout does NOT call this, deliberately: the legacy card has no screen
-   * switch, always blits, and its lane visibility is what `setCardVisibility`
-   * is for. Marking unconditionally there would put a scrolled-away card's node
-   * back into the pull set and change engine behaviour the extraction has no
-   * business changing.
+   * ⚠ A HOST WITH NO SCREEN SWITCH MUST NOT CALL THIS. It always blits, so its
+   * mark is renewed by the blit; its visibility is what `setCardVisibility` is
+   * for, and marking unconditionally would put a scrolled-away node back into
+   * the pull set and change engine behaviour this component has no business
+   * changing.
    */
   function renewWatchMark(): void {
     const e = engineCtx.get();
@@ -2454,7 +2447,7 @@
     pushMouse();
     // SCREEN OFF skips the BLIT — a GL readback into a surface nobody can see —
     // and nothing else. See `renewWatchMark`: the node stays a pull root.
-    if (layout === 'face') renewWatchMark();
+    renewWatchMark();
     if (screenOn) blitOnce();
     // Drive all 6 inline scopes from ONE batched read('cvScope') — joined to
     // THIS rAF (after blitOnce), no separate loop, no per-knob readLive.
@@ -2570,18 +2563,15 @@
      ═══════════════════════════════════════════════════════════════════════ -->
 
 {#snippet screenZone()}
-  <div class="screen-wrap" class:face={layout === 'face'}>
-    <!-- ⚠ THE TESTID IS HOST-DEPENDENT ON PURPOSE. The legacy card keeps
-         `toybox-canvas`, which twenty shipped `?shell=legacy` specs and the
-         card VRT scenes address; the faceplate takes the fleet-conventional
-         `<prefix>-face-canvas`, which is what face-screen-render-suite looks
-         for when it proves the SCREEN switch REMOVES the picture and reclaims
-         the space. One element either way — never both. -->
+  <div class="screen-wrap face">
+    <!-- The fleet-conventional `<prefix>-face-canvas`, which is what
+         face-screen-render-suite looks for when it proves the SCREEN switch
+         REMOVES the picture and reclaims the space. -->
     <canvas
       bind:this={canvasEl}
       width={CANVAS_W}
       height={CANVAS_H}
-      data-testid={layout === 'face' ? 'toybox-face-canvas' : 'toybox-canvas'}
+      data-testid="toybox-face-canvas"
       data-node-id={id}
       style="touch-action: none;"
       onpointerdown={onCanvasPointerDown}
@@ -3116,23 +3106,10 @@
 {#snippet combineZone()}
   <!-- ───────── COMBINE GRAPH EDITOR (Phase 4) ───────── -->
   <div class="combine-section" data-testid="toybox-combine-section">
-    <!-- ⚠ THE COLLAPSE TOGGLE IS THE CARD'S. On the faceplate the TAB RAIL is
-         this control (a tab shows one section and hides the others, which is
-         what this button does with one press instead of two), so rendering both
-         would give the player two ways to hide the same panel and one of them
-         would strand the other. `editorVisible` below is the ONE predicate
-         either host answers. -->
-    {#if layout === 'card'}
-      <button
-        type="button"
-        class="combine-toggle"
-        data-testid="toybox-combine-toggle"
-        aria-expanded={editorOpen}
-        onclick={() => (editorOpen = !editorOpen)}
-      >
-        {editorOpen ? '▾' : '▸'} COMBINE GRAPH
-      </button>
-    {/if}
+    <!-- ⚠ NO PER-SECTION COLLAPSE HERE. The TAB RAIL is this control — a tab
+         shows one section and hides the others, which is what a ▾ toggle does
+         with one press instead of two — and two hide-controls for one panel
+         would strand each other. `editorVisible` is the ONE predicate. -->
 
     {#if editorVisible}
       <!-- Add-node menu: insert a fade / lumakey / chromakey / map op. -->
@@ -3391,18 +3368,7 @@
 {#snippet cvZone()}
   <!-- ───────── CV / MODULATION SECTION (6 inputs) ───────── -->
   <div class="cv-section" data-testid="toybox-cv-section">
-    <!-- Card-only, for the reason the COMBINE toggle's note gives. -->
-    {#if layout === 'card'}
-      <button
-        type="button"
-        class="combine-toggle"
-        data-testid="toybox-cv-toggle"
-        aria-expanded={cvOpen}
-        onclick={() => (cvOpen = !cvOpen)}
-      >
-        {cvOpen ? '▾' : '▸'} CV / MOD
-      </button>
-    {/if}
+    <!-- No per-section collapse, for the reason the COMBINE note gives. -->
 
     {#if cvVisible}
       <div class="cv-rows" data-testid="toybox-cv-rows">
@@ -3496,26 +3462,6 @@
   </div>
 {/snippet}
 
-{#if layout === 'card'}
-  <!-- 3-COLUMN BODY: LEFT = preview + layer editor, CENTER = combine graph,
-       RIGHT = the 6-input CV/modulation section. Unchanged from the card this
-       console was extracted from, down to the testids and the wrapper divs. -->
-  <div class="toybox-cols" data-testid="toybox-cols">
-  <div class="toybox-col toybox-col-left" data-testid="toybox-col-left">
-  {@render screenZone()}
-  {@render presetZone()}
-  {@render layerZone()}
-  </div><!-- /toybox-col-left -->
-
-  <div class="toybox-col toybox-col-center" data-testid="toybox-col-center">
-  {@render combineZone()}
-  </div><!-- /toybox-col-center -->
-
-  <div class="toybox-col toybox-col-right" data-testid="toybox-col-right">
-  {@render cvZone()}
-  </div><!-- /toybox-col-right -->
-  </div><!-- /toybox-cols -->
-{:else}
   <!-- ── THE FACEPLATE BODY — the owner-ruled stack (2026-08-28) ──────────
 
        SCREEN → persistent LAYER band → three-tab rail. Read the header for
@@ -3576,34 +3522,12 @@
       {/if}
     </div>
   </div>
-{/if}
 
 <style>
-  /* ── 3-column body (layout === 'card') ── */
-  .toybox-cols {
-    display: flex;
-    align-items: flex-start;
-    gap: 1px;
-    /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,
-       inset from the corners) — ports now patch through the panel, not raw
-       side jacks, so the old left-edge IN1..IN6 label gutter is retired. */
-    margin-top: 8px;
-    padding-left: 8px;
-  }
-  .toybox-col {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .toybox-col-left { width: 250px; flex: 0 0 250px; }
-  .toybox-col-center {
-    width: 320px;
-    flex: 0 0 320px;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    padding: 0 4px;
-  }
-  .toybox-col-right { width: 256px; flex: 0 0 256px; padding-left: 4px; }
+  /* The picture box's base. `.screen-wrap.face` overrides margin/width/height
+     and inherits the border, radius, overflow, background and line-height from
+     here — so this rule is load-bearing, not a survivor of the three-column
+     body that used to sit above it. */
   .screen-wrap {
     margin: 12px auto 8px;
     width: 200px;
@@ -3618,8 +3542,7 @@
   /* ═══ THE FACEPLATE BODY (layout === 'face') ═══════════════════════════════
    *
    * Every rule below is scoped by a `.tb-*` class or by `.screen-wrap.face`, so
-   * NOTHING here can reach the legacy card — its baselines stay pinned to the
-   * plate they were captured on.
+   * nothing here reaches any other surface's plate.
    *
    * ⚠ WHOLE-PIXEL WIDTHS THROUGHOUT. The dock faceplate is `max-content`
    * clamped to the pane, so THIS stack's natural width IS the plate width;
@@ -3996,19 +3919,6 @@
     border-top: 1px solid var(--border);
     padding-top: 8px;
   }
-  .combine-toggle {
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    color: var(--text-dim);
-    border: none;
-    font-family: ui-monospace, monospace;
-    font-size: 0.62rem;
-    letter-spacing: 0.06em;
-    cursor: pointer;
-    padding: 2px 0;
-  }
-  .combine-toggle:hover { color: var(--text); }
   .add-row {
     display: flex;
     flex-wrap: wrap;

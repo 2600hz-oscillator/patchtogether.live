@@ -1,44 +1,23 @@
 // e2e/tests/numpad-plus.spec.ts
 //
-// NUMPAD+ end-to-end, SPLIT IN TWO by what each test is actually about.
+// NUMPAD+ ENGINE TRUTH, end to end.
 //
-// ⚠ WHY THE SPLIT, AND WHY IT IS A CORRECTION RATHER THAN TIDYING. Every test
-// in this file used to boot `?shell=legacy`, and after the face promotion
-// `legacy-fallback.ts` still returns `'legacy'` for a promoted module under
-// that flag — BEFORE it ever looks at `migrated`. So all thirteen would have
-// stayed GREEN and stopped testing the product: the surface a player gets is
-// the faceplate, and nothing here would have opened it. That is the
-// green-and-blind shape, not a red one.
+// Every test here is about the ENGINE rather than any painted surface: they
+// dispatch real document KeyboardEvents and read `__patch` / `__engine` back.
+// The panel-driving twins — the step grid, the keymap caps, POLY, the octave
+// pair — live in `numpad-plus-face.spec.ts`.
 //
-// So:
-//   * THE ENGINE-TRUTH TESTS move to the DEFAULT SHELL. They drive real
-//     document KeyboardEvents and read `__patch` / `__engine`; they never
-//     needed a card and they now cover the shipping renderer. That is a strict
-//     improvement rather than a re-point.
-//   * THE LEGACY-CARD TESTS stay on `?shell=legacy` ON PURPOSE, because their
-//     subject IS that card, which both surfaces must keep working while the
-//     migration is incomplete. Their faceplate twins live in
-//     `numpad-plus-face.spec.ts`, which drives the panels instead.
-//
-// The keypad capture itself is surface-independent: the `keydown`/`keyup`
-// listener is installed by the FACTORY and torn down in `dispose()`, never on
-// the card, which is why promotion cannot unplug it.
+// The keypad capture is surface-independent: the `keydown`/`keyup` listener is
+// installed by the FACTORY and torn down in `dispose()`, never by a mounted
+// surface, which is why nothing about rendering can unplug it.
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-/** The LEGACY card surface — for the tests whose subject is that card. */
-async function spawnNumpadPlus(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(page, [{ id: 'np', type: 'numpadPlus', position: { x: 200, y: 200 } }]);
-  await expect(page.locator('[data-testid="numpad-plus-card"]')).toBeVisible();
-}
-
-/** The DEFAULT (v2 faceplate) shell — for the tests whose subject is the
- *  ENGINE. No card, no faceplate cell is touched: the module's keyboard capture
- *  and its recording path are in the factory. */
+/** The rack, for the tests whose subject is the ENGINE. No faceplate cell is
+ *  touched: the module's keyboard capture and its recording path are in the
+ *  factory. */
 async function spawnNumpadPlusShell(page: Page): Promise<void> {
   await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
@@ -93,151 +72,6 @@ const readStep0 = (page: Page) =>
     };
     return w.__patch.nodes.np?.data?.layers?.[0]?.[0] ?? null;
   });
-
-test.describe('NUMPAD+ — the LEGACY CARD (?shell=legacy, deliberately)', () => {
-  test('spawns + card mounts + no console errors', async ({ page }) => {
-    const errs: string[] = [];
-    page.on('pageerror', (e) => errs.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
-    await spawnNumpadPlus(page);
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('4');
-    expect(errs.filter((e) => !e.includes('DEP0040')), errs.join('; ')).toEqual([]);
-  });
-
-  test('octave arrows update the octave param', async ({ page }) => {
-    await spawnNumpadPlus(page);
-    await page.locator('[data-testid="numpad-octave-up"]').click();
-    await page.locator('[data-testid="numpad-octave-up"]').click();
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('6');
-    await page.locator('[data-testid="numpad-octave-down"]').click();
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('5');
-  });
-
-  test('layer button selects activeLayer + the live readout follows', async ({ page }) => {
-    await spawnNumpadPlus(page);
-    await page.locator('[data-testid="numpad-layer-3"]').click();
-    const al = await page.evaluate(() => {
-      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
-      return w.__patch.nodes.np?.params.activeLayer;
-    });
-    expect(al).toBe(2); // L3 (0-indexed = 2)
-  });
-
-  test('⚠ the STEP GRID repaints on a SECOND write — the granular-write repaint gap', async ({ page }) => {
-    // The gap that let a frozen card ship for one round on this branch. Both of
-    // this card's `node.data` derivations read through the LIVE Yjs proxy, whose
-    // identity never changes, and they got away with it only while every write
-    // REPLACED the whole object. Once the write seam made them granular the
-    // derivations stopped re-running: the graph was right and the card painted
-    // stale. The keymap half was caught by the reset assertion below (the one
-    // existing test that performs a second `node.data` write); the GRID half had
-    // no coverage at all, so it gets some here.
-    await spawnNumpadPlus(page);
-    const cell = page.locator('[data-testid="numpad-cell-0"]');
-    await expect(cell, 'an empty step paints a dot').toHaveText('·');
-
-    await cell.click();                       // first write: seeds data.layers
-    await expect(cell, 'lighting a step paints its note').toHaveText('c4');
-
-    await cell.click();                       // SECOND write: granular, in place
-    await expect(cell, 'unlighting it must repaint — this is the frozen-card case').toHaveText('·');
-
-    await cell.click();
-    await expect(cell, 'and the note is remembered rather than re-seeded').toHaveText('c4');
-  });
-
-  test('right-click a key → Remap → next keypress rebinds it (persisted + displayed)', async ({ page }) => {
-    await spawnNumpadPlus(page);
-
-    // Key 0 = the C pad; default physical key is Numpad1 → label "1".
-    const keyC = page.locator('[data-testid="numpad-key-0"]');
-    await expect(keyC.locator('.kmap-phys')).toHaveText('1');
-
-    // Right-click → context menu → Remap.
-    await keyC.click({ button: 'right' });
-    await expect(page.locator('[data-testid="numpad-key-menu"]')).toBeVisible();
-    await page.locator('[data-testid="numpad-remap-item"]').click();
-    await expect(page.locator('[data-testid="numpad-remap-hint"]')).toBeVisible();
-
-    // Press a NON-numpad key — 'q' → code KeyQ. It binds to C.
-    await page.keyboard.press('q');
-
-    // The pad now displays "Q", the listening hint is gone, and the keymap is
-    // persisted in node.data with KeyQ→0 and the old Numpad1 binding dropped.
-    await expect(keyC.locator('.kmap-phys')).toHaveText('Q');
-    await expect(page.locator('[data-testid="numpad-remap-hint"]')).toHaveCount(0);
-    const keymap = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: { keymap?: Record<string, number> } }> };
-      };
-      return w.__patch.nodes.np?.data?.keymap ?? null;
-    });
-    expect(keymap).not.toBeNull();
-    expect(keymap!['KeyQ']).toBe(0);
-    expect(keymap!['Numpad1']).toBeUndefined();
-    expect(keymap!['Numpad2']).toBe(1); // other notes untouched
-
-    // Reset-to-default restores Numpad1 → C.
-    await keyC.click({ button: 'right' });
-    await page.locator('[data-testid="numpad-reset-item"]').click();
-    await expect(keyC.locator('.kmap-phys')).toHaveText('1');
-  });
-
-  test('octave up/down keys render (default + / −) and nudge the octave param', async ({ page }) => {
-    await spawnNumpadPlus(page);
-
-    // ⚠ `numpad-key-12` / `-13`, NOT `numpad-octkey-*`. The card used to emit a
-    // SECOND testid prefix for these two, which the def has never agreed with —
-    // `DEFAULT_KEYMAP` is one fourteen-entry map and every handler treats all
-    // fourteen identically. Unifying the prefix is what lets the def declare ONE
-    // `numpad-key` control family instead of two.
-    const octUp = page.locator('[data-testid="numpad-key-12"]');
-    const octDown = page.locator('[data-testid="numpad-key-13"]');
-    await expect(octUp.locator('.kmap-phys')).toHaveText('+');
-    await expect(octDown.locator('.kmap-phys')).toHaveText('−');
-    await expect(octUp.locator('.kmap-note')).toHaveText('OCT↑');
-
-    // The default-mapped physical keys nudge the octave via the global listener.
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('4');
-    await page.keyboard.press('NumpadAdd');
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('5');
-    await page.keyboard.press('NumpadSubtract');
-    await page.keyboard.press('NumpadSubtract');
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('3');
-  });
-
-  test('an octave key is remappable like a note key', async ({ page }) => {
-    await spawnNumpadPlus(page);
-    const octUp = page.locator('[data-testid="numpad-key-12"]');
-    await octUp.click({ button: 'right' });
-    await page.locator('[data-testid="numpad-remap-item"]').click();
-    await page.keyboard.press('ArrowUp'); // bind OCT↑ → ArrowUp
-    await expect(octUp.locator('.kmap-phys')).toHaveText('↑');
-    const keymap = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: { keymap?: Record<string, number> } }> };
-      };
-      return w.__patch.nodes.np?.data?.keymap ?? null;
-    });
-    expect(keymap!['ArrowUp']).toBe(12);        // OCTAVE_UP_ACTION
-    expect(keymap!['NumpadAdd']).toBeUndefined(); // old key freed
-    // The remapped key now nudges the octave.
-    await page.keyboard.press('ArrowUp');
-    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('5');
-  });
-
-  test('the remap menu is portaled to <body> so it spawns at the cursor (not inside the transformed node)', async ({ page }) => {
-    await spawnNumpadPlus(page);
-    await page.locator('[data-testid="numpad-key-0"]').click({ button: 'right' });
-    const menu = page.locator('[data-testid="numpad-key-menu"]');
-    await expect(menu).toBeVisible();
-    // The bug: position:fixed inside SvelteFlow's transformed node anchors the
-    // menu to that node. The fix portals it OUT — so it must NOT be a descendant
-    // of any .svelte-flow node wrapper.
-    await expect(page.locator('.svelte-flow [data-testid="numpad-key-menu"]')).toHaveCount(0);
-  });
-
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE ENGINE-TRUTH TESTS — on the DEFAULT SHELL, which is the renderer every
@@ -531,33 +365,12 @@ test.describe('NUMPAD+ — the ENGINE, on the default (faceplate) shell', () => 
   });
 });
 
-test.describe('NUMPAD+ — the LEGACY CARD, poly controls', () => {
-  test('POLY button toggles the poly param + a poly output handle renders', async ({ page }) => {
-    await spawnNumpadPlus(page);
-    const polyBtn = page.locator('[data-testid="numpad-poly"]');
-    await expect(polyBtn).toBeVisible();
-    await expect(polyBtn).toHaveAttribute('aria-pressed', 'false');
-    await polyBtn.click();
-    await expect(polyBtn).toHaveAttribute('aria-pressed', 'true');
-    const polyParam = await page.evaluate(() => {
-      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
-      return w.__patch.nodes.np?.params.poly;
-    });
-    expect(polyParam).toBe(1);
-    // The polyPitchGate output handle is declared + rendered.
-    await expect(page.locator('[data-handleid="poly"], [data-id*="poly"]').first()).toBeAttached();
-  });
-
-});
-
 // ── the two POLY-RECORDING bodies, shared by the engine tests above ────────
 //
-// Extracted rather than duplicated: both used to live inside `?shell=legacy`
-// tests whose only use of the card was a card-class readiness signal — which
-// answered "did Svelte re-render", not "can the factory see the param". The
-// factory re-reads `livePatch.nodes[id].params` on every keydown, so the
-// question is whether the engine NODE exists, which `engineReady` asks
-// directly. The assertions themselves are unchanged.
+// Extracted rather than duplicated. Their readiness signal is `engineReady`,
+// which asks whether the engine NODE exists — the question that actually
+// matters, since the factory re-reads `livePatch.nodes[id].params` on every
+// keydown. A render-completion signal would only answer "did Svelte repaint".
 
 /** HOLD a 3-note chord and prove all three landed in the step before release. */
 async function polyChordBody(page: Page): Promise<void> {

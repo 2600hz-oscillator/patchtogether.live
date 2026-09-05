@@ -19,8 +19,8 @@
 //   2. `freeze` renders ZERO cells — the inverted assertion that makes the
 //      `noUserControl` claim falsifiable in both directions.
 //   3. the body does NOT `markWatched`, deliberately, unlike every video body.
-//   4. the body applies the DEVICE PIXEL RATIO — the legacy card does not, and
-//      that is a live half-size defect this face must not inherit.
+//   4. the body applies the DEVICE PIXEL RATIO — the surface it replaced did
+//      not, and that half-size defect must not be inherited.
 //   5. `speed` is rank 1 despite having been the defect this same PR fixes.
 
 import { describe, expect, it } from 'vitest';
@@ -37,7 +37,6 @@ const def = pongDef as unknown as FaceDefLike & { type: string };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'pong/PongCourtBody.svelte');
-const CARD_SRC = resolve(HERE, 'PongCard.svelte');
 /**
  * Strip comments before grepping for CODE.
  *
@@ -59,7 +58,6 @@ function stripComments(src: string): string {
 }
 
 const bodySrc = stripComments(readFileSync(BODY_SRC, 'utf-8'));
-const cardSrc = stripComments(readFileSync(CARD_SRC, 'utf-8'));
 
 describe('pong face — promoted, and the lane picture is LAYOUT-FED', () => {
   it('is promoted', () => {
@@ -188,7 +186,7 @@ describe('pong face — freeze is UNREACHABLE (the lushgarden defect, avoided)',
 });
 
 describe('pong body — the court, at the RIGHT SIZE, and no cargo watch mark', () => {
-  it('applies the DEVICE PIXEL RATIO — the card does NOT, and that is a live defect', () => {
+  it('applies the DEVICE PIXEL RATIO — the defect its predecessor shipped with', () => {
     // ⚠ THE MEASUREMENT THIS LEG EXISTS FOR. `PongDrawOpts` documents `paddleW`
     // and `ballPx` in CSS PIXELS. `PongCard.svelte` passes `canvasEl.width` /
     // `.height` — the BACKING STORE, 2x — and never scales the context, so on the
@@ -199,23 +197,25 @@ describe('pong body — the court, at the RIGHT SIZE, and no cargo watch mark', 
       /setTransform\(\s*DPR|scale\(\s*DPR/.test(bodySrc),
       'the body does not apply the device pixel ratio, so drawPong is being handed backing-store ' +
         'dimensions for a function documented in CSS pixels — the court renders at HALF size, ' +
-        'which is the defect the legacy card has today',
+        'which is the defect this face was written not to inherit',
     ).toBe(true);
 
     // ANCHOR: if drawPong stops being called here this gate is measuring nothing.
     expect(bodySrc, 'the body no longer draws the court').toContain('drawPong(');
   });
 
-  it('NEGATIVE CONTROL: the CARD still shows the unscaled shape this leg denies', () => {
-    // ⚠ Proves the predicate can tell the two apart rather than matching anything
-    // that mentions a canvas. If the card is ever fixed too, this leg goes red and
-    // should be deleted with the defect — not weakened.
-    expect(
-      /setTransform\(\s*DPR|scale\(\s*DPR/.test(cardSrc),
-      'PongCard now applies the DPR — the half-size defect is fixed there too, so this control ' +
-        'has no subject left. Delete it along with the note in the body.',
-    ).toBe(false);
-  });
+  // ⚠ A NEGATIVE CONTROL STOOD HERE AND ITS SUBJECT IS GONE. It read
+  // `PongCard.svelte` and required the card to STILL show the unscaled shape,
+  // so that the predicate above was shown to separate the two surfaces rather
+  // than matching anything that mentions a canvas. Its own note said what to do
+  // when the card stopped carrying the defect: "this leg goes red and should be
+  // deleted with the defect — not weakened". The fleet deletion is that, in the
+  // strongest form — the defective surface no longer exists to be measured.
+  //
+  // What the predicate can still be shown to separate is asserted inline above
+  // instead: the body must MATCH the DPR shape and must still call `drawPong`,
+  // so a regex that stopped matching anything fails the anchor rather than
+  // reading as a clean pass.
 
   it('does NOT markWatched — deliberately, unlike every video body', () => {
     // ⚠ THE CARGO-CULT GUARD. Every other `fullViewBody` in the tree calls

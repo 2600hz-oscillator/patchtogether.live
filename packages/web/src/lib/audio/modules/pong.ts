@@ -85,7 +85,6 @@ export const pongDef: AudioModuleDef = {
   domain: 'audio',
   label: 'pong',
   category: 'games',
-  vizPassthrough: true,
 
   inputs: [
     // paddle_* are bipolar CV in [-1, +1]; the stepper maps to [0, 1] Y.
@@ -143,12 +142,10 @@ export const pongDef: AudioModuleDef = {
 
   // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
-  // ⚠ THE PROMOTION IS THE FIX, NOT A SKIN. Today on main pong is not in
-  // NON_SHELL_LANE_TYPES, not in STRICT_FACES and not a CARD_PRODUCER, so
-  // laneRenderKind returns 'placeholder': under the shipping shell the lane tile
-  // is an empty plate — no court, no score, no faders — WHILE THE GAME RUNS,
-  // scores, and pulses its gate outputs into whatever is patched. Every pong e2e
-  // drives ?shell=legacy, so nothing in the suite has ever observed it.
+  // ⚠ THE PROMOTION WAS THE FIX, NOT A SKIN. Before it, pong's lane tile was an
+  // empty plate — no court, no score, no faders — WHILE THE GAME RAN, scored,
+  // and pulsed its gate outputs into whatever was patched. No pong e2e
+  // exercised that tile, so nothing in the suite had ever observed it.
   //
   // WHAT THE MODULE IS FOR: a CV-steered arcade game whose two gate outputs are
   // the point — the rally is a clock and the scores are its events.
@@ -215,8 +212,8 @@ export const pongDef: AudioModuleDef = {
     glyph: 'algorithm',
 
     // TWO SLOTS. The `fullViewBody` court lives here (#1928): promotion stops
-    // both surfaces rendering the legacy card, so the dock body is the only
-    // place the LIVE game can be seen — it receives a nodeId and reads the
+    // the pre-promotion surface rendering, so the dock body is the only place
+    // the LIVE game can be seen — it receives a nodeId and reads the
     // engine snapshot every frame. The `glyph` slot is the LANE identity
     // picture, which receives no nodeId and is a pure layout function of pong's
     // own rest state. See `$lib/ui/modules/pong/shell-extension.ts`.
@@ -233,7 +230,7 @@ export const pongDef: AudioModuleDef = {
   },
   docs: {
     explanation:
-      "A playable two-paddle Pong game wrapped as a CV/gate module — the rally drives the patch. A ball bounces between a left and right paddle; you position each paddle with a CV input (so an LFO, sequencer, envelope follower, or a JOYSTICK CV plays it — wire one side to a slow LFO for an auto-rally, or two players each on their own CV), and the game emits a gate pulse whenever a side scores (the ball gets past the opposite paddle). So Pong becomes a generative trigger source whose pulse timing depends on the back-and-forth. The court renders on the card's 2D canvas; since the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video. SPEED scales the ball velocity, PADDLE sets paddle height, and SERVE sets how wide the serve angle varies.",
+      "A playable two-paddle Pong game wrapped as a CV/gate module — the rally drives the patch. A ball bounces between a left and right paddle; you position each paddle with a CV input (so an LFO, sequencer, envelope follower, or a JOYSTICK CV plays it — wire one side to a slow LFO for an auto-rally, or two players each on their own CV), and the game emits a gate pulse whenever a side scores (the ball gets past the opposite paddle). So Pong becomes a generative trigger source whose pulse timing depends on the back-and-forth. The court renders on the module's dock faceplate, and on the lane tile as a read-only thumbnail. SPEED scales the ball velocity, PADDLE sets paddle height, and SERVE sets how wide the serve angle varies.",
     inputs: {
       paddle_left:
         "Bipolar CV (−1..+1) setting the LEFT paddle's vertical position — −1 = top, 0 = center, +1 = bottom. Read at scheduler-tick rate (it's a continuous position, not a gate). Drive it with an LFO for an auto-rally, a sequencer for stepped jumps, or a JOYSTICK/MIDI CV to play by hand.",

@@ -13,9 +13,9 @@
 //
 // ── WHY THIS FILE EXISTS: WHAT THE EXISTING GATES CANNOT SEE ────────────────
 //
-// `midi-out-buddy.spec.ts` is the module's byte-level spec and it boots
-// `?shell=legacy` in all four tests — a surface no player meets (the 377-of-431
-// problem in AGENTS.md). Worse for this class: its one send test reaches
+// `midi-out-buddy.spec.ts` is the module's byte-level spec and all four of its
+// tests were written against the PRE-PROMOTION surface — one no player meets.
+// Worse for this class: its one send test reaches
 // `engine.read(node,'card-api')` and calls `connect()` + `selectDevice()`
 // DIRECTLY, so the two gestures that were actually broken — pressing CONNECT
 // and picking a port — have never been driven. `midiclock.spec.ts` drives the

@@ -188,21 +188,23 @@ describe('ruttetra face — the picture, and where it comes from', () => {
     expect(ruttetraDef.face?.extension, 'and the extension that carries its toggle').toBe('ruttetra');
   });
 
-  it('the monitor box is ONE constant, and BOTH surfaces read it', () => {
+  it('the monitor box is ONE constant, and the surface that writes those keys reads it', () => {
+    // ⚠ THIS LEG USED TO SAY 'BOTH surfaces', AND THE SECOND ONE IS GONE. The
+    // legacy card was the other writer of `node.data.resizedWidth`/`resizedHeight`,
+    // and the hazard it created was DIVERGENCE: two self-consistent surfaces
+    // disagreeing about the same persisted keys, which nothing at runtime can
+    // see (the backdraft class). With one writer left that hazard does not
+    // exist to be caught — it is unspellable rather than untested. What remains
+    // is the half that still can go wrong: the surviving body must READ the
+    // shared box instead of re-typing its floors, and the floors must be
+    // internally coherent.
     // A floor above the default would open every monitor at the wrong size.
     expect(RUTTETRA_MONITOR_BOX.defW).toBeGreaterThanOrEqual(RUTTETRA_MONITOR_BOX.minW);
     expect(RUTTETRA_MONITOR_BOX.defH).toBeGreaterThanOrEqual(RUTTETRA_MONITOR_BOX.minH);
-    const card = readFileSync(resolve(HERE, 'RuttetraCard.svelte'), 'utf8');
     const body = readFileSync(resolve(HERE, 'ruttetra/RuttetraOutputBody.svelte'), 'utf8');
     expect(
-      /import\s*\{\s*RUTTETRA_MONITOR_BOX\s*\}\s*from\s*'\.\/ruttetra\/monitor-box'/.test(card),
-      'the legacy card must READ the shared box rather than re-typing its floors — the two ' +
-        'surfaces share `node.data.resizedWidth`/`resizedHeight`, so a drifted floor is a ' +
-        'divergence nothing at runtime can see',
-    ).toBe(true);
-    expect(
       /import\s*\{\s*RUTTETRA_MONITOR_BOX\s*\}\s*from\s*'\.\/monitor-box'/.test(body),
-      'and so does the faced dock body — the OTHER surface that writes the same keys',
+      'the faced dock body must READ the shared box, never re-type its floors',
     ).toBe(true);
   });
 

@@ -16,29 +16,35 @@
   // blind — `ch1_out` is bit-exactly the CH1 input, so the trace it paints is
   // invariant to all nine controls. Live, green, and false.
   //
-  // ⚠ `onMeterFrame`, NOT A RAW rAF — and NOT a copy of `RasterizeOutputBody`.
-  // That body runs an ungated `requestAnimationFrame` loop and its header
-  // explains the exemption: rasterize's painter is advanced INSIDE
-  // `read('imageData')`, so its loop is the only thing moving the raster.
-  // SCOPE HAS NO SUCH INVERSION — `readSnapshot()` reads two analysers and
-  // mutates nothing, and the video bridge's `drawFrame` is independent of any
-  // card. Copying the exemption without its reason would ship an ungated
-  // full-canvas redraw on a collapsed dock. `onMeterFrame` is
-  // IntersectionObserver-gated, which is what `ScopeCard` has always used.
+  // ⚠ THE TRACE IS `ScopeTraceSurface`, NOT A THIRD COPY OF `drawScope`
+  // (legacy-removal S1). This body used to carry its own `vrtSeed` /
+  // `seededSnapshot` / `paint` trio, and so did `ScopeCard.svelte` — one pasted
+  // from the other, agreeing exactly because of that, which is the condition
+  // under which two implementations stop agreeing silently. The `GroupCard`
+  // viz-passthrough mount made it three. One file paints a scope trace now.
+  //
+  // ⚠ AND THIS BODY NO LONGER PRODUCES ANYTHING, WHICH IS THE HALF WORTH
+  // READING. It used to run `write(node,'cvCombined')` — a SECOND writer of the
+  // module's CV shadows, beside the card's — with a long note explaining why the
+  // push had to run even with the SCREEN off. That push belongs to the NODE now
+  // (`$lib/ui/media/frame-producers`), so the argument evaporates rather than
+  // being restated: the producer runs whether this component exists or not, the
+  // `out` texture cannot desync from the controls, and SCREEN OFF is free to be
+  // exactly what it says — no canvas.
   //
   // ⚠ THERE IS NO WATCH MARK HERE. `markWatched` is a VideoEngine PULL-SET
   // concept; this module's AnalyserNodes are fed by the Web Audio graph, which
   // runs whether or not anyone is looking. There is no pull set to fall out of
   // and no producer to mute. Stated rather than omitted, so "this body has no
   // markWatched" reads as a derived answer and not as a copy that lost a line.
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
-  import { onMeterFrame } from '$lib/ui/meter-frame';
-  import { scopeDef, type ScopeSnapshot, type PitchResult } from '$lib/audio/modules/scope';
-  import { drawScope, type ScopeTuning } from '$lib/audio/modules/scope-draw';
+  import { type PitchResult } from '$lib/audio/modules/scope';
+  import { type ScopeTuning } from '$lib/audio/modules/scope-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ScopeTraceSurface from './ScopeTraceSurface.svelte';
 
   interface Props {
     /** The graph node this faceplate is showing — the ONLY prop the slot gets
@@ -156,139 +162,14 @@
   );
 
   // ── THE TRACE ────────────────────────────────────────────────────────────
-
-  // Trace colours: the cable tints, resolved post-mount so they track the
-  // theme — the convention `ScopeCard` and `DockscopeOutputBody` both use.
-  // ⚠ `onMount`, NOT `$effect`, and deliberately — this is the convention both
-  // `ScopeCard` and `DockscopeOutputBody` use. An effect here would READ each
-  // colour in its own `||` fallback and WRITE it, so it would depend on the
-  // state it assigns: it converges (Svelte stops on an equal write) but it is a
-  // self-referencing effect for a one-shot read of a CSS custom property.
-  let ch1Color = $state('#fbbf24');
-  let ch2Color = $state('#60a5fa');
-  onMount(() => {
-    const cs = getComputedStyle(document.documentElement);
-    ch1Color = cs.getPropertyValue('--cable-audio').trim() || ch1Color;
-    ch2Color = cs.getPropertyValue('--cable-pitch').trim() || ch2Color;
-  });
-
-  // ⚠ THE SAME VRT SEED THE CARD HONOURS, INCLUDING ITS SHAPE AND DEFAULTS.
-  // Two live oscillators driving ch1/ch2 are NOT phase-locked, so a Lissajous
-  // figure's orientation drifts run-to-run and a dock baseline over this body
-  // would be noise. `__scopeVrtSeed` swaps the live analyser windows for fixed
-  // phase-locked sines. Reading a DIFFERENT global here would leave this
-  // surface unbaselinable while the card stayed pinned — dockscope records that
-  // trap by name. No-op in production (the global is never set).
-  function vrtSeed(): { ch1Freq: number; ch2Freq: number; ch2Phase?: number } | null {
-    const s = (globalThis as unknown as {
-      __scopeVrtSeed?: { ch1Freq?: number; ch2Freq?: number; ch2Phase?: number } | boolean;
-    }).__scopeVrtSeed;
-    if (!s) return null;
-    const cfg = typeof s === 'object' ? s : {};
-    return { ch1Freq: cfg.ch1Freq ?? 220, ch2Freq: cfg.ch2Freq ?? 330, ch2Phase: cfg.ch2Phase ?? 0 };
-  }
-  function seededSnapshot(seed: { ch1Freq: number; ch2Freq: number; ch2Phase?: number }): ScopeSnapshot {
-    const n = 2048;
-    const sampleRate = 48000;
-    const ch1 = new Float32Array(n);
-    const ch2 = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      ch1[i] = Math.sin((2 * Math.PI * seed.ch1Freq * i) / sampleRate);
-      ch2[i] = Math.sin((2 * Math.PI * seed.ch2Freq * i) / sampleRate + (seed.ch2Phase ?? 0));
-    }
-    return { ch1, ch2, sampleRate };
-  }
-
-  let canvasEl: HTMLCanvasElement | null = $state(null);
-
-  /** Every param's shipped default, keyed BY ID.
-   *
-   *  ⚠ BY ID RATHER THAN BY INDEX, and that is not style. `ScopeCard.svelte`
-   *  reads its fallbacks as `scopeDef.params[4]!.defaultValue` — nine positional
-   *  literals that are silently wrong the day anyone reorders the array, and
-   *  wrong in the worst way (a plausible number from the neighbouring control,
-   *  not a crash). Keying by id cannot drift. */
-  const DEFAULTS: Record<string, number> = Object.fromEntries(
-    scopeDef.params.map((p) => [p.id, p.defaultValue]),
-  );
-
-  /** Knob fallbacks — what the trace draws with before an engine exists. With
-   *  nothing patched these equal the combined values anyway. */
-  function knob(id: string): number {
-    return (node?.params?.[id] as number | undefined) ?? DEFAULTS[id]!;
-  }
-
-  function paint(c: HTMLCanvasElement, snap: ScopeSnapshot, live?: Record<string, number>): void {
-    const ctx2d = c.getContext('2d');
-    if (!ctx2d) return;
-    drawScope(
-      ctx2d,
-      snap,
-      {
-        timeMs: live?.timeMs ?? knob('timeMs'),
-        ch1Scale: live?.ch1Scale ?? knob('ch1Scale'),
-        ch1Offset: live?.ch1Offset ?? knob('ch1Offset'),
-        ch1Range: live?.ch1Range ?? knob('ch1Range'),
-        ch2Scale: live?.ch2Scale ?? knob('ch2Scale'),
-        ch2Offset: live?.ch2Offset ?? knob('ch2Offset'),
-        ch2Range: live?.ch2Range ?? knob('ch2Range'),
-        mode: live?.mode ?? knob('mode'),
-        intensity: live?.intensity ?? knob('intensity'),
-        ch1Color,
-        ch2Color,
-        tuning,
-      },
-      c.width,
-      c.height,
-    );
-  }
-
-  $effect(() => {
-    if (!canvasEl) return;
-    const h = onMeterFrame(canvasEl, () => {
-      const c = canvasEl;
-      const n = node;
-      if (!c || !n) return;
-      const eng = engineCtx.get();
-
-      // ⚠ PUSH THEN READ, UNCONDITIONALLY — and it is NOT optional here.
-      // `scope` is in `CARD_PRODUCER_LANE_TYPES`, which means the headless
-      // source host keeps `ScopeCard` mounted and that mount owns the
-      // `cvCombined` push. But a param that was under CV when the pump stopped
-      // LATCHES AT ITS LAST MODULATED VALUE — it does not fall back to the
-      // knob — so a docked scope with a patched TIME cable would otherwise draw
-      // on a stale timebase. `eng.readParam` returns the knob PLUS the engine's
-      // own per-port CV tap and costs nothing extra (the tap already exists for
-      // any patched port); with nothing patched there is no tap, so this equals
-      // the knob and no render moves. (#1664)
-      let live: Record<string, number> | undefined;
-      if (eng) {
-        const combined: Record<string, number> = {};
-        for (const p of scopeDef.params) {
-          const v = eng.readParam(n, p.id);
-          if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
-        }
-        eng.write(n, 'cvCombined', combined);
-        live = eng.read(n, 'drawParams') as Record<string, number> | undefined;
-      }
-
-      // ⚠ THE PUSH ABOVE RUNS WHETHER OR NOT THE SCREEN IS ON; only the PAINT
-      // is skipped. The owner's floor is "it KEEPS RENDERING while OFF", and
-      // the module's own video-out `drawFrame` reads the same shadows this push
-      // feeds — so stopping the push on collapse would desync the `out` texture
-      // from the controls, which is a real regression rather than a saved
-      // frame. Scope's analysers are fed by the audio graph regardless, so this
-      // is cheap: skip the paint, never the loop.
-      if (previewCollapsed) return;
-
-      const seed = vrtSeed();
-      const snap = seed
-        ? seededSnapshot(seed)
-        : (eng?.read(n, 'snapshot') as ScopeSnapshot | undefined);
-      if (snap) paint(c, snap, live);
-    });
-    return () => h.stop();
-  });
+  //
+  // ⚠ SCREEN OFF UNMOUNTS THE SURFACE, AND THAT IS NOW SAFE RATHER THAN MERELY
+  // CHEAP. While this body owned a `write(node,'cvCombined')` push it had to
+  // keep its loop running with the screen off, because stopping it would have
+  // desynced the module's `out` texture from its controls — a preview toggle
+  // acting as a producer kill switch, the #1720/#1721 class. The producer is the
+  // NODE's now, so the owner's "it KEEPS RENDERING while OFF" floor is satisfied
+  // by construction: nothing this component does can reach `out`.
 </script>
 
 <div class="scope-output" data-testid="scope-output-body">
@@ -296,14 +177,17 @@
     {#if !previewCollapsed}
       <!-- 480 × 360 — 4:3 KEPT ON PURPOSE. XY mode plots a CIRCLE for a 1:1
            Lissajous, and a non-square aspect makes it an ellipse: a WRONG
-           picture, not merely a stretched one. -->
-      <canvas
-        bind:this={canvasEl}
+           picture, not merely a stretched one.
+
+           THE trace, not a copy of it: the surface emits the `scope-face-canvas`
+           element itself and no wrapper, so this box is unchanged. -->
+      <ScopeTraceSurface
+        nodeId={nodeId}
         width={480}
         height={360}
-        data-testid="scope-face-canvas"
-        data-node-id={nodeId}
-      ></canvas>
+        testid="scope-face-canvas"
+        {tuning}
+      />
       <!-- The tuning graticule's own element. It PAINTS NOTHING — it carries
            the accessible name for the meter `drawScope` draws inside the canvas
            along this rectangle, which is how the Hz / cents / confidence
@@ -351,7 +235,10 @@
      x axis IS the window TIME sets — so a narrow trace is a trace you cannot
      read. This is the one thing on this faceplate that claims width; the nine
      controls beneath it stay compact. */
-  .preview-wrap canvas {
+  /* `:global(canvas)` because the element belongs to `ScopeTraceSurface` now —
+     Svelte's scoped selector would not reach a child component's DOM. Scoped by
+     `.preview-wrap`, so nothing leaks. */
+  .preview-wrap :global(canvas) {
     display: block;
     width: 100%;
     max-width: 480px;

@@ -64,8 +64,8 @@ const colPos = (ch: number, shell: boolean) => ({
   y: COLUMN_BASELINE_Y - 40,
 });
 
-async function gotoWorkflow(page: Page, shell: boolean): Promise<void> {
-  await page.goto(shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page, _shell: boolean): Promise<void> {
+  await page.goto('/rack');
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
   await page.waitForFunction(
     () => {
@@ -155,8 +155,11 @@ async function spawnIntoLane(page: Page, ch: number, shell: boolean): Promise<st
 }
 
 test.describe('workflow spawn-camera reveal: adds never scroll the viewport wildly', () => {
-  for (const shell of [false, true]) {
-    const label = shell ? 'mode=workflow&shell=1' : 'mode=workflow';
+  // The helpers still take a `shell` flag because the RACKLINE geometry
+  // constants are only meaningful next to the wider tile they replaced; the
+  // flag and its dead branches retire together in the vocabulary sweep.
+  for (const shell of [true]) {
+    const label = 'mode=workflow&shell=1';
 
     test(`ON-SCREEN lane add → the viewport transform is UNCHANGED, byte-equal (${label})`, async ({ page }) => {
       await gotoWorkflow(page, shell);

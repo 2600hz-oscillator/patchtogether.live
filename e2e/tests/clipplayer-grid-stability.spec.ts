@@ -38,7 +38,7 @@ test.describe.configure({ mode: 'default' });
 async function gotoShellWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
   // 15s first-load budget (the workflow-shell.spec.ts pattern — cold dev-server
-  // compile latency on the very first /rack?shell=legacy&seed=none load).
+  // compile latency on the very first /rack load).
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -109,10 +109,10 @@ async function readSampler(page: Page): Promise<{ samples: number; distinct: num
 }
 
 /**
- * ⚠ THE GRID THIS SPEC MEASURES IS THE FACE'S, NOT THE CARD'S, SINCE
- * `clipplayer` WAS PROMOTED. This file has always booted the DEFAULT shell
- * (`/rack`, no `?shell=legacy`) and opened the dock full view, so it drove the
- * verbatim card only because the module was carved out of the swap. With the
+ * ⚠ THE GRID THIS SPEC MEASURES IS THE FACE'S SINCE `clipplayer` WAS PROMOTED.
+ * This file has always booted `/rack` and opened the dock full view, so it drove
+ * the module's pre-promotion surface only because the module was carved out of
+ * the swap. With the
  * promotion the same pane paints the faceplate, and its launch grid is the
  * `clipplayer-face-grid` panel. Everything else about the spec is unchanged and
  * still exactly as load-bearing: `[data-clip="n"]`, `data-state` and

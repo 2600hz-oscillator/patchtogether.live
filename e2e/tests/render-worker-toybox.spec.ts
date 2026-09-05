@@ -59,32 +59,50 @@ const WORKER_PROVEN_FRAMES = 2;
  */
 const CONTENT_STALL_MS = WORKER_FRAME_MS * 40;
 
-/** Read the OUTPUT canvas pixel statistics (non-black fraction + variance).
- *  `outNodeId` scopes the read to ONE output — required once a rack holds more
- *  than one (the #1905 control runs a warm main-thread node alongside the
- *  worker-resident one, and an unscoped read would silently average them). */
+/** Read an OUTPUT sink's engine-surface pixel statistics (non-black fraction +
+ *  variance) via `vid.outputTexture(<sink>)` + readPixels (the card-era probe
+ *  read `video-out-canvas` card chrome, absent on the default shell). Already
+ *  node-scoped by construction — the #1905 control's warm main-thread node and
+ *  the worker-resident one read distinct sink surfaces. */
 async function outputStats(
   page: Page,
-  outNodeId?: string,
+  outNodeId = 'out',
 ): Promise<{ nonZeroFrac: number; variance: number; mean: number } | null> {
-  const canvas = outNodeId
-    ? page.locator(`[data-testid="video-out-canvas"][data-node-id="${outNodeId}"]`)
-    : page.locator('[data-testid="video-out-canvas"]');
-  await expect(canvas, `video-out canvas mounted${outNodeId ? ` (${outNodeId})` : ''}`).toHaveCount(1);
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+  return page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          outputTexture: (n: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    if (!w.__engine) return null;
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    const tex = vid.outputTexture(id);
+    if (!tex) return null;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const data = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+    if (!complete) return null;
     let n = 0, sum = 0, sumSq = 0, nonZero = 0;
-    for (let i = 0; i < data.length; i += 16) {
+    for (let i = 0; i < data.length; i += 4 * 16) {
       const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
       sum += v; sumSq += v * v; n++;
       if (v > 8) nonZero++;
     }
     const mean = sum / n;
     return { nonZeroFrac: nonZero / n, variance: sumSq / n - mean * mean, mean };
-  });
+  }, outNodeId);
 }
 
 /** Deterministic worker-readiness signal: worker bitmaps uploaded for `nodeId`. */
@@ -134,7 +152,7 @@ test.describe('Fix E render worker — toybox', () => {
       (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = true;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -148,8 +166,14 @@ test.describe('Fix E render worker — toybox', () => {
       ],
     );
 
-    await expect(page.locator('.svelte-flow__node-toybox'), 'toybox node present').toBeVisible();
-    await expect(page.locator('[data-testid="video-out-card"]'), 'video-out card present').toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="tb"] [data-testid="module-shell"]'),
+      'toybox faceplate present',
+    ).toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]'),
+      'video-out faceplate present',
+    ).toHaveCount(1);
 
     const workerSupported = await page.evaluate(() =>
       typeof Worker !== 'undefined' &&
@@ -287,7 +311,7 @@ test.describe('Fix E render worker — toybox', () => {
       (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = false;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // ── PHASE 1: warm the MAIN thread ──
@@ -351,7 +375,28 @@ test.describe('Fix E render worker — toybox', () => {
         };
       });
     });
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(2);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="warmout"] [data-testid="module-shell"]'),
+    ).toHaveCount(1);
+    // Keep the appended chain OBSERVED: the legacy video-out card's blit loop
+    // marked its node watched unconditionally, but the shell's tile thumb is
+    // viewport-gated and the appended pair lands wherever the first spawn's
+    // fit left the viewport — so open the sink's dock pane (a real presenting
+    // surface; Canvas holds a per-open-pane render lease) for the phase under
+    // measurement. Without an observer the sink never routes a frame and the
+    // black read would be about pull-eval, not #1905.
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'out',
+    );
+    await expect(
+      page
+        .locator('[data-testid="dock-fullview-pane"][data-pane-node="out"]')
+        .getByTestId('videoout-face-canvas'),
+    ).toBeVisible({ timeout: 60_000 });
 
     // Wait for the worker to be the ACTIVE path AND to have stepped its node at
     // least once — i.e. we are INSIDE the window: GL is live, the node is
@@ -470,7 +515,7 @@ test.describe('Fix E render worker — toybox', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Warm up (rAF running) until the gen-layer content has compiled + the
     // downstream OUTPUT is non-black — a deterministic STATE, polled, not a fixed

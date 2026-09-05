@@ -144,7 +144,7 @@ async function buildChain(page: import('@playwright/test').Page, prefix: string)
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 }
 
 test('@launchpad single-unit ARP — a held KEYS chord is SEQUENCED to audible RMS (real source → arp → voice)', async ({ page, rack, errorWatch }) => {

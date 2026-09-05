@@ -51,18 +51,20 @@ async function readPongSnapshot(page: Page, nodeId: string): Promise<PongSnapsho
   }, nodeId);
 }
 
-test('pong: drop module → card mounts with no console errors', async ({ page }) => {
+test('pong: drop module → the shell mounts with no console errors', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'p', type: 'pong', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-pong');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('PONG');
-  // The canvas must render with a non-zero backing store.
-  const canvas = card.locator('[data-testid="pong-canvas"]');
+  const tile = page.locator('.svelte-flow__node:has([data-shell-type="pong"])');
+  await expect(tile).toBeVisible();
+  await expect(tile).toContainText(/pong/i);
+  // The 16-bit screen lives in the DOCK face body on the default shell; its
+  // canvas must render with a non-zero backing store.
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('p'));
+  const canvas = page.locator('[data-testid="pong-face-canvas"]');
   await expect(canvas).toBeVisible();
   const size = await canvas.evaluate((el: Element) => {
     const c = el as HTMLCanvasElement;

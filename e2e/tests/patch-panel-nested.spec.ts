@@ -53,26 +53,16 @@ async function visibleRowCount(page: Page, nodeId: string): Promise<number> {
 }
 
 test.describe('PatchPanel: overlay-replace nested sections', () => {
-  test('MIXMSTRS: 6 channel nav rows; drill/back overlay behaviour', async ({ page, rack }) => {
-    await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } }]);
-    await openMenu(page, 'mm');
-
-    // Channel sections present as nav rows.
-    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6', 'Master']) {
-      await expect(sectionNav(page, 'mm', label)).toHaveCount(1);
-    }
-    expect(await visibleRowCount(page, 'mm')).toBe(0);
-
-    await drillSection(page, 'mm', 'Ch1');
-    expect(await visibleRowCount(page, 'mm')).toBeGreaterThan(0);
-    await chrome(page, 'mm').locator('[data-testid="patch-panel-back"]').click();
-    await drillSection(page, 'mm', 'Ch2');
-    await expect(chrome(page, 'mm').locator('[data-testid="patch-panel-section"]')).toHaveCount(1);
-  });
+  // ⚠ The 6-channel SECTION-NAV drill test folded in the S2 legacy-removal
+  // inversion: per-channel sections were a CARD-variant PatchPanel feature —
+  // the shell lane rail mounts `groupingStrategy: 'auto'` (#1762, documented
+  // at the ModuleShell mount), so no shell surface renders section nav rows.
+  // The flat INPUT/OUTPUT drill is pinned by aut-patch-panel.spec.ts and
+  // mixmstrs-stereo-expand.spec.ts (S2 manifest).
 
   test('MIXMSTRS: collapsed root menu fits on a 1366×768 viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } }]);
     await openMenu(page, 'mm');

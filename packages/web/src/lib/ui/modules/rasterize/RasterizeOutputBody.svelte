@@ -15,21 +15,20 @@
   // raster with four knobs on the one module whose entire job is to make a
   // picture.
   //
-  // ⚠ AND THE PRODUCER IS PULL-DRIVEN HERE, WHICH INVERTS THE COLLAPSE RULE.
-  // In `spirographs` / `backdraft` the VIDEO ENGINE owns the producer and this
-  // kind of component only READS it, so collapsing stops a copy and nothing
-  // else. RASTERIZE's painter is advanced INSIDE `read('imageData')`
-  // (`advanceOncePerFrame`), so when nothing downstream is patched THIS LOOP IS
-  // THE ONLY THING ADVANCING THE RASTER. Stopping the loop on collapse would
-  // therefore freeze the module itself — precisely the #1720/#1721 class the
-  // owner's "it KEEPS RENDERING while OFF" floor exists to prevent. So the
-  // collapse skips the BLIT and never the advance. That is also the cheap half
-  // to keep: the advance writes ~800 pixels, while the blit is a 1024×768 →
-  // 480×360 scale-draw.
+  // ⚠ THIS BODY IS A VIEWER, NOT THE PRODUCER (legacy-removal S1.5). It used to
+  // carry a second copy of the card's whole loop — the `cvCombined` push and
+  // the advancing read — because the painter is advanced INSIDE
+  // `read('imageData')` and whoever held the only mounted loop was the only
+  // thing advancing the raster (#1720/#1721). Both duties belong to
+  // `RASTERIZE_FRAME_PRODUCER` (`$lib/ui/media/frame-producers`) now, owned by
+  // the NODE on graph lifetime, so the raster moves and honours its cables with
+  // no surface mounted anywhere — and two surfaces no longer run two copies of
+  // one push that only agreed because one was pasted from the other. This loop
+  // reads the current frame and blits it; the read's own advance coalesces on
+  // the module's 8 ms guard.
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
-  import { rasterizeDef } from '$lib/audio/modules/rasterize';
   import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
@@ -61,26 +60,16 @@
     });
   }
 
-  // PUSH then READ, exactly as the legacy card does. `eng.readParam` returns the
-  // knob PLUS the engine's own per-port CV tap (the combined value), and the
-  // painter runs inside `read('imageData')`, so the push has to land first
-  // (#1664). With nothing patched there is no tap, so this equals the knob.
+  // READ and BLIT — the viewer's whole job. The push that used to precede this
+  // read lives on the node producer now (see the header); reading here still
+  // advances, deduped, which costs nothing and keeps the shown frame current.
   function draw() {
     rafId = null;
     const eng = engineCtx.get();
     const node = patch.nodes[nodeId] as ModuleNode | undefined;
-    if (eng && node) {
-      const combined: Record<string, number> = {};
-      for (const p of rasterizeDef.params) {
-        const v = eng.readParam(node, p.id);
-        if (typeof v === 'number' && Number.isFinite(v)) combined[p.id] = v;
-      }
-      eng.write(node, 'cvCombined', combined);
-      // ⚠ READ UNCONDITIONALLY — this is what advances the painter. See the
-      // pull-driven note at the top: skipping it while collapsed would freeze
-      // the raster whenever no video consumer is patched.
+    if (eng && node && !previewCollapsed && canvasEl) {
       const img = eng.read(node, 'imageData') as ImageData | undefined;
-      if (img && !previewCollapsed && canvasEl) blit(canvasEl, img);
+      if (img) blit(canvasEl, img);
     }
     rafId = requestAnimationFrame(draw);
   }
@@ -105,9 +94,9 @@
     ctx2d.drawImage(stage, 0, 0, c.width, c.height);
   }
 
-  // ONE place owns the loop, so it cannot be started twice. It runs for the
-  // lifetime of the component regardless of SCREEN state — see the pull-driven
-  // note; `draw` itself decides whether to paint.
+  // ONE place owns the loop, so it cannot be started twice. `draw` itself
+  // decides whether to paint; SCREEN OFF costs one boolean read per frame and
+  // touches nothing engine-visible, because nothing engine-visible lives here.
   $effect(() => {
     if (rafId === null) rafId = requestAnimationFrame(draw);
     return () => {

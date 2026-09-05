@@ -97,17 +97,6 @@ export interface AudioModuleDef {
    */
   stereoPairs?: readonly (readonly [string, string])[];
   /**
-   * Module-grouping Phase 3A: when set, this module renders an on-card
-   * visualization (typically a <canvas>) that can be portaled into the
-   * parent GroupCard so the group "becomes" the viz. SCOPE is the
-   * pioneering case — the on-card 2D oscilloscope canvas is hoisted to
-   * the GroupCard body when SCOPE is a member of a collapsed group.
-   * Other viz-capable modules (wavviz, swolevco, …) leave
-   * this UNSET for now; once their cards stabilize their canvas DOM
-   * contract the flag flips on without further plumbing.
-   */
-  vizPassthrough?: boolean;
-  /**
    * WebGL-attestation marker (semaphore scheme). When true, this AUDIO-domain
    * module's card renders via a real WebGL/WebGL2 context (CUBE / WAVESCULPT) — i.e. it is a GPU render path even though it lives in the
    * audio registry. The §12 coverage guard reads this flag to mechanically
@@ -153,12 +142,6 @@ export interface AudioModuleDef {
    * module-categories map required. Omitted = Uncategorized.
    */
   palette?: PaletteCategory;
-  /**
-   * Card-component basename override (no '.svelte'), e.g. 'AudioinCard'.
-   * ONLY needed when the default convention `PascalCase(type)+'Card'` doesn't
-   * match the actual component filename. Resolved by $lib/ui/modules-card-map.
-   */
-  card?: string;
   /**
    * Living-docs: co-located AUTHORED prose (overview + per-port + per-control).
    * See ModuleDocs. Drift-checked by the docs gate; the GENERATED I/O reference

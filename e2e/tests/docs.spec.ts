@@ -115,12 +115,13 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
   await loadVoiceDemo(page);
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-  // Right-click on the analog VCO card — its module type is 'analogVco', so
+  // Right-click on the analog VCO tile — its module type is 'analogVco', so
   // the Docs link should resolve to /docs/modules/analogVco.
-  const vco = page.locator('.svelte-flow__node-analogVco').first();
-  // Right-click the card background (title bar) — a knob/fader right-click now
-  // opens the per-control MIDI menu instead of the module menu.
-  await vco.locator('.title').click({ button: 'right' });
+  const vco = page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])').first();
+  // Right-click the tile's NAME ROW — a control right-click opens the
+  // per-control MIDI menu instead of the module menu (the shell's `.tile-name`
+  // is the card `.title`'s counterpart).
+  await vco.locator('.tile-name').click({ button: 'right' });
 
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();

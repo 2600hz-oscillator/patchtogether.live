@@ -43,14 +43,46 @@ async function step0PitchProb(page: import('@playwright/test').Page) {
   });
 }
 
+
+/** Select one page of the clip player's RAILED face.
+ *
+ * ⚠ THE FACE IS TABBED (`face.tabbed`, owner P0 2026-09-04) AND RENDERS EXACTLY
+ * ONE BAND. The launch grid is `session`, the piano roll is `editor`; the
+ * inactive one is `display:none`, so its testids resolve to real elements with
+ * a 0×0 box and every interaction times out instead of failing on a missing
+ * selector. The `aria-selected` wait is the state the band swap commits —
+ * clicking a chip and reading a cell in the same breath races it. */
+async function showClipPage(
+  scope: import('@playwright/test').Locator,
+  pageId: 'session' | 'editor',
+) {
+  const tab = scope.getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
+}
+
 async function openEditorWithNote(page: import('@playwright/test').Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await spawnPatch(page, [{ id: 'pp-cp', type: 'clipplayer', domain: 'audio', position: { x: 200, y: 120 } }]);
-  const card = page.getByTestId('clipplayer-card').first();
-  await card.waitFor({ state: 'visible' });
-  await card.locator('.pad').first().dblclick(); // → editor, lane 0 / slot 0
-  await page.getByTestId('clipplayer-editor').waitFor({ state: 'visible' });
-  const cell = page.getByTestId('clipplayer-cell-0-0');
+  // The first cell click both selects lane 0 / slot 0 and commits its clip (the
+  // face-clipplayer recipe — no pad dblclick needed). The band it lives on has
+  // to be SELECTED first: see `showClipPage`.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'pp-cp',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="pp-cp"]');
+  await showClipPage(pane, 'editor');
+  await expect(pane.getByTestId('clipplayer-face-editor')).toBeVisible({ timeout: 60_000 });
+  const cell = pane.getByTestId('clipplayer-cell-0-0');
+  await cell.scrollIntoViewIfNeeded();
   await cell.click(); // draw a note at display row 0 / step 0
   return cell;
 }

@@ -112,9 +112,9 @@ interface Result {
   refStdDev: number;
 }
 
-/** Measure the OUTPUT card's preview against a hand-computed box filter. */
-async function measure(page: Page): Promise<Result> {
-  return page.evaluate((): Result => {
+/** Measure an OUTPUT preview surface against a hand-computed box filter. */
+async function measure(page: Page, selector: string): Promise<Result> {
+  return page.evaluate((selector): Result => {
     const w = globalThis as unknown as {
       __engine: () => {
         getDomain: (d: string) => {
@@ -136,9 +136,7 @@ async function measure(page: Page): Promise<Result> {
       nonZeroFrac: 0,
       refStdDev: 0,
     };
-    const card = document.querySelector(
-      '[data-testid="video-out-canvas"]',
-    ) as HTMLCanvasElement | null;
+    const card = document.querySelector(selector) as HTMLCanvasElement | null;
     if (!card) return empty;
     const vid = w.__engine().getDomain('video');
 
@@ -277,7 +275,7 @@ async function measure(page: Page): Promise<Result> {
       nonZeroFrac: nonZero / ref.length,
       refStdDev: Math.sqrt(Math.max(0, sumSq / ref.length - mean * mean)),
     };
-  });
+  }, selector);
 }
 
 function describeWhere(r: Result): string {
@@ -344,60 +342,13 @@ function assertPreviewIsBoxFiltered(r: Result, label: string): void {
   ).toBeLessThan(r.refVhf * COMB_EXCESS);
 }
 
-/** The OUTPUT canvas's current drawing-buffer height. */
-async function bufferHeight(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const c = document.querySelector(
-      '[data-testid="video-out-canvas"]',
-    ) as HTMLCanvasElement | null;
-    return c?.height ?? 0;
-  });
-}
-
-/**
- * Resize the OUTPUT card through the patch store (the same field the corner
- * drag writes), so the preview is measured at a SECOND, harder reduction.
- *
- * ⚠ Only HEIGHT is worth shrinking: the card clamps `innerWidth` at
- * `MIN_WIDTH - PAD_PX`, so a narrower `width` changes nothing. Height drives
- * the letterbox fit at these proportions, and the comb is a VERTICAL aliasing
- * artifact anyway.
- */
-async function resizeOutput(page: Page, width: number, height: number): Promise<void> {
-  const before = await bufferHeight(page);
-  await page.evaluate(
-    ({ width, height }) => {
-      const w = globalThis as unknown as {
-        __ydoc: { transact: (fn: () => void) => void };
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['out'];
-        if (!n) return;
-        if (!n.data) n.data = {};
-        n.data.width = width;
-        n.data.height = height;
-      });
-    },
-    { width, height },
-  );
-  // Wait on the OBSERVABLE — the drawing buffer actually shrinking — not on a
-  // budget. The card re-derives its buffer dims from node.data.
-  await expect
-    .poll(() => bufferHeight(page), {
-      message: `the OUTPUT canvas drawing buffer followed the resize (was ${before} px)`,
-      timeout: 15_000,
-    })
-    .toBeLessThan(before);
-}
-
 test.describe('#1846 on-card preview downscale', () => {
   test('the OUTPUT preview matches a box filter; a single tap does NOT @webgl-smoke', async ({
     page,
     errorWatch,
   }) => {
     test.setTimeout(180_000);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // SHAPES → RUTTETRA → OUTPUT. RUTTETRA scatters the shape into dense
@@ -435,25 +386,32 @@ test.describe('#1846 on-card preview downscale', () => {
         },
       ],
     );
-    await expect(page.locator('[data-testid="video-out-canvas"]')).toHaveCount(1);
+    // The shell's TWO preview surfaces share the drawPreviewDownscaled seam:
+    // the dock face canvas (320×240, the milder reduction) and the lane tile
+    // thumb (160×120, the thumbnail regime the old test reached by resizing
+    // the card — the geometry knob died with the card, the REGIME did not).
+    await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('out'));
+    await expect(page.locator('[data-testid="videoout-face-canvas"]')).toHaveCount(1);
+    await expect(
+      page.locator('.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]'),
+    ).toHaveCount(1);
     // Frames, not milliseconds: enough for the chain to settle and for the
-    // 30 fps-capped preview to have repainted from it several times.
+    // 30 fps-capped previews to have repainted from it several times.
     await waitFrames(page, 40);
 
-    // ── LEG 1: the card at its SHIPPED default size (~3x reduction) ─────────
-    const shipped = await measure(page);
-    console.log(`[preview-downscale] default size ${JSON.stringify(shipped)}`);
-    assertPreviewIsBoxFiltered(shipped, 'default OUTPUT card');
+    // ── LEG 1: the dock face canvas (~3.2× reduction) ───────────────────────
+    const shipped = await measure(page, '[data-testid="videoout-face-canvas"]');
+    console.log(`[preview-downscale] dock face ${JSON.stringify(shipped)}`);
+    assertPreviewIsBoxFiltered(shipped, 'dock face canvas');
 
-    // ── LEG 2: a SHORT card — the thumbnail regime (~6x), where a single tap
-    // discards the most rows and the comb is worst. Same code path and same
-    // order of reduction as the RACKLINE lane thumb, which is 160x120 off the
-    // same 1024x768 buffer.
-    await resizeOutput(page, 360, 180);
-    await waitFrames(page, 40);
-    const small = await measure(page);
-    console.log(`[preview-downscale] small card ${JSON.stringify(small)}`);
-    assertPreviewIsBoxFiltered(small, 'small OUTPUT card (thumbnail regime)');
+    // ── LEG 2: the lane thumb — the thumbnail regime (~6.4×), where a single
+    // tap discards the most rows and the comb is worst.
+    const small = await measure(
+      page,
+      '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]',
+    );
+    console.log(`[preview-downscale] lane thumb ${JSON.stringify(small)}`);
+    assertPreviewIsBoxFiltered(small, 'lane tile thumb (thumbnail regime)');
 
     expect(
       small.source.h / small.dest.h,

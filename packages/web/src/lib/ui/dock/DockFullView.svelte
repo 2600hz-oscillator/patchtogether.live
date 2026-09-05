@@ -6,66 +6,43 @@
   // bottom drawer — NOT one more card in DockRail's horizontal card flex. Domain
   // accent lip + glow, grip, title bar (badge + name + "<label> · lane N" sub) +
   // a window-control trio (undock / collapse-to-lane / close), a tab-rail seam
-  // (single "MODULE" tab for legacy content — real per-op tabs are P1), and a
-  // .page > .editor that mounts the CONTENT at NATIVE scale:
-  //   * un-migrated → the module's VERBATIM legacy *Card.svelte via
-  //     nodeTypes[node.type], with the SAME plain-mount contract DockCardHost
-  //     uses (self-gating PatchPanel outside the flow provider) — carrying the
-  //     data-dock-card / data-dock-card-frame anchors + node.id keying so
-  //     PickupCable / cardRectOf + the patch menu keep working.
-  //   * migrated → <ModuleShell view="dock-full"> (effTier 'dock').
+  // (real per-section tabs above the dockTabPlan threshold, one MODULE chip
+  // below it), and a .page > .editor that mounts <ModuleShell view="dock-full">
+  // (effTier 'dock') at NATIVE scale.
   //
-  // ── BOTH BRANCHES CARRY THE DOCK ANCHORS, AND ONLY ONE USED TO ─────────────
-  // `data-dock-card` / `data-dock-card-frame` are how `Canvas.cardRectFor` and
-  // `PickupCable` find the on-screen rectangle of a module whose canvas
-  // presence is a stub — or nothing at all. Both resolve
-  // `[data-dock-card="…"] [data-dock-card-frame]` and then fall back to
-  // `.svelte-flow__node[data-id]`.
+  // ── THE PANE IS THE DOCK FRAME (`data-dock-card` / `data-dock-card-frame`) ──
+  // Those two anchors are how `Canvas.cardRectFor`, `PickupCable` and the patch
+  // menu find the on-screen rectangle of a module whose canvas presence is a
+  // stub — or nothing at all. They sit on THIS pane's own frame.
   //
-  // ⚠ THE FACED BRANCH EMITTED NEITHER, so a faced pane fell straight through
-  // to the canvas-node fallback — and a CANVAS-HIDDEN occupant does not have
-  // one. `isCanvasHiddenNode` nodes (the pinned singletons: the built-in clip
-  // player, the audio-I/O and MIDI-DIN surfaces) have no stub, no handles and
-  // no `.svelte-flow__node` at all, so BOTH lookups missed and:
+  // ⚠ THEY USED TO SIT ON A WRAPPER THAT ONLY THE SECOND BRANCH EMITTED, and
+  // that made them a property of the CONTENT rather than of the DOCK. When the
+  // second branch went, `cardRectFor` lost its frame for every full-view
+  // occupant and fell through to `.svelte-flow__node[data-id]` — which a
+  // CANVAS-HIDDEN occupant does not have. The built-in clip player is exactly
+  // that shape (`pinned-clipplayer`, `isCanvasHiddenNode`), so `c` → patch → to…
+  // resolved NULL and the picker fell back to the raw cursor instead of the
+  // pane edge: the owner-reported "patch to is a mess in terms of where the
+  // menu spawns", returning by a different route. Anchoring the PANE is what
+  // `cardRectFor`'s own comment always claimed the contract was.
   //
-  //   * `PickupCable` returned the EMPTY PATH — flip the pane (Tab), click a
-  //     back jack, and nothing attaches to the cursor. No ghost cable at all.
-  //     Its own dock fallback exists verbatim for this case and could not
-  //     reach it.
-  //   * `cardRectFor` returned null, so the patch picker opened at the raw
-  //     cursor instead of the pane edge — the owner-reported "patch to is a
-  //     mess in terms of where the menu spawns", by a second route.
-  //
-  // The anchors now sit on the PANE'S OWN FRAME for a faced occupant, which is
-  // what `cardRectFor`'s own comment always claimed the contract was. They are
-  // attributes on elements the frame already had — no wrapper element — so the
-  // dock's measured geometry is unchanged.
-  //
-  // PLAIN-MOUNT SAFETY (verbatim from DockCardHost): the card is the SAME
-  // component the canvas mounts, fed the same `{ id, data: { node } }`. PatchPanel
-  // self-gates outside the provider (guarded useStore): no <Handle> stack mounts
-  // here, so the node's ONLY handles + only `.svelte-flow__node[data-id]` element
-  // live on its canvas tile — PickupCable + sweep contracts stay unambiguous. The
-  // patch MENU still works from the drawer (port rows dispatch document-level
-  // events Canvas owns). Rack sizing is replicated by a classed wrapper
-  // (dock-rack-sized) that mirrors .svelte-flow__node.rack-sized WITHOUT the
-  // .svelte-flow__node class. NO transform/ResizeObserver zoom — native scale.
+  // They are attributes on elements the frame already had, deliberately — no
+  // wrapper element, so the dock's measured geometry is unchanged.
   //
   // Close / collapse-to-lane both call dockStore.closeFullView(node.id) —
   // closing THIS pane only; a split survivor returns to full width (the
-  // module's lane placeholder/shell stays in place — Option #1). The full-view
+  // module's lane tile stays in place — Option #1). The full-view
   // (up to TWO side-by-side panes, owner extension) is the ONE bottom-drawer
   // occupant while open (dock unification: pinned XOR full-view) — ESC closes
   // the whole view, M/E REPLACE it with the pinned drawer (Canvas's dock-key
   // handler → dockStore occupancy). Transient: never a persisted dock ENTRY.
   //
   // The built-in CLIP PLAYER (`pinned-clipplayer`) is one of these panes too
-  // (owner 2026-07-26: `c` = expand): a real node with a real def, so it takes
-  // the un-migrated branch below (verbatim ClipplayerCard) and the flip key (Tab) flips it to
-  // its def-driven RearCard jack field like any other un-migrated occupant.
+  // (owner 2026-07-26: `c` = expand): a real node with a real def, so it gets
+  // the same faceplate as any other occupant, and the flip key (Tab) flips it
+  // to its def-driven RearCard jack field.
 
   import './_dock-faceplate.css';
-  import type { Component } from 'svelte';
   import type { ModuleNode, ParamDef, PortDef } from '$lib/graph/types';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
@@ -87,12 +64,6 @@
   interface Props {
     /** The full-view node (live snapshot entry — `data` is the live proxy). */
     node: ModuleNode;
-    /** The shared glob-driven nodeTypes map (Canvas's). */
-    nodeTypes: Record<string, unknown>;
-    /** Rack sizing (Canvas's rackSizeByType entry), if the type declares one. */
-    rackSize?: { size?: string; hp?: number };
-    /** True ⇒ mount the migrated <ModuleShell>; else the verbatim legacy card. */
-    migrated: boolean;
     /** Header display name. */
     title: string;
     /** Close the full-view (✕ / ESC). */
@@ -108,7 +79,7 @@
      *  per-pane surface is this prop + the `data-flipped` attr. */
     flipped?: boolean;
   }
-  let { node, nodeTypes, rackSize, migrated, title, onClose, onCollapse, onUndock, flipped = false }: Props = $props();
+  let { node, title, onClose, onCollapse, onUndock, flipped = false }: Props = $props();
 
   function defLookup(type: string) {
     return getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
@@ -142,9 +113,9 @@
    *
    * Found by `tv-librarian-face.spec.ts` as an unexpected `pageerror`: a tuned
    * tvLibrarian could not have its faceplate re-opened after the pane was closed.
-   * ⚠ It is PRE-EXISTING and independent of that promotion — `DockFullView`
-   * mounts for a legacy occupant too, so a tuned tvLibrarian docked under
-   * `?shell=legacy` hits the same line on `main`.
+   * ⚠ It is PRE-EXISTING and independent of that promotion — this `$derived`
+   * runs for every dock occupant, whatever surface it paints, so any tuned
+   * tvLibrarian reached the same line.
    *
    * The fix is the TYPE CHECK, not a try/catch: the label means "mixer lane N",
    * and a value that is not a number is not that. Deny by default — an unknown
@@ -162,10 +133,6 @@
     return label;
   });
 
-  let CardComponent = $derived(nodeTypes[node.type] as Component | undefined);
-  let rackU = $derived(rackSize?.size ? parseInt(rackSize.size, 10) || 1 : null);
-  let rackHp = $derived(rackSize?.hp ?? 1);
-
   // ── PF-16: REAL PER-SECTION TABS ────────────────────────────────────────
   //
   // The rail used to be one hard-coded "MODULE" chip with a `real per-op tabs
@@ -175,8 +142,7 @@
   // it (this rail and ModuleShell's band hiding) so they can never disagree
   // about whether a face is tabbed.
   //
-  // Un-migrated (legacy-card) occupants keep the single MODULE chip: their
-  // content is one verbatim card with no declared sections to tab.
+  // A def that declares no sections keeps the single MODULE chip and scrolls.
   // ⚠ THE RAIL IS COMPUTED FROM THE POST-HERO BANDS, and it MUST be. This used
   // to read `dockTabPlan(dockFacePlan(def))` — the bands BEFORE the hero split —
   // while ModuleShell hides bands using the bands AFTER it (`heroSplit.bands`).
@@ -188,7 +154,7 @@
   // a blank faceplate. spirographs is that face (`count` is its whole hero), and
   // the fix is to ask the SAME question both consumers ask.
   let tabs = $derived(
-    migrated && def
+    def
       ? dockTabPlan(
           heroFacePlan(def as FaceplateDefLike, dockFacePlan(def as FaceDefLike)).bands,
           'dock-full',
@@ -247,7 +213,7 @@
   // reveals nothing is a labelled void — and gating on the DECLARATION (never
   // on a module id) is what
   // makes the affordance appear for adopter #2 without an edit here.
-  let annotatable = $derived(migrated && def ? faceHasAnnotations(def as FaceplateDefLike) : false);
+  let annotatable = $derived(def ? faceHasAnnotations(def as FaceplateDefLike) : false);
   let annotationsOn = $derived(isAnnotating(node.id));
 </script>
 
@@ -256,9 +222,9 @@
   data-testid="dock-full-view"
   data-fullview-node={node.id}
   data-flipped={flipped && def ? 'true' : 'false'}
-  data-dock-card={migrated ? node.id : undefined}
-  data-dock-type={migrated ? node.type : undefined}
-  data-dock-full={migrated ? 'true' : undefined}
+  data-dock-card={node.id}
+  data-dock-type={node.type}
+  data-dock-full="true"
 >
   <!-- OCCUPANT SWAP = REMOUNT ({#key node.id}): opening module B while A is
        expanded must tear A's subtree down and mount B's fresh — never morph
@@ -277,27 +243,11 @@
          bar scrolled sideways with the content and the ✕ sat past the pane's
          right edge — invisible in BOTH the front and the flipped rear state
          (the owner screenshot: clipped "REA…" chip, no close anywhere). -->
-    <!-- `data-dock-card-frame` — THE MEASURED RECTANGLE FOR A FACED OCCUPANT.
-         `Canvas.cardRectFor` and `PickupCable` edge-align the patch picker and
-         the ghost cable to `[data-dock-card] [data-dock-card-frame]`, falling
-         back to `.svelte-flow__node[data-id]`. A faced pane emitted NEITHER,
-         and a CANVAS-HIDDEN occupant has no canvas node to fall back to — see
-         the header. This is the frame the user reads as "the module", so it is
-         the right rectangle to align to.
-
-         ⚠ GATED ON `migrated`, and that gate is load-bearing rather than
-         tidiness. The un-migrated branch below already emits its own
-         `data-dock-card` / `data-dock-card-frame` pair around the verbatim
-         card, and `cardRectFor` uses `querySelector` — FIRST IN DOCUMENT
-         ORDER. An ungated attribute here would sit on an ANCESTOR of that
-         pair and win, silently moving every legacy occupant's anchor from its
-         card frame to the whole pane. Emitting these only on the branch that
-         lacks them leaves the legacy path bit-for-bit unchanged. -->
-    <div
-      class={`faceplate ${domain}`}
-      data-fullview-domain={domain}
-      data-dock-card-frame={migrated ? '' : undefined}
-    >
+    <!-- `data-dock-card-frame` — THE MEASURED RECTANGLE. `Canvas.cardRectFor`
+         and `PickupCable` edge-align the patch picker / cable pickup to this
+         element, so it must be the frame the user sees as "the module", not
+         the scroll region inside it. -->
+    <div class={`faceplate ${domain}`} data-fullview-domain={domain} data-dock-card-frame>
       <span class="spine" aria-hidden="true"></span>
 
       <div class="faceplate-grip" data-testid="faceplate-grip" aria-hidden="true"></div>
@@ -416,27 +366,7 @@
 
           <div class="page">
             <div class="editor" data-testid="faceplate-editor">
-              {#if migrated}
-                <ModuleShell id={node.id} data={{ node, view: 'dock-full', activePage: activeTab }} />
-              {:else}
-                <!-- Verbatim legacy card, plain-mount (data-dock-card* anchors +
-                     node.id keying carried so PickupCable/cardRectOf + patch menu
-                     resolve; PatchPanel self-gates outside the provider). -->
-                <section class="fp-card-mount" data-dock-card={node.id} data-dock-type={node.type} data-dock-full="true">
-                  <div class="fp-card-frame" data-dock-card-frame>
-                    <div
-                      class={rackU != null ? 'dock-rack-sized' : 'dock-natural-sized'}
-                      style={rackU != null ? `--rack-hp:${rackHp};--rack-u:${rackU}` : undefined}
-                    >
-                      {#if CardComponent}
-                        <CardComponent id={node.id} data={{ node }} />
-                      {:else}
-                        <div class="fp-missing">unknown module type: {node.type}</div>
-                      {/if}
-                    </div>
-                  </div>
-                </section>
-              {/if}
+              <ModuleShell id={node.id} data={{ node, view: 'dock-full', activePage: activeTab }} />
             </div>
           </div>
           </div>
@@ -480,11 +410,6 @@
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
-  }
-  .fp-card-frame {
-    position: relative;
-    width: max-content;
-    max-width: 100%;
   }
   /* PF-16 — the tabs are real <button role="tab"> elements now (keyboard +
      AT reachable). The kit's `.tab` rule already paints them; these three
@@ -553,15 +478,5 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .dock-natural-sized,
-  :global(.dock-faceplate .dock-rack-sized) {
-    position: relative;
-    width: max-content;
-  }
-  .fp-missing {
-    padding: 12px;
-    color: var(--text-dim);
-    font-size: 0.75rem;
   }
 </style>

@@ -14,12 +14,12 @@
   //
   // ⚠ THE PICTURE IS BLITTED FROM THE ENGINE AND THE `<video>` IS NEVER ADOPTED
   // HERE — the `TvLibrarianTunerBody` constraint, for the same two reasons. A
-  // DOM node has exactly one parent, and the node's element may be adopted by
-  // the LEGACY card at the same moment (`?shell=legacy`); adopting it here
-  // would move it out from under that mount. And `blitOutputForPreview` reads
-  // the module's OWN output texture, which is what `gain` scales and what
-  // downstream modules actually receive — the card's raw-element preview
-  // structurally cannot show the one ranked control on this face. The engine
+  // DOM node has exactly one parent, and this one belongs to a NODE-lifetime
+  // owner that keeps it alive with nothing mounted; adopting it here would move
+  // it out from under that owner. And `blitOutputForPreview` reads the module's
+  // OWN output texture, which is what `gain` scales and what downstream modules
+  // actually receive — a raw-element preview structurally cannot show the one
+  // ranked control on this face. The engine
   // frame is the anamorphic 16:9-into-4:3 upload every downstream consumer
   // already gets (owner decision 2026-08-31 §3: blit it AS-IS; the upload's
   // aspect is a separate platform defect, not letterboxed around here).
@@ -28,8 +28,8 @@
   // audio wire, the saved-handle restore, the 500 ms drift loop, the 33 ms gate
   // loop and the sync→element application are all
   // `$lib/ui/media/node-video-source-registry`'s, on NODE lifetime. This body
-  // reads what the controller publishes and forwards gestures to it, exactly as
-  // the legacy card does. The ONE element read it performs is a NON-OWNING
+  // reads what the controller publishes and forwards gestures to it, owning
+  // nothing. The ONE element read it performs is a NON-OWNING
   // `nodeMedia.peek` for the playhead position (`VideoSourceStatus` publishes
   // no position or duration) — never `adopt`, never a write.
   //
@@ -334,9 +334,9 @@
   $effect(() => { fs.setTarget(wrapEl); });
   $effect(() => fs.attach());
 
-  // Full Frame on the SAME `node.data.fullFrame` key the legacy card reads and
-  // writes — a wall-of-TVs rack saved on either surface means the same thing on
-  // the other. Tracked (mutateNode → LOCAL_ORIGIN) so it reaches Cmd-Z; the
+  // Full Frame on the persisted `node.data.fullFrame` key — a wall-of-TVs rack
+  // means the same thing whenever it is reopened. Tracked (mutateNode →
+  // LOCAL_ORIGIN) so it reaches Cmd-Z; the
   // card's bare write is fixed to match in the same diff.
   let fullFrame = $derived<boolean>((patch.nodes[nodeId]?.data?.fullFrame as boolean | undefined) ?? false);
   const ff = createFullFrame({
@@ -782,7 +782,7 @@
   /* ── FULL FRAME (in-app) — the picture consumes the surface ─────────────
      The picker, transport, seekbar and filename are hidden so the body shows
      only video; the state is on node.data.fullFrame, so it syncs to peers and
-     to the legacy card. Double-click exits (use-full-frame). */
+     survives a reload. Double-click exits (use-full-frame). */
   .videobox-body.full-frame .pick-btn,
   .videobox-body.full-frame .transport,
   .videobox-body.full-frame .filename,

@@ -103,7 +103,7 @@ test.describe('NIBBLES.length_cv → SCOPE.ch1: regression for PR #163', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
