@@ -1701,9 +1701,17 @@
       }
       for (const spec of missing) {
         if (patch.nodes[spec.id]) continue; // in-transact re-check
-        const data: Record<string, unknown> = {
-          name: nextDefaultName(patch.nodes, spec.type),
-        };
+        // NAMED AFTER THE SLOT, NOT THROUGH `nextDefaultName` — and this is a
+        // behaviour fix, not a cosmetic choice. `nextDefaultName` hands out
+        // `CAMERAINPUT`, `CAMERAINPUT2`, … by scanning existing names of that
+        // shape, so four slots taking names from that sequence made a user's
+        // FIRST ＋-added camera "camera 5". `cam1` does not match the pattern,
+        // so the slots sit outside the sequence entirely and dynamic cameras
+        // number from 1 again. It also reads better: the slot's name is the
+        // rig's own vocabulary, the same string the row label and the shell's
+        // pre-flight UI use. Still ordinary `data.name`, so an operator can
+        // rename it to "STAGE LEFT" like any other module.
+        const data: Record<string, unknown> = { name: spec.slot };
         if (spec.pinned) data.pinned = true;
         if (spec.hiddenCard) data.hiddenCard = true;
         patch.nodes[spec.id] = {

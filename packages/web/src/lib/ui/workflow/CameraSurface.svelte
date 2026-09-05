@@ -108,18 +108,32 @@
    * unscoped query over the canvas will find. That regressed three lane specs
    * (drop-target and stack geometry) before this predicate existed.
    *
-   * The host exists to keep a LIVE stream alive across a menu close. An UNBOUND
-   * slot has no stream, so it needs no host — mount one only when:
-   *   - the slot is BOUND (`data.deviceId`), i.e. there is a session to protect;
-   *   - or its row is the one the user is currently working (`shownId`), so the
-   *     source picker for an unbound slot still has a real card to drive.
+   * The host exists to keep a LIVE stream alive across a menu close, so the ONLY
+   * camera that safely goes without one is a RESERVED SLOT THAT IS UNBOUND —
+   * the new thing, and the only thing this withholds a host from. A slot gets
+   * one as soon as it is bound (`data.deviceId`: there is a session to protect)
+   * or while its row is the one being worked (`shownId`: the source picker needs
+   * a real card to drive).
    *
-   * Dynamic `wfcam-*` cameras carry no deviceId until the user picks one, so
-   * they are hosted through the second arm at exactly the moment the ＋ row
-   * opens their picker — the behaviour they had before, by a different route.
+   * ⚠ DYNAMIC `wfcam-*` CAMERAS ARE HOSTED UNCONDITIONALLY, EXACTLY AS BEFORE,
+   * and the first version of this predicate got that wrong. It keyed on
+   * `deviceId` alone, which reads as "is it bound" but is not: a camera that
+   * auto-acquired the browser's DEFAULT device never writes a deviceId, so a
+   * freshly-＋-added camera was hosted only while its picker was open and lost
+   * its card — and its stream — the moment the menu closed. That is the
+   * regression this layer exists to prevent, introduced by the fix for it.
+   * `workflow-camera.spec.ts` caught it: the REAL CHAIN leg patches a mapped
+   * camera into CHROMA and asserts the downstream renders live frames.
+   *
+   * The honest predicate is about SESSION, not binding, and for a dynamic camera
+   * "might hold a session" is always true — it exists because a user asked for
+   * it. Reserved slots are the only population where absence of a session is
+   * knowable up front, because an unbound one has never acquired anything.
    */
   let hostedCameras = $derived(
-    cameras.filter((c) => readCameraDeviceId(c) !== null || c.id === shownId),
+    cameras.filter(
+      (c) => !isCameraSlotNode(c) || readCameraDeviceId(c) !== null || c.id === shownId,
+    ),
   );
 
   // Drop stale expand/hover state when its camera is unmapped (any path —
@@ -280,11 +294,20 @@
   >＋ add camera</button>
 
   {#if cameras.length === 0}
+    <!-- Reachable only where the reserved camera slots are absent — `?seed=none`
+         and any rack that predates the device-slot ensure. A slotted rack is
+         never empty: its four unbound `cam1..cam4` rows ARE the empty state,
+         and they say more than this line did. -->
     <div class="empty" data-testid="workflow-cameras-empty">
       no cameras mapped — ＋ adds one
     </div>
   {/if}
 
+  <!-- `data-camera-kind` — two populations share this list and behave
+       differently: a SLOT is reserved, always present, and its ✕ UNBINDS; a
+       DYNAMIC camera is user-added and its ✕ DELETES. The distinction was only
+       inferable by parsing the id shape, which is not something a consumer
+       should have to do. -->
   {#each cameras as cam (cam.id)}
     <div
       class="cam-row"
@@ -292,6 +315,7 @@
       data-testid="workflow-camera-row"
       data-node-id={cam.id}
       data-assigned={readCameraDeviceId(cam) ? 'true' : 'false'}
+      data-camera-kind={isCameraSlotNode(cam) ? 'slot' : 'dynamic'}
       role="menuitem"
       tabindex="0"
       onmouseenter={() => (hoveredId = cam.id)}
