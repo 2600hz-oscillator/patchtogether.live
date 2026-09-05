@@ -29,10 +29,22 @@
 // graph-lifetime `sync()` sweeping a deleted node — which ABANDONS the take
 // and leaves its scratch as a recover candidate, never deletes it.
 //
-// ⚠ THE ARM IS A PARAM, NOT A BUTTON. `ch{N}_rec` (slice 3's record band) is
-// the surface: this registry POLLS the mixer's effective (knob + CV) values
-// through `read('recState')` and drives the pure machine
-// (clip-audio-rec-machine.ts) from edges on them. Level semantics:
+// ⚠ THERE IS CURRENTLY NO ARM SURFACE AT ALL, AND THAT IS DELIBERATE. The arm
+// used to be a mixmstrs param (`ch{N}_rec`, slice 3's record band): this
+// registry polled the mixer's effective (knob + CV) values through
+// `read('recState')` and drove the pure machine from edges on them. The owner
+// ruled that surface off the mixer on 2026-09-04 — recording is a CLIPPLAYER
+// feature, per clip — and the replacement per-lane toggle has not landed yet.
+//
+// So `read('recState')` returns `undefined` on every mixmstrs node today, the
+// guard at the top of `#pumpEntry` returns, and this registry IDLES: entries are
+// still created per live mixmstrs node, no wiring is built, no take can start,
+// and `clipPadState` is untouched. `cliprec-registry-idles.spec.ts` pins that,
+// because an absent seam that throws and an absent seam that idles look
+// identical from the outside until someone boots a rack.
+//
+// The edge contract below is UNCHANGED and is what the clipplayer toggle will
+// drive; only the SOURCE of the arm value moves. Level semantics:
 //   - 0 → 1 edge while idle  = ARM SINGLE (this slice; 2/endless is slice 6,
 //     and reads as "not 1" here — arming stays un-actioned until it lands).
 //     The edge PREPARES (refusals, tempo latch, manifest, writer worker —
@@ -818,13 +830,31 @@ export class NodeClipRecorderRegistry {
     }
   }
 
-  /** Snap the arm knob back to OFF after a take ends, so the control reads
-   *  disarmed and a fresh 0→1 edge is required for the next take. Through the
-   *  mutation seam with a NON-TRACKED origin — a programmatic knob snap must
-   *  never join anyone's undo stack. */
-  #snapArmOff(entry: Entry, lane: number): void {
-    setNodeParam(entry.nodeId, `ch${lane + 1}_rec`, 0, { origin: CLIP_REC_PARAM_ORIGIN });
-    if (entry.prevArm) entry.prevArm[lane] = 0;
+  /** End the arm sequence after a take, so a HELD arm cannot start another one
+   *  and a fresh 0→1 edge is required to re-arm.
+   *
+   *  ⚠ THIS USED TO WRITE THE KNOB, AND THE REWRITE IS A BUG FIX, NOT A PORT.
+   *  It wrote `ch{N}_rec = 0` on the mixer through the mutation seam with a
+   *  NON-TRACKED origin (a programmatic snap must never join anyone's undo
+   *  stack) and then set `prevArm[lane] = 0` to match. That pairing was
+   *  load-bearing in a way the second line alone is NOT: clearing `prevArm`
+   *  was only safe BECAUSE the same call forced the observed value to 0 in the
+   *  same tick.
+   *
+   *  The owner removed the mixmstrs record band on 2026-09-04, so there is no
+   *  param to write. Keeping `prevArm[lane] = 0` on its own would invert the
+   *  contract — a source still reading 1 would look like a fresh 0→1 edge on the
+   *  very next pump and machine-gun takes for as long as the arm was held, which
+   *  is precisely the failure the edge-triggered design exists to prevent.
+   *
+   *  So the correct behaviour with no write-back is to leave `prevArm` AT THE
+   *  LAST OBSERVED VALUE: a held-high arm is "still high", not a new edge, and
+   *  re-arming requires the source to dip to 0 first and rise again. The
+   *  clipplayer's per-lane record toggle can then snap ITS own surface if it
+   *  wants the control to read disarmed, without this seam assuming it did. */
+  #snapArmOff(_entry: Entry, _lane: number): void {
+    // Intentionally empty — see the contract above. The edge is closed by the
+    // observed value, never by a value this registry invents on its behalf.
   }
 
   // -------------------------------------------------------------------------

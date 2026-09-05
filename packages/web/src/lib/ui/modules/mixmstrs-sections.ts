@@ -99,14 +99,6 @@ export function mixmstrsSectionPlan(
           `comp${ch}`,
           `ch${ch}_send1`,
           `ch${ch}_send2`,
-          // CLIP RECORDING. Every param gets a CV input from `buildInputs()`,
-          // so A GATE CAN ARM A CHANNEL and a CV can pick its monitor mode —
-          // genuinely modular, and free. But the jack only RENDERS if it is
-          // picked here: this list is hand-maintained and the picker silently
-          // drops an id the def does not declare, which is the exact failure
-          // this file exists to make testable.
-          `ch${ch}_rec`,
-          `ch${ch}_mon`,
         ],
         `Ch${ch}`,
         'input',
@@ -127,9 +119,7 @@ export function mixmstrsSectionPlan(
       label: 'Master',
       inputs: pick(
         inputById,
-        // The two BUS-SCOPED clip-record controls join Master, where every
-        // other bus-scoped jack already lives.
-        ['master_volume', 'send1Pre', 'send2Pre', 'recTap', 'recQuality'],
+        ['master_volume', 'send1Pre', 'send2Pre'],
         'Master',
         'input',
       ),

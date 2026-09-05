@@ -407,8 +407,30 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     // "Hear it take over": the recorded slot is queued, immediately.
     expect(clipData().queued?.[0]).toBe(0);
     expect(clipData().queuedImmediate?.[0]).toBe(true);
-    // The arm knob snapped back to OFF (a fresh edge is required to re-arm).
-    expect((patch.nodes[MIX]!.params as Record<string, number>).ch1_rec).toBe(0);
+    // ⚠ THE ARM IS CLOSED, AND THIS IS THE ASSERTION THAT ACTUALLY MATTERS.
+    // It used to read the mixer knob snapping back to 0 (`ch1_rec`), which was
+    // only ever a PROXY for the real property — and the knob went away with the
+    // record band on 2026-09-04. The property itself is unchanged and is now
+    // asserted directly: `recordOneTake` leaves the arm source HELD AT 1, and a
+    // held arm must NOT start a second take. A regression here machine-guns
+    // takes for as long as the control is held, which is exactly what the
+    // edge-triggered design exists to prevent.
+    const takesBefore = h.posted.filter((m) => m.type === 'arm').length;
+    expect(h.recState.arm[0], 'the arm source is still HELD HIGH').toBe(1);
+    // ⚠ DRIVE THE FULL ARM SEQUENCE, NOT ONE PUMP. Arming is prepare → media
+    // open (async) → confirm, so a single pump cannot reach the worklet `arm`
+    // post even when the edge DID fire — an assertion after one pump passes
+    // whether or not the bug is present. This is the same pump/settle pair
+    // `recordOneTake` uses to arm in the first place.
+    h.reg.pump();
+    await settle();
+    h.reg.pump();
+    await settle();
+    expect(
+      h.posted.filter((m) => m.type === 'arm').length,
+      'a HELD arm re-armed the worklet — a fresh 0→1 edge must be required',
+    ).toBe(takesBefore);
+    expect(h.reg.view(MIX)![0]!.phase, 'and the machine stayed idle').toBe('idle');
     // Nothing was discarded.
     expect(h.removed).toEqual([]);
   });
@@ -438,8 +460,17 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.writerClose).toHaveBeenCalled();
     expect(h.reg.view(MIX)![0]!.phase).toBe('idle');
     expect(h.reg.lastRefusal(MIX)).toMatch(/commit failed/);
-    // The arm still snapped off — a failed take must not look armed.
-    expect((patch.nodes[MIX]!.params as Record<string, number>).ch1_rec).toBe(0);
+    // The arm sequence still CLOSED — a failed take must not look armed, and a
+    // still-held arm must not immediately retry into the same failure.
+    const armsAfterFail = h.posted.filter((m) => m.type === 'arm').length;
+    h.reg.pump();
+    await settle();
+    h.reg.pump();
+    await settle();
+    expect(
+      h.posted.filter((m) => m.type === 'arm').length,
+      'a failed take re-armed itself while the control was held — retry storms on a broken writer',
+    ).toBe(armsAfterFail);
   });
 
   it('a worklet frame count that misses the window is a FAILED commit, not a wrong-length clip', async () => {

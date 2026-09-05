@@ -315,27 +315,47 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // clipplayer driver launches a NOTE clip in all 8 lanes — that is what the
   // 24 pitch/gate/vel outs need — and a lane plays exactly ONE clip, so the
   // two port populations are mutually exclusive inside one fixture: this is a
-  // structural exemption, not a payable one. Covered END-TO-END by
-  // cliprec-arm-single.spec.ts, which records a take from a live oscillator
-  // through the REAL surface and asserts audible RMS on audio1L through a
-  // scope — strictly stronger than this sweep's generic emit check.
-  // Handle-presence still pins all 16 ports here.
-  'clipplayer.audio1L': 'recorded-take playback (audio clip in lane 1); covered by cliprec-arm-single.spec.ts (real-chain record→launch→audible RMS on THIS port)',
-  'clipplayer.audio1R': 'recorded-take playback (audio clip in lane 1); covered by cliprec-arm-single.spec.ts',
-  'clipplayer.audio2L': 'recorded-take playback (audio clip in lane 2); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio2R': 'recorded-take playback (audio clip in lane 2); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio3L': 'recorded-take playback (audio clip in lane 3); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio3R': 'recorded-take playback (audio clip in lane 3); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio4L': 'recorded-take playback (audio clip in lane 4); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio4R': 'recorded-take playback (audio clip in lane 4); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio5L': 'recorded-take playback (audio clip in lane 5); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio5R': 'recorded-take playback (audio clip in lane 5); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio6L': 'recorded-take playback (audio clip in lane 6); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio6R': 'recorded-take playback (audio clip in lane 6); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio7L': 'recorded-take playback (audio clip in lane 7); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio7R': 'recorded-take playback (audio clip in lane 7); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio8L': 'recorded-take playback (audio clip in lane 8); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
-  'clipplayer.audio8R': 'recorded-take playback (audio clip in lane 8); covered by cliprec-arm-single.spec.ts (same path, lane-indexed)',
+  // structural exemption, not a payable one.
+  //
+  // ⚠ THE END-TO-END COVERAGE THAT USED TO BACK THIS IS SUSPENDED, AND SAYING
+  // SO IS THE POINT. These sixteen ports had a dedicated arm-single e2e that
+  // recorded a take from a live oscillator through the mixer's record band and
+  // asserted audible RMS on audio1L — a strictly stronger check than this
+  // sweep's generic emit. The owner removed that record band on 2026-09-04
+  // (recording becomes a per-clip CLIPPLAYER feature), so there is currently NO
+  // surface that can arm a take, and the spec was DELETED rather than left
+  // driving a control that no longer exists.
+  //
+  // ⚠ ITS FILENAME IS DELIBERATELY NOT CITED HERE. `exemption-coverage-anchors`
+  // reddens on an exemption naming a test artifact that is not in the tree, and
+  // it is right to: a citation that cannot be resolved is worse than none. The
+  // exemption below does NOT rest on that spec — the STRUCTURAL reason above
+  // stands on its own — so the name is dropped instead of repointed at a spec
+  // that does not cover these ports.
+  //
+  // These stay EXEMPT because the structural reason above is unchanged and
+  // still correct — a lane plays exactly one clip, so note and audio ports
+  // cannot both be driven in one fixture. What is temporarily missing is the
+  // deeper end-to-end leg, which returns with the clipplayer record toggle.
+  // ⚠ DO NOT re-cite a spec here without checking it still exists and still
+  // drives THESE ports; a stale citation is how an exemption outlives its
+  // justification. Handle-presence still pins all 16 ports here.
+  'clipplayer.audio1L': 'recorded-take playback (audio clip in lane 1); end-to-end coverage SUSPENDED with the record band (2026-09-04) — returns with the clipplayer record toggle',
+  'clipplayer.audio1R': 'recorded-take playback (audio clip in lane 1); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio2L': 'recorded-take playback (audio clip in lane 2); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio2R': 'recorded-take playback (audio clip in lane 2); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio3L': 'recorded-take playback (audio clip in lane 3); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio3R': 'recorded-take playback (audio clip in lane 3); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio4L': 'recorded-take playback (audio clip in lane 4); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio4R': 'recorded-take playback (audio clip in lane 4); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio5L': 'recorded-take playback (audio clip in lane 5); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio5R': 'recorded-take playback (audio clip in lane 5); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio6L': 'recorded-take playback (audio clip in lane 6); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio6R': 'recorded-take playback (audio clip in lane 6); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio7L': 'recorded-take playback (audio clip in lane 7); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio7R': 'recorded-take playback (audio clip in lane 7); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio8L': 'recorded-take playback (audio clip in lane 8); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
+  'clipplayer.audio8R': 'recorded-take playback (audio clip in lane 8); end-to-end coverage SUSPENDED with the record band (2026-09-04)',
   // SIX STRUM — a plucked-string voice, silent until struck. The output-emit is
   // covered by the IDENTICAL drive in the dedicated e2e/tests/sixstrum-poly.spec.ts
   // (SEQUENCER.gate → strum1 → SCOPE audible RMS + SEQUENCER.pitch → poly → RMS),
@@ -659,8 +679,11 @@ export const PINNED_PER_PORT_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'buggles.burst', 'buggles.clock',
   // clipplayer audio{N}L/R (slice 5) — ONE structural exemption in 16
   // spellings: recorded-take playback, undrivable in a fixture whose lanes
-  // already play the note clips the other 24 ports need; covered end-to-end
-  // by cliprec-arm-single.spec.ts (see EXEMPT_OUTPUT_EMIT for the reasons).
+  // already play the note clips the other 24 ports need. ⚠ Its end-to-end leg
+  // is SUSPENDED — the record band that armed it was removed on 2026-09-04 and
+  // the arm-single spec went with it (see EXEMPT_OUTPUT_EMIT for the full
+  // account). The STRUCTURAL exemption below is unaffected; the deeper coverage
+  // returns with the clipplayer's per-lane record toggle.
   'clipplayer.audio1L', 'clipplayer.audio1R', 'clipplayer.audio2L', 'clipplayer.audio2R',
   'clipplayer.audio3L', 'clipplayer.audio3R', 'clipplayer.audio4L', 'clipplayer.audio4R',
   'clipplayer.audio5L', 'clipplayer.audio5R', 'clipplayer.audio6L', 'clipplayer.audio6R',
