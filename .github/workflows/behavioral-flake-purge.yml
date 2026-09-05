@@ -117,8 +117,9 @@ jobs:
         if: steps.cache-doom-wad.outputs.cache-hit != 'true'
         run: |
           curl -L --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
-            -o packages/web/static/doom/DOOM1.WAD \
-            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+            -o /tmp/shareware_doom_iwad.zip \
+            https://www.doomworld.com/3ddownloads/ports/shareware_doom_iwad.zip
+          unzip -o -j /tmp/shareware_doom_iwad.zip DOOM1.WAD -d packages/web/static/doom/
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
       - name: Build web (preview bundle, test hooks enabled)
