@@ -137,91 +137,24 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
   // (`setNodeParam(id, key, v)`), but each also changes undo/sync SEMANTICS for
   // a shipped control, so they are drained deliberately rather than in bulk
   // under a gate PR. FilterCard was drained in the PR that widened this guard.
-  // ⚠ `ui/modules/DoomCard.svelte` WAS HERE AND IS PAID (2026-09-02, with the
-  // doom face). Its entry read *"card control writes — user gesture, should be
-  // undoable + synced"* over `fillMode` and `audioGain`, and the payment is the
-  // plainest form of it: `setFillMode` / `setAudioGain` now call `setNodeParam`
-  // instead of poking `patch.nodes[id].params` directly, so an OUTPUT FIT flip
-  // and a Volume twist ride the Y.Doc transaction with `LOCAL_ORIGIN`, reach the
-  // UndoManager and reach collaborators. Cmd-Z stepped straight over both before
-  // this.
-  //   ⚠ AND IT IS THE GATEMAIDEN / GAMEPAD LESSON APPLIED RATHER THAN RE-LEARNED
-  //   FOR THE THIRD TIME — with one wrinkle those two did not have. This ledger
-  //   is keyed by CARD PATH and anchored to the source in BOTH directions, and
-  //   the doom face MOVED the whole surface into
-  //   `ui/modules/doom/DoomSurface.svelte`. So doing nothing was not an option
-  //   that leaves the ledger honest: the entry would have gone stale (a debt
-  //   naming a write that is no longer at that path) while the raw write carried
-  //   on unpaid one directory down. The move forced the question; the fix
-  //   answers it. The card is still rendered by the per-card VRT sweep under
-  //   `?shell=legacy`, and it is still the surface these two controls live on.
-
-  // ⚠ `ui/modules/GamepadCard.svelte` WAS HERE AND IS PAID (2026-08-24, with
-  // the gamepad face). Its entry read *"pad-slot picker write — user gesture,
-  // should be undoable + synced"*, and the payment is one line: `setPadIndex`
-  // now calls `setNodeParam`, so the slot change rides the Y.Doc transaction
-  // with `LOCAL_ORIGIN` and reaches the UndoManager. Cmd-Z could not undo a slot
-  // change before this.
-  //   ⚠ AND IT IS THE GATEMAIDEN LESSON APPLIED RATHER THAN RE-LEARNED. That
-  //   entry's note (below) records #2025 arguing a debt was "paid by
-  //   construction" because the module got a FACE. It is not: this ledger is
-  //   keyed by CARD PATH and anchored to the source, promotion does not delete
-  //   the card, and the per-card VRT sweep still renders it under
-  //   `?shell=legacy`. So the face PR paid this one EXPLICITLY, by editing the
-  //   card — and only then deleted the row. A face does not pay a card's debt.
-  // ⚠ `ui/modules/GatemaidenCard.svelte` WAS HERE AND IS PAID (queue Q53,
-  // 2026-08-20). Its entry read *"card button write — user gesture, should be
-  // undoable + synced"*, and the payment is the plainest form of it: the shape
-  // button now calls the tracked `set('trigShape')` seam instead of poking
-  // `patch.nodes[id].params` directly, so the gesture is undoable and reaches
-  // collaborators. The raw write is gone from the ARTIFACT and this entry had
-  // to go with it.
-  //   ⚠ WORTH RECORDING BECAUSE THE ISSUE THAT FILED IT GOT THIS WRONG. #2025
-  //   argued the debt was "paid by construction" by FACING the module, on the
-  //   reasoning that a faceplate routes the param through the normal path.
-  //   That is not what this ledger measures. It is keyed by CARD PATH and
-  //   anchored to the source, and promotion does not delete the card — the
-  //   per-card VRT sweep still renders it under `?shell=legacy`. The raw write
-  //   would have survived the promotion untouched and deleting this entry
-  //   without touching the card would have gone RED as a stale exemption.
-  //   A face does not pay a card's debt; editing the card does.
-  // ⚠ `ui/modules/JoystickCard.svelte` WAS HERE AND IS PAID (queue Q43,
-  // 2026-08-19). Its entry read *"joystick drag — per-frame-ish, but it
-  // persists; needs the transient-first treatment (midi-cc-write-storm)"*, and
-  // that treatment is `createDragCommit` — the same rAF-coalescing pump
-  // Fader/Knob/XyPad use. The card now writes through the tracked param path,
-  // so the raw write is gone from the ARTIFACT and this entry had to go with it
-  // (an entry naming a write that no longer exists is RED).
+  // ⚠ NINE CARD-FILE TOMBSTONES STOOD HERE AND ARE DELETED WITH THE FILES THEY
+  // NAMED. Each recorded a `*Card.svelte` entry that had been PAID — DoomCard,
+  // GamepadCard, GatemaidenCard, JoystickCard, QuadralogicalCard, Moog956Card,
+  // NibblesCard and two more — and each argued the same thing about how it was
+  // paid. Their reasoning rested on facts that are no longer true: that
+  // promotion does not delete the card, and that a per-card VRT sweep still
+  // renders it. There are no card files, so no row keyed at one can be added
+  // back and no tombstone is needed to prevent it.
   //
-  // ⚠ `ui/modules/QuadralogicalCard.svelte` BELOW IS THE IDENTICAL PATTERN and
-  // is DELIBERATELY LEFT ALONE — `quadralogical` is face-queue Q27 and gated,
-  // so its card is not being touched in this wave. Its `why` used to point here
-  // ("see JoystickCard"); it now carries the mechanism itself, because a
-  // cross-reference to a deleted entry is worse than no cross-reference.
-  // ⚠ `Moog956Card.svelte` PAID AND REMOVED 2026-09-02, in the promotion PR.
-  // The entry read: "ribbon controller — performance gesture; needs the
-  // transient-first treatment, not a bare store write", keys `pos` + `gate`.
-  // Both halves are now discharged rather than re-argued, and each by the
-  // treatment its own remedy named:
-  //   * `pos` rides a `createDragCommit` pump — tracked, undoable, synced, one
-  //     Y.Doc write per frame — through `ui/modules/moog956/ribbon-actions.ts`,
-  //     the seam the card, the lane `tileBody` and the dock `fullViewBody` all
-  //     call, so the three surfaces cannot drift apart.
-  //   * `gate` stopped being a durable value at all: it is `face.momentary`, so
-  //     it goes through `setMomentaryParam` (engine only, panic-latched) and a
-  //     press can no longer persist a stuck HIGH gate into the rack.
-  // This ledger is anchored to the SOURCE in both directions, so removing the
-  // entry without removing the writes would have been red.
-  // ⚠ `ui/modules/NibblesCard.svelte` LEFT THIS LEDGER with the nibbles face
-  // (its `auto` raw write is now `setNodeParam` in `nibbles-game-actions.ts`,
-  // shared by the card and the face's toggle cell). Recorded here rather than
-  // deleted silently, because the REASON it had to go with that PR is the
-  // interesting part: promotion makes a raw write UNREACHABLE without paying
-  // it — the face's cell writes through the sanctioned path, so a player can no
-  // longer take the raw one, while the code and this entry both stay GREEN
-  // FOREVER describing a path nobody can walk. That is the stale-scoping shape
-  // this ledger's anchoring exists to catch, and the owner ruling is explicit:
-  // never ledger payable debt, fix it in one sweep.
+  // ⚠ WHAT THEY ARGUED IS KEPT, BECAUSE IT IS GENERAL AND THIS LEDGER STILL
+  // HAS LIVE ROWS: *a refactor does not pay another file's recorded debt —
+  // editing that file does.* A promotion could make a raw write UNREACHABLE
+  // while leaving the write itself in the source, so the code and its entry
+  // would both stay GREEN FOREVER describing a path nobody can walk. That is
+  // the stale-scoping shape this ledger's source anchoring exists to catch, and
+  // the owner ruling is explicit: never ledger payable debt, fix it in one
+  // sweep.
+
   'ui/modules/dx7-patch-actions.ts': {
     keys: ['algorithm', 'feedback'],
     kind: 'debt',

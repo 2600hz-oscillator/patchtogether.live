@@ -2846,12 +2846,11 @@
   // default won and it mounted `nodeTypes[type]` unconditionally. The rule
   // existed, was correct, and had a caller that did not call it.
   //
-  // ⚠ BOTH WERE FALSE FOR YEARS, AND NOW BOTH ARE JUST "IS THERE A NODE".
-  // These read `dockRailRendersFace({ shellFaces, pinned: true, migrated })`,
-  // whose three terms have all lost their subject: there is no `?shell=legacy`,
-  // there is no card to fall back to, and every faced module is in
-  // `STRICT_FACES`. The panel mounts the faceplate because that is the only
-  // surface the module has.
+  // ⚠ BOTH ARE JUST "IS THERE A NODE", and that is not a simplification of the
+  // rule — it is the rule's whole content now. The panel mounts the faceplate
+  // because that is the ONLY surface these two modules have: they are
+  // canvas-hidden pinned singletons, so there is no lane tile and no EXPAND
+  // pill to reach a second one from.
   let workflowAudioInFace = $derived(!!workflowAudioInNode);
   let workflowAudioOutFace = $derived(!!workflowAudioOutNode);
   /** A cable feeds TIMELORDE's clock input (DIN assignment or hand-patch)
@@ -3141,12 +3140,12 @@
       // ── THE DOMAIN HUE, ON EVERY CARD HOST (#1794) ────────────────────────
       //
       // The neon control family resolves ONE accent chain —
-      // `var(--ka, var(--domain, var(--accent)))` — and until this line the
-      // LEGACY shell set no `--domain` at all, so every control on a legacy
-      // card fell through to `--accent`. That fallback is `#ffb347`, an ORANGE
-      // reserved for focus rings and hover glow; MEASURED on `?shell=legacy`
-      // before this change, an audio card and a video card both resolved
-      // `rgb(255, 179, 71)`.
+      // `var(--ka, var(--domain, var(--accent)))` — so a surface that sets no
+      // `--domain` sends every control on it through to `--accent`. That
+      // fallback is `#ffb347`, an ORANGE reserved for focus rings and hover
+      // glow. MEASURED before this line existed: an audio module and a video
+      // module both resolved `rgb(255, 179, 71)` — the same orange, on both
+      // domains, which is the bug this sets `--domain` to prevent.
       //
       // ⚠ IT IS NOT ONLY "video is not purple". `ModuleShell` (the lane tile /
       // faceplate) and `.dock-faceplate .video` (the dock full view) BOTH

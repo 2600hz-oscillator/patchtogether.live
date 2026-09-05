@@ -69,14 +69,13 @@
     /** The pinned AUDIO IN / AUDIO OUT (snapshot-derived; null pre-ensure). */
     audioIn: ModuleNode | null;
     audioOut: ModuleNode | null;
-    /** Does each column render its PROMOTED FACEPLATE instead of the verbatim
-     *  legacy card? This is `dockRailRendersFace({ shellFaces, migrated })`
-     *  — evaluated by Canvas and INJECTED, exactly like
-     *  `DockCardHost.face` in the dock rails. This panel deliberately re-derives
-     *  neither `?shell=legacy` nor `migrated()`: the whole reason that rule is
-     *  pure and injected is that ONE component reads those, and the patch rows
-     *  below are here because a second source of truth for a def's own facts is
-     *  the failure class this file has already paid for once. */
+    /** Does each column have a surface to render? Evaluated by Canvas and
+     *  INJECTED, exactly like `DockCardHost.face` in the dock rails.
+     *
+     *  ⚠ THIS PANEL DELIBERATELY RE-DERIVES NOTHING, and that discipline is
+     *  older than the value it carries: ONE component decides, everyone else is
+     *  told. The patch rows below exist because a second source of truth for a
+     *  def's own facts is a failure class this file has already paid for once. */
     audioInFace?: boolean;
     audioOutFace?: boolean;
     /** The same glob-driven nodeTypes map the main canvas uses. */
