@@ -2,21 +2,20 @@
 //
 // COMPOSITE-STATE VRTs for KARPLUS + TOM DRUM (2026-07-11 coverage audit).
 //
-// The per-card sweep (vrt.spec.ts) locks each card at its DEFAULT state
-// only; these scenes lock the cards at sonically/visually DISTINCT
-// non-default control states — the voice "presets" the sonic-dynamism audit
-// proved out at the DSP tier — so a Fader regression (value readout, curve
-// mapping, extreme positions), a params→card wiring break, or a state-CSS
-// regression (the TOM DRUM STRIKE pad's held styling) is caught as pixels.
-// Same category as the QUADRALOGICAL per-effect scenes
-// (vrt-quadralogical.spec.ts): one spec file, N deterministic baselines.
+// The default sweep locks each module at its DEFAULT state only; these scenes
+// lock two voices at sonically/visually DISTINCT non-default control states —
+// the "presets" the sonic-dynamism audit proved out at the DSP tier — so a
+// Fader regression (value readout, curve mapping, extreme positions), a
+// params→surface wiring break, or a state-CSS regression (the TOM DRUM STRIKE
+// pad's pressed styling) is caught as pixels. Same category as the
+// QUADRALOGICAL per-effect scenes: one spec file, N deterministic baselines.
 //
-// Both cards are pure-DOM chrome (fader bands + the PatchPanel drill-down —
-// NO canvas/animation), so the frames are deterministic; the AudioContext is
+// Both faceplates are pure-DOM chrome (fader bands + the PatchPanel drill-down
+// — NO canvas/animation), so the frames are deterministic; the AudioContext is
 // suspended before capture (the spawn-strike ring of the held TOM pad has no
-// on-card visualization, but suspending is the house belt-and-braces), and
-// the height-stability settle loop guards the ±1 px text-raster flake
-// (memory: vrt-flake-1px-layout-rounding).
+// visualization here, but suspending is the house belt-and-braces), and the
+// height-stability settle loop guards the ±1 px text-raster flake (memory:
+// vrt-flake-1px-layout-rounding).
 //
 // Informational lane (`task vrt`).
 // Baselines are authored by LINUX CI — one set, no {platform} segment (see
@@ -40,24 +39,32 @@ interface StateScene {
    * A `data-testid` to hold DOWN (pointerdown, no release) before the capture.
    *
    * ⚠ ADDED 2026-08-02, AND THE REASON IS THE POINT. `tomtom-strike-held` used
-   * to reach the pad's `.held` styling by seeding `params: { strike: 1 }` — a
+   * to reach the pad's pressed styling by seeding `params: { strike: 1 }` — a
    * momentary pad's pressed value, persisted. That value is exactly the
-   * data-integrity bug that was just fixed: a press is not state, it no longer
-   * survives in the Y.Doc, and the pad's lit state is now LOCAL to the surface
+   * data-integrity bug that was then fixed: a press is not state, it does not
+   * survive in the Y.Doc, and the pad's lit state is LOCAL to the surface
    * holding the finger ($lib/audio/momentary-params). Seeding the param
    * therefore stopped lighting the pad, and **the scene silently became a
-   * duplicate of the default card**.
+   * duplicate of the default capture**.
    *
    * ⚠⚠ AND THE GATE DID NOT NOTICE. Measured: the change moved 859 px in an
    * 84×60 box — the whole pad — against a `maxDiffPixelRatio: 0.01` budget of
-   * 4163 px on this 790×527 capture. 21 % of budget, so the assertion passed
-   * AND `--update-snapshots` refused to rewrite the baseline (Playwright only
+   * 4163 px on that capture. 21 % of budget, so the assertion passed AND
+   * `--update-snapshots` refused to rewrite the baseline (Playwright only
    * rewrites on FAILURE). That is the A2/#1213 sub-tolerance staleness trap,
    * reproduced exactly; the baseline had to be `git rm`-ed to re-capture.
    *
    * Pressing the real pad is also STRONGER than what it replaced: it proves
    * the press PATH lights the pad, where the old form only proved a stored
    * number did.
+   *
+   * ⚠ RE-POINTED AGAIN (legacy removal): the id was `tomtom-strike`, a testid
+   * no file in the tree emits, so the wait timed out and the scene could not
+   * be captured at all. The pad is now a shell MOMENTARY cell — `<Button
+   * momentary>` with `data-testid="control-<paramId>"` and `class:pressed` —
+   * and tomtom ranks `strike` in its DOCK-ONLY tail, so it does not render on
+   * the lane tile this file otherwise captures. A hold scene therefore
+   * captures the DOCK.
    */
   hold?: string;
 }
@@ -114,10 +121,11 @@ const SCENES: StateScene[] = [
     moduleType: 'tomtom',
     blurb:
       'The STRIKE pad HELD (a real pointerdown, not a seeded param): the pad ' +
-      'renders its orange .held state — the one stateful CSS surface on ' +
-      'either card — over otherwise default knobs.',
+      'renders its pressed state — the one stateful CSS surface on either ' +
+      'faceplate — over otherwise default controls. Captured on the DOCK, ' +
+      'because tomtom ranks `strike` in its dock-only tail.',
     params: {},
-    hold: 'tomtom-strike',
+    hold: 'control-strike',
   },
 ];
 
@@ -155,15 +163,24 @@ test.describe('VRT: KARPLUS + TOM DRUM composite states', () => {
       // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
       // and every lane node is `moduleShell`, so a per-module class matches
       // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
-      const card = canvasNode(page, 'voice');
-      await card.waitFor({ state: 'visible', timeout: 15_000 });
+      const laneTile = canvasNode(page, 'voice');
+      await laneTile.waitFor({ state: 'visible', timeout: 15_000 });
+
+      // A HOLD scene captures the DOCK, because a momentary pad ranked in the
+      // dock-only tail does not render on the lane tile (see StateScene.hold).
+      let card = laneTile;
+      if (scene.hold) {
+        await laneTile.getByTestId('shell-open-dock').click();
+        card = page.locator('[data-testid="dock-full-view"]');
+        await card.waitFor({ state: 'visible', timeout: 15_000 });
+      }
 
       // HOLD a momentary pad DOWN for the capture (see StateScene.hold).
       // `dispatchEvent` rather than `mouse.down()` so no release is implied by
       // any later interaction, and so the pointer never has to sit over the
       // element while the settle loop runs.
       if (scene.hold) {
-        const pad = page.locator(`[data-testid="${scene.hold}"]`);
+        const pad = card.locator(`[data-testid="${scene.hold}"]`);
         await pad.waitFor({ state: 'visible', timeout: 15_000 });
         await pad.dispatchEvent('pointerdown');
         // NEGATIVE CONTROL, on every run rather than once at authoring time:
@@ -171,7 +188,9 @@ test.describe('VRT: KARPLUS + TOM DRUM composite states', () => {
         // fall back to capturing an unheld pad the moment the press path
         // changed again — which is precisely how it broke the first time, and
         // the pixel gate could not see it (859 px against a 4163 px budget).
-        await expect(pad).toHaveClass(/\bheld\b/);
+        // `pressed` is <Button>'s own class for a held momentary; the old
+        // `held` name belonged to the surface this scene used to capture.
+        await expect(pad).toHaveClass(/\bpressed\b/);
       }
 
       // Height-stability settle: text-row raster determinism (the ±1 px
@@ -195,8 +214,8 @@ test.describe('VRT: KARPLUS + TOM DRUM composite states', () => {
           }),
       );
 
-      // Suspend the AudioContext (belt-and-braces: both cards are pure DOM,
-      // but the held STRIKE pad fired a spawn hit — freeze everything).
+      // Suspend the AudioContext (belt-and-braces: both faceplates are pure
+      // DOM, but the held STRIKE pad fired a spawn hit — freeze everything).
       await page.evaluate(async () => {
         const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
         const eng = w.__engine?.();
