@@ -1162,6 +1162,37 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
     'CV modulation recorded NOTHING (automation records your hands — screen, MIDI, Electra — never CV)',
   ).toEqual([]);
 
+  // ⚠ THE RECORDER'S OWN PRECONDITIONS, ASSERTED BEFORE THE SWEEP. The CI
+  // failure (run 33996525110) is `0 events` with the CC provably driving the
+  // param, so the question narrows to WHICH precondition the faceplate path
+  // stopped delivering. The recorder needs THREE things and the event count
+  // conflates all of them:
+  //
+  //   * the lane still ARMED with this client as `recorderId` — the arm is a
+  //     single-writer claim, and every step since arming has opened panes and
+  //     switched pages;
+  //   * the lane still PLAYING a clip — the punch-in happens at that clip's
+  //     next loop start, so a lane that has stopped records nothing forever;
+  //   * a module still ASSIGNED to the lane — assignment gates RECORD.
+  //
+  // Each is cheap and each names a different defect. Without them a `0` blames
+  // "automation recording" when the fault may be that nothing was armed.
+  expect(
+    await isLaneArmed(page, 0),
+    'lane 0 is STILL armed at the moment of the MIDI sweep (the arm is a single-writer claim ' +
+      'and the steps since arming have opened panes and switched pages)',
+  ).toBe(true);
+  expect(
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { playing?: unknown[] } }> };
+      };
+      return w.__patch?.nodes?.['cp']?.data?.playing?.[0];
+    }),
+    'lane 0 is STILL playing its clip (the recorder punches in at the next loop start, so a ' +
+      'stopped lane can never record)',
+  ).toBe(0);
+
   // Now twist the SAME knob by MIDI (the hand): a track appears.
   await midiLearn(page, 'va', 21);
   //

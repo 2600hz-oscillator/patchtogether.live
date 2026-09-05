@@ -20,6 +20,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { canvasNode, spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 /** All always-on pinned ids a workflow rack must hold after the ensure
@@ -102,6 +103,26 @@ async function setBpm(page: Page, bpm: number): Promise<void> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
+  // ⚠ A BIGGER BOUND WAS NOT THE ANSWER, AND THE SECOND FAILURE PROVED IT. The
+  // flat `10_000` here was derived up to `BOOT_MS` (30 s on CI) — and the wait
+  // then expired at THIRTY seconds on the very next run. A bound that fails at
+  // 3x its old value is not marginal; the page genuinely is not getting there.
+  //
+  // WHAT IT IS WAITING FOR is four PINNED surface nodes to reach `__patch`
+  // after `/rack` boots — and note the URL carries NO `?seed=none`, so this is
+  // the FULL DEFAULT RACK, every module of it mounting and painting, on a
+  // 2-core runner sharing five workers. The pins are the subject; the pictures
+  // are not.
+  //
+  // So the load is removed instead of the ceiling raised, the same lever that
+  // fixed `toybox-presets-io` and `picturebox`'s diagnosis: every assertion in
+  // this file is DOM — pin presence, `canvasNode` counts, a menu, a BPM text
+  // readout — and `grep` finds no pixel read anywhere in it. Pausing the video
+  // engine costs this spec nothing and gives the boot its cores back.
+  //
+  // `addInitScript` has to land before the app boots, which is why this sits
+  // inside the shared entry point rather than in the tests.
+  await installRenderSmokeHooks(page);
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await waitForPins(page);

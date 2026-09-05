@@ -245,6 +245,13 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('FREEZE holds the output still (deterministic capture hook)', async ({ page }) => {
+    // ⚠ BARE DEFAULT, AND THIS FILE HAS NOW LOST THREE TESTS TO IT. The feedback
+    // case above records two earlier CI deaths on the undeclared 30 s; this one
+    // and the DELAY CLOCK case joined them on run 33996525110, both with a
+    // plain `Test timeout` and no call log — nothing stuck, the whole test just
+    // ran out. Four of this file's tests already declare a budget; these were
+    // the two that never did. A BOUND, not a claim: neither asserts a latency.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     // ⚠ THIS TEST WAS VACUOUS. It asserted only `expect(b).toEqual(a)` on two
     // samples 200 ms apart — and a BLACK canvas satisfies that perfectly. It
     // could not tell "FREEZE held the picture still" from "there was never a
@@ -688,6 +695,13 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('DELAY CLOCK input overrides the DELAY knob (CLK badge appears when patched)', async ({ page, rack, errorWatch }) => {
+    // ⚠ BARE DEFAULT, AND THIS FILE HAS NOW LOST THREE TESTS TO IT. The feedback
+    // case above records two earlier CI deaths on the undeclared 30 s; this one
+    // and the DELAY CLOCK case joined them on run 33996525110, both with a
+    // plain `Test timeout` and no call log — nothing stuck, the whole test just
+    // ran out. Four of this file's tests already declare a budget; these were
+    // the two that never did. A BOUND, not a claim: neither asserts a latency.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     // Drive the DELAY CLOCK gate input with an LFO (its phase0 CV output is a
     // steady periodic swing). When the delay_clock cable is patched, the card
     // must flip the Delay knob into the "clock-driven" (overridden) state and
