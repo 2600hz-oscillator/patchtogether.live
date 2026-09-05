@@ -317,6 +317,28 @@ describe('hostile peer vs. a reserved slot', () => {
 // node-keyed registry entry that owns the resource. So the assertion is not
 // "the node still exists" (presence) but "the reconciler never asked the device
 // layer to let go" (liveness, as far as a graph-level instrument can see it).
+//
+// ⚠ WHICH MECHANISM SAVES THE SLOT DEPENDS ON THE ENVELOPE, and the negative
+// control is what showed it. Disabling the clear-pass skip and re-running BOTH
+// instruments reddens them on DIFFERENT assertions:
+//
+//   * envelope CONTAINS a node at the slot id, same type — the delete and the
+//     re-add land in ONE transaction, the snapshot bus emits one snapshot per
+//     transaction (#2321), so the reconciler sees an unchanged node and emits
+//     no `removeNode` at all. The skip is NOT what saves the session here.
+//   * envelope does NOT contain the slot — an old patch, a foreign patch, a
+//     patch saved from a rack that predates slots. Delete with no re-add, and
+//     the id is simply gone: the e2e's camera dies and this file's assertions
+//     see a real `removeNode slot:cam1`. The skip is the ONLY thing that saves
+//     it, which is why the loads below deliberately carry NO slot nodes.
+//
+// The rig binding is saved by the carry-across in both cases — that is the
+// assertion the e2e reddens on, since a stripped-then-re-added node arrives
+// with no `deviceId`.
+//
+// Do not "simplify" these loads to an envelope that happens to contain the
+// slots: that would move every case into the first bucket and this file would
+// pass without the skip existing.
 // ───────────────────────────────────────────────────────────────────────────
 
 /** Build an envelope from a throwaway doc holding `nodes`. */
