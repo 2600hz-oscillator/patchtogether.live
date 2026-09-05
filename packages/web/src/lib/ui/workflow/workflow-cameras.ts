@@ -28,6 +28,7 @@ import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import { removePatchNode } from '$lib/graph/mutate';
 import { wouldExceedCap } from '$lib/graph/cap';
 import { isHiddenCardNode } from '$lib/graph/hidden-card';
+import { DEVICE_SLOT_RIG_KEYS, deviceSlotForId, isDeviceSlotId } from '$lib/graph/device-slots';
 import { nextDefaultName } from '$lib/multiplayer/module-naming';
 // The def itself (READ-ONLY import — its maxInstances is the cap truth).
 // Imported directly rather than via getVideoModuleDef so the cap guard
@@ -72,13 +73,30 @@ export function cameraNumberOf(node: CameraNodeLike): number | null {
   return m[1] === '' ? 1 : Number(m[1]);
 }
 
-/** The menu-mapped cameras in `nodes`, sorted by ordinal (unparseable
- *  names last, id as the tiebreak) so every client lists the same order. */
+/**
+ * The menu-mapped cameras in `nodes`, sorted so every client lists the same
+ * order: RESERVED SLOTS FIRST in slot order (cam1…cam4), then the dynamic
+ * cameras by ordinal (unparseable names last, id as the tiebreak).
+ *
+ * Slots lead because they are the rig's fixed inputs — the operator's muscle
+ * memory is "cam2 is the stage-left camera", and a list whose first row moves
+ * when an unrelated dynamic camera is added would break exactly that. Their
+ * ordering is also independent of `data.name`, which a user is free to rename,
+ * where a dynamic camera's ordinal is only as stable as its assigned name.
+ */
 export function listWorkflowCameras<T extends CameraNodeLike>(
   nodes: ReadonlyArray<T>,
 ): T[] {
   const cams = nodes.filter((n) => isWorkflowCameraNode(n));
+  const rank = (n: CameraNodeLike): number => {
+    const spec = deviceSlotForId(n.id);
+    return spec ? spec.index : Number.MAX_SAFE_INTEGER;
+  };
   return cams.sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra !== Number.MAX_SAFE_INTEGER) return 0; // both slots, index decided it
     const na = cameraNumberOf(a) ?? Number.POSITIVE_INFINITY;
     const nb = cameraNumberOf(b) ?? Number.POSITIVE_INFINITY;
     if (na !== nb) return na - nb;
@@ -105,6 +123,11 @@ export interface DeviceLabelLike {
  * browser-instance-local and only visible post-permission); when the
  * saved device isn't resolvable here — no pick yet, permission not
  * granted, or a collaborator's camera — fall back to the stable ordinal.
+ *
+ * A RESERVED SLOT falls back to its SLOT NAME (`cam3`) instead. That name is
+ * the rig's own vocabulary — the same string the shell's pre-flight UI and the
+ * binding store key on — so an unbound slot reads as the address it is rather
+ * than as a camera that failed to resolve.
  */
 export function cameraRowLabel(
   node: CameraNodeLike,
@@ -115,6 +138,8 @@ export function cameraRowLabel(
     const label = devices.find((d) => d.deviceId === deviceId)?.label;
     if (label) return label;
   }
+  const slot = deviceSlotForId(node.id);
+  if (slot) return slot.slot;
   const n = cameraNumberOf(node);
   return n === null ? 'camera' : `camera ${n}`;
 }
@@ -189,7 +214,43 @@ export function addWorkflowCamera(opts: CameraAddOptions = {}): string | null {
  * standard remove path (removePatchNode — one origin-tagged transact).
  * Mapped cameras are never pinned, so this always succeeds for a live
  * node. Confirm-free by design: re-adding is one ＋ click.
+ *
+ * ⚠ TWO KINDS OF ROW, TWO MEANINGS — and the ✕ must not become a dead button
+ * on one of them. A DYNAMIC camera (`wfcam-*`, added by the ＋ row) is deleted
+ * as above. A RESERVED DEVICE SLOT (`slot:cam1..4`, native-shell P1) cannot be
+ * deleted at all: `removePatchNode` refuses a reserved id by construction, so
+ * without this branch the ✕ on a slot row would silently do nothing. For a slot
+ * the gesture means UNBIND — drop the device binding, leave the slot standing
+ * and dark at its reserved id, ready for the next patch to re-bind.
+ *
+ * The asymmetry is the layer's point rather than an inconsistency: a slot is
+ * rig infrastructure, and the operator's next patch expects to find it. Note
+ * this clears `data.deviceId` ONLY, which is what CameraInputCard reads back —
+ * so the card's own acquire path sees an unbound camera and releases through
+ * its normal route. Nothing here reaches into the media registry.
+ *
+ * @returns true when something changed.
  */
 export function unmapWorkflowCamera(nodeId: string): boolean {
+  if (isDeviceSlotId(nodeId)) {
+    let changed = false;
+    ydoc.transact(() => {
+      const data = patch.nodes[nodeId]?.data as Record<string, unknown> | undefined;
+      if (!data) return;
+      for (const key of DEVICE_SLOT_RIG_KEYS) {
+        if (key in data) {
+          delete data[key];
+          changed = true;
+        }
+      }
+    }, LOCAL_ORIGIN);
+    return changed;
+  }
   return removePatchNode(nodeId);
+}
+
+/** True when this camera row is a RESERVED SLOT rather than a dynamic camera —
+ *  the ✕ unbinds it instead of deleting it, so the label must say so. */
+export function isCameraSlotNode(node: CameraNodeLike | null | undefined): boolean {
+  return !!node && isDeviceSlotId(node.id);
 }

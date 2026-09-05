@@ -32,6 +32,18 @@ import { makeAdoptionGraph, validateEdge, type ResolveDef } from './validate-edg
 // re-worded reason here would otherwise silently fall into the "migrated"
 // bucket and read as good news).
 import { LOAD_DIAGNOSTIC_REASONS } from './load-diagnostics';
+// NATIVE-SHELL P1 — the device-slot layer. Reserved slot ids are the keys the
+// node-keyed hardware registries hang sessions off, so the clear pass must SKIP
+// them and an incoming node landing on one must never change its type. Pure
+// table + predicates; graph/device-slots.ts explains why IDENTITY, not
+// presence, is the invariant.
+import {
+  DEVICE_SLOT_RIG_KEYS,
+  decideSlotMerge,
+  deviceSlotForId,
+  isDeviceSlotId,
+  slotCoercionReason,
+} from './device-slots';
 
 /** Is `type` registered in ANY per-domain registry? The persistence loader only
  *  needs to know whether a saved node's type still resolves to a def — an
@@ -528,6 +540,24 @@ export function loadEnvelopeIntoStore(
     // toJSON() above severed Yjs proxies, so `node.data` is a plain object we
     // own and can safely mutate.
     stripTransientDataFields(node.type, node.data);
+    // RESERVED DEVICE SLOT (native-shell P1). The contract-lock cannot see
+    // envelope DATA, so a hand-edited, foreign or version-skewed envelope can
+    // carry any type at a reserved slot id — and a type change at a REUSED id
+    // is read by the reconciler's `identityChanged` as remove+add, i.e. the
+    // exact teardown the slot layer exists to prevent, fired by the layer's own
+    // merge. The slot's canonical type therefore always wins, and the incoming
+    // node's rig-owned bindings (a stranger's `deviceId`) are stripped either
+    // way so a shared patch can never rebind this machine's hardware.
+    const slotMerge = decideSlotMerge(node);
+    if (slotMerge) {
+      if (slotMerge.action === 'coerce') {
+        const spec = deviceSlotForId(id)!;
+        node.type = spec.type;
+        node.domain = spec.domain;
+        node.params = {};
+        diagnostics.push({ nodeId: id, type: slotMerge.incomingType, reason: slotCoercionReason(slotMerge) });
+      }
+    }
     keptNodes[id] = node;
   }
 
@@ -551,8 +581,41 @@ export function loadEnvelopeIntoStore(
       liveYdoc.getMap(SETTINGS_MAP_KEY).set(SETTINGS_VIDEO_ASPECT, loadedVideoAspect);
     }
     for (const id of Object.keys(livePatch.edges)) delete livePatch.edges[id];
-    for (const id of Object.keys(livePatch.nodes)) delete livePatch.nodes[id];
+    // ── MERGE, NEVER CLEAR, AT A RESERVED DEVICE SLOT (native-shell P1) ──────
+    //
+    // This clear is what a patch load actually IS, and it is also the single
+    // mechanism that breaks a device session: deleting the id retires the
+    // node-keyed registries that own the resource (nodeMedia stops the camera's
+    // MediaStream tracks in `sweep`; nodeAudioInput's `track.stop()` is
+    // IRREVERSIBLE; the ES-9 client is released from the engine handle's
+    // dispose). Skipping the reserved ids is therefore not a nicety — it is the
+    // whole of "device access never breaks" for the load workflow.
+    //
+    // The live slot node keeps its RIG-OWNED data (which camera it is bound to)
+    // across the swap. Everything else about it — params, name, cables — is
+    // ordinary patch content the envelope is free to replace.
+    const liveSlotRigData: Record<string, Record<string, unknown>> = {};
+    for (const id of Object.keys(livePatch.nodes)) {
+      if (isDeviceSlotId(id)) {
+        const live = livePatch.nodes[id];
+        const kept: Record<string, unknown> = {};
+        for (const key of DEVICE_SLOT_RIG_KEYS) {
+          const v = (live?.data as Record<string, unknown> | undefined)?.[key];
+          if (v !== undefined) kept[key] = v;
+        }
+        liveSlotRigData[id] = kept;
+        continue; // the id survives — and with it the hardware session
+      }
+      delete livePatch.nodes[id];
+    }
     for (const node of Object.values(keptNodes)) {
+      const rig = liveSlotRigData[node.id];
+      if (rig) {
+        // Re-attach this machine's binding to the incoming slot node. Written
+        // as one object so the whole slot lands in a single Y.Map entry, the
+        // same shape the ordinary insert below produces.
+        node.data = { ...(node.data ?? {}), ...rig } as ModuleNode['data'];
+      }
       livePatch.nodes[node.id] = node;
     }
     // ONE adoption graph over the WHOLE incoming edge set, so a saved patch of
