@@ -123,6 +123,8 @@ async function installFakeCameras(page: Page, initialLevel: number): Promise<voi
       /** Held so nothing here is collected while its track is still live. */
       rigs: FakeRig[];
       setLevel(v: number): void;
+      /** Stop every capture pipeline this rig started. See the afterEach. */
+      dispose(): void;
     }
     const g = globalThis as unknown as { __fakeCam: FakeCamApi; navigator: Navigator };
 
@@ -132,6 +134,24 @@ async function installFakeCameras(page: Page, initialLevel: number): Promise<voi
       rigs: [],
       setLevel(v: number): void {
         api.level = v;
+      },
+      // ⚠ THE RIG MUST BE STOPPABLE, and it was not. Each acquisition mints a
+      // canvas, a 30 fps `captureStream` and a 33 ms `setInterval`, all
+      // deliberately retained so nothing is collected while a track is live.
+      // Nothing ever stopped them, so every pipeline stayed hot for the life of
+      // the page — and a run that ended abnormally left the browser holding
+      // them. Chromium spawns per-stream capture/decode utility processes, so
+      // the cost is real processes, not just timers: an iterative local loop
+      // over this spec accumulated ~80 orphaned helpers.
+      //
+      // Called from the afterEach below, so it runs on the FAILING path too —
+      // which is the path that was leaking.
+      dispose(): void {
+        for (const rig of api.rigs) {
+          clearInterval(rig.timer);
+          for (const t of rig.stream.getTracks()) t.stop();
+        }
+        api.rigs.length = 0;
       },
     };
     g.__fakeCam = api;
@@ -451,6 +471,18 @@ async function pickSource(page: Page, nodeId: string, deviceId: string): Promise
 // ---------------------------------------------------------------------------
 
 test.describe('NATIVE-SHELL P1 — a bound device slot survives a patch load', () => {
+  // Stop every capture pipeline this test started, on the failing path as well
+  // as the passing one — see `dispose` in the rig. Best-effort: the page may
+  // already be gone (a crash, a navigation), and a teardown that threw would
+  // convert a real failure into a confusing one.
+  test.afterEach(async ({ page }) => {
+    await page
+      .evaluate(() => {
+        (globalThis as unknown as { __fakeCam?: { dispose(): void } }).__fakeCam?.dispose();
+      })
+      .catch(() => {});
+  });
+
   test('a slot camera keeps PRODUCING across a load; an unreserved camera does NOT', async ({
     page,
     errorWatch,
