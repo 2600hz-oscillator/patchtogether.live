@@ -54,6 +54,7 @@ import { drainAudition, clearAudition } from './clip-audition';
 import { applyPitchProbability } from '$lib/audio/pitch-probability';
 import {
   readClip,
+  clipPlaysLive,
   clipLengthSteps,
   notesFiringAt,
   lanesFromFiring,
@@ -831,8 +832,15 @@ export const clipplayerDef: AudioModuleDef = {
           if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
           spawnLaneSource(L, st, buf);
         })
-        .catch(() => {
-          /* media absent — the pad's named state; nothing sounds */
+        .catch((err) => {
+          // ⚠ SAY SO. This was a bare swallow, and a decode that fails looks
+          // EXACTLY like a clip that is not playing: the pad paints `playing`,
+          // the lane reports its slot, and the output is silent with nothing
+          // anywhere naming a cause. A missing media file is a legitimate state
+          // (the pad already says so), but it is not a reason to discard the
+          // error text on the path that also covers a corrupt take or a decode
+          // the browser refused.
+          console.warn(`[clipplayer] lane ${L + 1} could not decode its take`, err);
         });
     }
 
@@ -853,14 +861,32 @@ export const clipplayerDef: AudioModuleDef = {
         });
     }
 
+    /** ⚠ THE ONE PLACE THAT DECIDES WHETHER A CLIP'S RECORDED AUDIO SOUNDS.
+     *  Three call sites start lane audio (launch/switch, transport re-anchor,
+     *  and the cache-key sweep) and all three ask here, because a rule spelled
+     *  out three times is a rule two of them will eventually disagree with.
+     *
+     *  CLAUSE 6 is the new clause in it: a clip set to LIVE is a PASS-THROUGH.
+     *  Launching it deliberately starts NO source, so the lane's live input —
+     *  which reaches the mixer channel through the normalled return either way
+     *  — is what you hear. That is what replaced the mixmstrs channel-level MON
+     *  duck: the old control muted a whole channel from the mixer, this one is
+     *  a property of a single clip and is decided at the playback side. */
+    function clipShouldSound(d: ClipPlayerData | undefined, L: number, clip: ClipRecord | null): boolean {
+      if (clip?.kind !== 'audio') return false;
+      if (laneMuted(d, L)) return false;
+      if (clipPlaysLive(clip)) return false; // clause 6 — pass the live input instead
+      return true;
+    }
+
     /** The launch/stop/switch hook: lane L's active slot became `slot`,
      *  effective at `at` — the same instant setLaneActive anchors the grid on.
      *  Called from every path that moves `ln.active`. */
     function updateLaneAudio(L: number, slot: number | null, at: number): void {
       const d = liveData();
       const clip = slot !== null ? readClip(d, clipIndex(slot, L)) : null;
-      if (clip?.kind === 'audio' && transportRunning() && !laneMuted(d, L)) {
-        startLaneAudio(L, clip, at);
+      if (clipShouldSound(d, L, clip) && transportRunning()) {
+        startLaneAudio(L, clip as AudioClipRecord, at);
       } else {
         haltLaneAudio(L, at, true);
       }
@@ -874,7 +900,7 @@ export const clipplayerDef: AudioModuleDef = {
         const slot = lanes[L].active;
         if (slot === null) continue;
         const clip = readClip(d, clipIndex(slot, L));
-        if (clip?.kind === 'audio' && !laneMuted(d, L)) startLaneAudio(L, clip, at);
+        if (clipShouldSound(d, L, clip)) startLaneAudio(L, clip as AudioClipRecord, at);
         else haltLaneAudio(L, at, true);
       }
     }
@@ -2809,14 +2835,52 @@ export const clipplayerDef: AudioModuleDef = {
         // replaces/removes the record (keyed by mediaId+takeAt), and a source
         // still looping the old bytes would be audio without a clip — cut it.
         // A REPLACED take (same slot, new key) restarts from its own top.
+        // ⚠ IT ALSO STARTS A LANE THAT HAS NO SOURCE YET, and that half was
+        // missing. The loop used to open with `if (!st) continue`, so it could
+        // only ever CUT or REPLACE an already-sounding take — a lane whose slot
+        // BECAME an audio clip while the lane had no audio state was skipped on
+        // every tick and stayed silent forever.
+        //
+        // That is exactly what a freshly recorded take does. The commit writes
+        // `clips[k]` and queues its own take-over launch in ONE transaction, and
+        // the launch can be applied on a pass where the slot still reads as the
+        // empty note placeholder the player clicked to aim the record button —
+        // `updateLaneAudio` then correctly declines to sound a note clip, and
+        // nothing ever revisited the decision. The result was a clip that
+        // reported `playing`, painted `playing`, held 96000 frames of non-silent
+        // audio in OPFS, and emitted nothing.
+        //
+        // Starting here is idempotent: once the source exists its cache key
+        // matches and the next tick takes the `continue` above.
         for (let L = 0; L < LANES; L++) {
           const st = laneAudio[L];
-          if (!st) continue;
           const clip = laneClips[L];
-          if (clip?.kind === 'audio' && clipAudioCacheKey(clip) === st.key) continue;
-          haltLaneAudio(L, ctx.currentTime, true);
-          if (clip?.kind === 'audio' && running && !laneMuted(d0, L)) {
-            startLaneAudio(L, clip, ctx.currentTime + 0.01);
+          // ⚠ CLAUSE 6, AND IT MUST COME BEFORE THE CACHE-KEY TEST. Flipping a
+          // clip to LIVE changes neither its `mediaId` nor its `takeAt`, so its
+          // cache key is IDENTICAL and the `continue` below would skip a lane
+          // that is still sounding a take the player just asked to stop hearing.
+          //
+          // Deliberately narrow: it tests `clipPlaysLive` alone rather than the
+          // whole `clipShouldSound`, because a MUTED lane must keep its
+          // suspend/resume path (`st.audible`) and halting it here would lose
+          // the phase that path exists to preserve.
+          // ⚠ RE-READ THE RECORD, do not trust `laneClips[L]`. That cache is
+          // refreshed only when a LAUNCH swaps `ln.active`, so it still holds
+          // the record as it was at launch — and flipping LIVE is an EDIT, not
+          // a launch. Reading the live slot is what makes the toggle take
+          // effect on a clip that is already sounding, which is the only moment
+          // the control is interesting.
+          const activeSlot = lanes[L]?.active ?? null;
+          const liveRecord =
+            activeSlot !== null ? readClip(d0, clipIndex(activeSlot, L)) : null;
+          if (st && clipPlaysLive(liveRecord)) {
+            haltLaneAudio(L, ctx.currentTime, true);
+            continue;
+          }
+          if (st && clip?.kind === 'audio' && clipAudioCacheKey(clip) === st.key) continue;
+          if (st) haltLaneAudio(L, ctx.currentTime, true);
+          if (clipShouldSound(d0, L, clip) && running) {
+            startLaneAudio(L, clip as AudioClipRecord, ctx.currentTime + 0.01);
           }
         }
 
