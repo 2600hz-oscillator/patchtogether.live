@@ -243,15 +243,15 @@ test('every 8-wide row shares ONE column ruler — column N is channel N everywh
     'dynamics',
     'sends',
   ]);
-  // ⚠ TWO BANDS ARE OFF THE RULER NOW, FOR DIFFERENT REASONS, and both are
-  // deliberate. `returns` is side-by-side (`clusterFlow: 'row'`). `record` is
-  // all SEGMENTED cells, which are far wider than knobs because their width is
-  // set by their option labels: putting it on the shared ruler was measured and
-  // took the face from ONE column pitch to FOUR (168.2 / 161.2 / 161.1 / 111.6
-  // CSS px), which is the #1825 defect itself. A record row cannot share the
-  // fader pitch without destroying it for the three bands that depend on it.
+  // ⚠ ONE BAND IS OFF THE RULER: `returns`, which is side-by-side
+  // (`clusterFlow: 'row'`). The `record` band was the other, for a different
+  // reason — all SEGMENTED cells, far wider than knobs because their width is
+  // set by their option labels, and putting it on the shared ruler was measured
+  // to take the face from ONE column pitch to FOUR (168.2 / 161.2 / 161.1 /
+  // 111.6 CSS px), the #1825 defect itself. The owner removed that band on
+  // 2026-09-04, so the segmented-cell hazard has no population on this face
+  // today; it is recorded here because the next segmented band would hit it.
   expect(offRuler, 'and exactly these bands are laid out off the ruler instead').toEqual([
-    'record',
     'returns',
   ]);
   // …and the off-ruler band really is the side-by-side one, read off the DOM

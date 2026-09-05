@@ -750,18 +750,18 @@ export const FACES = [
   // that used to be true. A per-scene override is only honest while the scene
   // still needs it.
   //
-  // ⚠ FIVE BANDS SINCE THE CLIP-RECORD BAND LANDED, WHICH MAKES `foldHeight` A
-  // MEASUREMENT THAT NEEDS RE-TAKING. The 2048 was sized against a 1623 px pane
-  // with 425 px of headroom; the new `record` band is 16 SEGMENTED cells (every
-  // one of its params declares an `options` roster, and a segmented cell is
-  // width-class `wide`, so the band cannot pack into a shared row and takes its
-  // own). If it eats that headroom the scene frames short — and a short frame
-  // is wrong in a way a GREEN run will not say. It is left at 2048 on purpose:
-  // Linux CI authors the single baseline set, so a height guessed on a macOS
-  // box would be a second unverified number stacked on the first.
+  // ⚠ BACK TO FOUR BANDS, AND `foldHeight` IS BACK ON ITS ORIGINAL FOOTING. The
+  // 2048 was measured against a 1623 px pane with 425 px of headroom BEFORE the
+  // clip-record band existed; the band's arrival is what made the number a
+  // question (16 segmented cells, width-class `wide`, so it could not pack into
+  // a shared row and took one of its own — possibly eating that headroom and
+  // framing the scene short, which is wrong in a way a GREEN run will not say).
+  // The owner removed the band on 2026-09-04, which restores exactly the
+  // condition 2048 was measured for, so the number stands and the warning is
+  // retired rather than carried. Linux CI still authors the single baseline set.
   {
     type: 'mixmstrs',
-    pages: 5,
+    pages: 4,
     foldHeight: 2048,
   },
   // THE FACEPLATE QUEUE · Q14 — quad slew + 4→1 sequential switch. `pages: 2`
