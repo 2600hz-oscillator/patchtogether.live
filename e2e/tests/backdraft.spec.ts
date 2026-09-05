@@ -23,6 +23,7 @@ import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, type RenderStats } from './_render-smoke';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 // ── SHARED DRIVE HELPERS ────────────────────────────────────────────────────
 // Every capture in this file is frame-driven, never wall-clocked. See the
@@ -153,6 +154,15 @@ async function readVoutFrame(
 
 test.describe('BACKDRAFT — video feedback generator', () => {
   test('SHAPES/LINES masks + SHAPES sources -> BACKDRAFT -> OUTPUT renders a live feedback frame', async ({ page, errorWatch }) => {
+    // ⚠ AND IT STILL NEVER DECLARED ONE — until now. It timed out at the bare
+    // 30 s default AGAIN on 2026-09-05, for the third recorded time, and the
+    // paragraph below has been sitting here naming the cause the whole time.
+    // The frame-driven rewrite it describes was the right fix for the COST; it
+    // was never a fix for the CEILING, and the two were conflated. This branch
+    // then added a dock open to the file, which put the cost back over.
+    // `SLOW_BOOT_TEST_TIMEOUT_MS` is the bound; the FRAMES loop below is still
+    // what makes the cost renderer-honest.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     // FRAME-DRIVEN. This test timed out at the DEFAULT 30 s on CI (#1256 run
     // 30444817370, and twice before that) — it cost 34.8 s there against a 30 s
     // budget it never declared. Its only settle was `waitForTimeout(800)`,
