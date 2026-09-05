@@ -19,7 +19,23 @@
 //
 // Fixtures are SMALL + committed: e2e/fixtures/av-clip.webm + tiny.png.
 
+//
+// ── ⚠ PER-TEST BOUND, NOT A BUDGET RAISE (2026-09-05) ──────────────────────
+//
+// This file timed out on CI inside a plain action — `locator.waitFor`, 30 s (an API the boot-budget note calls out as having NO timeout of its own) — while passing
+// locally in 6.9 s. The action carries no timeout of its own, so it is
+// bounded by the TEST BUDGET and nothing else, and this suite does not
+// override Playwright's 30 s default. That is the documented subject of
+// `SLOW_BOOT_TEST_TIMEOUT_MS`: a BOUND on how long the test waits before
+// calling the app broken, on a spec that ASSERTS nothing about latency.
+//
+// A bound costs wall-clock only when it is exceeded, so a green run is
+// unchanged. Lane COST stays gauged by `--global-timeout`, which is a separate
+// instrument and is untouched here — raising this failure bound cannot hide a
+// cost regression.
+
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
 
@@ -90,6 +106,7 @@ async function openPicPane(page: import('@playwright/test').Page, id: string): P
 
 test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
   test('restores the videovarispeed video + picturebox image after a new rack', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const errors = await setup(page);
 
     await spawnPatch(page, [

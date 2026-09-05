@@ -29,7 +29,23 @@
 // passes a synthetic position and would skip the drag-origin capture that
 // snap-back depends on, so it cannot see this feature's main failure mode.
 
+//
+// ── ⚠ PER-TEST BOUND, NOT A BUDGET RAISE (2026-09-05) ──────────────────────
+//
+// This file timed out on CI inside a plain action — `mouse.move`, 30 s, on both of its drag tests — while passing
+// locally in 10.2 s and 11.3 s — the highest local cost of the group, so it sat closest to the flat default. The action carries no timeout of its own, so it is
+// bounded by the TEST BUDGET and nothing else, and this suite does not
+// override Playwright's 30 s default. That is the documented subject of
+// `SLOW_BOOT_TEST_TIMEOUT_MS`: a BOUND on how long the test waits before
+// calling the app broken, on a spec that ASSERTS nothing about latency.
+//
+// A bound costs wall-clock only when it is exceeded, so a green run is
+// unchanged. Lane COST stays gauged by `--global-timeout`, which is a separate
+// instrument and is untouched here — raising this failure bound cannot hide a
+// cost regression.
+
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const RACK = '/rack?seed=none';
 
@@ -122,6 +138,7 @@ async function carryFirstOutputOf(page: Page, nodeId: string): Promise<void> {
 
 test.describe('drop a card on a card → the patch modal', () => {
   test('a plain drag to empty canvas MOVES the card and opens NOTHING', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     // OUTCOME 1, unchanged. This is the leg that fails if the drop rule is too
     // loose — and it is the single most-used gesture in the app.
     const { bdId } = await seedTwoVideoCards(page);
@@ -135,6 +152,7 @@ test.describe('drop a card on a card → the patch modal', () => {
   });
 
   test('a drag that only CLIPS another card still just moves it', async ({ page }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     // The threshold's reason for existing. xyflow's own intersection default is
     // `overlappingArea > 0` — one square pixel — and the app's collision
     // resolver slides cards in 22.5px steps, so a rule at that default would

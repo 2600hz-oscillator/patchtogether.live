@@ -34,10 +34,23 @@
 // rather than silently reporting an empty array from a mock that never
 // installed.
 
+//
+// ── ⚠ PER-TEST BOUND, NOT A BUDGET RAISE (2026-09-05) ──────────────────────
+//
+// The auto-detect-with-no-matching-port case timed out on CI inside
+// `locator.click`, at exactly the flat 30 s default, while passing locally in
+// 3.4 s. Ten tests in this file run in parallel and the lane co-schedules them
+// with other work, so the click waits on a busy page rather than a missing
+// element. The action carries no timeout of its own, so the TEST BUDGET is the
+// only bound — the documented subject of `SLOW_BOOT_TEST_TIMEOUT_MS`. It is a
+// BOUND: this file asserts CC numbers and delivery, never latency. Lane cost
+// stays gauged by `--global-timeout`.
+
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { installMidiOutCapture, readCapturedCcs, clearMidiOutCaptured } from '../_helpers/midi';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -323,6 +336,7 @@ test('chromaconsole: auto-detect picks the pedal by name and ignores the decoy',
 test('chromaconsole: with NO matching port, auto-detect selects nothing rather than guessing', async ({
   page,
 }) => {
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
   await boot(page, [OTHER_PORT]);
   await page
     .locator(`.svelte-flow__node[data-id="${NODE}"]`)

@@ -10,10 +10,39 @@
 //
 // Simulated MIDI (no hardware / no permission prompt) via the dev-only
 // __midiTestInstall / __midiTestInject hooks — same path real CCs take.
+//
+// ── ⚠ THE 2026-09-05 CI FAILURE WAS AN INSTRUMENT DEFECT, NOT A PRODUCT ONE ──
+//
+// It read, alarmingly, as a functional-parity break: `ctx-electra-el1` asserted
+// VISIBLE on one line, and the very next line's click on `ctx-midi-learn` timed
+// out — "the menu lost MIDI Learn on the new surface". Judged rather than
+// assumed, and it is not:
+//
+//   1. `ControlContextMenu.svelte` renders `ctx-midi-learn` UNCONDITIONALLY as
+//      the FIRST child of the menu — there is no `{#if}` anywhere near it. A
+//      menu that is open at all contains it, so a menu proven open by the
+//      Electra assertion one line above cannot be missing it.
+//   2. The error was `locator.click: Test timeout of 31636 ms exceeded` — the
+//      TEST BUDGET expiring mid-click, not `element(s) not found`.
+//   3. The A↔B leg EARLIER IN THE SAME TEST clicks that same testid and
+//      succeeds. One menu is fine and the second is not, which is a clock, not
+//      a render.
+//   4. Local: 7.3 s for the whole file.
+//
+// So MIDI-learn is present and binds; parity holds. What was missing is the
+// instrument's ability to SAY which of the two it was — a bare `.click()`
+// reports the same timeout whether the item is absent or the budget ran out.
+// The dry/wet leg now asserts the item VISIBLE before clicking it, exactly as
+// the A↔B leg already did, so a real regression fails by name instead.
+//
+// The budget itself is the `SLOW_BOOT_TEST_TIMEOUT_MS` subject: re-pointing
+// this spec off the deleted surface added a dock open, and a dock mount no
+// longer overlaps page load.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import type { Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -54,6 +83,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
 }
 
 test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click → learn → CC drives param)', async ({ page, rack, errorWatch }) => {
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
   await spawnPatch(
@@ -75,7 +105,13 @@ test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click →
   await expect(dock).toBeVisible();
   const abSlider = dock.getByTestId('control-fader');
   const dwSlider = dock.getByTestId('control-dryWet');
-  await abSlider.scrollIntoViewIfNeeded();
+  // ⚠ `scrollIntoViewIfNeeded()` stood here and on the dry/wet leg below. It
+  // waits for the element to be STABLE with no timeout of its own, and the
+  // fader's dock body is a live video surface that keeps the pane painting, so
+  // on a loaded runner it burns the whole test budget on a page that is fully
+  // rendered. `scrollIntoView` via evaluate is the DOM call underneath, with no
+  // actionability contract; every gesture after it is unchanged.
+  await abSlider.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 
   // ---- A↔B fader ----
   await abSlider.click({ button: 'right' });
@@ -95,10 +131,15 @@ test('FADER A↔B + dry/wet sliders are MIDI/Electra assignable (right-click →
   // behaviour is pinned by midi-learn.spec.ts on the shell.
 
   // ---- dry/wet fader ----
-  await dwSlider.scrollIntoViewIfNeeded();
+  await dwSlider.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await dwSlider.click({ button: 'right' });
   await expect(menu).toBeVisible();
   await expect(menu.locator('[data-testid="ctx-electra-el1"]'), 'dry/wet is Electra-assignable').toBeVisible();
+  // ⚠ ASSERTED BEFORE IT IS CLICKED — the discriminator this leg was missing.
+  // `ControlContextMenu` renders this item unconditionally, so its ABSENCE
+  // would be a functional-parity break and must fail by NAME. A bare click
+  // reports the same timeout for "gone" and for "budget expired".
+  await expect(menu.locator('[data-testid="ctx-midi-learn"]'), 'dry/wet menu offers MIDI Learn').toBeVisible();
   await menu.locator('[data-testid="ctx-midi-learn"]').click();
   await injectCc(page, 1, 22, 64); // ≈ 0.504
   await expect
