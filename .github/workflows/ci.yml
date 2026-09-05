@@ -2323,12 +2323,12 @@ jobs:
           echo "All required CI jobs passed."
 
   # -----------------------------------------------------------------------
-  # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
-  # knob/fader cards listed in STRICT_VRT_MODULES (see
-  # e2e/vrt/vrt-exemptions.ts). These cards have committed baselines, no canvas
-  # masks, and no animated chrome — a diff here is a real UI regression, not
-  # GPU/timing flake. Same-platform by construction since #1458: the baseline
-  # this compares against was rendered by this same runner image.
+  # VRT (strict subset) — fast, deterministic gate. Runs ONLY the specs named
+  # in STRICT_MATCH (e2e/vrt/vrt.config.ts): the faceplate sweep. Those scenes
+  # have committed baselines, no canvas masks, and no animated chrome — a diff
+  # here is a real UI regression, not GPU/timing flake. Same-platform by
+  # construction since #1458: the baseline this compares against was rendered
+  # by this same runner image.
   #
   # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
   # ruleset (16042163) was flipped to require the AGGREGATOR job's name
@@ -2339,14 +2339,14 @@ jobs:
   # context — names are matched literally.
   #
   # ⚠ THIS IS NOW THE ONLY LANE THAT COMPARES A BASELINE. The full-sweep `vrt`
-  # job (canvas-driven + animated cards, `continue-on-error: true`) was DELETED
+  # job (canvas-driven + animated scenes, `continue-on-error: true`) was DELETED
   # 2026-08-17: it could never block a merge, and at a 50-minute cap it had
   # started reporting `cancelled` on main runs. The baselines it compared are
   # NOT deleted and are still AUTHORED — `vrt-update.yml`, `task vrt`,
   # `task vrt:commit` and `FULL_MATCH` in e2e/vrt/vrt.config.ts are untouched,
   # because `vrt:commit` reads FULL_MATCH to WRITE baselines and pruning it
   # would silently stop baseline authoring for the whole faceplate programme.
-  # What is gone is the COMPARISON of everything outside STRICT_VRT_MODULES.
+  # What is gone is the COMPARISON of everything outside STRICT_MATCH.
   # Widening this lane is how that comes back; resurrecting a non-gating sweep
   # is not.
   #
@@ -2518,10 +2518,10 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     env:
-      # The lane's identity. Narrows testMatch to vrt.spec.ts +
-      # workflow-shell-faces.spec.ts AND filters vrt.spec.ts to
-      # STRICT_VRT_MODULES — so it must be set for the DISCOVERY step too, or
-      # the plan would be computed over the informational lane's roster.
+      # The lane's identity. Narrows testMatch to STRICT_MATCH
+      # (workflow-shell-faces.spec.ts) — so it must be set for the DISCOVERY
+      # step too, or the plan would be computed over the informational lane's
+      # roster.
       VRT_STRICT: '1'
 
     steps:
@@ -2536,7 +2536,7 @@ jobs:
       # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
       # pull` (HIT → no-op, MISS → fetch only changed objects) — a ~95%
       # bandwidth cut. The strict subset still needs the real PNG bytes for its
-      # pure-DOM card comparisons.
+      # faceplate comparisons.
       - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:

@@ -103,10 +103,10 @@ export const DENIED: Readonly<Record<string, string>> = {
   // Same mechanism, same reason for deleting by hand: promotion moves it out of
   // `unpromoted`, so the loop below stops consulting it and the record goes
   // INVISIBLE rather than RED. ⚠ And this one would have been factually wrong as
-  // well as unread — the 30 s figure was about the LEGACY CARD in the lane
-  // (`io-spec-consistency`'s `HEAVY_MOUNT_TIMEOUT`), which now measures at
-  // ~1 s, and the faceplate is a different surface from the one the sentence
-  // describes. Two entries deleted this way in two merges is the strongest
+  // well as unread — the 30 s figure was measured on the surface the lane used
+  // to mount (`io-spec-consistency`'s `HEAVY_MOUNT_TIMEOUT`), which now
+  // measures at ~1 s, and the faceplate is a different surface from the one the
+  // sentence describes. Two entries deleted this way in two merges is the strongest
   // evidence yet for the one-line repair already routed to the owner (a
   // `DENIED ∩ STRICT_FACES === ∅` clause in workflow-shell.spec.ts's existing
   // anchor block) — still correctly NOT self-served under the no-new-gates
@@ -641,24 +641,22 @@ export function contractDomain(type: string): string {
 }
 
 /**
- * A still-UN-MIGRATED **VIDEO SINK** — an un-promoted video module that can be
- * FED by a source, for the PLACEHOLDER-host half of `workflow-shell-video`'s
- * live-thumb case.
+ * A **VIDEO SINK** — a video module that can be FED by a source, for the
+ * fed-host half of `workflow-shell-video`'s live-thumb case.
  *
- * ⚠ IT EXISTS BECAUSE THAT SPEC HARD-CODED `grainsOfVision`, AND THIS PR
- * PROMOTES IT (#1929). The spec spawns `lines → g1` and then proves three
- * things ABOUT A PLACEHOLDER TILE: the tile carries a live `video-tile-thumb`,
- * the thumb's blit DRIVES the real chain (`framesDrawn` advances while it is the
- * only watcher), and the picture ANIMATES across frames. A faced tile also has a
- * thumb (#1785), and `b1` already covers that host — so promoting the hard-coded
- * subject leaves **every assertion passing while the placeholder host stops
- * being proven**. That is CLAUDE.md's "a gate whose PRECONDITION is the defect"
- * class, and it goes GREEN rather than red, which is why the re-point is
- * mandatory in the promoting diff rather than a follow-up.
+ * ⚠ IT EXISTS BECAUSE THAT SPEC HARD-CODED `grainsOfVision` (#1929). The spec
+ * spawns `lines → g1` and then proves three things ABOUT A LANE TILE: the tile
+ * carries a live `video-tile-thumb`, the thumb's blit DRIVES the real chain
+ * (`framesDrawn` advances while it is the only watcher), and the picture
+ * ANIMATES across frames. A hard-coded subject leaves **every assertion
+ * passing while the host it was chosen for stops being proven** the moment
+ * that subject changes shape. That is CLAUDE.md's "a gate whose PRECONDITION
+ * is the defect" class, and it goes GREEN rather than red, which is why the
+ * subject is DERIVED here rather than named.
  *
  * ⚠ WHY A SECOND FIXTURE AND NOT `VIDEO_FIXTURE`. That one resolves a subject
- * for the *dock legacy-card* case, whose only requirement is that a card
- * component renders. This case must also **wire an edge into it**, so it needs a
+ * for the dock-body case, whose only requirement is that a faceplate body
+ * renders. This case must also **wire an edge into it**, so it needs a
  * module with a `video`-cabled INPUT PORT — and it needs that port's ID, which
  * is why `LockedModule` now records `inPorts`. `VIDEO_FIXTURE`'s pick is free to
  * be a source with no inputs at all, and reusing it would resolve happily and
@@ -666,18 +664,16 @@ export function contractDomain(type: string): string {
  *
  * The predicates are the assertions' own, and every one of them was READ OFF
  * `laneRenderKind` rather than guessed — `laneRenderKind` is
- * `if (!shellFaces || !hasCard) return 'legacy'; return migrated ? 'shell' :
- * 'placeholder'`, so **two** independent things route a module away from the
- * placeholder tile and only one of them is promotion:
+ * `if (userDocked) return 'stub'; return laneNative ? 'native' : 'shell'`, so
+ * the one thing that routes a module away from a measurable lane tile is
+ * membership of `NON_SHELL_LANE_TYPES`:
  *
- *   * un-promoted — else it renders a FACE (`'shell'`), which is `b1`'s host;
  *   * `domain: 'video'`;
- *   * a resolvable card AND not a `NON_SHELL_LANE_TYPES` snowflake — either
- *     makes `hasCard` false, which renders the VERBATIM LEGACY CARD and not a
- *     placeholder at all. ⚠ This is the predicate a "just pick an un-migrated
- *     video module" rule would have missed, and it fails in the confusing
- *     direction: a legacy card has no `module-shell-placeholder` for the loop
- *     to find;
+ *   * not a `NON_SHELL_LANE_TYPES` snowflake — such a type renders its own
+ *     roaming surface and no lane tile at all, so there is no thumb for the
+ *     loop to find. ⚠ This is the predicate a "just pick any video module"
+ *     rule would have missed, and it fails in the confusing direction: the
+ *     subject resolves and then nothing is there to measure;
  *   * a `video` INPUT port to receive the chain — and its ID, so the edge can
  *     actually be built;
  *   * a `video` OUTPUT — without one the node is never pulled, `framesDrawn`

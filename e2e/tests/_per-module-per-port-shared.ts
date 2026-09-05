@@ -317,17 +317,16 @@ export const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 // Keep this list tight too (~10-15 entries).
 export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // ── CAMERAINPUT.out — a DEVICE port with no device, and the sweep only
-  // started saying so when it stopped reading card chrome.
+  // started saying so when it stopped reading surrounding chrome.
   //
-  // MEASURED 2026-09-04, CAMERAINPUT -> VIDEOOUT.in, the same patch on both
-  // shells. The sink's picture is the videoOut IDLE gradient in both cases:
-  // default-shell tile mean 18.95 / variance 1.50 (idle is 18.95 / 1.50);
-  // legacy card canvas mean 16.93 / variance 22.82 (an UNPATCHED videoOut card
-  // reads 22.82). Nothing arrives on EITHER surface — the port has never
-  // emitted in this fixture. It was green because the old floors
-  // (`nonBlackFrac > 0.001`, `variance > 0.5`) are cleared by an unpatched
-  // videoOut on both surfaces; see the sweep's video branch for that
-  // measurement.
+  // MEASURED 2026-09-04, CAMERAINPUT -> VIDEOOUT.in, the same patch on the two
+  // surfaces that existed then. The sink's picture is the videoOut IDLE
+  // gradient in both cases: faceplate tile mean 18.95 / variance 1.50 (idle is
+  // 18.95 / 1.50); the retired surface's canvas mean 16.93 / variance 22.82 (an
+  // UNPATCHED videoOut read 22.82 there). Nothing arrived on EITHER surface —
+  // the port has never emitted in this fixture. It was green because the old
+  // floors (`nonBlackFrac > 0.001`, `variance > 0.5`) are cleared by an
+  // unpatched videoOut; see the sweep's video branch for that measurement.
   //
   // Chromium runs with `--use-fake-device-for-media-stream`, so a stream is
   // AVAILABLE — but nothing in a bare spawn asks for one. Camera capture starts
@@ -344,7 +343,7 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // iteration loop and is NOT exempt, which is what keeps the module's emit
   // test meaningful. Fixing the palette at default params is a module change,
   // not a sweep change.
-  'mandleblot.color_out': 'the RGB-palette output renders black at default params — MEASURED: own tile 0.0000 nonBlack, sink 0.0000, and 0.1612/mean 1.02 on the legacy card (which is why the 0.001 floor passed). mono_out from the SAME iteration loop still emits and is not exempt',
+  'mandleblot.color_out': 'the RGB-palette output renders black at default params — MEASURED: own tile 0.0000 nonBlack, sink 0.0000, and 0.1612/mean 1.02 on the surface the lane mounted before the faceplate (which is why the 0.001 floor passed). mono_out from the SAME iteration loop still emits and is not exempt',
   // ── CLIPPLAYER audio{N}L/R (slice 5): recorded-audio-clip playback. A
   // lane's audio pair emits only while that lane PLAYS AN AUDIO CLIP, and an
   // audio clip exists only after a real take (OPFS media + an
