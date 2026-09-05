@@ -190,14 +190,6 @@ test.describe('CHROMA CONSOLE faceplate — the faced chain reaches the wire', (
     // controls, so every gesture — connect, the picker, push all, eight knobs —
     // was reachable only by expanding the dock.
     await expect(laneShell(page), 'the lane renders ModuleShell').toBeVisible();
-    await expect(
-      page.locator(`[data-testid="chromaconsole-card-${NODE}"]`),
-      'and the legacy card is NOT mounted anywhere',
-    ).toHaveCount(0);
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`),
-      'and it is no longer the empty placeholder',
-    ).toHaveCount(0);
 
     // ⚠ THE FACEPLATE IS OPENED **BEFORE** THE GRANT, AND THE ORDER IS THE
     // ASSERTION. The body's own empty state paints "Press Connect MIDI to grant

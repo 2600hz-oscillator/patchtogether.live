@@ -219,10 +219,6 @@ async function openModtrisFace(page: Page, params?: Record<string, number>) {
   await expect(shell, 'the promoted face renders a ModuleShell tile in the lane — before this '
     + 'promotion the shipping shell rendered a BLANK PLACEHOLDER here')
     .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-  await expect(
-    page.locator('.svelte-flow__node[data-id="m"] [data-testid="module-shell-placeholder"]'),
-    'and the placeholder is GONE — the two must not coexist',
-  ).toHaveCount(0);
   await shell.getByTestId('shell-open-dock').click();
   const faceplate = page.getByTestId('dock-full-view');
   await expect(faceplate).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });

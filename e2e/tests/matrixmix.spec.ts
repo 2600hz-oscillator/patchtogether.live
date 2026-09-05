@@ -469,10 +469,6 @@ test('FACE: the lane tile ranks both axis pickers, they write the graph, and the
   const shell = laneNode.getByTestId('module-shell');
   await expect(shell, 'a promoted meta module renders its curated face in the lane').toBeVisible();
   await expect(shell).toHaveAttribute('data-shell-type', 'matrixMix');
-  await expect(
-    laneNode.getByTestId('module-shell-placeholder'),
-    'and NOT the un-migrated placeholder this promotion replaced',
-  ).toHaveCount(0);
   // The legacy card is not in the lane at all under the default renderer.
   await expect(laneNode.locator('[data-testid="matrixmix-card"]')).toHaveCount(0);
 

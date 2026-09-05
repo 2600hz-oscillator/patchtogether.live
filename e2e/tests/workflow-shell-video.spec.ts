@@ -130,24 +130,18 @@ const RECORDERBOX = 'workflow-recorderbox';
 const SYNESTHESIA = 'workflow-synesthesia';
 
 /**
- * A node's RACKLINE lane tile, EITHER KIND — a faced `module-shell` or the
- * un-migrated `module-shell-placeholder`.
+ * A node's RACKLINE lane tile.
  *
- * ⚠ IT EXISTS BECAUSE TWO CASES IN THIS FILE ENCODED A MIGRATION STATE THEY DO
- * NOT DEPEND ON (#2295), which is the same finding `workflow-shell.spec.ts`
- * already records for its `vzFaceSelector`: matching either testid is STRICTLY
- * MORE GENERAL and weakens nothing, because both kinds are the same
- * `SHELL_TILE_W` box and neither caller reads the tile's contents. What the
- * callers actually assert is (a) a tile PAINTED before geometry is measured,
- * and (b) that the lane shows the RACKLINE look rather than the verbatim legacy
- * card — and both survive a promotion. Naming one kind made a PACKING test and
- * a HEADLESS-HOST test depend on the promotion queue: measured 2026-09-01,
- * promoting `recorderbox` alone reds the first, and promoting `archivist` reds
- * the second.
+ * ⚠ IT MATCHED TWO TESTIDS AND NOW MATCHES ONE, and the reason it ever matched
+ * two is worth keeping: two cases in this file had encoded a distinction they
+ * did not depend on (#2295). What the callers actually assert is that a tile
+ * PAINTED before geometry is measured — never anything about its contents — so
+ * naming a narrower subject than the assertion needs is what made a PACKING
+ * test and a HEADLESS-HOST test depend on the promotion queue. There is one
+ * tile kind now, so the generality is free; the lesson is not.
  */
 const laneTileSelector = (id: string) =>
-  `.svelte-flow__node[data-id="${id}"] `
-  + ':is([data-testid="module-shell"], [data-testid="module-shell-placeholder"])';
+  `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`;
 
 // DERIVED, never re-typed (#2239): the gap is whatever the shell pitch leaves
 // over a uniform tile. It was hardcoded 24 for the old 216 pitch, so the pitch
@@ -726,11 +720,9 @@ test.describe('?shell=1 video visibility', () => {
 
     await gotoShell(page);
 
-    // 1) A REAL FACE TILE — not a placeholder, and not the legacy card.
+    // 1) A REAL FACE TILE.
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
     const laneNode = page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"]`);
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    await expect(laneNode.locator('[data-testid="video-out-card"]')).toHaveCount(0);
     // …carrying a LIVE surface. #1785 evicts a video face's thumbnail when its
     // ranked cells outgrow a plate row; videoOut ranks NOTHING, so the strip
     // survives at every tier (pinned purely in `videoout-face-model.test.ts`).
@@ -782,34 +774,16 @@ test.describe('?shell=1 video visibility', () => {
   // for a reason none of the other cases has anything to do with.
   test('the derived video-SINK fixture is healthy', () => {
     expect(fixtureProblems(VIDEO_SINK_FIXTURE), VIDEO_SINK_FIXTURE.why).toEqual([]);
-    // ⚠ THE WIRABILITY LEG IS GATED ON `kind === 'ok'`, AND IT WAS NOT (#2295).
-    // `fixtureProblems` deliberately treats `migration-complete` as HEALTHY —
-    // it is the designed end state — but this second assertion read
-    // `SINK_IN_PORT`, which is `null` in exactly that state because `SINK_TYPE`
-    // is `''`. So the one test whose job is to be the SINGLE red for an
-    // exhausted pool would itself have gone red for the CLEAN exit, printing
-    // "the derived sink '' exposes a video input port" on the day the last
-    // un-promoted video sink was faced. `VIDEO_SINK_FIXTURE` is two promotions
-    // from that state (`mappy`, `toybox`), and both have face work in flight.
-    //
-    // What it asserts is a property OF A RESOLVED PICK — the half `VIDEO_FIXTURE`
-    // does not promise, since a subject with no video input port would fail at
-    // injectPatch with an edge to a port that does not exist — so it is
-    // meaningless when there is no pick, and asking it anyway is what made the
-    // clean exit look like a defect.
+    // The wirability half is a property OF A RESOLVED PICK: a subject with no
+    // video input port would fail at injectPatch with an edge to a port that
+    // does not exist. It stays gated on `kind === 'ok'` so a pool with no pick
+    // reds once, in `fixtureProblems` above, rather than twice.
     if (VIDEO_SINK_FIXTURE.kind === 'ok') {
       expect(
         SINK_IN_PORT,
         `the derived sink '${SINK_TYPE}' exposes a video input port`,
       ).not.toBeNull();
     }
-    // ⚠ AND THERE IS DELIBERATELY NOTHING HERE FOR THE `migration-complete`
-    // ARM. A first draft added an `expect(why).toBeTruthy()` to "report" the
-    // end state; a non-empty string is always truthy, so it could never fail —
-    // decoration wearing a check's clothes, the shape `fixtureProblems`'s own
-    // header refuses. The end state is announced where it is ACTED ON: the case
-    // below skips with `VIDEO_SINK_FIXTURE.why` as its reason, which the lane
-    // audit reads and the skip budget claims by name.
   });
 
   test('video-domain tiles show LIVE ANIMATED thumbnails via the real chain; the fake wave glyph is GONE for them', async ({ page }) => {
@@ -820,9 +794,8 @@ test.describe('?shell=1 video visibility', () => {
     // budgets it spends (60 + 60 = 120). This case spends ONE
     // `sampleDrawAdvance` and ONE `expectCanvasChanges`.
     test.setTimeout(videoCaseTimeout(1, 1));
-    // An exhausted pool is a MIGRATION state, not a failure — the named test
-    // above is what goes red for it. Skipping here keeps the failure in one
-    // place instead of two.
+    // A pool with no pick reds once, in the health test above; skipping here
+    // keeps the failure in one place instead of two.
     test.skip(
       VIDEO_SINK_FIXTURE.kind !== 'ok' || SINK_IN_PORT === null,
       VIDEO_SINK_FIXTURE.why,
@@ -859,21 +832,19 @@ test.describe('?shell=1 video visibility', () => {
       ],
     );
 
-    // ⚠ THE SUBJECT MUST STILL BE A PLACEHOLDER, ASSERTED ON THE PAGE. The
-    // fixture derives an UN-PROMOTED type from the golden, but the golden is a
-    // committed file and `STRICT_FACES` is code — if they ever disagree, every
-    // assertion below would silently move to the faced host and this case would
-    // duplicate `b1` while reading green. This is the one leg that cannot be
-    // replaced by a stronger derivation, because it is the derivation's own
-    // negative control.
+    // ⚠ THE SUBJECT MUST ACTUALLY HAVE MOUNTED A TILE, ASSERTED ON THE PAGE.
+    // The fixture derives the type from the committed golden; this is the leg
+    // that checks the golden and the running app still agree about it, so a
+    // subject that silently failed to render cannot make the thumb assertions
+    // below vacuous.
     await expect(
-      page.locator(`.svelte-flow__node[data-id="g1"] [data-testid="module-shell-placeholder"]`),
-      `the derived subject '${SINK_TYPE}' must render a PLACEHOLDER tile — if it is faced, this ` +
-        `case is a second copy of b1 and the placeholder thumb host is no longer proven anywhere`,
+      page.locator(`.svelte-flow__node[data-id="g1"] [data-testid="module-shell"]`),
+      `the derived subject '${SINK_TYPE}' must render a lane tile — without one there is no ` +
+        'glyph slot for the live thumb, and every assertion below would pass on an empty node',
     ).toHaveCount(1);
 
-    // Each PLACEHOLDER tile's glyph slot is the LIVE THUMB, and the fake
-    // dashed-wave SVG is GONE for video modules.
+    // Each tile's glyph slot is the LIVE THUMB, and the fake dashed-wave SVG is
+    // GONE for video modules.
     //
     // ⚠ `b1` (BACKDRAFT) IS NOT ONE OF THEM because it is FACED, not because it
     // has no thumb — it has one again (#1785), asserted on the shell host a few
@@ -918,10 +889,10 @@ test.describe('?shell=1 video visibility', () => {
     // NOT carry a video thumb (asserted directly a few lines below); sweeping
     // every placeholder without asking the golden would demand one of it and
     // fail for a reason that is the OPPOSITE of the rule.
-    const placeholderHosts = (
+    const videoTileHosts = (
       await page.evaluate(() =>
         Array.from(
-          document.querySelectorAll('.svelte-flow__node [data-testid="module-shell-placeholder"]'),
+          document.querySelectorAll('.svelte-flow__node [data-testid="module-shell"]'),
         ).map((tile) => ({
           id: tile.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '',
           type: tile.getAttribute('data-shell-type') ?? '',
@@ -932,17 +903,17 @@ test.describe('?shell=1 video visibility', () => {
     // ⚠ MINIMUM-POPULATION GUARD. A derived loop over an empty set passes
     // vacuously, and this one derives from the DOM — so it must contain the
     // subject this case spawned for exactly this purpose before any of it
-    // means anything. (`g1`'s own placeholder-ness is asserted above; this
-    // asserts the DERIVATION found it, which is a different claim.)
+    // means anything. (`g1` mounting a tile is asserted above; this asserts the
+    // DERIVATION found it, which is a different claim.)
     expect(
-      placeholderHosts.map((h) => h.id),
-      `the derived placeholder population must include the spawned sink 'g1' (${SINK_TYPE}) — ` +
-        'without it this loop proves nothing about the placeholder thumb host',
+      videoTileHosts.map((h) => h.id),
+      `the derived video-tile population must include the spawned sink 'g1' (${SINK_TYPE}) — ` +
+        'without it this loop proves nothing about the thumb host',
     ).toContain('g1');
 
-    for (const { id, type } of placeholderHosts) {
-      const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`);
-      await expect(tile, `${id} (${type}) renders a placeholder tile`).toHaveCount(1);
+    for (const { id, type } of videoTileHosts) {
+      const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
+      await expect(tile, `${id} (${type}) renders a lane tile`).toHaveCount(1);
       await expect(tile.locator('[data-testid="video-tile-thumb"]'), `${id} (${type}) has the live thumb canvas`).toHaveCount(1);
       await expect(tile.locator('.tile-wave'), `${id} (${type}) fake wave glyph gone`).toHaveCount(0);
     }
@@ -967,8 +938,12 @@ test.describe('?shell=1 video visibility', () => {
     // to the ROW layout — the picture beside two cells, which is exactly what
     // its own `compact` tile has painted all along. The trade is one lane cell
     // (`mix`), and the dock renders every ranked control regardless.
+    // ⚠ b1 IS NOW ALSO A MEMBER OF THE LOOP ABOVE, and this stays anyway: the
+    // loop proves the population holds, this names the module the #1785 defect
+    // was reported on, so a regression says "backdraft lost its thumbnail"
+    // instead of "one of N tiles did".
     const b1Tile = page.locator('.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]');
-    await expect(b1Tile, 'b1 is a FACED tile, not a placeholder').toHaveCount(1);
+    await expect(b1Tile, 'b1 renders its lane tile').toHaveCount(1);
     await expect(
       b1Tile.locator('[data-testid="video-tile-thumb"]'),
       'a faced video module at the full lane tier paints its LIVE thumb — the picture outranks ranked cells (#1785)',

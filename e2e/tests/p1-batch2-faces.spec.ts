@@ -111,11 +111,6 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       // ── 1) LANE: the curated shell, NOT the un-migrated placeholder. ──
       const shell = laneNode.locator('[data-testid="module-shell"]');
       await expect(shell).toBeVisible();
-      await expect(
-        laneNode.locator('[data-testid="module-shell-placeholder"]'),
-        `${type} is in STRICT_FACES, so the bridge must swap it — a placeholder here means ` +
-          'the face was authored + promoted but never actually reached the lane',
-      ).toHaveCount(0);
       // The LEGACY CARD itself is gone from the lane — the shell replaced it,
       // it did not wrap it. (Scoped to the card ROOT, not `control-*`: the
       // shell's own curated cells carry the same `control-<paramId>` testids,

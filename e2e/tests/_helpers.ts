@@ -658,9 +658,7 @@ export const LANE_SHELL_TIER = `${MAIN_CANVAS} [data-shell-tier]`;
  * geometry read that follows races a tile that is not there yet. A COUNT taken
  * as a FLOOR (`not.toHaveCount(0)`) simply stops being able to fail.
  */
-export const LANE_TILES =
-  `${MAIN_CANVAS} [data-testid="module-shell-placeholder"], ` +
-  `${MAIN_CANVAS} [data-testid="module-shell"]`;
+export const LANE_TILES = `${MAIN_CANVAS} [data-testid="module-shell"]`;
 
 /**
  * Wait until every LANE tile reports LOD tier `tier`.

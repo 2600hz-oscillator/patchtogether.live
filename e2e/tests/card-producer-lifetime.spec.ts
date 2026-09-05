@@ -224,14 +224,13 @@ const SUBJECTS = cardProducerTypes().map((type) => {
   return {
     type,
     domain: mod.domain,
-    /** What the shell renders in the lane INSTEAD of the real card. DERIVED
-     *  from the manifest's own `strictFace`, never declared here (#1724): a
-     *  MIGRATED module gets `<ModuleShell>`, an un-migrated one the uniform
-     *  `<ModuleShellPlaceholder>`. Both are `needsHeadlessSourceMount` kinds, so
-     *  the claim below is the same either way — but hard-coding the placeholder
-     *  made the assertion silently un-satisfiable for the first migrated
-     *  producer to join this set, which is exactly what CUBE is. */
-    laneTestId: mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder',
+    /** The lane tile every producer renders. It used to be DERIVED from the
+     *  manifest's `strictFace` (#1724), because a faced producer and an un-faced
+     *  one painted different tiles and hard-coding one made the assertion
+     *  silently un-satisfiable for the first faced producer to join the set —
+     *  which is exactly what CUBE was. There is one tile now, so the derivation
+     *  is gone and the constant is honest. */
+    laneTestId: 'module-shell' as const,
     /** Every video-carrying OUTPUT port. Which of them actually carries the
      *  card-produced picture is DERIVED at runtime (a port that shows nothing
      *  even with the card mounted — SYNESTHESIA's per-band rasters with no
@@ -1270,7 +1269,7 @@ for (const type of nodeFrameProducerTypes()) {
     await expect(
       page.locator(
         `.svelte-flow__node[data-id="${nodeId}"] [data-testid="${
-          mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder'
+          'module-shell'
         }"]`,
       ),
     ).toHaveCount(1, { timeout: 20_000 });
@@ -1625,7 +1624,7 @@ for (const type of nodeVizSurfaceTypes()) {
     await expect(
       page.locator(
         `.svelte-flow__node[data-id="${nodeId}"] [data-testid="${
-          mod.strictFace === true ? 'module-shell' : 'module-shell-placeholder'
+          'module-shell'
         }"]`,
       ),
     ).toHaveCount(1, { timeout: 20_000 });

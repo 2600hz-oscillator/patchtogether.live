@@ -38,8 +38,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 import {
-  AUDIO_PLACEHOLDER_FIXTURE,
-  VIDEO_FIXTURE,
+  AUDIO_DOCK_FIXTURE,
   fixtureProblems,
   fixtureType,
 } from './_face-fixtures';
@@ -119,8 +118,8 @@ async function panTileTo(
 // test, in the suite that owns the fixture, red at the point of promotion.
 // (The DENIED map's artifact anchor is asserted once for BOTH domains, in
 // workflow-shell.spec.ts, where the audio half's gate lives.)
-test('the derived video legacy-fallback fixture is healthy', () => {
-  expect(fixtureProblems(VIDEO_FIXTURE), VIDEO_FIXTURE.why).toEqual([]);
+test('the derived audio dock fixture is healthy', () => {
+  expect(fixtureProblems(AUDIO_DOCK_FIXTURE), AUDIO_DOCK_FIXTURE.why).toEqual([]);
 });
 
 test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
@@ -128,22 +127,19 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // CLOSE; CLOSE closes it and flips back. Covers the migrated shell AND the
   // un-migrated placeholder (both route through the same PatchPanel rail).
   test('EXPAND toggles to CLOSE while expanded, and CLOSE closes the full-view', async ({ page }) => {
-    // When every audio module is promoted the un-migrated half of this case has
-    // no subject BY DESIGN — a NAMED skip, never a silent pass (#1864).
-    // ⚠ THE PLACEHOLDER FIXTURE (#2137): this leg toggles a pill, so it needs a
-    // module that renders a placeholder and nothing more. It used to share the
-    // operability leg's fixture and inherited its fader + audio-class
-    // requirements for no reason of its own.
-    test.skip(AUDIO_PLACEHOLDER_FIXTURE.kind === 'migration-complete', AUDIO_PLACEHOLDER_FIXTURE.why);
+    // ⚠ TWO TILES ARE THE POINT, and the SECOND ONE IS WHAT THE ASSERTION
+    // NEEDS — this leg proves the pill is a per-tile TOGGLE, so it has to watch
+    // one tile flip to CLOSE while the OTHER stays EXPAND. The pair used to be
+    // "a migrated one and an un-migrated one" because those were two render
+    // paths; there is one path now, so it is simply two modules, and the second
+    // is DERIVED rather than named so a future exclusion cannot rot it.
     await gotoWorkflow(page);
     await spawnPatch(page, [
-      { id: 'm1', type: 'vca', position: { x: 30, y: 40 } }, // migrated
-      // DERIVED, not named — a hard-coded un-migrated fixture rots as each P1
-      // wave promotes more modules (delay was consumed by batch 3).
-      { id: 'u1', type: fixtureType(AUDIO_PLACEHOLDER_FIXTURE), position: { x: 250, y: 40 } }, // un-migrated
+      { id: 'm1', type: 'vca', position: { x: 30, y: 40 } },
+      { id: 'u1', type: fixtureType(AUDIO_DOCK_FIXTURE), position: { x: 250, y: 40 } },
     ]);
     const shellTile = page.locator('.svelte-flow__node[data-id="m1"] [data-testid="module-shell"]');
-    const placeholderTile = page.locator('.svelte-flow__node[data-id="u1"] [data-testid="module-shell-placeholder"]');
+    const placeholderTile = page.locator('.svelte-flow__node[data-id="u1"] [data-testid="module-shell"]');
     await expect(shellTile).toBeVisible();
     await expect(placeholderTile).toBeVisible();
     await panTileTo(page, 'm1', { top: 90 });
@@ -182,36 +178,33 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
   // the 18 useStore()-at-init cards that crashed the old swap): A+B sit
   // SIDE-BY-SIDE.
   //
-  // ⚠ B IS DERIVED, NOT NAMED. It was hard-coded to `backdraft` until the first
-  // VIDEO face promoted it, at which point B rendered a curated face and the
-  // "placeholder is visible" assertion failed for a reason that is not a bug —
-  // the exact rot the AUDIO fixture already existed to prevent one domain over.
-  // Its first replacement was a four-deep hand-picked list that the video face
-  // cohort then spent in full (#1864); `VIDEO_FIXTURE` derives the CANDIDATE
-  // SET from the contract golden — un-promoted + domain=video + a card
-  // component that resolves — so a promotion cannot empty it.
+  // ⚠ B IS A VIDEO MODULE ON PURPOSE — the split has to hold across DOMAINS,
+  // which is what makes this more than a repeat of the two-audio-tile case. It
+  // was hard-coded to `backdraft`, then to a four-deep hand-picked list, then
+  // to a derived pool of un-faced video modules; each of those rotted as the
+  // video faces landed. It is named again now, and safely, because the property
+  // it needed — "renders something other than what A renders" — is no longer a
+  // property of any module: both panes are faceplates, and `backdraft` is
+  // simply a video module with one.
   // Then migrated C: it replaces the least-recently-opened pane (A). ESC
   // closes the whole view. Every step is a REAL click on the lane pill; zero
   // pageerrors allowed (the crash class stays shut across pane mounts).
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
   // NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
-  // LOST WHILE PARKED: the owner split extension: two side-by-side dock panes with LRU replacement, asserted for BOTH migrated faces and legacy cards — the shell-parity leg is what stops a fix landing for one shell only.
+  // LOST WHILE PARKED: the owner split extension — two side-by-side dock panes with LRU replacement, asserted across DOMAINS (an audio pane beside a video one).
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('expanding B while A is open SPLITS the dock; a third replaces the oldest — migrated AND legacy cards', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    // The legacy half loses its subject BY DESIGN once every video module is
-    // promoted — a NAMED skip carrying the reason, never a silent pass (#1864).
-    test.skip(VIDEO_FIXTURE.kind === 'migration-complete', VIDEO_FIXTURE.why);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await gotoWorkflow(page);
     await spawnPatch(page, [
       { id: 'a1', type: 'tidyVco', position: { x: 30, y: 40 } }, // migrated
-      { id: 'b1', type: fixtureType(VIDEO_FIXTURE), position: { x: 250, y: 40 } }, // un-migrated legacy (video)
+      { id: 'b1', type: 'backdraft', position: { x: 250, y: 40 } }, // video domain
       { id: 'c1', type: 'vca', position: { x: 470, y: 40 } }, // migrated
     ]);
     const tileA = page.locator('.svelte-flow__node[data-id="a1"] [data-testid="module-shell"]');
-    const tileB = page.locator('.svelte-flow__node[data-id="b1"] [data-testid="module-shell-placeholder"]');
+    const tileB = page.locator('.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]');
     const tileC = page.locator('.svelte-flow__node[data-id="c1"] [data-testid="module-shell"]');
     await expect(tileA).toBeVisible();
     await expect(tileB).toBeVisible();
@@ -226,13 +219,12 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await expect(drawer).toHaveAttribute('data-pane-count', '1');
     await expect(paneOf('a1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
 
-    // Expand B (un-migrated) while A is open → SIDE-BY-SIDE: A keeps its
-    // shell pane, B's verbatim LEGACY card joins in its own pane; both pills
-    // read CLOSE.
+    // Expand B (video) while A is open → SIDE-BY-SIDE: both panes hold their
+    // own dock faceplate; both pills read CLOSE.
     await tileB.getByTestId('shell-open-dock').click();
     await expect(drawer).toHaveAttribute('data-pane-count', '2');
     await expect(paneOf('a1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
-    await expect(paneOf('b1').locator('[data-dock-card="b1"]')).toBeVisible();
+    await expect(paneOf('b1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
     await expect(tileA.getByTestId('shell-open-dock')).toContainText('CLOSE');
     await expect(tileB.getByTestId('shell-open-dock')).toContainText('CLOSE');
 
@@ -241,7 +233,7 @@ test.describe('P1 dock/expand UX fixes (?shell=1)', () => {
     await tileC.getByTestId('shell-open-dock').click();
     await expect(drawer).toHaveAttribute('data-pane-count', '2');
     await expect(paneOf('a1')).toHaveCount(0);
-    await expect(paneOf('b1').locator('[data-dock-card="b1"]')).toBeVisible();
+    await expect(paneOf('b1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
     await expect(paneOf('c1').locator('[data-testid="module-shell"][data-shell-tier="dock"]')).toBeVisible();
     await expect(tileA.getByTestId('shell-open-dock')).toContainText('EXPAND');
     await expect(tileC.getByTestId('shell-open-dock')).toContainText('CLOSE');

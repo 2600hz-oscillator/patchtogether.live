@@ -101,7 +101,6 @@ test.describe('P1 batch-1 curated faces (?shell=1)', () => {
     //    reveal parks the zoom at 0.6 → the LOD 'full' band.
     await expect(shell).toBeVisible();
     await expect(shell).toHaveAttribute('data-shell-type', 'adsr');
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
     // FULL tier: adsr's 4-stage face outgrows the row → the 3-col PLATE grid.
     //

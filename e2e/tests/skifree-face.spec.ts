@@ -268,10 +268,6 @@ test.describe('SKIFREE — the promoted FACE, on the default shell', () => {
     );
     await expect(tile, 'a promoted module paints the curated shell, not the placeholder')
       .toBeVisible();
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`),
-      'the placeholder must be gone — promotion is what swaps them',
-    ).toHaveCount(0);
 
     const canvas = tile.getByTestId('skifree-tile-canvas');
     await expect(canvas, 'the tileBody is the ONLY thing on this tile').toBeVisible();

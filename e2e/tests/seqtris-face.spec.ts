@@ -266,10 +266,6 @@ test.describe('SEQTRIS — the promoted FACE, on the default shell', () => {
     const tile = shellTile(page);
     await expect(tile, 'a promoted module paints the curated shell, not the placeholder')
       .toBeVisible();
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`),
-      'the placeholder must be gone — promotion is what swaps them',
-    ).toHaveCount(0);
 
     const well = tile.getByTestId('seqtris-tile-well');
     await expect(well, 'the tileBody must paint the well').toBeVisible();

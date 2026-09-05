@@ -462,25 +462,23 @@ export const SKIP_BUDGET = [
   // sentence ("THE FITNESS PREDICATE ACCEPTS NOTHING…") and it is a FIXTURE
   // DEFECT — a blind instrument, which the fixture-health tests already red on.
   // A row carrying it SHOULD be a violation.
+  // ⚠ THREE OF THE FOUR FIXTURES THIS ROW COVERED ARE DELETED, and the row is
+  // narrowed to the one live guard rather than left broad. `AUDIO_PLACEHOLDER`,
+  // `AUDIO_OPERABLE` and `VIDEO` each meant "an un-faced module whose card does
+  // X"; both halves of that are gone, so their guards went with them and this
+  // file's direction-A check is what caught the stale alternatives.
   {
-    specs: [
-      'workflow-dock-ux.spec.ts',
-      'workflow-shell-video.spec.ts',
-      'workflow-shell.spec.ts',
-    ],
-    reason:
-      /HAS NO SUBJECT LEFT, BY DESIGN|AUDIO_PLACEHOLDER_FIXTURE\.why|AUDIO_OPERABLE_FIXTURE\.why|VIDEO_FIXTURE\.why|VIDEO_SINK_FIXTURE\.why/,
+    specs: ['workflow-shell-video.spec.ts'],
+    reason: /VIDEO_SINK_FIXTURE\.why/,
     lanes: ['e2e'],
     homeLane: 'e2e',
     why:
-      'DYNAMIC guards over the four derived legacy-fallback fixtures (AUDIO_PLACEHOLDER, '
-      + 'AUDIO_OPERABLE, VIDEO, VIDEO_SINK in e2e/tests/_face-fixtures.ts). Each is resolved from the '
-      + 'contract golden × STRICT_FACES, and an exhausted pool is the END STATE OF THE FACE '
-      + 'PROGRAMME — every module that could host the un-migrated case is faced — not a failure. '
-      + 'The named fixture-health test in each file is what goes red for a BLIND predicate, so these '
-      + 'cases skip to keep one failure in one place instead of two. Tolerated but surfaced: when a '
-      + 'row appears here, the case has lost its subject and should be DELETED with the placeholder '
-      + 'tile, never re-pointed at a faced module.',
+      'A DYNAMIC guard over VIDEO_SINK_FIXTURE (e2e/tests/_face-fixtures.ts), resolved from the '
+      + 'contract golden. The live-thumb case skips when the pool resolves no pick, so the failure '
+      + 'stays in ONE place — the named fixture-health test in the same file, which reds for a '
+      + 'BLIND predicate — instead of two. A row appearing here means the video-sink pool could not '
+      + 'supply a subject: fix the predicate or the deny list, and never re-point the case at a '
+      + 'module that does not carry a video input and a video output.',
   },
   // The same shape for an in-SPEC candidate derivation rather than one in
   // `_face-fixtures.ts`, so its `why` literals are in the spec source and one
@@ -510,54 +508,18 @@ export const SKIP_BUDGET = [
       + 'The BLIND-instrument arm of the derivation is a separate RED assertion in the same body, '
       + 'so an empty candidate scan cannot hide behind this entry.',
   },
-  // ⚠ THE AUDIO TWIN OF THE ENTRY ABOVE, AND IT DIFFERS IN THE ONE WAY THAT
-  // MATTERS: `VIDEO_SINK_FIXTURE`'s guard does not fire on CI today, so its
-  // entry only PERMITS a row. This one fires on every audited run from the
-  // moment `modtris` was promoted (2026-08-31) — modtris was the last member of
-  // the derived `AUDIO_OPERABLE_FIXTURE` pool, `audioIn` (the only other
-  // candidate) is DENIED for getUserMedia, so `deriveFixture` returns
-  // `migration-complete` and the guard skips by name.
-  //
-  // ⚠ THE REGEX IS AN ALTERNATION ON PURPOSE, and it is the lesson of the
-  // re-aimed entry above applied in advance. Direction B claims a DYNAMIC site
-  // by matching this pattern against the spec's whole SOURCE TEXT, so a pattern
-  // that only spelled the realized prose would be claiming the site through a
-  // string that happens to appear in the file — the incidental claim that broke
-  // when its unrelated neighbour was deleted. The first arm names the guard's
-  // own reason EXPRESSION (`workflow-shell.spec.ts:371`), so the source claim
-  // cannot drift onto anything else and goes stale LOUDLY if the guard is
-  // removed. The second arm is the realized sentence `deriveFixture` emits,
-  // which is what the LANE AUDIT actually matches at runtime. Neither arm alone
-  // covers both directions.
-  //
-  // ⚠ AND THIS IS NOT A HOLE TO BE PLUGGED LATER. `deriveFixture`'s own
-  // `migration-complete` text offers "re-point it at a purpose-built fixture
-  // module that is deliberately never promoted"; the owner ruled that branch out
-  // on 2026-08-31 — every module gets migrated, `toybox` and DOOM included, and
-  // the legacy-card path then goes away entirely. So the pool is deliberately
-  // NOT re-pointed at a durable un-migrated subject and `mountsAFader` is NOT
-  // widened: this leg tests the placeholder/legacy-card machinery and is deleted
-  // along with it in LEG-08/09, at which point this entry goes stale and
-  // direction A turns it RED, which is the correct way for it to end.
-  {
-    specs: ['workflow-shell.spec.ts'],
-    reason: /AUDIO_OPERABLE_FIXTURE\.why|LEGACY-FALLBACK CASE HAS NO SUBJECT LEFT, BY DESIGN/,
-    lanes: ['e2e'],
-    homeLane: 'e2e',
-    why:
-      'A DYNAMIC guard on an EXHAUSTED derived fixture pool, and the exhaustion is the DESIGNED end '
-      + 'state rather than a failure: "un-migrated module -> placeholder in lane + legacy card '
-      + 'operable in the dock" needs a module that is NOT in STRICT_FACES, and the last audio '
-      + 'candidate that rendered a placeholder tile and mounted a <NeonFader> was promoted. What is '
-      + 'LOST meanwhile is real and worth naming rather than filing under bookkeeping: this was the '
-      + 'ONE leg in the suite that DROVE a legacy card control (a `.fader-wrap .track` drag) inside '
-      + 'the dock full view instead of merely looking at a tile, and it was strengthened once '
-      + 'because of this very module (the #2137 `scrollIntoViewIfNeeded` fix, added when the '
-      + 'derivation first offered modtris and its faders sat below the dock fold). The named '
-      + 'fixture-health test at the top of the same file still runs and still passes — '
-      + '`fixtureProblems` deliberately does not count `migration-complete` as a problem — so the '
-      + 'DERIVATION is still gated even though this case has nothing left to derive.',
-  },
+  /* ⚠ A ROW STOOD HERE FOR `AUDIO_OPERABLE_FIXTURE`, AND IT ENDED THE WAY IT
+   * SAID IT WOULD. Its own `why` read: "this leg tests the placeholder/legacy-
+   * card machinery and is deleted along with it in LEG-08/09, at which point
+   * this entry goes stale and direction A turns it RED, which is the correct
+   * way for it to end." That is exactly what happened — the fixture is deleted
+   * and direction A caught the row.
+   *
+   * The coverage it named as at risk is NOT lost: it called itself "the ONE leg
+   * in the suite that DROVE a control inside the dock full view instead of
+   * merely looking at a tile". That leg survives in `workflow-shell.spec.ts`,
+   * rewritten to drag the FACEPLATE's own first ranked control — and the #2137
+   * `scrollIntoViewIfNeeded` repair it mentions was carried across with it. */
   {
     specs: ['auth-routes.spec.ts'],
     reason: /live-deploy only/,

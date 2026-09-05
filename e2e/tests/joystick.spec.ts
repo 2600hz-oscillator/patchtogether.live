@@ -111,7 +111,6 @@ test.describe('JOYSTICK — the FACE (default shell)', () => {
       tile.locator('[data-testid="module-shell"]'),
       'the promoted face renders a ModuleShell tile, not the placeholder',
     ).toBeVisible();
-    await expect(tile.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
     // The two-ordinary-cells shape, at the tier the player is looking at:
     // rank 1 (X) paints at every tier, so it is the tier-independent claim.

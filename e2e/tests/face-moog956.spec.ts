@@ -140,7 +140,6 @@ test.describe('MOOG 956 RIBBON — the FACE (default shell)', () => {
       tile.locator('[data-testid="module-shell"]'),
       'the promoted face renders a ModuleShell tile, not the placeholder',
     ).toBeVisible();
-    await expect(tile.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
     // Rank 1 paints at every tier, so it is the tier-independent claim (the
     // ptzcam lesson — never assert a specific tier's cell COUNT from the
