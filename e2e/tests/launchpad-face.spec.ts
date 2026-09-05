@@ -10,9 +10,9 @@
 // ONE file: the card itself. Every `data-testid` that card emits appeared
 // NOWHERE else in the repository. Meanwhile the library beneath it is one of
 // the most heavily tested in the tree (ten unit files, ~6,300 lines) and it has
-// five e2e specs of its own — every one of which takes the `rack` fixture,
-// i.e. `?shell=legacy`, and drives `__launchpadTestInstall` / `__launchpadSim`
-// (installed by `Canvas.svelte`, not by the card).
+// five e2e specs of its own — every one of which takes the `rack` fixture and
+// drives `__launchpadTestInstall` / `__launchpadSim` (installed by
+// `Canvas.svelte`, never by a module surface).
 //
 // So the coverage is real, extensive, and ORTHOGONAL to the surface. Two facts
 // follow and they pull in opposite directions:

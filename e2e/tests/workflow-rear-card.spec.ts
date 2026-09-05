@@ -79,7 +79,7 @@ async function gotoWorkflow(page: Page): Promise<void> {
   // CI-validated rather than guessed.
   //
   // ROOT CAUSE of the cold-server flake this replaces: SvelteKit dev compiles
-  // /rack?shell=legacy&seed=none ON DEMAND. The very FIRST navigation of a run — a fresh
+  // /rack ON DEMAND. The very FIRST navigation of a run — a fresh
   // `task e2e:serve`, or a cleared node_modules/.vite — pays that compile
   // before the topbar can mount, blowing the 5s expect default; every later
   // load hits the warm module graph, which is why ONLY the first invocation

@@ -1,7 +1,7 @@
 // e2e/tests/scratch-persist-video-live.spec.ts
 //
 // REGRESSION (fix/video-engine-persist-reconcile) — the owner-reported bug:
-// returning to a persisted rack (e.g. a PR-preview rack loaded from the /rack?shell=legacy&seed=none
+// returning to a persisted rack (e.g. a PR-preview rack loaded from the /rack?seed=none
 // scratch IndexedDB replica) restores the module GRAPH, but the VIDEO CONTENT
 // is DEAD (black/frozen); re-adding a source, or DELETING one, brings the video
 // back. Root cause: the PatchEngine + auto-reconciler boot lazily via Canvas's
@@ -12,7 +12,7 @@
 // seeded) graph.
 //
 // This spec drives the owner's exact repro through the REAL persistence path:
-// seed TWO acidwarp -> videoOut chains on /rack?shell=legacy&seed=none, flush to IndexedDB, RELOAD (a
+// seed TWO acidwarp -> videoOut chains on /rack?seed=none, flush to IndexedDB, RELOAD (a
 // full new JS context), then assert BOTH restored chains are LIVE (their video
 // nodes advance frames) WITHOUT any manual add/delete. Two chains cover the
 // second symptom directly: on a fresh load ALL restored video is live, so the
@@ -24,7 +24,7 @@
 // frames (poll for +2), so this is light despite driving the REAL (un-paused)
 // loop; acidwarp is a cheap 320x240 procedural plasma source.
 //
-// Runs on /rack?shell=legacy&seed=none (no DB / no relay — the scratch replica is pure client
+// Runs on /rack?seed=none (no DB / no relay — the scratch replica is pure client
 // IndexedDB). Gated on IndexedDB availability so a hardened/private environment
 // skips instead of failing.
 

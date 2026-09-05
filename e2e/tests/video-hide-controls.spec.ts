@@ -2,10 +2,10 @@
 //
 // MONITOR MODE + the PatchPanel corner-trigger cascade, on the DEFAULT shell.
 //
-// ⚠ HISTORY (#2009): this file used to carry a parameterised LEGACY suite
-// driving `<type>-card` / `-hide-toggle` / `-resize-handle` on
-// `?shell=legacy`, plus a videoOut CARD-resize regression pair, with the FACED
-// monitor-mode leg below added precisely because promotion could remove the
+// ⚠ HISTORY (#2009): this file used to carry a parameterised suite driving
+// `<type>-card` / `-hide-toggle` / `-resize-handle` on the PRE-PROMOTION
+// renderer, plus a videoOut resize regression pair, with the FACED monitor-mode
+// leg below added precisely because promotion could remove the
 // gesture from the shipping surface while the legacy suite stayed green ("the
 // gate whose precondition is the defect"). S2 removes the legacy lane, and
 // with it the card-only halves died:

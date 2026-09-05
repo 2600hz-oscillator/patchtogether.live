@@ -29,11 +29,9 @@
 //
 // `e2e/vrt/workflow-audio-io-composite.spec.ts` is the scene written for this
 // exact surface, for the owner-reported class *"this should have been caught
-// with vrt analysis"*. It drives `/rack?shell=legacy`. Under that flag
-// `shellFaces` is false, so `dockRailRendersFace` is false **even with the prop
-// threaded** — that scene can never show a face in this panel, before or after
-// the fix. It is not re-pointed here: its legacy-arm assertion is the escape
-// hatch's only coverage and re-pointing it would delete that.
+// with vrt analysis"*. It was written against the PRE-INVERSION renderer, under
+// which the panel's own rule was false **even with the prop threaded** — so
+// that scene could never show a face in this panel, before or after the fix.
 //
 // `legacy-fallback.ts:200-204` already records this exact shape for the
 // NEIGHBOURING surface — *"the three shipped drawer specs cannot see this
@@ -66,14 +64,12 @@
 //
 // ── WHAT THIS SPEC STRUCTURALLY CANNOT SEE ────────────────────────────────
 //
-//   * PIXELS. The only baseline over this panel is the `?shell=legacy` one
-//     named above; there is deliberately no default-shell capture, because a
+//   * PIXELS. The only baseline over this panel is the one named above; there
+//     is deliberately no shipping-shell capture, because a
 //     page-level shot of `/rack` includes the seeded video zone painting live
 //     faceplate glyphs (the enumerated VRT-entropy class), and `?seed=none` —
 //     which would make it deterministic — suppresses the pinned ensure at
 //     `Canvas.svelte`, so the panel would have no occupants to photograph.
-//   * The `?shell=legacy` arm — that is the composite VRT scene and
-//     `audio-in.spec.ts`.
 //   * AUDIO IN's `getUserMedia` lifecycle. This file never grants, denies or
 //     asserts a capture; it only asserts which COMPONENT is mounted, which is
 //     capability-independent by construction.
@@ -271,10 +267,10 @@ test.describe('workflow · the 🎧 audio-I/O panel honours the migration rule (
     // outside `DockCardHost`, derived from the live def through the same
     // `collapseStereoPorts` the PatchPanel uses — so promotion must not touch
     // them in either direction. The shipped assertion for this
-    // (`audio-in.spec.ts`, "the pinned AUDIO OUT exposes a source picker") is
-    // on `/rack?shell=legacy`, i.e. an arm promotion never moves. It proves
-    // nothing about the surface this PR changes; this is that same claim on the
-    // arm that does move.
+    // (`audio-in.spec.ts`, "the pinned AUDIO OUT exposes a source picker") was
+    // written against the PRE-PROMOTION renderer, i.e. an arm promotion never
+    // moves. It proves nothing about the surface this PR changes; this is that
+    // same claim on the arm that does move.
     const errors = collectErrors(page);
     await gotoDefaultShell(page);
     await waitForPins(page, [...OCCUPANTS.map((o) => o.nodeId)]);

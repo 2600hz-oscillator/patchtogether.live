@@ -4,12 +4,12 @@
 //
 // ── ⚠ WHY THIS FILE EXISTS, AND WHY `control-surface.spec.ts` IS NOT ENOUGH ──
 //
-// All three tests in `control-surface.spec.ts` boot `/rack?shell=legacy`. That
-// was CORRECT while this module was a `NON_SHELL_LANE_TYPES` snowflake whose
-// verbatim card WAS the default lane render, and it stays correct as coverage
-// of that card — `?shell=legacy` still renders it. It stops being sufficient
-// the moment the module is PROMOTED: those tests keep passing against a
-// surface no player meets, while the face's lock, board, proxies, rename and
+// The three tests in `control-surface.spec.ts` were written against the
+// PRE-PROMOTION surface. That was CORRECT while this module was a
+// `NON_SHELL_LANE_TYPES` snowflake whose own instrument WAS the lane render. It
+// stops being sufficient the moment the module is PROMOTED: those tests keep
+// passing against a surface no player meets, while the face's lock, board,
+// proxies, rename and
 // — above all — the PRUNE have zero coverage. Green, and blind.
 //
 // ── THE PRUNE LEG IS THE POINT OF THIS FILE ─────────────────────────────────

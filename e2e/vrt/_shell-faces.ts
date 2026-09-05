@@ -670,15 +670,13 @@ export const FACES = [
   // so no key leaves a band and neither can be emptied. Three cells, one packed
   // dock row.
   //
-  // ⚠ THE ONE MEMBER OF ITS COHORT IN `STRICT_VRT_MODULES` — it has a COMMITTED
-  // legacy-card baseline, unlike moog911/moogCp3/moog921Vco which are exempt.
-  // That card baseline is NOT expected to move: `vrt.spec.ts` navigates to
-  // `/rack?shell=legacy`, so promotion does not change what it captures, and the
-  // `options[]` roster this face adds is read by the SHELL — the card builds its
-  // own mode name from `MOOG911A_MODE_NAMES` and is untouched. Verified by
-  // capturing the card scene on this branch and against `main` on the same
-  // machine and diffing the two actuals, which is the only same-platform
-  // comparison a local run can honestly make.
+  // ⚠ THE ONE MEMBER OF ITS COHORT THAT ONCE HAD A COMMITTED LANE BASELINE,
+  // unlike moog911/moogCp3/moog921Vco which were exempt. It did NOT move on
+  // promotion: that scene captured the module's own pre-promotion surface,
+  // which builds its mode name from `MOOG911A_MODE_NAMES` and never reads the
+  // `options[]` roster this face adds. Verified at the time by diffing two
+  // local actuals, the only same-platform comparison a local run can honestly
+  // make. (Scene and baseline were both deleted in S3.)
   //
   // PIXEL-DETERMINISTIC: the module emits nothing until a trigger arrives (its
   // factory's only source is a ConstantSource pinned at 0), `glyph: 'none'` is
@@ -3959,10 +3957,9 @@ export const FACES = [
     // board through the real assign path), but installing that in the VRT
     // harness is a change to the harness rather than to this module, and it is
     // the boundary `gamepad` and `midiclock` both drew. The filled surface is
-    // covered by `e2e/tests/electra-control.spec.ts` (the card, verbatim, under
-    // `?shell=legacy`), by `e2e/tests/workflow-drawer-face.spec.ts` (this body,
-    // in the pinned `e` tray, on the DEFAULT shell) and by
-    // `electracontrol-face-model.test.ts`.
+    // covered by `e2e/tests/electra-control.spec.ts`, by
+    // `e2e/tests/workflow-drawer-face.spec.ts` (this body, in the pinned `e`
+    // tray) and by `electracontrol-face-model.test.ts`.
     //
     // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
     // canvas, no engine node — so `hasVideoSurface` is false and the AUDIO boot
@@ -4011,9 +4008,8 @@ export const FACES = [
     // bound board through the real Send-to path), but installing that in the
     // VRT harness is a harness change, the boundary gamepad / midiclock /
     // electraControl all drew. The bound surface is covered by
-    // `e2e/tests/control-surface.spec.ts` (the card, verbatim, under
-    // `?shell=legacy`), by `e2e/tests/controlsurface-face.spec.ts` (the board
-    // body and tile, on the DEFAULT shell) and by
+    // `e2e/tests/control-surface.spec.ts`, by
+    // `e2e/tests/controlsurface-face.spec.ts` (the board body and tile) and by
     // `controlsurface-face-model.test.ts`.
     //
     // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
@@ -4474,11 +4470,7 @@ export const FACES = [
     // nothing to diverge from. The DIVERGED state is a workflow-lane condition
     // this harness does not construct, and it is asserted in
     // `midi-out-buddy-status-model.test.ts` (both the boolean and the sentence)
-    // plus `workflow-channel-columns.spec.ts` on the legacy card, which
-    // survives under `?shell=legacy`.
-    //
-    // ⚠ ITS `EXEMPT_FROM_VRT` CARD ENTRY IS ALSO LEFT STANDING, for the reason
-    // the sibling entry gives.
+    // plus `workflow-channel-columns.spec.ts`.
     //
     // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`,
     // and no canvas anywhere on the surface. The lamps change only when
@@ -4518,10 +4510,10 @@ export const FACES = [
   //     `if (!source.trim()) return`, so an empty body never fires and the lamp
   //     is dark in every frame.
   //
-  // The CARD exemptions STAY. They are about `?shell=legacy`, where the card
-  // paints its own live status line, and this is the rings / attenumix / es9
-  // precedent: a face is baselined while its legacy card is not, on evidence
-  // that belongs to the surface being captured.
+  // ⚠ THE LANE EXEMPTIONS THAT STOOD BESIDE THIS ENTRY ARE GONE WITH THEIR
+  // SCENES (S3). They were about a second renderer painting its own live status
+  // line — the rings / attenumix / es9 precedent, where a face is baselined on
+  // evidence that belongs to the surface being captured.
   {
     type: 'clockedRunner',
     // ONE band: the single DIV selector cell. `params: []`, so nothing else
@@ -5899,9 +5891,8 @@ export const FACES = [
   // LOADED player. Launched pads, drawn notes, armed lanes, a counting scene
   // and the automation lamps are all invisible to it — which is most of the
   // module's subject. That surface is covered by `face-clipplayer.spec.ts`
-  // (which drives the real face through the real dock), by the eighteen
-  // existing clipplayer specs under `?shell=legacy`, and by
-  // `clipplayer-face-model.test.ts`.
+  // (which drives the real face through the real dock), by the eighteen other
+  // clipplayer specs, and by `clipplayer-face-model.test.ts`.
   {
     type: 'clipplayer',
     // FOUR bands: session (the launch grid + the scene repeats its rows are),

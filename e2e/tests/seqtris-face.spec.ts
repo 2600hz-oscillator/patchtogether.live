@@ -8,13 +8,12 @@
 // `e2e/tests/seqtris.spec.ts` is a good file — it is the AGENTS.md boundary-8
 // chain, five tests running simulated Launchpad → the app's own CONNECT click →
 // bindUnit → onKey → the pure core → PIECE → a real DX7 → SCOPE RMS, with a
-// full-window negative control. It runs on the `rack` FIXTURE, which is
-// `?shell=legacy` BY CONSTRUCTION, so every one of those five tests keeps
+// full-window negative control. It ran on the `rack` FIXTURE, which was the
+// PRE-INVERSION renderer BY CONSTRUCTION, so every one of those five tests kept
 // passing after promotion WITHOUT EVER TOUCHING THE NEW SURFACE. That is the
 // `e2e-rack-fixture-hides-shell-parity` finding in its exact shape, and it is
-// why those five are left alone (they are also the legacy card's own gate,
-// which must keep working while `?shell=legacy` ships) and why this file is the
-// default-shell half rather than a re-pointing of them.
+// why those five were left alone and why this file is the shipping-shell half
+// rather than a re-pointing of them.
 //
 // ── ⚠ AND THE BLIND SPOT IS UNUSUALLY WIDE HERE ────────────────────────────
 //
@@ -122,9 +121,7 @@ async function readState(page: Page): Promise<SeqtrisState> {
   }, NODE);
 }
 
-/** The shipping shell. ⚠ NOT `?shell=legacy` and NOT the `rack` fixture — see
- *  the header; that fixture is the reason the existing suite cannot see any of
- *  this. */
+/** The shipping shell, and NOT the shared `rack` fixture — see the header. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });

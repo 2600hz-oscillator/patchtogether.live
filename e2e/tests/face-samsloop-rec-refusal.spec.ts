@@ -47,7 +47,7 @@ const SL = 'f-sl-refuse';
 
 test.describe.configure({ mode: 'parallel' });
 
-/** The DEFAULT shell (no `?shell=legacy`) — this file's whole subject. */
+/** The shipping shell — this file's whole subject. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });

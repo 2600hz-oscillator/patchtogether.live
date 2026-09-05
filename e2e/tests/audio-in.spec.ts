@@ -539,13 +539,13 @@ test.describe('AUDIO OUT device dropdown', () => {
 //
 // ── WHY A NEW FILE, WHICH IS THE FINDING ───────────────────────────────────
 //
-// At promotion time every existing AUDIO IN spec drove `?shell=legacy`:
-// `audio-in.spec.ts` booted `/rack?shell=legacy&seed=none` for all five of its
-// tests, and the 🎧 panel's own VRT scene (`workflow-audio-io-composite`) did
-// the same. (S2 has since re-pointed the describes above at the default shell;
-// this describe was the face arm from the start.) Under that flag
-// `shellFaces` is false, `laneRenderKind` returns `'legacy'` BEFORE `migrated`
-// is ever read, and the legacy card renders — so the whole of that coverage
+// At promotion time every existing AUDIO IN spec drove the PRE-PROMOTION
+// surface: all five tests in this file, and the 🎧 panel's own VRT scene
+// (`workflow-audio-io-composite`), booted a renderer that painted the module's
+// old instrument whatever its migration state was. (S2 has since re-pointed the
+// describes above at the shipping shell; this describe was the face arm from
+// the start.) The lane decision short-circuited before it ever read the
+// promotion — so the whole of that coverage
 // stays green after promotion while covering a surface no player meets. A green
 // legacy suite is not evidence about a face.
 //

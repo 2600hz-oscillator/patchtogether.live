@@ -4,10 +4,10 @@
 //
 // ── ⚠ WHY THIS FILE EXISTS, AND WHY `gamepad.spec.ts` IS NOT ENOUGH ─────────
 //
-// All eighteen tests in `gamepad.spec.ts` ride the `rack` fixture, which is
-// `/rack?shell=legacy&seed=none` by construction. That was CORRECT while this
-// module rendered its legacy card in the lane, and it stays correct as coverage
-// OF THAT CARD — the card still ships and `?shell=legacy` still renders it.
+// All eighteen tests in `gamepad.spec.ts` ride the `rack` fixture, which was
+// the PRE-INVERSION renderer by construction. That was CORRECT while this
+// module painted its own instrument in the lane, and it stayed correct as
+// coverage OF THAT SURFACE.
 //
 // It stops being sufficient the moment the module is PROMOTED, and the failure
 // mode is the one that ships silently: those eighteen tests keep passing against

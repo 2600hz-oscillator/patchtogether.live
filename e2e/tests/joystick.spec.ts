@@ -14,8 +14,8 @@
 // owner's two-ordinary-cells fallback: the lane tile and the dock bands paint
 // `pos_x`/`pos_y` as two plain knob cells, and the real pad is the extension's
 // `fullViewBody` at the head of the dock (`JoystickPadBody.svelte`). The
-// FACE legs below are the promotion's behavioural evidence — an existing
-// green `?shell=legacy` leg is NEVER evidence about a face — and they drive
+// FACE legs below are the promotion's behavioural evidence — a green leg on the
+// PRE-PROMOTION surface is NEVER evidence about a face — and they drive
 // the same #1963 drag-and-release contract through the shipping surface.
 //
 // ⚠ THE LEGACY-CARD ARM OF THIS FILE WAS FOLDED by the S2 legacy-removal

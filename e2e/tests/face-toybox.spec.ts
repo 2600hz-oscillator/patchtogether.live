@@ -9,11 +9,11 @@
 // spec named `toybox-face.spec.ts` would therefore be green forever without
 // executing once. Checked against that list before writing, not assumed.
 //
-// ⚠ WHY THIS FILE EXISTS ALONGSIDE THE TWENTY `?shell=legacy` TOYBOX SPECS.
-// Every one of those boots the LEGACY card, which is exactly the surface
-// promotion does not change — so all twenty stay green and all twenty stop
-// saying anything about what a player now meets. This spec boots the DEFAULT
-// shell, where `ToyboxCard.svelte` is mounted NOWHERE (toybox is in none of
+// ⚠ WHY THIS FILE EXISTS ALONGSIDE THE TWENTY EXISTING TOYBOX SPECS. Every one
+// of those was written against the PRE-PROMOTION surface, which is exactly the
+// one promotion does not change — so all twenty stay green and all twenty stop
+// saying anything about what a player now meets. This spec boots the shipping
+// shell, where that surface is mounted NOWHERE (toybox is in none of
 // DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES / HEADLESS_MOUNT_LANE_TYPES,
 // so there is no `<HeadlessSourceHost>` either), and asserts the console is
 // reachable, that it still drives the engine, and that the SCREEN switch
@@ -43,8 +43,7 @@ const OBSERVE_MS = 8_000;
 const laneNode = (nodeId: string) => `${MAIN_CANVAS} .svelte-flow__node[data-id="${nodeId}"]`;
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The twenty `?shell=legacy` toybox specs
-  // cover the surface this promotion leaves alone.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await canvasPane(page).waitFor({ state: 'visible' });

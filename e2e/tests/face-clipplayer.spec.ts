@@ -49,12 +49,12 @@
 //     with both surfaces in frame, so the defect WAS the baseline. Only a
 //     NEGATIVE assertion on the live faceplate can see it, and it has to run in
 //     both directions — either half alone passes on a face that lost a surface.
-//  6. (RETIRED WITH THE ESCAPE HATCH.) This file used to carry a leg that
-//     measured the ONE configuration in which a `clipplayer-*` testid matched
-//     TWO elements: `?shell=legacy` kept the verbatim card in the lane while
-//     the dock, which reads `migrated(type)` and not the flag, painted the
-//     faceplate — both correct, both live on one node. The card is gone, so
-//     the second surface cannot exist and the leg's subject went with it.
+//  6. (RETIRED WITH ITS SUBJECT.) This file used to carry a leg that measured
+//     the ONE configuration in which a `clipplayer-*` testid matched TWO
+//     elements: a second lane renderer painting the module's own instrument
+//     while the dock, which read `migrated(type)` alone, painted the faceplate
+//     — both correct, both live on one node. There is one renderer, so the
+//     second surface cannot exist and the leg's subject went with it.
 //     What the hazard TAUGHT is kept below and is not conditional on it:
 //     every locator in this file is node-scoped, because one node can still
 //     put a lane tile and an open dock pane on the page at the same time.

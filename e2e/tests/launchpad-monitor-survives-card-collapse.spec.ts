@@ -154,8 +154,9 @@ test.describe('the Launchpad monitor OUTLIVES its card', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    // DEFAULT shell (faceplates) — the configuration the bug needs. Under
-    // `?shell=legacy` the card sits in the lane forever and never unmounts.
+    // The shipping shell — the configuration the bug needs. On the
+    // PRE-PROMOTION renderer the surface sat in the lane forever, never
+    // unmounting.
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 

@@ -422,8 +422,8 @@ async function blueJpeg(page: Page): Promise<string> {
 }
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT faceplate shell, which is the whole point: under
-  // `?shell=legacy` the real card renders in the lane and the bug is invisible.
+  // Plain /rack — the shipping faceplate shell, which is the whole point: with
+  // the module's own surface pinned in the lane the bug is invisible.
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
 }

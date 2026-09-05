@@ -153,8 +153,8 @@ test('frogger: BUGGLES.clock patched into start_gate restarts the game', async (
 // THE FACE, ON THE DEFAULT SHELL.
 //
 // ⚠ NOTHING IN THIS SUITE HAD EVER OBSERVED FROGGER UNDER THE SHIPPING SHELL.
-// Every test above once drove `?shell=legacy` (the shared `rack` fixture
-// flipped to the DEFAULT shell in S2), so the surface a player actually gets was
+// Every test above once drove the PRE-INVERSION renderer (the shared `rack`
+// fixture flipped to the shipping shell in S2), so the surface a player gets was
 // unexercised — which is how frogger sat for months rendering a BLANK
 // PLACEHOLDER in the lane while its game ran and pulsed gates underneath.
 // These legs navigate the DEFAULT shell deliberately.

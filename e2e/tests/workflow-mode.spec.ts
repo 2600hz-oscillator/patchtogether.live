@@ -7,8 +7,8 @@
 // This file used to have a second half asserting "dawless is unchanged" on a
 // bare /rack. That shell is DELETED, so those assertions are gone rather than
 // re-pointed: there is no second UI for them to be about, and re-pointing them
-// at `?shell=legacy` would have re-asserted the shell's own chrome twice under
-// a name that says the opposite.
+// would have re-asserted the shell's own chrome twice under a name that says
+// the opposite.
 //
 // Driving /rack keeps this in the NORMAL e2e lane (no DB/relay needed — the
 // seeded /r/[id] path needs Neon, which shard runners don't have).
@@ -202,10 +202,10 @@ test.describe('workflow shell', () => {
     // drawer — so it asserts the pane hosts the module's surface, whichever
     // branch that surface comes from.
     //
-    // ⚠ AND THE SHELL FLAG NEVER CHANGED THAT (stated back when this test
-    // still booted `?shell=legacy`): the flag steers `laneRenderKind` (the
-    // CANVAS lane); the dock full view reads `migrated(type)` alone. Two
-    // different questions, one of which the URL does not answer.
+    // ⚠ AND THE RENDERER FLAG NEVER CHANGED THAT (stated back when this test
+    // still booted the second renderer): the flag steered the CANVAS lane; the
+    // dock full view reads `migrated(type)` alone. Two different questions, one
+    // of which the URL did not answer.
     await page.keyboard.press('c');
     const clipPane = page.locator(
       '[data-testid="dock-fullview-pane"][data-pane-node="pinned-clipplayer"]',

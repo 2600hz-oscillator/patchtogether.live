@@ -3,7 +3,7 @@
 // "NEW … RACK" MUST ACTUALLY BE NEW (owner report 2026-08-07: "when i do 'new
 // workflow rack', i don't get a fresh rack, i still get what's in local cache").
 //
-// THE REGRESSION THIS PINS. The landing tile was a plain <a href="/rack?shell=legacy&seed=none">
+// THE REGRESSION THIS PINS. The landing tile was a plain <a href="/rack?seed=none">
 // link. `/rack?seed=none` resolves its doc through `getOrCreateLocalScratchId`, which
 // returns the EXISTING per-device id — so the link reopened the previous rack
 // out of its IndexedDB replica. That was correct while scratch docs were

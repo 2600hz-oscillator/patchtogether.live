@@ -579,10 +579,10 @@ const SUBJECTS: readonly Subject[] = [
   // ⚠ IT NEEDS THE `canvas` OVERRIDE, and for a THIRD distinct reason — neither
   // quadralogical's (no conventionally-named canvas exists) nor twotracks'
   // (there are two pictures). Here the canvas is deliberately named
-  // `nibbles-screen`, VERBATIM from the legacy card, because that is the testid
-  // `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` already read — both of
-  // which drive `?shell=legacy`, so carrying the name means the face and the
-  // card describe the same element rather than forking the vocabulary.
+  // `nibbles-screen`, VERBATIM from the pre-promotion surface, because that is
+  // the testid `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` already
+  // read — carrying the name means both describe the same element rather than
+  // forking the vocabulary.
   //
   // Verified before writing rather than assumed: the body uses the standard
   // `{#if !previewCollapsed}` REMOVES mechanism and declares
@@ -743,8 +743,8 @@ function nodeId(type: string): string {
 
 /**
  * Boot the DEFAULT shell (what actually ships) ONCE and spawn a whole BATCH of
- * subjects into one rack. ⚠ NOT `?shell=legacy`: that is precisely the surface
- * promotion does NOT change, and testing it is the #1934 mistake this file must not
+ * subjects into one rack. ⚠ THE SHIPPING SHELL, deliberately: booting the
+ * surface a promotion does NOT change is the #1934 mistake this file must not
  * repeat.
  *
  * ⚠ ONE BOOT PER BATCH, NOT PER MODULE — and the number is MEASURED, not guessed.

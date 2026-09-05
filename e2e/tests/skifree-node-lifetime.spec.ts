@@ -25,10 +25,11 @@
 //
 // ── ⚠ WHY THIS SPEC BOOTS THE REAL SHELL, AND WHY THAT IS THE WHOLE POINT ───
 //
-// `e2e/tests/skifree.spec.ts` boots `/rack?shell=legacy`, where the lane paints
-// the real card — so the card is always mounted and the bug cannot appear. That
-// is true of EVERY existing skifree test, which is why nothing caught this. A
-// version of this spec on `?shell=legacy` would pass against the broken code.
+// `e2e/tests/skifree.spec.ts` was written against the PRE-PROMOTION renderer,
+// where the lane painted the module's own surface — so it was always mounted
+// and the bug could not appear. That was true of EVERY existing skifree test,
+// which is why nothing caught this. A version of this spec on that renderer
+// would have passed against the broken code.
 //
 // ── THE OBSERVABLE, AND ITS BUILT-IN NEGATIVE CONTROL ───────────────────────
 //
@@ -57,7 +58,7 @@ import { spawnPatch } from './_helpers';
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const NODE = 'ski';
 
-/** The shipping shell. NOT `?shell=legacy` — see the header. */
+/** The shipping shell — see the header. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({

@@ -36,7 +36,7 @@
 // an inequality, and it is renderer-independent: no frame budget, no
 // wall-clock, no tuning.
 //
-// Runs on /rack?shell=legacy (no DB, no relay) — the normal e2e lane.
+// Runs on /rack (no DB, no relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch, waitForLaneTier } from './_helpers';

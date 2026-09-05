@@ -28,8 +28,7 @@
 //     .test.ts`, 24 legs including spectrum oracles on the real taps;
 //   · that the dock renders three bands — the VRT roster's `openDock` count.
 //
-// Runs on /rack (no DB, no relay). The faceplate shell is the DEFAULT rack
-// since #1459; `?shell=legacy` is the escape hatch, not this.
+// Runs on /rack (no DB, no relay). The faceplate shell is the rack since #1459.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -138,9 +137,9 @@ test.describe('rings face — THE AUDITION (the module could not be sounded befo
       .toBe(true);
   });
 
-  // The CARD-STRUM leg (`?shell=legacy`, the card button driving the same
-  // seam) was DELETED by the S2 inversion: its subject was the compatibility
-  // surface, which leaves the product with the card fleet. One-implementation
+  // A second STRUM leg — the PRE-PROMOTION button driving the same seam — was
+  // DELETED by the S2 inversion: its subject was the compatibility surface,
+  // which left the product in S4. One-implementation
   // delivery is pinned by the dock-cell leg above plus the NEGATIVE CONTROL
   // below, on the shell users get.
 

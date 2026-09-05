@@ -9,9 +9,9 @@
 //
 // The drawer already had three shipped specs — `workflow-dock.spec.ts`'s
 // `masterL`-out and `ch1L`-in rear-view patches, and `workflow-mode.spec.ts`'s
-// "the pinned card renders IN FULL". ALL THREE DRIVE `/rack?shell=legacy`, and
-// `dockRailRendersFace` reads `shellFaces`, so all three exercise the LEGACY
-// arm forever. They pass unchanged across this change — and they would have
+// "the pinned occupant renders IN FULL". ALL THREE were written against the
+// PRE-INVERSION renderer, and the tray's own rule read the same flag, so all
+// three exercised the OLD arm forever. They pass unchanged — and they would have
 // passed unchanged if the tray had been left completely broken. A suite that
 // cannot fail on the surface under test is not coverage of it.
 //
@@ -31,10 +31,8 @@
 //
 //   * PIXELS. No VRT baseline captures the pinned bottom drawer (grep
 //     `dock-zone-bottom` under `e2e/vrt/` → zero hits), before or after.
-//   * The `?shell=legacy` arm — that is the three specs named above, plus the
-//     second case in the user-docked describe at the bottom of this file.
 //   ⚠ * A USER-DOCKED promoted module WAS ON THIS LIST, phrased as
-//     "deliberately still renders its legacy card (`dockRailRendersFace`
+//     "deliberately still renders its pre-promotion surface (the tray rule
 //     requires `pinned`)" — and that entry is the 2026-09-03 owner P0, written
 //     down a fortnight before it was reported. A SCOPE NOTE IN A BLIND-SPOT
 //     LIST IS STILL A BLIND SPOT: nothing in the repo could go red on it, so
@@ -89,7 +87,7 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-/** The DEFAULT shell — no `?shell=legacy`. That is the whole point of the file. */
+/** The shipping shell. That is the whole point of the file. */
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -884,9 +882,9 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
 // did not paint here the module would simply be GONE for every workflow user.
 //
 // ⚠ THIS IS THE ONLY PLACE THAT IS ASSERTED, which is why the block exists.
-// `electra-control.spec.ts` drives the same testids against the CARD on
-// `?shell=legacy` — the `false` arm of `dockRailRendersFace`, which promotion
-// cannot reach — and the face's two VRT scenes photograph a canvas instance's
+// `electra-control.spec.ts` drove the same testids against the PRE-PROMOTION
+// surface — an arm promotion could not reach — and the face's two VRT scenes
+// photograph a canvas instance's
 // EMPTY board, so they cannot see a proxy, a colour, a name or the flash button
 // at all. Without this, the promotion's actual subject has no coverage on its
 // actual surface: exactly the gap this file's own header describes for mixmstrs.
@@ -943,10 +941,10 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
 
     // THE RANKED CELL — the one gesture that leaves the browser. It is a face
     // cell now, not markup inside the body, so its testid is the SHELL's
-    // (`shell-cell-<familyId>`) rather than the legacy button's
-    // (`electra-connect-button`, which the card still emits under
-    // `?shell=legacy`). Both spellings exist on purpose and neither matches the
-    // other, which is what keeps the two surfaces' assertions honest.
+    // (`shell-cell-<familyId>`) rather than the button's own
+    // (`electra-connect-button`, which `ElectraConnectButton.svelte` still
+    // emits). Both spellings exist on purpose and neither matches the other,
+    // which is what keeps the two assertions honest.
     await expect(card.getByTestId('shell-cell-electra-connect-button')).toBeVisible();
     await expect(card.getByTestId('shell-cell-electra-connect-button')).toBeEnabled();
     await expect(
@@ -972,9 +970,8 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
     // ⚠ THE SOURCE CONTROL IS ADDRESSED BY ITS SHELL TESTID, NOT BY AN ARIA
     // LABEL. This file drives the DEFAULT shell, so `adsr` is itself a promoted
     // face: its lane tile is a `ModuleShell` emitting `control-<paramId>`, not
-    // the legacy card whose knob carried `aria-label="Attack"`. That is the
-    // difference between this block and `electra-control.spec.ts`, which drives
-    // `?shell=legacy` and can still use the label.
+    // the pre-promotion surface whose knob carried `aria-label="Attack"`. That
+    // is the difference between this block and `electra-control.spec.ts`.
     const attack = page
       .locator('.svelte-flow__node[data-id="adsr-1"]')
       .getByTestId('control-attack');
@@ -1059,9 +1056,9 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
 // legacy card in top camera area … ALSO WRONG."*
 //
 // ⚠ A DOCUMENTED BLIND SPOT IS STILL A BLIND SPOT. Nothing in the repo could
-// fail on this: `workflow-dock.spec.ts` docks `mixer` and asserts `.mod-card`,
-// but it drives `/rack?shell=legacy`, so it asserts the legacy arm and would
-// have passed just as well with the default shell completely broken. This case
+// fail on this: `workflow-dock.spec.ts` docked `mixer` and asserted on the
+// PRE-PROMOTION root, so it asserted the old arm and would have passed just as
+// well with the shipping shell completely broken. This case
 // is the same gesture on the DEFAULT shell, which is the only place the bug
 // lives.
 //
@@ -1073,9 +1070,9 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
 // is the module's ONLY mount and therefore the sole owner of getUserMedia. That
 // surface is recorded in `legacy-fallback.ts` and is NOT fixed here. What IS
 // fixed here is the same class on the rail, which `mixer` exercises: the old
-// rule's own note named it ("`workflow-dock.spec.ts` docks `mixer` and asserts
-// `.mod-card`") as the thing widening would move, and it does not — that spec
-// drives `?shell=legacy`.
+// rule's own note named it ("`workflow-dock.spec.ts` docks `mixer`") as the
+// thing widening would move, and it did not — that spec asserted the arm
+// promotion never touched.
 test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the rail', () => {
   test('docking a migrated module mounts ModuleShell in the rail, never its legacy card', async ({ page }) => {
     const errors = collectErrors(page);
@@ -1125,11 +1122,12 @@ test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
 
-  /* ⚠ A LEG STOOD HERE ASSERTING `?shell=legacy` DOCKS TO THE VERBATIM CARD,
-   * and it is retired because THIS BRANCH IS THE CHANGE IT WAS WATCHING FOR.
-   * Its own words: *"the reason the rule keeps its `shellFaces` term. Without
-   * this leg the fix above would be indistinguishable from deleting the legacy
-   * arm outright, which is a different (owner-gated) change."* That gated
+  /* ⚠ A LEG STOOD HERE ASSERTING THAT THE SECOND RENDERER DOCKED TO THE
+   * PRE-PROMOTION SURFACE, and it is retired because THIS BRANCH IS THE CHANGE
+   * IT WAS WATCHING FOR. Its own words: *"the reason the rule keeps its
+   * [renderer] term. Without this leg the fix above would be indistinguishable
+   * from deleting the old arm outright, which is a different (owner-gated)
+   * change."* That gated
    * change is exactly what happened — the escape hatch, the cards and
    * `dockRailRendersFace`'s three terms are all gone — so the leg is deleted
    * with its subject rather than re-pointed at a surface it was written to

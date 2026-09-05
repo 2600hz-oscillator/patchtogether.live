@@ -505,8 +505,8 @@ test('ptzcam: a camera-absent error frame surfaces on the card and halts sends',
 
 // ═══════════════════ THE PROMOTED SURFACE — DEFAULT SHELL ════════════════════
 //
-// ⚠ EVERY ASSERTION ABOVE THIS LINE ONCE BOOTED `?shell=legacy`, AND THAT WAS TRUE OF
-// THE WHOLE MODULE BEFORE THIS PR — the VRT scene too, and the `__annotated__`
+// ⚠ EVERY ASSERTION ABOVE THIS LINE ONCE DROVE THE PRE-PROMOTION SURFACE, AND
+// THAT WAS TRUE OF THE WHOLE MODULE — the VRT scene too, and the `__annotated__`
 // legend directory holds only adsr and lfo. So nothing in the tree could fail on
 // a dropped ptzcam affordance under the shell a player actually meets. These
 // legs are that gap, and they are deliberately not a re-run of the legacy ones:

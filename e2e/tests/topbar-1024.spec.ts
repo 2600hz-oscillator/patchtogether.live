@@ -20,7 +20,7 @@ test.describe.configure({ mode: 'parallel' });
 
 async function boot(page: Page): Promise<void> {
   // The overflow-prone topbar (the .actions cluster ending in the auth
-  // control) is the CANVAS topbar in Canvas.svelte, which lives on /rack?shell=legacy&seed=none
+  // control) is the CANVAS topbar in Canvas.svelte, which lives on /rack?seed=none
   // since the landing-page move (#995) — `/` is the static landing and has
   // no rack topbar at all.
   await page.goto('/rack?seed=none');

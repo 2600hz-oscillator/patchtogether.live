@@ -11,9 +11,9 @@
 // is WebGL-heavy: it reads DOM facts, graph state and a media clock, and
 // samples no pixels.
 //
-// ⚠ THE SHIPPED `archivist.spec.ts` BOOTS `?shell=legacy` (×3), which is
-// precisely the surface promotion does not change — so all of it stays green
-// while covering a surface no player meets. This file is the default-shell leg
+// ⚠ THE SHIPPED `archivist.spec.ts` WAS WRITTEN AGAINST THE PRE-PROMOTION
+// SURFACE (×3) — the one promotion does not change — so all of it stays green
+// while covering a surface no player meets. This file is the shipping-shell leg
 // it owes.
 //
 // ⚠ THE PRECONDITION HERE USED TO BE THE OPPOSITE OF PEERTUBE'S, AND IS NOT ANY
@@ -84,9 +84,8 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
  * CHILD combinator the host's grandchild flow cannot satisfy).
  *
  * ⚠ ARCHIVIST NO LONGER HAS A HOST (legacy-removal S1), so the trap cannot fire
- * here today. The scoping stays: `?shell=legacy` still puts a real card in this
- * module's lane, six CARD_PRODUCER modules still get hosts, and relaxing a
- * discipline one file at a time is how it stops being one.
+ * here today. The scoping stays: six CARD_PRODUCER modules still get hosts, and
+ * relaxing a discipline one file at a time is how it stops being one.
  */
 const laneNode = (nodeId: string) =>
   `${MAIN_CANVAS} .svelte-flow__node[data-id="${nodeId}"]`;
@@ -177,8 +176,7 @@ const VIDEO_MOCK = {
 } as const;
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. `archivist.spec.ts`'s `?shell=legacy` is
-  // precisely the surface promotion does not change.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   // `canvasPane` rather than `.svelte-flow__pane:visible.first()` — the hosts

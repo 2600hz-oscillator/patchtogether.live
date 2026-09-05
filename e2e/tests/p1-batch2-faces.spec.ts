@@ -28,7 +28,7 @@
 // preview OFF (the default) a batch-2 module still renders its REAL legacy
 // card in the lane. Promotion to STRICT_FACES must not leak out of `?shell=1`.
 //
-// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane.
+// Runs on /rack (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';

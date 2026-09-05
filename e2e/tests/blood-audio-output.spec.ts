@@ -38,11 +38,11 @@
 // Renderer-independent for the AUDIO assertion (analyser reads the engine's own
 // PCM, not the GL canvas) → SwiftShader-safe. Gated on blood-ready + e2e hooks.
 //
-// ── ⚠ RE-POINTED OFF `?shell=legacy` (2026-08-31, the blood face) ───────────
+// ── ⚠ RE-POINTED ONTO THE SHIPPING SURFACE (2026-08-31, the blood face) ─────
 //
-// The live test below used to boot `/rack?shell=legacy&seed=none` and wait on
-// `blood-card` / `blood-ready`. That surface is an escape hatch no player meets,
-// and — much worse for this particular spec — it is the surface whose card held
+// The live test below used to boot the PRE-PROMOTION renderer and wait on
+// `blood-card` / `blood-ready`. That surface is one no player meets, and —
+// much worse for this particular spec — it is the surface that held
 // the tree's ONLY `extras.ensureLoaded()` call. So a green run proved the whole
 // menu → level → MultiVoc → worklet → audio_l → SCOPE chain works WHEN THE
 // LEGACY CARD BOOTS THE ENGINE, and said nothing at all about the surface the
@@ -106,8 +106,8 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
   // out.
   //
   // ⚠ THE COST IS A SERIALISATION, NOT A SLOWDOWN, and that is the whole reason a
-  // bump is the honest fix rather than a cover-up. On `?shell=legacy` the card
-  // mounted WITH THE PAGE, so BLOOD's 5.9 MB ASYNCIFY cold boot (20-25 s on a
+  // bump is the honest fix rather than a cover-up. The old surface mounted WITH
+  // THE PAGE, so BLOOD's 5.9 MB ASYNCIFY cold boot (20-25 s on a
   // 2-core SwiftShader VM, per blood-mount.spec.ts's header) overlapped
   // `waitForLoadState('networkidle')` and `spawnPatch`. On the shipping surface
   // the body mounts in the DOCK, so that boot cannot begin until the dock is

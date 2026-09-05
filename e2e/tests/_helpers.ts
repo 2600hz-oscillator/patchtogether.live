@@ -544,10 +544,10 @@ export async function spawnPatch(
       //
       // ⚠ UNCONDITIONAL, and that is the fix. This used to be gated on
       // `page.url().includes('mode=workflow')` — a URL SNIFF standing in for
-      // "is this the shell?". Every rack is the shell now, and `?shell=legacy`
-      // does not contain that substring, so the gate would have silently
+      // "is this the shell?". Every rack is the shell now, and the URL it
+      // sniffed for stopped being written, so the gate would have silently
       // stopped firing for the entire suite the moment the default flipped:
-      // hundreds of specs timing out on an off-screen card with no signal
+      // hundreds of specs timing out on an off-screen node with no signal
       // pointing here. `revealWorkflowNodes` already no-ops when the nodes are
       // framed and clickable, so the CHECK decides — not the URL.
       await revealWorkflowNodes(page, nodes.map((n) => n.id));
@@ -573,12 +573,12 @@ export async function spawnPatch(
  *
  * ⚠ `.svelte-flow__pane` AND `.svelte-flow__node` ARE AMBIGUOUS ON A WORKFLOW
  * RACK, AND THE AMBIGUITY GREW, WHICH IS WHY THIS EXISTS. `HeadlessSourceHost`
- * mounts each hosted module's REAL card inside its OWN single-node SvelteFlow —
- * parked at `left:-9999px`, `aria-hidden`, `pointer-events:none` — so every one
- * of them contributes a second `.svelte-flow__pane` and its own
+ * mounts each hosted module's REAL surface inside its OWN single-node
+ * SvelteFlow — parked at `left:-9999px`, `aria-hidden`, `pointer-events:none` —
+ * so every one of them contributes a second `.svelte-flow__pane` and its own
  * `.svelte-flow__node[data-id=…]`. MEASURED on this tree: `/rack` has THREE
- * panes (the canvas + the timelorde and synesthesia hosts) and
- * `/rack?shell=legacy` has TWO; this selector resolves to exactly ONE in both.
+ * panes (the canvas + the timelorde and synesthesia hosts); this selector
+ * resolves to exactly ONE whatever the host count is.
  *
  * ⚠ THE HOSTS LIVE *INSIDE* `.flow`, so `.flow …` does NOT scope them out — and
  * that was the premise several specs were written on. The distinguishing fact is

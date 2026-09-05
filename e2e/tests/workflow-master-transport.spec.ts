@@ -2,8 +2,8 @@
 //
 // P0 GUARD — WORKFLOW MASTER TRANSPORT drives real clip playback, end to end.
 // Joins the transport guard family (clipplayer-transport-no-controller covers
-// the legacy card seam); this one drives the OWNER-FACING workflow surface on
-// /rack?shell=legacy (faces) AND ?shell=legacy: the pinned clipplayer in the `c` drawer,
+// the pre-promotion seam); this one drives the OWNER-FACING workflow surface on
+// /rack: the pinned clipplayer in the `c` drawer,
 // a lane instrument auto-wired by the wcol reconciler, and the pinned master
 // chain (MIXMSTRS → audio out).
 //
@@ -329,12 +329,11 @@ for (const [label, url] of [
     // ⚠ THE CONTAINER IS THE PANE, NOT `[data-dock-card]`, AND THE PROMOTION IS
     // WHY. `data-dock-card` is emitted by `DockCardHost` and by `DockFullView`'s
     // CARD branch only, so it vanishes the moment this drawer paints a
-    // faceplate — which it now does for `clipplayer` on BOTH urls in the table
-    // below, not only the default one. `?shell=legacy` steers `laneRenderKind`,
-    // which decides the CANVAS LANE; the `c` drawer routes through
-    // `DockFullView`, which switches on bare `STRICT_FACES` membership and
-    // never reads the flag. So the `legacy-cards` arm of this test is looking
-    // at the faceplate too, and asserting on a card selector made BOTH arms red.
+    // faceplate — which it does for `clipplayer` on every url in the table
+    // below. The renderer flag only ever steered the CANVAS LANE; the `c`
+    // drawer routes through `DockFullView`, which switches on bare
+    // `STRICT_FACES` membership and never read it. So both arms of this test
+    // look at the faceplate, and asserting on the old root made BOTH red.
     //
     // The pane wrapper is what the two surfaces have in common: Canvas emits
     // `[data-testid="dock-fullview-pane"][data-pane-node]` around whichever one

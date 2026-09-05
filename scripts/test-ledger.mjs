@@ -146,7 +146,7 @@ function runtimeSkips() {
 // disposition is WHAT THE SWEEP GATES, which is a property of the list:
 //
 //   'legacy-card' — ⚠ THIS SUBJECT NOW HAS NO POPULATION, WHICH IS THE POINT.
-//     It classified sweeps that screenshot a `?shell=legacy` CARD, and its whole
+//     It classified sweeps that screenshot a module's own pre-promotion surface, and its whole
 //     disposition was "do not pay this — the entries will be DELETED with the
 //     cards". They were: the per-module card sweep and the four exemption tables
 //     it applied are gone. The classification is kept rather than removed
@@ -177,7 +177,7 @@ const RECORD_EXEMPTIONS = [
  *  instead of being maintained forever. Rendered beside the population. */
 const SUBJECT_ANCHORS = {
   'legacy-card': {
-    label: 'RETIRED — the subject was a `?shell=legacy` card, and there is no card',
+    label: 'RETIRED — its subject was a surface the lane no longer renders',
     anchor:
       'EMPTY, and it emptied the way it was supposed to. Every member was an exemption from ' +
       'the per-module card VRT sweep, whose stated disposition was "do not backfill these — ' +

@@ -4,7 +4,7 @@
 //
 //   * New rack (File menu, LOGGED-OUT scratch path here): a FRESH empty rack of
 //     a fresh empty rack — the shell's pinned singletons
-//     re-spawn, and any prior user modules are gone. Driven on /rack?shell=legacy&seed=none (no DB /
+//     re-spawn, and any prior user modules are gone. Driven on /rack?seed=none (no DB /
 //     relay) with the scratch IndexedDB replica OPTED IN, so the test proves the
 //     new rack genuinely discards the PERSISTED session (a new per-device
 //     scratch id ⇒ a fresh empty replica DB), not just an in-memory reset.
@@ -167,7 +167,7 @@ test.describe('landing: Return to last rack', () => {
   });
 
   test('APPEARS after a scratch session persists, and REOPENS it', async ({ page }) => {
-    // Opt the replica in so /rack?shell=legacy&seed=none actually persists a DB the card can find.
+    // Opt the replica in so /rack?seed=none actually persists a DB the landing tile can find.
     await page.addInitScript(() => {
       (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica = true;
     });

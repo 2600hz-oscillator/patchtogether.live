@@ -8,12 +8,11 @@
 //   spawn → expand (dock full-view) → load a file → play → COLLAPSE →
 //   assert the element is STILL PLAYING.
 //
-// ⚠ THE DEFAULT SHELL IS THE POINT. The pre-existing videovarispeed specs all
-// boot `/rack?shell=legacy`, which keeps the real card in the LANE — so the
-// card never moves between mounts and the entire bug class is invisible to
-// them. `shellFaces` is TRUE unless `?shell=legacy` is passed
-// (Canvas.svelte), i.e. those specs were validating a mode users do not have.
-// This spec goes to plain `/rack` deliberately; do not add a shell param.
+// ⚠ THE SHIPPING SHELL IS THE POINT. The pre-existing videovarispeed specs
+// were written against a renderer that kept the module's own surface in the
+// LANE — so the surface never moved between mounts and the entire bug class was
+// invisible to them. This spec goes to plain `/rack`, where a collapse really
+// does unmount the surface.
 //
 // ⚠ AND BOTH REAL PLAYERS ARE NOW FACED (videobox wave 3, videovarispeed wave
 // 4, both 2026-09-01), so the placement leg below takes its FACED branch for
@@ -585,9 +584,9 @@ test('the sweep is NOT VACUOUS: it still exercises real file players', () => {
   //
   // ⚠ DELIBERATELY NOT A TYPED FLOOR (`>= 2`), and the distinction is the repo
   // standard rather than taste. The real player population is videobox +
-  // videovarispeed — both now FACED, and the predicate that derives them still
-  // reads their LEGACY CARDS, which are alive at `?shell=legacy` and keep their
-  // `-file-input` / `-play-btn` testids for exactly that reason. It is expected
+  // videovarispeed — both now FACED, and the predicate that derives them reads
+  // their surviving surfaces for the `-file-input` / `-play-btn` testids the
+  // migration deliberately carried over unrenamed. It is expected
   // to STAY that pair across this whole epic —
   // so a literal `2` would sit EXACTLY ON the population, which is a ratchet in
   // behaviour whatever it is in intent: the next legitimate change to that set

@@ -408,13 +408,12 @@ test.fixme('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way bac
 
 // ── THE FACEPLATE, DRIVEN FOR REAL ──────────────────────────────────────────
 //
-// ⚠ EVERY TEST ABOVE BOOTS `?shell=legacy` AND IS THEREFORE BLIND TO THE FACE.
-// That is not an oversight in them — they were written against the card and the
-// card still ships — but it means promotion could have landed a completely dead
-// faceplate with this entire file green. (The same is true of
-// `workflow-dock.spec.ts`'s matrixmix fixture, which also boots `?shell=legacy`
-// and needed no edit for exactly that reason.) This test is the other half: the
-// DEFAULT renderer, which is what a player actually gets.
+// ⚠ EVERY TEST ABOVE WAS WRITTEN AGAINST THE PRE-PROMOTION SURFACE AND IS
+// THEREFORE BLIND TO THE FACE. That is not an oversight in them — but it means
+// promotion could have landed a completely dead faceplate with this entire file
+// green. (The same was true of `workflow-dock.spec.ts`'s matrixmix fixture,
+// which needed no edit for exactly that reason.) This test is the other half:
+// the faceplate, which is what a player actually gets.
 //
 // It asserts the three things promotion is responsible for and nothing else:
 //
@@ -450,8 +449,7 @@ async function readAxes(page: Page, nodeId: string): Promise<{ x?: string; y?: s
 }
 
 test('FACE: the lane tile ranks both axis pickers, they write the graph, and the dock body patches', async ({ page }) => {
-  // The DEFAULT renderer — no `?shell=legacy`. This is the one test in this file
-  // that sees a ModuleShell instead of MatrixMixCard.
+  // The lane faceplate — the surface this test is for.
   await page.goto('/rack?seed=none');
   // A FAILURE BOUND, not the gate: the first navigation on a cold dev server
   // compiles the whole route graph on demand.

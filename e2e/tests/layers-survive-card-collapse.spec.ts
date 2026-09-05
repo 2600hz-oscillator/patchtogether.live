@@ -37,9 +37,9 @@
 // budget would be a different assertion on every machine — and the timeouts here
 // only BOUND a failure, they are never the gate.
 //
-// ⚠ The `?shell=legacy` toybox specs keep the real card in the LANE, so the card
-// never moves between mounts and this entire bug class is invisible to them.
-// This spec goes to plain `/rack` deliberately; do not add a shell param.
+// ⚠ The older toybox specs kept the module's own surface pinned in the LANE, so
+// it never moved between mounts and this entire bug class is invisible to them.
+// This spec goes to plain `/rack`, where a collapse really does unmount it.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { unzipSync, strFromU8 } from 'fflate';
@@ -119,9 +119,9 @@ async function boot(page: Page): Promise<string[]> {
  * rather than copying it.
  *
  * ⚠ AND THE SUBJECT IS NOW STRICTLY STRONGER. The #1589 class is "the media
- * dies when the mount goes away"; before promotion the mount was a card that
- * `?shell=legacy` also renders in the lane, and now the dock full view is the
- * ONLY mount there is. A collapse is the whole of it.
+ * dies when the mount goes away"; before promotion the mount also sat in the
+ * lane, and now the dock full view is the ONLY mount there is. A collapse is
+ * the whole of it.
  */
 async function expand(page: Page): Promise<void> {
   await page.evaluate(

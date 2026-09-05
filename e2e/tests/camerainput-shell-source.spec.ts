@@ -146,9 +146,8 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned sour
     });
     await stubMediaDevices(page);
 
-    // ⚠ THE DEFAULT SHELL, NOT `?shell=legacy`. The legacy surface is precisely
-    // the one promotion does not change, so testing it would prove nothing about
-    // this change.
+    // The shipping shell — the only surface this module has, and the whole
+    // subject of this file.
     await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar'))
       .toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
@@ -288,9 +287,9 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned sour
     ).toContainText(/site settings/i, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   });
 
-  // The legacy-escape-hatch leg was DELETED by the S2 inversion: its subject
-  // was the `?shell=legacy` renderer plus the absence of the (since deleted)
-  // HeadlessSourceHost. Node-source ownership on the shell users get is
+  // A second-renderer leg was DELETED by the S2 inversion: its subject was that
+  // renderer plus the absence of the (since deleted) HeadlessSourceHost.
+  // Node-source ownership on the shell users get is
   // covered by the tests above and by workflow-shell-video's per-row
   // card-absence assertions.
 });

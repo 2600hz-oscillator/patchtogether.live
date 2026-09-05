@@ -102,9 +102,9 @@ test.describe('full-frame — VIDEO OUT + VIDEOBOX + BENTBOX', () => {
   // surface would be a duplicate, not coverage.)
 
   test('VIDEOBOX on the DEFAULT shell: the FACE body enters Full Frame on the SAME node.data.fullFrame key', async ({ page }) => {
-    // ⚠ THE LEG THE WAVE-3 PROMOTION OWES. The legacy leg above boots
-    // `?shell=legacy`, which is precisely the surface promotion does NOT
-    // change — an existing green legacy spec is never evidence about a face.
+    // ⚠ THE LEG THE WAVE-3 PROMOTION OWES. The leg above was written against
+    // the PRE-PROMOTION surface, which is precisely the one promotion does NOT
+    // change — a green spec there is never evidence about a face.
     // This leg drives the ModuleShell dock body and reads the flag back off
     // the SAME `readFullFrame` helper (i.e. the same `node.data.fullFrame`
     // key), so the two surfaces cannot quietly fork the persistence: a body

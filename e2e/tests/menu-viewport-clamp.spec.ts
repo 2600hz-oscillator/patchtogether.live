@@ -24,7 +24,7 @@
 //   * patch drill-down        — a lane tile at the LEFT window edge
 //   * remap menu              — NUMPAD+ key remap menu at the corner
 //
-// Runs against /rack?shell=legacy&seed=none (classic canvas) and /rack (the
+// Runs against /rack?seed=none (the canvas) and /rack (the
 // dock) — the fix is ungated (plain bug fix), so no feature flag is involved.
 
 import { test, expect, type Page, type Locator } from '@playwright/test';

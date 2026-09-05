@@ -10,7 +10,7 @@
 // its real card in the lane EXACTLY as today — the bridge is inert until owner
 // sign-off, so nothing else in workflow mode changes.
 //
-// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
+// Runs on /rack (no DB/relay) — the normal e2e lane, same as
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
 import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';

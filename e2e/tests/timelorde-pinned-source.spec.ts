@@ -48,10 +48,10 @@
 //      NOT EXIST, through `?.()` — a leg that would have been permanently green
 //      over no measurement at all. GREP FOR THE HOOK.
 //   2. NO card and NO headless host, anywhere. ⚠ `toHaveCount(0)` is the shape
-//      that goes blind — it is satisfied by "correctly no card" AND by "the page
-//      rendered nothing at all" — so leg 2 carries a POSITIVE CONTROL that spawns
-//      an ordinary canvas timelorde under `?shell=legacy` and requires the SAME
-//      selector to find its card. The absence is then a reading, not a silence.
+//      that goes blind — it is satisfied by "correctly nothing there" AND by
+//      "the page rendered nothing at all" — so leg 2 carries a POSITIVE CONTROL
+//      that spawns an ordinary canvas timelorde and requires the SAME selector
+//      to find its lane surface. The absence is then a reading, not a silence.
 //   3. `video_out` is LIVE, and MOVING. Brightness alone is refused here on
 //      purpose: `drawFrame` keeps blitting the last bitmap anyone pushed, so a
 //      dead producer reads bright and frozen (measured: nonBlack 47034/48400

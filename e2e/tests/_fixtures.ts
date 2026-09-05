@@ -84,8 +84,8 @@ export const test = base.extend<{
   // (or the dock full view), never through a `<type>-card` testid — those do
   // not exist in this lane.
   //
-  // Inverted from `?shell=legacy` by the S2 fixture flip (LEG-04 / #1515):
-  // this fixture used to boot the legacy card renderer.
+  // Inverted by the S2 fixture flip (LEG-04 / #1515): this fixture used to
+  // boot the second, pre-promotion renderer.
   //
   // ⚠ ITS OPT-IN SIBLING `rackLegacy` IS GONE, and it drained to zero rather
   // than being cut short. The escape hatch existed for specs whose subject

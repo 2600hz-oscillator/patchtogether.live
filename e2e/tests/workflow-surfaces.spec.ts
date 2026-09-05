@@ -1,6 +1,6 @@
 // e2e/tests/workflow-surfaces.spec.ts
 //
-// WORKFLOW MODE P2 — the topbar surface trio on /rack?shell=legacy:
+// WORKFLOW MODE P2 — the topbar surface trio on /rack:
 //
 //   🕐 clock — TIMELORDE's face: live BPM readout, the REAL tempo knob,
 //      TAP tempo (shared TapTempo core), and click-driven patch-out rows
@@ -12,7 +12,7 @@
 //   (The 🎧 audio-I/O surface needs the fake-mic browser flags, so its e2e
 //   lives in audio-in.spec.ts under the chromium-audio-in project.)
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Web MIDI is faked
 // via addInitScript (a deterministic single-input access object): CI
 // runners have no MIDI hardware, and the bridge's device handling starts

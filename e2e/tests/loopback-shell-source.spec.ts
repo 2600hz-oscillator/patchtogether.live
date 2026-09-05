@@ -87,9 +87,9 @@
 // `.svelte-flow__node[data-id=…]` matches TWO elements and Playwright's
 // `toBeVisible` is satisfied by one at `left:-9999px`. That measured trap bit
 // four tests on the camera promotion. It no longer applies to LOOPBACK under
-// the default shell — there is no hosted card — but it DOES still apply to the
-// `?shell=legacy` test at the bottom and to every sibling module that is still
-// hosted, so the discipline stays rather than being relaxed one file at a time.
+// LOOPBACK any more — it has no host — but it DOES still apply to every sibling
+// module that is hosted, so the discipline stays rather than being relaxed one
+// file at a time.
 //
 // ⚠ ARMED WITH `errorWatch`, WHICH IS PART OF THE ASSERTION HERE RATHER THAN
 // HYGIENE. The status registry notifies its subscribers SYNCHRONOUSLY from
@@ -238,9 +238,8 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, node-owned so
     });
     await stubDisplayMedia(page);
 
-    // ⚠ THE DEFAULT SHELL, NOT `?shell=legacy`. Every test in `loopback.spec.ts`
-    // pins `?shell=legacy`, which is precisely the surface promotion does not
-    // change — so that whole file, useful as it is, proves nothing about this.
+    // The shipping shell. `loopback.spec.ts` was written against the
+    // pre-promotion surface, so useful as it is, it proves nothing about this.
     await bootRack(page);
     await spawnLoopbackChain(page);
 
@@ -481,9 +480,9 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, node-owned so
     ).toBe(true);
   });
 
-  // The legacy-escape-hatch leg was DELETED by the S2 inversion: its subject
-  // was the `?shell=legacy` renderer plus the absence of the (since deleted)
-  // HeadlessSourceHost. Node-source ownership on the shell users get is
+  // A second-renderer leg was DELETED by the S2 inversion: its subject was that
+  // renderer plus the absence of the (since deleted) HeadlessSourceHost.
+  // Node-source ownership on the shell users get is
   // covered by the tests above and by workflow-shell-video's per-row
   // card-absence assertions.
 });

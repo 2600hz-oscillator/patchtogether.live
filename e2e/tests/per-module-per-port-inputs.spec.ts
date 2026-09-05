@@ -294,7 +294,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
 //
 // ⚠ WHAT THIS BUDGET CANNOT ABSORB, stated plainly so nobody sizes to it. The
 // runner that went red printed `[perf-midi-cc] FPS diagnostic: idle=2.0` and had
-// a 79-SECOND window with zero `/rack?shell=legacy&seed=none` navigations across all four workers. At
+// a 79-SECOND window with zero `/rack` navigations across all four workers. At
 // ~2 fps a single `spawnPatch` can legally consume its whole 30 s mount cap, so
 // 26 of them do not fit in any budget worth writing down. This change fixes the
 // REVIEW defect — the per-port term is live again, and wavesculpt gets the

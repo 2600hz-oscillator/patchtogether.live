@@ -28,7 +28,7 @@
 // literal instead of an inequality, and it is renderer-independent: no frame
 // budget, no wall-clock, no tuning.
 //
-// Runs on /rack?shell=legacy (no DB, no relay) — the normal e2e lane.
+// Runs on /rack (no DB, no relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch, waitForLaneTier } from './_helpers';
@@ -39,7 +39,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 /** Boot the migrated shell (`?shell=1`) and wait for the workflow chrome. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
-  // The BOOT wait: the first test of a run pays SvelteKit's on-demand /rack?shell=legacy&seed=none
+  // The BOOT wait: the first test of a run pays SvelteKit's on-demand /rack
   // compile. Same bound the sibling workflow specs carry.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
     timeout: SLOW_RENDER ? 30_000 : 15_000,

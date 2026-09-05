@@ -99,9 +99,10 @@ async function spawnToybox(page: Page, extraNodes: SpawnNode[] = [], edges: Spaw
  * Spawn a toybox under the DEFAULT shell and open its dock full view.
  *
  * ⚠ REWRITTEN 2026-09-02, WHEN TOYBOX WAS PROMOTED — the wave-6 §8 lesson
- * landing on the two rows in this file that were never on `?shell=legacy`.
+ * landing on the two rows in this file that always drove the shipping shell.
  * They used to click the UN-MIGRATED placeholder's EXPAND button and then read
- * the legacy CARD inside the dock. A faced module has neither: the lane tile is
+ * the module's pre-promotion surface inside the dock. A faced module has
+ * neither: the lane tile is
  * a `module-shell` with `shell-open-dock`, and what the dock mounts is
  * `toybox-face-body`. Both rows' SUBJECTS are unchanged — the owner-black
  * report and the stale-proxy editor repaint both happen in the DOCK, which is
@@ -428,9 +429,9 @@ test.describe('toybox randomize — heavy proofs', () => {
   });
 
   test('DOCK full view (the DEFAULT shell): fresh spawn paints, and a roll paints', async ({ page }) => {
-    // The owner-black report came from the dock; the first spec never left
-    // ?shell=legacy. This leg keeps the dock path and the FIRST-MOUNT default
-    // state (no preset, no roll) covered — both were probe blind spots.
+    // The owner-black report came from the dock; the first spec never left the
+    // pre-promotion surface. This leg keeps the dock path and the FIRST-MOUNT
+    // default state (no preset, no roll) covered — both were probe blind spots.
     test.setTimeout(180_000);
     await openDockFace(page);
     await expectAlive(page, 'dock first-mount (default state, no roll)');

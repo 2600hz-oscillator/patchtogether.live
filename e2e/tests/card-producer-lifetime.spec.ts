@@ -621,16 +621,17 @@ async function hasVideoSource(page: Page, nodeId: string, port: string): Promise
   }, { id: nodeId, p: port });
 }
 
-async function boot(page: Page, shell: Shell = 'default'): Promise<void> {
-  // Plain /rack — the DEFAULT faceplate shell, which is the whole point of the
-  // #1587 legs: under `?shell=legacy` the real card renders in the lane and the
-  // shell-swap bug is invisible. The #1721 leg passes 'legacy' as well, because
-  // ITS defect is not shell-shaped (see there).
-  await page.goto(shell === 'legacy' ? '/rack?shell=legacy' : '/rack');
+async function boot(page: Page): Promise<void> {
+  // Plain /rack — the shipping faceplate shell, which is the whole point of the
+  // #1587 legs: with the module's own surface pinned in the lane the shell-swap
+  // bug is invisible.
+  //
+  // ⚠ THIS FUNCTION TOOK A `shell` ARGUMENT AND NO CALLER PASSED ONE. Its other
+  // value selected a second renderer that no longer exists, so the parameter
+  // and its type went with the arm.
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
 }
-
-type Shell = 'default' | 'legacy';
 
 for (const subject of SUBJECTS) {
   const { type, domain, videoOuts, laneTestId, migrated, keepsHeadlessWhileDocked } = subject;
@@ -908,12 +909,13 @@ for (const subject of SUBJECTS) {
   // ── #1721 — THE GROUP-COLLAPSE LEG IS DELETED WITH ITS SUBJECT ────────────
   //
   // This block ran every CARD_PRODUCER through "wrapped in a COLLAPSED GROUP,
-  // in BOTH shells" and asserted the module kept its picture, that its card was
-  // mounted EXACTLY ONCE across every host that could hold it, and that an
-  // expand put the child back in the lane. Its trigger was Canvas's `flowNodes`
-  // derivation dropping a collapsed group's children OUTSIDE the `shellFaces`
-  // branch — the one member of the #1583 family that was not default-shell-only,
-  // which is why `?shell=legacy` was a real second subject here.
+  // in BOTH renderers" and asserted the module kept its picture, that its
+  // surface was mounted EXACTLY ONCE across every host that could hold it, and
+  // that an expand put the child back in the lane. Its trigger was Canvas's
+  // `flowNodes` derivation dropping a collapsed group's children BEFORE the
+  // lane decision ran — the one member of the #1583 family that was not
+  // specific to one renderer, which is why the second one was a real subject
+  // here.
   //
   // The GROUP! module is deleted (owner ruling: group and sticky are deleted
   // entirely), so `collapsedGroupIds` and the `parentGroupId` lane filter are
@@ -1069,9 +1071,9 @@ const FRAME_PRODUCER_FIXTURES: Record<string, FrameProducerFixture> = {
     why:
       "the module's audio IS this table: `bridgeTick()` paints the rasters, folds them into the "
       + '3-axis field and posts a rebuilt wavetable to the worklet, and nothing else calls it. '
-      + 'The only reachable caller used to be `FoxyCard.svelte` reading its raster previews, so '
-      + 'the sound had a card lifetime — MEASURED at the moment it was found, FOXY -> SCOPE.ch1 '
-      + 'on one patch: maxPeak 1.0000 under `?shell=legacy` and 0.0000 on the default shell over '
+      + 'The only reachable caller used to be a preview-drawing surface reading its rasters, so '
+      + 'the sound had a component lifetime — MEASURED at the moment it was found, FOXY -> SCOPE.ch1 '
+      + 'on one patch: maxPeak 1.0000 with that surface mounted and 0.0000 without it, over '
       + 'a 6 s window. A sample of the table moving frame to frame is the closest observable to '
       + '"the oscillator has something new to play"; the pixel probe cannot see it.',
   },
@@ -1766,10 +1768,10 @@ for (const type of nodeVizSurfaceTypes()) {
     expect(providerErrors, `provider throw(s): ${providerErrors.join(' | ')}`).toEqual([]);
   });
 
-  // ⚠ THE `[legacy shell]` ARM IS DELETED WITH THE SURFACE IT PHOTOGRAPHED, and
-  // it was the LAST thing in `e2e/tests/` that booted `?shell=legacy`.
+  // ⚠ A SECOND ARM IS DELETED WITH THE SURFACE IT PHOTOGRAPHED, and it was the
+  // LAST thing in `e2e/tests/` that booted the pre-inversion renderer.
   //
-  // It asserted that the module's CARD ADOPTS the node-owned canvas — one
+  // It asserted that the module's own surface ADOPTS the node-owned canvas — one
   // element, one renderer — because the two-mount alternative would have put the
   // DRS step seam on a surface nobody was looking at: stepping would freeze the
   // seam owner while the photographed element free-ran. `wavesculpt.spec.ts`

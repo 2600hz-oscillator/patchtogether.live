@@ -4,11 +4,12 @@
 //
 // ── ⚠ WHY THIS FILE EXISTS AND WHY IT BOOTS `/rack` ────────────────────────
 //
-// Every other skifree spec drives `?shell=legacy` (`skifree.spec.ts`) or asserts
-// engine state with nothing painted (`skifree-node-lifetime.spec.ts`). Neither
-// can see the surface a player actually meets, and `laneRenderKind` reads
-// `'legacy'` BEFORE it reads `migrated`, so a green legacy suite says nothing
-// about a promoted face. This file is the default-shell half.
+// Every other skifree spec was written against the PRE-PROMOTION surface
+// (`skifree.spec.ts`) or asserts engine state with nothing painted
+// (`skifree-node-lifetime.spec.ts`). Neither can see the surface a player
+// actually meets: the lane decision short-circuited before it read `migrated`,
+// so a green suite there said nothing about a promoted face. This file is the
+// shipping-shell half.
 //
 // ── THE TWO DEFECTS, AND WHAT EACH LEG PROVES ──────────────────────────────
 //
@@ -77,7 +78,7 @@ const NODE = 'ski';
  *  import from `packages/web`; the unit test is what pins them equal. */
 const CANVAS_SIZE = 320;
 
-/** The shipping shell. NOT `?shell=legacy` — see the header. */
+/** The shipping shell — see the header. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });

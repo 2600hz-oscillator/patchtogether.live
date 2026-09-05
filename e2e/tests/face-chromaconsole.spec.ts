@@ -4,9 +4,9 @@
 // A MIDI PORT.
 //
 // ⚠ WHY THIS FILE EXISTS AT ALL, when `chromaconsole.spec.ts` already asserts
-// the wire. That suite boots `?shell=legacy` — every one of its ten tests drives
-// the legacy CARD — so after promotion it stays green over a surface no player
-// meets. This is the default-shell leg it owes, and it is the ONLY thing in the
+// the wire. All ten of its tests were written against the PRE-PROMOTION surface,
+// so after promotion it stays green over a surface no player meets. This is the
+// shipping-shell leg it owes, and it is the ONLY thing in the
 // tree that can see the faced chain end to end.
 //
 // ⚠ AND IT IS THE POLY/MIDI RULE'S TERMINAL, NOT A SUBSTITUTE FOR IT. CLAUDE.md
@@ -75,8 +75,7 @@ const OTHER_PORT = { id: 'other-0', name: 'Prophet Rev2' };
 
 async function boot(page: Page, ports = [OTHER_PORT, CHROMA_PORT]): Promise<void> {
   await installMidiOutCapture(page, ports);
-  // Plain /rack — the DEFAULT shell. `?shell=legacy` is precisely the surface
-  // promotion does not change.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

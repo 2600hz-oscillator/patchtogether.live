@@ -19,7 +19,7 @@
 //      the legacy card renders in the lane exactly as today (the P0.3b
 //      no-op guarantee now covering a module that HAS a face).
 //
-// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
+// Runs on /rack (no DB/relay) — the normal e2e lane, same as
 // workflow-shell.spec.ts.
 
 import { test, expect, type Page, type Locator } from '@playwright/test';

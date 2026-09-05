@@ -18,12 +18,12 @@
 //      inject NOTE-on again → toggles back off. "Forget" drops the binding.
 //   3. The SAME binding on the DEFAULT SHELL — see below.
 //
-// ⚠ LEG 2 NAVIGATES `?shell=legacy`, AND AFTER SCORE'S PROMOTION THAT MAKES IT A
-// TEST OF A COMPATIBILITY SURFACE. `laneRenderKind` returns `'legacy'` whenever
-// `shellFaces` is false, so it renders the verbatim `ScoreCard.svelte` — faced or
-// not. It did not go RED on promotion; it went GREEN AND BLIND, which is worse,
-// because it would have certified the orphaned-binding defect below as fine. The
-// legacy leg is KEPT (the escape hatch is a real surface and a real regression
+// ⚠ LEG 2 DROVE THE PRE-PROMOTION SURFACE, AND AFTER SCORE'S PROMOTION THAT
+// MADE IT A TEST OF A COMPATIBILITY SURFACE: the lane decision short-circuited
+// before it read the promotion, so it painted the old instrument faced or not.
+// It did not go RED on promotion; it went GREEN AND BLIND, which is worse,
+// because it would have certified the orphaned-binding defect below as fine. It
+// was KEPT at the time (that surface was still real, and a real regression
 // class) and RE-TITLED to say what it now proves, and LEG 3 is the one that can
 // fail on the bug.
 //
@@ -209,7 +209,7 @@ test('MIDI assign: the FACE\'s isPlaying toggle binds a NOTE, and a saved legacy
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  // ── THE DEFAULT SHELL. No `?shell=legacy`: this is the surface a user gets.
+  // ── THE SHIPPING SHELL: the surface a user gets.
   await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 

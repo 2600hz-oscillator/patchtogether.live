@@ -333,11 +333,11 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // AVAILABLE — but nothing in a bare spawn asks for one. Camera capture starts
   // from a user gesture, which is what `camera-input.spec.ts` drives.
   // Handle-presence + input-accept still pin the port here.
-  'cameraInput.out': 'a camera device port on a bare spawn: nothing requests getUserMedia, so the sink shows its own idle picture — MEASURED identical on ?shell=legacy (mean 16.93 vs an unpatched card 22.82) and on the shell (18.95/1.50 vs idle 18.95/1.50), i.e. this port never emitted here and the old floors passed on videoOut idle. Real coverage: camera-input.spec.ts drives the gesture that starts capture',
+  'cameraInput.out': 'a camera device port on a bare spawn: nothing requests getUserMedia, so the sink shows its own idle picture — MEASURED identical on BOTH renderers that existed at the time (mean 16.93 against an unpatched 22.82, and 18.95/1.50 against an idle 18.95/1.50), i.e. this port never emitted here and the old floors passed on videoOut idle. Real coverage: camera-input.spec.ts drives the gesture that starts capture',
   // ── MANDLEBLOT.color_out — the RGB palette output is BLACK at default params.
-  // MEASURED 2026-09-04 with the same patch on both shells: the legacy card
+  // MEASURED 2026-09-04 with the same patch on both renderers: the older
   // canvas read nonBlackFrac 0.1612 / mean 1.02 (it cleared `> 0.001` by being
-  // a hair above pure black, in a canvas whose variance came from card chrome),
+  // a hair above pure black, in a canvas whose variance came from its chrome),
   // and the shell tile reads 0.0000 / mean 0.00 — and so does MANDLEBLOT's OWN
   // tile, so this is the module rendering nothing, not the bridge dropping it.
   // `mono_out` (the greyscale escape-time field) emits normally from the same

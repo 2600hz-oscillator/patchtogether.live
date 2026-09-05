@@ -3,8 +3,8 @@
 // THE PROJECTOR OUTLIVES THE CARD (owner P0, dev: "backdraft on dev when card
 // is not expanded and its been sent to a projector, the output stops").
 //
-// WHAT "not expanded" MEANS, mechanically. Under the faceplate shell (the
-// default — `?shell=legacy` is the escape hatch) BACKDRAFT's OUTPUT SURFACE
+// WHAT "not expanded" MEANS, mechanically. Under the faceplate shell
+// BACKDRAFT's OUTPUT SURFACE
 // exists in exactly one place: the dock FULL-VIEW that the tile's EXPAND opens.
 // The "Present on <display>" menu lives on that surface. So the owner's
 // sequence is expand -> present -> COLLAPSE, and the collapse UNMOUNTS the host.
@@ -16,8 +16,9 @@
 // three things that died with the unmount, and every assertion below are
 // unchanged — the surface that owns `createPresent` simply has a new name, and
 // it is the CURRENT one that needs this proof.
-// present-second-display.spec.ts cannot see any of this: it runs
-// `?shell=legacy`, where the card sits in the lane forever and is never swapped.
+// present-second-display.spec.ts cannot see any of this: it was written against
+// the PRE-PROMOTION renderer, where the surface sat in the lane forever and was
+// never swapped.
 //
 // THREE CARD-OWNED THINGS DIED WITH THAT UNMOUNT, and a fix for any one of them
 // alone still leaves a dead projector — which is why this spec asserts the
