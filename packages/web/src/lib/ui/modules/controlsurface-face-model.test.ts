@@ -78,20 +78,19 @@ describe('controlSurface face — the promotion', () => {
     expect(NON_SHELL_LANE_TYPES.has('cadillac'), 'a real member remains').toBe(true);
   });
 
-  // ⚠ THE USER-DOCKED RESIDUAL, PINNED rather than discovered in review:
-  // controlSurface is NOT a pinned singleton, so `dockRailRendersFace` is false
-  // for it and a user-docked node's rail occupant stays the VERBATIM legacy
-  // card — which carries its own prune `$effect` and its own lock button, so no
-  // reachable surface is prune-less or lock-less.
-    // ⚠ THE `?shell=legacy` HALF OF THIS LEG IS GONE WITH THE HATCH, and so is
-    // the `dockRailRendersFace` half. The rail's rule was
-    // `shellFaces && pinned && migrated`, and its `pinned` clause is exactly the
-    // path this leg pinned: a user-docked, non-pinned occupant kept the VERBATIM
-    // CARD in the rail on the DEFAULT shell. All three terms lost their subject
-    // at once — no hatch, no card, and every faced module in STRICT_FACES — so
-    // the rule is deleted and the rail renders the faceplate unconditionally.
-    // What the leg was protecting (a reachable surface that is prune-less or
-    // lock-less) is now protected by there being ONE surface.
+  // ⚠ THE USER-DOCKED RESIDUAL LEG IS GONE, AND SO IS THE DEFECT IT DESCRIBED.
+  // It asserted `dockRailRendersFace(...) === false` — controlSurface is not a
+  // pinned singleton, so a user-docked node's rail occupant kept the VERBATIM
+  // legacy card — and argued that nothing was lost because that card carried
+  // its own prune `$effect` and lock button. The owner filed exactly this as a
+  // P0 on 2026-09-03: the rail painted a DIFFERENT INSTRUMENT from the lane for
+  // the same node. Main fixed it by dropping the `pinned` term (#2358); here
+  // all three terms lost their subject at once — no `?shell=legacy` hatch, no
+  // card to fall back to, every faced module in STRICT_FACES — so the rule is
+  // deleted outright and the rail renders the faceplate unconditionally. The
+  // prune side effect lives on the `tileBody` (node-on-canvas lifetime) and the
+  // LOCK is a ranked cell, so both survive; what the leg protected is now
+  // protected by there being ONE surface.
 });
 
 describe('controlSurface face — the ONE ranked cell', () => {

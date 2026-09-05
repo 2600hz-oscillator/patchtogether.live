@@ -24,6 +24,8 @@
 
 import { test, expect, _electron, type ElectronApplication, type Page } from '@playwright/test';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import WebSocket from 'ws';
 
 const APP_DIR = path.resolve(__dirname, '..');
@@ -65,7 +67,10 @@ async function launchShell(): Promise<{
   const vstPort = 19310 + 2 * (portSlot % 40);
   portSlot += 1;
   const app = await _electron.launch({
-    args: [APP_DIR],
+    // Fresh userData per launch, for the same reason the ports are fresh: the
+    // shell now holds a single-instance lock keyed on this directory, and a
+    // lingering sibling would make the next launch exit instead of boot.
+    args: [`--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-sup-'))}`, APP_DIR],
     env: {
       ...process.env,
       PT_DESKTOP_WEB_ROOT: WEB_ROOT,

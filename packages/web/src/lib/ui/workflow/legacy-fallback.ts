@@ -209,9 +209,10 @@ export type LaneRenderKind = 'shell' | 'native' | 'stub';
  *     dock full view — the ordinary semantic-zoom contract, owner-approved for
  *     exactly this module (2026-08-31, owner-decisions item 10, on the
  *     electraControl precedent). The prune side effect the card owned moved to
- *     the tileBody (node-on-canvas lifetime), and a USER-DOCKED node's rail
- *     occupant still mounts the verbatim card (`dockRailRendersFace` requires
- *     `pinned`), so no surface is ever prune-less.
+ *     the tileBody (node-on-canvas lifetime), which is what keeps every
+ *     surface prune-ful — including a USER-DOCKED node's rail occupant, which
+ *     renders the FACE since the 2026-09-03 P0 removed `pinned` from
+ *     `dockRailRendersFace`.
  *   ⚠ clipplayer USED TO BE IN THIS SET and is not any more. It was the entry
  *     the "snowflake" clause was actually true of: its card IS a launcher grid,
  *     and a ranked-knob skeleton in its place would have been a lane tile of
@@ -317,18 +318,34 @@ export function isLaneNative(type: string): boolean {
 // was promoted. OWNER RULING (#1739): *"the `m` key tray view needs to show the
 // new card and not the old one."*
 //
-// ⚠ `pinned` IS PART OF THE RULE, NOT AN OPTIMISATION. The two rail occupant
-// kinds have different amounts of surface:
+// ⚠ `pinned` USED TO BE PART OF THE RULE, AND THAT TERM WAS THE SECOND HALF OF
+// AN OWNER P0 (2026-09-03: *"dev is also still using legacy card in top camera
+// area … that is a workaround for now but ALSO WRONG"*). The argument for it
+// read:
 //   * a PINNED occupant is canvas-hidden (`isCanvasHiddenNode`), so it has NO
 //     lane tile, NO EXPAND pill and no route to `DockFullView`. The tray is its
 //     ONLY surface, and it is therefore the only place its face can appear.
 //   * a USER-DOCKED entry still has both — the lane shows its DockStubCard and
 //     the stub's own affordances reach the full view — so its face is already
 //     reachable and the rail card is the second surface, not the only one.
-// Widening this to every occupant is a separate, deliberate change: it flips
-// every user-docked promoted module at once and MOVES `workflow-dock.spec.ts`
-// (which docks `mixer` and asserts `.mod-card`) plus the `workflow-dock-
-// composite` VRT baseline (which docks `vca`). Both are promoted types.
+// The second bullet is TRUE and is not a reason. "Reachable somewhere else"
+// answers a COMPLETENESS question; a rail occupant is a surface a player LOOKS
+// AT, and `Canvas.railCards` passes `pinned: false` for every user-docked node,
+// so on the default shell docking a promoted module swapped it back to the
+// instrument it had before it was promoted. That is the same split-brain
+// `NON_SHELL_LANE_TYPES` above records as the thing to close IN THE SAME DIFF
+// as a promotion — two instruments for one node — arriving through a different
+// door. Docking a module is not a request for its old card.
+//
+// ⚠ THE COST THE OLD NOTE PRICED IS NOT PAID, AND THAT WAS CHECKED RATHER THAN
+// REASONED. It said widening "MOVES `workflow-dock.spec.ts` (which docks
+// `mixer` and asserts `.mod-card`) plus the `workflow-dock-composite` VRT
+// baseline (which docks `vca`)". `workflow-dock.spec.ts` drives
+// `/rack?shell=legacy` — the `shellFaces` arm below — so it keeps the legacy
+// card and does not move. The VRT file's `?shell=legacy` scene is likewise on
+// that arm, and its DEFAULT-shell scene EXPANDS a `vca` into a full-view PANE
+// rather than docking it to a rail, so it never reaches this rule at all.
+// Both verified against the spec sources before the term was removed.
 //
 // ⚠ `shellFaces` IS PART OF THE RULE for the same reason it is part of
 // `laneRenderKind`: `?shell=legacy` means "verbatim legacy cards inside the
@@ -358,7 +375,20 @@ export function isLaneNative(type: string): boolean {
 // GENERAL FORM, for whoever adds a FOURTH host: a pure rule with an injected
 // input is only as good as its call sites, and nothing here can tell you a
 // caller is missing. When you mount `DockCardHost`, decide `face` — the default
-// is a decision too, and it is the wrong one for a pinned occupant.
+// is a decision too, and it is the wrong one for any rail occupant.
+//
+// ⚠ AND THERE IS A HOST THAT IS NOT A `DockCardHost` AT ALL, WHICH IS WHY THE
+// "fourth host" WARNING ABOVE DID NOT CATCH IT. The workflow topbar's 📷 CAMERA
+// MANAGER (`$lib/ui/workflow/CameraSurface.svelte`) keeps one always-mounted
+// `<SvelteFlow nodeTypes={…}>` per mapped camera and therefore paints the
+// verbatim `CameraInputCard` on every shell — that is the surface the owner's
+// P0 screenshot calls the "top camera area". It is DELIBERATELY the card and
+// must stay one: a `hiddenCard` camera has no canvas node and no
+// `<HeadlessSourceHost>`, so that host is the module's ONLY mount and therefore
+// the sole owner of `getUserMedia`, the MediaStream and the permission machine.
+// Facing it means giving those cameras a headless owner FIRST. Recorded here
+// rather than fixed here, because swapping the component without moving the
+// ownership would stop every mapped camera dead.
 
 // ⚠ `dockRailRendersFace()` AND `DockRailRenderInput` ARE GONE, AND THE REASON
 // IS THE BUG THIS FILE'S OWN HEADER DESCRIBES ABOVE.
@@ -377,3 +407,12 @@ export function isLaneNative(type: string): boolean {
 // The general form the header prescribes for "whoever adds a FOURTH host" is
 // unchanged and now trivial to honour: a `DockCardHost` mount has one surface to
 // choose from.
+//
+// ⚠ MAIN REACHED THE SAME CONCLUSION HALFWAY, INDEPENDENTLY (#2358, 2026-09-03).
+// The owner filed the `pinned` clause as a P0 — *"dev is also still using legacy
+// card in top camera area … that is a workaround for now but ALSO WRONG"* — and
+// that fix DROPPED `pinned`, leaving `shellFaces && migrated`. This supersedes
+// it rather than contradicting it: with the cards gone the other two terms lose
+// their subject too, so the two-term rule could also only ever answer one way.
+// The merge keeps THIS side deliberately; nothing of #2358's behaviour is lost,
+// because "every rail occupant renders the face" is what both arrive at.

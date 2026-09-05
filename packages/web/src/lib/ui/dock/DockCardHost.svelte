@@ -25,7 +25,7 @@
   //
   //  * THE PROMOTED FACE (#1739). When the occupant renders its FACEPLATE
   //    (`face` — `dockRailRendersFace`, decided in Canvas so `?shell=legacy`
-  //    and `pinned` are read in ONE place), the mounted component is
+  //    and `migrated()` are read in ONE place), the mounted component is
   //    `<ModuleShell view='drawer'>` instead of `nodeTypes[type]`. Everything
   //    else on this host is untouched: the same `<section data-dock-card>` and
   //    `[data-dock-card-frame]` anchors (cardRectFor / PickupCable /
@@ -48,7 +48,8 @@
     /** Mount the PROMOTED FACEPLATE (`<ModuleShell view='drawer'>`) rather than
      *  the verbatim legacy card. Injected — `dockRailRendersFace` in
      *  legacy-fallback.ts owns the rule and Canvas evaluates it, so this host
-     *  stays registry-free and does not re-derive `?shell=legacy` / `pinned`. */
+     *  stays registry-free and does not re-derive `?shell=legacy` /
+     *  `migrated()`. */
     face?: boolean;
     /** Rack sizing (Canvas's rackSizeByType entry), if the type declares one. */
     rackSize?: { size?: string; hp?: number };

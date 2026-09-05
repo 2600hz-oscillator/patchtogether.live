@@ -52,20 +52,49 @@ test('export state-only: menu row produces a smaller zip that round-trips the ra
   });
 
   // Stub the save dialog: capture the suggested name + written bytes.
+  //
+  // ⚠ `write` APPENDS — it does not assign. A real
+  // `FileSystemWritableFileStream.write(chunk)` writes at the stream's current
+  // position and advances it, so N calls produce one concatenated file. This
+  // stub used to do `bytes = Array.from(d)`, which is only equivalent while the
+  // producer happens to make exactly ONE call — and the export path now streams
+  // the archive in bounded chunks (so a big save neither duplicates the whole
+  // archive in memory nor blocks the main thread in one stretch). The
+  // assignment silently kept the LAST chunk, i.e. the end of the central
+  // directory, and the round-trip below then failed with "missing
+  // performance.json" against a perfectly good save.
+  //
+  // Modelling the real API is the fix; asserting a single write would pin a
+  // property of the OLD writer that the browser never guaranteed.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
-      __stateOnlySave?: { name: string | null; bytes: number[] | null };
+      __stateOnlySave?: {
+        name: string | null;
+        bytes: number[] | null;
+        writes: number;
+        closed: boolean;
+      };
       showSaveFilePicker?: unknown;
     };
-    w.__stateOnlySave = { name: null, bytes: null };
+    w.__stateOnlySave = { name: null, bytes: null, writes: 0, closed: false };
     (w as { showSaveFilePicker: unknown }).showSaveFilePicker = async (o?: { suggestedName?: string }) => {
       w.__stateOnlySave!.name = o?.suggestedName ?? null;
       return {
         createWritable: async () => ({
           write: async (d: Uint8Array) => {
-            w.__stateOnlySave!.bytes = Array.from(d);
+            const s = w.__stateOnlySave!;
+            s.writes++;
+            s.bytes = s.bytes ? s.bytes.concat(Array.from(d)) : Array.from(d);
           },
-          close: async () => {},
+          // ⚠ `closed` IS THE COMPLETION SIGNAL, and the reason the poll below
+          // does not watch `bytes.length`. With a chunked writer the byte count
+          // is non-zero after the FIRST chunk, so polling on it would read a
+          // half-written archive and fail the round-trip intermittently — a
+          // fixture racing the product, not a product bug. `close()` is the
+          // only point at which a real file is complete.
+          close: async () => {
+            w.__stateOnlySave!.closed = true;
+          },
         }),
       };
     };
@@ -81,27 +110,39 @@ test('export state-only: menu row produces a smaller zip that round-trips the ra
 
   await fileMenuClick(page, 'workflow-file-save-performance-state-only');
 
+  // Wait for the stream to CLOSE, not for the first byte — see the stub.
   await expect
     .poll(
       () =>
         page.evaluate(
           () =>
-            (globalThis as unknown as { __stateOnlySave?: { bytes: number[] | null } }).__stateOnlySave
-              ?.bytes?.length ?? 0,
+            (globalThis as unknown as { __stateOnlySave?: { closed: boolean } }).__stateOnlySave
+              ?.closed ?? false,
         ),
-      { message: 'state-only export wrote zip bytes through the save picker' },
+      { message: 'state-only export closed the save stream (the file is complete)' },
     )
-    .toBeGreaterThan(0);
+    .toBe(true);
 
   const stateOnly = await page.evaluate(async () => {
     const w = globalThis as unknown as {
-      __stateOnlySave: { name: string | null; bytes: number[] };
+      __stateOnlySave: { name: string | null; bytes: number[]; writes: number };
       __perfZip: { export: () => Promise<Uint8Array> };
     };
     const full = await w.__perfZip.export();
-    return { name: w.__stateOnlySave.name, size: w.__stateOnlySave.bytes.length, fullSize: full.length };
+    return {
+      name: w.__stateOnlySave.name,
+      size: w.__stateOnlySave.bytes.length,
+      writes: w.__stateOnlySave.writes,
+      fullSize: full.length,
+    };
   });
   expect(stateOnly.name).toBe('performance-state.ptperf.zip');
+  // The save reached the picker at all. Chunk COUNT is deliberately not
+  // asserted here — a small state-only manifest may legitimately be one chunk,
+  // and the chunking contract is pinned in performance-zip.test.ts where the
+  // payload can be made large enough for the assertion to mean something.
+  expect(stateOnly.writes, 'the export wrote through the save stream').toBeGreaterThan(0);
+  expect(stateOnly.size, 'the captured archive is non-empty').toBeGreaterThan(0);
   expect(
     stateOnly.size,
     `state-only zip (${stateOnly.size} B) must undercut the history-carrying export (${stateOnly.fullSize} B)`,

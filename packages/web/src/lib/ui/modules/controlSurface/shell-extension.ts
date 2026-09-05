@@ -41,10 +41,15 @@
 //      node is on canvas; the dock body exists only while the full view is
 //      open. The effect therefore rides the tile.
 //
-// The USER-DOCKED residual: `dockRailRendersFace` requires `pinned`, and
+// ⚠ THE USER-DOCKED RESIDUAL THIS NOTE RECORDED IS CLOSED (owner P0,
+// 2026-09-03). It read: "`dockRailRendersFace` requires `pinned`, and
 // controlSurface is not in the pin trio, so a user-docked node's dock-rail
-// occupant stays the verbatim legacy card (which carries its own prune
-// effect and its own lock button) — no surface is ever prune-less.
+// occupant stays the verbatim legacy card (which carries its own prune effect
+// and its own lock button)". That residual is the defect the owner reported on
+// cameraInput: a docked promoted module painting its pre-promotion card. The
+// `pinned` term is gone, so the rail occupant is the face — and the reason no
+// surface is prune-less is now this file's `tileBody`, on every surface, rather
+// than a card that only some surfaces mounted.
 
 import type { ShellExtension } from '$lib/ui/workflow/shell-extensions';
 import ControlSurfaceBoardBody from './ControlSurfaceBoardBody.svelte';

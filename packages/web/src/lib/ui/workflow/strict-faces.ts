@@ -4852,7 +4852,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // It is the `E` of the M/E/C pin trio with `surface: 'drawer'`, spawned into
   // every workflow rackspace with `data.pinned` and CANVAS-HIDDEN — so its
   // always-on instance has no lane tile at all, and `dockRailRendersFace`
-  // (`shellFaces && pinned && migrated`) flips its drawer from the legacy card to
+  // (`shellFaces && migrated`) flips its drawer from the legacy card to
   // `<ModuleShell view='drawer'>`. `dockFullViewHeadPlan` gates the extension
   // body on `isFaceplateView(view)` = `view !== 'lane'` — "the pinned drawer
   // paints the same full faceplate and wants the same head precedence (#1739)" —
@@ -5685,12 +5685,16 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // in the shipped `ElectraGridBody` (green only because the sweep never binds
   // a slot) and is fixed in the same diff.
   //
-  // ⚠ THE USER-DOCKED RESIDUAL, stated rather than discovered in review: a
+  // ⚠ THE USER-DOCKED RESIDUAL THIS ENTRY RECORDED IS CLOSED. It read: "a
   // user-docked controlSurface keeps mounting the verbatim legacy card in the
   // dock rail (`dockRailRendersFace` requires `pinned`), and the card is
   // `DYNAMIC_SIZED`, so the free-growing board survives promotion unmodified
-  // there. With 3+ surfaces, boards beyond `MAX_FULLVIEW_PANES = 2` evict each
-  // other in the full view.
+  // there." The owner reported that residual as a P0 on 2026-09-03 (on
+  // cameraInput, the same shape): a docked promoted module painting its
+  // pre-promotion card. `pinned` is no longer part of the rule, so a docked
+  // node's rail occupant is the face and the board is one Expand away, exactly
+  // as it is from the lane. With 3+ surfaces, boards beyond
+  // `MAX_FULLVIEW_PANES = 2` evict each other in the full view.
   //
   // ZERO ATTEST: a meta def — no engine node, no basis file, and both bodies
   // are DOM with no drawing surface. CONTRACT MOVED: `controlFamilies` ARE
