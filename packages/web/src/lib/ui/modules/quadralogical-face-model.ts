@@ -11,10 +11,10 @@
 //     height never moves", which is what stops the EDGE band below the screen
 //     jumping under the player's cursor on every toggle. A regression here is a
 //     moved baseline with no explanation attached;
-//   * the diamond is the module's own weight model DRAWN, and the legacy card's
-//     rotate(45deg) square is correct ONLY at 1:1 — at the SCREEN-ON aspect it
-//     is wrong by 4/3 on one axis. That is a silent maths error: the outline
-//     still looks like a diamond;
+//   * the diamond is the module's own weight model DRAWN, and the obvious
+//     shortcut — a CSS square under rotate(45deg) — is correct ONLY at 1:1: at
+//     the SCREEN-ON aspect it is wrong by 4/3 on one axis. That is a silent
+//     maths error, because the outline still looks like a diamond;
 //   * the DOMINANT input is the one fact the card carried as a COLOUR and
 //     nothing else, and a colour is not speakable or assertable;
 //   * the accessible name is where the deleted `x: 0.00  y: 0.00` row went, so
@@ -28,7 +28,7 @@
  */
 export const QUAD_FIELD_H = 360;
 
-/** SCREEN OFF: the legacy card's SQUARE pad (1:1) — the joystick with no video. */
+/** SCREEN OFF: the SQUARE pad (1:1) — the joystick with no video. */
 export const QUAD_FIELD_W_OFF = 360;
 
 /**
@@ -51,9 +51,9 @@ export function quadFieldWidth(previewCollapsed: boolean): number {
  * `|x| + |y| = margin` in NORMALISED joystick coordinates, whose horizontal
  * semi-axis is `margin·W/2` and vertical semi-axis `margin·H/2`. A CSS square
  * rotated 45° has EQUAL semi-axes, so it is correct at 1:1 and only at 1:1 —
- * which is why the legacy card's version (`diamondSide = margin·PAD/√2` +
- * `rotate(45deg)`) is right where it lives, on a square pad, and would be wrong
- * by 4/3 on one axis here with SCREEN ON.
+ * which is why the shortcut form (`diamondSide = margin·PAD/√2` +
+ * `rotate(45deg)`) is right on a square pad and would be wrong by 4/3 on one
+ * axis here with SCREEN ON.
  *
  * Percentages are aspect-free, so ONE expression is correct in both states.
  * `margin` is clamped to the param's own 0..1 range.
@@ -95,7 +95,7 @@ export function quadFmtAxis(v: number): string {
 }
 
 /**
- * The joystick field's ACCESSIBLE NAME — where the legacy card's
+ * The joystick field's ACCESSIBLE NAME — where the printed
  * `x: 0.00  y: 0.00` row went when the resting-text ruling deleted it.
  *
  * ⚠ `aria-label`, NOT `aria-valuetext`. The field is `role="application"` — the

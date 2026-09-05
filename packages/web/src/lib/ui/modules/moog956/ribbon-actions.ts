@@ -1,15 +1,14 @@
 // packages/web/src/lib/ui/modules/moog956/ribbon-actions.ts
 //
 // THE RIBBON GESTURE, as ONE action seam — press, slide, release — called
-// verbatim by all three surfaces that play the 956: the legacy card, the
-// face's lane `tileBody` and its dock `fullViewBody`.
+// verbatim by both surfaces that play the 956: the face's lane `tileBody` and
+// its dock `fullViewBody`.
 //
 // It is a plain TypeScript module rather than logic inside a component for the
 // reason `module-surfaces` states: a def-reading gate cannot see behaviour
-// owned only by a Svelte component, and promotion stops the legacy card
-// rendering on normal surfaces — so a gesture implemented three times would be
-// three chances to diverge, with nothing able to notice. `livecode`'s RUN is
-// the precedent.
+// owned only by a Svelte component — so a gesture implemented once per surface
+// would be one chance to diverge per surface, with nothing able to notice.
+// `livecode`'s RUN is the precedent.
 //
 // ── ⚠ THE ORDER IS THE WHOLE POINT ──────────────────────────────────────────
 //
@@ -129,9 +128,9 @@ export function ribbonPress(nodeId: string, pos: number): number {
   // seams. The strip wrote `pos` durably and grabbed nothing, so with a
   // `moog956::pos` clip playing a finger neither suspended playback nor
   // recorded — `drive()` kept re-scheduling over the stroke and the
-  // "live wins" contract ($lib/audio/automation-touch) was bypassed on the one
-  // surface the promotion makes primary. The legacy card had the same hole;
-  // this seam is where it gets closed for all three surfaces at once.
+  // "live wins" contract ($lib/audio/automation-touch) was bypassed on the
+  // primary surface. This seam is where it gets closed for every surface at
+  // once.
   notifyAutomationTouch({ nodeId, paramId: RIBBON_POS_PARAM }, 'pointer');
   const p = ribbonSlide(nodeId, pos);
   ribbonPersistPos(nodeId, p);
@@ -160,11 +159,10 @@ export function ribbonRelease(nodeId: string): void {
  * The ribbon's pitch as a HUMAN reading, in semitones — one string, one
  * source, for two very different destinations.
  *
- * The legacy card PAINTS it (legacy cards print values and are untouched by
- * the resting-text ruling); the face SPEAKS it, as the strip's
- * `aria-valuetext`, because the ruling puts a derived value on the accessible
- * name and nowhere else. Sharing the formatter is what stops the two surfaces
- * quietly disagreeing about the same number — the divergence class this
+ * The face SPEAKS it, as the strip's `aria-valuetext`, because the
+ * resting-text ruling puts a derived value on the accessible name and nowhere
+ * else. Sharing one formatter between the lane and dock bodies is what stops
+ * them quietly disagreeing about the same number — the divergence class this
  * module's whole shape is arguing against.
  *
  * V/oct → semitones is ×12 by the project's pitch convention (1.0 == one

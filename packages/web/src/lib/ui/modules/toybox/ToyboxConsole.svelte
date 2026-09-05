@@ -220,13 +220,14 @@
   interface Props {
     /** The TOYBOX node id. Stable for this component's whole lifetime. */
     nodeId: string;
-    /** The legacy card's xyflow snapshot wrapper. ⚠ THE CARD PASSES IT AND THE
-     *  FACE CANNOT, and that asymmetry is the reason `extRev` below exists
-     *  rather than a preference: the card's reactivity has always keyed off
-     *  this wrapper's FRESH IDENTITY per snapshot, and a faceplate body is not
-     *  rendered by xyflow so no such wrapper reaches it. */
+    /** An xyflow snapshot wrapper for the node. ⚠ NO CALLER PASSES ONE ANY
+     *  MORE — a faceplate body is not rendered by xyflow, so no such wrapper
+     *  reaches it and this is always `undefined`. It is left in place rather
+     *  than removed because `extRev` below reads it, and the removal is a code
+     *  change this branch is deliberately not making after its attest; it is
+     *  named here so the next editor deletes both together. */
     nodeSnapshot?: ModuleNode | undefined;
-    /** 'card' (legacy 3-column) or 'face' (screen + layer band + tab rail). */
+    /** 'face' (screen + layer band + tab rail) — the only layout. */
     layout?: ToyboxConsoleLayout;
     /**
      * Is the SCREEN switched ON? Owned by the HOST, because the fleet's video
@@ -241,7 +242,7 @@
      * producer class, #1721/#1728). Off changes what is PAINTED, never what is
      * PRODUCED.
      *
-     * Defaults TRUE so the legacy card is unchanged: it has no switch.
+     * Defaults TRUE, so a host that does not offer the switch always blits.
      */
     screenOn?: boolean;
   }
@@ -2422,11 +2423,11 @@
    * bring the picture back black or stale when the screen came on again — the
    * collapse-kills-the-producer class (#1721, #1728).
    *
-   * Card layout does NOT call this, deliberately: the legacy card has no screen
-   * switch, always blits, and its lane visibility is what `setCardVisibility`
-   * is for. Marking unconditionally there would put a scrolled-away card's node
-   * back into the pull set and change engine behaviour the extraction has no
-   * business changing.
+   * ⚠ A HOST WITH NO SCREEN SWITCH MUST NOT CALL THIS. It always blits, so its
+   * mark is renewed by the blit; its visibility is what `setCardVisibility` is
+   * for, and marking unconditionally would put a scrolled-away node back into
+   * the pull set and change engine behaviour this component has no business
+   * changing.
    */
   function renewWatchMark(): void {
     const e = engineCtx.get();
@@ -3541,8 +3542,7 @@
   /* ═══ THE FACEPLATE BODY (layout === 'face') ═══════════════════════════════
    *
    * Every rule below is scoped by a `.tb-*` class or by `.screen-wrap.face`, so
-   * NOTHING here can reach the legacy card — its baselines stay pinned to the
-   * plate they were captured on.
+   * nothing here reaches any other surface's plate.
    *
    * ⚠ WHOLE-PIXEL WIDTHS THROUGHOUT. The dock faceplate is `max-content`
    * clamped to the pane, so THIS stack's natural width IS the plate width;

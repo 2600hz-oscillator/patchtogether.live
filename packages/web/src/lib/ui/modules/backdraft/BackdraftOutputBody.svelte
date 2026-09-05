@@ -23,7 +23,7 @@
   // direct GL surface here would put this file in the basis PERMANENTLY and
   // make every future edit to it cost a ~10-minute owner-machine re-attest. The
   // engine already renders to its own GL canvas; this is a `drawImage` blit of
-  // it, which is what the legacy card does for exactly the same reason.
+  // it, which is the cheapest way to show the engine's picture here.
 
   import { untrack } from 'svelte';
   import { useEngine } from '$lib/audio/engine-context';
@@ -43,8 +43,7 @@
 
   interface Props {
     /** The graph node this faceplate is showing. The ONLY prop the slot gets
-     *  (`ShellExtensionFullViewBodyProps`) — everything else is resolved here,
-     *  exactly as the legacy card resolves it. */
+     *  (`ShellExtensionFullViewBodyProps`) — everything else is resolved here. */
     nodeId: string;
   }
   let { nodeId }: Props = $props();
@@ -283,8 +282,8 @@
   <!-- ⚠ NEVER `{#if}`-ed AWAY. `requestFullscreen()` must be handed a real,
        rendered element at the moment the menu item is clicked, and the Present
        popup blits FROM this canvas every frame — so OFF collapses it to a
-       zero-space ghost (the legacy card's own proven shape) rather than
-       unmounting it. `.collapsed` takes it out of flow, which is what actually
+       zero-space ghost rather than unmounting it. `.collapsed` takes it out of
+       flow, which is what actually
        reclaims the vertical space; `display:none` would too, but it also
        forfeits the fullscreen target. -->
   <div
@@ -384,9 +383,9 @@
     line-height: 0;
   }
 
-  /* FULL FRAME here means "fill the dock body" — the dock has no card border to
-   * consume, so the in-app expansion is of this slot rather than of a card. The
-   * PERSISTED flag is the same `node.data.fullFrame` the legacy card writes. */
+  /* FULL FRAME here means "fill the dock body" — the dock has no plate border
+   * to consume, so the in-app expansion is of this slot. The PERSISTED flag is
+   * `node.data.fullFrame`, the same key a saved rack carries. */
   .bd-out.full-frame {
     flex-direction: column;
     align-items: stretch;

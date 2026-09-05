@@ -284,8 +284,8 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     ).toHaveCount(1);
 
     // ── PATCH SURFACE (front): the jack rail + its drill-down trigger. The
-    //    legacy card offered the two CORNER triggers; the face offers the lane
-    //    rail's. Both open the SAME portaled patch menu, and it must be
+    //    face offers the lane rail's, in place of the two CORNER triggers that
+    //    preceded it. Both open the SAME portaled patch menu, and it must be
     //    EDGE-ALIGNED TO THE DOCK FRAME rather than the viewport origin —
     //    `PatchPanel.cardRectOf` resolves that through `[data-dock-card-frame]`,
     //    an anchor this change deliberately left on the same element.
@@ -813,8 +813,8 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
     await spawnPatch(page, [{ id: 'amp', type: 'vca', position: { x: 420, y: 120 } }]);
     await waitForPin(page, 'pinned-mixmstrs'); // spawnPatch wiped; ensure re-spawned
     const card = await openTray(page);
-    // Proves this test is looking at the FACE, not the legacy card — without
-    // it the assertions below would be green on either.
+    // Proves this test is looking at the DRAWER face specifically — without it
+    // the assertions below would be green on any shell view.
     await expect(card.locator('[data-testid="module-shell"]')).toHaveAttribute('data-shell-view', 'drawer');
 
     await pressFlipKey(page);
@@ -879,9 +879,10 @@ test.describe('workflow · the pinned `m` tray renders the promoted face (#1739)
 // merely the surface the owner asked about but the ONLY surface the module has.
 // `electraControl` is `surface: 'drawer'` and canvas-hidden, so before this
 // promotion its entire 6×6 board — thirty-six proxies, the rename, the flash —
-// was reachable only by opening the `e` drawer onto a legacy card. Promotion
-// swaps that card for `<ModuleShell view='drawer'>`, so if the extension body
-// did not paint here the module would simply be GONE for every workflow user.
+// was reachable only by opening the `e` drawer onto a bespoke surface.
+// Promotion swaps that for `<ModuleShell view='drawer'>`, so if the extension
+// body did not paint here the module would simply be GONE for every workflow
+// user.
 //
 // ⚠ THIS IS THE ONLY PLACE THAT IS ASSERTED, which is why the block exists.
 // `electra-control.spec.ts` drove the same testids against the PRE-PROMOTION
@@ -905,7 +906,7 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
     return card;
   }
 
-  test('the tray mounts the FACE and its BOARD — not the legacy card', async ({ page }) => {
+  test('the tray mounts the FACE and its BOARD', async ({ page }) => {
     const errors = collectErrors(page);
     await gotoWorkflow(page);
     await waitForPin(page, EC);
@@ -1049,13 +1050,12 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
 // THE USER-DOCKED RAIL OCCUPANT — the 2026-09-03 owner P0's second half.
 //
 // This file's own header listed "A USER-DOCKED promoted module, which
-// deliberately still renders its legacy card" as a thing it structurally could
-// not see, and named `dockRailRendersFace requires pinned` as the reason. That
-// was true, it was written as a scope note rather than a gap, and it is exactly
-// what shipped: the owner docked a CAMERA and got `CameraInputCard` back — old
-// chrome, the card's own device dropdown, "streaming" lamp, Pause / Mirror /
-// Fit:Fill, GAIN slider — on the default shell. *"dev is also still using
-// legacy card in top camera area … ALSO WRONG."*
+// deliberately still renders its PRE-FACE surface" as a thing it structurally
+// could not see, and named `dockRailRendersFace requires pinned` as the reason.
+// That was true, it was written as a scope note rather than a gap, and it is
+// exactly what shipped: the owner docked a CAMERA and got the old chrome back —
+// a bespoke device dropdown, "streaming" lamp, Pause / Mirror / Fit:Fill, GAIN
+// slider — on the default shell, and said so.
 //
 // ⚠ A DOCUMENTED BLIND SPOT IS STILL A BLIND SPOT. Nothing in the repo could
 // fail on this: `workflow-dock.spec.ts` docked `mixer` and asserted on the
@@ -1076,7 +1076,7 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
 // thing widening would move, and it did not — that spec asserted the arm
 // promotion never touched.
 test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the rail', () => {
-  test('docking a migrated module mounts ModuleShell in the rail, never its legacy card', async ({ page }) => {
+  test('docking a migrated module mounts ModuleShell in the rail', async ({ page }) => {
     const errors = collectErrors(page);
     await gotoWorkflow(page);
 
@@ -1084,7 +1084,7 @@ test.describe('workflow · a USER-DOCKED promoted module renders its FACE in the
 
     // PRECONDITION, ASSERTED RATHER THAN ASSUMED: the lane already paints the
     // face. Without this the test could pass on a demoted module by rendering
-    // nothing anywhere, and "the rail has no legacy card" would be vacuous.
+    // nothing anywhere.
     const laneShell = page.locator('.svelte-flow__node[data-id="dock-mix"] [data-testid="module-shell"]');
     await expect(laneShell, 'the lane paints the promoted face before we dock it').toBeVisible({
       timeout: BOOT_MS,

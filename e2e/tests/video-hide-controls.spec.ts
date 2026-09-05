@@ -81,7 +81,7 @@ async function readNodeData(page: Page, id: string): Promise<NodeDataShape> {
 // existed to bypass. The cascade itself keeps shell coverage where its shell
 // gestures live: the rear back-jack menus (unpatch-patch-point.spec.ts) and
 // the drag drill-down (cable-drag-drilldown.spec.ts). `triggerInfoFromEvent`
-// dies with the legacy cards.
+// died with the surface that raised those events.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE FACED LEG (#2009) — MONITOR MODE on the workflow-shell dock faceplate.
@@ -91,7 +91,7 @@ async function readNodeData(page: Page, id: string): Promise<NodeDataShape> {
 // faceplate the gesture is a different mechanism entirely:
 //
 //   * the STATE is the same persisted `node.data.hideControls` key (shared on
-//     purpose — a rack saved from the legacy card must reopen the same way);
+//     purpose — a rack saved before the faceplate must reopen the same way);
 //   * the TOGGLE lives on the module's own `fullViewBody` extension;
 //   * the SUPPRESSION is the shell's (`faceMonitorPlan`), because
 //     `fullViewBody` paints ABOVE the bands and by contract cannot hide them.
@@ -228,7 +228,7 @@ async function gotoShell(page: Page): Promise<void> {
 async function openFace(page: Page, nodeId: string): Promise<Locator> {
   await centerOnNode(page, nodeId);
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
-  await expect(shell, `${nodeId} renders a faceplate shell, not a legacy card`).toBeVisible();
+  await expect(shell, `${nodeId} renders a faceplate shell`).toBeVisible();
   await shell.getByTestId('shell-open-dock').click();
   const fv = page.getByTestId('dock-full-view');
   await expect(fv).toBeVisible();
@@ -290,7 +290,7 @@ test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
       await expect(handle, 'the corner drag arrives with the mode').toBeVisible();
 
       const hidden = await readNodeData(page, m.nodeId);
-      expect(hidden.hideControls, 'over the SAME persisted key the legacy card writes').toBe(true);
+      expect(hidden.hideControls, 'over the SAME persisted key a saved rack carries').toBe(true);
 
       // ── THE CORNER DRAG ──────────────────────────────────────────────────
       const before = await canvas.boundingBox();
@@ -343,8 +343,8 @@ test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
   test("NEGATIVE CONTROL: a stale hideControls cannot blank a face that declares no monitor", async ({ page }) => {
     // ⚠ THE FAILURE MODE THE DECLARATION GATE EXISTS FOR, exercised end to end
     // rather than argued in a comment. `hideControls` is persisted and
-    // collab-synced, so a rack saved from ANY legacy card can hand this flag to
-    // a faceplate whose face never declared monitor mode. If the shell read the
+    // collab-synced, so ANY saved rack can hand this flag to a faceplate whose
+    // face never declared monitor mode. If the shell read the
     // flag alone, that patch would open a faceplate with no bands — and on a
     // face with no extension body, with nothing at all.
     //
@@ -380,7 +380,7 @@ test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
       .toBeVisible();
 
     // The flag is still ON the node — the shell IGNORED it rather than clearing
-    // it, so the legacy card's meaning of the key is untouched.
+    // it, so a saved rack's meaning of the key is untouched.
     const data = await readNodeData(page, 'gov-face');
     expect(data.hideControls, 'the key is untouched, merely inert here').toBe(true);
   });
