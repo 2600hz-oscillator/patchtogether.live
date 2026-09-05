@@ -189,11 +189,12 @@ test.describe('CLIP PLAYER faceplate', () => {
       { id: CP, type: 'clipplayer', position: { x: 120, y: 120 }, domain: 'audio' },
     ]);
 
-    // The verbatim card is GONE from the canvas — the half of the promotion
-    // `NON_SHELL_LANE_TYPES` used to prevent.
-    await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(0);
-    await expect(page.locator('[data-testid="clipplayer-card"]')).toHaveCount(0);
-
+    // ⚠ TWO ABSENCE CHECKS STOOD HERE — "the verbatim surface is GONE from the
+    // canvas", the half of the promotion `NON_SHELL_LANE_TYPES` used to
+    // prevent. Neither can fail now: `.svelte-flow__node-clipplayer` is a
+    // per-TYPE xyflow class and every lane node is `moduleShell`, and
+    // `clipplayer-card` is emitted by nothing. The lane shell below is the
+    // positive statement they were guarding.
     const shell = laneShell(page, CP);
     await expect(shell).toBeVisible();
 

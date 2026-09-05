@@ -5,8 +5,9 @@
 //
 // ── THE DEFECT ─────────────────────────────────────────────────────────────
 //
-// `node.data.hideControls` turns a video card into a resizable monitor. It is
-// mounted by FIVE legacy cards and is NOT a `ParamDef`, so a `FaceReadoutValue`
+// `node.data.hideControls` turns a video module into a resizable monitor. Five
+// modules carried it before their faces, and it is NOT a `ParamDef`, so a
+// `FaceReadoutValue`
 // cannot see it, `contract-lock` cannot see it, and `module-face-lint`'s
 // completeness sweep — which enumerates params, declared families and numbered
 // legends — cannot see it either. #1865 measured the consequence: "a face over
@@ -42,8 +43,9 @@
 //   FORWARD  a face that DECLARES `monitor` must own a `fullViewBody` that can
 //            actually drive it (reads the key, writes the key, has a button).
 //            Without this, `monitor` is a declaration with no way to reach it.
-//   INVERSE  a FACED module whose legacy card still mounts `hideControls` must
-//            DECLARE `monitor`. This is the half that catches the next
+//   INVERSE  a FACED module that still mounted `hideControls` on an un-migrated
+//            surface had to DECLARE `monitor`. That was the half that caught the
+//            next
 //            promotion — `monoglitch`, `milkdrop`, `reshaper`, `graphicEq` —
 //            and it is the one #1865 actually asked for. A named exemption is
 //            allowed and must carry an argument.
@@ -91,15 +93,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULES_DIR = resolve(HERE, '../modules');
 const SHELL = resolve(MODULES_DIR, 'ModuleShell.svelte');
 
-/** The persisted key. ONE spelling, shared by the legacy card and the faced
- *  body deliberately — a rack saved before a promotion already carries it, and
+/** The persisted key. ONE spelling across every surface, deliberately — a rack
+ *  saved before a promotion already carries it, and
  *  reading a different key on the face would silently forget every monitor a
  *  player had open. */
 const KEY = 'hideControls';
 
 interface DefLike {
   type: string;
-  card?: string;
   face?: { extension?: string; monitor?: { why: string } };
 }
 
@@ -115,28 +116,28 @@ function read(p: string): string {
   return readFileSync(p, 'utf8');
 }
 
-// ⚠ THE INVERSE HALF OF THIS GATE RETIRES WITH THE LEGACY FLEET, and it is
+// ⚠ THE INVERSE HALF OF THIS GATE RETIRED WITH THE SURFACES IT READ, and it is
 // worth writing down rather than quietly deleting, because it was the half that
 // caught the NEXT promotion rather than the current one.
 //
-// It resolved each def's legacy card (`def.card` or `PascalCase(type) + 'Card'`)
-// and derived the population that mounts `hideControls` off the TREE — no
-// roster to go stale. Three legs rested on it:
+// It resolved each def's un-migrated surface by convention and derived the
+// population that mounted `hideControls` off the TREE — no roster to go stale.
+// Three legs rested on it:
 //
-//   * "a FACED module whose card mounts hideControls declares `monitor`" — the
-//     #1865 shape: promotion stops BOTH surfaces rendering the card, so the
-//     affordance is deleted by the very change meant to keep it, invisibly,
-//     because it is not a ParamDef.
-//   * "every exemption still names a faced module whose card mounts the
-//     monitor" — the anchoring on NO_MONITOR_MODE, which is EMPTY today.
-//   * "the card resolver DISCRIMINATES" — its own instrument control, with
-//     ruttetra as the positive case and adsr as the negative.
+//   * "a FACED module that still mounts hideControls declares `monitor`" — the
+//     #1865 shape: promotion stops that surface rendering, so the affordance is
+//     deleted by the very change meant to keep it, invisibly, because it is not
+//     a ParamDef.
+//   * "every exemption still names a faced module that mounts the monitor" —
+//     the anchoring on NO_MONITOR_MODE, which is EMPTY today.
+//   * "the resolver DISCRIMINATES" — its own instrument control, with ruttetra
+//     as the positive case and adsr as the negative.
 //
 // ⚠ THE CLAIM IS NOT WEAKENED, IT IS FINISHED. That leg was a MIGRATION check:
-// its subject is "an affordance a card has and a face does not yet", and it can
-// only fire while an un-migrated card exists to compare against. With the fleet
-// gone there is no before-state left to lose an affordance from — every module
-// IS its face. NAMED, so nobody reads its absence as an oversight: the
+// its subject is "an affordance an un-migrated surface has and a face does not
+// yet", and it can only fire while such a surface exists to compare against.
+// There is no before-state left to lose an affordance from — every module IS its
+// face. NAMED, so nobody reads its absence as an oversight: the
 // migration-era comparison has no successor, and what remains is the FORWARD
 // direction (a declared monitor must be reachable and the shell must really
 // suppress on it), which is what protects the affordance from here on.
@@ -161,8 +162,8 @@ function defsDeclaringMonitor(): DefLike[] {
 }
 
 /**
- * FACED modules that mount `hideControls` on their card and legitimately do
- * NOT carry monitor mode onto the face.
+ * FACED modules that carried `hideControls` before their face and legitimately
+ * do NOT carry monitor mode onto it.
  *
  * Each entry is a `(type, why)` pair. EMPTY TODAY, and that is the point: the
  * rule holds with no carve-outs, so adding one is a visible decision rather

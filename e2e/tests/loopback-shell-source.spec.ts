@@ -269,14 +269,13 @@ test.describe('LOOPBACK under the DEFAULT shell — promoted lane, node-owned so
     const host = page.locator(HOST);
     await expect(host, 'loopback has no headless host any more — the controller owns the source')
       .toHaveCount(0, { timeout: BOOT_MS });
-    await expect(
-      page.getByTestId('loopback-start-capture'),
-      'and no LoopbackCard is mounted ANYWHERE — not in a host, not in the lane, not in the dock',
-    ).toHaveCount(0);
-    await expect(
-      page.locator('.svelte-flow__node-loopback'),
-      'zero card mounts, stated on the node class too',
-    ).toHaveCount(0);
+    // ⚠ TWO FURTHER ABSENCE CHECKS STOOD HERE AND NEITHER CAN FAIL ANY MORE.
+    // `loopback-start-capture` is emitted by nothing in the tree, and
+    // `.svelte-flow__node-loopback` is a per-TYPE xyflow class that stopped
+    // existing when every lane node became `moduleShell` — so both were
+    // satisfied by a page that rendered nothing. The HOST check above is the
+    // falsifiable one, and the parked-<video> leg below is the positive
+    // statement.
 
     // ── 3. THE NODE-OWNED <video> EXISTS AND IS PARKED ─────────────────────
     //

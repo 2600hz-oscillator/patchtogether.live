@@ -608,8 +608,9 @@
     // option (c)). Shared with the tier-invariant _module-card.css height rule
     // (--shell-tile-h) so CSS/TS can't drift, and the RESERVED lane slot equals
     // the RENDERED tile (else the baseline number badge floats mid-card).
-    // NON_SHELL_LANE_TYPES keeps its member's LEGACY card in the lane, so such a
-    // type reserves its NATIVE rack tier rather than the shell tile. The set is
+    // NON_SHELL_LANE_TYPES keeps its member's own native body in the lane, so
+    // such a type reserves its NATIVE rack tier rather than the shell tile. The
+    // set is
     // down to `cadillac` alone (a roaming overlay sprite that is filtered out of
     // flowNodes upstream anyway) now that group and sticky are deleted.
     // Preview-OFF keeps the per-TYPE rack tier for every type → byte-identical.
@@ -623,8 +624,8 @@
    *  preview a shell/placeholder tile is the UNIFORM SHELL_TILE_W (every module the
    *  SAME width — the owner "same-size horizontally" premise), so the reserved
    *  column slot == the rendered tile and band-CENTERING (card center == channel-
-   *  number center) stays exact. NON_SHELL_LANE_TYPES keep their legacy card's
-   *  NATIVE hp width. Preview-OFF (and every type there) uses the per-TYPE hp tier
+   *  number center) stays exact. NON_SHELL_LANE_TYPES keep their own NATIVE hp
+   *  width. Preview-OFF (and every type there) uses the per-TYPE hp tier
    *  (`--rack-hp` × RACK_UNIT, the same math _module-card.css applies) → byte-
    *  identical. Falls back to one tile. */
   function wcolCardWidthPx(type: string): number {
@@ -2395,9 +2396,8 @@
 
   /** P0.3b — the transient EXPANDED FULL-VIEW occupants (owner extension: up
    *  to TWO side-by-side 50/50 panes, open order = left→right): each is a
-   *  node whose full faceplate is open in the bottom dock (an un-migrated
-   *  module's verbatim legacy card via nodeTypes[type], or a migrated
-   *  module's shell face). NEVER persisted entries — a pane closes to
+   *  node whose full faceplate is open in the bottom dock. NEVER persisted
+   *  entries — a pane closes to
    *  dockStore.closeFullView(id) and keeps the module's lane
    *  placeholder/shell in place (Option #1). */
   let fullViewCards = $derived.by(() => {
@@ -8845,9 +8845,9 @@
     <!-- NODE-LIFETIME VIZ SURFACES (legacy-removal S1). One surface per
          wavesculpt/cube node, parked off-screen, owning the module's
          cross-domain frame drawer and the DRS step seam — so `video_out`
-         carries a picture on a saved rack with NO card and NO faceplate
-         mounted anywhere. The legacy card and the dock views CLAIM that
-         element to show it; none creates one. Renders NOTHING when no such
+         carries a picture on a saved rack with NO faceplate mounted anywhere.
+         A view CLAIMS that element to show it; none creates one. Renders
+         NOTHING when no such
          node exists. -->
     {#each vizSurfaceNodes as vs (vs.id)}
       <NodeVizSurfaceHost nodeId={vs.id} type={vs.type} />
@@ -9236,8 +9236,8 @@
        behind 1600px of empty chrome and parking the ⤡/✕ controls a screen-width
        away from the card they act on.
        `0 1 auto` = never grow, still allowed to shrink; the content's own
-       min-width governs (the 900px kit for curated faces, max-content for a
-       legacy card frame). */
+       min-width governs (the 900px kit for curated faces, max-content
+       otherwise). */
     flex: 0 1 auto;
     min-width: 0;
     display: flex;

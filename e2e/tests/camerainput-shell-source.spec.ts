@@ -183,14 +183,13 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned sour
     );
     await expect(host, 'cameraInput has no headless host any more — the controller owns the source')
       .toHaveCount(0, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await expect(
-      page.getByTestId('camera-device-select'),
-      'and no CameraInputCard is mounted ANYWHERE — not in a host, not in the lane, not in the dock',
-    ).toHaveCount(0);
-    await expect(
-      page.locator('.svelte-flow__node-cameraInput'),
-      'zero card mounts, stated on the node class too',
-    ).toHaveCount(0);
+    // ⚠ TWO FURTHER ABSENCE CHECKS STOOD HERE AND NEITHER CAN FAIL ANY MORE.
+    // `camera-device-select` is emitted by nothing in the tree, and
+    // `.svelte-flow__node-cameraInput` is a per-TYPE xyflow class that stopped
+    // existing when every lane node became `moduleShell` — so both were
+    // satisfied by a page that rendered nothing. The HOST check above is the
+    // falsifiable one (six modules still get hosts), and the source-produces
+    // leg below is the positive statement.
 
     // ── 4. THE SOURCE PRODUCES ─────────────────────────────────────────────
     // Driven synchronously with the engine rAF loop paused: the frame count is

@@ -683,19 +683,18 @@ test('the FACE alone adopts, acquires and drives real audio — with no card any
     ],
   );
 
-  // ── THE PRECONDITION THIS FILE EXISTS FOR: there is no card. ──
+  // ── THE PRECONDITION THIS FILE EXISTS FOR: the lane paints the FACE. ──
+  //
+  // ⚠ TWO ABSENCE CHECKS STOOD HERE AND BOTH HAD STOPPED BEING FALSIFIABLE.
+  // One waited on `.svelte-flow__node-audioIn` — xyflow stamps a node with its
+  // NODE TYPE, and every lane node is `moduleShell` now, so that class cannot
+  // appear for ANY module and the assertion was true of a blank page. The other
+  // refused `audioin-device-select`, an id no surface in the tree emits any
+  // more. A `toHaveCount(0)` whose subject cannot exist is satisfied by a rack
+  // that rendered nothing at all, which is the shape this file's own header
+  // warns about. The POSITIVE statement below is the one that can fail.
   const tile = faceTileControls(page);
   await expect(tile, 'the lane tile must render the face body').toBeVisible({ timeout: BOOT_MS });
-  await expect(
-    page.locator(`.svelte-flow__node-audioIn`),
-    'a promoted module must not render its legacy card in the lane — if it does, everything ' +
-      'below is testing the card again and the promotion is not what is under test',
-  ).toHaveCount(0);
-  await expect(
-    page.locator(`[data-audioin-node="${FACE_NODE}"] [data-testid="audioin-device-select"]`),
-    'neither body may reuse the CARD-ONLY testid: `workflow-audio-io-face.spec.ts` uses it as ' +
-      'the positive marker that the 🎧 tray mounted the verbatim card',
-  ).toHaveCount(0);
 
   // ── ADOPT + ACQUIRE, from the face's own binding effect. ──
   await faceWaitForState(page, 'streaming');
