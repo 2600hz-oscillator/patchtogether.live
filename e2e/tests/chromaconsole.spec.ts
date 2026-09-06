@@ -48,7 +48,7 @@
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, revealInPane } from './_helpers';
 import { installMidiOutCapture, readCapturedCcs, clearMidiOutCaptured } from '../_helpers/midi';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
@@ -79,7 +79,20 @@ async function boot(page: Page, ports = [OTHER_PORT, CHROMA_PORT]): Promise<void
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: NODE, type: TYPE, position: { x: 200, y: 200 } }]);
   await expect(page.locator(`.svelte-flow__node:has([data-shell-type="${TYPE}"])`)).toBeVisible();
-  // The port picker + actions live in the DOCK device body on the shell.
+}
+
+/** Open the dock full view — the shell home of the port picker + actions.
+ *
+ *  ⚠ ORDER MATTERS: open it only AFTER the tile-cell clicks a test needs. The
+ *  drawer OVERLAYS the canvas, and whether the tile lands under it is decided
+ *  by a camera race the test does not control (on-init fitView vs the spawn,
+ *  load-ordered). CI run 34008250298 shard 2: the connect cell sat under the
+ *  drawer's faceplate-bar and `locator.click` burned the whole 30 s budget on
+ *  "subtree intercepts pointer events" — recovered on retry only because the
+ *  camera race resolved the other way on a fresher page. Clicking tile cells
+ *  BEFORE the drawer exists makes the overlap structurally impossible; no
+ *  camera outcome can cover a drawer that is not there. */
+async function openDock(page: Page): Promise<void> {
   await page.evaluate(
     (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
     NODE,
@@ -87,15 +100,22 @@ async function boot(page: Page, ports = [OTHER_PORT, CHROMA_PORT]): Promise<void
   await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${NODE}"]`)).toBeVisible();
 }
 
+/** Click a lane-tile ACTION cell, panning it into the pane first (the pane is
+ *  the only occluder left once the dock drawer is closed — see openDock). */
+async function clickTileCell(page: Page, cellTestId: string): Promise<void> {
+  const cell = page.locator(`.svelte-flow__node[data-id="${NODE}"]`).getByTestId(cellTestId);
+  await revealInPane(page, cell);
+  await cell.click();
+}
+
 /** Click the card's real Connect button, which runs the real permission +
  *  auto-detect path. */
 async function connect(page: Page): Promise<void> {
   // The shell's connect is the lane tile's ACTION cell; the picker it fills
-  // is the dock device body's port select.
-  await page
-    .locator(`.svelte-flow__node[data-id="${NODE}"]`)
-    .getByTestId('shell-cell-chromaconsole-connect')
-    .click();
+  // is the dock device body's port select. Tile click FIRST, drawer after —
+  // see openDock for why this order is load-bearing.
+  await clickTileCell(page, 'shell-cell-chromaconsole-connect');
+  await openDock(page);
   // Auto-detect resolves synchronously against the fake; wait for the picker to
   // show the pedal selected rather than sleeping.
   await expect(dockBody(page).getByTestId(`chromaconsole-port-${NODE}`)).toHaveValue(CHROMA_PORT.id);
@@ -251,10 +271,14 @@ test('chromaconsole: PUSH ALL re-asserts every slot even though nothing changed'
   // The only resync a receive-only device can have. If suppression were not
   // cleared here, the button would do nothing at all — and it is the single
   // most important control on the card.
-  await page
-    .locator(`.svelte-flow__node[data-id="${NODE}"]`)
-    .getByTestId('shell-cell-chromaconsole-pushall')
-    .click();
+  //
+  // connect() left the dock full view open, and this click goes back to the
+  // TILE — so close the drawer first (its own close control is always on top),
+  // or the tile cell can sit under it (see openDock). Nothing below needs the
+  // dock body: the assertions read the captured wire.
+  await dockBody(page).getByTestId('faceplate-close').click();
+  await expect(dockBody(page)).toBeHidden();
+  await clickTileCell(page, 'shell-cell-chromaconsole-pushall');
   await waitForCcs(page, 8);
 
   const ccs = await readCapturedCcs(page, CHROMA_PORT.id);
@@ -338,10 +362,9 @@ test('chromaconsole: with NO matching port, auto-detect selects nothing rather t
 }) => {
   test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
   await boot(page, [OTHER_PORT]);
-  await page
-    .locator(`.svelte-flow__node[data-id="${NODE}"]`)
-    .getByTestId('shell-cell-chromaconsole-connect')
-    .click();
+  // Tile click first, drawer after — the same order connect() uses (openDock).
+  await clickTileCell(page, 'shell-cell-chromaconsole-connect');
+  await openDock(page);
   await expect(dockBody(page).getByTestId(`chromaconsole-port-${NODE}`)).toHaveValue('');
 
   await clearMidiOutCaptured(page);

@@ -234,6 +234,18 @@ async function dragCardToFlow(page: Page, id: string, toTopLeft: { x: number; y:
 
 const scrim = (page: Page) => page.locator('[data-testid="patch-drop-scrim"]');
 
+/** Poll window for graph-state reads AFTER a real pointer drop on the pointer
+ *  legs. NOT the 5 s `expect.poll` default: CI run 34008250298 shard 3 failed
+ *  the STACK DROP leg at that hidden default while the failure screenshot shows
+ *  the fader ALREADY FLUSH IN THE LANE — the join landed, later than 5 s, on a
+ *  page ticking at 711 ms under SwiftShader load. These legs declare a 120 s
+ *  budget as "a bound, not a gate" and assert STATE, never latency; a poll
+ *  window tighter than the leg's own bound re-introduces the invisible-default
+ *  disease that budget exists to remove. Wall-clock is only spent when the
+ *  subject is genuinely late or genuinely broken — and a real never-joins still
+ *  fails here, by name. */
+const DROP_SETTLE = { timeout: 60_000 };
+
 /** Wait for the fitView transition to SETTLE: the live viewport transform is
  *  identical across two consecutive rAF polls (a state poll on the real
  *  subject — never a wall-clock budget, #1523). */
@@ -294,16 +306,22 @@ test.describe('workflow lanes: every module type binds identically', () => {
       x: colX(1),
       y: paintedTop - 30 - SHELL_TILE_H_SLOT / 2,
     });
-    await expect.poll(() => channelOf(page, fader)).toBe(1);
+    await expect.poll(() => channelOf(page, fader), DROP_SETTLE).toBe(1);
     expect(await orderOf(page, 1)).toEqual([vco, vout, fader]);
     await expect(scrim(page)).toHaveCount(0);
     // Automation bound like any member, and the stack placed it on TOP: its
     // rendered tile sits directly above the videoOut's (position = render
-    // output — the flush layout, not the release point).
-    await expect.poll(() => autoLaneOf(page, fader)).toBe(0);
-    const fBox = (await page.locator(`.svelte-flow__node[data-id="${fader}"]`).boundingBox())!;
-    const vBox = (await page.locator(`.svelte-flow__node[data-id="${vout}"]`).boundingBox())!;
-    expect(Math.abs(fBox.y + fBox.height - vBox.y)).toBeLessThan(2);
+    // output — the flush layout, not the release point). The geometry is a
+    // RENDER of the join, so it settles a beat after the CRDT write — poll it
+    // under the same bound rather than reading the boxes once mid-flush.
+    await expect.poll(() => autoLaneOf(page, fader), DROP_SETTLE).toBe(0);
+    await expect
+      .poll(async () => {
+        const fBox = await page.locator(`.svelte-flow__node[data-id="${fader}"]`).boundingBox();
+        const vBox = await page.locator(`.svelte-flow__node[data-id="${vout}"]`).boundingBox();
+        return fBox && vBox ? Math.abs(fBox.y + fBox.height - vBox.y) : Number.POSITIVE_INFINITY;
+      }, DROP_SETTLE)
+      .toBeLessThan(2);
   });
 
   test('STACK DROP: releasing a card dead-ON the stack top card JOINS — never drop-to-patch, even for a compatible pair', async ({ page }) => {
@@ -326,7 +344,7 @@ test.describe('workflow lanes: every module type binds identically', () => {
     // slot (the stack anchors one badge clearance above the baseline).
     const voutFlowTop = COLUMN_BASELINE_Y - SHELL_LANE_BADGE_CLEARANCE_Y - 2 * SHELL_TILE_H_SLOT;
     await dragCardToFlow(page, fader, { x: colX(2), y: voutFlowTop });
-    await expect.poll(() => channelOf(page, fader)).toBe(2);
+    await expect.poll(() => channelOf(page, fader), DROP_SETTLE).toBe(2);
     expect(await orderOf(page, 2)).toContain(fader);
     await expect(scrim(page)).toHaveCount(0);
     void vco;
