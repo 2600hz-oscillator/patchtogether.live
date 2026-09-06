@@ -853,6 +853,29 @@ export const SKIP_BUDGET = [
       + 'existed for, and why it clicked the UI instead of the __patch global.',
   },
   {
+    specs: ['vfpga-p4-early-hd.spec.ts'],
+    reason: /PARKED 2026-09-06 — marginal 75 s bound under CI contention/,
+    lanes: ['e2e'],
+    homeLane: 'e2e',
+    why:
+      'PARKED 2026-09-06 (legacy removal endgame; owner: the PR must be ACTUALLY green) — the '
+      + 'macroblock-mosh leg only: the two-clip datamosh causal proof that clip B\'s motion transfers '
+      + 'onto image A through vin2. MARGINAL, not broken: measured 17.3/17.5 s locally under '
+      + 'E2E_SWIFTSHADER=1 against a 75 s bound, and CI\'s 2-core 3-5x contention multiplier genuinely '
+      + 'reaches that, so the failure needs only a bad day, not a defect. The spec\'s own '
+      + '`observeOutputDelta` header REJECTS a bump in writing ("the number was not slightly small, it '
+      + 'was measuring a path the test does not always take"), and the remaining ~15 s is two 30 x '
+      + '250 ms ACCUMULATION cadences whose thresholds (`dOff + 5` / `> 6`) are pinned against the '
+      + 'cadence — converting ms to frames moves the goalposts of a measured assertion, which is a '
+      + 're-spec, not a fix. UN-PARK CONDITION: a fixture that removes the cadences\' wall-clock '
+      + 'dependence without moving the pinned thresholds, or an owner-approved re-spec of those '
+      + 'thresholds. "It passes now" is NOT an un-park reason — it passed on run 33999805785\'s '
+      + 'predecessor and failed on 33990942421 with identical code, which is what marginal means. '
+      + '⚠ LOST WHILE PARKED: the only e2e proof that clip B\'s motion reaches the composited picture. '
+      + 'Still covered: the file\'s other macroblock legs (reference-settle, mvect=0 static control), '
+      + 'vfpga-p3-composite, and the vfpga ART scenarios pin the DSP side.',
+  },
+  {
     specs: [
       'workflow-channel-columns.spec.ts',
       'workflow-dock-ux.spec.ts',
