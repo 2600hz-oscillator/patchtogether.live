@@ -48,8 +48,9 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import type { ModuleFace } from '$lib/graph/types';
+import type { ModuleFace, ModuleNode } from '$lib/graph/types';
 import { MIDI_CHANNEL_COUNT } from './midi-cv-buddy';
+import { watchLiveNodeData } from '$lib/audio/live-node-data';
 import { vOctToMidi, MIN_MIDI, MAX_MIDI } from '$lib/audio/note-entry';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createPolyReceiver, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
@@ -293,6 +294,28 @@ export function isMidiOutChannelOverridden(
   return effectiveMidiOutChannel(data) !== lane;
 }
 
+/** What the factory HYDRATES from `node.data`, as one comparable value. The
+ *  channel is the EFFECTIVE one (override → lane → 1), so a lane move that
+ *  writes `data.channel` re-routes the notes the way the "follow the lane"
+ *  contract above promises. Re-read by the live-data watcher after a
+ *  same-session load at a reused id (`$lib/audio/live-node-data`) — the
+ *  reconciler never re-materializes such a node, so without this the handle
+ *  keeps sending on the PREVIOUS patch's channel and port. */
+export interface MidiOutBuddyHydrate {
+  channel: number;
+  deviceId: string | null;
+  deviceName: string | null;
+}
+
+export function midiOutBuddyHydrateOf(node: ModuleNode): MidiOutBuddyHydrate {
+  const d = (node.data ?? {}) as Partial<MidiOutBuddyData>;
+  return {
+    channel: effectiveMidiOutChannel(d),
+    deviceId: d.lastDeviceId ?? DEFAULT_DATA.lastDeviceId,
+    deviceName: d.lastDeviceName ?? null,
+  };
+}
+
 // ---------------- The CHANNEL roster ----------------
 //
 // Every picker offers the SAME sixteen choices, built here once so no surface
@@ -528,9 +551,14 @@ export const midiOutBuddyDef: AudioModuleDef = {
     // explicit `midiOutChannel` override → else the lane's `data.channel` (the
     // add-to-lane default) → else 1. See MidiOutBuddyData for why the two keys
     // must stay separate.
-    const savedData = (node.data ?? {}) as Partial<MidiOutBuddyData>;
-    let channel: number = effectiveMidiOutChannel(savedData);
-    let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
+    //
+    // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
+    // same-session load at a reused id; `savedDeviceName` is a `let` so
+    // `pickDefaultDevice` resolves the LOADED patch's name.
+    const hydrated = midiOutBuddyHydrateOf(node);
+    let channel: number = hydrated.channel;
+    let selectedDeviceId: string | null = hydrated.deviceId;
+    let savedDeviceName: string | null = hydrated.deviceName;
 
     // ---------------- Mutable runtime state ----------------
     let access: MidiOutAccessLike | null = null;
@@ -724,7 +752,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, o] of access.outputs) connected.push({ id, name: o.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedData.lastDeviceName ?? null },
+        { id: selectedDeviceId, name: savedDeviceName },
         connected,
       ).id;
     }
@@ -816,6 +844,36 @@ export const midiOutBuddyDef: AudioModuleDef = {
       },
     };
 
+    // ── RE-HYDRATE ON A SAME-SESSION LOAD AT A REUSED ID ──────────────────
+    // The reconciler never re-runs this factory for a node whose id and type
+    // survive a load, and never diffs `data`. Both re-applies go through the
+    // setters above, so a held note is flushed on the OLD channel / port
+    // before the switch — the same stuck-note defence the surface gets.
+    const stopHydrateWatch = watchLiveNodeData<MidiOutBuddyHydrate>({
+      nodeId: node.id,
+      initial: hydrated,
+      project: midiOutBuddyHydrateOf,
+      onChange(next, prev) {
+        if (next.channel !== prev.channel) setChannel(next.channel);
+        if (next.deviceId !== prev.deviceId || next.deviceName !== prev.deviceName) {
+          savedDeviceName = next.deviceName;
+          if (access) {
+            // Resolve the LOADED pick against the live roster (exact id, else
+            // the durable name) with the resolver seeded by the loaded id, then
+            // switch through selectDevice so the old port is flushed first.
+            const previous = selectedDeviceId;
+            selectedDeviceId = next.deviceId;
+            const pick = pickDefaultDevice();
+            selectedDeviceId = previous;
+            selectDevice(pick);
+          } else {
+            selectedDeviceId = next.deviceId;
+            notify();
+          }
+        }
+      },
+    });
+
     return {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
@@ -837,6 +895,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        stopHydrateWatch();
         // All-notes-off + matched note-off BEFORE tearing down, so external
         // gear is never left with a stuck note.
         panic();

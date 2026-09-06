@@ -62,11 +62,12 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import type { ModuleFace } from '$lib/graph/types';
+import type { ModuleFace, ModuleNode } from '$lib/graph/types';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
 import { bindMidiPort, type ConnectedDevice } from '$lib/graph/device-rebind';
+import { watchLiveNodeData } from '$lib/audio/live-node-data';
 
 // ---------------- Web MIDI minimal types ----------------
 //
@@ -422,6 +423,30 @@ export const DEFAULT_DATA: MidiCvBuddyData = {
   lastDeviceId: null,
 };
 
+/** The settings the factory HYDRATES from `node.data`, as one comparable
+ *  value. Re-read by the live-data watcher after a same-session load at a
+ *  reused id (see `$lib/audio/live-node-data`): the reconciler never
+ *  re-materializes such a node, so without this the handle keeps the previous
+ *  patch's channel filter and device — silence with every lamp green. */
+export interface MidiCvBuddyHydrate {
+  channel: number | null;
+  priority: VoicePriority;
+  retrig: boolean;
+  deviceId: string | null;
+  deviceName: string | null;
+}
+
+export function midiCvBuddyHydrateOf(node: ModuleNode): MidiCvBuddyHydrate {
+  const d = (node.data ?? {}) as Partial<MidiCvBuddyData>;
+  return {
+    channel: midiInChannelOf(d),
+    priority: d.priority ?? DEFAULT_DATA.priority,
+    retrig: d.retrig ?? DEFAULT_DATA.retrig,
+    deviceId: d.lastDeviceId ?? DEFAULT_DATA.lastDeviceId,
+    deviceName: d.lastDeviceName ?? null,
+  };
+}
+
 /**
  * Per-instance handle returned by the factory. Extends AudioDomainNodeHandle
  * with the MIDI-specific controls the Svelte card calls into via
@@ -607,16 +632,21 @@ export const midiCvBuddyDef: AudioModuleDef = {
     velSrc.start();
 
     // ---------------- Saved data (with defaults) ----------------
-    const savedData = ((node.data ?? {}) as Partial<MidiCvBuddyData>);
-    // ⚠ `midiInChannelOf`, never `savedData.channel` — that key is the workflow
+    // ⚠ `midiInChannelOf`, never `data.channel` — that key is the workflow
     // channel-column reconciler's membership truth and reading it made a
     // lane-dropped module listen to one channel it never chose. See the
     // function's own header for the measurement and for why there is no legacy
     // fallback to write.
-    let channel: number | null = midiInChannelOf(savedData);
-    let priority: VoicePriority = savedData.priority ?? DEFAULT_DATA.priority;
-    let retrig: boolean = savedData.retrig ?? DEFAULT_DATA.retrig;
-    let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
+    //
+    // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
+    // same-session load at a reused id; `savedDeviceName` is a `let` for the
+    // same reason — `pickDefaultDevice` must resolve the LOADED patch's name.
+    const hydrated = midiCvBuddyHydrateOf(node);
+    let channel: number | null = hydrated.channel;
+    let priority: VoicePriority = hydrated.priority;
+    let retrig: boolean = hydrated.retrig;
+    let selectedDeviceId: string | null = hydrated.deviceId;
+    let savedDeviceName: string | null = hydrated.deviceName;
 
     // ---------------- Internal mutable state ----------------
     let heldStack: number[] = [];
@@ -780,7 +810,7 @@ export const midiCvBuddyDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedData.lastDeviceName ?? null },
+        { id: selectedDeviceId, name: savedDeviceName },
         connected,
       ).id;
     }
@@ -877,6 +907,35 @@ export const midiCvBuddyDef: AudioModuleDef = {
       },
     };
 
+    // ── RE-HYDRATE ON A SAME-SESSION LOAD AT A REUSED ID ──────────────────
+    // The reconciler never re-runs this factory for a node whose id and type
+    // survive a load, and never diffs `data` — so every `let` above would hold
+    // the PREVIOUS patch's settings while the doc showed the loaded ones.
+    // Per-key, through the same setters the surface uses: a load that moves
+    // only the channel must not flush the device or re-pick the port.
+    const stopHydrateWatch = watchLiveNodeData<MidiCvBuddyHydrate>({
+      nodeId: node.id,
+      initial: hydrated,
+      project: midiCvBuddyHydrateOf,
+      onChange(next, prev) {
+        if (next.channel !== prev.channel) setChannel(next.channel);
+        if (next.priority !== prev.priority) setPriority(next.priority);
+        if (next.retrig !== prev.retrig) setRetrig(next.retrig);
+        if (next.deviceId !== prev.deviceId || next.deviceName !== prev.deviceName) {
+          savedDeviceName = next.deviceName;
+          selectedDeviceId = next.deviceId;
+          // Connected: resolve the loaded pick against the live roster exactly
+          // as connect() does (exact id, else the durable NAME) and listen on
+          // it. Not connected: the loaded pick seeds the eventual connect.
+          if (access) {
+            selectedDeviceId = pickDefaultDevice();
+            attachToDevice(selectedDeviceId);
+          }
+          notify();
+        }
+      },
+    });
+
     return {
       domain: 'audio',
       inputs: new Map(),
@@ -897,6 +956,7 @@ export const midiCvBuddyDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        stopHydrateWatch();
         // Detach OUR MIDI handler before tearing down audio nodes — only the
         // port we installed on, never a sweep across the whole access.
         claim.detach();
