@@ -737,6 +737,63 @@ export function samsloopWindowToFraction(
   return { start: Math.min(s, e), end: Math.max(s, e) };
 }
 
+/**
+ * POST-HYDRATE METADATA + LEGACY-WINDOW MIGRATION — the one write every source
+ * kind must make after its buffer reaches the worklet.
+ *
+ * ⚠ THIS USED TO RUN ONLY ON THE `file` BRANCH, and that asymmetry was a live
+ * silence bug, not an untidiness. The frame→fraction window rework put the
+ * migration inside `decodeBytesAndPush` — the UPLOAD hydrate — so a patch
+ * saved BEFORE the rework that held a RECORDING (`sample`) or a legacy YArray
+ * (`samples`) loaded with its frame-indexed start/end intact. Both params
+ * clamp to the worklet's ±2 declared range, so any touched frame index
+ * resolved to startFrac = 1: a ONE-FRAME window at the sample's tail. The
+ * voice "plays" — the playhead publishes, the waveform paints, the faders look
+ * right — and the output is the last sample repeated, which is DC and
+ * therefore inaudible. Owner report: "load the patch and samsloop doesn't
+ * play." This is `resolveSamsloopSource`'s lesson a second time: a repair
+ * applied on the one branch someone was looking at, while the sibling branches
+ * consume the same persisted shape.
+ *
+ * Pure over its inputs (no AudioContext, no store import) so a unit test can
+ * drive it against a real Y.Doc node and a plain object alike. The caller
+ * pushes the returned window into its own AudioParams — the split keeps this
+ * testable without a worklet.
+ *
+ * Returns the migrated fractional window when one was converted, else null
+ * (already fractional, or nothing to divide by). Idempotent: a second run sees
+ * fractions and returns null, which is what lets it live on a poll loop.
+ */
+export function applySamsloopHydrateMetadata(
+  live: { params?: Record<string, number>; data?: Record<string, unknown> } | undefined,
+  newLen: number,
+  newRate: number | undefined,
+): { start: number; end: number } | null {
+  if (!live) return null;
+  if (!live.data) live.data = {};
+  const ld = live.data as SamsloopData;
+  // Prefer the SAVED length as the divisor — the frames were written against
+  // it. Fall back to the freshly-decoded one when the envelope carried no
+  // length (very old patches).
+  const savedLen = typeof ld.sampleLength === 'number' ? ld.sampleLength : 0;
+  let migrated: { start: number; end: number } | null = null;
+  if (live.params) {
+    const p = live.params;
+    migrated = samsloopWindowToFraction(
+      p.start ?? 0,
+      p.end ?? 1,
+      savedLen > 0 ? savedLen : newLen,
+    );
+    if (migrated) {
+      p.start = migrated.start;
+      p.end = migrated.end;
+    }
+  }
+  if (ld.sampleLength !== newLen) ld.sampleLength = newLen;
+  if (newRate !== undefined && ld.sampleRate !== newRate) ld.sampleRate = newRate;
+  return migrated;
+}
+
 // ---------- mic-record state machine ----------
 //
 // The card owns the actual MediaStream + AudioContext nodes; this
@@ -1413,65 +1470,38 @@ export const samsloopDef: AudioModuleDef = {
       // Cache derived metadata so the card knows the sample length even
       // before its own $effect runs. We write defensively — the node
       // may have been removed during the decode.
-      try {
-        const live = livePatch.nodes[node.id];
-        if (!live) return;
-        if (!live.data) live.data = {} as never;
-        const ld = live.data as SamsloopData;
-        // ⚠ `result.samples`, NOT `f32` — `f32` is a COPY whose buffer was just
-        // TRANSFERRED to the worklet, so `f32.length` is 0 here. (`result.samples`
-        // is a different buffer and survives.) See postBuffer below for the
-        // regression this exact read caused on the record branch.
-        const newLen = result.samples.length;
-        // LEGACY WINDOW MIGRATION — frame indices → the fractional window.
-        //
-        // ⚠ THIS IS THE WHOLE MIGRATION, AND IT LIVES HERE RATHER THAN IN
-        // `persistence.ts` ON PURPOSE. That loader's stated policy is TOLERANT
-        // READ with no value reshaping — *"a patch stores TOPOLOGY + authored
-        // values only, and is never reshaped on load"* — and the per-module
-        // `schemaVersion` / `moduleSchemas` substrate was deliberately collapsed
-        // in the envelope-v2 cleanup. Re-opening it for one module would undo
-        // that decision (and drag `persistence.ts`, a collab-attest basis file,
-        // along with it). The factory already owns the one moment where the
-        // saved window and the sample's true length are both in hand, which is
-        // exactly what the conversion needs.
-        //
-        // ⚠ AND THE OLD PROPORTIONAL RESCALE IS GONE WITH THE FRAME INDEXING,
-        // not merely moved. It existed because an absolute index is only valid
-        // against the length the buffer had at SAVE time, so a non-WAV source
-        // re-decoded at a different AudioContext rate (`decodeAudioData`
-        // resamples) pointed the window at the wrong samples. A FRACTION is
-        // length-invariant, so that failure cannot occur and there is nothing
-        // left to repair — the bug class is deleted, not patched.
-        const savedLen = typeof ld.sampleLength === 'number' ? ld.sampleLength : 0;
-        if (live.params) {
-          const p = live.params as Record<string, number>;
-          // Prefer the SAVED length as the divisor — the frames were written
-          // against it. Fall back to the freshly-decoded one when the envelope
-          // carried no length (very old patches).
-          const migrated = samsloopWindowToFraction(
-            p.start ?? 0,
-            p.end ?? 1,
-            savedLen > 0 ? savedLen : newLen,
-          );
-          if (migrated) {
-            p.start = migrated.start;
-            p.end = migrated.end;
-            // Re-apply to the worklet immediately (the poll loop only repushes
-            // the sample, not start/end — those are set once at factory init).
-            params.get('start')?.setValueAtTime(migrated.start, ctx.currentTime);
-            params.get('end')?.setValueAtTime(migrated.end, ctx.currentTime);
-          }
-        }
-        if (ld.sampleLength !== newLen) {
-          ld.sampleLength = newLen;
-        }
-        if (ld.sampleRate !== result.sampleRate) {
-          ld.sampleRate = result.sampleRate;
-        }
-      } catch {
-        // syncedstore writes can throw if the node was deleted; ignore.
-      }
+      //
+      // LEGACY WINDOW MIGRATION — frame indices → the fractional window —
+      // rides the same write, via `applySamsloopHydrateMetadata`.
+      //
+      // ⚠ THE MIGRATION LIVES IN THE FACTORY RATHER THAN IN `persistence.ts`
+      // ON PURPOSE. That loader's stated policy is TOLERANT READ with no value
+      // reshaping — *"a patch stores TOPOLOGY + authored values only, and is
+      // never reshaped on load"* — and the per-module `schemaVersion` /
+      // `moduleSchemas` substrate was deliberately collapsed in the envelope-v2
+      // cleanup. Re-opening it for one module would undo that decision (and
+      // drag `persistence.ts`, a collab-attest basis file, along with it). The
+      // factory owns the one moment where the saved window and the sample's
+      // true length are both in hand — for EVERY source kind, which is why the
+      // shared helper exists (see its header for the silence bug the
+      // file-branch-only version shipped).
+      //
+      // ⚠ AND THE OLD PROPORTIONAL RESCALE IS GONE WITH THE FRAME INDEXING,
+      // not merely moved. It existed because an absolute index is only valid
+      // against the length the buffer had at SAVE time, so a non-WAV source
+      // re-decoded at a different AudioContext rate (`decodeAudioData`
+      // resamples) pointed the window at the wrong samples. A FRACTION is
+      // length-invariant, so that failure cannot occur and there is nothing
+      // left to repair — the bug class is deleted, not patched.
+      // ⚠ `result.samples.length`, NOT `f32.length` — `f32` is a COPY whose
+      // buffer was just TRANSFERRED to the worklet, so `f32.length` is 0 here.
+      // (`result.samples` is a different buffer and survives.) See postBuffer
+      // below for the regression this exact read caused on the record branch.
+      applyHydrateMetadataAndWindow(
+        livePatch.nodes[node.id],
+        result.samples.length,
+        result.sampleRate,
+      );
     }
 
     /** The factory's bound form of `postSampleBuffer` (module scope, above) —
@@ -1505,7 +1535,21 @@ export const samsloopDef: AudioModuleDef = {
       const d = live?.data as SamsloopData | undefined;
       const src = resolveSamsloopSource(d);
       const sig = src?.signature ?? 'empty';
-      if (sig === lastSignature) return;
+      if (sig === lastSignature) {
+        // The SAMPLE is unchanged, but the WINDOW can still arrive
+        // frame-indexed without a sample change: loading a pre-fraction patch
+        // over a rack that already holds the same bytes replaces `params`
+        // while the signature stays put, so the migration in the push branches
+        // below never runs. A fraction is ≤ 1 by construction, so a window
+        // value > 1 can only be a legacy frame index — migrate it whenever
+        // seen. Idempotent and normally a two-comparison no-op per poll.
+        const p = live?.params as Record<string, number> | undefined;
+        const knownLen = d?.sampleLength ?? 0;
+        if (p && knownLen > 0 && ((p.start ?? 0) > 1 || (p.end ?? 1) > 1)) {
+          applyHydrateMetadataAndWindow(live, knownLen, undefined);
+        }
+        return;
+      }
       if (src?.kind === 'file') {
         // The async branch guards re-entrancy BEFORE claiming the signature,
         // so a decode still in flight is retried on the next poll rather than
@@ -1521,7 +1565,13 @@ export const samsloopDef: AudioModuleDef = {
       lastSignature = sig;
       if (!src) return;
       if (src.kind === 'legacy') {
-        postBuffer(new Float32Array(src.samples), src.sampleRate);
+        const frames = postBuffer(new Float32Array(src.samples), src.sampleRate);
+        // Metadata cache + the frame→fraction window migration — the SAME
+        // post-hydrate write the file branch makes. A pre-fraction patch is
+        // MORE likely to be a legacy/record one than an upload, and this
+        // branch shipping without the migration is exactly the
+        // one-branch-repaired defect the helper's header documents.
+        applyHydrateMetadataAndWindow(live, frames, src.sampleRate);
         return;
       }
       // 'record' — mono-mix a stereo take, exactly as the upload path
@@ -1534,15 +1584,30 @@ export const samsloopDef: AudioModuleDef = {
       // from here on. See postBuffer's comment: reading it here is what wrote
       // `sampleLength: 0` onto every recording and broke both window faders.
       const frames = postBuffer(f32, src.sample.rate);
-      // Cache the derived metadata the START/END faders bound against, the
-      // same way decodeBytesAndPush does for an upload — without it the card
-      // sizes both faders to `Math.max(1, 0)` and the loop window is unusable
-      // on a recording.
+      // Cache the derived metadata the START/END faders bound against + run
+      // the frame→fraction window migration, the same way decodeBytesAndPush
+      // does for an upload — without the cache the card sizes both faders to
+      // `Math.max(1, 0)`, and without the migration a pre-fraction recording
+      // patch loads as a one-frame DC window (silent).
+      applyHydrateMetadataAndWindow(live, frames, src.sample.rate);
+    }
+
+    /** Bound form of `applySamsloopHydrateMetadata`: run the shared metadata
+     *  cache + window migration against a live node and push a migrated
+     *  window into THIS worklet's AudioParams. Defensive — the node can be
+     *  deleted between the resolve and this write. */
+    function applyHydrateMetadataAndWindow(
+      live: { params?: Record<string, number>; data?: Record<string, unknown> } | undefined,
+      frames: number,
+      bufferRate: number | undefined,
+    ): void {
       try {
-        const ld = live?.data as SamsloopData | undefined;
-        if (!ld) return;
-        if (ld.sampleLength !== frames) ld.sampleLength = frames;
-        if (ld.sampleRate !== src.sample.rate) ld.sampleRate = src.sample.rate;
+        if (!live) return;
+        const migrated = applySamsloopHydrateMetadata(live, frames, bufferRate);
+        if (migrated) {
+          params.get('start')?.setValueAtTime(migrated.start, ctx.currentTime);
+          params.get('end')?.setValueAtTime(migrated.end, ctx.currentTime);
+        }
       } catch {
         // syncedstore writes throw if the node was deleted; ignore.
       }
