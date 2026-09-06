@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "81e6eb60f9657b559b29044b82b3818046a6080525f74a7289e12ac98ae252ec",
-  "attestedAt": "2026-09-05T17:17:28.101Z",
+  "webglContentHash": "f12a9b0019f8f532b3dd7b88042d1ed9cbae4509a4801444af68dccb9a82f02b",
+  "attestedAt": "2026-09-06T04:08:25.544Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "6c76fb39c33ab15a5a19acbd27b94fe856b1ac9a",
+  "gitHeadAtAttest": "e10a7b4d38c57eefc78c99fa132a53a602a4ad9b",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 10.2,
+    "maxForeignCpu": 0.5,
     "thresholdCpu": 25,
-    "load1": 4.173828125,
+    "load1": 4.48779296875,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:58721",
+    "url": "http://127.0.0.1:62985",
     "mode": "dev",
     "root": "/Users/2600hz/Documents/workspace/wt-legacy-removal",
-    "commit": "6c76fb39c33ab15a5a19acbd27b94fe856b1ac9a"
+    "commit": "e10a7b4d38c57eefc78c99fa132a53a602a4ad9b"
   },
   "repeatEach": 1,
   "suites": {
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 242
+  "durationSec": 236
 }
