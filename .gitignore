@@ -152,3 +152,6 @@ packages/web/native/nblood/.objcache/
 apps/desktop/dist/
 apps/desktop/release/
 apps/desktop/test-results/
+# per-run JSON records from `task desktop:spike` (the owner pastes the verdict
+# into SPIKE-OPENER-DISPLAY.md / the plan; raw runs stay local)
+apps/desktop/spike-results/

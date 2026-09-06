@@ -1631,3 +1631,22 @@ tasks:
     cmds:
       - npm run build
       - npx playwright test {{.CLI_ARGS}}
+
+  desktop:spike:
+    desc: |
+      P2 opener→popup DOM-access + CROSS-DISPLAY blit SPIKE — the P4 gate
+      (plan §1.2 "main ↔ output windows", the highest-risk display assumption).
+      OWNER-HARDWARE harness: needs TWO physical displays; boots the shell's
+      real server+security wiring, opens the /present sink on display 2 from
+      the MAIN window's renderer, drives the opener blit, reads pixels back in
+      the popup. Prints PASS/FAIL per step + writes a JSON record to
+      apps/desktop/spike-results/. Read apps/desktop/SPIKE-OPENER-DISPLAY.md
+      for what each result means. Needs desktop:install + desktop:build:web
+      once first. Wiring check on any machine: task desktop:spike -- --dry-run
+      Optional row-1 observation: task desktop:spike -- --crash-probe
+      NOT a test lane and NOT wired to CI (owner ruling: no new gates) — the
+      unit-test leg below just proves the harness's own pure logic first.
+    dir: apps/desktop
+    cmds:
+      - npm run spike:unit
+      - npm run spike -- {{.CLI_ARGS}}

@@ -60,7 +60,12 @@ Same-origin opener→popup DOM access under `setWindowOpenHandler`: opener
 advanced 3 frames under opener control, `sameOrigin: true`.
 Probe output: `{"access":true,"painted":true,"popupFramesAdvanced":3,"sameOrigin":true}`
 (one-off probe script, not a gate — no-new-gates ruling). P4's blit design
-premise HOLDS; no re-plan needed.
+premise HOLDS **on one display**; no re-plan needed on the DOM-access half.
+⚠ This probe ran single-display: the CROSS-DISPLAY half — the half where
+captureStream actually went black — was not answered here. The repeatable
+dual-monitor harness for it is `task desktop:spike`
+(apps/desktop/SPIKE-OPENER-DISPLAY.md); P4 waits on that recorded result,
+not on this probe.
 
 ## Battery (this branch, this commit family)
 
