@@ -134,6 +134,33 @@ async function readPlayheadSpread(
   );
 }
 
+/**
+ * Fire the TRIGGER until the scope hears it (bounded). The factory's poll
+ * pushes the decoded buffer on its own ~200 ms clock, and a trigger that lands
+ * BEFORE the buffer does is deliberately eaten (`loadSample` stops all voices,
+ * idle-by-default). Observable-driven: re-trigger + listen, never a flat wait.
+ */
+async function triggerUntilAudible(
+  page: Page,
+  pane: Locator,
+  floor: number,
+): Promise<number> {
+  const trig = pane.getByTestId('shell-cell-samsloop-trigger');
+  let best = 0;
+  await expect
+    .poll(
+      async () => {
+        await trig.click();
+        const w = await readScopePeakOverWindow(page, 'scp', 500, { untilPeak: floor });
+        if (w.peak > best) best = w.peak;
+        return best;
+      },
+      { timeout: 15_000, message: `TRIGGER produces audible output (floor ${floor})` },
+    )
+    .toBeGreaterThan(floor);
+  return best;
+}
+
 async function uploadWav(page: Page, pane: Locator): Promise<void> {
   await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({
     name: 'samsloop-test.wav',
@@ -240,11 +267,7 @@ async function assertMigratedAndPlaying(page: Page): Promise<void> {
   expect(win.end, `migrated end ${win.end}`).toBeGreaterThan(0.95);
 
   const pane = await openSamsloopPane(page, 's');
-  await pane.getByTestId('shell-cell-samsloop-trigger').click();
-  const w = await readScopePeakOverWindow(page, 'scp', 4000, { untilPeak: AUDIBLE_FLOOR });
-  expect(w.peak, `post-load post-trigger peak ${w.peak} (must be audible)`).toBeGreaterThan(
-    AUDIBLE_FLOOR,
-  );
+  await triggerUntilAudible(page, pane, AUDIBLE_FLOOR);
   // Liveness of the MECHANISM: a real loop sweeps the window. The broken state
   // pins at ≈1.0 (one-frame window at the tail) with ~zero spread.
   const ph = await readPlayheadSpread(page, 's', 700);
@@ -256,30 +279,28 @@ async function assertMigratedAndPlaying(page: Page): Promise<void> {
 
 test.describe('SAMSLOOP plays after patch load', () => {
   test('upload patch: fresh-page load, TRIGGER produces audible output', async ({ page }) => {
+    test.setTimeout(60_000); // two capture windows + a reload on a SwiftShader runner
     const errors = await setupPage(page);
     await spawnPatch(page, patchNodes(), patchEdges());
     const pane = await openSamsloopPane(page, 's');
     await uploadWav(page, pane);
-    await page.waitForTimeout(600); // factory poll pushes the buffer
 
-    // Positive control: it plays BEFORE the round-trip.
-    await pane.getByTestId('shell-cell-samsloop-trigger').click();
-    const before = await readScopePeakOverWindow(page, 'scp', 2000, { untilPeak: 0.05 });
-    expect(before.peak, `pre-save post-trigger peak ${before.peak}`).toBeGreaterThan(0.05);
+    // Positive control: it plays BEFORE the round-trip. (The retry-trigger
+    // absorbs the factory poll's ~200 ms push cadence — observable, not a
+    // flat wait.)
+    await triggerUntilAudible(page, pane, 0.05);
 
     const env = await saveEnvelope(page);
     await freshLoad(page, env);
-    await page.waitForTimeout(800); // factory poll decodes + pushes
 
     const pane2 = await openSamsloopPane(page, 's');
-    await pane2.getByTestId('shell-cell-samsloop-trigger').click();
-    const after = await readScopePeakOverWindow(page, 'scp', 4000, { untilPeak: 0.05 });
-    expect(after.peak, `post-load post-trigger peak ${after.peak} (must be audible)`).toBeGreaterThan(0.05);
+    await triggerUntilAudible(page, pane2, 0.05);
 
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
   test('pre-rework RECORD patch (frame-indexed window): loads, migrates, and PLAYS', async ({ page }) => {
+    test.setTimeout(90_000); // record + reload + TWO load/assert cycles on a SwiftShader runner
     const errors = await setupPage(page);
     await spawnPatch(page, recordNodes(), recordEdges());
     await recordTake(page);
@@ -303,6 +324,7 @@ test.describe('SAMSLOOP plays after patch load', () => {
   });
 
   test('pre-rework LEGACY-YArray patch (frame-indexed window): loads, migrates, and PLAYS', async ({ page }) => {
+    test.setTimeout(60_000); // reload + a capture window on a SwiftShader runner
     const errors = await setupPage(page);
     await spawnPatch(page, patchNodes(), patchEdges());
     // Seed the LEGACY `node.data.samples` shape directly (a real pre-base64
