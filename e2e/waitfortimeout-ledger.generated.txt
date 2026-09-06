@@ -72,7 +72,6 @@ e2e/tests/clip-automation.spec.ts :: per-clip automation: a MIDI CC on an automa
 e2e/tests/clip-automation.spec.ts :: per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing :: waitForTimeout(220) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero :: waitForTimeout(400) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: switching clips in a lane swaps to the NEW clip’s own envelope (each clip carries its own) :: waitForTimeout(500) #1
-e2e/tests/clip-automation.spec.ts :: sweepCc :: waitForTimeout(60) #1
 e2e/tests/clipplayer-grid-stability.spec.ts :: dock full-view: a pad click does not move the grid (and the sampler can see it if it does) :: waitForTimeout(120) #1
 e2e/tests/clipplayer-grid-stability.spec.ts :: dock full-view: a pad click does not move the grid (and the sampler can see it if it does) :: waitForTimeout(500) #1
 e2e/tests/clipplayer-grid-stability.spec.ts :: slowDblClick :: waitForTimeout(gapMs) #1
