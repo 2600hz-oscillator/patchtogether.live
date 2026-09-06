@@ -16,6 +16,10 @@
 //                             so "clip notes → audible RMS" is provable.
 //   mock:mute  (effect)     — outputs silence, so "the helper path is live"
 //                             is distinguishable from the local bypass.
+//   mock:gain  (effect)     — deliberately NO render branch: falls through to
+//                             the echo path while MOUNTED, so a mute→gain swap
+//                             is an audible silence→signal flip (the
+//                             same-session-load spec drives that transition).
 // Nothing mounted ⇒ bit-transparent echo, same as the real bridge.
 //
 // The mock records every MIDI event per session, keyed by hello.clientId —
@@ -52,6 +56,14 @@ const PLUGINS = [
     kind: 'effect',
     format: 'au',
   },
+  {
+    id: 'mock:gain',
+    name: 'mock gain fx',
+    manufacturer: 'patchtogether e2e',
+    version: '1.0',
+    kind: 'effect',
+    format: 'au',
+  },
 ] as const;
 
 export interface MockMidiEvent {
@@ -65,6 +77,9 @@ export interface MockSession {
   mountedId: string | null;
   /** Every 0x02 event received, in arrival order. */
   midi: MockMidiEvent[];
+  /** Every setState blob received, in arrival order — the load-adopt spec
+   *  asserts a loaded patch's stored state actually reaches the plugin. */
+  setStates: string[];
   blocksIn: number;
   lastSampleTime: number;
 }
@@ -114,6 +129,7 @@ export function startMockVstBridge(): Promise<MockVstBridge> {
         rate: 48000,
         mountedId: null,
         midi: [],
+        setStates: [],
         blocksIn: 0,
         lastSampleTime: -1,
       };
@@ -208,6 +224,7 @@ export function startMockVstBridge(): Promise<MockVstBridge> {
             });
             break;
           case 'setState':
+            session.setStates.push(typeof msg.data === 'string' ? msg.data : '');
             sendJSON({ type: 'stateSet', ok: true });
             break;
           case 'rescanPlugins':
