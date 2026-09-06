@@ -64,6 +64,8 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import type { ModuleNode } from '$lib/graph/types';
+import { watchLiveNodeData } from '$lib/audio/live-node-data';
 // The ceiling is imported from the limiter core, NOT re-typed here: the worklet
 // and this file's degraded fallback must agree by construction. (Relative,
 // because `@patchtogether.live/dsp`'s exports map has no type resolution for
@@ -83,6 +85,18 @@ import { createWorkletNode, onWorkletNodeError } from '$lib/audio/worklet-guard'
 
 const LIMITER_PROCESSOR = 'master-limiter';
 const limiterLoaded = new WeakSet<BaseAudioContext>();
+
+/** The saved output-device pick on a node: `data.outputDeviceId`, or `''`
+ *  (the browser default sink) when the patch never chose one. Read by the
+ *  factory at boot AND by the live-data watcher after a same-session load at
+ *  a reused id (`$lib/audio/live-node-data`) — the reconciler never
+ *  re-materializes such a node, so the boot-time apply alone left the loaded
+ *  patch's sink unapplied and the audio on whichever device the PREVIOUS
+ *  patch chose. */
+export function audioOutSinkPickOf(node: ModuleNode): string {
+  const saved = (node.data ?? {})['outputDeviceId'];
+  return typeof saved === 'string' ? saved : '';
+}
 
 export const audioOutDef: AudioModuleDef = {
   type: 'audioOut',
@@ -423,6 +437,10 @@ export const audioOutDef: AudioModuleDef = {
      *  cleared here rather than left to a caller, because a stale error under a
      *  working picker was a real defect on the card. */
     let sinkError: string | null = null;
+    /** The id most recently HANDED to `applySink` (applied or not). The
+     *  live-data watcher compares the doc against this, so the picker's own
+     *  `write()` (which applies AND persists) is never applied a second time. */
+    let requestedSinkId = '';
 
     /** Publish the current sink state. `read('outputSink')` is a plain function
      *  call and therefore not reactive, so a UI `$derived` over it would never
@@ -434,6 +452,7 @@ export const audioOutDef: AudioModuleDef = {
     }
 
     async function applySink(deviceId: string): Promise<void> {
+      requestedSinkId = deviceId;
       if (!sinkSupported) {
         // Not an error the user caused — the browser cannot do this at all, and
         // the picker reports that as its DISABLED state, not as a failure.
@@ -461,9 +480,24 @@ export const audioOutDef: AudioModuleDef = {
     // priority).
     {
       publishSink(); // support/idle state is known now, before any pick
-      const saved = (node.data ?? {})['outputDeviceId'];
-      if (typeof saved === 'string' && saved.length > 0) void applySink(saved);
+      const saved = audioOutSinkPickOf(node);
+      if (saved.length > 0) void applySink(saved);
     }
+
+    // ── RE-APPLY ON A SAME-SESSION LOAD AT A REUSED ID ────────────────────
+    // A load over a running rack keeps this handle (same id, same type) and
+    // the block above has already run, so the loaded patch's pick reached
+    // nothing. Watch the LIVE node's pick and apply a change through the one
+    // owner of setSinkId. `''` (no pick) is applied too — it is the browser's
+    // default sink, and it is what a fresh-page load of that patch would give.
+    const stopSinkWatch = watchLiveNodeData<string>({
+      nodeId: node.id,
+      project: audioOutSinkPickOf,
+      current: () => requestedSinkId,
+      onChange(next) {
+        void applySink(next);
+      },
+    });
 
     return {
       domain: 'audio',
@@ -553,6 +587,7 @@ export const audioOutDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        stopSinkWatch();
         clearSinkReport(node.id);
         try { silenceL.stop(); } catch { /* */ }
         try { silenceR.stop(); } catch { /* */ }

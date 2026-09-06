@@ -451,9 +451,18 @@ interface Controller<E> {
   reverseAccumMs: number;
   lastFrameMs: number;
   lastGate: Record<string, number>;
-  /** Per-slot restore latch — each slot's saved-handle reload runs ONCE per
-   *  controller, not once per graph tick. */
-  reloadAttempted: boolean[];
+  /** Per slot: the persisted handle id whose bytes the element currently HOLDS
+   *  (null for a file loaded without a persistable handle). Compared against
+   *  the doc's per-slot meta by the housekeeping pump — the archivist's
+   *  `attachedIdentifier`, ported. A same-session load at a REUSED id (or the
+   *  asset picker writing a fresh `fileMeta` onto a populated node) changes the
+   *  handle id and nothing else, so this is the only signal that the slot's
+   *  source must be re-attached. */
+  attachedHandleIds: (string | null)[];
+  /** Per slot: the handle id the last reload ATTEMPT targeted, latched
+   *  synchronously so an in-flight or failed attempt (a peer's id this IDB
+   *  never held) is tried once per distinct id, not once per pump. */
+  reloadHandleIds: (string | null)[];
   /** The aspect the stored crop was last re-fitted for. */
   lastRefitAspect: number;
   disposed: boolean;
@@ -663,6 +672,22 @@ export function createNodeVarispeedRegistry<E>(
       await deps.el.awaitMetadata(el);
       if (c.disposed) return;
 
+      // ⚠ A RESTORE WHOSE HANDLE THE DOC NO LONGER NAMES IS STALE — ABANDON IT.
+      // Same hazard the videobox registry documents: a same-session load that
+      // lands while this restore awaits metadata must not have its slot meta
+      // stamped over (and its handle deleted) by the restore completing late.
+      // Only a handle RESTORE is guarded; a user pick is itself the intent.
+      if (opts?.reuseHandleId) {
+        const docId = slotMetaOf(deps.doc.readMeta(c.node.id), slot)?.handleId ?? null;
+        if (docId !== opts.reuseHandleId) {
+          if (c.reloadHandleIds[slot] === opts.reuseHandleId) {
+            c.attachedHandleIds[slot] = opts.reuseHandleId;
+            pumpReloads(c);
+          }
+          return;
+        }
+      }
+
       const duration = deps.el.duration(el);
       c.slotDuration[slot] = duration;
       // Keep this (and every other loaded) slot's decode alive even while it is
@@ -687,6 +712,10 @@ export function createNodeVarispeedRegistry<E>(
         size: Number.isFinite(file.size) ? file.size : undefined,
         handleId,
       };
+      // Record what the slot now holds BEFORE the doc writes, so the pump's
+      // next read compares equal and does not restart the load.
+      c.attachedHandleIds[slot] = handleId ?? null;
+      c.reloadHandleIds[slot] = handleId ?? null;
       if (slot === 0) deps.doc.writeFileMeta(c.node.id, meta);
       deps.doc.writeSlotMeta(c.node.id, slot, meta);
 
@@ -721,17 +750,37 @@ export function createNodeVarispeedRegistry<E>(
     publishDuration(c);
   }
 
+  /** The per-slot persisted meta: slot 0 reads the legacy single-video
+   *  `fileMeta` first (the key the perf-zip loader, the asset picker and the
+   *  rebind sweep all write), every slot its own `slotMeta` row. */
+  function slotMetaOf(
+    metas: ReturnType<VarispeedDeps<E>['doc']['readMeta']>,
+    slot: number,
+  ): VideoboxFileMeta | null {
+    if (!metas) return null;
+    return slot === 0
+      ? (metas.fileMeta ?? metas.slotMeta?.[0] ?? null)
+      : (metas.slotMeta?.[slot] ?? null);
+  }
+
   /** Restore one slot from a remembered handle. The `granted` branch needs NO
    *  gesture, which is what makes "a saved rack comes back playing with no
    *  surface mounted" true; `prompt` is published for a surface to offer as a
-   *  click, because `requestPermission()` is honoured only inside one. */
-  async function tryReloadSlot(c: Controller<E>, slot: number): Promise<void> {
+   *  click, because `requestPermission()` is honoured only inside one.
+   *
+   *  `replace`: reload even though the slot already holds bytes — the doc
+   *  names a DIFFERENT handle than the one attached (patch v2 loaded over v1
+   *  at the same node id, or the asset picker dropping a new clip onto a
+   *  populated node). The old short-circuit on "has bytes" is exactly what
+   *  kept v1's clip playing while every surface reported v2's file. */
+  async function tryReloadSlot(
+    c: Controller<E>,
+    slot: number,
+    opts?: { replace?: boolean },
+  ): Promise<void> {
     if (!hooks || c.disposed) return;
-    if (hasBytes(c, slot)) return;
-    const metas = deps.doc.readMeta(c.node.id);
-    const meta = slot === 0
-      ? (metas?.fileMeta ?? metas?.slotMeta?.[0] ?? null)
-      : (metas?.slotMeta?.[slot] ?? null);
+    if (!opts?.replace && hasBytes(c, slot)) return;
+    const meta = slotMetaOf(deps.doc.readMeta(c.node.id), slot);
     const handleId = meta?.handleId;
     if (!handleId) return;
     let handle: unknown | null = null;
@@ -755,29 +804,28 @@ export function createNodeVarispeedRegistry<E>(
     // 'denied' → the re-link prompt covers it.
   }
 
-  /** Fire every slot's restore once its synced meta carries a handleId. Latched
-   *  per slot so a late-arriving `slotMeta` (a peer's write, a perf-zip load
-   *  that lands after the controller was built) still gets its one attempt. */
+  /** Fire a slot's restore whenever its synced meta names a handle the slot
+   *  does not HOLD. Latched per (slot, handle id) so a late-arriving `slotMeta`
+   *  (a peer's write, a perf-zip load that lands after the controller was
+   *  built) gets its one attempt, and a CHANGED id — a same-session load at a
+   *  reused node id, the asset picker writing onto a populated node — gets a
+   *  fresh one that REPLACES the bytes on air.
+   *
+   *  ⚠ THIS USED TO SHORT-CIRCUIT ON "every slot latched or holding bytes" so
+   *  `readMeta` never ran in the steady state. That short-circuit was the
+   *  defect: a populated slot could never learn the doc had moved under it.
+   *  The pump runs at HOUSEKEEPING cadence (4 Hz), and `readMeta` is eight
+   *  small clones — it is not the 33 Hz CV poll and not the rAF frame. */
   function pumpReloads(c: Controller<E>): void {
     if (!hooks || c.disposed) return;
-    // Every slot already latched or already holding bytes ⇒ nothing to read.
-    // That is the steady state for the whole life of a loaded node, so the
-    // expensive `readMeta` never runs on it.
-    let pending = false;
-    for (let i = 0; i < ASSET_SLOTS; i++) {
-      if (!c.reloadAttempted[i] && !hasBytes(c, i)) { pending = true; break; }
-    }
-    if (!pending) return;
     const metas = deps.doc.readMeta(c.node.id);
     if (!metas) return;
     for (let i = 0; i < ASSET_SLOTS; i++) {
-      if (c.reloadAttempted[i] || hasBytes(c, i)) continue;
-      const meta = i === 0
-        ? (metas.fileMeta ?? metas.slotMeta?.[0] ?? null)
-        : (metas.slotMeta?.[i] ?? null);
-      if (!meta?.handleId) continue;
-      c.reloadAttempted[i] = true;
-      void tryReloadSlot(c, i);
+      const wantId = slotMetaOf(metas, i)?.handleId ?? null;
+      if (wantId === null) continue;
+      if (wantId === c.attachedHandleIds[i] || wantId === c.reloadHandleIds[i]) continue;
+      c.reloadHandleIds[i] = wantId;
+      void tryReloadSlot(c, i, { replace: hasBytes(c, i) });
     }
   }
 
@@ -1072,7 +1120,8 @@ export function createNodeVarispeedRegistry<E>(
       reverseAccumMs: 0,
       lastFrameMs: 0,
       lastGate: {},
-      reloadAttempted: new Array(ASSET_SLOTS).fill(false),
+      attachedHandleIds: new Array(ASSET_SLOTS).fill(null),
+      reloadHandleIds: new Array(ASSET_SLOTS).fill(null),
       lastRefitAspect: 0,
       disposed: false,
       dispose(): void {
@@ -1097,6 +1146,18 @@ export function createNodeVarispeedRegistry<E>(
     attachActive(c);
     ensureAllSlotsAlive(c);
     pushCrop(c);
+    // Slots whose bytes are ALREADY live (a controller re-created after a
+    // graph churn while the urls survived in nodeMedia) hold the saved
+    // handles' bytes: record that so the pump re-loads only on a CHANGE.
+    if (hooks) {
+      const metas = deps.doc.readMeta(node.id);
+      for (let i = 0; i < ASSET_SLOTS; i++) {
+        if (!hasBytes(c, i)) continue;
+        const id = slotMetaOf(metas, i)?.handleId ?? null;
+        c.attachedHandleIds[i] = id;
+        c.reloadHandleIds[i] = id;
+      }
+    }
     // A node restored from a saved rack (or one the asset picker just wrote
     // `fileMeta` onto) already carries the handle ids; a freshly spawned one
     // does not. Both go through the same call — it no-ops without one.
