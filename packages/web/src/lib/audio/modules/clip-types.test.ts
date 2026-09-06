@@ -11,6 +11,7 @@ import {
   CLIP_SCHEMA_VERSION,
   migrateLegacyClipKey,
   migrateClipPlayerData,
+  clipPlayerDataNeedsLoadSeam,
   DEFAULT_CLIP_STEPS,
   clipIndex,
   laneOf,
@@ -251,6 +252,45 @@ describe('clip-key schema migration (v1 stride-8 → v2 stride-64)', () => {
     expect((readClip(d, clipIndex(1, 0)) as NoteClipRecord).name).toBe('p'); // lane 0 slot 1
     expect((readClip(d, clipIndex(3, 2)) as NoteClipRecord).name).toBe('q'); // lane 2 slot 3
     expect(d.clips![String(2 * 8 + 3)]).toBeUndefined(); // legacy key gone
+  });
+});
+
+describe('clipPlayerDataNeedsLoadSeam (fleet-audit #5 — the tick re-arm)', () => {
+  /** Data the way the load seam leaves it: current schema + every container. */
+  const seamed = () => ({
+    sv: CLIP_SCHEMA_VERSION,
+    auto: {},
+    autoAssign: {},
+    automation: { lanes: {} },
+    sceneRepeats: {},
+    song: { v: 1, notes: {}, auto: {}, arrangerAuto: { tracks: {} }, arrangerAssign: {} },
+  });
+
+  it('fires on a pre-`sv` (legacy stride-8) data object — the audited case', () => {
+    expect(clipPlayerDataNeedsLoadSeam({ clips: { '9': defaultNoteClip() } })).toBe(true);
+  });
+
+  it('fires when an LWW-hardening container is missing on stamped v2 data', () => {
+    for (const missing of ['auto', 'autoAssign', 'automation', 'sceneRepeats', 'song'] as const) {
+      const d = seamed() as Record<string, unknown>;
+      delete d[missing];
+      expect(clipPlayerDataNeedsLoadSeam(d), `missing ${missing}`).toBe(true);
+    }
+  });
+
+  it('is QUIET on data the seam has run against — the storm-safety clause', () => {
+    // ⚠ Every write the seam performs must satisfy this predicate, or the tick
+    // would re-run the seam forever (a per-tick Y.Doc write storm). Mirror the
+    // seam: migrate + create the containers, then assert quiet.
+    const d = { clips: { '9': defaultNoteClip() } } as Record<string, unknown>;
+    migrateClipPlayerData(d as never);
+    Object.assign(d, { auto: {}, autoAssign: {}, automation: {}, sceneRepeats: {}, song: {} });
+    expect(clipPlayerDataNeedsLoadSeam(d)).toBe(false);
+  });
+
+  it('is quiet on nullish data — an absent node is not a migration candidate', () => {
+    expect(clipPlayerDataNeedsLoadSeam(undefined)).toBe(false);
+    expect(clipPlayerDataNeedsLoadSeam(null)).toBe(false);
   });
 });
 

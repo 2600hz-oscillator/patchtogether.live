@@ -151,6 +151,51 @@ export function migrateClipPlayerData(
   return true;
 }
 
+/** True when a clip-player's persisted `data` still needs the engine's
+ *  per-node LOAD SEAM (the stride-8→64 `migrateClipPlayerData` re-key + the
+ *  LWW-container init) run against it.
+ *
+ *  ⚠ WHY THIS EXISTS (fleet-audit 2026-09-06 #5): the seam originally ran in
+ *  the engine FACTORY only, on the stated-but-false premise that the factory
+ *  always runs. The reconciler re-materializes a node only on id-absence or a
+ *  type/domain change and NEVER diffs `node.data` — so a pre-`sv` patch loaded
+ *  at a REUSED id (same-session envelope load / perf-zip load over a live
+ *  rack) kept its stride-8 clip keys while every runtime read used stride-64:
+ *  pads silently never fired. The engine tick calls this predicate per tick
+ *  (a handful of proxy property reads) and re-runs the seam when it fires;
+ *  the seam's own writes satisfy every clause, so it converges after one run
+ *  and can never storm.
+ *
+ *  The container clauses keep the LWW-hardening guarantee on the same seam:
+ *  containers are created ONLY here (guarded — once present, no writer ever
+ *  replaces one), never lazily inside the racy commit/assign/arm paths. Two
+ *  peers racing this seam both write an EMPTY container — harmless either
+ *  way, exactly the documented factory-time race. PURE. */
+export function clipPlayerDataNeedsLoadSeam(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as {
+    sv?: unknown;
+    auto?: unknown;
+    autoAssign?: unknown;
+    automation?: unknown;
+    sceneRepeats?: unknown;
+    song?: unknown;
+  };
+  if (d.sv !== CLIP_SCHEMA_VERSION) return true;
+  return (
+    !d.auto ||
+    typeof d.auto !== 'object' ||
+    !d.autoAssign ||
+    typeof d.autoAssign !== 'object' ||
+    !d.automation ||
+    typeof d.automation !== 'object' ||
+    !d.sceneRepeats ||
+    typeof d.sceneRepeats !== 'object' ||
+    !d.song ||
+    typeof d.song !== 'object'
+  );
+}
+
 /** True iff the clips map holds ANY key ≥ SCENE_STRIDE — the tell-tale of
  *  already-stride-64 data (a legacy stride-8 key is always ≤ 63). PURE. */
 function hasStride64Key(clips: Record<string, unknown>): boolean {

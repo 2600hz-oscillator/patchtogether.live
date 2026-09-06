@@ -544,6 +544,48 @@ export async function noteClipMediaProgress(mediaId: string, frames: number): Pr
   await putClipMediaManifest({ ...existing, frames: Math.max(0, Math.trunc(frames)) });
 }
 
+/** Import a COMPLETE take's bytes (a `.ptperf.zip` restore on a machine that
+ *  never recorded it) through the SAME take lifecycle a live recording uses:
+ *  manifest first (status `'recording'`), then the bytes through the worker
+ *  writer, then `'done'` at the manifest's frame count. Reusing the lifecycle
+ *  keeps the crash model intact — an interrupt at any instant leaves either
+ *  nothing or a named file, never orphaned bytes.
+ *
+ *  IDEMPOTENT ON CONTENT: when the store already holds a file of the SAME SIZE
+ *  at this id, the write is skipped (a mediaId is minted once at record time,
+ *  so an equal-length file at the same id IS this take — typically the same
+ *  machine re-loading its own export) and only the manifest is completed.
+ *
+ *  Returns true when the bytes are in the store (written or already present);
+ *  false when this runtime cannot store clip media at all. Never throws. */
+export async function importClipMediaTake(
+  m: ClipMediaManifest,
+  bytes: Uint8Array,
+): Promise<boolean> {
+  if (bytes.length === 0) return false;
+  try {
+    const existing = await readClipMedia(m.mediaId);
+    if (existing && existing.size === bytes.length) {
+      // Same take already on disk — just make sure the manifest says 'done'
+      // (an absent manifest is fine too; membership is what protects it).
+      const manifest = await getClipMediaManifest(m.mediaId);
+      if (manifest && manifest.status !== 'done') await finishClipMediaTake(m.mediaId, m.frames);
+      return true;
+    }
+    const writer = await beginClipMediaTake(m);
+    try {
+      await writer.write(bytes, 0);
+    } finally {
+      await writer.close();
+    }
+    await finishClipMediaTake(m.mediaId, m.frames);
+    return true;
+  } catch {
+    // Storage failure — the caller's missing-media notice is what surfaces it.
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The garbage collector
 // ---------------------------------------------------------------------------
@@ -669,11 +711,23 @@ const SWEEP_KEY_SEP = '\u0000';
  *  absence.
  *
  *  Production callers ignore it — the graph pass must never block on storage —
- *  which is why the `$effect` spells the discard with `void`. */
+ *  which is why the `$effect` spells the discard with `void`.
+ *
+ *  ⚠ AN EMPTY LIVE SET IS REFUSED (fleet-audit 2026-09-06 #1). `gcClipMedia([])`
+ *  frees every non-recording take in the ORIGIN-GLOBAL store, and every route
+ *  that has ever handed this function an empty set was a snapshot that was not
+ *  the truth: the pre-provider-sync empty graph on `/r/[id]`, and a
+ *  just-switched rack whose doc has not loaded. A rack that GENUINELY holds no
+ *  audio clips loses nothing by this refusal — its takes are freed by the next
+ *  sweep that carries a real (non-empty) set — while a false empty set would
+ *  destroy unrecoverable recordings. Over-retention is a wasted file;
+ *  under-retention is a lost take. The refusal deliberately does NOT touch the
+ *  memo, so the first non-empty set after it always sweeps. */
 export function sweepClipMedia(
   liveMediaIds: Iterable<string>,
 ): Promise<ClipMediaGcResult> | null {
   const ids = [...liveMediaIds].sort();
+  if (ids.length === 0) return null; // minimum-population guard — never GC to zero
   const key = ids.join(SWEEP_KEY_SEP);
   if (gcInFlight || key === lastLiveKey) return null;
   lastLiveKey = key;

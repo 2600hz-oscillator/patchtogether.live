@@ -76,6 +76,7 @@ import {
   laneAutomationArmed,
   migrateAutomationLanesShape,
   migrateClipPlayerData,
+  clipPlayerDataNeedsLoadSeam,
   coerceClipRecord,
   coerceAutoClipRecord,
   autoTrackViews,
@@ -815,6 +816,24 @@ export const clipplayerDef: AudioModuleDef = {
      *  Decode is lazy (byte-capped cache); the duck edge is published at the
      *  SCHEDULED time immediately, not when the decode resolves — the boundary
      *  is the boundary whether or not the bytes are warm. */
+    /** Cache keys already reported as media-absent, so a re-launch of the same
+     *  missing take warns once instead of once per loop/launch. */
+    const reportedAbsentTakes = new Set<string>();
+    /** ⚠ SAY SO when a decode resolves NULL (fleet-audit #2). A null buffer —
+     *  media absent from this origin's OPFS store, or a format with no decode
+     *  path — used to be indistinguishable from a clip that is not playing:
+     *  the pad paints `playing`, the lane reports its slot, the output is
+     *  silent, and NOTHING anywhere names a cause. The load paths surface the
+     *  user-facing notice; this names the lane and take for the console. */
+    function reportAbsentTake(L: number, st: LaneAudioPlay): void {
+      if (reportedAbsentTakes.has(st.key)) return;
+      reportedAbsentTakes.add(st.key);
+      console.warn(
+        `[clipplayer] lane ${L + 1}: recorded take ${st.clip.mediaId} has no audio in this ` +
+          `browser's media store — the clip will play silence (was this patch saved without ` +
+          `its media, or loaded on another machine?)`,
+      );
+    }
     function startLaneAudio(L: number, clip: AudioClipRecord, at: number): void {
       haltLaneAudio(L, at, true);
       const st: LaneAudioPlay = {
@@ -829,7 +848,8 @@ export const clipplayerDef: AudioModuleDef = {
       if (!canPlayAudioClips) return;
       void getClipAudioBuffer(ctx, clip)
         .then((buf) => {
-          if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
+          if (!buf) return reportAbsentTake(L, st);
+          if (!alive || laneAudio[L] !== st || !st.audible || st.source) return;
           spawnLaneSource(L, st, buf);
         })
         .catch((err) => {
@@ -853,11 +873,12 @@ export const clipplayerDef: AudioModuleDef = {
       if (!canPlayAudioClips) return;
       void getClipAudioBuffer(ctx, st.clip)
         .then((buf) => {
-          if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
+          if (!buf) return reportAbsentTake(L, st);
+          if (!alive || laneAudio[L] !== st || !st.audible || st.source) return;
           spawnLaneSource(L, st, buf);
         })
         .catch(() => {
-          /* media absent */
+          /* decode failure — startLaneAudio's catch already names this class */
         });
     }
 
@@ -1149,22 +1170,28 @@ export const clipplayerDef: AudioModuleDef = {
       mut(live.data as ClipPlayerData);
     }
 
-    // ── ONE-TIME clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) ──
+    // ── clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) + containers ──
     // The migration does not hook the persistence loader (graph/persistence.ts)
     // — originally because that file was in the collab-attest basis (deleted
     // 2026-08-17), and still because the loader is not the seam that always
-    // runs. Instead it runs ONCE here — the
-    // engine factory is the single per-node seam that always runs, for every
-    // load path (envelope load AND live-doc / rackspace restore). It re-keys the
+    // runs. Instead it runs here as `runLoadSeam` — called ONCE from the
+    // factory, AND re-armed from the tick via `clipPlayerDataNeedsLoadSeam`
+    // (fleet-audit 2026-09-06 #5): the factory is NOT the seam that always
+    // runs, because the reconciler re-materializes a node only on id-absence
+    // or a type/domain change and never diffs `node.data`, so a pre-`sv` patch
+    // loaded at a REUSED id arrived with stride-8 keys nothing re-keyed and
+    // pads that silently never fired. It re-keys the
     // `clips` map so every clip stays at its original (lane, slot), then stamps
-    // `data.sv = 2`. Guarded by `sv` → runs at most once per node per client and
-    // NEVER re-migrates (storm-safe: one small write, not per-tick — see
+    // `data.sv = 2`. Guarded by `sv` → runs at most once per LOADED data object
+    // per client and NEVER re-migrates (storm-safe: one small write per load,
+    // not per-tick — the tick predicate is reads only, and every write below
+    // satisfies it, so it converges after one run — see
     // `cv-modulation-live-store-write-storm`). `coerceClipRecord` clones each
     // moved clip to a PLAIN object so a live syncedStore Y child is never
     // re-parented (`yjs-save-load-real-ydoc`). Stamping `sv` here for an EMPTY
     // new player (before any clip exists) is what makes "clips-present-but-no-sv"
     // unambiguously mean LEGACY for every later reader.
-    writeData((d) => {
+    const runLoadSeam = (): void => writeData((d) => {
       migrateClipPlayerData(d, coerceClipRecord);
       // CONTAINER INIT (LWW-race hardening): create the `auto` + `autoAssign`
       // + `automation`/`automation.lanes` containers HERE — the deterministic
@@ -1219,6 +1246,7 @@ export const clipplayerDef: AudioModuleDef = {
         }
       }
     });
+    runLoadSeam();
 
     // ─────────────────────── PER-CLIP AUTOMATION ────────────────────────────
     // One AutomationController per clip-player node. It composes the pure
@@ -2163,6 +2191,17 @@ export const clipplayerDef: AudioModuleDef = {
       try {
         const running = transportRunning();
         const d0 = liveData();
+        // ⚠ RE-ARM THE LOAD SEAM FOR A SAME-SESSION LOAD AT A REUSED ID
+        // (fleet-audit #5). `loadEnvelopeIntoStore` deletes + re-inserts every
+        // node in one transaction and the reconciler never diffs `node.data`,
+        // so the factory seam above has NOT run against freshly loaded data.
+        // A pre-`sv` patch would read stride-64 against stride-8 keys — pads
+        // that silently never fire — and the LWW-hardening containers would
+        // fall back to their racy lazy creation. The predicate is reads-only
+        // and every seam write satisfies it, so this fires at most once per
+        // load (no write storm). The seam mutates the SAME live object `d0`
+        // proxies, so the rest of this tick reads migrated data.
+        if (clipPlayerDataNeedsLoadSeam(d0)) runLoadSeam();
         const mode: ClipPlayMode =
           d0?.clipMode === 'arrangement' || d0?.clipMode === 'song' ? d0.clipMode : 'session';
         const recording = d0?.recording === true;
