@@ -220,22 +220,31 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
     .locator(`[data-testid="toybox-combine-knob-${param}"]`)
     .locator('[role="slider"]');
   await expect(slider).toBeVisible();
-  const before = Number(await slider.getAttribute('aria-valuenow'));
-  const min = Number(await slider.getAttribute('aria-valuemin'));
-  const max = Number(await slider.getAttribute('aria-valuemax'));
+  // ONE evaluate for all three aria reads. Three separate getAttribute calls
+  // are three protocol round trips, and on the loaded shard that failed run
+  // 34004453604 a single round trip measured 0.4-1.2 s — this loop runs per
+  // knob, fourteen times in the exhaustive feedback test.
+  const aria = await slider.evaluate((el) => ({
+    now: Number(el.getAttribute('aria-valuenow')),
+    min: Number(el.getAttribute('aria-valuemin')),
+    max: Number(el.getAttribute('aria-valuemax')),
+  }));
+  const before = aria.now;
+  const min = aria.min;
+  const max = aria.max;
   const tol = Math.max(1e-3, (max - min) * 0.02);
   // Pan the canvas so THIS knob is centred + on-screen (feedback's 14 knobs push
-  // lower ones off the viewport inside svelte-flow's transform), then hover()
-  // parks the cursor on it. Pointer CAPTURE on pointerdown keeps the drag flowing
-  // to this knob even as the cursor leaves it.
+  // lower ones off the viewport inside svelte-flow's transform). Pointer CAPTURE
+  // on pointerdown keeps the drag flowing to this knob even as the cursor
+  // leaves it.
   await panToElement(page, slider);
   // SETTLE before placing the cursor: ToyboxCard's graph-wrap persistResize
   // action DEBOUNCES (200ms) a store write of the wrap height; right after
   // the params pane opens, that write lands a beat later and collapses the
-  // layout ~54px — moving every knob between hover() and mouse.down(), so
+  // layout ~54px — moving every knob between cursor-park and mouse.down(), so
   // the drag hits the WRONG knob (zoom's drag committed tx). Main used to
   // win this race by accident: the pre-identity-reuse Canvas re-measured
-  // every node per commit, slowing the pre-drag steps until hover's
+  // every node per commit, slowing the pre-drag steps until the pre-drag
   // stability window straddled the collapse; the fast path loses it
   // deterministically. Wait until the knob's box is unchanged across a
   // window that OUTLASTS the debounce (the height-stability settle-loop
@@ -249,9 +258,12 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
   // the whole test spent 186.9 s against its own 180 s budget. The CLAIM is
   // unchanged — the knob's rect must stop moving for longer than the 200 ms
   // persistResize debounce — but it is now one evaluate instead of ~60.
-  await slider.evaluate(
+  // The settle RESOLVES WITH the settled rect, so the drag below needs no
+  // separate `boundingBox()` round trip — on the failed shard a bare
+  // boundingBox measured ~1 s per knob.
+  const box = await slider.evaluate(
     (el, quietMs) =>
-      new Promise<void>((resolve) => {
+      new Promise<{ x: number; y: number; width: number; height: number }>((resolve) => {
         let last = el.getBoundingClientRect();
         let quietSince = performance.now();
         const t0 = performance.now();
@@ -264,7 +276,7 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
           // Bounded so a genuinely never-settling layout fails in the drag
           // below with a real message, rather than hanging here.
           if (performance.now() - quietSince >= quietMs || performance.now() - t0 >= 5_000) {
-            return resolve();
+            return resolve({ x: last.x, y: last.y, width: last.width, height: last.height });
           }
           requestAnimationFrame(tick);
         };
@@ -272,8 +284,6 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
       }),
     300,
   );
-  await slider.hover();
-  const box = (await slider.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   // Drag toward the side that CHANGES the value: up (cy-) = increase, so values
@@ -281,8 +291,25 @@ async function assertKnobSticks(page: Page, nodeId: string, param: string, label
   // max, e.g. fade T=1, can't increase further).
   const mid = (min + max) / 2;
   const dy = before <= mid ? -55 : 55;
+  // ⚠ NOT `slider.hover()` — that call is ACTIONABILITY-GATED: it re-waits for
+  // the element to be visible/stable/the hit target with no bound of its own,
+  // and on failed run 34004453604 each hover cost 1.9-2.4 s per knob. The
+  // in-page settle above IS this test's stability contract (it outlasts the
+  // 200 ms persistResize debounce that actually moves the layout), so a raw
+  // cursor park at the settled centre is sufficient — and if an overlay ever
+  // DID swallow the press, the committed-value poll below fails with a real
+  // message rather than this leg hanging in an unbounded wait.
+  await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx, cy + dy, { steps: 8 });
+  // TWO interpolation steps, not eight. Knob.pointermove recomputes the value
+  // from `startY - e.clientY` on every event — intermediate positions carry no
+  // information, only the LAST move decides the committed value. Each step is
+  // one Input.dispatchMouseEvent round trip ACKed by the renderer main thread,
+  // measured 0.3-0.65 s apiece on the failed shard; eight of them per knob was
+  // the single largest line item (48-63 s of the 180 s budget across the
+  // feedback test's fourteen knobs). Two keeps a mid-drag pointermove flowing
+  // through pointer capture (the seam under test) at a quarter of the cost.
+  await page.mouse.move(cx, cy + dy, { steps: 2 });
   await page.mouse.up();
 
   // the committed value moved off the default…
