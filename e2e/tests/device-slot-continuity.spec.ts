@@ -257,15 +257,22 @@ interface WatchRec {
 
 /** Find + stash the node-owned <video>, its stream and its track. Everything
  *  read afterwards is read THROUGH these references, which is what makes every
- *  assertion below an identity claim rather than a presence claim. */
+ *  assertion below an identity claim rather than a presence claim.
+ *
+ *  The element is the node-media registry's, found by the node id it stamps at
+ *  creation — NOT through the 📷 manager's host, which under the shell renders
+ *  only the face's CONTROLS (CameraSourceControls). The <video> itself lives in
+ *  the registry's off-screen parking (real dimensions, never display:none, so
+ *  it keeps decoding and presenting frames) or wherever a surface adopted it —
+ *  either way the same element for the life of the NODE, which is the identity
+ *  this test rides. */
 async function watchCamera(page: Page, nodeId: string): Promise<void> {
   await page.evaluate((id) => {
     const w = globalThis as unknown as { __slotWatch?: Record<string, WatchRec> };
     w.__slotWatch ??= {};
-    const host = document.querySelector(
-      `[data-testid="workflow-camera-host"][data-node-id="${CSS.escape(id)}"]`,
-    );
-    const el = host?.querySelector('video') as HTMLVideoElement | null;
+    const el = document.querySelector(
+      `video[data-testid="camera-preview"][data-node-id="${CSS.escape(id)}"]`,
+    ) as HTMLVideoElement | null;
     const stream = (el?.srcObject as MediaStream | null) ?? null;
     w.__slotWatch[id] = {
       el,
@@ -279,10 +286,9 @@ async function sampleCamera(page: Page, nodeId: string): Promise<CamSample> {
   return page.evaluate((id) => {
     const w = globalThis as unknown as { __slotWatch?: Record<string, WatchRec> };
     const rec = w.__slotWatch?.[id];
-    const host = document.querySelector(
-      `[data-testid="workflow-camera-host"][data-node-id="${CSS.escape(id)}"]`,
-    );
-    const liveEl = (host?.querySelector('video') as HTMLVideoElement | null) ?? null;
+    const liveEl = (document.querySelector(
+      `video[data-testid="camera-preview"][data-node-id="${CSS.escape(id)}"]`,
+    ) as HTMLVideoElement | null) ?? null;
     const el = rec?.el ?? null;
     const now = (el?.srcObject as MediaStream | null) ?? null;
     const q = el as unknown as {
@@ -449,23 +455,25 @@ async function openCamerasMenu(page: Page): Promise<void> {
   await expect(panel).toHaveAttribute('data-open', 'true');
 }
 
-/** Pick `deviceId` in the hosted REAL CameraInputCard's own `<select>` — the
- *  module's existing source-selection seam, which is what the 📷 manager's
- *  SOURCE button pins open. Nothing is written to the doc by this test. */
+/** Pick `deviceId` in the hosted REAL faceplate's own `<select>` — the
+ *  module's existing source-selection seam (CameraSourceControls, mounted by
+ *  the tile body with the `cameraInput-tile` testid prefix), which is what the
+ *  📷 manager's SOURCE button pins open. Nothing is written to the doc by this
+ *  test. */
 async function pickSource(page: Page, nodeId: string, deviceId: string): Promise<void> {
   const host = camHost(page, nodeId);
-  await expect(host, `${nodeId}'s card host is on-screen + interactive`).toHaveAttribute(
+  await expect(host, `${nodeId}'s camera host is on-screen + interactive`).toHaveAttribute(
     'data-shown',
     'true',
     { timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
   );
-  const select = host.getByTestId('camera-device-select');
+  const select = host.getByTestId('cameraInput-tile-device-select');
   await expect(select).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
   await select.selectOption(deviceId);
   await expect(
-    host.getByTestId('camera-status'),
+    host.getByTestId('cameraInput-tile-lamp'),
     `${nodeId} reached 'streaming' through the picker`,
-  ).toHaveAttribute('data-state', 'streaming', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  ).toHaveAttribute('data-lamp', 'streaming', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 }
 
 // ---------------------------------------------------------------------------

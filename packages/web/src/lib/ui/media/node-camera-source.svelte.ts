@@ -113,6 +113,12 @@ const registry = createNodeCameraSourceRegistry<HTMLElement>({
           v.muted = true;
           v.autoplay = true;
           v.setAttribute('data-testid', 'camera-preview');
+          // The registry keys this element by NODE, but nothing said so in the
+          // DOM — every camera's element carried the same testid, parked or
+          // adopted. Reflecting the key lets a spec (device-slot continuity)
+          // hold the SPECIFIC node's element across a patch load and assert
+          // identity, instead of fishing among identical previews.
+          v.setAttribute('data-node-id', nodeId);
         },
       }),
     setStream: (nodeId, slot, stream) => nodeMedia.setStream(nodeId, slot, stream),
