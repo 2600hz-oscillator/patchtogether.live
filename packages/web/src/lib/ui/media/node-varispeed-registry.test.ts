@@ -913,3 +913,127 @@ describe('the crop ASPECT RE-FIT is the node\'s, not a card $effect', () => {
     expect(h.cropWrites).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ⚠ SAME-SESSION LOAD AT A REUSED ID (fleet audit 2026-09-06, finding #3)
+//
+// Same shape as videobox, per slot: `loadEnvelopeIntoStore` re-inserts the
+// node at its SAME id, the controller and its seven elements survive, and
+// patch v2's per-slot handle ids arrive as a DOC CHANGE on slots still
+// holding v1's bytes. The reload pump used to latch "attempted" per slot and
+// short-circuit on "has bytes", so v1 kept PLAYING — ×7 slots. The asset
+// picker writing a fresh `fileMeta` onto a populated node is the same case.
+// ---------------------------------------------------------------------------
+
+describe('⚠ SAME-SESSION LOAD AT A REUSED ID — a slot re-attaches on a CHANGE of handle id', () => {
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+  }
+  function countingGets(h: Harness): string[] {
+    const gets: string[] = [];
+    const orig = h.hooks.get;
+    h.hooks.get = async (id) => { gets.push(id); return orig(id); };
+    return gets;
+  }
+
+  it('patch v2 at the SAME node id REPLACES slot 0\'s bytes on air', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-v1', { perm: 'granted', file: fakeVideo('v1.webm') });
+    h.handles.set('h-v2', { perm: 'granted', file: fakeVideo('v2.webm') });
+    h.state.set('v1', {
+      isPlaying: true, loop: true, crop: null,
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    await settle();
+    const el0 = h.els.get(`v1::${varispeedSlotKey(0)}`)!;
+    expect(el0.src, 'the saved rack restores v1').toBe('blob:v1.webm');
+    expect(reg.view('v1').slotNames[0]).toBe('v1.webm');
+
+    // THE LOAD: the doc's slot-0 meta moves to v2's handle; the node id,
+    // the controller and the element are all the same.
+    h.state.get('v1')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(el0.src, 'v2\'s bytes are on the element').toBe('blob:v2.webm');
+    expect(reg.view('v1').slotNames[0]).toBe('v2.webm');
+    expect(h.metaWrites.at(-1)?.meta).toMatchObject({ name: 'v2.webm', handleId: 'h-v2' });
+  });
+
+  it('slots 1..6 re-attach from their OWN slotMeta row, and untouched slots stay put', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-3a', { perm: 'granted', file: fakeVideo('three-a.webm') });
+    h.handles.set('h-3b', { perm: 'granted', file: fakeVideo('three-b.webm') });
+    h.handles.set('h-5', { perm: 'granted', file: fakeVideo('five.webm') });
+    const slotMeta = new Array(ASSET_SLOTS).fill(null);
+    slotMeta[3] = { name: 'three-a.webm', duration: 3, handleId: 'h-3a' };
+    slotMeta[5] = { name: 'five.webm', duration: 5, handleId: 'h-5' };
+    h.state.set('v1', { isPlaying: false, loop: true, crop: null, slotMeta });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    await settle();
+    expect(reg.view('v1').slotNames[3]).toBe('three-a.webm');
+    expect(reg.view('v1').slotNames[5]).toBe('five.webm');
+    const gets = countingGets(h);
+
+    const loaded = [...h.state.get('v1')!.slotMeta!];
+    loaded[3] = { name: 'three-b.webm', duration: 3, handleId: 'h-3b' };
+    h.state.get('v1')!.slotMeta = loaded;
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(h.els.get(`v1::${varispeedSlotKey(3)}`)!.src).toBe('blob:three-b.webm');
+    expect(reg.view('v1').slotNames[3]).toBe('three-b.webm');
+    expect(reg.view('v1').slotNames[5], 'slot 5 was not touched').toBe('five.webm');
+    expect(gets, 'only the CHANGED slot hit the store').toEqual(['h-3b']);
+  });
+
+  it('STEADY STATE is quiet, and a PEER\'s unknown handle is tried once with v1 kept on air', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-v1', { perm: 'granted', file: fakeVideo('v1.webm') });
+    h.state.set('v1', {
+      isPlaying: false, loop: true, crop: null,
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    await settle();
+    const gets = countingGets(h);
+    const writes = h.metaWrites.length;
+    for (let i = 0; i < 8; i++) { c.tick(HOUSEKEEPING_INTERVAL_MS); await settle(); }
+    expect(gets, 'an unchanged doc never reads the store').toEqual([]);
+    expect(h.metaWrites.length, 'and never re-writes').toBe(writes);
+
+    h.state.get('v1')!.fileMeta = { name: 'peer.webm', duration: 3, handleId: 'h-peer' };
+    for (let i = 0; i < 5; i++) { c.tick(HOUSEKEEPING_INTERVAL_MS); await settle(); }
+    expect(gets, 'one attempt for the peer id, not one per pump').toEqual(['h-peer']);
+    expect(h.els.get(`v1::${varispeedSlotKey(0)}`)!.src, 'local bytes not blanked').toBe('blob:v1.webm');
+  });
+
+  it('a controller RE-CREATED over live bytes records the saved handles instead of re-loading', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-v1', { perm: 'granted', file: fakeVideo('v1.webm') });
+    h.handles.set('h-v2', { perm: 'granted', file: fakeVideo('v2.webm') });
+    h.state.set('v1', {
+      isPlaying: false, loop: true, crop: null,
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    await settle();
+    const gets = countingGets(h);
+    reg.disposeNode('v1');
+    reg.sync([vvNode('v1')], eng.engine);
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(gets, 'bytes already on air are not re-read').toEqual([]);
+    h.state.get('v1')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(h.els.get(`v1::${varispeedSlotKey(0)}`)!.src).toBe('blob:v2.webm');
+  });
+});

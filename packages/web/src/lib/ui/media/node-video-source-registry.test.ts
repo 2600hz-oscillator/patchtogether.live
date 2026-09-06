@@ -31,6 +31,7 @@ import {
   type VideoSourceDeps,
   type VideoSourceEngine,
   type VideoSourceStatus,
+  type VideoSourceHandleHooks,
 } from './node-video-source-registry';
 
 // ---------------------------------------------------------------------------
@@ -503,5 +504,140 @@ describe('SCOPE — what this gate structurally cannot see', () => {
       typeof (el as unknown as { getContext?: unknown }).getContext,
       'the fake element grew a real DOM surface — this suite would then be asserting about a browser it does not have',
     ).toBe('undefined');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠ SAME-SESSION LOAD AT A REUSED ID (fleet audit 2026-09-06, finding #3)
+//
+// `loadEnvelopeIntoStore` deletes and re-inserts every node at its SAME id in
+// one transaction; the reconciler keeps the engine node and this registry
+// keeps its controller and element. Patch v2's `fileMeta.handleId` therefore
+// arrives as a DOC CHANGE on a controller still holding v1's bytes. The
+// handle-reload used to run once at creation and short-circuit on "has
+// bytes", so v1 kept PLAYING while every surface reported v2's file. These
+// legs pin the archivist shape ported here: re-attach on a CHANGE of handle
+// id, once per distinct id, never on the load's own write.
+// ---------------------------------------------------------------------------
+
+describe('⚠ SAME-SESSION LOAD AT A REUSED ID — re-attach on a CHANGE of handle id', () => {
+  type StoredHandle = { perm: 'granted' | 'prompt' | 'denied'; file: File };
+  function makeHooks() {
+    const handles = new Map<string, StoredHandle>();
+    const gets: string[] = [];
+    const hooks: VideoSourceHandleHooks = {
+      canPersist: () => true,
+      newId: () => `id-${handles.size + 1}`,
+      put: async (id, handle) => { handles.set(id, handle as StoredHandle); },
+      get: async (id) => { gets.push(id); return handles.get(id) ?? null; },
+      queryPermission: async (h) => (h as StoredHandle).perm,
+      requestPermission: async () => 'granted',
+      getFile: async (h) => (h as StoredHandle).file,
+    };
+    return { hooks, handles, gets };
+  }
+  /** Drain the reload chain (get → permission → file → metadata → writes). */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+  }
+  function seedV1(h: Harness, hk: ReturnType<typeof makeHooks>): void {
+    hk.handles.set('h-v1', { perm: 'granted', file: fakeFile('v1.webm', 'video/webm') });
+    hk.handles.set('h-v2', { perm: 'granted', file: fakeFile('v2.webm', 'video/webm') });
+    h.state.set('vb', {
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+      isPlaying: true, lastSyncTime: 1_000, lastSyncPosition: 0,
+    });
+  }
+
+  it('patch v2 at the SAME node id puts v2\'s bytes on the element and keeps it playing', async () => {
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    seedV1(h, hk);
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    const el = h.els.get('vb::main')!;
+    expect(el.src, 'the saved rack restores v1 with nothing mounted').toBe('blob:v1.webm');
+
+    // THE LOAD: the doc moves to v2's handle. Same id, same controller.
+    h.state.get('vb')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+
+    expect(el.src, 'v2\'s bytes are on the element — not v1\'s, still playing under v2\'s name').toBe('blob:v2.webm');
+    expect(h.names.get('vb::main')).toBe('v2.webm');
+    expect(reg.view('vb').fileName).toBe('v2.webm');
+    const last = h.metas.at(-1)!;
+    expect(last.name).toBe('v2.webm');
+    expect(last.resetPlayhead, 'the loaded patch\'s transport is the truth, not a fresh pick').toBe(false);
+    expect(el.paused, 'it PLAYS, per the loaded isPlaying').toBe(false);
+  });
+
+  it('RE-ENTRANCY + STEADY STATE: the load\'s own meta write and every later tick are quiet', async () => {
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    seedV1(h, hk);
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    h.state.get('vb')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    const metasAfterLoad = h.metas.length;
+    const getsAfterLoad = hk.gets.length;
+    // Ten more graph ticks with the doc unchanged (the v2 write itself
+    // provokes one; param drags provoke the rest).
+    for (let i = 0; i < 10; i++) { reg.sync([videoboxNode('vb')], eng.engine); await settle(); }
+    expect(h.metas.length, 'no re-load, no re-write').toBe(metasAfterLoad);
+    expect(hk.gets.length, 'no IDB read either').toBe(getsAfterLoad);
+    expect(h.els.get('vb::main')!.src).toBe('blob:v2.webm');
+  });
+
+  it('a handle this browser never held (a PEER\'s load) is tried ONCE and v1 stays on air', async () => {
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    seedV1(h, hk);
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    h.state.get('vb')!.fileMeta = { name: 'peer.webm', duration: 3, handleId: 'h-peer' };
+    for (let i = 0; i < 5; i++) { reg.sync([videoboxNode('vb')], eng.engine); await settle(); }
+    expect(hk.gets.filter((id) => id === 'h-peer').length, 'one attempt, not one per tick').toBe(1);
+    expect(h.els.get('vb::main')!.src, 'the local bytes are not blanked').toBe('blob:v1.webm');
+  });
+
+  it('a LAPSED permission on v2 is OFFERED, not performed, and v1 stays on air', async () => {
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    seedV1(h, hk);
+    hk.handles.set('h-v2', { perm: 'prompt', file: fakeFile('v2.webm', 'video/webm') });
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    h.state.get('vb')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    expect(reg.view('vb').pendingHandleName).toBe('v2.webm');
+    expect(h.els.get('vb::main')!.src).toBe('blob:v1.webm');
+  });
+
+  it('a controller RE-CREATED over live bytes records the saved handle rather than re-loading', async () => {
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    seedV1(h, hk);
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    const getsAfterRestore = hk.gets.length;
+    // Graph churn: the controller goes, the url survives in nodeMedia.
+    reg.disposeNode('vb');
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    expect(hk.gets.length, 'no reload for bytes already on air').toBe(getsAfterRestore);
+    // ...and the NEXT change is still seen.
+    h.state.get('vb')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    expect(h.els.get('vb::main')!.src).toBe('blob:v2.webm');
   });
 });
