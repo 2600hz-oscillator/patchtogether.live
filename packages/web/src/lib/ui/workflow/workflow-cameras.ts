@@ -225,9 +225,10 @@ export function addWorkflowCamera(opts: CameraAddOptions = {}): string | null {
  *
  * The asymmetry is the layer's point rather than an inconsistency: a slot is
  * rig infrastructure, and the operator's next patch expects to find it. Note
- * this clears `data.deviceId` ONLY, which is what CameraInputCard reads back —
- * so the card's own acquire path sees an unbound camera and releases through
- * its normal route. Nothing here reaches into the media registry.
+ * this clears `data.deviceId` ONLY, which is what the camera source registry
+ * reads back — so the module's own acquire path sees an unbound camera and
+ * releases through its normal route. Nothing here reaches into the media
+ * registry.
  *
  * @returns true when something changed.
  */

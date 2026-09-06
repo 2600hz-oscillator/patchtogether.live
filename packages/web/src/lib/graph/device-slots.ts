@@ -125,12 +125,13 @@ export interface DeviceSlotSpec {
    * Camera slots carry BOTH flags, and the second one is load-bearing rather
    * than belt-and-braces. `hiddenCard` is what the workflow camera manager
    * lists on (`isWorkflowCameraNode` = type match AND `isHiddenCardNode`), and
-   * that manager owns the ALWAYS-MOUNTED `CameraInputCard` host which owns the
-   * `getUserMedia` gesture. A pinned-only camera would be canvas-hidden AND
-   * absent from the manager's list — and it would get no headless mount either
-   * (`needsHeadlessSourceMount` refuses a lane-omitted node whose type is not a
-   * CARD_PRODUCER, and `cameraInput` is not one), so it would be a camera slot
-   * with no path to ever acquire a stream.
+   * that manager's row host is the only SURFACE an off-canvas camera has: the
+   * capture itself lives on graph lifetime (node-camera-source-registry), but
+   * the device picker and the REQUEST ACCESS gesture live in the hosted face
+   * controls (CameraSourceControls). A pinned-only camera would be
+   * canvas-hidden AND absent from the manager's list — a camera slot with no
+   * surface anywhere, and so no way for the operator to ever bind a device to
+   * it.
    */
   hiddenCard: boolean;
   /** Nominal card width (px) for the purple-zone packing layout. Ignored for
@@ -334,8 +335,9 @@ export function planDeviceSlotIdentityRepairs(
 /**
  * `node.data` keys that are RIG properties, not patch content.
  *
- *  - `deviceId` — the camera the slot is bound to. `CameraInputCard` persists
- *    its dropdown pick here (workflow-cameras.ts `readCameraDeviceId`).
+ *  - `deviceId` — the camera the slot is bound to. The face's device dropdown
+ *    (CameraSourceControls) persists its pick here (workflow-cameras.ts
+ *    `readCameraDeviceId`).
  *    Browser device ids are per-origin, per-machine and rotate on a permission
  *    reset, so the value is meaningless anywhere but the machine that wrote it.
  *  - `deviceLabel` — the human name the card writes beside the id, and the ONLY

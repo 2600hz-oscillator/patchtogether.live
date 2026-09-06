@@ -98,8 +98,9 @@ const BAND_B_MIN = 95; // ~120 expected
  * Replace `enumerateDevices` + `getUserMedia` before boot.
  *
  * ⚠ EMPTY LABELS ARE LOAD-BEARING, for the reason camerainput-shell-source.spec
- * documents: `CameraInputCard`'s mount-time auto-acquire fires only when labels
- * are visible (i.e. permission was already granted in this origin). An empty
+ * documents: the camera source registry's bootstrap auto-acquire
+ * (node-camera-source-registry.ts) fires only when labels are visible (i.e.
+ * permission was already granted in this origin). An empty
  * label is the real pre-grant shape, it keeps all four slot cameras idle, and it
  * leaves the FIRST `getUserMedia` on this page to the pick this test makes
  * through the manager's own source picker. A labelled fake would have every
