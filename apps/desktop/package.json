@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit",
     "start": "npm run build && electron .",
     "e2e": "npm run build && playwright test",
+    "spike": "npm run build && electron dist/spike/opener-display-spike.js",
+    "spike:unit": "npm run build && node --test dist/spike/opener-display-logic.test.js",
     "dist": "npm run build && electron-builder --mac"
   },
   "devDependencies": {

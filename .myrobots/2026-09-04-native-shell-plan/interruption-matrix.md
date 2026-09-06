@@ -117,9 +117,15 @@ Until that lands: `build-brief.md`'s P3 task 4 and its `render-process-gone` mat
 row are both marked PENDING and must not be turned into assertions. **Left as-is,
 "helpers+windows alive" would become a green test for a property that cannot hold —
 and in a Tier-A harness with no output window it would pass vacuously.** Free
-add-on: the P2 opener spike is already scheduled with Electron running; have it
-record what `render-process-gone` does to a popup and whether `outlivesOpener:true`
-changes anything. Costs one assertion.
+add-on: SHIPPED as `task desktop:spike -- --crash-probe` (observation only, not a
+step — apps/desktop/SPIKE-OPENER-DISPLAY.md): it records what
+`render-process-gone` in the opener does to the popup under the shipped bare
+`{action:'allow'}`. First single-display record (dev machine, 2026-09-06,
+Electron 44.1.1): the popup died with the opener — `render-process-gone: killed`
+on the popup, window closed — consistent with the shared-renderer analysis
+above. The `outlivesOpener:true` variant stays a P4-re-plan experiment (it would
+mean overriding the shipped handler); the owner-hardware record is the one that
+feeds this row's decision.
 
 ---
 
