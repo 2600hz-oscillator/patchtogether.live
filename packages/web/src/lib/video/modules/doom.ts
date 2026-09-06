@@ -71,6 +71,7 @@ import {
   type DoomCheatName,
   type RisingEdgeState,
 } from '$lib/doom/cheat-sequence';
+import { pulseTriggerNow } from '$lib/audio/gate-trigger';
 
 // AudioWorkletProcessor URL — served as a static asset under
 // /doom/doom-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet
@@ -846,11 +847,17 @@ export const doomDef: VideoModuleDef = {
     function pulseGate(src: ConstantSourceNode, portId: string): void {
       const ac = ctx.audioCtx;
       if (!ac) return;
-      const t = ac.currentTime;
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + EVT_PULSE_S);
-      // Fire discrete pulse subscribers in sync with the CSN schedule so the
-      // same-domain bridge can dispatch a frame-independent setParam pair.
+      // ⚠ RENDER-ROBUST NOW-PULSE. A hand-rolled setValueAtTime(1, currentTime)
+      // / setValueAtTime(0, currentTime + w) pair renders NOTHING when the audio
+      // render frontier leads main-thread currentTime by more than the pulse
+      // width — the render-quantum-past-the-frontier defect that made evt_kill
+      // drop under load (~60-80% of throttled boots). `pulseTriggerNow` rises by
+      // value write and falls only after >= width of RENDERED audio, so a
+      // starved thread widens the pulse rather than losing it. Same fix applied
+      // to gibribbon/nibbles/archivist/peertube/tv-librarian in this branch.
+      pulseTriggerNow(src, EVT_PULSE_S);
+      // Fire discrete pulse subscribers so the same-domain bridge can dispatch a
+      // frame-independent setParam pair.
       notifyPulse(portId);
     }
     function drainAndPulseEvents(): void {
