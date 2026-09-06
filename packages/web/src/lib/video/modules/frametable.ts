@@ -589,7 +589,7 @@ export const frametableDef: VideoModuleDef = {
     {
       param: 'liveGate',
       writer: 'cv-port',
-      why: "The `live_gate` input (edge: 'gate') targets it, and the cross-domain bridge writes that jack's LEVEL into it every frame. `draw()` reads it as `params.liveGate >= 0.5` and ORs it with the latched LIVE switch, which is the entire reason the two are separate params: a per-frame level write into `live` would erase whatever the player had switched on the instant a cable was patched. There is no control for it on the card and none on the faceplate — the LIVE switch is the control, and this is the jack's private landing pad.",
+      why: "The `live_gate` input (edge: 'gate') targets it, and the cross-domain bridge writes that jack's LEVEL into it every frame. `draw()` reads it as `params.liveGate >= 0.5` and ORs it with the latched LIVE switch, which is the entire reason the two are separate params: a per-frame level write into `live` would erase whatever the player had switched on the instant a cable was patched. There is no control for it on the faceplate and none on the faceplate — the LIVE switch is the control, and this is the jack's private landing pad.",
     },
     {
       param: 'chaosGate',
@@ -1006,9 +1006,9 @@ export const frametableDef: VideoModuleDef = {
     // had it backwards.
     //
     // Doing it in the FACTORY is what makes it view-free: the factory is
-    // constructed with the node and disposed with it, on both surfaces and under
-    // `?shell=legacy` alike, so there is now exactly ONE hydrate path and the
-    // card and the faceplate cannot drift about what a reload restores.
+    // constructed with the node and disposed with it, whichever surfaces happen
+    // to be mounted, so there is exactly ONE hydrate path and no two views can
+    // drift about what a reload restores.
     //
     // Best-effort by construction — a missing local copy is the NORMAL case for
     // a collaborator who never had the file (the VIDEOBOX "peers without a local

@@ -18,14 +18,14 @@
 // the assertions below pin that it is still DERIVED from the same pure function
 // the engine handle publishes, rather than re-typed on the face.
 //
-// ⚠ AND ONE COVERAGE LAPSE IS NAMED RATHER THAN LEFT TO ROT.
-// `e2e/tests/timelorde-transport-state.spec.ts` spawns `/rack?shell=legacy`, so
-// it renders the LEGACY CARD and is UNAFFECTED by this promotion: it will stay
-// green forever while asserting a strip on a surface the default shell no longer
-// reaches. That is the milder form of the precondition-is-the-defect class — not
-// a gate that certifies the bug, but a gate whose green is evidence about the
-// wrong surface. The legacy spec is KEPT (it still covers a reachable surface)
-// and this file is the face-side leg it cannot be.
+// ⚠ AND ONE COVERAGE LAPSE IS NAMED RATHER THAN LEFT TO ROT. When this file was
+// written, `e2e/tests/timelorde-transport-state.spec.ts` asserted the transport
+// strip on a surface the shipping shell did not reach, so it would have stayed
+// green forever whatever the promotion did to the face. That is the milder form
+// of the precondition-is-the-defect class — not a gate that certifies the bug,
+// but a gate whose green is evidence about the wrong surface. This file is the
+// face-side leg it could not be; the spec has since been re-pointed at the
+// shipping surface.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -48,7 +48,6 @@ const paramById = (id: string) => timelordeDef.params.find((p) => p.id === id)!;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_SRC = resolve(HERE, 'timelorde/TimelordeDisplayBody.svelte');
-const CARD_SRC = resolve(HERE, 'TimelordeCard.svelte');
 
 /** Strip comments before grepping for CODE — this file's own bodies EXPLAIN in
  *  prose the very calls some legs assert are absent, and a raw grep cannot tell
@@ -63,7 +62,14 @@ function stripComments(src: string): string {
     .join('\n');
 }
 const bodySrc = stripComments(readFileSync(BODY_SRC, 'utf-8'));
-const cardSrc = stripComments(readFileSync(CARD_SRC, 'utf-8'));
+/** The node-lifetime owner of the composite the card used to run
+ *  (legacy-removal S1), and its real-DOM binding. Two files because the split is
+ *  the point: the producer is pure and testable, the singleton is where the
+ *  browser edges — including the owl's DECODE — are named. */
+const PRODUCER_SRC = resolve(HERE, '../media/frame-producers.ts');
+const SINGLETON_SRC = resolve(HERE, '../media/node-frame-producers.ts');
+const producerSrc = stripComments(readFileSync(PRODUCER_SRC, 'utf-8'));
+const singletonSrc = readFileSync(SINGLETON_SRC, 'utf-8');
 
 describe('timelorde face — promoted, and the lane deliberately has NO picture', () => {
   it('is promoted', () => {
@@ -235,16 +241,13 @@ describe('timelorde face — the SWING ROSTER is DERIVED from the jacks it names
     expect(paramCellKind(paramById('swingSource'), EMPTY, 'dock')).toBe('selector');
   });
 
-  it('THE CARD READS THE SAME LIST — no re-typed copy survives', () => {
-    // The backdraft one-source rule, applied to a list. `SRC_LABELS` used to be a
-    // hand-typed twelve-entry literal in the card; a literal there would be a
-    // second copy free to disagree with the def about which index is `1/12`.
-    expect(cardSrc, 'the card imports the derived roster').toContain('TIMELORDE_SWING_SOURCES');
-    expect(
-      /const SRC_LABELS\s*=\s*\[/.test(cardSrc),
-      'the card re-declares SRC_LABELS as a literal array — that is the duplicate this face removed',
-    ).toBe(false);
-  });
+  // ⚠ 'THE CARD READS THE SAME LIST — no re-typed copy survives' STOOD HERE.
+  // The backdraft one-source rule, applied to a list: `SRC_LABELS` used to be a
+  // hand-typed twelve-entry literal in the card, and a literal there would have
+  // been a second copy free to disagree with the def about which index is
+  // `1/12`. The list has one home again — the def's own
+  // `TIMELORDE_SWING_SOURCES` — and the selector above resolves off it, so
+  // there is no second surface left to hold a copy.
 });
 
 describe('timelorde face — the TAP cell, and why its probe needed two new fields', () => {
@@ -284,7 +287,6 @@ describe('timelorde face — the TAP cell, and why its probe needed two new fiel
     // about what a tap means.
     const faceTapSrc = stripComments(readFileSync(resolve(HERE, 'timelorde/face-tap.ts'), 'utf-8'));
     expect(faceTapSrc).toContain("from '$lib/electra/tap-tempo'");
-    expect(cardSrc).toContain("from '$lib/electra/tap-tempo'");
     // ⚠ NODE-KEYED, NOT COMPONENT-HELD. A tap series spans presses and the
     // faceplate cell's component unmounts on collapse / LRU / tab switch — the
     // #1531 class — so a component-held controller would forget the first tap.
@@ -377,50 +379,62 @@ describe('timelorde body — it BLITS the producer, it does not re-render it', (
     // property of what the surfaces DO, not of where they live: the basis sweeps
     // WebGL-context-creating cards under `lib/ui/modules`. A `getContext('webgl')`
     // here would put a real-GPU attest on every future edit to this module.
-    expect(
-      /getContext\(\s*['"]webgl/.test(bodySrc) || /getContext\(\s*['"]webgl/.test(cardSrc),
-      'a WebGL context appeared on a timelorde surface — this module would join the attest basis',
-    ).toBe(false);
   });
 });
 
 describe('timelorde face — the DISPLAY’s determinism is a DECODE, not a freeze', () => {
-  it('the card awaits img.decode() before the first paint', () => {
+  // ⚠ BOTH LEGS BELOW MOVED WITH THE CODE (legacy-removal S1), THEY WERE NOT
+  // DELETED — each guards a MEASURED regression, and an assertion that follows
+  // its subject is the only kind worth keeping. The composite left
+  // `TimelordeCard.svelte` for `$lib/ui/media/frame-producers.ts` when the
+  // display became node-lifetime; the card BLITS `video_out` now, exactly as
+  // `TimelordeDisplayBody` always has.
+
+  it('the producer awaits a DECODE, not a load, before the first paint', () => {
     // ⚠ THE MEASUREMENT: `vrt-live-surfaces.ts` recorded 13 of 20 SEPARATE
     // PROCESSES failing the timelorde CARD scene unmasked. Under
-    // prefers-reduced-motion the card paints EXACTLY ONE frame and stops, and
-    // `owlReady` used to flip in `onload` — which fires when the bytes arrive,
+    // prefers-reduced-motion exactly ONE frame is painted and kept, and the owl
+    // ready-latch used to flip in `onload` — which fires when the bytes arrive,
     // not when the bitmap is rastered — so the latched frame was a function of
     // boot speed. The card scene could be masked; the FACES roster has no mask
     // mechanism at all, so the dock baseline would have inherited that flake with
     // nowhere to put it. Fixed at the source instead.
-    expect(cardSrc).toContain('img.decode()');
+    //
+    // The seam is `FrameEnv.loadImage`, whose contract is "resolves only once it
+    // is DECODED"; the real-DOM binding is the only place `decode()` is called.
+    expect(producerSrc, 'the producer loads the owl through the decode-aware seam')
+      .toMatch(/env\.loadImage\(/);
+    expect(singletonSrc).toContain('img.decode()');
     expect(
-      /owlReady\s*=\s*true/.test(cardSrc),
-      'the owl-ready latch vanished — this leg is measuring nothing',
+      /resolves on DECODE|RESOLVES ON \*DECODE\*/i.test(singletonSrc),
+      'the decode contract lost the note that says WHY it is a decode and not a load',
     ).toBe(true);
   });
 
   it('the PUSH is CONVERGENT, not fire-and-forget — the reduced-motion defect', () => {
     // ⚠ FOUND BY THIS FACE AND FIXED IN THE SAME DIFF, and it was never a face
-    // bug: under `prefers-reduced-motion` the card paints ONE frame and pushes
-    // ONE bitmap, so a write that lands before the engine handle exists (or on a
+    // bug: under `prefers-reduced-motion` ONE frame is painted and ONE bitmap
+    // pushed, so a write that lands before the engine handle exists (or on a
     // handle that is then replaced) is lost FOREVER and `video_out` serves the
     // #07090d idle field for the rest of the session. MEASURED on a default rack
     // with `reducedMotion: 'reduce'`, the card mounted and its own canvas
     // carrying the owl at `nonBlack 47034/48400`: `video_out` read
     // `nonBlack 0/3072, maxLuma 9`. Non-reduced racks never saw it because the
-    // ordinary rAF re-pushes every frame and the loss self-heals invisibly.
+    // ordinary loop re-pushes every frame and the loss self-heals invisibly.
     //
-    // The card now ASKS the node whether its frame arrived and re-pushes only
-    // while it has not — which also heals a replaced handle, where a one-shot
-    // retry could not.
-    expect(cardSrc).toContain("'hasDisplayFrame'");
+    // The producer ASKS the node whether its frame arrived and re-does the work
+    // only while it has not — which also heals a replaced handle, where a
+    // one-shot retry could not.
+    expect(producerSrc).toContain("'hasDisplayFrame'");
     expect(
-      /if \(e && node && e\.read\?\.\(node, 'hasDisplayFrame'\) !== 1\) pushDisplayFrame\(\)/.test(cardSrc),
-      'the reduced-motion branch no longer re-pushes while the node holds no frame — a single ' +
-        'lost write makes video_out dark for the whole session',
+      /if \(reduced && ctx\.engine\.read\(ctx\.node, 'hasDisplayFrame'\) === 1\) return;/.test(
+        producerSrc,
+      ),
+      'the reduced-motion arm no longer converges while the node holds no frame — a single lost ' +
+        'write makes video_out dark for the whole session',
     ).toBe(true);
+    // ...and the CARD must not have grown a second push on the way out: one
+    // writer is the property, and two agreeing writers is how it stops being one.
   });
 
   it('declares NO freeze param — so freezeIsNotASeam must NOT be declared either', () => {

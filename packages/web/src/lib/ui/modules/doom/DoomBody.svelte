@@ -90,7 +90,7 @@
 
 <div class="doom-body" data-testid="doom-body">
   <div class="preview-wrap" data-preview-collapsed={previewCollapsed ? 'true' : 'false'}>
-    <DoomSurface id={nodeId} variant="face" {previewCollapsed} />
+    <DoomSurface id={nodeId} {previewCollapsed} />
     <div class="switches">
       <button
         type="button"

@@ -175,20 +175,22 @@ async function resumeAudio(page: Page): Promise<void> {
     .click({ timeout: 2000 }).catch(() => { /* already running */ });
 }
 
-test('skifree: card mounts, canvas renders, x/y inputs + gate/out outputs present', async ({ page }) => {
+test('skifree: shell mounts, canvas renders, x/y inputs + gate/out outputs present', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 's', type: 'skifree', position: { x: 200, y: 160 } }]);
 
-  const card = page.locator('.svelte-flow__node-skifree');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('SKIFREE');
+  const tile = page.locator('.svelte-flow__node:has([data-shell-type="skifree"])');
+  await expect(tile).toBeVisible();
+  await expect(tile).toContainText(/skifree/i);
 
-  const canvas = card.locator('[data-testid="skifree-canvas"]');
+  // The slope screen lives in the DOCK face body on the default shell.
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('s'));
+  const canvas = page.locator('[data-testid="skifree-face-canvas"]');
   await expect(canvas).toBeVisible();
   const size = await canvas.evaluate((el: Element) => {
     const c = el as HTMLCanvasElement;
@@ -197,11 +199,12 @@ test('skifree: card mounts, canvas renders, x/y inputs + gate/out outputs presen
   expect(size.w).toBeGreaterThan(0);
   expect(size.h).toBeGreaterThan(0);
 
-  // Handle presence: x/y CV inputs + gate/out outputs render as patch handles.
-  await expect(card.locator('[data-handleid="x"]')).toHaveCount(1);
-  await expect(card.locator('[data-handleid="y"]')).toHaveCount(1);
-  await expect(card.locator('[data-handleid="gate"]')).toHaveCount(1);
-  await expect(card.locator('[data-handleid="out"]')).toHaveCount(1);
+  // Handle presence: x/y CV inputs + gate/out outputs render as patch handles
+  // (the shell wrapper materialises every declared port).
+  await expect(tile.locator('[data-handleid="x"]')).toHaveCount(1);
+  await expect(tile.locator('[data-handleid="y"]')).toHaveCount(1);
+  await expect(tile.locator('[data-handleid="gate"]')).toHaveCount(1);
+  await expect(tile.locator('[data-handleid="out"]')).toHaveCount(1);
 
   expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
 });

@@ -37,14 +37,7 @@
 //   gravityBpm (log 30..240, default 60): drop-tick tempo.
 //   levelStep (linear 1..20, default 10): lines-per-level threshold (controls difficulty ramp).
 //
-// ⚠ `vizPassthrough: true` IS A LICENCE, NOT A WORKING PATH, and the
-// user-facing prose that promised otherwise has been removed from
-// `docs.explanation`. `GROUP_VIZ_HOST_TYPES` is `new Set(['scope'])`, so
-// GroupCard opens a portal slot for this module and mounts nothing into it —
-// measured `canvasInSlot 0` for modtris (and frogger / pong / nibbles) against
-// SCOPE's 1, recorded in `group-viz-hosts.test.ts` and tracked as #1755. The
-// flag stays declared because it is what the eventual host fix reads. The
-// well's real home is the DOCK FACEPLATE BODY (see `face.extension` below).
+// The well's home is the DOCK FACEPLATE BODY (see `face.extension` below).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -94,7 +87,6 @@ export const modtrisDef: AudioModuleDef = {
   domain: 'audio',
   label: 'modtris',
   category: 'games',
-  vizPassthrough: true,
 
   inputs: [
     // Gate inputs — bipolar/unipolar CV, but the stepper only cares about
@@ -169,8 +161,8 @@ export const modtrisDef: AudioModuleDef = {
     // reader does not go hunting for the disagreement. A tab rail needs
     // DOCK_TAB_MIN_BANDS = 7 bands and NOTHING IS PADDED to reach one.
     pages: [{ id: 'fall', label: 'fall', controls: ['gravityBpm', 'levelStep'] }],
-    // ⚠ DECLARED, AND THE REASON IS PARITY RATHER THAN TASTE. The legacy card
-    // renders both as `<NeonFader>`; without `paramCells` the shell derives
+    // ⚠ DECLARED, AND THE REASON IS PARITY RATHER THAN TASTE. Both were
+    // rendered as `<NeonFader>`; without `paramCells` the shell derives
     // KNOBS and a player's muscle memory for a vertical throw lands on a rotary.
     // ⚠ Note the divergence from the sibling: `frogger` declares NOTHING here
     // because `FroggerCard` draws a `<Knob>`. Each face matches its OWN card;
@@ -198,7 +190,7 @@ export const modtrisDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A playable Tetris-style block-stacking game wrapped as a CV/gate module — the falling-block gameplay drives the patch. Pieces drop into a 10×20 well at a tempo you set (DROP); you steer and rotate them with five gate inputs, and the game emits gate pulses on the events it produces: every line cleared and an overfill (game over). So a sequencer or clock pattern playing the game becomes a generative trigger source whose rhythm follows the stacking — a four-line 'Tetris' fires four separate LINE pulses in quick succession. You DON'T touch a surface to play: you patch gates into MOVE L/R, ROT L/R and DROP, and the well accumulates every decision you have made, so the same input pattern produces a different output rate ten seconds later. The well + next-piece preview + line count render on a 2D canvas at the head of the module's dock faceplate (and on the legacy card), and there is no video output port — MODTRIS speaks in gates, and the well is how you read what it is saying. DROP sets the gravity tempo and LVL sets how many cleared lines it takes to speed it up.",
+      "A playable Tetris-style block-stacking game wrapped as a CV/gate module — the falling-block gameplay drives the patch. Pieces drop into a 10×20 well at a tempo you set (DROP); you steer and rotate them with five gate inputs, and the game emits gate pulses on the events it produces: every line cleared and an overfill (game over). So a sequencer or clock pattern playing the game becomes a generative trigger source whose rhythm follows the stacking — a four-line 'Tetris' fires four separate LINE pulses in quick succession. You DON'T touch a surface to play: you patch gates into MOVE L/R, ROT L/R and DROP, and the well accumulates every decision you have made, so the same input pattern produces a different output rate ten seconds later. The well + next-piece preview + line count render on a 2D canvas at the head of the module\'s dock faceplate, and there is no video output port — MODTRIS speaks in gates, and the well is how you read what it is saying. DROP sets the gravity tempo and LVL sets how many cleared lines it takes to speed it up.",
     inputs: {
       rotate_l: "Rotate the current piece counter-clockwise on each rising edge — one quarter-turn per pulse (acts on the leading edge only, so a held gate rotates once).",
       rotate_r: "Rotate the current piece clockwise on each rising edge — one quarter-turn per pulse.",

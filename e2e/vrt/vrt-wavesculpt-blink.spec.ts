@@ -127,7 +127,7 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -212,8 +212,22 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
         try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
       });
 
-      const card = page.locator('.svelte-flow__node-wavesculpt').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE RENDERER IS IN THE DOCK PANE, NOT THE LANE. Since legacy-removal S1
+      // the wavesculpt canvas belongs to the NODE (`NodeVizSurfaceHost`, parked
+      // off-screen) and a VIEW claims it; the lane paints a `VideoTileThumb`, so
+      // a lane-scoped capture photographs the THUMB rather than the render. The
+      // blink scenes fail loudly on their live-surface `expectCount: 1`; the
+      // walls scenes did NOT — they captured the wrong picture silently, which
+      // is why both specs move together.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'vrt-1',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="vrt-1"]`)
+        .getByTestId('wavesculpt-output-body');
+      await card.waitFor({ state: 'visible', timeout: 20_000 });
 
       // Let the voices settle so the scope buffers fill with a couple of
       // cycles, then turn on the freeze hook (pins all time-derived inputs

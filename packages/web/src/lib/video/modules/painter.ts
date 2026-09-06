@@ -21,11 +21,11 @@
 // deterministic replay of `node.data.ops`, so `$lib/ui/media/extras-producers`
 // replays it onto a NODE-owned canvas on NODE lifetime and binds that (#1720) —
 // which is what makes a saved rack render the drawing rather than a blank page
-// with nothing opened. While a DRAWING SURFACE is mounted (the faceplate's
-// `fullViewBody`, or `PainterCard.svelte` under `?shell=legacy`) that surface
-// CLAIMS the binding and pushes its own canvas instead, because an in-progress
-// stroke must show on OUT before the op commits. Both replay the same log, so
-// the lease changes WHICH canvas is bound and never WHAT is on it.
+// with nothing opened. While the DRAWING SURFACE is mounted (the faceplate's
+// `fullViewBody`) it CLAIMS the binding and pushes its own canvas instead,
+// because an in-progress stroke must show on OUT before the op commits. Both
+// canvases replay the same log, so the lease changes WHICH canvas is bound and
+// never WHAT is on it.
 //
 // The drawing model (the PaintOp log, deterministic apply, flood fill, the
 // palette) is pure + unit-tested in painter-draw.ts. This file owns ONLY the GL

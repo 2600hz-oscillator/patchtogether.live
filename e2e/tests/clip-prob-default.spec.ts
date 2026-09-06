@@ -125,7 +125,7 @@ async function buildChain(page: Page, prefix: string) {
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="clipplayer"])')).toHaveCount(1);
 }
 
 /** Seed clip 0 (lane 0 slot 0) with the given steps + optional clip default. */

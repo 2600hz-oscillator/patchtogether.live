@@ -23,7 +23,7 @@
 // deeper task-#64/#65 fix; here we just give the loaded shard the headroom.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 
 type STGlobal = {
   __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -37,7 +37,7 @@ type VideoEngineLike = { step: () => void };
 /** Sample the preview canvas: total lit pixels + a coarse colour signature. */
 async function sampleCanvas(page: Page): Promise<{ lit: number; total: number; sig: string }> {
   return page.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+    const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
     if (!canvas) return { lit: 0, total: 0, sig: '' };
     const c2d = canvas.getContext('2d');
     if (!c2d) return { lit: 0, total: 0, sig: '' };
@@ -56,15 +56,14 @@ async function sampleCanvas(page: Page): Promise<{ lit: number; total: number; s
 }
 
 async function spawnToybox(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-toybox').first();
-  await card.waitFor({ state: 'visible', timeout: 10_000 });
+  await openToyboxDock(page);
 }
 
 /** Drive a few engine steps + freeze, then poll for a non-black frame. */
@@ -75,7 +74,7 @@ async function freezeAndWaitLit(page: Page, time: number, frac = 0.05): Promise<
       const ve = w.__engine?.().getDomain<VideoEngineLike>('video');
       for (let i = 0; i < 6; i++) ve?.step();
       w.__toyboxFreeze?.(time);
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       const d = c?.getContext('2d')?.getImageData(0, 0, c.width, c.height).data;
       if (!d) return false;
       let lit = 0;

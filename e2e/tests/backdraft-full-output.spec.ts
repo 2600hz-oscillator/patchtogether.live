@@ -43,6 +43,17 @@
 // Mirrors video-fullscreen.spec.ts + video-full-frame.spec.ts + present-second-
 // display.spec.ts, scoped to BACKDRAFT.
 //
+// ── DEFAULT-SHELL RE-POINT (S2) ─────────────────────────────────────────────
+// The card died with promotion; the output modes live in BackdraftOutputBody
+// (`fullViewBody`, dock-only). ⚠ UNLIKE THE CARD, THE RESTING SURFACE IS REAL
+// (the body's own note): the pane shows a live preview at rest, so the card's
+// mounted-but-0×0 anatomy asserts — and the rack-tier geometry asserts, pinned
+// elsewhere by rack-sizing.test.ts — died with it. What this file keeps is the
+// FEATURE: the ⛶ OUTPUT button opens the shared menu, Full Frame toggles the
+// persisted flag + the body's full-frame state and double-click exits, Full
+// Screen drives the wrap's state machine with mutual exclusion, and Present is
+// capability-gated. Every locator scopes under the dock pane.
+//
 // Assertion strategy notes (carried from the sibling specs):
 //   * Fullscreen: requestFullscreen() needs a user-gesture; the menu click IS
 //     one + chromium grants it headless, but we treat the COMPONENT STATE
@@ -54,17 +65,8 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-// The card's tier, read from the ONE place that owns it. Hard-coding 720x540
-// here would make this a THIRD copy of that truth (card CSS, RACK_SIZE_DEFAULTS,
-// spec) and the copies could drift silently in either direction;
-// card-control-ranges.test.ts already pins the CSS against this map, so
-// importing it makes the pair CSS<->map<->rendered-box transitive.
-import { RACK_SIZE_DEFAULTS } from '../../packages/web/src/lib/ui/rack-sizes';
-
-const RACK_UNIT = 180;
-const TIER = RACK_SIZE_DEFAULTS.backdraft!;
-const TIER_W = TIER.hp * RACK_UNIT;
-const TIER_H = Number(TIER.size.replace('u', '')) * RACK_UNIT;
+// (The card-tier geometry asserts died with the card; rack-sizing.test.ts owns
+// that truth, so the RACK_SIZE_DEFAULTS import went with them.)
 
 // ── COST: this spec asserts STATE, never PIXELS ──────────────────────────────
 // Every case here reads the component state machine (classes, persisted
@@ -148,27 +150,45 @@ async function setup(page: Page): Promise<string[]> {
     if (m.type() === 'error') errors.push(m.text());
   });
   await freezeVideoRender(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Spawn BACKDRAFT solo — no source needed (see the COST note above). */
-async function spawnBackdraft(page: Page): Promise<void> {
+/** Spawn BACKDRAFT solo — no source needed (see the COST note above) — and
+ *  open its dock pane (the output body is `fullViewBody`). Returns the PANE
+ *  locator every body read scopes under. */
+async function spawnBackdraft(page: Page) {
   await spawnPatch(
     page,
     [{ id: 'bd', type: 'backdraft', position: { x: 200, y: 60 }, domain: 'video' }],
     [],
   );
-  await expect(page.locator('[data-testid="backdraft-card"]')).toHaveCount(1);
+  await expect(
+    page.locator('.svelte-flow__node[data-id="bd"] [data-testid="module-shell"]'),
+  ).toHaveCount(1);
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'bd',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="bd"]');
+  await expect(pane.getByTestId('backdraft-face-output')).toBeVisible({ timeout: 60_000 });
+  return pane;
 }
 
-/** Open the card's OUTPUT menu — the SOLE entry point now that there is no
- *  display to right-click. Waits for the button rather than the surface,
- *  because the surface is invisible until an expanded mode is entered. */
-async function openOutputMenu(page: Page): Promise<void> {
-  const btn = page.locator('[data-testid="backdraft-output-menu"]');
-  await expect(btn, 'OUTPUT button present on the card').toBeVisible();
+type Pane = Awaited<ReturnType<typeof spawnBackdraft>>;
+
+/** Open the body's OUTPUT menu via the ⛶ button. */
+async function openOutputMenu(pane: Pane): Promise<void> {
+  const btn = pane.locator('[data-testid="backdraft-output-menu"]');
+  await expect(btn, 'OUTPUT button present on the body').toBeVisible();
   await expect(btn, 'OUTPUT button is enabled').toBeEnabled();
   await btn.click();
 }
@@ -221,41 +241,17 @@ test.describe('BACKDRAFT — full output capabilities', () => {
 
   test('the OUTPUT button opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
     const errors = await setup(page);
-    await spawnBackdraft(page);
+    const pane = await spawnBackdraft(page);
 
-    // THE SURFACE IS MOUNTED BUT NOT SHOWN. Both halves matter and neither
-    // implies the other: dropping the element entirely would still satisfy
-    // "not visible" (and would silently break requestFullscreen + Present),
-    // while showing a picture again would still satisfy "in the DOM". This is a
-    // layout read, not a pixel read — no GL work.
-    const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
+    // ⚠ UNLIKE THE CARD, THE RESTING SURFACE IS REAL (the body's own note):
+    // the pane shows a live preview at rest, so the surface is present AND
+    // visible — the card's 0×0-ghost anatomy died with the card. (The
+    // rack-tier geometry asserts are pinned by rack-sizing.test.ts.)
+    const canvas = pane.locator('canvas[data-testid="backdraft-canvas"]');
     await expect(canvas, 'the output surface is present in the DOM').toHaveCount(1);
-    await expect(canvas, 'the output surface is NOT shown in the rack').toBeHidden();
-    const wrapBox = await page.locator('[data-testid="backdraft-fs-wrap"]').boundingBox();
-    // A 0x0 box: Playwright returns null for a zero-area element, and if it ever
-    // returns a box it must still be empty. Either way the card shows no picture.
-    expect(
-      wrapBox === null || (wrapBox.width === 0 && wrapBox.height === 0),
-      `in-rack output surface occupies no space (got ${JSON.stringify(wrapBox)})`,
-    ).toBe(true);
+    await expect(canvas, 'the resting preview is shown in the pane').toBeVisible();
 
-    // THE CARD IS ITS TIER, EXACTLY (4hp x 3u = 720x540 today, read from
-    // RACK_SIZE_DEFAULTS above). The point of removing the display was a
-    // SMALLER card with no dead space, and the height is pinned min AND max, so
-    // any part of the tier the layout does not use is permanent grey on every
-    // instance of the card — and any part the layout EXCEEDS is silently
-    // clipped by `.card { overflow: hidden }`.
-    // offsetWidth/offsetHeight are LAYOUT (CSS) px and immune to xyflow's zoom
-    // transform, unlike boundingBox() — see the units note in
-    // card-control-overflow.spec.ts.
-    const size = await page.locator('[data-testid="backdraft-card"]').evaluate((el) => ({
-      w: (el as HTMLElement).offsetWidth,
-      h: (el as HTMLElement).offsetHeight,
-    }));
-    expect(size.w, `card width ${size.w} CSS px (want ${TIER.hp}hp = ${TIER_W})`).toBe(TIER_W);
-    expect(size.h, `card height ${size.h} CSS px (want ${TIER.size} = ${TIER_H})`).toBe(TIER_H);
-
-    await openOutputMenu(page);
+    await openOutputMenu(pane);
     const menu = page.locator('[data-testid="video-canvas-context-menu"]');
     await expect(menu, 'output menu opened').toBeVisible();
 
@@ -278,26 +274,24 @@ test.describe('BACKDRAFT — full output capabilities', () => {
     const errors = await setup(page);
     await spawnBackdraft(page);
 
-    // The card used to have TWO entry points to the output menu: the button and
-    // a right-click on the 320x240 display. The display is gone, so the second
-    // one is gone with it and the BUTTON now carries the whole feature.
-    //
-    // This case pins the consequence rather than mourning it. The output
-    // surface is still IN the card (0x0, absolutely positioned), so the failure
-    // mode worth guarding is that it silently swallows pointer events over the
-    // faceplate: it is `pointer-events: none` in the rack precisely so it
-    // cannot. Right-clicking the card must therefore reach SvelteFlow's own
-    // node menu (Docs / Duplicate / Delete) exactly as it does on any other
-    // card, and must NOT open the output menu.
-    await page.locator('[data-testid="backdraft-gates"]').click({ button: 'right' });
+    // The card guarded "the 0×0 output surface must not swallow faceplate
+    // right-clicks". On the shell the LANE TILE mounts no output surface at
+    // all, and the invariant it protected survives in this form: right-click
+    // on the tile reaches the module menu (Docs / Duplicate / Delete) exactly
+    // as on any other module, and does NOT open the output menu (which lives
+    // behind the pane's ⛶ button / picture only). Close the pane first so the
+    // lane is the surface under test.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-testid="dock-fullview-pane"]')).toHaveCount(0);
+    await page.locator('.svelte-flow__node[data-id="bd"] .tile-kind').click({ button: 'right' });
 
     await expect(
       page.locator('[role="menu"][aria-label="Module actions"]'),
-      'right-click on the faceplate opens the SvelteFlow node menu',
+      'right-click on the tile opens the module menu',
     ).toBeVisible();
     await expect(
       page.locator('[data-testid="video-canvas-context-menu"]'),
-      'right-click does NOT open the output menu (no display to claim it)',
+      'right-click does NOT open the output menu (no lane display to claim it)',
     ).toHaveCount(0);
 
     expect(errors).toEqual([]);
@@ -305,66 +299,33 @@ test.describe('BACKDRAFT — full output capabilities', () => {
 
   test('Full Frame toggles node.data.fullFrame + hides chrome; double-click exits', async ({ page }) => {
     const errors = await setup(page);
-    await spawnBackdraft(page);
+    const pane = await spawnBackdraft(page);
 
-    const card = page.locator('[data-testid="backdraft-card"]');
-    const canvas = page.locator('canvas[data-testid="backdraft-canvas"]');
-    const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
+    const body = pane.getByTestId('backdraft-face-output');
+    const canvas = pane.locator('canvas[data-testid="backdraft-canvas"]');
+    const wrap = pane.locator('[data-testid="backdraft-fs-wrap"]');
 
-    // Baseline: in the rack the surface occupies NOTHING, so the transition
-    // below is asserted as real GROWTH from zero to the whole card. (Playwright
-    // returns null for a zero-area box, hence the ?? 0.)
+    // Baseline: at rest the body is NOT in full-frame and the preview has its
+    // resting size (real, unlike the card's 0×0 ghost).
+    await expect(body).not.toHaveClass(/full-frame/);
     const beforeBox = await wrap.boundingBox();
-    const beforeW = beforeBox?.width ?? 0;
-    expect(beforeW, 'in-rack output surface has no width').toBe(0);
+    expect(beforeBox, 'resting preview measurable').not.toBeNull();
 
     // Enter Full Frame via the OUTPUT menu.
-    await openOutputMenu(page);
+    await openOutputMenu(pane);
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
     await page.locator('[data-testid="ctx-full-frame"]').click();
 
-    // Card gains .full-frame + the data attribute flips true + it persists.
-    await expect(card, 'card entered full-frame').toHaveClass(/full-frame/);
-    await expect(card).toHaveAttribute('data-full-frame', 'true');
-    await expect(wrap, 'wrap gained full-frame').toHaveClass(/full-frame/);
+    // The body gains .full-frame ("fill the dock body") + the SAME
+    // node.data.fullFrame the card persisted flips true (one truth, Y-synced).
+    await expect(body, 'body entered full-frame').toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame persisted true').toBe(true);
-
-    // The point of full-frame: the CONTROLS are gone and the surface — which
-    // occupied no space at all a moment ago — has GROWN to consume the whole
-    // card. This is the case that proves the 0x0 in-rack surface is genuinely
-    // the SAME element every expanded mode presents, not a dead stub.
     await expect(canvas, 'output surface is showing').toBeVisible();
-    await expect(
-      card.locator('[data-testid="backdraft-controls"]'),
-      'controls hidden while full-frame',
-    ).toBeHidden();
-    const afterBox = await wrap.boundingBox();
-    expect(afterBox, 'full-frame display measurable').not.toBeNull();
-    expect(
-      afterBox!.width,
-      `surface GREW into full-frame (${beforeW.toFixed(0)} -> ${afterBox!.width.toFixed(0)})`,
-    ).toBeGreaterThan(100);
-    const cardBoxFF = await card.boundingBox();
-    expect(
-      Math.abs(afterBox!.width - cardBoxFF!.width),
-      'full-frame display spans the whole card width',
-    ).toBeLessThan(4);
-    expect(
-      Math.abs(afterBox!.height - cardBoxFF!.height),
-      'full-frame display spans the whole card height (card padding dropped)',
-    ).toBeLessThan(4);
 
-    // The card's own Svelte Flow handles are visually hidden but still in the
-    // DOM (cables stay connected — we hide, not remove).
-    const handles = card.locator('.svelte-flow__handle');
-    expect(await handles.count(), 'handles still in DOM while full-frame').toBeGreaterThan(0);
-    await expect(handles.first()).toHaveCSS('opacity', '0');
-    await expect(handles.first()).toHaveCSS('pointer-events', 'none');
-
-    // Double-click the card exits back to normal chrome.
-    await card.dblclick();
-    await expect(card, 'card exited full-frame').not.toHaveClass(/full-frame/);
-    await expect(card).toHaveAttribute('data-full-frame', 'false');
+    // Double-click the body exits back to normal chrome (ff.attach's gesture,
+    // mirroring the card's).
+    await body.dblclick();
+    await expect(body, 'body exited full-frame').not.toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame persisted false').toBe(false);
 
     expect(errors).toEqual([]);
@@ -372,26 +333,25 @@ test.describe('BACKDRAFT — full output capabilities', () => {
 
   test('Full Screen enters the .fullscreen state; double-click exits (Full Frame ↔ Full Screen mutually exclusive)', async ({ page }) => {
     const errors = await setup(page);
-    await spawnBackdraft(page);
+    const pane = await spawnBackdraft(page);
 
-    const card = page.locator('[data-testid="backdraft-card"]');
-    const wrap = page.locator('[data-testid="backdraft-fs-wrap"]');
+    const body = pane.getByTestId('backdraft-face-output');
+    const wrap = pane.locator('[data-testid="backdraft-fs-wrap"]');
 
-    // Enter Full Frame first (in-rack, menu reachable).
-    await openOutputMenu(page);
+    // Enter Full Frame first (menu reachable at rest).
+    await openOutputMenu(pane);
     await page.locator('[data-testid="ctx-full-frame"]').click();
-    await expect(card, 'entered full-frame').toHaveClass(/full-frame/);
+    await expect(body, 'entered full-frame').toHaveClass(/full-frame/);
 
-    // Now enter Full Screen — the card must clear full-frame first (mutual
-    // exclusion), leaving a single clean .fullscreen state. The OUTPUT button
-    // is hidden while full-frame (the chrome is gone), so exit via the
+    // Now enter Full Screen — full-frame must clear first (mutual exclusion),
+    // leaving a single clean .fullscreen state. Exit full-frame via the
     // documented double-click first, exactly as a user would.
-    await card.dblclick();
-    await expect(card, 'exited full-frame').not.toHaveClass(/full-frame/);
-    await openOutputMenu(page);
+    await body.dblclick();
+    await expect(body, 'exited full-frame').not.toHaveClass(/full-frame/);
+    await openOutputMenu(pane);
     await page.locator('[data-testid="ctx-fullscreen"]').click();
     await expect(wrap, 'wrap entered fullscreen state').toHaveClass(/fullscreen/);
-    await expect(card, 'full-frame cleared on fullscreen enter').not.toHaveClass(/full-frame/);
+    await expect(body, 'full-frame cleared on fullscreen enter').not.toHaveClass(/full-frame/);
     expect(await readFullFrame(page, 'bd'), 'fullFrame false after fullscreen enter').toBe(false);
 
     // Best-effort: report whether real OS fullscreen engaged.
@@ -413,9 +373,9 @@ test.describe('BACKDRAFT — full output capabilities', () => {
       { label: 'DELL U2720Q', isPrimary: false },
     ]);
     const errors = await setup(page);
-    await spawnBackdraft(page);
+    const pane = await spawnBackdraft(page);
 
-    await openOutputMenu(page);
+    await openOutputMenu(pane);
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
 
     // "Present on …" appears only for the NON-current (secondary) display.

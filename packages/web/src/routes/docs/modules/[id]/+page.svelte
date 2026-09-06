@@ -11,13 +11,20 @@
 
   // ---- Interactive virtual module (the redesign's PRIMARY view) ----
   //
-  // The live card touches `window`/xyflow on mount, so it must NEVER run during
-  // SSR/prerender. We gate it behind onMount AND the per-module allowlist
-  // (data.interactive); until it mounts (and for non-prototype modules) the LEFT
-  // column shows the static numbered face / IoDiagram fallback, which is exactly
-  // what the prerendered (no-JS) HTML carries. The RIGHT pane's authored text is
-  // SSR-rendered too (DocHoverPane is pure presentational), so the doc is fully
-  // readable without JS.
+  // The live faceplate touches `window` on mount and pulls the module
+  // REGISTRIES (which resolve worklet/wasm `?url` assets), so it must NEVER run
+  // during SSR/prerender — this whole subtree is `prerender = true`. We gate it
+  // behind onMount AND the per-module allowlist (data.interactive); until it
+  // mounts (and for non-allowlisted modules) the LEFT column shows the static
+  // numbered face / IoDiagram fallback, which is exactly what the prerendered
+  // (no-JS) HTML carries. The RIGHT pane's authored text is SSR-rendered too
+  // (DocHoverPane is pure presentational), so the doc is fully readable
+  // without JS.
+  //
+  // ⚠ THE FALLBACK IS WHAT KEEPS THE OTHER ~140 STRICT_DOCS PAGES WHOLE. Only
+  // the INTERACTIVE_DOC_MODULES members mount a live surface at all; every
+  // other module's doc page has always been the numbered PNG + its authored
+  // KEY, and stays that way.
   let mounted = $state(false);
   let VirtualModule = $state<typeof VirtualModuleComponent | null>(null);
 
@@ -25,14 +32,14 @@
   let hoverState = $state<DocHoverState>({ hovered: null });
   const docIndex = $derived(data.docIndex);
 
-  // Show the live card only when: in the browser, mounted, allowlisted, and the
-  // card module finished loading.
+  // Show the live faceplate only when: in the browser, mounted, allowlisted,
+  // and the VirtualModule chunk finished loading.
   let showLive = $derived(browser && mounted && data.interactive && !!VirtualModule);
 
   onMount(() => {
     if (!data.interactive) return;
-    // Dynamic import keeps VirtualModule (xyflow + cards) out of the prerender
-    // server bundle entirely.
+    // Dynamic import keeps VirtualModule (ModuleShell + the module registries)
+    // out of the prerender server bundle entirely.
     import('$lib/docs/interactive/VirtualModule.svelte').then((m) => {
       VirtualModule = m.default;
       mounted = true;
@@ -88,11 +95,12 @@
   </a>
 {/if}
 
-<!-- THE CARD — 2-column interactive view (the redesign): LEFT a live, hoverable
-     virtual module (the PRIMARY view), RIGHT a pane that explains whatever
-     faceplate control / patch port you hover. The static numbered face is the
-     no-JS / prerender / not-yet-promoted FALLBACK shown on the left until the
-     live card mounts (or for modules not on the interactive allowlist). -->
+<!-- THE FACEPLATE — 2-column interactive view (the redesign): LEFT a live,
+     hoverable virtual module (the PRIMARY view), RIGHT a pane that explains
+     whatever faceplate control / patch port you hover. The static numbered face
+     is the no-JS / prerender / not-allowlisted FALLBACK shown on the left until
+     the live faceplate mounts (or for modules not on the interactive
+     allowlist). -->
 <h2>the faceplate</h2>
 <div class="card-explore" data-testid="card-explore" class:has-live={showLive}>
   <div class="card-explore-left">
@@ -101,7 +109,8 @@
       <!-- {#key mod.type} because VirtualModule binds a throwaway sandbox rackspace
            (`__docs-sandbox__:<type>`) and seeds its demo node in onMount. SvelteKit
            re-uses this page component across /docs/modules/A → /docs/modules/B, so
-           without the key the sandbox stays bound to A while B's card is shown. -->
+           without the key the sandbox stays bound to A while B's faceplate is
+           shown. -->
       {#key mod.type}
         <VM type={mod.type} {docIndex} {hoverState} def={data.defLite} />
       {/key}

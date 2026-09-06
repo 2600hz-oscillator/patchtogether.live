@@ -14,16 +14,17 @@
 // owner's two-ordinary-cells fallback: the lane tile and the dock bands paint
 // `pos_x`/`pos_y` as two plain knob cells, and the real pad is the extension's
 // `fullViewBody` at the head of the dock (`JoystickPadBody.svelte`). The
-// FACE legs below are the promotion's behavioural evidence — an existing
-// green `?shell=legacy` leg is NEVER evidence about a face — and they drive
+// FACE legs below are the promotion's behavioural evidence — a green leg on the
+// PRE-PROMOTION surface is NEVER evidence about a face — and they drive
 // the same #1963 drag-and-release contract through the shipping surface.
 //
-// ⚠ `joystick-readout` BELOW IS THE LEGACY CARD'S OWN ROW, and it survives
-// there deliberately: the resting-text ruling is about FACEPLATES — legacy
-// cards print values and are untouched. On the FACE that readout is the
-// promotion's named DELETION (owner-decisions item 11): the pad body paints
-// no decimals, and the values live on its `aria-label` and on the knob
-// cells' `aria-valuetext`.
+// ⚠ THE LEGACY-CARD ARM OF THIS FILE WAS FOLDED by the S2 legacy-removal
+// inversion: its three tests asserted the identical #1963 drag/release/
+// re-centre contract through the card, and the FACE legs below are the same
+// claims on the shipping surface (S2 manifest). `joystick-readout` was the
+// card's own row; on the face it is the promotion's named DELETION
+// (owner-decisions item 11): the pad body paints no decimals, and the values
+// live on its `aria-label` and on the knob cells' `aria-valuetext`.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -47,85 +48,6 @@ async function storedPos(page: import('@playwright/test').Page, nodeId: string) 
     return { pos_x: n?.params.pos_x ?? 99, pos_y: n?.params.pos_y ?? 99 };
   }, nodeId);
 }
-
-test.describe('JOYSTICK — XY CV utility (legacy card)', () => {
-  test('spawns + pad mounts + no console errors', async ({ page, rack, errorWatch }) => {
-    await spawnPatch(page, [
-      { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
-    ]);
-
-    await expect(page.locator('[data-testid="joystick-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="joystick-pad"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="joystick-dot"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="joystick-readout"]')).toHaveCount(1);
-  });
-
-  test('drag updates pos_x + pos_y, and RELEASE LEAVES THEM THERE', async ({ page, rack }) => {
-    await spawnPatch(page, [
-      { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
-    ]);
-
-    const pad = page.locator('[data-testid="joystick-pad"]');
-    await expect(pad).toHaveCount(1);
-    const box = await pad.boundingBox();
-    expect(box).not.toBeNull();
-    if (!box) return;
-
-    // Drag from centre toward the upper-right corner. Expect pos_x > 0.3 and
-    // pos_y > 0.3 (positive y is "up").
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    const tx = box.x + box.width * 0.85;
-    const ty = box.y + box.height * 0.15;
-    await page.mouse.move(cx, cy);
-    await page.mouse.down();
-    await page.mouse.move(tx, ty, { steps: 6 });
-
-    // Still holding. The write is rAF-coalesced now (createDragCommit), so poll
-    // the real subject rather than racing a single frame.
-    await expect
-      .poll(async () => (await storedPos(page, 'j1')).pos_x, {
-        message: 'pos_x positive while dragging right',
-      })
-      .toBeGreaterThan(0.3);
-    const held = await storedPos(page, 'j1');
-    expect(held.pos_y, 'pos_y positive after drag up (Y flipped)').toBeGreaterThan(0.3);
-
-    // Release — and the position STAYS. #1963: "1 - persist".
-    await page.mouse.up();
-    const released = await storedPos(page, 'j1');
-    expect(released.pos_x, 'pos_x survives the release').toBeCloseTo(held.pos_x, 3);
-    expect(released.pos_y, 'pos_y survives the release').toBeCloseTo(held.pos_y, 3);
-
-    // The negative control on the leg above: it must be a value the OLD
-    // snap-back would have destroyed, i.e. genuinely off-centre. Without this
-    // the assertion would also pass on a stick that never moved.
-    expect(Math.abs(released.pos_x), 'and it is not merely centred').toBeGreaterThan(0.3);
-  });
-
-  test('double-click re-centres — the gesture that REPLACED the snap-back', async ({ page, rack }) => {
-    await spawnPatch(page, [
-      { id: 'j1', type: 'joystick', position: { x: 200, y: 100 }, domain: 'audio' },
-    ]);
-
-    const pad = page.locator('[data-testid="joystick-pad"]');
-    const box = await pad.boundingBox();
-    expect(box).not.toBeNull();
-    if (!box) return;
-
-    await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.15);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.15, { steps: 2 });
-    await page.mouse.up();
-    await expect.poll(async () => Math.abs((await storedPos(page, 'j1')).pos_x)).toBeGreaterThan(0.3);
-
-    await pad.dblclick();
-    await expect
-      .poll(async () => (await storedPos(page, 'j1')).pos_x, { message: 'pos_x re-centred' })
-      .toBeCloseTo(0, 3);
-    expect((await storedPos(page, 'j1')).pos_y, 'pos_y re-centred').toBeCloseTo(0, 3);
-  });
-});
 
 // ── THE FACE — the promoted surface every user actually gets ────────────────
 //
@@ -174,7 +96,7 @@ async function waitStoredPos(
 test.describe('JOYSTICK — the FACE (default shell)', () => {
   test('the lane tile is a ModuleShell painting BOTH axis cells — and NOT the pad', async ({
     page,
-    rackDefault,
+    rack,
     errorWatch,
   }) => {
     // `errorWatch` is this spec's pageerror guard: a derivation repaired on
@@ -189,7 +111,6 @@ test.describe('JOYSTICK — the FACE (default shell)', () => {
       tile.locator('[data-testid="module-shell"]'),
       'the promoted face renders a ModuleShell tile, not the placeholder',
     ).toBeVisible();
-    await expect(tile.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
 
     // The two-ordinary-cells shape, at the tier the player is looking at:
     // rank 1 (X) paints at every tier, so it is the tier-independent claim.
@@ -203,7 +124,7 @@ test.describe('JOYSTICK — the FACE (default shell)', () => {
 
   test('dock: the pad body drags BOTH axes, release LEAVES them, dblclick re-centres', async ({
     page,
-    rackDefault,
+    rack,
     errorWatch,
   }) => {
     await spawnPatch(page, [

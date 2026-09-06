@@ -1,6 +1,9 @@
 // e2e/tests/es9-card-shows-state.spec.ts
 //
-// THE CARD MUST SHOW THE BRIDGE'S REAL STATE.
+// THE VISIBLE SURFACE MUST SHOW THE BRIDGE'S REAL STATE — on the default
+// shell that surface is the dock face's BRIDGE StatusLed, whose aria-label
+// carries the owner-snapshot detail sentence (the readout ruling's home for
+// derived state).
 //
 // Owner-reported showstopper, 2026-08-07: "the es-9 widget … clicking connect
 // does nothing. no console errors, no connection" — while the bridge was
@@ -27,43 +30,42 @@ test.describe.configure({ mode: 'parallel' });
 
 const NODE = 'es9a';
 
-/** The status text the card is displaying right now. */
+/** The state sentence the face's BRIDGE lamp is announcing right now. */
 async function cardState(page: Page): Promise<string> {
-  return (await page.getByTestId(`es9-status-${NODE}`).innerText()).trim().toLowerCase();
+  return ((await page.getByTestId(`es9-led-bridge-${NODE}`).getAttribute('aria-label')) ?? '')
+    .trim()
+    .toLowerCase();
 }
 
 async function spawnEs9(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: NODE, type: 'es9', position: { x: 140, y: 140 }, domain: 'audio' },
   ]);
-  await expect(page.getByTestId(`es9-status-${NODE}`)).toBeVisible();
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    NODE,
+  );
+  await expect(page.getByTestId(`es9-led-bridge-${NODE}`)).toBeVisible();
 }
 
 /**
- * What the card paints while it is still on its INITIAL snapshot — the frozen
- * state this whole file exists to catch.
- *
- * ⚠ IT IS `off`, NOT `idle`, AND THAT IS WHY THE ORIGINAL ASSERTION WAS
- * VACUOUS. `Es9Card.svelte`'s `stateLabel` maps `case 'stopped': case 'idle':
- * return 'off'` — the string `idle` is a STATE NAME and never a RENDERED LABEL,
- * so `.not.toContain('idle')` was true on the very first poll, before the card
- * had subscribed to anything, and **the exact regression it was written for
- * would have rendered `off`, passed, and shipped.**
+ * What the lamp announces while still on its INITIAL snapshot — the frozen
+ * state this whole file exists to catch: `es9BridgeDetail` maps `idle`/
+ * `stopped` to the press-CONNECT hint, which a subscribed surface leaves the
+ * moment the worker's first close arrives.
  */
-const FROZEN_LABEL = 'off';
+const FROZEN_LABEL = 'the hardware link is down';
 
 /**
- * What a SUBSCRIBED card settles on with no es9-bridge helper listening — the
- * transport worker's close, delivered through the subscription.
- *
- * MEASURED on this branch (MutationObserver over 12 s): the row cycles
- * `bridge not found` ↔ `connecting…` three times, spending all but a few
- * milliseconds of each ~1-5 s backoff period on the former. Either string is
- * proof of a live subscription; `off` is proof of the bug.
+ * What a SUBSCRIBED surface settles on once the transport worker has spoken —
+ * `es9BridgeDetail`'s post-idle sentences: the no-answer close, the connect
+ * attempt, or (on a machine where a real es9-bridge app holds the port) the
+ * busy refusal. The FROZEN initial snapshot ('idle') renders none of these —
+ * it says "the hardware link is down", which is the discrimination below.
  */
-const SUBSCRIBED_LABELS = /bridge not found|connecting/;
+const SUBSCRIBED_LABELS = /no es9-bridge app answered|connecting to the es9-bridge|busy/;
 
 test('the card LEAVES its initial snapshot — it is subscribed, not frozen', async ({ page, rack }) => {
   await spawnEs9(page);
@@ -96,18 +98,12 @@ test('the CONNECT button reaches the bridge owner', async ({ page, rack }) => {
   await spawnEs9(page);
   await expect.poll(() => cardState(page), { timeout: 15_000 }).toMatch(SUBSCRIBED_LABELS);
 
-  const row = page.getByTestId(`es9-status-${NODE}`);
-
-  // ⚠ BY TESTID, NOT BY VISIBLE TEXT. This used to be
-  // `getByRole('button', { name: /^connect$/i })` — a match on a caption that
-  // is one edit away from unfindable, and which would have made this whole
-  // test silently vacuous rather than red. The testids arrived with the face's
-  // `es9-connect` / `es9-disconnect` controlFamilies.
-  const connect = row.getByTestId(`es9-connect-${NODE}`);
-  await expect(
-    connect,
-    'with no helper listening the card is not connected, so CONNECT is the button it offers',
-  ).toHaveCount(1);
+  // The face's CONNECT cell — always present, static caption (the card's
+  // one flipping label was the vacuous shape this file documents).
+  const connect = page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${NODE}"] [data-testid="shell-cell-es9-connect"]`)
+    .first();
+  await expect(connect).toHaveCount(1);
   await connect.click();
 
   // ⚠ CONNECT is NOT a deterministic TEXT transition and must not be asserted
@@ -122,33 +118,20 @@ test('the CONNECT button reaches the bridge owner', async ({ page, rack }) => {
     .toBe(true);
 });
 
-test('⚠ DISCONNECT is UNREACHABLE from this card on CI, and that is stated rather than skipped', async ({
+test('DISCONNECT is ALWAYS offered on the face — the state-gated card button died with the card', async ({
   page,
   rack,
 }) => {
-  // ⚠ THIS TEST REPLACES A BLOCK THAT WAS BOTH UNREACHABLE **AND WRONG IF
-  // REACHED**, which is worse than either alone. It read:
-  //
-  //     const disconnect = row.getByRole('button', { name: /disconnect/i });
-  //     if (await disconnect.count()) { … .toContain('stopped'); }
-  //
-  // The card renders DISCONNECT only while `connState === 'connected'`, which
-  // no runner reaches — so the guard was always false and the body never ran.
-  // And had it run it would have FAILED: `stop()` reports the state `stopped`,
-  // and `stateLabel` renders that state as the label **`off`**. The comment
-  // above it was emphatic that "DISCONNECT is deterministic … so that is what
-  // we assert the wiring with", and the thing it asserted against was the
-  // LABEL, not the state. A conditional block that never executes is a green
-  // check certifying nothing.
+  // The card rendered DISCONNECT only while `connState === 'connected'` — a
+  // state no CI runner reaches, which made its predecessor's conditional
+  // block a green check certifying nothing (this file's history records it).
+  // The face fixes the reachability at the source: BOTH cells are always
+  // present with static captions, and faces-parity drives each press through
+  // the audition ledger. Here the presence is pinned on the shipping surface.
   await spawnEs9(page);
-  const row = page.getByTestId(`es9-status-${NODE}`);
-  await expect(
-    row.getByTestId(`es9-disconnect-${NODE}`),
-    'no es9-bridge helper on this runner, so the card never reaches `connected` and never offers '
-      + 'DISCONNECT. The gesture IS covered, on the FACE: both cells are always present there '
-      + '(static captions, not one label that flips), and faces-parity drives each and requires '
-      + 'the audition ledger to record a DELIVERED press.',
-  ).toHaveCount(0);
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${NODE}"]`);
+  await expect(pane.locator('[data-testid="shell-cell-es9-connect"]')).toHaveCount(1);
+  await expect(pane.locator('[data-testid="shell-cell-es9-disconnect"]')).toHaveCount(1);
 });
 
 test('NEGATIVE CONTROL — the status element exists and reports distinct states', async ({
@@ -165,7 +148,7 @@ test('NEGATIVE CONTROL — the status element exists and reports distinct states
   // also names a string the frozen card CANNOT produce.
   await spawnEs9(page);
   const text = await cardState(page);
-  expect(text.length, 'the status row renders real text, not an empty node').toBeGreaterThan(0);
+  expect(text.length, 'the lamp announces real text, not an empty label').toBeGreaterThan(0);
   await expect
     .poll(() => cardState(page), { timeout: 15_000 })
     .toMatch(SUBSCRIBED_LABELS);

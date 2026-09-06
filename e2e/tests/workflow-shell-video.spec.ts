@@ -1,18 +1,16 @@
 // e2e/tests/workflow-shell-video.spec.ts
 //
-// The `?shell=1` VIDEO VISIBILITY fix, end to end (owner regression: video
-// modules rendered the generic placeholder tile with a FAKE dashed-wave glyph,
-// so there was NO user-viewable video output anywhere in the shell; and the
-// dock full-view mounted videoOut's legacy card DEAD — its bare useStore()
-// threw outside the SvelteFlow provider, while DOOM, which never calls
-// useStore, worked).
+// The VIDEO VISIBILITY fix, end to end (owner regression: video modules
+// rendered the generic placeholder tile with a FAKE dashed-wave glyph, so there
+// was NO user-viewable video output anywhere; and the dock full-view mounted
+// videoOut's body DEAD — its bare useStore() threw outside the SvelteFlow
+// provider, while DOOM, which never calls useStore, worked).
 //
 //   1. videoOut renders a FACE TILE carrying a live picture in the video zone,
-//      and the freely resizable screen is the DETACHED DISPLAY (#1821). ⚠ This
-//      bullet used to read "its REAL, freely-resizable LEGACY card … NON_SHELL
-//      video-surface snowflake"; videoOut now has a `face`, so the swap lands on
-//      a ModuleShell with a live VideoTileThumb rather than the placeholder that
-//      caused the original regression.
+//      and the freely resizable screen is the DETACHED DISPLAY (#1821). videoOut
+//      has a `face`, so its lane tile is a ModuleShell with a live
+//      VideoTileThumb rather than the placeholder that caused the original
+//      regression.
 //   2. Video-domain tiles carry a LIVE ANIMATED THUMBNAIL of the module's
 //      actual output (the legacy blitOutputToDrawingBuffer preview seam) in
 //      the glyph slot — the fake wave is GONE for video modules — and the
@@ -22,8 +20,6 @@
 //      a hard render lease while open. ⚠ videoOut reaches it through its own
 //      EXPAND pill now (it has a tile); the dev seam it used to need is kept
 //      here only for the modules that still have no tile.
-//   4. `?shell=legacy` stays a strict no-op: no tiles, no thumbs, and videoOut's
-//      verbatim card exactly as before — the escape hatch has to stay honest.
 //
 // DETERMINISM: chain liveness is asserted via ENGINE PROBES (framesDrawnFor —
 // SwiftShader-tolerant); pixel-change asserts poll toDataURL inequality on a
@@ -132,24 +128,18 @@ const RECORDERBOX = 'workflow-recorderbox';
 const SYNESTHESIA = 'workflow-synesthesia';
 
 /**
- * A node's RACKLINE lane tile, EITHER KIND — a faced `module-shell` or the
- * un-migrated `module-shell-placeholder`.
+ * A node's RACKLINE lane tile.
  *
- * ⚠ IT EXISTS BECAUSE TWO CASES IN THIS FILE ENCODED A MIGRATION STATE THEY DO
- * NOT DEPEND ON (#2295), which is the same finding `workflow-shell.spec.ts`
- * already records for its `vzFaceSelector`: matching either testid is STRICTLY
- * MORE GENERAL and weakens nothing, because both kinds are the same
- * `SHELL_TILE_W` box and neither caller reads the tile's contents. What the
- * callers actually assert is (a) a tile PAINTED before geometry is measured,
- * and (b) that the lane shows the RACKLINE look rather than the verbatim legacy
- * card — and both survive a promotion. Naming one kind made a PACKING test and
- * a HEADLESS-HOST test depend on the promotion queue: measured 2026-09-01,
- * promoting `recorderbox` alone reds the first, and promoting `archivist` reds
- * the second.
+ * ⚠ IT MATCHED TWO TESTIDS AND NOW MATCHES ONE, and the reason it ever matched
+ * two is worth keeping: two cases in this file had encoded a distinction they
+ * did not depend on (#2295). What the callers actually assert is that a tile
+ * PAINTED before geometry is measured — never anything about its contents — so
+ * naming a narrower subject than the assertion needs is what made a PACKING
+ * test and a HEADLESS-HOST test depend on the promotion queue. There is one
+ * tile kind now, so the generality is free; the lesson is not.
  */
 const laneTileSelector = (id: string) =>
-  `.svelte-flow__node[data-id="${id}"] `
-  + ':is([data-testid="module-shell"], [data-testid="module-shell-placeholder"])';
+  `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`;
 
 // DERIVED, never re-typed (#2239): the gap is whatever the shell pitch leaves
 // over a uniform tile. It was hardcoded 24 for the old 216 pitch, so the pitch
@@ -169,33 +159,18 @@ async function gotoShell(page: Page): Promise<void> {
 /**
  * The seeded videoOut's LANE SURFACE.
  *
- * ⚠ IT IS A SHELL TILE NOW, not the legacy card (#1821). This helper used to
- * return `[data-testid="video-out-card"]` and was named `videoOutCard`, because
- * videoOut was a NON_SHELL_LANE_TYPE carve-out — held back on its verbatim card
- * after a PLACEHOLDER tile removed the only user-viewable video output. It now
- * carries a real `face`, so the swap lands on a `ModuleShell` painting the LIVE
- * `VideoTileThumb`, and the big picture moved to right-click → DETACH DISPLAY.
- * Most call sites below use this purely as a "the video zone has mounted" gate.
+ * It is a SHELL TILE (#1821): videoOut carries a real `face`, so its lane node
+ * is a `ModuleShell` painting the LIVE `VideoTileThumb`, and the big picture
+ * lives behind right-click → DETACH DISPLAY. Most call sites below use this
+ * purely as a "the video zone has mounted" gate.
  */
 function videoOutLane(page: Page) {
   return page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"]`);
 }
 
-/** The same node under `?shell=legacy`, where the verbatim card still renders —
- *  the escape hatch, which promotion must NOT change. */
-function videoOutLegacyCard(page: Page) {
-  return page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-card"]`);
-}
-
-/** The videoOut surface that paints in a given mode: the face tile's live thumb
- *  under the default shell, the legacy card's canvas under `?shell=legacy`.
- *  ⚠ Mode-dependent BY NECESSITY — the two renderers are the subject of the
- *  parity claim, so one selector for both would be asserting about whichever
- *  happened to exist. */
-function videoOutSurfaceSel(url: string): string {
-  return url.includes('shell=legacy')
-    ? `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="video-out-canvas"]`
-    : `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"] canvas`;
+/** The videoOut surface that paints: the face tile's live thumb. */
+function videoOutSurfaceSel(): string {
+  return `.svelte-flow__node[data-id="${VIDEO_OUT}"] [data-testid="module-shell"] canvas`;
 }
 
 /** Boot the engine via the dev global (same seam spawnPatch uses). */
@@ -719,14 +694,13 @@ async function expectCanvasChanges(page: Page, selector: string, what: string): 
 test.describe('?shell=1 video visibility', () => {
   test('videoOut renders a FACE TILE with a live picture in the video zone, and DETACH is the resizable display', async ({ page }) => {
     // ⚠ THIS TEST IS THE INVERSE OF THE ONE IT REPLACES, and the reversal is the
-    // point. It used to assert videoOut kept its verbatim LEGACY card with its
-    // own corner-resize handle, because a PLACEHOLDER tile had removed the only
-    // user-viewable video output (the owner ?shell=1 regression). #1821 removes
-    // the cause instead of the symptom: videoOut carries a real `face`, so the
-    // lane tile is a ModuleShell painting a LIVE picture — and the freely
-    // resizable screen moved to where the owner asked for it, right-click →
-    // DETACH DISPLAY (*"the card does not need the arbitrary resizing on the
-    // card"*).
+    // point. The earlier version accepted a corner-resize handle on the lane
+    // surface as the answer to a PLACEHOLDER tile having removed the only
+    // user-viewable video output (the owner regression). #1821 removes the
+    // cause instead of the symptom: videoOut carries a real `face`, so the lane
+    // tile is a ModuleShell painting a LIVE picture — and the freely resizable
+    // screen moved to where the owner asked for it, right-click → DETACH
+    // DISPLAY, rather than being an arbitrary resize on the tile itself.
     //
     // ⚠ A GREEN RUN HERE WOULD BE MEANINGLESS WITHOUT THE PICTURE LEG. "the tile
     // mounted" is true of a placeholder too — which is exactly the regression
@@ -740,24 +714,25 @@ test.describe('?shell=1 video visibility', () => {
 
     await gotoShell(page);
 
-    // 1) A REAL FACE TILE — not a placeholder, and not the legacy card.
+    // 1) A REAL FACE TILE.
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
     const laneNode = page.locator(`.svelte-flow__node[data-id="${VIDEO_OUT}"]`);
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    await expect(laneNode.locator('[data-testid="video-out-card"]')).toHaveCount(0);
     // …carrying a LIVE surface. #1785 evicts a video face's thumbnail when its
     // ranked cells outgrow a plate row; videoOut ranks NOTHING, so the strip
     // survives at every tier (pinned purely in `videoout-face-model.test.ts`).
     await expect(videoOutLane(page).locator('canvas')).toHaveCount(1);
-    // The card's own resize handle is GONE — that is the affordance the owner
-    // said the card does not need.
-    await expect(laneNode.locator('[data-testid="video-out-resize-handle"]')).toHaveCount(0);
+    // ⚠ A `video-out-resize-handle` ABSENCE GATE STOOD HERE AND IS DELETED. No
+    // file in the tree emits that testid any more, so `toHaveCount(0)` was
+    // satisfied by a page that rendered nothing at all — it could not fail, and
+    // an assertion that cannot fail is worse than none. The affordance it was
+    // about (the owner's "no arbitrary resize on the tile") is now stated by
+    // the DETACH DISPLAY case below, which asserts the resizable screen exists
+    // somewhere positive rather than that a name is absent.
 
     // 2) PACKED zone: recorderbox clears videoOut by exactly one gutter. The
-    //    packing derives from each occupant's real width, so a uniform tile
-    //    lands on the same gutter the wide legacy card used to.
-    // EITHER lane tile: this is a READINESS WAIT for the packing measurement
-    // below, which derives from the occupant's WIDTH — the same for both kinds.
+    //    packing derives from each occupant's real width.
+    // READINESS WAIT for the packing measurement below, which derives from the
+    // occupant's WIDTH.
     await expect(page.locator(laneTileSelector(RECORDERBOX))).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(async () => {
@@ -796,34 +771,16 @@ test.describe('?shell=1 video visibility', () => {
   // for a reason none of the other cases has anything to do with.
   test('the derived video-SINK fixture is healthy', () => {
     expect(fixtureProblems(VIDEO_SINK_FIXTURE), VIDEO_SINK_FIXTURE.why).toEqual([]);
-    // ⚠ THE WIRABILITY LEG IS GATED ON `kind === 'ok'`, AND IT WAS NOT (#2295).
-    // `fixtureProblems` deliberately treats `migration-complete` as HEALTHY —
-    // it is the designed end state — but this second assertion read
-    // `SINK_IN_PORT`, which is `null` in exactly that state because `SINK_TYPE`
-    // is `''`. So the one test whose job is to be the SINGLE red for an
-    // exhausted pool would itself have gone red for the CLEAN exit, printing
-    // "the derived sink '' exposes a video input port" on the day the last
-    // un-promoted video sink was faced. `VIDEO_SINK_FIXTURE` is two promotions
-    // from that state (`mappy`, `toybox`), and both have face work in flight.
-    //
-    // What it asserts is a property OF A RESOLVED PICK — the half `VIDEO_FIXTURE`
-    // does not promise, since a subject with no video input port would fail at
-    // injectPatch with an edge to a port that does not exist — so it is
-    // meaningless when there is no pick, and asking it anyway is what made the
-    // clean exit look like a defect.
+    // The wirability half is a property OF A RESOLVED PICK: a subject with no
+    // video input port would fail at injectPatch with an edge to a port that
+    // does not exist. It stays gated on `kind === 'ok'` so a pool with no pick
+    // reds once, in `fixtureProblems` above, rather than twice.
     if (VIDEO_SINK_FIXTURE.kind === 'ok') {
       expect(
         SINK_IN_PORT,
         `the derived sink '${SINK_TYPE}' exposes a video input port`,
       ).not.toBeNull();
     }
-    // ⚠ AND THERE IS DELIBERATELY NOTHING HERE FOR THE `migration-complete`
-    // ARM. A first draft added an `expect(why).toBeTruthy()` to "report" the
-    // end state; a non-empty string is always truthy, so it could never fail —
-    // decoration wearing a check's clothes, the shape `fixtureProblems`'s own
-    // header refuses. The end state is announced where it is ACTED ON: the case
-    // below skips with `VIDEO_SINK_FIXTURE.why` as its reason, which the lane
-    // audit reads and the skip budget claims by name.
   });
 
   test('video-domain tiles show LIVE ANIMATED thumbnails via the real chain; the fake wave glyph is GONE for them', async ({ page }) => {
@@ -834,9 +791,8 @@ test.describe('?shell=1 video visibility', () => {
     // budgets it spends (60 + 60 = 120). This case spends ONE
     // `sampleDrawAdvance` and ONE `expectCanvasChanges`.
     test.setTimeout(videoCaseTimeout(1, 1));
-    // An exhausted pool is a MIGRATION state, not a failure — the named test
-    // above is what goes red for it. Skipping here keeps the failure in one
-    // place instead of two.
+    // A pool with no pick reds once, in the health test above; skipping here
+    // keeps the failure in one place instead of two.
     test.skip(
       VIDEO_SINK_FIXTURE.kind !== 'ok' || SINK_IN_PORT === null,
       VIDEO_SINK_FIXTURE.why,
@@ -873,21 +829,19 @@ test.describe('?shell=1 video visibility', () => {
       ],
     );
 
-    // ⚠ THE SUBJECT MUST STILL BE A PLACEHOLDER, ASSERTED ON THE PAGE. The
-    // fixture derives an UN-PROMOTED type from the golden, but the golden is a
-    // committed file and `STRICT_FACES` is code — if they ever disagree, every
-    // assertion below would silently move to the faced host and this case would
-    // duplicate `b1` while reading green. This is the one leg that cannot be
-    // replaced by a stronger derivation, because it is the derivation's own
-    // negative control.
+    // ⚠ THE SUBJECT MUST ACTUALLY HAVE MOUNTED A TILE, ASSERTED ON THE PAGE.
+    // The fixture derives the type from the committed golden; this is the leg
+    // that checks the golden and the running app still agree about it, so a
+    // subject that silently failed to render cannot make the thumb assertions
+    // below vacuous.
     await expect(
-      page.locator(`.svelte-flow__node[data-id="g1"] [data-testid="module-shell-placeholder"]`),
-      `the derived subject '${SINK_TYPE}' must render a PLACEHOLDER tile — if it is faced, this ` +
-        `case is a second copy of b1 and the placeholder thumb host is no longer proven anywhere`,
+      page.locator(`.svelte-flow__node[data-id="g1"] [data-testid="module-shell"]`),
+      `the derived subject '${SINK_TYPE}' must render a lane tile — without one there is no ` +
+        'glyph slot for the live thumb, and every assertion below would pass on an empty node',
     ).toHaveCount(1);
 
-    // Each PLACEHOLDER tile's glyph slot is the LIVE THUMB, and the fake
-    // dashed-wave SVG is GONE for video modules.
+    // Each tile's glyph slot is the LIVE THUMB, and the fake dashed-wave SVG is
+    // GONE for video modules.
     //
     // ⚠ `b1` (BACKDRAFT) IS NOT ONE OF THEM because it is FACED, not because it
     // has no thumb — it has one again (#1785), asserted on the shell host a few
@@ -907,10 +861,9 @@ test.describe('?shell=1 video visibility', () => {
     // a few lines up: a hard-coded un-migrated module is a promotion away from
     // breaking, and picking a different name here would just reset that clock.
     // `g1` is resolved from the contract golden by the predicates these
-    // assertions actually need (un-promoted, video domain, resolvable card, not a
-    // NON_SHELL_LANE_TYPES snowflake, video in AND out), so it CANNOT be a faced
-    // module — and a future promotion drops it from the pool automatically
-    // instead of reddening this line.
+    // assertions actually need (video domain, not a NON_SHELL_LANE_TYPES
+    // snowflake, video in AND out), so a registry change moves the subject
+    // automatically instead of reddening this line.
     //
     // ⚠ AND THE SECOND MEMBER USED TO BE THE LITERAL `RECORDERBOX`, WHICH THE
     // PARAGRAPH ABOVE ARGUES AGAINST IN ITS OWN LOOP (#2295). `recorderbox` is
@@ -932,10 +885,10 @@ test.describe('?shell=1 video visibility', () => {
     // NOT carry a video thumb (asserted directly a few lines below); sweeping
     // every placeholder without asking the golden would demand one of it and
     // fail for a reason that is the OPPOSITE of the rule.
-    const placeholderHosts = (
+    const videoTileHosts = (
       await page.evaluate(() =>
         Array.from(
-          document.querySelectorAll('.svelte-flow__node [data-testid="module-shell-placeholder"]'),
+          document.querySelectorAll('.svelte-flow__node [data-testid="module-shell"]'),
         ).map((tile) => ({
           id: tile.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '',
           type: tile.getAttribute('data-shell-type') ?? '',
@@ -946,17 +899,17 @@ test.describe('?shell=1 video visibility', () => {
     // ⚠ MINIMUM-POPULATION GUARD. A derived loop over an empty set passes
     // vacuously, and this one derives from the DOM — so it must contain the
     // subject this case spawned for exactly this purpose before any of it
-    // means anything. (`g1`'s own placeholder-ness is asserted above; this
-    // asserts the DERIVATION found it, which is a different claim.)
+    // means anything. (`g1` mounting a tile is asserted above; this asserts the
+    // DERIVATION found it, which is a different claim.)
     expect(
-      placeholderHosts.map((h) => h.id),
-      `the derived placeholder population must include the spawned sink 'g1' (${SINK_TYPE}) — ` +
-        'without it this loop proves nothing about the placeholder thumb host',
+      videoTileHosts.map((h) => h.id),
+      `the derived video-tile population must include the spawned sink 'g1' (${SINK_TYPE}) — ` +
+        'without it this loop proves nothing about the thumb host',
     ).toContain('g1');
 
-    for (const { id, type } of placeholderHosts) {
-      const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`);
-      await expect(tile, `${id} (${type}) renders a placeholder tile`).toHaveCount(1);
+    for (const { id, type } of videoTileHosts) {
+      const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
+      await expect(tile, `${id} (${type}) renders a lane tile`).toHaveCount(1);
       await expect(tile.locator('[data-testid="video-tile-thumb"]'), `${id} (${type}) has the live thumb canvas`).toHaveCount(1);
       await expect(tile.locator('.tile-wave'), `${id} (${type}) fake wave glyph gone`).toHaveCount(0);
     }
@@ -971,7 +924,7 @@ test.describe('?shell=1 video visibility', () => {
     // `hasGlyph` was true — but at the `full` tier a face this size takes the
     // PLATE layout, where "ranked controls outrank the glyph" dropped the strip.
     // MEASURED both ways, so the cause was not guessed: WITH `face.paramCells`
-    // declaring the card's faders the tile painted 3 cells and 0 thumbs; with
+    // declaring the module's faders the tile painted 3 cells and 0 thumbs; with
     // those declarations REMOVED, 6 cells and still 0 thumbs. Face SIZE removed
     // the picture, not the fader kind.
     //
@@ -981,8 +934,12 @@ test.describe('?shell=1 video visibility', () => {
     // to the ROW layout — the picture beside two cells, which is exactly what
     // its own `compact` tile has painted all along. The trade is one lane cell
     // (`mix`), and the dock renders every ranked control regardless.
+    // ⚠ b1 IS NOW ALSO A MEMBER OF THE LOOP ABOVE, and this stays anyway: the
+    // loop proves the population holds, this names the module the #1785 defect
+    // was reported on, so a regression says "backdraft lost its thumbnail"
+    // instead of "one of N tiles did".
     const b1Tile = page.locator('.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]');
-    await expect(b1Tile, 'b1 is a FACED tile, not a placeholder').toHaveCount(1);
+    await expect(b1Tile, 'b1 renders its lane tile').toHaveCount(1);
     await expect(
       b1Tile.locator('[data-testid="video-tile-thumb"]'),
       'a faced video module at the full lane tier paints its LIVE thumb — the picture outranks ranked cells (#1785)',
@@ -1036,7 +993,7 @@ test.describe('?shell=1 video visibility', () => {
     page,
   }) => {
     // ⚠ THIS IS THE BILL #1785 COULD HAVE RE-OPENED. #1802/#1836 gated the
-    // per-card preview blits (measured: off-screen blits 5061 → 0, main-thread
+    // per-module preview blits (measured: off-screen blits 5061 → 0, main-thread
     // share 49.7 % → 24.7 %), and giving a promoted video face its picture back
     // puts a live blit loop into every video lane tile again. So the claim is
     // measured on the FACED host rather than assumed from the placeholder's.
@@ -1049,9 +1006,8 @@ test.describe('?shell=1 video visibility', () => {
     // `VIDEO_THUMB_FPS` cadence — HALF `PREVIEW_FPS`. It takes NO render lease.
     test.setTimeout(SLOW_RENDER ? 120_000 : 45_000);
     await gotoShell(page);
-    // ⚠ Re-pointed by #1821: this is a "the video zone has mounted" gate, and
-    // videoOut is a promoted FACE TILE now rather than a legacy card. The gate
-    // is incidental; the subject is `bcost` below.
+    // ⚠ This is a "the video zone has mounted" gate on videoOut's FACE TILE.
+    // The gate is incidental; the subject is `bcost` below.
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
     // ⚠ AND THE ONE-BLITTER ARGUMENT SURVIVES THAT PROMOTION, which is worth
@@ -1219,23 +1175,22 @@ test.describe('?shell=1 video visibility', () => {
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
-    // LINES feeds BOTH cards under test so their pictures animate: → FEEDBACK
+    // LINES feeds BOTH modules under test so their pictures animate: → FEEDBACK
     // in, and → the seeded videoOut's in (its idle pattern is static).
     //
     // WHY FEEDBACK AND NOT BACKDRAFT (which this case used to expand): the
-    // EXPAND half of this test needs a shell-lane video card that owns a LIVE
-    // PREVIEW CANVAS, and BACKDRAFT no longer has one. Its in-card display was
-    // removed for good; the card keeps a <canvas> only as the OUTPUT SURFACE
-    // for Full Frame / Full Screen / Present, and that surface is 0×0 and
-    // unpainted while the card sits in the rack — so a dock full-view of
-    // BACKDRAFT would show controls, not a picture. FEEDBACK is the same shape
-    // (video-domain, shell-lane so it gets a tile + EXPAND, one video in / one
-    // video out) and DOES own a blitOutputToDrawingBuffer preview. The
-    // ORIGINAL regression this case guards — a legacy card whose bare
-    // useStore() threw outside the SvelteFlow provider and mounted DEAD in the
-    // dock — is the videoOut half below (videoOut is the card it was found on
-    // and still calls into the flow store); the `providerErrors` sink covers
-    // both halves regardless.
+    // EXPAND half of this test needs a shell-lane video module that owns a LIVE
+    // PREVIEW CANVAS, and BACKDRAFT no longer has one. Its in-lane display was
+    // removed for good; it keeps a <canvas> only as the OUTPUT SURFACE for Full
+    // Frame / Full Screen / Present, and that surface is 0×0 and unpainted
+    // while the node sits in the rack — so a dock full-view of BACKDRAFT would
+    // show controls, not a picture. FEEDBACK is the same shape (video-domain,
+    // shell-lane so it gets a tile + EXPAND, one video in / one video out) and
+    // DOES own a blitOutputToDrawingBuffer preview. The ORIGINAL regression
+    // this case guards — a dock body whose bare useStore() threw outside the
+    // SvelteFlow provider and mounted DEAD — is the videoOut half below
+    // (videoOut is where it was found and still calls into the flow store);
+    // the `providerErrors` sink covers both halves regardless.
     await injectPatch(
       page,
       [
@@ -1251,27 +1206,23 @@ test.describe('?shell=1 video visibility', () => {
     // (a) FEEDBACK via the tile's EXPAND affordance — the user path.
     await centerOnNode(page, 'b1', 0.9);
     // ⚠ RE-POINTED WHEN FEEDBACK WAS PROMOTED (batch 24). Promotion is a
-    // BEHAVIOUR change, not a skin: `migrated('feedback')` is now true, so the
-    // lane renders a real `module-shell` TILE instead of the
-    // `module-shell-placeholder` that stands in for an unfaced module, and the
-    // dock renders `<ModuleShell view="dock-full">` instead of
-    // `FeedbackCard.svelte`. Both locators below moved for that reason and only
-    // that reason — the SUBJECT changed, so the assertions follow it.
+    // BEHAVIOUR change, not a skin: the lane renders a real `module-shell` TILE
+    // and the dock renders `<ModuleShell view="dock-full">`. Both locators
+    // below moved for that reason and only that reason — the SUBJECT changed,
+    // so the assertions follow it.
     //
     // ⚠ THIS IS STRICTLY STRONGER THAN WHAT IT REPLACED, which is why the leg was
     // re-pointed rather than re-homed on another module. The canvas it now polls
     // is `FeedbackOutputBody`'s — the module's own `fullViewBody` extension —
-    // so the same three assertions (mounts / paints / ANIMATES) now prove the
+    // so the same three assertions (mounts / paints / ANIMATES) prove the
     // faced dock surface end-to-end, including that the extension's rAF loop
-    // survives the dock mount. Before promotion they proved it of a card the
-    // dock no longer renders.
+    // survives the dock mount.
     //
     // ⚠ AND THE REGRESSION THIS CASE EXISTS FOR IS UNAFFECTED. The original
-    // defect — a legacy card whose bare `useStore()` threw outside the
-    // SvelteFlow provider and mounted DEAD in the dock — is the videoOut leg
-    // below, and videoOut is NOT faced (it is the one named exemption in
-    // `video-face-screen-source.test.ts`). The `providerErrors` sink still
-    // covers both halves.
+    // defect was a dock body whose bare `useStore()` threw outside the
+    // SvelteFlow provider and mounted DEAD; the videoOut leg below is the one
+    // it was found on, and videoOut still calls into the flow store. The
+    // `providerErrors` sink covers both halves.
     const b1Tile = page.locator(`.svelte-flow__node[data-id="b1"] [data-testid="module-shell"]`);
     await expect(b1Tile, 'the faced feedback shell tile').toBeVisible();
     await b1Tile.getByTestId('shell-open-dock').click();
@@ -1288,15 +1239,14 @@ test.describe('?shell=1 video visibility', () => {
 
     // (b) VIDEOOUT through its OWN EXPAND PILL — the user path, which it did
     // not have until #1821. ⚠ This leg used to go through the `__openDockFullView`
-    // dev seam with the note "a NON_SHELL legacy lane card has no tile / EXPAND
-    // button". It has a tile now, so the seam is no longer the only route and
-    // driving it would be testing a hook instead of the product.
+    // dev seam because videoOut had no lane tile to expand from. It has one now,
+    // so the seam is no longer the only route and driving it would be testing a
+    // hook instead of the product.
     await centerOnNode(page, VIDEO_OUT, 0.9);
     await videoOutLane(page).getByTestId('shell-open-dock').click();
     await expect(faceplate).toBeVisible();
-    // ⚠ AND THE SURFACE IS THE FACEPLATE'S OWN, not the legacy card's: promotion
-    // swaps DockFullView's body for <ModuleShell>, whose `fullViewBody`
-    // extension mounts videoOut's picture.
+    // ⚠ AND THE SURFACE IS THE FACEPLATE'S OWN: DockFullView's body is
+    // <ModuleShell>, whose `fullViewBody` extension mounts videoOut's picture.
     const dockOutSel = '[data-testid="videoout-face-canvas"]';
     await expect(faceplate.locator(dockOutSel), 'videoOut video surface mounts in the dock').toBeVisible();
     // The full-view holds a HARD render lease on the video node (the lane copy
@@ -1328,73 +1278,26 @@ test.describe('?shell=1 video visibility', () => {
 
     expect(providerErrors, `no useStore/provider throws: ${providerErrors.join(' | ')}`).toEqual([]);
   });
-
-  test('?shell=legacy stays a strict no-op: no tiles, no thumbs, videoOut verbatim card as before', async ({ page }) => {
-    // ⚠ THE ESCAPE HATCH MUST STAY HONEST. Promoting videoOut changes the
-    // DEFAULT renderer; `?shell=legacy` means "the verbatim legacy cards inside
-    // the same shell", and a promotion that leaked into it would make the hatch
-    // a lie — so this reads the legacy CARD deliberately, not the shared gate.
-    await page.goto('/rack?shell=legacy');
-    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
-    await expect(videoOutLegacyCard(page)).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="module-shell"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="video-tile-thumb"]')).toHaveCount(0);
-
-    // ⚠ RE-POINTED (2026-08-23, #1754), AND THE OLD LINE IS WORTH READING BEFORE
-    // THE NEW ONE. It was `expect(headless-source-host).toHaveCount(0)` — "the
-    // legacy shell hosts nothing" — and it was TRUE ONLY BECAUSE A PRODUCER WAS
-    // DEAD. The pinned TIMELORDE every rack auto-spawns is canvas-hidden, so its
-    // card mounted NOWHERE in either shell; `video_out` served its idle field
-    // forever (measured `nonBlack 0/3072, maxLuma 8`). Fixing that gives legacy a
-    // host, so the old assertion could only stay green by leaving the bug in.
-    //
-    // ⚠ AND THE CLAIM THIS TEST IS ACTUALLY MAKING IS UNDAMAGED. Its subject is
-    // "the SHELL is a strict no-op under ?shell=legacy" — no shell tiles, no
-    // thumbs, the videoOut verbatim card. A headless host is not a shell feature:
-    // it is a LIFETIME mechanism keyed on `laneOmitsNode`, the one arm of
-    // `needsHeadlessSourceMount` that its own doc-comment calls "the ONE ARM THAT
-    // IS NOT SHELL-SPECIFIC". So the assertion is narrowed to what the shell
-    // itself may not do — host a module the SHELL swapped away — which is the
-    // regression the original line was written to catch, and it still fails on it.
-    // ⚠ AN ATTRIBUTE SELECTOR, NOT `filter({hasNot})`: the type lives on the host
-    // element ITSELF, and `filter` matches DESCENDANTS — it would have excluded
-    // nothing and passed for the wrong reason.
-    await expect(
-      page.locator('[data-testid="headless-source-host"]:not([data-node-type="timelorde"])'),
-      'a headless host under ?shell=legacy for something OTHER than the canvas-hidden clock — ' +
-        'the shell is supposed to be a strict no-op here',
-    ).toHaveCount(0);
-    // POSITIVE CONTROL for the narrowing: the clock's host really is the one
-    // being excluded, so this cannot quietly become "count anything, exclude
-    // everything".
-    await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-type="timelorde"]'),
-      'the canvas-hidden clock has no host on legacy either — #1754 is only half fixed',
-    ).toHaveCount(1);
-  });
 });
 
 // ---------------------------------------------------------------------------
 // THE CHAIN ITSELF (owner P0 follow-up: "no video AT ALL under ?shell=1 —
 // camera → output and acidwarp → output render nothing").
 //
-// The earlier describe proves the SURFACES exist under the shell (videoOut's
-// real card, live tile thumbs, the dock full-view). This one proves the ENGINE
-// CHAIN behind them is identical to preview-off — the part that was still dead:
+// The earlier describe proves the SURFACES exist (videoOut's faceplate, live
+// tile thumbs, the dock full-view). This one proves the ENGINE CHAIN behind
+// them is identical to preview-off — the part that was still dead:
 //
-//   1. A pure-GPU chain (ACIDWARP → OUTPUT) is LIVE under the shell, and the
-//      engine's materialized node set is EXACTLY the preview-off set for the
-//      same rack (the parity invariant: which UI renders a module must not
-//      change what the engine has).
-//   2. A DOM-SOURCE module — one whose pixels come from a card-owned
-//      <video>/<img> handed over with `attachExternalSource` — keeps its REAL
-//      card mounted in the off-screen <HeadlessSourceHost> when the shell swaps
-//      its lane card for a tile. That attach is the whole reason camera /
-//      videobox / archivist / … → OUTPUT was patched-but-black.
-//   3. cameraInput's DEVICE PICKER is reachable in the lane under the shell
-//      (its `<select>` is card-only DOM, not a ParamDef, so no face can render
-//      it — hence the NON_SHELL carve-out). The "lists real devices" half is
+//   1. A pure-GPU chain (ACIDWARP → OUTPUT) is LIVE, and the engine's
+//      materialized node set is EXACTLY the preview-off set for the same rack
+//      (the parity invariant: which UI renders a module must not change what
+//      the engine has).
+//   2. A DOM-SOURCE module — one whose pixels come from a <video>/<img> handed
+//      over with `attachExternalSource` — keeps that source attached from the
+//      NODE, with no surface owning it. That attach is the whole reason camera
+//      / videobox / archivist / … → OUTPUT was patched-but-black.
+//   3. cameraInput's DEVICE PICKER is reachable on the faceplate. The
+//      "lists real devices" half is
 //      CAPABILITY-GATED on a runtime enumerateDevices() probe: the default CI
 //      project has no camera and no permission, so an ungated assert would be
 //      green locally and red on CI (the capability-dependent-e2e discipline).
@@ -1424,25 +1327,30 @@ async function engineNodeIds(page: Page): Promise<string[]> {
 }
 
 test.describe('?shell=1 video CHAIN parity', () => {
-  test('ACIDWARP → OUTPUT is LIVE under the shell, and the engine node set matches preview-off exactly', async ({ page }) => {
-    // Software-renderer scale: two full rack boots, each with a live
-    // acidwarp→videoOut chain and a pixel-change poll.
+  test('ACIDWARP → OUTPUT is LIVE, and the engine materializes the whole chain', async ({ page }) => {
+    // Software-renderer scale: a full rack boot with a live acidwarp→videoOut
+    // chain and a pixel-change poll.
     //
-    // ⚠ THE WORST OF THE THREE, and only visible once the envelope is written
-    // as arithmetic: `buildAndProbe` is called TWICE (`/rack` and
-    // `/rack?shell=legacy`) and EACH call spends a `sampleDrawAdvance` AND an
-    // `expectCanvasChanges` — 2 x (60 000 + 60 000) = 240 000 ms of ceiling
-    // under SLOW_RENDER, inside a 120 000 ms literal. Half the budget the case
-    // is allowed to spend was unreachable.
-    test.setTimeout(videoCaseTimeout(2, 2));
+    // ⚠ THE ENVELOPE IS ARITHMETIC, NOT A LITERAL: `buildAndProbe` spends a
+    // `sampleDrawAdvance` AND an `expectCanvasChanges`, so its ceiling under
+    // SLOW_RENDER is 60 000 + 60 000. A flat literal here was once HALF the
+    // budget the case was allowed to spend, which made part of it unreachable.
+    //
+    // ⚠ COVERAGE THAT RETIRED WITH THE SECOND RENDERER, stated rather than
+    // dropped: this used to build the SAME rack twice and assert the engine
+    // node sets were equal — "which UI renders a module must not change what
+    // the engine materialized". With one renderer that comparison has no
+    // second side and cannot fail. What it was really protecting is that the
+    // chain is GRAPH-driven rather than render-driven, and that is what the
+    // per-node assertions below still say directly.
+    test.setTimeout(videoCaseTimeout(1, 1));
 
-    /** Build the SAME rack in a given mode and report what the engine has +
-     *  whether the OUTPUT surface is actually painting moving pixels. */
+    /** Build the rack and report what the engine has + whether the OUTPUT
+     *  surface is actually painting moving pixels. */
     async function buildAndProbe(url: string): Promise<{ nodes: string[] }> {
       await page.goto(url);
       await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 15_000 });
-      const lane = url.includes('shell=legacy') ? videoOutLegacyCard(page) : videoOutLane(page);
-      await expect(lane, `${url}: videoOut lane surface mounts`).toBeVisible({ timeout: 15_000 });
+      await expect(videoOutLane(page), `${url}: videoOut lane surface mounts`).toBeVisible({ timeout: 15_000 });
 
       await injectPatch(
         page,
@@ -1475,69 +1383,62 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
       // …and the user-viewable OUTPUT surface actually paints MOVING pixels
       // (not a black canvas — the owner's "nothing renders").
-      const outSel = videoOutSurfaceSel(url);
-      await expectCanvasChanges(page, outSel, `${url}: OUTPUT surface`);
+      await expectCanvasChanges(page, videoOutSurfaceSel(), `${url}: OUTPUT surface`);
 
       return { nodes: await engineNodeIds(page) };
     }
 
-    const shell = await buildAndProbe('/rack');
-    const off = await buildAndProbe('/rack?shell=legacy');
-
-    // THE PARITY INVARIANT: which UI renders a module must not change what the
-    // engine has materialized for the same rack.
-    expect(shell.nodes, 'shell engine node set === preview-off engine node set').toEqual(off.nodes);
+    const built = await buildAndProbe('/rack');
+    expect(
+      built.nodes,
+      'the engine materialized both ends of the chain the graph describes',
+    ).toEqual(expect.arrayContaining(['aw1', VIDEO_OUT]));
   });
 
-  test('a DOM-SOURCE video module keeps its REAL card alive off-screen when the shell swaps its lane card', async ({ page }) => {
+  test('a video module with a DOM-backed source owns its renderer from the NODE, with no off-screen host anywhere', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
-    // ⚠ SUBJECT MOVED THREE TIMES (LEG-02, #1511): `videobox` in P1,
-    // `videovarispeed` in P2, `tvLibrarian` after that — and the SECOND move is
-    // the cautionary one. P1 re-pointed this test at videovarispeed; P2
-    // converted videovarispeed, so the subject went stale again and this test
-    // went RED ON CI ("videovarispeed gets an off-screen lifecycle host"),
-    // caught by nothing local because the phase's own spec runs were scoped to
-    // the module's OWN specs. The lesson is mechanical: converting a module
-    // means re-running every spec that NAMES it, found by grep, not by filename.
-    // P3 converted BOTH tuners, so the subject is now `archivist` — card-owned,
-    // unfaced, and exercising the identical arm. When IT converts, re-point
-    // again; when the set empties, this test's subject is gone for good and the
-    // test goes with it. This test's subject
-    // is "a module whose engine-visible source lives on its CARD gets an
-    // off-screen host". VIDEOBOX IS NO LONGER SUCH A MODULE: its attach, audio
-    // wiring and loops moved to `$lib/ui/media/node-video-source-registry` on
-    // graph lifetime, so it left `DOM_SOURCE_LANE_TYPES` and gets no host at all.
+    // ⚠ THE TITLE IS THE INVERSE OF THE ONE THIS TEST CARRIED FOR FIVE
+    // RE-POINTINGS, and the rename is the honest end of that sequence rather
+    // than a tidy-up. The old claim was "a module whose engine-visible source
+    // lives off the lane keeps that source alive in an off-screen host"; it was
+    // re-aimed at four different subjects as each one converted, and the fifth
+    // conversion removed the MECHANISM: `<HeadlessSourceHost>` is deleted and
+    // every renderer is mounted by `NodeVizSurfaceHost`, keyed on the NODE.
+    // There is no module left that could satisfy the old title, so keeping it
+    // while asserting the opposite is exactly the "kept the NAME, inverted the
+    // CLAIM" trap the earlier prose warned about.
     //
-    // Left pointed at videobox, this test would have gone RED — but the wrong
-    // repair is what to watch for here: relaxing it to `toHaveCount(0)` would
-    // have kept the NAME while inverting the CLAIM, leaving a test called "keeps
-    // its REAL card alive off-screen" that asserts nothing of the kind. So the
-    // subject is re-pointed at a module that still has the property, and
-    // videobox's new behaviour is asserted separately below as its own claim.
-    // `archivist` is unfaced and still card-owned, so it renders the same
-    // placeholder tile videobox used to and exercises the identical arm.
-    await injectPatch(page, [{ id: 'arc1', type: 'archivist', position: { x: -1200, y: 5100 } }]);
+    // The surviving claim is asserted per-module below: the lane shows a tile,
+    // NO off-screen host exists, and the node's own surface host is what
+    // mounts the renderer.
+    //
+    // ⚠ THE LESSON FROM THOSE RE-POINTINGS IS STILL LIVE and is why this is
+    // written down: converting a module means re-running every spec that NAMES
+    // it, found by grep, not by filename. One of the moves went RED ON CI
+    // because the phase's local runs were scoped to the module's OWN specs.
+    await injectPatch(page, [{ id: 'cube1', type: 'cube', position: { x: -1200, y: 5100 } }]);
 
-    // The LANE still shows the uniform tile (the shell look is preserved — this
-    // fix is NOT "give every source module the legacy card back")…
+    // The LANE shows the uniform tile — the rackline look is the point, and no
+    // per-module surface is restored to it…
     await expect(
-      page.locator(laneTileSelector('arc1')),
-      'archivist still renders the uniform RACKLINE tile in its lane (either kind — the claim is '
-        + '"not the verbatim legacy card back", which a promotion does not change)',
+      page.locator(laneTileSelector('cube1')),
+      'cube renders the uniform RACKLINE tile in its lane',
     ).toHaveCount(1);
 
-    // …while its REAL card is mounted in the off-screen lifecycle host, so its
-    // source attach/detach still runs.
-    const host = page.locator('[data-testid="headless-source-host"][data-node-id="arc1"]');
-    await expect(host, 'archivist gets an off-screen lifecycle host').toHaveCount(1);
-    await expect(host, 'the host mounts the REAL archivist card').toHaveAttribute('data-node-type', 'archivist');
+    // …with the NODE-OWNED surface host where the headless mount used to be.
+    // `card-producer-lifetime.spec.ts` owns the pixels; this leg owns the
+    // ownership.
     await expect(
-      host.locator('[data-testid="archivist-card"]'),
-      "the hosted card is the module's real card, not a stub",
+      page.locator('[data-testid="node-viz-surface"][data-node-id="cube1"]'),
+      "cube's renderer is mounted by the NODE (NodeVizSurfaceHost), not by a separate host",
     ).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="headless-source-host"]'),
+      'a headless source host exists — the component was deleted in S1.5, so ANY match means it came back',
+    ).toHaveCount(0);
 
     // ── THE CONVERTED MODULE, asserted as its own claim ──────────────────────
     //
@@ -1548,90 +1449,61 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // Whether its SOURCE is actually live without one is
     // `node-source-videobox.spec.ts`'s job — this leg only owns the host.
     //
-    // ⚠ THE CARD TESTID IS CARRIED PER ROW rather than derived from the type.
-    // It used to be `type.toLowerCase() + '-card'`, which happens to be right
-    // for videobox and videovarispeed and is WRONG for `tvLibrarian`
-    // (`tv-librarian-card`) — so P3's additions would have looked for a selector
-    // that matches nothing and the `toHaveCount(0)` leg would have passed
-    // vacuously, certifying exactly the state it exists to refuse.
+    // ⚠ TWO ABSENCE LEGS RAN HERE AND ARE DELETED — READ THIS BEFORE ADDING ONE
+    // BACK. Each row used to carry a per-module selector and assert
+    // `toHaveCount(0)` for it, plus `toHaveCount(0)` for an off-screen
+    // `headless-source-host`. Both subjects are now DELETED SOURCE: no file in
+    // the tree renders either, so both matchers were satisfied by a page that
+    // rendered nothing at all. That is the precise vacuity this loop's own
+    // prose warned about twice ("a selector that matches nothing would pass
+    // vacuously, certifying exactly the state this loop refuses") — and once
+    // the component is gone, the warning applies to the assertion itself.
     //
-    // ⚠ THE LANE TILE USED TO BE CARRIED PER ROW, and that column is GONE
-    // (#2295). Its note argued — correctly — that "node-owned source" and
-    // "un-migrated" are INDEPENDENT properties and that reading one off the
-    // other breaks the moment either moves; `tvLibrarian` had already been
-    // promoted and its row re-typed to `module-shell` once. But the column was
-    // still a hand-maintained migration state that a promotion turns FALSE, so
-    // the next of these four to be faced reds this case with "does not render
-    // the module-shell-placeholder tile its migration state calls for" — a
-    // message that reads like a lane regression and is not one.
+    // ⚠ NAMED COVERAGE LOSS. What those legs bought was "a conversion did not
+    // leave a second, hidden mount behind". That question is now answered by
+    // CONSTRUCTION rather than at runtime — there is no component to mount —
+    // and re-arming it would mean a new source-level gate, which is an owner
+    // decision, not this branch's.
     //
-    // The column's own note says what to do with it: the tile kind "changes
-    // nothing about the two legs this test actually owns (no headless host, no
-    // card mounted anywhere)". So the wait is now EITHER kind — a readiness
-    // signal that the node mounted a RACKLINE tile at all — and the two legs
-    // that ARE this test's subject run unchanged for every row.
+    // ONE tombstone is kept, above: the unscoped `headless-source-host` count.
+    // It is the same kind of claim, deliberately stated ONCE as "if this ever
+    // matches, the deleted component came back" rather than repeated per row,
+    // where ten copies of an unfailable matcher would read as ten assertions.
+    //
+    // What SURVIVES here is the positive leg, and it is the one with content:
+    // every one of these modules mounts a real RACKLINE lane tile. That is the
+    // claim a regression can actually break.
     const converted = [
-      ['vb1', 'videobox', 'videobox-card'],
-      ['vv1', 'videovarispeed', 'videovarispeed-card'],
-      ['pt1', 'peertube', 'peertube-card'],
-      ['tv1', 'tvLibrarian', 'tv-librarian-card'],
+      ['vb1', 'videobox'],
+      ['vv1', 'videovarispeed'],
+      ['pt1', 'peertube'],
+      ['tv1', 'tvLibrarian'],
+      ['lb1', 'loopback'],
+      ['arc1', 'archivist'],
+      ['syn1', 'synesthesia'],
+      ['tl1', 'timelorde'],
+      ['ras1', 'rasterize'],
+      ['cube2', 'cube'],
     ] as const;
-    for (const [nodeId, type, cardTestId] of converted) {
+    for (const [nodeId, type] of converted) {
       await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(
         page.locator(laneTileSelector(nodeId)),
-        `${type} mounted no RACKLINE lane tile of either kind`,
+        `${type} mounted no RACKLINE lane tile`,
       ).toHaveCount(1);
-      await expect(
-        page.locator(`[data-testid="headless-source-host"][data-node-id="${nodeId}"]`),
-        `${type} got an off-screen host — its lifecycle is node-owned, so nothing should be keeping its card alive`,
-      ).toHaveCount(0);
-      await expect(
-        page.locator(`[data-testid="${cardTestId}"]`),
-        `a ${type} card is mounted somewhere despite the module being converted`,
-      ).toHaveCount(0);
     }
 
-    // Exactly ONE mount FOR THIS NODE: a second live <video> would double
-    // getUserMedia/decode and the first to unmount would detach the survivor.
+    // ⚠ A THIRD ABSENCE LEG STOOD HERE (cameraInput must not get an off-screen
+    // host) AND IS DELETED FOR THE SAME REASON as the two above: nothing in the
+    // tree mounts that host any more, so the matcher could not fail.
     //
-    // ⚠ SCOPED TO THE NODE, and that is the whole assertion — it used to count
-    // every host in the DOCUMENT, which said "for the node" while measuring
-    // something else entirely. The seeded rack's own TIMELORDE joined the
-    // headless set in #1587 (its card is the sole writer of its video_out), so
-    // the document count became 2 and this reddened without a single thing
-    // about videobox having changed. A per-node count states what it means and
-    // cannot be moved by an unrelated module joining the set.
-    await expect(
-      page.locator('[data-testid="headless-source-host"][data-node-id="arc1"]'),
-    ).toHaveCount(1);
-
-    // ⚠ cameraInput IS HOSTED NOW, AND THIS ASSERTION USED TO SAY THE OPPOSITE.
-    // It read:
-    //
-    //   // cameraInput must NEVER be hosted — it keeps its real card IN the
-    //   // lane (carve-out), so hosting it would be the double-mount above.
-    //   await expect(page.locator('…[data-node-id="cam1"]')).toHaveCount(0);
-    //
-    // Both halves of that were true when written and the FIRST half is what
-    // changed: `cameraInput` was in `NON_SHELL_LANE_TYPES`, so its real card
-    // rendered in the lane and a host would indeed have been a second mount.
-    // It was promoted and left that set, so the lane paints its faceplate and
-    // the host is now the ONLY mount — which makes it an ordinary member of
-    // this test's subject rather than the exception to it.
-    //
-    // The double-mount hazard the old line guarded has NOT been waived; it has
-    // moved to where it can still occur, and it is asserted BELOW rather than
-    // deleted: exactly one host for this node, and none at all under
-    // `?shell=legacy` (see `camerainput-shell-source.spec.ts`, which drives the
-    // legacy shell and asserts the count is zero there).
-    await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -700, y: 5100 } }]);
-    const camHost = page.locator('[data-testid="headless-source-host"][data-node-id="cam1"]');
-    await expect(camHost, 'a promoted CAMERA keeps its real card in the off-screen host').toHaveCount(1);
-    await expect(
-      camHost.locator('[data-testid="camera-device-select"]'),
-      "the hosted card is the module's real card, not a stub",
-    ).toHaveCount(1);
+    // WHAT IT GUARDED IS NOT WAIVED. The hazard was a SECOND OWNER of one
+    // camera device — the lane surface and an off-screen mount both calling
+    // getUserMedia. getUserMedia, the device roster, the rebind and the
+    // permission machine live in `$lib/ui/media/node-camera-source-registry` on
+    // graph lifetime, so there is exactly one owner of the stream and it is not
+    // a surface at all. `camerainput-shell-source.spec.ts` asserts that owner
+    // POSITIVELY, which is the shape this claim should have had from the start.
   });
 
   test('the CAMERA source picker is reachable on the FACEPLATE under the shell (device list capability-gated)', async ({ page }) => {
@@ -1647,10 +1519,10 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // stopped being true. Two mechanisms combined, and neither is visible from
     // the assertion:
     //
-    //   1. `<HeadlessSourceHost>` mounts the real card inside its OWN
-    //      single-node `<SvelteFlow>`, passing `type`/`id` through — so
-    //      `.svelte-flow__node[data-id="cam1"]` matches TWO elements, the lane
-    //      tile AND the hosted card. `laneNode.locator(...)` resolved through
+    //   1. The off-screen host mounted a SECOND copy of the module inside its
+    //      OWN single-node `<SvelteFlow>`, passing `type`/`id` through — so
+    //      `.svelte-flow__node[data-id="cam1"]` matched TWO elements, the lane
+    //      tile AND the hosted copy. `laneNode.locator(...)` resolved through
     //      the HOST's copy.
     //   2. Playwright's `toBeVisible` means "has a non-empty box and is not
     //      display:none/visibility:hidden". The host parks at `left:-9999px`,
@@ -1664,7 +1536,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
     // subtree that cannot receive a click, and the test called it "usable in
     // the shell lane". The `module-shell-placeholder` leg also still passed,
     // but for a NEW reason (the lane is a `module-shell` FACE now, not a
-    // placeholder) rather than the old one (the carve-out gave it a real card).
+    // placeholder) rather than the one it was written for.
     //
     // ⚠ SO THE SUBJECT MOVED, AND THE ASSERTION FOLLOWS IT rather than being
     // weakened: the picker is no longer a lane affordance at all. It lives in
@@ -1677,22 +1549,22 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
     await injectPatch(page, [{ id: 'cam1', type: 'cameraInput', position: { x: -1200, y: 5100 } }]);
 
-    // (a) THE LANE CARRIES NO PICKER, stated as a property of the whole
-    //     document rather than of a selector that cannot tell the two mounts
-    //     apart: every `camera-device-select` there is must be inside the host.
-    const hostedPicker = page.locator(
-      '[data-testid="headless-source-host"][data-node-id="cam1"] [data-testid="camera-device-select"]',
-    );
-    await expect(hostedPicker, "the real card's picker is in the off-screen host")
-      .toHaveCount(1, { timeout: 15_000 });
-    await expect(
-      page.locator('[data-testid="camera-device-select"]'),
-      'and it is the ONLY one — nothing reachable in the lane, which is the point',
-    ).toHaveCount(1);
+    // ⚠ LEG (a) IS DELETED: a document-wide `camera-device-select`
+    // `toHaveCount(0)`. That testid is emitted by NOTHING in the tree, so the
+    // matcher was satisfied by a page that rendered nothing at all and could
+    // not fail. It was a real claim when the off-screen mount existed — a bare
+    // count on the LANE could not tell an off-screen copy from no copy, so the
+    // leg was scoped to the host — but the host and the surface are both gone
+    // and `$lib/ui/media/node-camera-source-registry` owns the stream, the
+    // roster and the permission machine on graph lifetime.
+    //
+    // The blindness it guarded is defended in the leg below, which is where it
+    // has to live now: the FACEPLATE picker is asserted OPERABLE — scrolled to,
+    // on-canvas, hit-testable — rather than some other control being absent.
 
-    // (b) THE FACEPLATE CARRIES ONE, and it is genuinely operable. `[data-testid=
-    //     "module-shell"]` exists only on the lane tile, so this locator cannot
-    //     resolve through the host the way the old one did.
+    // THE FACEPLATE CARRIES ONE, and it is genuinely operable. `[data-testid=
+    // "module-shell"]` exists only on the lane tile, so this locator cannot
+    // resolve through an off-screen copy the way the old one did.
     //
     // Same re-pointing discipline the FEEDBACK leg above records for batch 24:
     // "Promotion is a BEHAVIOUR change, not a skin … the SUBJECT changed, so the
@@ -1769,21 +1641,53 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
     // ⚠ PERMANENT NEGATIVE CONTROL — the repaired predicate must still be able
     // to FAIL on the thing it was blind to, or this rewrite has only moved the
-    // blindness. Run by hand against the hosted copy while repairing: pointing
-    // `picker` at
+    // blindness. It used to compare against the HOSTED copy of this very picker:
+    // pointing `picker` at
     // `[data-testid="headless-source-host"][data-node-id="cam1"] [data-testid="camera-device-select"]`
-    // fails at the scroll leg with `viewport ratio 0` — where the OLD predicate
-    // (`toBeVisible`) passed on that same element. Kept as an executable leg
-    // rather than a claim: the hosted picker is asserted to be exactly what the
-    // reachable one is not.
-    const hostedBox = await hostedPicker.boundingBox();
-    expect(hostedBox, 'the hosted picker exists to compare against').not.toBeNull();
+    // failed at the scroll leg with `viewport ratio 0`, where the OLD predicate
+    // (`toBeVisible`) passed on that same element.
+    //
+    // ⚠ THAT SUBJECT NO LONGER EXISTS (legacy-removal S1) — nothing mounts a
+    // second copy of the camera, so there is no off-screen one to compare. The
+    // control is therefore re-anchored on the INSTRUMENT rather than deleted
+    // with its population: a SYNTHETIC element parked exactly where the host
+    // used to park one, which the predicate must still refuse. A control over a
+    // population that reaches zero stops controlling anything; a control over
+    // the matcher does not.
+    const syntheticOffCanvas = await page.evaluateHandle(() => {
+      const el = document.createElement('div');
+      el.setAttribute('data-testid', 'offscreen-probe');
+      el.style.cssText =
+        'position:fixed;left:-9999px;top:0;width:120px;height:24px;pointer-events:none;';
+      document.body.appendChild(el);
+      return el;
+    });
+    const probeBox = await page
+      .locator('[data-testid="offscreen-probe"]')
+      .boundingBox();
+    expect(probeBox, 'the synthetic off-canvas probe exists to compare against').not.toBeNull();
     expect(
-      hostedBox!.x,
-      `the host's copy must be OFF-canvas — if this ever goes >= 0 the two mounts ` +
-        `are no longer distinguishable by position and the checks above go blind; ` +
-        `saw x=${Math.round(hostedBox!.x)}`,
+      probeBox!.x,
+      `an element parked where the headless host used to park one must read OFF-canvas — if ` +
+        `this ever goes >= 0 the position predicate the checks above rely on has stopped ` +
+        `discriminating; saw x=${Math.round(probeBox!.x)}`,
     ).toBeLessThan(0);
+    const probeReachable = await page
+      .locator('[data-testid="offscreen-probe"]')
+      .evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
+      });
+    expect(
+      probeReachable,
+      'the hit-test predicate accepted an off-canvas element — it is exactly the blindness the ' +
+        'reachability leg above exists to avoid',
+    ).toBe(false);
+    await syntheticOffCanvas.dispose();
+    await page.evaluate(() => {
+      document.querySelector('[data-testid="offscreen-probe"]')?.remove();
+    });
 
     // CAPABILITY GATE (ci-capability discipline): only assert "lists a real
     // device" where a videoinput actually exists. CI's default project has no

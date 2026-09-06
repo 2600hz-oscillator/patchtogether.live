@@ -198,7 +198,6 @@ describe('electraControlDef: meta def shape', () => {
   it('is a meta module with no ports/params + the right card + palette', () => {
     expect(electraControlDef.type).toBe(ELECTRA_CONTROL_TYPE);
     expect(electraControlDef.domain).toBe('meta');
-    expect(electraControlDef.card).toBe('ElectraControlCard');
     expect(electraControlDef.inputs).toEqual([]);
     expect(electraControlDef.outputs).toEqual([]);
     expect(electraControlDef.params).toEqual([]);

@@ -146,8 +146,7 @@ The biggest open question is **MODTRIS multiplayer** — single-owner + awarenes
     { "id": "speed",       "label": "Speed",  "default": 1.0,  "min": 0.25, "max": 4,  "curve": "log" },
     { "id": "paddle_h",    "label": "Paddle", "default": 0.2,  "min": 0.05, "max": 0.5, "curve": "linear" },
     { "id": "serve_angle", "label": "Serve",  "default": 0.3,  "min": 0.0,  "max": 1.0, "curve": "linear" }
-  ],
-  "vizPassthrough": true
+  ]
 }
 ```
 
@@ -200,8 +199,7 @@ factory(ctx, node) {
   "params": [
     { "id": "gravity_bpm", "label": "Drop", "default": 60, "min": 30, "max": 240, "curve": "log" },
     { "id": "level_step",  "label": "Lvl",  "default": 10, "min": 1,  "max": 20,  "curve": "linear" }
-  ],
-  "vizPassthrough": true
+  ]
 }
 ```
 

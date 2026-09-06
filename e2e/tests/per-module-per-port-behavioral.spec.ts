@@ -101,7 +101,15 @@ import { collectPageErrors } from './_page-errors';
 // Modules whose card can't render under bare spawnPatch (mirrors
 // _per-module-per-port-shared.ts SKIP_SPAWN).
 const SKIP_SPAWN: Record<string, string> = {
-  group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
+  // ⚠ THE `group` ROW IS GONE WITH ITS MODULE (owner ruling: group and sticky
+  // are deleted entirely). It skipped the sweep because a bare spawnPatch of a
+  // GROUP! rendered no flow card without `data.children`, and cited the
+  // grouping phase-1 spec as its coverage. Both halves are now false: the
+  // module is unregistered so the sweep never reaches it, and the spec it
+  // cited is deleted too. The cited filename is deliberately NOT repeated
+  // here — `exemption-coverage-anchors.test.ts` scans this file for spec
+  // names and reds on any that is not in the tree, which is exactly the
+  // check that caught this row.
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
 
@@ -308,7 +316,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // delta to detect — a structural no-delta, not dead CV.
   blood:    'boot-gated, not data-gated: the bundled shareware is committed + materialized on CI (docs/adr/007-game-asset-distribution.md) but `blood-ready` takes 20–25 s and, until the menu is driven into a level, driven + control arms observe the same idle menu → structural no-delta; real coverage = blood-audio-output.spec.ts (menu→level→fire→SCOPE) + blood-ingame specs + blood-keys.test.ts',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
-  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts (?shell=legacy) + e2e/tests/skifree-face.spec.ts (the DEFAULT shell — the cited coverage used to exist only on a shell no player meets)',
+  skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts + e2e/tests/skifree-face.spec.ts (the same gate → SCOPE path with the screen switched OFF)',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-engine.test.ts',
 
   // ── Pure-passthrough sink with no semantic transformation: VIDEOOUT
@@ -2971,8 +2979,17 @@ function aggregateAudio(samples: AudioFingerprint[]): AggregatedSample {
   };
 }
 
-/** The VIDEOOUT canvas the video sink is read back from. */
-const VIDEO_SINK_CANVAS = 'canvas[data-testid="video-out-canvas"]';
+/** The VIDEOOUT canvas the video sink is read back from, NAMED BY NODE ID.
+ *
+ *  This was a bare `canvas[data-testid="video-out-canvas"]` — a testid only
+ *  `VideoOutCard.svelte` ever emitted. On the shell a player gets there is no
+ *  card, so that selector resolves nothing and `readSinkAggregated` returns
+ *  `null` — a "could not measure" that arrives looking like a measurement. The
+ *  lane tile paints `VideoTileThumb` from the same central engine frame and
+ *  stamps its node id on `data-thumb-node`, so the sink is now addressed
+ *  instead of being the only video canvas on the page. */
+const videoSinkCanvas = (nodeId: string): string =>
+  `canvas[data-testid="video-tile-thumb"][data-thumb-node="${nodeId}"]`;
 
 async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<AggregatedSample | null> {
   if (sink.node.type === 'scope') {
@@ -2993,7 +3010,7 @@ async function readSinkAggregated(page: Page, sink: SinkSpec): Promise<Aggregate
   // window that measured 26–29 frames per gap on a free-running page and 10–11
   // under an ~8 fps load, i.e. a different observation window per machine. See
   // _module-coverage-helpers.ts for the measurement and the reasoning.
-  const cap = await captureCanvasStatsFrameSpaced(page, VIDEO_SINK_CANVAS, {
+  const cap = await captureCanvasStatsFrameSpaced(page, videoSinkCanvas(sink.node.id), {
     captures: VIDEO_CAPTURES,
     spacingFrames: VIDEO_CAPTURE_SPACING_FRAMES,
     capMs: VIDEO_CAPTURE_CAP_MS,
@@ -4124,7 +4141,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // shouldn't have gotten here (modules without outputs are
         // filtered via mod.outputs.length earlier in many specs); if
         // we do, fail loudly so the design gets revisited.
-        await page.goto('/rack?shell=legacy&seed=none'); // give the test SOMETHING to navigate to before asserting
+        await page.goto('/rack?seed=none'); // give the test SOMETHING to navigate to before asserting
         expect(
           observed,
           `${mod.type}: no observable output type — module needs a BEHAVIORAL_MODULE_EXEMPT entry or pickObservedOutput extension`,
@@ -4137,8 +4154,8 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // next-iter's control...) so each spawn starts from a fresh
       // AudioContext + engine — same determinism story as
       // per-module-per-port-outputs.spec.ts outputs-emit dim. Pattern:
-      //  goto('/rack?shell=legacy&seed=none') → spawnPatch(control) → settle → read
-      //  goto('/rack?shell=legacy&seed=none') → spawnPatch(patched) → settle → read → compare
+      //  goto('/rack?seed=none') → spawnPatch(control) → settle → read
+      //  goto('/rack?seed=none') → spawnPatch(patched) → settle → read → compare
       const failures: string[] = [];
       const passes: string[] = [];
       // Rows where the INSTRUMENT missed, kept apart from module verdicts so the
@@ -4173,7 +4190,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // ─── CONTROL ─────────────────────────────────────────────────
         // SUT + driver (if needed) + context (effect-shape upstream
         // noise/video) + sink. NO upstream on test input.
-        await page.goto('/rack?shell=legacy&seed=none');
+        await page.goto('/rack?seed=none');
         await page.waitForLoadState('networkidle');
 
         const sutNode: SpawnNode = {
@@ -4218,7 +4235,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
 
         // ─── PATCHED ─────────────────────────────────────────────────
         // Same nodes + edges, PLUS the test-input upstream.
-        await page.goto('/rack?shell=legacy&seed=none');
+        await page.goto('/rack?seed=none');
         await page.waitForLoadState('networkidle');
 
         const patchedNodes: SpawnNode[] = [

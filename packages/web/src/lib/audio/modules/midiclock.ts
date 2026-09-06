@@ -22,7 +22,7 @@
 // SCHED_LOOKAHEAD_S so edges land at the start of the next audio block.
 //
 // Inputs: none. MIDI source is the host device, picked from the faceplate's
-// device body (the dock full view) or the legacy card's dropdown.
+// device body (the dock full view).
 //
 // Outputs:
 //   clock (gate): rising edge every N MIDI clock ticks (N set by user; 24 = quarter, 12 = eighth, etc).
@@ -115,7 +115,7 @@ export function divisorLabel(d: ClockDivisor): string {
  * validator, and has been since the module shipped.
  *
  * What one declaration buys, none of it needing further work: clip automation,
- * MIDI learn, group exposure (`group-controls.ts`), a Push 2 card where there
+ * MIDI learn, group exposure (`exposable-controls.ts`), a Push 2 card where there
  * was none, and — the one that is a bug fix — UNDO, because `setNodeParam` is
  * the origin-tagged seam and the card's `writeData` never was.
  *
@@ -356,11 +356,11 @@ export const midiclockDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Brings an external MIDI device's TRANSPORT into the patch as clock and run signals — the transport-only sibling of MIDI-CV-BUDDY (which carries the notes). MIDI sends 24 clock ticks per quarter note, plus Start / Stop / Continue messages; MIDICLOCK divides that tick stream down to a usable pulse and tracks the play state. Mental model: it's the bridge that lets a hardware sequencer, drum machine, or DAW be the master clock for the whole rack — connect a class-compliant USB-MIDI device, pick it from the faceplate's device body, and patch its CLOCK output into anything that wants a beat (a SEQUENCER's CLOCK IN, TIMELORDE, an envelope trigger). Two settings, and they are deliberately different kinds of thing: the DIVISION is a param, so it can be automated, MIDI-learned, exposed on a group and undone like any other value; the DEVICE is not, because its roster lives behind the browser's own MIDI permission and differs on every machine — it is picked from the dock's device body and remembered per patch. Nothing at all happens until MIDI access is granted, which is one click, once per origin.",
+      "Brings an external MIDI device's TRANSPORT into the patch as clock and run signals — the transport-only sibling of MIDI-CV-BUDDY (which carries the notes). MIDI sends 24 clock ticks per quarter note, plus Start / Stop / Continue messages; MIDICLOCK divides that tick stream down to a usable pulse and tracks the play state. Mental model: it's the bridge that lets a hardware sequencer, drum machine, or DAW be the master clock for the whole rack — connect a class-compliant USB-MIDI device, pick it from the faceplate\'s device body, and patch its CLOCK output into anything that wants a beat (a SEQUENCER's CLOCK IN, TIMELORDE, an envelope trigger). Two settings, and they are deliberately different kinds of thing: the DIVISION is a param, so it can be automated, MIDI-learned, exposed on a group and undone like any other value; the DEVICE is not, because its roster lives behind the browser's own MIDI permission and differs on every machine — it is picked from the dock's device body and remembered per patch. Nothing at all happens until MIDI access is granted, which is one click, once per origin.",
     inputs: {},
     outputs: {
       clock:
-        "A short ~5 ms pulse whose rising edge fires once every N incoming MIDI ticks, where N is the card's clock-division setting (MIDI runs at a fixed 24 ticks per quarter note, so N=24 gives one pulse per quarter note, 12 an eighth, 6 a sixteenth, 3 a 32nd, and 1 the raw 24-PPQN tick stream). Patch it into a SEQUENCER's CLOCK IN or TIMELORDE to slave the rack's timing to the external transport. On a MIDI Start the divider re-zeros so the first pulse lands cleanly on the downbeat.",
+        "A short ~5 ms pulse whose rising edge fires once every N incoming MIDI ticks, where N is the faceplate's clock-division setting (MIDI runs at a fixed 24 ticks per quarter note, so N=24 gives one pulse per quarter note, 12 an eighth, 6 a sixteenth, 3 a 32nd, and 1 the raw 24-PPQN tick stream). Patch it into a SEQUENCER's CLOCK IN or TIMELORDE to slave the rack's timing to the external transport. On a MIDI Start the divider re-zeros so the first pulse lands cleanly on the downbeat.",
       run:
         "A level that sits at 0 while the external transport is stopped and rises to 1 while it is running; it latches to 1 on both MIDI Start and MIDI Continue and drops to 0 on MIDI Stop. Use it as a gate to enable downstream modules only while the master transport is playing.",
       midistart:

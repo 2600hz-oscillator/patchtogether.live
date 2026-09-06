@@ -19,6 +19,7 @@
 // no OS H.264 encoder dependency.
 
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { spawnPatch } from './_helpers';
 import { midiToVOct } from '../../packages/web/src/lib/audio/note-entry';
 import { ASSET_SLOT_NOTES } from '../../packages/web/src/lib/video/asset-select';
@@ -30,15 +31,16 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Mean luminance over a VIDEO-OUT canvas (identified by its node id). */
+/** Mean luminance over a VIDEO-OUT node's tile thumb (the default shell's
+ *  visible pixel surface for a video module). */
 async function meanLuma(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
-  await expect(handle, `VIDEO-OUT ${nodeId} canvas present`).toHaveCount(1);
+  const handle = page.locator(`.svelte-flow__node[data-id="${nodeId}"] canvas[data-testid="video-tile-thumb"]`);
+  await expect(handle, `VIDEO-OUT ${nodeId} thumb present`).toHaveCount(1);
   return await handle.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -177,6 +179,14 @@ const DARK = 60;
 
 test.describe('PICTUREBOX — 7-slot asset selector (image)', () => {
   test('a gate at note D shows slot 1; a gate at note C shows slot 0', async ({ page }) => {
+    // ⚠ BARE 30 s DEFAULT — the family this branch has now repaired a dozen
+    // times. Failed on CI (run 34000971132) with a plain `Test timeout` and NO
+    // call log: nothing stuck, the test simply ran out. Re-pointing a spec off
+    // the deleted surface adds a dock open, and a dock mount no longer overlaps
+    // page load, so the boot moved in front of the first assertion. A BOUND,
+    // not a claim: this test asserts a slot selection / a resize, never a
+    // latency, and a bound costs wall-clock only when it is exceeded.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const errors = await setup(page);
 
     await spawnPatch(

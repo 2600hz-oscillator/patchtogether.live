@@ -172,14 +172,26 @@ const OWN_NODE_UNGATED = /\bblitOutput(?:Port)?ToDrawingBuffer\s*\(\s*id\s*[,)]/
 describe('#1802 card preview gate', () => {
   const files = sourceFiles();
 
-  it('the sweep actually found the card sources (a vacuity floor)', () => {
+  it('the sweep actually found the module surfaces (a vacuity floor)', () => {
+    // ⚠ THE FLAT ANCHOR IS THE ONE THIS GATE EXEMPTS, not an arbitrary file.
+    // It used to be `VideoOutCard.svelte`, which anchored the walk to a
+    // population that no longer exists; `VideoTileThumb.svelte` is the
+    // reference implementation UNGATED_OK names, so a walk that cannot see it
+    // cannot see its own exemption either — the two legs fail together instead
+    // of one of them going quietly green.
     expect(
-      files.some((f) => f.name === 'VideoOutCard.svelte'),
-      'the module-card directory did not resolve, so every assertion below is vacuous',
-    ).toBe(true);
+      files.map((f) => f.name),
+      'the module-surface directory did not resolve, so every assertion below is vacuous',
+    ).toContain('VideoTileThumb.svelte');
+    // And the SUBDIRECTORY level, separately — the half that went vacuous in
+    // 2026-09-02 and the half every fullViewBody/tileBody lives in.
+    expect(
+      files.filter((f) => f.name.includes('/')).length,
+      'the walk found NO module subdirectory surfaces — the second level has stopped resolving',
+    ).toBeGreaterThan(0);
     expect(
       files.some((f) => f.src.includes('blitOutputForPreview')),
-      'NOT ONE card uses the gated preview blit. Either the migration was reverted or the ' +
+      'NOT ONE surface uses the gated preview blit. Either the migration was reverted or the ' +
         'comment-stripper is eating the code — both make this whole file green and blind.',
     ).toBe(true);
   });

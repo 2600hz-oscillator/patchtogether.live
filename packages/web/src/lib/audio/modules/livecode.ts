@@ -37,11 +37,11 @@ export const livecodeDef: AudioModuleDef = {
   // ⚠ ONE FAMILY, AND THE COUNT IS FORCED BY THE RESOLVER. `resolveFaceControl`
   // resolves a face key to a PARAM id, a family TEMPLATE (`<id>-{n}`) or a legend
   // STATIC — and this def declares `params: []`, so RUN can only reach the plate
-  // as a family. The `testidPrefix` is a literal the LEGACY CARD already emits
-  // (`LivecodeCard.svelte`, `data-testid="livecode-run"`), which is what
-  // module-docs-lint's card-drift grep checks — so a rename on either surface is
-  // RED. The card file survives promotion: `?shell=legacy` still renders it, and
-  // `livecode.spec.ts` still drives it there.
+  // as a family. ⚠ NO SURFACE EMITS `livecode-run` AS A LITERAL — MEASURED.
+  // `ModuleShell` stamps a family generically from this declaration, so
+  // module-docs-lint holds it through the CELL arm (`livecode-run-{n}` ranked
+  // on the face plan and resolving to a live shell cell), never through a
+  // source grep.
   //
   // ⚠ NEITHER THE BUFFER NOR THE LOG IS A FAMILY, and declaring one for either
   // would be the mistake. A family is a promise to RANK, and module-face-lint
@@ -57,7 +57,7 @@ export const livecodeDef: AudioModuleDef = {
       "A live-coding module: a small JavaScript sandbox that builds and patches the rack from text. Its faceplate is a code editor with an output log and a RUN control; the script can spawn modules, set parameters, and wire cables, and it can register clocked(division, fn) callbacks that run in time with the rack clock (each one spawns its own CLOCKED runner module, which then keeps firing on its own whether or not anything is open). It has no audio jacks of its own — it's a side tool that mutates the patch graph, and its changes sync to other people in the rackspace through the shared document like any other edit. The script itself and the last run's outcome are saved with the patch, so reopening a rack shows you both. It's registered in the audio domain only because the rack already has an audio engine; its factory does no audio work.",
     controls: {
       'livecode-run-{n}':
-        "Evaluates the script in the editor and applies whatever it produced to the rack, in ONE transaction — so a script that spawns five modules and wires them together is a single undo away from never having happened. Anything the script printed with log() lands in the output pane above, and a script that throws reports the failing line and column on this control's own accessible name rather than in the rack. A partial failure keeps what already landed: if the script created three modules and then hit a bad patch() pair, the three stay, which is usually what you want while you are still writing it. Because RUN is ranked rather than buried in the editor, it is also on the module's lane tile — so re-running a script you have already written is one click from the rack, without opening anything.",
+        "Evaluates the script in the editor and applies whatever it produced to the rack, in ONE transaction — so a script that spawns five modules and wires them together is a single undo away from never having happened. Anything the script printed with log() lands in the output pane above, and a script that throws reports the failing line and column on this control's own accessible name rather than in the rack. A partial failure keeps what already landed: if the script created three modules and then hit a bad patch() pair, the three stay, which is usually what you want while you are still writing it. Because RUN is ranked rather than buried in the editor, it is also on the module\'s lane tile — so re-running a script you have already written is one click from the rack, without opening anything.",
     },
   },
 

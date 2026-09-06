@@ -20,13 +20,35 @@ import { spawnPatch } from './_helpers';
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
 
+/** Open a video module's dock full-view pane (the output body — canvas, fs
+ *  wrap and the shared VideoCanvasContextMenu — is `fullViewBody`, dock-only)
+ *  and return the PANE locator every surface read scopes under. */
+async function openPane(page: Page, id: string, bodyTestId: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId(bodyTestId)).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
+type Pane = Awaited<ReturnType<typeof openPane>>;
+
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -37,12 +59,13 @@ async function setup(page: Page): Promise<string[]> {
  *  exit and assert it left fullscreen. */
 async function exercise(
   page: Page,
+  pane: Pane,
   canvasTestId: string,
   wrapTestId: string,
 ): Promise<void> {
-  const canvas = page.locator(`canvas[data-testid="${canvasTestId}"]`);
+  const canvas = pane.locator(`canvas[data-testid="${canvasTestId}"]`);
   await expect(canvas, `${canvasTestId} present`).toHaveCount(1);
-  const wrap = page.locator(`[data-testid="${wrapTestId}"]`);
+  const wrap = pane.locator(`[data-testid="${wrapTestId}"]`);
   await expect(wrap, `${wrapTestId} present`).toHaveCount(1);
 
   // Let the rAF blit tick so the canvas has live content.
@@ -96,8 +119,8 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
-    await exercise(page, 'video-out-canvas', 'video-out-fs-wrap');
+    const pane = await openPane(page, 'out', 'videoout-face-output');
+    await exercise(page, pane, 'videoout-face-canvas', 'videoout-fs-wrap');
     expect(errors).toEqual([]);
   });
 
@@ -111,8 +134,8 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bb', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await expect(page.locator('[data-testid="bentbox-card"]')).toHaveCount(1);
-    await exercise(page, 'bentbox-canvas', 'bentbox-fs-wrap');
+    const pane = await openPane(page, 'bb', 'bentbox-output-body');
+    await exercise(page, pane, 'bentbox-face-canvas', 'bentbox-face-fs-wrap');
     expect(errors).toEqual([]);
   });
 
@@ -134,13 +157,13 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    const pane = await openPane(page, 'out', 'videoout-face-output');
 
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    const wrap = page.locator('[data-testid="video-out-fs-wrap"]');
+    const canvas = pane.locator('canvas[data-testid="videoout-face-canvas"]');
+    const wrap = pane.locator('[data-testid="videoout-fs-wrap"]');
     await expect(canvas).toHaveCount(1);
 
-    // Let the rAF blit tick so the card has captured live engine dims.
+    // Let the rAF blit tick so the body has captured live engine dims.
     await page.waitForTimeout(400);
 
     // The live engine source aspect (VIDEO_RES = 1024×768 = 4:3).
@@ -153,10 +176,12 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
       return w > 0 && h > 0 ? w / h : 4 / 3;
     });
 
-    // In-rack: the buffer carries the CARD aspect (a wide preview area).
+    // At rest: the face's modest IDLE buffer (320×240 — deliberately compact;
+    // 4:3, so unlike the card's wide preview its ASPECT already matches a 4:3
+    // engine. The swap is observable in the buffer SIZE here; the 16:9 test
+    // below is the one where the aspect itself must change).
     const beforeW = Number(await canvas.getAttribute('width'));
     const beforeH = Number(await canvas.getAttribute('height'));
-    const cardAspect = beforeW / beforeH;
 
     // Enter fullscreen via the context menu (real user-gesture click).
     await canvas.click({ button: 'right' });
@@ -164,15 +189,14 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
     await page.locator('[data-testid="ctx-fullscreen"]').click();
     await expect(wrap, 'wrap entered fullscreen state').toHaveClass(/fullscreen/);
 
-    // The buffer must now carry the ENGINE aspect, not the card aspect.
+    // The buffer must now carry the ENGINE aspect AND the engine-size buffer
+    // (the resting idle buffer swapped out — fullscreenCanvasDims).
     const afterW = Number(await canvas.getAttribute('width'));
     const afterH = Number(await canvas.getAttribute('height'));
     const fsAspect = afterW / afterH;
     expect(Math.abs(fsAspect - engineAspect)).toBeLessThan(0.02);
-    // The default card preview is wider than 4:3, so the bug's card-aspect
-    // buffer differed from the engine aspect — assert we actually swapped.
-    expect(Math.abs(cardAspect - engineAspect)).toBeGreaterThan(0.05);
-    expect(Math.abs(fsAspect - cardAspect)).toBeGreaterThan(0.05);
+    expect(afterW, `buffer swapped off the idle size (${beforeW}x${beforeH} -> ${afterW}x${afterH})`)
+      .toBeGreaterThan(beforeW);
 
     // If real OS-fullscreen engaged (it does headless on chromium here), prove
     // the RENDERED content HEIGHT-FILLS the viewport with NO top/bottom bars:
@@ -182,7 +206,7 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
     const fill = await page.evaluate(() => {
       if (!document.fullscreenElement) return null;
       const cv = document.querySelector(
-        'canvas[data-testid="video-out-canvas"]',
+        'canvas[data-testid="videoout-face-canvas"]',
       ) as HTMLCanvasElement | null;
       if (!cv) return null;
       const box = cv.getBoundingClientRect();
@@ -222,7 +246,7 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+    const pane = await openPane(page, 'out', 'videoout-face-output');
 
     // Flip the OUTPUT aspect to 16:9 — in-place engine realloc to 1366×768.
     await page.evaluate(() => {
@@ -237,8 +261,8 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
       }), { timeout: 8000, message: 'engine resized to 16:9 width' })
       .toBe(1366);
 
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    const wrap = page.locator('[data-testid="video-out-fs-wrap"]');
+    const canvas = pane.locator('canvas[data-testid="videoout-face-canvas"]');
+    const wrap = pane.locator('[data-testid="videoout-fs-wrap"]');
     await page.waitForTimeout(400); // let the rAF mirror the 16:9 engine dims
 
     await canvas.click({ button: 'right' });
@@ -262,8 +286,8 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
     await spawnPatch(page, [
       { id: 'out', type: 'videoOut', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const pane = await openPane(page, 'out', 'videoout-face-output');
+    const canvas = pane.locator('canvas[data-testid="videoout-face-canvas"]');
     await canvas.click({ button: 'right' });
     // Our canvas menu opens...
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();

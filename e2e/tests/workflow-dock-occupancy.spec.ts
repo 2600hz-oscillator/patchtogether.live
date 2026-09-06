@@ -99,7 +99,7 @@ async function waitForPinnedTrio(page: Page): Promise<void> {
 async function gotoShellWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
   // First-load budget (the workflow-shell.spec.ts pattern): on a COLD dev
-  // server the very first /rack?shell=legacy&seed=none compile can exceed the 5s expect default —
+  // server the very first /rack compile can exceed the 5s expect default —
   // reproduced locally with a cleared .vite cache; every later load is ~1s.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
@@ -692,7 +692,7 @@ test.describe('bottom-drawer occupancy: preview-off M/E drawer + the same C pane
   });
 
   test('`c` opens the SAME clip pane flag-off; `m`/`e` still toggle the shipped drawer', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     // Same first-load budget as gotoShellWorkflow (cold-compile latency).
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

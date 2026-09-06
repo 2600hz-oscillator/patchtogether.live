@@ -77,7 +77,6 @@ export function moog993RouteState(route: number): number {
 export const moog993Def: AudioModuleDef = {
   type: 'moog993',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog993Card',
   domain: 'audio',
   label: '993 trig',
   category: 'modulation',

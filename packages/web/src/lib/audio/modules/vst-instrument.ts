@@ -90,7 +90,7 @@ export const VST_INSTRUMENT_FACE: ModuleFace = {
         'The session with the vst-bridge helper app, which hosts your plugin through CoreAudio and '
         + 'serves it over a localhost WebSocket. It is not a browser permission: the app has to be '
         + 'running on this machine, and the plugin has to be installed on it. Until it answers, this '
-        + 'card is silent and harmless. The session belongs to the node and is keyed by its id, so '
+        + 'module is silent and harmless. The session belongs to the node and is keyed by its id, so '
         + 'collapsing this pane does not drop it and a page reload re-adopts the running plugin.',
       controls: ['vst-connect-{n}', 'vst-disconnect-{n}'],
     },
@@ -143,7 +143,7 @@ export const vstInstrumentDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Plays one of YOUR installed instrument plugins — the AU builds of your VSTs (Arturia, Serum, Apple's built-in DLS synth, …) — as a first-class rack voice, through the vst-bridge native helper app (macOS, ws://127.0.0.1:9309). Drop it in a channel lane and it behaves exactly like an internal instrument: the lane's clip player auto-wires its pitch, gate and velocity outputs here, the card's stereo output auto-wires into the lane chain, and the worklet converts poly CV to sample-accurate MIDI (0.0 pitch CV = C4 = MIDI 60, 1.0 = one octave; gate threshold 0.5; tied steps become legato NoteOff+NoteOn pairs; velocity 0..1 maps to MIDI 1..127, default 100 when vel is unpatched). Pick a plugin on the card, mount it, and OPEN EDITOR raises the plugin's own native window on your machine. One card = one plugin instance (the helper caps at 16); a page refresh re-adopts the running instance, so the plugin and its state survive reloads. Requires the vst-bridge helper running locally (Chromium/Firefox; the card shows status) — without it the card sits silent and harmless. In a shared patch, audio renders only on the machine running the helper with the plugin installed; collaborators see the card but hear this voice only through your machine's contribution.",
+      "Plays one of YOUR installed instrument plugins — the AU builds of your VSTs (Arturia, Serum, Apple's built-in DLS synth, …) — as a first-class rack voice, through the vst-bridge native helper app (macOS, ws://127.0.0.1:9309). Drop it in a channel lane and it behaves exactly like an internal instrument: the lane's clip player auto-wires its pitch, gate and velocity outputs here, the faceplate\'s stereo output auto-wires into the lane chain, and the worklet converts poly CV to sample-accurate MIDI (0.0 pitch CV = C4 = MIDI 60, 1.0 = one octave; gate threshold 0.5; tied steps become legato NoteOff+NoteOn pairs; velocity 0..1 maps to MIDI 1..127, default 100 when vel is unpatched). Pick a plugin on the faceplate, mount it, and OPEN EDITOR raises the plugin's own native window on your machine. One module = one plugin instance (the helper caps at 16); a page refresh re-adopts the running instance, so the plugin and its state survive reloads. Requires the vst-bridge helper running locally (Chromium/Firefox; the faceplate shows status) — without it the module sits silent and harmless. In a shared patch, audio renders only on the machine running the helper with the plugin installed; collaborators see the module but hear this voice only through your machine's contribution.",
     inputs: {
       poly:
         "The rack's 32-channel poly note bus (16 voice pairs: even channels pitch V/oct, odd channels gate 0|1). Auto-wired from the lane clip player's pitch{n}. Each voice pair runs its own gate→NoteOn/NoteOff state machine in the worklet, so chords land as concurrent MIDI notes with per-voice NoteOffs.",
@@ -156,15 +156,15 @@ export const vstInstrumentDef: AudioModuleDef = {
     },
     outputs: {
       out_l:
-        "The plugin's audio return, left — placed on the card's own timeline by the bridge (each returned block carries the sampleTime of the clock block that pulled it). Auto-wires into the channel lane chain.",
+        "The plugin's audio return, left — placed on the faceplate\'s own timeline by the bridge (each returned block carries the sampleTime of the clock block that pulled it). Auto-wires into the channel lane chain.",
       out_r:
         "The plugin's audio return, right (stereo-paired with out_l, so patching only the left side normals both).",
     },
     controls: {
       'vst-connect-{n}':
-        "Opens this card's own session with the vst-bridge helper — one WebSocket, one plugin "
+        "Opens this faceplate's own session with the vst-bridge helper — one WebSocket, one plugin "
         + 'instance, keyed by this node id. It also RESTARTS a live session at the engine\'s current '
-        + 'sample rate, which is the recovery path when another browser tab has claimed this card\'s '
+        + 'sample rate, which is the recovery path when another browser tab has claimed this faceplate\'s '
         + 'instance: press it and the instance comes back here. The engine already connects on its '
         + 'own when the node is created, so this is for the case where the helper was not running '
         + 'yet, or where you disconnected on purpose.',
@@ -172,7 +172,7 @@ export const vstInstrumentDef: AudioModuleDef = {
         'Drops the session without deleting the node — the helper PARKS this plugin instance rather '
         + 'than destroying it (about 90 seconds), so a reconnect re-adopts the same plugin with its '
         + 'state intact. Use it to hand one of the helper\'s sixteen concurrent instances to another '
-        + 'card, or to silence this voice without losing the patch.',
+        + 'module, or to silence this voice without losing the patch.',
     },
   },
 

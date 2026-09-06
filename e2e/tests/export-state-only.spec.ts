@@ -20,7 +20,7 @@ test.describe.configure({ mode: 'parallel' });
 
 test('export state-only: menu row produces a smaller zip that round-trips the rack', async ({
   page,
-  rackDefault,
+  rack,
 }) => {
   await spawnPatch(
     page,

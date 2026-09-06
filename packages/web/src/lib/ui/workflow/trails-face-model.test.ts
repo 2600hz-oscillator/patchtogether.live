@@ -325,11 +325,11 @@ describe('trails face — the extension: TWO slots, ONE mirror', () => {
     }
   });
 
-  it('the legacy card and the cell call ONE seam — no second connect implementation', () => {
-    // Promotion does not remove `TrailsCard.svelte` from `?shell=legacy`, so two
-    // surfaces ship at once. A body that grew its own `requestMIDIAccess` path
-    // would be a second owner of a gesture with a user-activation constraint,
-    // and the two could drift on the fallback branch alone.
+  it('the CONNECT gesture is ONE seam — no second connect implementation', () => {
+    // A body that grew its own `requestMIDIAccess` path would be a second owner
+    // of a gesture with a user-activation constraint, and the two could drift on
+    // the fallback branch alone. The seam is what makes the next surface a call
+    // rather than a copy.
     expect(existsSync(fileURLToPath(new URL('../modules/trails-cell-actions.ts', import.meta.url))))
       .toBe(true);
     // ⚠ AND THE DOCK BODY HAS NO CONNECT BUTTON. The gesture is a ranked action

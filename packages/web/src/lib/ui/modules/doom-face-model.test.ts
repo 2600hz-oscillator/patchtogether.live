@@ -63,7 +63,6 @@ function param(id: string) {
 function stripped(rel: string): string {
   return stripSourceComments(readFileSync(resolve(HERE, rel), 'utf8'));
 }
-const cardSrc = (): string => stripped('DoomCard.svelte');
 const bodySrc = (): string => stripped('doom/DoomBody.svelte');
 const surfaceSrc = (): string => stripped('doom/DoomSurface.svelte');
 const extensionSrc = (): string => stripped('doom/shell-extension.ts');
@@ -190,30 +189,34 @@ describe('doom — the forty gate params are declared, and the claim is checkabl
 });
 
 describe('⚠ doom — ONE SURFACE, TWO MOUNTS (the promotion hazard)', () => {
-  it('the legacy card is a THIN BRIDGE onto the shared surface', () => {
-    const src = cardSrc();
-    expect(src).toContain("import DoomSurface from './doom/DoomSurface.svelte'");
-    expect(src).toMatch(/<DoomSurface[^>]*variant="card"/s);
-    // ⚠ THE CARD MUST NOT RE-IMPLEMENT ANY OF IT. If a future edit copies logic
-    // back into the card, the two surfaces can disagree about who owns the
-    // keyboard and who adopted the session — the exact drift this split exists
-    // to make unrepresentable. Every one of these belongs to the surface now.
-    for (const owned of [
-      'nodeDoomSession',
-      'addEventListener',
-      '__doomCards',
-      'requestAnimationFrame',
-      'DoomNetcode',
-      'LockstepTransport',
-    ]) {
-      expect(src, `DoomCard.svelte must not own '${owned}' any more`).not.toContain(owned);
-    }
-  });
-
-  it('the FACE BODY mounts the same surface, in face variant', () => {
+  // ⚠ OWNER RULING 30 (2026-09-04): THIS PROBE IS DELETED WITH THE CARD, NOT
+  // LEFT TO PASS.
+  //
+  // It read `DoomCard.svelte` and asserted the card was a THIN BRIDGE — that it
+  // imported `DoomSurface` with `variant="card"` and OWNED none of
+  // `nodeDoomSession`, `addEventListener`, `__doomCards`,
+  // `requestAnimationFrame`, `DoomNetcode`, `LockstepTransport`. Every one of
+  // those is a `.not.toContain`, and **an empty string satisfies all of them**.
+  // With the card deleted the read returns nothing, so the block would have gone
+  // GREEN VACUOUSLY — the same shape as a sweep whose population emptied. The
+  // owner ruled it out explicitly rather than let it stand.
+  //
+  // ⚠ ACCEPTED COST, NAMED AT DECISION TIME: nothing now prevents a DOOM card
+  // being reintroduced. What remains is the face-side half of this same
+  // describe (the body and the extension mount the ONE surface), `face-doom.spec.ts`,
+  // and the standing DOOM e2e battery including the collab lockstep specs.
+  it('the FACE BODY mounts the ONE surface', () => {
     const src = bodySrc();
     expect(src).toContain("import DoomSurface from './DoomSurface.svelte'");
-    expect(src).toMatch(/<DoomSurface[^>]*variant="face"/s);
+    expect(src).toMatch(/<DoomSurface\b/);
+    // ⚠ THE `variant="face"` ASSERTION IS GONE WITH THE PROP. `DoomSurface`
+    // carried `variant?: 'card' | 'face'` defaulting to `'card'`, and this leg
+    // pinned the body to the non-default arm. Nothing mounted the `'card'` arm
+    // any more — it emitted `data-testid="doom-card"`, `class:mod-card` and a
+    // PatchPanel the faceplate already provides through `face.rear` — so the
+    // prop, its branch and its dead CSS are deleted. A prop with one legal
+    // value is not a choice to assert.
+    expect(src, 'the deleted prop must not come back by habit').not.toContain('variant=');
   });
 
   it('⚠ the SURFACE — not either wrapper — owns the session and the keyboard', () => {
@@ -269,44 +272,45 @@ describe('⚠ doom — ONE SURFACE, TWO MOUNTS (the promotion hazard)', () => {
     // promotion costs no GPU re-attest. If one ever does, this goes red BEFORE
     // CI discovers it as a hash move.
     const CTX = /getContext\(\s*['"`]webgl2?['"`]/;
+    // (`DoomCard.svelte` was the third member until the fleet was deleted — see
+    // ruling 30 above. A file that does not exist reads as the empty string, and
+    // "the empty string creates no GL context" is not a measurement.)
     for (const [name, src] of [
       ['DoomSurface.svelte', surfaceSrc()],
       ['DoomBody.svelte', bodySrc()],
-      ['DoomCard.svelte', cardSrc()],
     ] as const) {
       expect(CTX.test(src), `${name} must not create a GL context`).toBe(false);
     }
   });
 
-  it('⚠ the param writes are TRACKED, and stay where the ledgers can see them', () => {
-    // The OUTPUT FIT row and the Volume knob are CARD chrome and must remain in
-    // `DoomCard.svelte`: `card-def-agreement.test.ts` and
-    // `card-range-source.test.ts` scan `*Card.svelte` ONLY, so a control that
-    // moved into the shared surface would take its recorded card↔def divergence
-    // out of their reach and the ledger entry would read as PAID when nothing
-    // had been fixed. The surface renders them through a snippet PROP instead.
-    const card = cardSrc();
-    expect(card).toContain('data-testid="doom-fit-row"');
-    expect(card).toContain('data-testid="doom-volume"');
-    expect(card).toMatch(/\{#snippet controlsRow\(\)\}/);
-    expect(surfaceSrc()).toMatch(/\{@render controlsRow\?\.\(\)\}/);
-    // ⚠ AND THE ONE DIVERGENCE THAT IS STILL OPEN IS STILL WHERE IT WAS. The def
-    // says 'Gain'; the card's Knob says "Volume". `VOCABULARY_DEBT` carries the
-    // pair, and this leg is what keeps the two facts joined — if a future edit
-    // renames either side, one of these three goes red rather than the ledger
-    // quietly going stale.
+  // ⚠ THE SECOND CARD SOURCE-PROBE, ALSO DELETED UNDER RULING 30. It asserted
+  // the OUTPUT FIT row and the Volume knob stayed in `DoomCard.svelte`, because
+  // `card-def-agreement.test.ts` and `card-range-source.test.ts` scanned
+  // `*Card.svelte` ONLY — so a control that moved into the shared surface would
+  // take its recorded card-vs-def divergence out of their reach. All three of
+  // those files are gone together, so the reason has gone with the mechanism.
+  //
+  // ⚠ THE ONE CLAIM WORTH KEEPING IS KEPT, and it is the one that does not need
+  // a card: the def says 'Gain' while the shipped control said "Volume", and
+  // `VOCABULARY_DEBT` carries the pair. Asserting the def side alone is what
+  // stops the ledger entry going stale in the direction that is still checkable.
+  it('⚠ the audioGain label is still the def side of the VOCABULARY_DEBT pair', () => {
     expect(param('audioGain').label).toBe('Gain');
-    expect(card).toContain('label="Volume"');
   });
 
   it('⚠ the param writes are TRACKED — the raw-write debt is paid, not moved', () => {
-    const card = cardSrc();
-    expect(card).toContain("setNodeParam(id, 'fillMode', v)");
-    expect(card).toContain("setNodeParam(id, 'audioGain', v)");
-    // The raw form this replaced. It was neither undoable nor LOCAL_ORIGIN-
-    // tagged, so Cmd-Z stepped straight over an OUTPUT FIT flip.
-    expect(card).not.toMatch(/target\.params\.(fillMode|audioGain)\s*=/);
+    // ⚠ THE CARD HALF OF THIS LEG IS GONE (ruling 30). It asserted the card used
+    // `setNodeParam(id, …)` for fillMode/audioGain and NOT the raw
+    // `target.params.X =` form, which was neither undoable nor LOCAL_ORIGIN-
+    // tagged — Cmd-Z stepped straight over an OUTPUT FIT flip. Two of those
+    // three assertions were `.not.` forms that an empty read satisfies.
+    //
+    // The SURFACE half is the one that still has a subject, and it is the one
+    // that matters: the shared surface is where those controls live now, so a
+    // raw write reappearing THERE is the regression. Kept, unchanged.
     expect(surfaceSrc()).not.toMatch(/\.params\.(fillMode|audioGain)\s*=/);
+    // …and the probe can still say NO — the raw form is detected when present.
+    expect(/\.params\.(fillMode|audioGain)\s*=/.test('target.params.fillMode = 1')).toBe(true);
   });
 
 });

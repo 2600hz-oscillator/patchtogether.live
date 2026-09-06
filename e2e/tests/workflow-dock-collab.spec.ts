@@ -23,7 +23,7 @@
 //
 // Setup mirrors collab.spec.ts's canonical two-context pattern — separate
 // cookie jars/localStorage/ydocs, both attached to one Hocuspocus room via
-// the dev-only __attachProvider — but on /rack?shell=legacy (the mode is
+// the dev-only __attachProvider — but on /rack (the mode is
 // per-page shell chrome; the shared ydoc is mode-agnostic). Pure-sync: no
 // DATABASE_URL-gated assertions, so the spec is real (not vacuous) on the
 // dedicated collab lane AND under the local relay.
@@ -43,7 +43,7 @@ async function attachWorkflow(
   page: import('@playwright/test').Page,
   rackspaceId: string,
 ): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(
@@ -105,7 +105,7 @@ test.describe('@collab workflow dock — dual-rect invariants for peers', () => 
   // sleep — green runs pay nothing extra.
   test.setTimeout(120_000);
 
-  test('A docks → B keeps the ordinary card + can patch to it; the cable lands on A\'s stub; A\'s dock survives reload (tombstone revive)', async ({ browser }) => {
+  test('A docks → B keeps the ordinary surface + can patch to it; the cable lands on A\'s stub; A\'s dock survives reload (tombstone revive)', async ({ browser }) => {
     const s = await openWorkflowPair(browser);
     try {
       await seedAndSync(s);
@@ -119,14 +119,14 @@ test.describe('@collab workflow dock — dual-rect invariants for peers', () => 
         s.pageA.locator('.svelte-flow__node[data-id="mx"] [data-testid="dock-stub"]'),
       ).toBeVisible();
 
-      // B SEES NOTHING DIFFERENT: the ordinary card (no stub, no rail
+      // B SEES NOTHING DIFFERENT: the ordinary surface (no stub, no rail
       // entry) at the baked patch position — dock state never syncs.
       await expect(s.pageB.locator('[data-dock-card="mx"]')).toHaveCount(0);
       await expect(
         s.pageB.locator('.svelte-flow__node[data-id="mx"] [data-testid="dock-stub"]'),
       ).toHaveCount(0);
       await expect(
-        s.pageB.locator('.svelte-flow__node[data-id="mx"] .mod-card').first(),
+        s.pageB.locator('.svelte-flow__node[data-id="mx"] [data-testid="module-shell"]').first(),
       ).toBeVisible();
       const posOnB = await s.pageB.evaluate(() => {
         const w = window as unknown as {

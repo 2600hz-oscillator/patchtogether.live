@@ -85,7 +85,7 @@ async function injectScreens(
 }
 
 async function setup(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -95,8 +95,26 @@ async function setup(page: Page): Promise<void> {
     ],
     [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
   );
-  await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
-  // Let the OUTPUT card's rAF render the source frame into its canvas.
+  // The OUTPUT face (`videoout-face-canvas` + the same shared
+  // VideoCanvasContextMenu the card mounted) is `fullViewBody` — open the dock
+  // pane; the present gesture right-clicks the face picture there.
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'out',
+  );
+  await expect(
+    page
+      .locator('[data-testid="dock-fullview-pane"][data-pane-node="out"]')
+      .getByTestId('videoout-face-canvas'),
+  ).toBeVisible({ timeout: 60_000 });
+  // Let the face's rAF render the source frame into its canvas.
   await page.waitForTimeout(500);
 }
 
@@ -161,7 +179,9 @@ test.describe('present on a second display — VIDEO OUT', () => {
     await injectScreens(page, [{ label: 'Only Display', isPrimary: true }]);
     await setup(page);
 
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const canvas = page
+      .locator('[data-testid="dock-fullview-pane"][data-pane-node="out"]')
+      .getByTestId('videoout-face-canvas');
     await canvas.click({ button: 'right' });
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
 
@@ -195,7 +215,9 @@ test.describe('present on a second display — VIDEO OUT', () => {
     ]);
     await setup(page);
 
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const canvas = page
+      .locator('[data-testid="dock-fullview-pane"][data-pane-node="out"]')
+      .getByTestId('videoout-face-canvas');
     await canvas.click({ button: 'right' });
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
 

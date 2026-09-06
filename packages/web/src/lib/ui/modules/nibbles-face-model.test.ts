@@ -71,7 +71,6 @@ const FACE = nibblesDef.face!;
 const DECLARED: readonly string[] = nibblesDef.params.map((p) => p.id);
 
 const BODY = readFileSync(new URL('./nibbles/NibblesScreenBody.svelte', import.meta.url), 'utf8');
-const CARD = readFileSync(new URL('./NibblesCard.svelte', import.meta.url), 'utf8');
 const ACTIONS = readFileSync(new URL('./nibbles-game-actions.ts', import.meta.url), 'utf8');
 const DEF_SRC = readFileSync(new URL('../../video/modules/nibbles.ts', import.meta.url), 'utf8');
 
@@ -88,7 +87,6 @@ const DEF_SRC = readFileSync(new URL('../../video/modules/nibbles.ts', import.me
  * inherit it. Three legs below would have been red on their first run.
  */
 const BODY_CODE = stripSourceComments(BODY);
-const CARD_CODE = stripSourceComments(CARD);
 
 /** Everything between `</script>` and `<style>` — the rendered DOM, as source. */
 function markupOf(svelte: string): string {
@@ -347,7 +345,7 @@ describe('nibbles — the SCALE zoom is on the node, which is a BUG FIX and not 
   // to 1x today, and the dock's LRU eviction did it to a module the user never
   // touched. The #1531 / #1574 / #1583 class verbatim.
   it('NEITHER surface holds the zoom in component state any more', () => {
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
+    for (const [name, src] of [['face body', BODY] as const]) {
       expect(src, `${name}: the zoom must not be component state`)
         .not.toMatch(/let scale = \$state\(/);
       expect(src, `${name}: the zoom must be read off the node`).toMatch(/nibblesPreviewScale\(/);
@@ -383,8 +381,6 @@ describe('nibbles — the SCALE zoom is on the node, which is a BUG FIX and not 
     // zoom makes the CARD 1280 px wide: the "useless gray horizontal space" the
     // compact ruling forbids. The face must not inherit it, and the plate is
     // sized to the 1x preview (an entry justified by 4x would justify the bug).
-    expect(CARD_CODE, 'the card still grows — it is about to stop rendering')
-      .toMatch(/width: max-content/);
     expect(BODY_CODE).toMatch(/overflow: auto/);
     // ⚠ A DECLARED `width`, NOT a `max-width`, and the difference is a fix
     // rather than a style. The three corner switches are absolutely positioned
@@ -435,7 +431,6 @@ describe('nibbles — CLAIM 3: AUTO derives a TOGGLE, one param shape from the m
   it('TICK stays a plain knob — the card draws one, and the face declares nothing', () => {
     const tick = nibblesDef.params.find((p) => p.id === 'tick_ms')!;
     expect(paramCellKind(tick, new Set())).toBe('knob');
-    expect(CARD).toMatch(/<Knob/);
   });
 
   it('the TICK accessible name carries the ms AND the rate, and the rate is DERIVED', () => {
@@ -557,7 +552,7 @@ describe('nibbles — the ARROW KEYS are the INSTRUMENT, and Tab is still the FL
   });
 
   it('BOTH surfaces stop propagation — or SvelteFlow pans the viewport while you steer', () => {
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
+    for (const [name, src] of [['face body', BODY] as const]) {
       expect(src, `${name}: must stop the keydown propagating to xyflow`)
         .toMatch(/e\.stopPropagation\(\)/);
       expect(src, `${name}: must preventDefault`).toMatch(/e\.preventDefault\(\)/);
@@ -568,7 +563,7 @@ describe('nibbles — the ARROW KEYS are the INSTRUMENT, and Tab is still the FL
     expect(DEF_SRC).toMatch(/function pushDirection\(dir: NibblesDirection\): boolean \{\s*\n\s*if \(params\.auto >= 0\.5\) return false;/);
     // Neither surface re-derives it. (The card used to, which is one more place
     // for the rule to drift.)
-    for (const [name, src] of [['card', CARD], ['face body', BODY]] as const) {
+    for (const [name, src] of [['face body', BODY] as const]) {
       expect(src, `${name}: must not re-derive the AUTO guard`).not.toMatch(/if \(autoOn\) return;/);
     }
   });
@@ -645,9 +640,6 @@ describe('nibbles — CLAIM 5: RESET is OBSERVABLE, and the observable is the AU
   });
 
   it('BOTH surfaces fire the SAME reset — the card no longer calls extras itself', () => {
-    expect(CARD).toMatch(/fireNibblesReset\(id\)/);
-    expect(CARD, 'the card must not reach extras directly any more')
-      .not.toMatch(/eng\.read\(node, 'extras'\)/);
     expect(ACTIONS).toMatch(/getActiveEngine\(\)/);
   });
 });
@@ -662,8 +654,6 @@ describe('nibbles — the AUTO raw write is PAID, not made unreachable', () => {
   });
 
   it('and the card writes through setNodeParam', () => {
-    expect(CARD_CODE).toMatch(/toggleNibblesAuto\(id\)/);
-    expect(CARD_CODE, 'no raw params write may return').not.toMatch(/\.params\.auto\s*=/);
     expect(ACTIONS).toMatch(/setNodeParam\(nodeId, 'auto'/);
   });
 });
@@ -703,7 +693,6 @@ describe('nibbles — CLAIM 6: the VRT pin can actually pin, and BOTH halves are
     expect(DEF_SRC).toMatch(/__nibblesVrtSeed/);
     expect(DEF_SRC).not.toMatch(/__nibblesVrtSeed\s*=/);
     expect(BODY).not.toMatch(/__nibblesVrtSeed/);
-    expect(CARD).not.toMatch(/__nibblesVrtSeed/);
   });
 
   it('NO `freeze` param was added to buy an assertion that already holds', () => {
@@ -743,7 +732,6 @@ describe('nibbles — the ZERO-ATTEST discipline this PR rests on', () => {
     expect(nibblesDef.inputs).toEqual([]);
     // …and BOTH surfaces still spell the button the same way, which is what
     // keeps the face and the legacy card describing one control.
-    expect(CARD).toMatch(/data-testid="nibbles-reset"/);
     expect(BODY_CODE).toMatch(/data-testid="nibbles-reset"/);
   });
 

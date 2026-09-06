@@ -172,7 +172,7 @@ async function installMocks(page: Page, opts: { mediaCorsOk: boolean } = { media
 async function gotoApp(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -228,24 +228,46 @@ async function readOutputStats(page: Page, outNodeId: string): Promise<{ peak: n
   return summarize(samples);
 }
 
+/** Open PEERTUBE's dock full-view pane (the browse body — preview + picker +
+ *  disclaimer, state attrs on `peertube-face-body` — is `fullViewBody`, dock
+ *  only) and return the PANE locator every UI read scopes under. The <video>
+ *  element (`peertube-video`) is registry-owned (node lifetime), so raw
+ *  element probes stay document-level. */
+async function openPtPane(page: Page, id: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId('peertube-face-body')).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
 test.describe('PEERTUBE — network-mocked source chain', () => {
   test('search → results → pick → stream attaches; card reacts @video', async ({ page }) => {
     await installMocks(page);
     const errors = await gotoApp(page);
     await spawnPatch(page, [{ id: 'pt1', type: 'peertube', position: { x: 80, y: 80 }, domain: 'video' }]);
 
-    const card = page.getByTestId('peertube-card');
+    const pane = await openPtPane(page, 'pt1');
+    const card = pane.getByTestId('peertube-face-body');
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute('data-has-selection', 'false');
 
     // Search → the mocked Sepia results render (the host-less row is dropped; both
-    // valid rows show). Press Enter (a synthetic .click on a node-internal button
-    // is swallowed by the pan handler; Enter hits runSearch directly).
-    await page.getByTestId('peertube-search').fill('blender');
-    await page.getByTestId('peertube-search').press('Enter');
-    const results = page.getByTestId('peertube-result');
+    // valid rows show). Enter hits runSearch directly.
+    await pane.getByTestId('peertube-search').fill('blender');
+    await pane.getByTestId('peertube-search').press('Enter');
+    const results = pane.getByTestId('peertube-result');
     await expect(results).toHaveCount(2, { timeout: 10_000 });
-    await expect(page.getByText('Mock Federated Clip')).toBeVisible();
+    await expect(pane.getByText('Mock Federated Clip')).toBeVisible();
     await expect(card.getByText('Mock Channel', { exact: false })).toBeVisible();
 
     // Pick the first result → it resolves + attaches + persists the selection.
@@ -258,7 +280,7 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     // picture's accessible name. The ASSERTION is unchanged in substance: the
     // card still says which video it is playing, in the place a screen reader
     // and a test can both reach.
-    await expect(card.getByTestId('peertube-preview'))
+    await expect(pane.getByTestId('peertube-face-preview'))
       .toHaveAttribute('aria-label', /playing Mock Federated Clip/, { timeout: 10_000 });
 
     // The selection persisted to node.data (syncs to rack-mates).
@@ -272,8 +294,8 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     // The card reaches a terminal stream state (playing OR unavailable) — never
     // stuck on "loading" forever. The disclaimer + attribution are present.
     await expect(card).toHaveAttribute('data-stream-state', /playing|unavailable/, { timeout: 16_000 });
-    await expect(page.getByTestId('peertube-disclaimer')).toBeVisible();
-    await expect(card.getByText('Sepia Search')).toBeVisible();
+    await expect(pane.getByTestId('peertube-disclaimer')).toBeVisible();
+    await expect(pane.getByText('Sepia Search')).toBeVisible();
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
@@ -289,7 +311,7 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     test.setTimeout(60_000);
 
     await installHlsMocks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // PEERTUBE -> (video) VIDEO OUT, plus audio_l/audio_r fanned to a SCOPE +
@@ -308,11 +330,12 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     );
 
     // Search + pick → resolveStream returns the HLS master → hls.js attaches.
-    await page.getByTestId('peertube-search').fill('blender');
-    await page.getByTestId('peertube-search').press('Enter');
-    await expect(page.getByTestId('peertube-result').first()).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('peertube-result').first().click();
-    await expect(page.getByTestId('peertube-card')).toHaveAttribute('data-has-selection', 'true', { timeout: 10_000 });
+    const pane = await openPtPane(page, 'pt');
+    await pane.getByTestId('peertube-search').fill('blender');
+    await pane.getByTestId('peertube-search').press('Enter');
+    await expect(pane.getByTestId('peertube-result').first()).toBeVisible({ timeout: 10_000 });
+    await pane.getByTestId('peertube-result').first().click();
+    await expect(pane.getByTestId('peertube-face-body')).toHaveAttribute('data-has-selection', 'true', { timeout: 10_000 });
 
     // The clip is a short (~1.6s) VOD; a real federated stream never ends. Loop it
     // so there's CONTINUOUS audio across the measurement window. This only sets a
@@ -328,9 +351,9 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     // `unavailable` → SKIP (never flake — the recorderbox/edges no-OS-encoder /
     // SwiftShader trap). The wiring PATH (search→resolve→attach + node.data) is
     // hard-asserted in the first test regardless.
-    await expect(page.getByTestId('peertube-card'))
+    await expect(pane.getByTestId('peertube-face-body'))
       .toHaveAttribute('data-stream-state', /playing|unavailable/, { timeout: 20_000 });
-    const state = await page.getByTestId('peertube-card').getAttribute('data-stream-state');
+    const state = await pane.getByTestId('peertube-face-body').getAttribute('data-stream-state');
     test.skip(state !== 'playing', `renderer could not decode the AVC/AAC HLS clip (state=${state})`);
 
     // wireAudio() must have run (audio_l/audio_r are the live splitter now, not the
@@ -392,11 +415,12 @@ test.describe('PEERTUBE — network-mocked source chain', () => {
     const errors = await gotoApp(page);
     await spawnPatch(page, [{ id: 'pt2', type: 'peertube', position: { x: 80, y: 80 }, domain: 'video' }]);
 
-    const card = page.getByTestId('peertube-card');
-    await page.getByTestId('peertube-search').fill('blender');
-    await page.getByTestId('peertube-search').press('Enter');
-    await expect(page.getByTestId('peertube-result').first()).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('peertube-result').first().click();
+    const pane = await openPtPane(page, 'pt2');
+    const card = pane.getByTestId('peertube-face-body');
+    await pane.getByTestId('peertube-search').fill('blender');
+    await pane.getByTestId('peertube-search').press('Enter');
+    await expect(pane.getByTestId('peertube-result').first()).toBeVisible({ timeout: 10_000 });
+    await pane.getByTestId('peertube-result').first().click();
 
     // It reaches a terminal state within the timeout — never stuck on "loading".
     // (The webm may still decode under no-ACAO in some headless configs, so accept

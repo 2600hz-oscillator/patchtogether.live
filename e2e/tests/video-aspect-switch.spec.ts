@@ -138,7 +138,7 @@ test.describe('video: OUTPUT aspect switch reallocates IN PLACE (no teardown)', 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

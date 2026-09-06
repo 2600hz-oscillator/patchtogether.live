@@ -1,19 +1,15 @@
 <script lang="ts">
-  // DockCardHost — mounts ONE module card in a dock rail, OUTSIDE the
+  // DockCardHost — mounts ONE module faceplate in a dock rail, OUTSIDE the
   // SvelteFlow provider (P2.5a). This is the spike-proven plain-mount host:
   //
-  //  * The card is the SAME component the canvas mounts (resolved via the
-  //    shared nodeTypes map), fed the same `{ id, data: { node } }` shape.
-  //    No second implementation.
+  //  * The occupant is the SAME `<ModuleShell>` the canvas mounts in a lane,
+  //    fed the same `{ id, data: { node } }` shape. No second implementation.
   //  * PatchPanel self-gates outside the provider (guarded useStore): no
   //    <Handle> stack mounts here, so the node's ONLY handles + only
   //    `.svelte-flow__node[data-id]` element live on its canvas
   //    DockStubCard — PickupCable + sweep selector contracts stay
   //    unambiguous. The patch MENU still works from the rail (port rows
   //    dispatch document-level events Canvas owns).
-  //  * Rack sizing is replicated by a classed wrapper (`dock-rack-sized`
-  //    in _module-card.css) that mirrors `.svelte-flow__node.rack-sized`
-  //    WITHOUT the .svelte-flow__node class (selector collisions).
   //  * INDEPENDENT ZOOM: discrete 50–150% in 25% steps. The inner wrapper
   //    is transform-scaled from its top-left; the frame's layout box is
   //    the MEASURED natural size × scale (ResizeObserver, no per-frame
@@ -23,19 +19,24 @@
   //    do NOT stop propagation, so wheel events over a control are theirs,
   //    never a zoom.
   //
-  //  * THE PROMOTED FACE (#1739). When the occupant renders its FACEPLATE
-  //    (`face` — `dockRailRendersFace`, decided in Canvas so `?shell=legacy`
-  //    and `migrated()` are read in ONE place), the mounted component is
-  //    `<ModuleShell view='drawer'>` instead of `nodeTypes[type]`. Everything
-  //    else on this host is untouched: the same `<section data-dock-card>` and
-  //    `[data-dock-card-frame]` anchors (cardRectFor / PickupCable /
-  //    PatchPanel.cardRectOf all resolve through them), the same header, the
-  //    same zoom ladder, the same ✕. `view='drawer'` is the shell view that
-  //    renders the full faceplate AND keeps the lane `PatchPanel`, because this
-  //    host has no title bar and therefore no flip-to-RearCard: that PatchPanel
-  //    is the tray's only patch surface, front and rear.
+  //  * ⚠ THE MOUNT IS UNCONDITIONAL, and it did not used to be. This host took
+  //    a `face` boolean and an injected component map, and fell through to
+  //    `nodeTypes[node.type]` when the flag was false. That map holds exactly
+  //    two entries — `dockStub` and `moduleShell` — and a node's `type` is
+  //    neither, so the fall-through could only ever have reached the
+  //    "unknown module type" plate. Both callers passed the flag TRUE
+  //    unconditionally (DockRail, and AudioIoSurface for its two singletons),
+  //    so the branch was unreachable in both directions: dead if the flag was
+  //    true, broken if it ever went false. It is one mount now.
+  //
+  //    `view='drawer'` is the shell view that renders the full faceplate AND
+  //    keeps the lane `PatchPanel`, because this host has no title bar and
+  //    therefore no flip-to-rear: that PatchPanel is the tray's only patch
+  //    surface, front and rear. Everything else is untouched — the same
+  //    `<section data-dock-card>` and `[data-dock-card-frame]` anchors
+  //    (cardRectFor / PickupCable / PatchPanel.cardRectOf all resolve through
+  //    them), the same header, the same zoom ladder, the same ✕.
 
-  import type { Component } from 'svelte';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleShell from '$lib/ui/modules/ModuleShell.svelte';
   import { ZOOM_MAX, ZOOM_MIN } from './dock-entries';
@@ -43,16 +44,6 @@
   interface Props {
     /** The docked node (live snapshot entry — `data` is the live proxy). */
     node: ModuleNode;
-    /** The shared glob-driven nodeTypes map (Canvas's). */
-    nodeTypes: Record<string, unknown>;
-    /** Mount the PROMOTED FACEPLATE (`<ModuleShell view='drawer'>`) rather than
-     *  the verbatim legacy card. Injected — `dockRailRendersFace` in
-     *  legacy-fallback.ts owns the rule and Canvas evaluates it, so this host
-     *  stays registry-free and does not re-derive `?shell=legacy` /
-     *  `migrated()`. */
-    face?: boolean;
-    /** Rack sizing (Canvas's rackSizeByType entry), if the type declares one. */
-    rackSize?: { size?: string; hp?: number };
     /** Discrete content scale (dockStore.scaleOf; 0.5–1.5). */
     scale: number;
     /** Header label (display name). */
@@ -68,9 +59,6 @@
   }
   let {
     node,
-    nodeTypes,
-    face = false,
-    rackSize,
     scale,
     title,
     onStepScale,
@@ -79,17 +67,13 @@
     onClose,
   }: Props = $props();
 
-  let CardComponent = $derived(nodeTypes[node.type] as Component | undefined);
+  // ⚠ NO RACK SIZING HERE, and that is not an omission. The rack tier was a
+  // per-TYPE height mirrored onto a wrapper class, and the rules it fed select
+  // roots a `.module-shell` deliberately is not — so the tier reached this host
+  // as `--rack-u/--rack-hp` that nothing read. The face sizes itself, which is
+  // why the ResizeObserver below can measure it.
 
-  // RACK SIZING is a LEGACY-CARD mirror and does not apply to a face. The rules
-  // it feeds (`_module-card.css`: `.dock-rack-sized > :is(.mod-card, .card,
-  // .moog-panel)`) select the three legacy card roots, which a `.module-shell`
-  // is deliberately not — so a face in a `.dock-rack-sized` wrapper would carry
-  // `--rack-u/--rack-hp` that nothing reads. The face sizes itself.
-  let rackU = $derived(face ? null : rackSize?.size ? parseInt(rackSize.size, 10) || 1 : null);
-  let rackHp = $derived(rackSize?.hp ?? 1);
-
-  // Natural (unscaled) card size, measured once + on card-driven changes.
+  // Natural (unscaled) content size, measured once + on content-driven changes.
   // The frame's layout box is natural × scale so neighbours reflow only on
   // an actual scale/size change — never per frame.
   let natW = $state(0);
@@ -199,18 +183,8 @@
            full-view pane — identical width, +23 px for the jack rail the full
            view drops. So the two hosts agree by construction rather than by a
            re-typed width, and there is no number here to go stale. -->
-      <div
-        bind:this={innerEl}
-        class={rackU != null ? 'dock-rack-sized' : 'dock-natural-sized'}
-        style={rackU != null ? `--rack-hp:${rackHp};--rack-u:${rackU}` : undefined}
-      >
-        {#if face}
-          <ModuleShell id={node.id} data={{ node, view: 'drawer' }} />
-        {:else if CardComponent}
-          <CardComponent id={node.id} data={{ node }} />
-        {:else}
-          <div class="dock-missing">unknown module type: {node.type}</div>
-        {/if}
+      <div bind:this={innerEl} class="dock-natural-sized">
+        <ModuleShell id={node.id} data={{ node, view: 'drawer' }} />
       </div>
     </div>
   </div>
@@ -288,18 +262,12 @@
     transform-origin: top left;
     width: max-content;
   }
-  /* The natural/rack-sized inner box positions the card the way a
-     .svelte-flow__node wrapper does: cards use position:absolute children
-     (patch triggers etc.) against the card root, which is position:static
-     inside a plain div — same as inside xyflow's wrapper. */
-  .dock-natural-sized,
-  :global(.dock-rack-sized) {
+  /* The inner box positions the faceplate the way a .svelte-flow__node wrapper
+     does: absolutely-positioned children (patch triggers etc.) resolve against
+     a root that is position:static inside a plain div — same as inside
+     xyflow's wrapper. */
+  .dock-natural-sized {
     position: relative;
     width: max-content;
-  }
-  .dock-missing {
-    padding: 12px;
-    color: var(--text-dim);
-    font-size: 0.75rem;
   }
 </style>

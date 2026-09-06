@@ -20,7 +20,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-aspect-16x9.spec.ts/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 // A fixed-param SHAPES (a centered triangle) — a static, time-independent
@@ -34,10 +34,9 @@ test.describe.configure({ mode: 'default' });
 async function setup16x9(
   page: Page,
   sinkType: 'videoOut',
-  sinkCardClass: string,
 ): Promise<ReturnType<Page['locator']>> {
   await pinVrtFonts(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
 
@@ -50,7 +49,10 @@ async function setup16x9(
     [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'sink', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
   );
 
-  const card = page.locator(`.svelte-flow__node-${sinkCardClass}`).first();
+  // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+  // and every lane node is `moduleShell`, so a per-module class matches
+  // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+  const card = canvasNode(page, 'sink');
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
   // Flip the OUTPUT aspect to 16:9 (in-place engine realloc → 1366×768).
@@ -98,8 +100,8 @@ async function setup16x9(
 // toHaveScreenshot; both are EXEMPT_FROM_VRT at 4:3 for exactly this reason. The
 // aspect geometry for the animated sinks is covered functionally by
 // e2e/tests/video-aspect-switch.spec.ts + the fitRect unit math.)
-const CARDS: Array<{ id: string; sinkType: 'videoOut'; cardClass: string }> = [
-  { id: 'aspect16x9-output', sinkType: 'videoOut', cardClass: 'videoOut' },
+const CARDS: Array<{ id: string; sinkType: 'videoOut' }> = [
+  { id: 'aspect16x9-output', sinkType: 'videoOut' },
 ];
 
 test.describe('VRT: OUTPUT aspect 16:9 — preview cards letterbox at the live aspect', () => {
@@ -111,7 +113,7 @@ test.describe('VRT: OUTPUT aspect 16:9 — preview cards letterbox at the live a
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      const card = await setup16x9(page, c.sinkType, c.cardClass);
+      const card = await setup16x9(page, c.sinkType);
       await expect(card).toHaveScreenshot(`${c.id}.png`, { maskColor: '#ff00ff' });
 
       expect(

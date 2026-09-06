@@ -50,9 +50,6 @@ interface ContractDefLike {
   /** Off-main-thread render routing (video defs). engine.ts consults this to
    *  pick the WorkerProxyHandle path — behavioral contract, not cosmetics. */
   renderLocus?: string;
-  /** Module-grouping viz-passthrough flag — behavioral (GroupCard portals the
-   *  on-card canvas), same class as exposesSequence/undeletable. */
-  vizPassthrough?: boolean;
   exposableControls?: readonly { id: string; paramId?: string; kind?: string }[];
   controlFamilies?: readonly ControlFamily[];
   /** ⚠ NO face field is projected into the golden — `FACE_FIELDS_NOT_IN_LOCK`
@@ -213,7 +210,6 @@ export function serializeModuleContract(def: ContractDefLike): string[] {
   if (def.undeletable) meta.push('undeletable');
   if (def.ownerOnly) meta.push('ownerOnly');
   if (def.renderLocus) meta.push(`renderLocus=${def.renderLocus}`);
-  if (def.vizPassthrough) meta.push('vizPassthrough');
   lines.push(`${t} meta ${meta.join(' ')}`);
 
   for (const p of [...(def.inputs ?? [])].sort(byId)) lines.push(`${t} in ${portLine(p)}`);

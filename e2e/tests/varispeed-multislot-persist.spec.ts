@@ -16,18 +16,41 @@ import { spawnPatch } from './_helpers';
 
 const FX = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
 
+
+/** Open a videovarispeed node's dock full view — every transport affordance
+ *  (file input, PLAY/LOOP, slots, crop) is its `fullViewBody`; the SAME
+ *  `videovarispeed-*` testids the card carried render there, including the
+ *  state attributes, which live on `videovarispeed-face-body`. Idempotent
+ *  (openFullView de-dupes). */
+async function openVvsPane(page: import('@playwright/test').Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="videovarispeed-face-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
+}
+
 test('videovarispeed persists every loaded asset slot to the synced doc', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'vv1', type: 'videovarispeed', domain: 'video', position: { x: 140, y: 80 } }]);
+  await openVvsPane(page, 'vv1');
 
-  const card = page.locator('[data-testid="videovarispeed-card"]');
-  await expect(card).toBeVisible();
-  await card.click({ button: 'right', position: { x: 30, y: 30 } });
-  await page.keyboard.press('Escape'); // dismiss the node context menu the right-click also opens
+  // The 7-slot ASSET BANK is ALWAYS-ON in the dock face (the card needed a
+  // right-click gesture to reveal it; that chrome died with the card — and a
+  // spare Escape here would close the whole full view).
   await expect(page.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible();
 
   // Load the same fixture into three different slots (0, 1, 2).

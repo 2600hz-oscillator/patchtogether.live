@@ -34,7 +34,9 @@ interface TraceStats {
 }
 
 async function readTraceStats(page: import('@playwright/test').Page): Promise<TraceStats | null> {
-  const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+  // The videoOut tile thumb — the default shell's visible pixel surface
+  // (160×120; the flat-vs-spanning row discrimination survives the downscale).
+  const canvas = page.locator('.svelte-flow__node[data-id="v-out"] canvas[data-testid="video-tile-thumb"]');
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -49,7 +51,10 @@ async function readTraceStats(page: import('@playwright/test').Page): Promise<Tr
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4;
         const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-        if (v > 100) {
+        // Brightness floor 50, not the card's 100: the 160×120 thumb
+        // downscale caps the trace's peak luma at ~74–94 (measured); the
+        // flat-vs-spanning ROW discrimination is unchanged (flat ≈ 4 rows).
+        if (v > 50) {
           brightRows.add(y);
           brightCols.add(x);
           totalBright++;
@@ -62,7 +67,7 @@ async function readTraceStats(page: import('@playwright/test').Page): Promise<Tr
 
 test.describe('waveform video trace shape (Bug-2 regression)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
   });
 

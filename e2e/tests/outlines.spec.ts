@@ -32,14 +32,14 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
 /** Mean luminance over a VIDEO-OUT canvas (identified by its node id). */
 async function meanLuma(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
+  const handle = page.locator(`.svelte-flow__node[data-id="${nodeId}"] canvas[data-testid="video-tile-thumb"]`);
   await expect(handle, `VIDEO-OUT ${nodeId} canvas present`).toHaveCount(1);
   return await handle.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -133,7 +133,7 @@ test.describe('OUTLINES — stateful particle video generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="outlines-card"]'), 'OUTLINES card present').toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="outlines"])'), 'OUTLINES tile present').toHaveCount(1);
 
     // Fire a few real gate pulses on top of the internal clock so the field
     // fills quickly + deterministically.
@@ -180,7 +180,7 @@ test.describe('OUTLINES — stateful particle video generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="outlines-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="outlines"])')).toHaveCount(1);
 
     // Let it run with NO gate — rate=0 means no internal clock → stays black.
     const stillBlack = await waitForLuma(page, 'o_ovr', (m) => m > 3, 2500);
@@ -217,7 +217,7 @@ test.describe('OUTLINES — stateful particle video generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="outlines-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="outlines"])')).toHaveCount(1);
 
     // Hold the COLLIDE gate HIGH (live level), then seed extra spawns so the
     // field is dense and pairs collide.

@@ -9,6 +9,7 @@
 // Measured cost of this dimension: 1013.6 s / 181 tests
 
 import { test, expect } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   EXEMPT_OUTPUT_EMIT,
   EXEMPT_OUTPUT_EMIT_MODULES,
@@ -33,6 +34,7 @@ import {
   emitBudgetMs,
 } from './_per-module-per-port-shared';
 import { buildKriaData } from './_helpers';
+import { SLOW_RENDER } from '../_helpers/boot-budget';
 import type {
   RegistryModule,
   SpawnEdge,
@@ -69,6 +71,160 @@ test.describe.configure({ mode: 'parallel' });
  *  out_l/out_r ring even with no upstream because the wavetable oscillator is
  *  ticking; the `fm` input is OPTIONAL), so it takes the normal emit path. */
 
+// ────────── The VIDEO sink oracle: a picture, against the sink's OWN IDLE ──────
+//
+// ⚠ WHY A DIFFERENTIAL AND NOT A BRIGHTNESS FLOOR. The floors this branch used
+// to stand on — `nonBlackFrac > 0.001` and `variance > 0.5` — BOTH PASS WITH
+// NOTHING CONNECTED. Measured 2026-09-04 with a videoOut spawned alone, no edge:
+// the shell tile reads nonBlackFrac 1.0000 / variance 1.50 (an unpatched
+// videoOut paints its own dark-blue idle gradient, 10,15,27..37), and the legacy
+// card canvas read nonBlackFrac 1.0000 / variance 22.82 (that number came from
+// the card CHROME around the frame, not from the frame). So the video half of
+// this sweep was never measuring what its message claimed on EITHER surface.
+//
+// The state a "the port emitted" claim has to be told apart from is the sink's
+// own idle picture, so that is what it is compared against: one 16x12 luma grid,
+// measured once per worker from a rack holding ONLY a videoOut, cached, and
+// required to differ. Nothing about it is tuned to a particular shader — if the
+// idle picture changes, the measurement changes with it.
+
+/** One sink read: the 16x12 luma grid plus the two legacy scalar floors. */
+interface SinkFrame {
+  cells: number[];
+  variance: number;
+  nonBlackFrac: number;
+}
+
+/** Grid the sink picture is reduced to. 16x12 keeps the videoOut aspect and is
+ *  coarse enough that a one-pixel AA difference cannot register as a cell. */
+const SINK_GRID_W = 16;
+const SINK_GRID_H = 12;
+/** Luma delta (0..255) at which a CELL counts as different from idle.
+ *
+ *  4, and the number is a compromise measured from both ends. The idle picture
+ *  is a deterministic shader, so a re-render of it lands on the SAME cell means
+ *  and a threshold could in principle be 1; what sets the floor is 8-bit
+ *  rounding across the 160x120 downscale. What sets the CEILING is that several
+ *  real pictures are DARK: loopback's no-capture frame reads mean 25.1 against
+ *  idle's 19.0, so a delta of 12 rejected a picture that was plainly there. */
+const SINK_CELL_DELTA = 4;
+/** Cells that must differ, out of 192. A picture that fills the frame moves
+ *  nearly all of them; a thin mono-video trace on a dark field moves the cells
+ *  it crosses, which for a 16x12 grid over a 160x120 canvas is a whole row. */
+const SINK_DIFF_MIN_CELLS = 8;
+/** The thumb is throttled to VIDEO_THUMB_FPS (15) and its first ticks paint the
+ *  empty well before the engine has drawn the node, so the first READABLE frame
+ *  is not necessarily the settled one. Frames, not a fixed sleep: the poll ends
+ *  as soon as the picture differs.
+ *
+ *  ⚠ IT WAS A FLAT 8 s AND THAT IS A DIFFERENT BOUND ON EVERY RUNNER. Measured
+ *  locally and written down twelve lines above: loopback reads EMPTY at ~1 s and
+ *  carries a real picture by ~4 s. 8 s is two settles' headroom on a dev box and
+ *  none at all on CI, where the same picture is composited by SwiftShader on a
+ *  shared 2-core runner with up to five workers.
+ *
+ *  ⚠ AND IT COST THREE PORTS ON 2026-09-05, all with the same call log
+ *  ("Timeout 8000ms exceeded while waiting on the predicate"): `loopback.out`,
+ *  `mandelbulb` and `mandleblot`. Read the subjects and the diagnosis is one
+ *  line — loopback's no-capture frame is a REAL picture this file's own
+ *  `SINK_CELL_DELTA` note measures at mean 25.1 against idle's 19.0, and the two
+ *  fractal iterators are the most expensive first frames in the registry. None
+ *  of the three is a port that fails to emit; all three are pictures that had
+ *  not arrived yet.
+ *
+ *  Scaled rather than raised: the poll EXITS the instant the picture differs, so
+ *  a port that emits pays nothing for the larger ceiling and only a port that
+ *  was going to fail spends it. This is a BOUND, and the sweep's assertion —
+ *  that the sink shows a picture DIFFERENT from its own idle — is untouched. */
+const SINK_FRAME_TIMEOUT_MS = SLOW_RENDER ? 24_000 : 8_000;
+
+async function readSinkFrame(canvas: Locator): Promise<SinkFrame | null> {
+  return await canvas.evaluate(
+    (el, { gw, gh }) => {
+      const c = el as HTMLCanvasElement;
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const w = c.width, h = c.height;
+      const cells = new Array<number>(gw * gh).fill(0);
+      const counts = new Array<number>(gw * gh).fill(0);
+      let n = 0, sum = 0, sumSq = 0, nonBlack = 0;
+      for (let y = 0; y < h; y++) {
+        const gy = Math.min(gh - 1, Math.floor((y / h) * gh));
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
+          sum += v; sumSq += v * v;
+          // Threshold at 1 (essentially "any pixel above pure 0"). This floor
+          // is now the SECONDARY check — see the differential above.
+          if (v > 1) nonBlack++;
+          n++;
+          const gx = Math.min(gw - 1, Math.floor((x / w) * gw));
+          const k = gy * gw + gx;
+          cells[k] += v;
+          counts[k]++;
+        }
+      }
+      for (let k = 0; k < cells.length; k++) cells[k] = counts[k]! ? cells[k]! / counts[k]! : 0;
+      const mean = sum / n;
+      return { cells, variance: sumSq / n - mean * mean, nonBlackFrac: nonBlack / n };
+    },
+    { gw: SINK_GRID_W, gh: SINK_GRID_H },
+  );
+}
+
+/** How many grid cells of `frame` differ from `idle` by more than the delta. */
+function differsFrom(frame: readonly number[], idle: readonly number[]): number {
+  if (idle.length === 0) return frame.length; // no idle measured — see sinkIdleCells
+  let d = 0;
+  for (let k = 0; k < frame.length; k++) {
+    if (Math.abs(frame[k]! - (idle[k] ?? 0)) > SINK_CELL_DELTA) d++;
+  }
+  return d;
+}
+
+/** The videoOut sink's OWN idle picture, as a 16x12 luma grid.
+ *
+ *  Measured ONCE PER WORKER (module scope is worker scope in Playwright) from a
+ *  rack holding only a videoOut, because it is a property of videoOut and not of
+ *  any SUT: paying it per test would add a navigation to all 25 video modules
+ *  for the same numbers. Two consecutive agreeing reads are required before it
+ *  is cached, so an idle that turns out to animate cannot be frozen at one
+ *  arbitrary tick and then differ from itself in every later comparison. */
+let idleSinkCells: number[] | null = null;
+async function sinkIdleCells(page: Page): Promise<number[]> {
+  if (idleSinkCells) return idleSinkCells;
+  const sink = pickOutputSink('video');
+  if (!sink) return [];
+  await page.goto('/rack?seed=none');
+  await spawnPatch(page, [sink.node], []);
+  const canvas = page.locator(
+    `canvas[data-testid="video-tile-thumb"][data-thumb-node="${sink.node.id}"]`,
+  );
+  await expect(
+    canvas,
+    'the idle videoOut sink must paint a tile thumb — without it there is nothing to compare against',
+  ).toHaveCount(1);
+  let prev: number[] | null = null;
+  await expect
+    .poll(
+      async () => {
+        const f = await readSinkFrame(canvas);
+        if (!f) return false;
+        const settled = prev !== null && differsFrom(f.cells, prev) === 0;
+        prev = f.cells;
+        return settled;
+      },
+      {
+        message: 'the idle videoOut picture must settle before it can be used as a control',
+        timeout: SINK_FRAME_TIMEOUT_MS,
+      },
+    )
+    .toBe(true);
+  idleSinkCells = prev ?? [];
+  return idleSinkCells;
+}
+
 test.describe('per-module per-port: outputs emit signal', () => {
   for (const mod of REGISTRY) {
     if (mod.outputs.length === 0) continue;
@@ -83,6 +239,16 @@ test.describe('per-module per-port: outputs emit signal', () => {
       test.setTimeout(emitBudgetMs(mod));
 
       const errors = collectPageErrors(page);
+
+      // The control for every VIDEO port below: what this module's sink looks
+      // like with nothing patched into it. Hoisted out of the port loop because
+      // it navigates, and cached across the worker because it is a property of
+      // videoOut. Modules with no video-sinking output never pay for it.
+      const idle = mod.outputs.some(
+        (p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`] && pickOutputSink(p.type)?.node.type === 'videoOut',
+      )
+        ? await sinkIdleCells(page)
+        : [];
 
       const driver = driverFor(mod);
       // Per-port driver: category-appropriate setup (page-init shim,
@@ -137,7 +303,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
         // quiet-window wait was a fixed cost in front of the real gate.
         // (_helpers.ts already says as much at its HMR retry: "networkidle is
         // too strict here".)
-        await page.goto('/rack?shell=legacy&seed=none');
+        await page.goto('/rack?seed=none');
 
         const sink = pickOutputSink(port.type);
         if (!sink) {
@@ -344,71 +510,116 @@ test.describe('per-module per-port: outputs emit signal', () => {
             + (diagLine ? `\n  SUT state at failure: ${diagLine}` : ''),
           ).toBeGreaterThan(0.005);
         } else {
-          // Video output → VIDEOOUT canvas stats. We assert TWO floors:
-          //   * any-nonblack pixel fraction > 0.1% — catches a totally
-          //     blank canvas (the regression case: video bridge dropped
-          //     the edge or the source's drawFrame() noop'd).
-          //   * variance threshold — calibrated per cable type. `video`
-          //     outputs typically fill the frame, so >5 is fine (matches
-          //     wavecel-video-outs). `mono-video` outputs are often
-          //     waveform-scope renders (a thin trace on a near-black
-          //     canvas) where variance is intrinsically low; >0.5 is
-          //     the floor where a SINGLE-PIXEL trace clears noise.
-          // When the SUT is itself a videoOut module, BOTH the SUT and
-          // the sink render `data-testid="video-out-canvas"` so the
-          // locator matches 2 elements. Use `.last()` to target the
-          // sink (added to the patch AFTER the SUT, so its canvas is
-          // mounted last and represents what came OUT of the SUT's
-          // passthrough). For non-videoOut SUTs, count is 1 and last()
-          // == only().
-          const canvases = page.locator('canvas[data-testid="video-out-canvas"]');
-          await expect(canvases, `${mod.type}.${port.id}: video-out canvas present`).not.toHaveCount(0);
-          const canvas = canvases.last();
-          const stats = await canvas.evaluate((el) => {
-            const c = el as HTMLCanvasElement;
-            const ctx = c.getContext('2d');
-            if (!ctx) return null;
-            const img = ctx.getImageData(0, 0, c.width, c.height);
-            const w = c.width, h = c.height;
-            let n = 0, sum = 0, sumSq = 0, nonBlack = 0;
-            for (let y = 0; y < h; y++) {
-              for (let x = 0; x < w; x++) {
-                const i = (y * w + x) * 4;
-                const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-                sum += v; sumSq += v * v;
-                // Threshold at 1 (essentially "any pixel above pure 0").
-                // mono-video waveform-scope traces antialias down to v~10-30
-                // at the trace center but the dimmest edge pixels are
-                // v~2-5; setting the floor at 1 catches the trace + the
-                // anti-aliased shoulder without claiming pure-black canvases.
-                if (v > 1) nonBlack++;
-                n++;
-              }
-            }
-            const mean = sum / n;
-            return { variance: sumSq / n - mean * mean, nonBlackFrac: nonBlack / n, n };
-          });
+          // ────────── VIDEO OUTPUT → the sink's PICTURE, against its OWN IDLE ──
+          //
+          // Two things changed here, and the second one is the important one.
+          //
+          // 1. THE SINK IS ADDRESSED BY NODE ID. The read used to be
+          //    `canvas[data-testid="video-out-canvas"]` — a testid only
+          //    `VideoOutCard.svelte` ever emitted — followed by `.last()`,
+          //    because when the SUT was itself a videoOut BOTH cards painted
+          //    one and "the later-mounted element" was the only way to say
+          //    "the sink". All 25 video modules' emit legs went red the moment
+          //    this file booted the shell a player gets: there is no card, so
+          //    the locator resolved nothing, and `toHaveCount(0)` is what an
+          //    ABSENT SURFACE looks like — it says nothing about the port. The
+          //    lane tile paints `VideoTileThumb`, a 160x120 2D canvas fed by
+          //    the same central engine frame the card canvas took, stamped with
+          //    `data-thumb-node`. Naming the sink also retires `.last()`: a
+          //    videoOut SUT paints its own thumb and this locator cannot pick
+          //    it up by accident.
+          //
+          // 2. ⚠ THE OLD FLOORS PASSED WITH NOTHING CONNECTED, ON BOTH
+          //    SURFACES. MEASURED (2026-09-04, painter + videoOut, sink
+          //    spawned with NO edge): the shell tile reads nonBlackFrac 1.0000
+          //    / variance 1.50, and the legacy card canvas read nonBlackFrac
+          //    1.0000 / variance 22.82. Both clear `> 0.001` and `> 0.5`. So
+          //    "the port emits" was never what this branch measured — an
+          //    unpatched videoOut paints its own dark-blue idle gradient
+          //    (10,15,27..37), and the card's numbers came from the card CHROME
+          //    around the frame. The vacuity is pre-existing, not something the
+          //    shell flip introduced; the flip only stopped it being green.
+          //
+          //    The repair is a DIFFERENTIAL against the thing that was
+          //    indistinguishable: the sink's own idle picture, measured once
+          //    per worker from a rack holding ONLY a videoOut, and required to
+          //    be different from what the sink shows with the SUT patched in.
+          //    That is the same claim the floors meant to make ("a picture
+          //    arrived"), stated against the state it has to be told apart
+          //    from. The floors stay as the secondary "not pure black" and
+          //    "painted something" checks, because they still catch a sink that
+          //    went black — a state the differential alone would accept.
+          const canvases = page.locator(
+            `canvas[data-testid="video-tile-thumb"][data-thumb-node="${sink.node.id}"]`,
+          );
+          await expect(
+            canvases,
+            `${mod.type}.${port.id}: videoOut sink tile thumb present`,
+          ).toHaveCount(1);
+          const canvas = canvases.first();
+          // ⚠ READ THE WELL ONLY ONCE IT HAS PAINTED. `VideoTileThumb` has
+          // three states and the first two are pixel-different from the third
+          // while being STILL: before its first tick the 2D context has drawn
+          // nothing, so `getImageData` returns transparent black everywhere —
+          // which is not "the sink is black", it is "the sink has not answered
+          // yet". It also defeats the differential in the wrong direction: an
+          // all-zero frame differs from the idle gradient in every cell, so the
+          // poll below would exit on the FIRST read with the emptiest possible
+          // canvas. The component publishes `data-thumb-painted` exactly once,
+          // on `framesDrawnFor(nodeId) >= 1`, for this. It is observable state,
+          // not a delay.
+          await expect(
+            canvas,
+            `${mod.type}.${port.id}: the videoOut sink's well must have painted at least one `
+            + `engine frame before its pixels mean anything (data-thumb-painted)`,
+          ).toHaveAttribute('data-thumb-painted', '1', { timeout: SINK_FRAME_TIMEOUT_MS });
+          // Poll: the thumb is throttled to VIDEO_THUMB_FPS (15) and its first
+          // ticks paint the empty well before the engine has drawn the node, so
+          // the FIRST readable frame is not necessarily the settled one. The
+          // poll ends the moment the picture differs from idle, so a healthy
+          // port pays one round trip.
+          //
+          // ⚠ AN EMPTY FRAME DOES NOT COUNT AS "DIFFERENT", and getting that
+          // wrong is how a differential lies in the OTHER direction. The tile's
+          // `drawImage` is skipped entirely while the sink has no output texture
+          // (`outputTexture(nodeId)` null — the guard that stops a texture-less
+          // node snapshotting somebody else's frame), so the well can sit at
+          // transparent-black AFTER `data-thumb-painted` is stamped, and
+          // transparent-black differs from the idle gradient in EVERY cell. A
+          // naive predicate therefore returns 192 on the emptiest possible read
+          // and ends the poll on the one frame that says nothing. Requiring
+          // ink first makes the wait wait: measured, loopback / lushgarden read
+          // empty at ~1 s and carry a real picture by ~4 s.
+          const held: { frame: SinkFrame | null } = { frame: null };
+          await expect
+            .poll(
+              async () => {
+                held.frame = await readSinkFrame(canvas);
+                if (!held.frame) return -1;
+                if (held.frame.nonBlackFrac <= 0.001) return 0; // no ink yet — keep waiting
+                return differsFrom(held.frame.cells, idle);
+              },
+              {
+                message:
+                  `${mod.type}.${port.id} (type=${port.type}): the videoOut sink must show a `
+                  + `DIFFERENT picture from its own idle. An unpatched videoOut paints a dark `
+                  + `gradient that clears every brightness floor, so "not black" is not evidence `
+                  + `the port emitted anything.`,
+                timeout: SINK_FRAME_TIMEOUT_MS,
+              },
+            )
+            .toBeGreaterThan(SINK_DIFF_MIN_CELLS);
+          const stats = held.frame;
           expect(stats, `${mod.type}.${port.id}: video stats read succeeded`).not.toBeNull();
           if (!stats) continue;
-          // Variance floor: relatively loose because bare-spawn video
-          // outputs often render THIN content (a 1-pixel scope trace, a
-          // single-line 3D wavetable) on a near-black canvas — variance
-          // is dominated by background. The nonBlackFrac assertion above
-          // already pins "the canvas is not pure black"; variance > 0.5
-          // is the secondary "the painter actually painted SOMETHING with
-          // contrast" check. wavecel-video-outs.spec.ts asserts >5
-          // SPECIFICALLY because its scene drives an upstream VCO — that
-          // test's upstream-source pattern is the right way to assert
-          // a stronger floor.
-          const varianceFloor = 0.5;
+          // Secondary floors, unchanged in value and now genuinely secondary:
+          // the differential above is what proves a picture ARRIVED; these two
+          // still catch a sink that arrived BLACK (bridge delivered an empty
+          // texture), which differs from idle and would otherwise pass.
           expect(
             stats.nonBlackFrac,
             `${mod.type}.${port.id} (type=${port.type}): canvas non-blank fraction above floor (nonBlackFrac=${stats.nonBlackFrac.toFixed(4)}, variance=${stats.variance.toFixed(2)})`,
           ).toBeGreaterThan(0.001);
-          expect(
-            stats.variance,
-            `${mod.type}.${port.id} (type=${port.type}): video-out canvas variance above floor (variance=${stats.variance.toFixed(2)}, floor=${varianceFloor})`,
-          ).toBeGreaterThan(varianceFloor);
         }
       }
 

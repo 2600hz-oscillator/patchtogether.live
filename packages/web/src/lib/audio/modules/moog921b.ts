@@ -217,7 +217,7 @@ export const moog921bDef: AudioModuleDef = {
       range: "RANGE — octave footage, a discrete ±5-octave coarse offset on top of the bus pitch, to stack a 921B an octave (or several) above/below its siblings. ±6000 cents: the largest authority on the module, which is why the faceplate promotes it. RANGE and FREQ land in the SAME exponent as the pitch bus, so the pitch this module sings is 261.626 Hz x 2^(bus volts + range + fine/12) — the faceplate's `pitch` readout is that expression with the bus at rest, and `offset` is the term this module contributes to it.",
       modAmount: "FM — linear-FM depth, ±1, shared by both the DC and AC modulate inputs. At the shipped 0 BOTH FM jacks are bit-exactly silent, so patching one changes nothing until this is turned up; the faceplate's `fm` readout prints `off` there and the ±Hz swing a full-scale modulator buys otherwise.",
       syncMode: "SYNC switch: LO = soft sync (a gentle phase nudge), OFF = the sync input is ignored, HI = hard sync (a full phase reset on each rising edge of the sync input). It is a three-position switch rather than a dial — the DSP compares against ±0.5, so there is nothing between the detents.",
-      level: "Output gain on every waveform tap, 0 to 2 (1 = unity) — the 921B's built-in VCA. It is a LINEAR multiplier, so its own value reads 1.00 at unity where the faceplate's `out` readout says 0.0 dB, and 2.00 at the top where that is +6.0 dB.",
+      level: "Output gain on every waveform tap, 0 to 2 (1 = unity) — the 921B's built-in VCA. It is a LINEAR multiplier, so its own value reads 1.00 at unity where the faceplate\'s `out` readout says 0.0 dB, and 2.00 at the top where that is +6.0 dB.",
     },
   },
 

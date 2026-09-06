@@ -111,7 +111,7 @@ async function bootRig(page: Page): Promise<void> {
   await page.addInitScript(() => {
     (window as unknown as { __b3ntb0xFreezeTimeSec?: number }).__b3ntb0xFreezeTimeSec = 2.0;
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

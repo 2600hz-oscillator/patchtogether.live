@@ -48,8 +48,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 /**
  * The RANGE switch's three positions.
  *
- * ⚠ THE POSITION NUMBERS EXISTED ONLY ON THE LEGACY CARD, and what they MEAN
- * existed nowhere at all. `Moog904aVcfCard.svelte` built its `role="radiogroup"`
+ * ⚠ THE POSITION NUMBERS EXISTED ONLY IN ONE SURFACE'S MARKUP, and what they
+ * MEAN existed nowhere at all. That surface built its `role="radiogroup"`
  * from a local `RANGE_POS` array of bare `1` / `2` / `3` — so promotion would
  * have deleted the only place the positions are named, and even the card never
  * said that they are ×1 / ×4 / ×16.
@@ -95,7 +95,6 @@ export const MOOG904A_RANGE_OPTIONS: readonly ParamOption[] = [
 export const moog904aDef: AudioModuleDef = {
   type: 'moog904a',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog904aVcfCard',
   domain: 'audio',
   label: '904a vcf',
   category: 'filters',

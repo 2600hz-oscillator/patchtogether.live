@@ -5,9 +5,9 @@
   import '$lib/styles/tokens.css';
   import './global.css';
   import '$lib/ui/modules/_module-card.css';
-  // RACKLINE lane-tile vocabulary (P0.3b) — the shared .rl-tile classes both
-  // <ModuleShell> and <ModuleShellPlaceholder> consume. After _module-card.css
-  // (which pins the uniform tile HEIGHT) so the visual frame layers on top.
+  // RACKLINE lane-tile vocabulary — the shared .rl-tile classes <ModuleShell>
+  // consumes. After _module-card.css (which pins the uniform tile HEIGHT) so
+  // the visual frame layers on top.
   import '$lib/ui/modules/_rackline-tile.css';
   // ⚠ `$lib/styles/console.css` WAS IMPORTED HERE AND IS DELETED (#1794). Its
   // whole body was a `[data-shell-type='mixmstrs']` block setting the

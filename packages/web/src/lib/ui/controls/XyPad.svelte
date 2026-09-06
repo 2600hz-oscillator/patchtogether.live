@@ -224,7 +224,11 @@
     dragging = true;
     liveX = xValue;
     liveY = yValue;
-    padEl.setPointerCapture(ev.pointerId);
+    // Guarded for the same reason `controls/Button.svelte` is: a capture that
+    // throws must not take the gesture with it. The call sits BEFORE the write
+    // below, so an unguarded throw leaves `dragging` true and the pointer's own
+    // position never applied — the control looks grabbed and does nothing.
+    try { padEl.setPointerCapture(ev.pointerId); } catch { /* not capturable */ }
     writeFromPointer(ev);
     ev.preventDefault();
     ev.stopPropagation();

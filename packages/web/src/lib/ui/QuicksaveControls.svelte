@@ -26,7 +26,11 @@
     lastLoadedSlot: SlotKey | null;
     isPlaying: boolean;
     /**
-     * Paint the "QUICKSAVE" caption. Default true — the legacy cards want it.
+     * Paint the "QUICKSAVE" caption. ⚠ THE `true` DEFAULT IS NOW DEAD: the one
+     * caller in the tree (`ScoreSlotsPanel`) passes `false`. Left in place
+     * rather than inverted, because flipping a default is a behaviour change
+     * and this branch is past its attest; delete the prop or flip it in the
+     * same edit that gives this component a second caller.
      *
      * ⚠ FALSE ON A FACEPLATE, and it is the one-control-one-place rule rather
      * than a style knob: the panel CELL already prints `quicksave` as its own
@@ -35,7 +39,7 @@
      */
     showLabel?: boolean;
     /**
-     * Paint the PLAY button. Default true — the legacy cards want it.
+     * Paint the PLAY button. Same dead `true` default as `showLabel` above.
      *
      * ⚠ FALSE ON A FACEPLATE, for the same rule: `isPlaying` is a ranked cell
      * there, so this would be the same control twice on one plate. RESET has no
@@ -54,7 +58,7 @@
      * cell host, where exactly one instance of this widget is mounted, so a
      * stable name is unambiguous there by construction. (kria's grid panel has
      * the same property and simply never had node-scoped testids to preserve.)
-     * Omitted = the legacy cards' markup is byte-identical.
+     * Omitted = the markup keeps its original node-scoped testids.
      */
     faceTestidBase?: string;
     onSetMode: (mode: PendingMode) => void;

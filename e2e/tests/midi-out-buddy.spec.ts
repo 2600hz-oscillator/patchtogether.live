@@ -40,11 +40,11 @@ async function installFakeMidiOut(page: Page): Promise<void> {
 
 test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no console errors', async ({ page, errorWatch }) => {
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: TYPE, position: { x: 200, y: 200 } }]);
 
-  const card = page.locator(`.svelte-flow__node-${TYPE}`);
+  const card = page.locator(`.svelte-flow__node:has([data-shell-type="${TYPE}"])`);
   await expect(card).toBeVisible();
   // Every declared input port renders a handle — the list is READ FROM THE
   // LIVE DEF, not re-typed here. It used to be the literal trio
@@ -87,7 +87,7 @@ test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no c
 // ─────────────────────────────────────────────────────────────────────────────
 test('midi-out-capture-instrument: the buffer EXISTS and is empty before anything sends', async ({ page }) => {
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   const probe = await page.evaluate(() => {
@@ -132,25 +132,32 @@ test('midi-out-capture-instrument: the buffer EXISTS and is empty before anythin
 
 test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors', async ({ page }) => {
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: TYPE, position: { x: 200, y: 200 } }]);
 
-  const card = page.locator(`.svelte-flow__node-${TYPE}`);
+  const card = page.locator(`.svelte-flow__node:has([data-shell-type="${TYPE}"])`);
   await expect(card).toBeVisible();
-  const btn = card.getByRole('button', { name: /Connect MIDI/ });
+  const btn = card.getByTestId('shell-cell-midi-out-buddy-connect');
   await expect(btn).toBeVisible();
   await btn.click();
-  // The fake resolves immediately → the device + channel dropdowns appear.
-  await expect(card.locator('select')).toHaveCount(2);
-  // The fake output is listed by name.
-  await expect(card.getByRole('option', { name: 'Fake MIDI Out (Playwright)' })).toHaveCount(1);
+  // The fake resolves immediately. The device picker lives in the DOCK's
+  // device body on the shell; the channel selector is the tile/dock CH cell.
+  await card.locator('[data-testid="module-shell"]').getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  const body = dock.getByTestId('midi-out-buddy-device-body-m');
+  await expect(body).toBeVisible();
+  // The fake output is listed by name in the device picker.
+  await expect(body.getByRole('option', { name: 'Fake MIDI Out (Playwright)' })).toHaveCount(1);
+  // …and the CH selector cell is present alongside it.
+  await expect(dock.getByTestId('shell-cell-midi-out-buddy-channel')).toBeVisible();
 });
 
 test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake output', async ({ page, errorWatch }) => {
   test.setTimeout(45_000);
   await installFakeMidiOut(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   // SEQUENCER (fast, playing) → midiOutBuddy gate + pitch.

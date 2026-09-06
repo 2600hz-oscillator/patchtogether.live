@@ -78,11 +78,11 @@ test('a module respawned at a REUSED node id replaces the previous module, and i
   page,
 }) => {
   const errors = collectPageErrors(page);
-  // The legacy renderer, because that is where the unguarded read lives: the
-  // legacy SynesthesiaCard passes `snap.levelsA` straight through, while the
-  // v2 face body (SynesthesiaVuBody) defaults it. Same URL the registry
-  // inputs-accept sweep boots (support/rack-session LEGACY_RACK_URL).
-  await page.goto('/rack?shell=legacy&seed=none');
+  // The DEFAULT shell (S2 legacy-removal): the reconciler claim is
+  // engine-level, and the paint check runs on the face body
+  // (SynesthesiaVuBody, mounted in the dock full view) — the legacy card's
+  // unguarded `snap.levelsA` read died with the card.
+  await page.goto('/rack?seed=none');
 
   // 1. SCOPE occupies node id `sut`. It answers the shared `read('snapshot')`
   //    key with its own analyser-window shape.
@@ -108,12 +108,13 @@ test('a module respawned at a REUSED node id replaces the previous module, and i
     })
     .toEqual(['levelsA', 'levelsB']);
 
-  // 4. …and the card PAINTS. Pre-fix this canvas stays fully transparent: the
-  //    rAF loop clears it, then throws inside drawVuMeters before the first
-  //    segment is filled. Level 0 still paints all 40 unlit segments, so this
-  //    needs no signal to be deterministic.
+  // 4. …and the face PAINTS. Level 0 still paints all the unlit segments, so
+  //    this needs no signal to be deterministic. The VU wall is the dock face
+  //    body on the default shell.
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('sut'));
+  await expect(page.locator('[data-testid="synesthesia-face-vu-a"]')).toBeVisible();
   await expect
-    .poll(async () => await paintedFraction(page, 'synesthesia-vu-a'), {
+    .poll(async () => await paintedFraction(page, 'synesthesia-face-vu-a'), {
       message: 'the NEW module\'s VU meters must actually be drawn',
       timeout: 15_000,
     })

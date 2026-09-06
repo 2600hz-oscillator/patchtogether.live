@@ -10,8 +10,8 @@
   //
   //   * THE 9x9 PICTURE — the module's whole point on a machine with no
   //     Launchpad attached, and the thing BRIGHT and GAMMA act on. Drawn by the
-  //     shared `drawOutToLaunchPreview`, which the legacy card imports too, so
-  //     the two surfaces cannot paint different pictures.
+  //     shared `drawOutToLaunchPreview`, so no two surfaces that show this
+  //     picture can paint different ones.
   //   * THE SCREEN SWITCH — required of every faced video module by the
   //     2026-08-18 owner ruling and gated by `video-face-screen-source.test.ts`.
   //   * THE PORT PICKER — a roster enumerated from the MACHINE, so it is not a
@@ -20,7 +20,7 @@
   //     cell from `liveCell` keyed on `nodeVersion(id)`, and `bindMonitor`
   //     writes to `node.data` ZERO times, so a selector would paint the roster
   //     it had at mount and never move. A body is an ordinary component and can
-  //     subscribe, which is what the legacy card already did.
+  //     subscribe, which is what this one does.
   //   * UNBIND — one control whose two presses do OPPOSITE things to CONNECT's,
   //     and it is absent entirely until there is a claim to release.
   //     `ShellActionCell.label` is a plain `string`, so a cell could not say
@@ -101,8 +101,8 @@
 
   const engineCtx = useEngine();
 
-  // ADOPT — idempotent and non-destructive, exactly as the legacy card did it.
-  // It re-pins the engine accessor on every mount (a reboot swaps the instance)
+  // ADOPT — idempotent and non-destructive. It re-pins the engine accessor on
+  // every mount (a reboot swaps the instance)
   // and never resets a live bind.
   //
   // ⚠ THIS IS THE ONLY SURFACE THAT ADOPTS, AND THE PICKER IS ON IT, WHICH IS

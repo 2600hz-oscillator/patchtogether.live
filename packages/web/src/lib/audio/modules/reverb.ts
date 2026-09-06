@@ -76,7 +76,7 @@ export const reverbDef: AudioModuleDef = {
   //   compact (2 + glyph) → + SIZE, the decay time: how long the space rings.
   //   full/dock          → + DAMP, the tone trim.
   //
-  // RE-RANKED vs the legacy card: the old row ran SIZE / DAMP / MIX purely
+  // RE-RANKED: the old row ran SIZE / DAMP / MIX purely
   // because that is `params[]` order. DAMP is a set-and-forget tone control
   // and is the correct one to demote below the glyph; MIX is reached for on
   // every patch and was ranked last.

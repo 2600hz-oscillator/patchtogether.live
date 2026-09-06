@@ -281,7 +281,8 @@ async function seedClip(
   );
 }
 
-/** Launch the seeded clip in lane 0 and gate on it SOUNDING. */
+/** Launch the seeded clip in lane 0 and gate on it SOUNDING. The pad lives in
+ *  the DOCK face grid on the default shell (opened by spawnOwnerPatch). */
 async function launchClip(page: Page): Promise<void> {
   await page.getByTestId(`clipplayer-pad-${IDX}`).click();
   await page.waitForFunction(
@@ -321,7 +322,22 @@ async function waitForStepAtLeast(page: Page, n: number, timeoutMs: number): Pro
   );
 }
 
+/** Select one page of the clip player's RAILED face.
+ *
+ * ⚠ THE ARM ROW IS ON THE `channels` PAGE. The face is tabbed (`face.tabbed`,
+ * owner P0 2026-09-04) and renders exactly ONE band; the others are
+ * `display:none`, so `clipplayer-auto-arm-N` resolves to a real element with a
+ * 0×0 box and the click waits out the whole test budget instead of failing on a
+ * missing selector. The `aria-selected` wait is the state the band swap
+ * commits. */
+async function showClipPage(page: Page, pageId: 'session' | 'channels' | 'editor' | 'playback') {
+  const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
+}
+
 async function armLane0(page: Page): Promise<void> {
+  await showClipPage(page, 'channels');
   await page.getByTestId('clipplayer-auto-arm-0').click();
 }
 
@@ -366,7 +382,12 @@ async function spawnOwnerPatch(page: Page): Promise<void> {
       },
     ],
   );
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  // The pad grid + arm row live in the dock face on the default shell.
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    CP,
+  );
+  await expect(page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${CP}"]`)).toBeVisible();
 }
 
 /** IN-PAGE record driver: sweep the fake stick across [lo, hi] in graded

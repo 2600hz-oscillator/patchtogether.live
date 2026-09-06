@@ -149,9 +149,9 @@ export const ptzcamDef: AudioModuleDef = {
 
   // The CONNECT gesture is not a `ParamDef` — it writes nothing, it asks the
   // browser for permission — so it reaches `face.order` through the family
-  // key-space, exactly as midiclock's does. `testidPrefix` already appears on
-  // the legacy card (`ptzcam-connect-{id}`), so module-docs-lint's
-  // card-drift clause holds with no card edit.
+  // key-space, exactly as midiclock's does. ⚠ NO SURFACE EMITS
+  // `ptzcam-connect` AS A LITERAL — MEASURED — so module-docs-lint holds this
+  // family through its CELL arm rather than through its source grep.
   controlFamilies: [
     { id: 'ptzcam-connect', label: 'Connect camera', kind: 'other', testidPrefix: 'ptzcam-connect' },
   ],

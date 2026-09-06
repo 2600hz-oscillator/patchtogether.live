@@ -2,7 +2,7 @@
 //
 // The interactive virtual-module doc page (the redesign that replaces the
 // numbered face as the PRIMARY view). Proves, data-driven over adsr:
-//   (a) the LIVE card mounts + renders on /docs/modules/<id>,
+//   (a) the LIVE FACEPLATE mounts + renders on /docs/modules/<id>,
 //   (b) hovering a faceplate control shows its AUTHORED text in the right pane,
 //   (c) opening the patch panel + hovering a CV port shows the CV desc AND the
 //       "modulates <Param>" DUAL context (the CV→param overlap),
@@ -11,7 +11,22 @@
 //   (e) SSR — the prerendered HTML carries the right-pane authored explanation
 //       with NO JS.
 //
-// These are NEW tests; flake-checked 3× via `REPEAT=3 task e2e:one`.
+// ⚠ THE SUBJECT IS THE FACEPLATE, NOT THE LEGACY CARD. VirtualModule mounted
+// the real `*Card.svelte` through the glob card-map until the face rebuild;
+// it now mounts `<ModuleShell view='drawer'>`, so this file is what holds the
+// doc route while the card fleet is deleted. Two things follow, and both are
+// why the probe shape below still works unchanged:
+//   * `control-<paramId>` is emitted by the shell's control cells exactly as
+//     it was by the cards' Knob/Fader (faces-parity asserts one per def param
+//     across the whole faceplate), and
+//   * `view='drawer'` is the ONE face view `dockTabPlan` refuses to tab, so a
+//     tabbed face renders every band visibly here — a probe can name a control
+//     on any page without first clicking a rail this page does not paint.
+// The per-batch provenance comments below are about each module's CARD. They
+// record why a module was ADMITTED to INTERACTIVE_DOC_MODULES; read them as
+// history, not as a live claim about what mounts today.
+//
+// These were NEW tests when written; flake-checked 3× via `REPEAT=3 task e2e:one`.
 
 import { test, expect, type Page } from '@playwright/test';
 
@@ -453,23 +468,58 @@ const PROBES: Probe[] = [
 
 /** Wait for the live virtual module to finish mounting.
  *
- *  The flow host appearing is only a CORRELATE of readiness: it is gated on the
- *  dynamic card-map import resolving, and the card inside it is still
- *  `visibility: hidden` until xyflow measures the node. Waiting on the host and
- *  then asserting a faceplate control is the shape that failed on CI (run
- *  33567352895) — the control resolved for ten straight seconds and never
- *  became visible, because the measurement had been dropped.
+ *  The face host appearing is only a CORRELATE of readiness: it is gated on the
+ *  dynamic `ModuleShell` import resolving, which says nothing about whether the
+ *  faceplate inside it ever laid out. Waiting on the host and then asserting a
+ *  faceplate control is the shape that failed on CI (run 33567352895) — the
+ *  control resolved for ten straight seconds and never became visible.
  *
- *  `data-card-ready` is the card's OWN observable: VirtualModule flips it when
- *  xyflow reports the node measured and un-hides it. Assert that, so a
- *  regression fails HERE, naming the card, instead of downstream on whichever
- *  control the probe happened to pick. */
-async function waitForLiveCard(page: Page) {
+ *  `data-face-ready` is the faceplate's OWN observable: VirtualModule flips it
+ *  when a ResizeObserver on `[data-testid="module-shell"]` reports a non-zero
+ *  box. Assert that, so a regression fails HERE, naming the faceplate, instead
+ *  of downstream on whichever control the probe happened to pick.
+ *
+ *  ⚠ It ALSO fails here for the registry failure this page is uniquely exposed
+ *  to. `ModuleShell` reads `getModuleDef` but registers nothing; on the rack it
+ *  is `Canvas.svelte` that imports the registration barrels, and there is no
+ *  Canvas on /docs. VirtualModule imports them itself and REFUSES (rendering
+ *  `virtual-module-unavailable`) when the def or its `face` does not resolve —
+ *  so a broken registration is a fast, named failure rather than a faceplate
+ *  frame with zero controls in it. */
+async function waitForLiveFace(page: Page) {
   const vm = page.getByTestId('virtual-module');
   await expect(vm).toBeVisible({ timeout: 15_000 });
-  const flow = page.getByTestId('virtual-module-flow');
-  await expect(flow).toBeVisible({ timeout: 15_000 });
-  await expect(flow).toHaveAttribute('data-card-ready', 'true', { timeout: 15_000 });
+  // Negative control on the refusal arm: if the face never resolved, say THAT
+  // rather than time out on the host below.
+  await expect(page.getByTestId('virtual-module-unavailable')).toHaveCount(0);
+  const host = page.getByTestId('virtual-module-face');
+  await expect(host).toBeVisible({ timeout: 15_000 });
+  await expect(host).toHaveAttribute('data-face-ready', 'true', { timeout: 15_000 });
+
+  // ⚠ THE VIEW IS ASSERTED, AND THIS EXISTS BECAUSE THE PROBES BELOW CANNOT
+  // SEE IT. Perturbing VirtualModule to `view: 'lane'` — the tile view, which
+  // renders the tier-capped TOP-N controls and drops the rest — left all 42
+  // probes GREEN, because each probe hovers ONE control and every probe's
+  // control happened to survive the cap (measured on cloudseed: SIX controls
+  // rendered under 'lane' against the whole faceplate under 'drawer', and
+  // `late_out`, the probe's pick, was one of the six). A doc page whose job is
+  // that EVERY documented control is present to hover cannot be gated by a
+  // single arbitrary control per module.
+  //
+  // `data-shell-tier` / `data-shell-view` are the shell's OWN observables for
+  // exactly this, so the property is asserted rather than inferred:
+  //   * tier 'dock'   — the whole faceplate, no tier cap (isFaceplateView).
+  //   * view 'drawer' — the faceplate PLUS the lane PatchPanel, which is the
+  //     only view that keeps the jack rail the port probes need AND the only
+  //     one dockTabPlan refuses to tab.
+  const shell = page.locator('[data-testid="module-shell"][data-shell-node="demo"]');
+  await expect(shell).toHaveAttribute('data-shell-tier', 'dock');
+  await expect(shell).toHaveAttribute('data-shell-view', 'drawer');
+  // …and the tab half of that, stated directly: an untabbed faceplate hides no
+  // band, so a regression to 'dock-full' (where a 7+-band face DOES tab, and
+  // hides all but the active page) reds here rather than on whichever page the
+  // probe's control happened to land.
+  await expect(page.locator('[data-testid="face-page"][hidden]')).toHaveCount(0);
 }
 
 /** Open the patch panel (left trigger) and drill into INPUT so the port rows
@@ -483,10 +533,12 @@ async function openInputs(page: Page) {
 }
 
 for (const probe of PROBES) {
-  test(`virtual module: live card + hover pane (${probe.id})`, async ({ page }) => {
-    // A module only earns the INTERACTIVE_DOC_MODULES allowlist if its live card
-    // mounts with NO uncaught page error (a card that throws on the doc sandbox
-    // stays on the static face). Collect uncaught errors for the whole flow.
+  test(`virtual module: live faceplate + hover pane (${probe.id})`, async ({ page }) => {
+    // A module only earns the INTERACTIVE_DOC_MODULES allowlist if its live
+    // surface mounts with NO uncaught page error (one that throws in the doc
+    // sandbox stays on the static numbered face). That bar was set against the
+    // CARD and is re-proved here against the FACEPLATE for every member.
+    // Collect uncaught errors for the whole flow.
     const pageErrors: string[] = [];
     page.on('pageerror', (e) => pageErrors.push(String(e)));
 
@@ -499,8 +551,8 @@ for (const probe of PROBES) {
     await expect(pane).toBeVisible();
     await expect(page.getByTestId('pane-default-explanation')).toBeVisible();
 
-    // (a) The live card mounts.
-    await waitForLiveCard(page);
+    // (a) The live faceplate mounts.
+    await waitForLiveFace(page);
 
     // (b) Hover a faceplate control → its authored prose appears in the pane.
     const control = page.locator(`[data-testid="control-${probe.controlParam}"]`).first();
@@ -531,14 +583,14 @@ for (const probe of PROBES) {
       await expect(page.getByTestId('pane-explain')).toBeVisible();
     }
 
-    // EYEBALL: capture the rendered page (card + pane) for manual review.
+    // EYEBALL: capture the rendered page (faceplate + pane) for manual review.
     await page.screenshot({
       path: `test-results/docs-virtual-module-${probe.id}.png`,
       fullPage: true,
     });
 
-    // The live card + hover flow must not have thrown — this is the gate that
-    // qualifies the module for the interactive allowlist.
+    // The live faceplate + hover flow must not have thrown — this is the gate
+    // that qualifies the module for the interactive allowlist.
     expect(pageErrors, `page errors on /docs/modules/${probe.id}: ${pageErrors.join('\n')}`).toEqual(
       [],
     );
@@ -552,7 +604,7 @@ test('sandbox isolation: interacting never persists a real rack or opens a relay
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
   await page.goto('/docs/modules/adsr');
-  await waitForLiveCard(page);
+  await waitForLiveFace(page);
 
   // Interact: open the patch panel + hover a port, then hover a control.
   await openInputs(page);
@@ -583,7 +635,7 @@ test('SSR: prerendered HTML carries the right-pane authored text without JS', as
 }) => {
   // A JS-disabled context proves the prerendered (no-CSR) HTML is readable: the
   // right pane's module explanation is in the initial response, and the static
-  // numbered-face fallback (not the live card) renders.
+  // numbered-face fallback (not the live faceplate) renders.
   const ctx = await browser.newContext({ javaScriptEnabled: false });
   const page = await ctx.newPage();
   await page.goto('/docs/modules/adsr');
@@ -591,7 +643,7 @@ test('SSR: prerendered HTML carries the right-pane authored text without JS', as
   // The pane + its default explanation are in the SSR HTML.
   await expect(page.getByTestId('doc-hover-pane')).toBeVisible();
   await expect(page.getByTestId('pane-default-explanation')).toContainText(/envelope/i);
-  // The live card never mounts without JS → the static face fallback is shown.
+  // The live faceplate never mounts without JS → the static face fallback is shown.
   await expect(page.getByTestId('module-face')).toBeVisible();
   // The live virtual module is absent.
   await expect(page.getByTestId('virtual-module')).toHaveCount(0);

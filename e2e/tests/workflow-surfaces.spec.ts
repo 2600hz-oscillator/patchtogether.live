@@ -1,6 +1,6 @@
 // e2e/tests/workflow-surfaces.spec.ts
 //
-// WORKFLOW MODE P2 — the topbar surface trio on /rack?shell=legacy:
+// WORKFLOW MODE P2 — the topbar surface trio on /rack:
 //
 //   🕐 clock — TIMELORDE's face: live BPM readout, the REAL tempo knob,
 //      TAP tempo (shared TapTempo core), and click-driven patch-out rows
@@ -12,7 +12,7 @@
 //   (The 🎧 audio-I/O surface needs the fake-mic browser flags, so its e2e
 //   lives in audio-in.spec.ts under the chromium-audio-in project.)
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Web MIDI is faked
 // via addInitScript (a deterministic single-input access object): CI
 // runners have no MIDI hardware, and the bridge's device handling starts
@@ -20,6 +20,8 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { canvasNode, spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 /** All always-on pinned ids a workflow rack must hold after the ensure
  *  (P1 trio + P2 surfaces — graph/workflow-pins.ts). */
@@ -46,7 +48,23 @@ async function waitForPins(page: Page): Promise<void> {
       return ids.every((id) => w.__patch!.nodes[id]?.data?.pinned === true);
     },
     PINNED_IDS as unknown as string[],
-    { timeout: 10_000 },
+    // ⚠ WAS A FLAT 10_000, AND THE RE-POINT IS WHY IT STOPPED FITTING. This
+    // helper is byte-identical to origin/main; what changed is the navigation
+    // above it — `?shell=legacy` is gone, so the pins now land after the v2
+    // dock/ModuleShell boot rather than the legacy one, and a dock mount no
+    // longer overlaps page load (memory:
+    // repointing-a-spec-off-legacy-serializes-cold-boots). The flat number was
+    // never re-derived.
+    //
+    // MEASURED on CI (run 33990942421, blob-report-10): this step occupied
+    // 25,012 ms of wall clock before unwinding a "10000 ms" timeout — the page
+    // was unresponsive well past its own deadline, while two ~400 s
+    // `faceplate-platform` tests ran alongside it on the same shard. On the
+    // retry the identical wait took 74 ms.
+    //
+    // A BOUND, not a claim: nothing here asserts boot latency, and the wait
+    // returns the instant the pins land.
+    { timeout: BOOT_MS },
   );
 }
 
@@ -85,7 +103,27 @@ async function setBpm(page: Page, bpm: number): Promise<void> {
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  // ⚠ A BIGGER BOUND WAS NOT THE ANSWER, AND THE SECOND FAILURE PROVED IT. The
+  // flat `10_000` here was derived up to `BOOT_MS` (30 s on CI) — and the wait
+  // then expired at THIRTY seconds on the very next run. A bound that fails at
+  // 3x its old value is not marginal; the page genuinely is not getting there.
+  //
+  // WHAT IT IS WAITING FOR is four PINNED surface nodes to reach `__patch`
+  // after `/rack` boots — and note the URL carries NO `?seed=none`, so this is
+  // the FULL DEFAULT RACK, every module of it mounting and painting, on a
+  // 2-core runner sharing five workers. The pins are the subject; the pictures
+  // are not.
+  //
+  // So the load is removed instead of the ceiling raised, the same lever that
+  // fixed `toybox-presets-io` and `picturebox`'s diagnosis: every assertion in
+  // this file is DOM — pin presence, `canvasNode` counts, a menu, a BPM text
+  // readout — and `grep` finds no pixel read anywhere in it. Pausing the video
+  // engine costs this spec nothing and gives the boot its cores back.
+  //
+  // `addInitScript` has to land before the app boots, which is why this sits
+  // inside the shared entry point rather than in the tests.
+  await installRenderSmokeHooks(page);
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await waitForPins(page);
 }
@@ -110,6 +148,11 @@ async function installFakeMidi(page: Page): Promise<void> {
   });
 }
 
+// ⚠ AND `BOOT_MS` (30 s on CI) DOES NOT FIT INSIDE PLAYWRIGHT'S 30 s DEFAULT,
+// so the budget has to move with it or the inner cap could never fire — the
+// nesting inversion this repo has now been bitten by three times.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+
 test.describe('workflow clock surface (🕐 TIMELORDE face)', () => {
   test('surface pins exist off-canvas; the menu shows the live BPM readout', async ({ page }) => {
     await gotoWorkflow(page);
@@ -132,14 +175,31 @@ test.describe('workflow clock surface (🕐 TIMELORDE face)', () => {
       await expect(canvasNode(page, id)).toHaveCount(0);
     }
     // …and the ABSENCE above is not the absence of the node from the PAGE, which
-    // is a different and much weaker claim. `pinned-timelorde` really is mounted
-    // — off-canvas, in its host — because its card is the sole writer of
-    // `video_out`. Pinning that here keeps the leg above honest: if the host ever
-    // stops existing, this fails rather than the one above quietly getting easier.
+    // is a different and much weaker claim.
+    //
+    // ⚠ WHAT PINNED IT HAS CHANGED, AND THE LEG IS STRONGER FOR IT
+    // (legacy-removal S1). This used to assert `pinned-timelorde` was mounted
+    // off-canvas in a `headless-source-host`, because its CARD was the sole
+    // writer of `video_out`. The composite is node-owned now
+    // ($lib/ui/media/frame-producers), so there is no host and no card at all —
+    // and the honest anchor is the NODE, which really is in the graph while
+    // nothing renders it on the canvas. If the node ever stops existing, this
+    // fails rather than the count-zero leg above quietly getting easier.
+    expect(
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch?: { nodes: Record<string, { type?: string } | undefined> };
+        };
+        return w.__patch?.nodes['pinned-timelorde']?.type ?? null;
+      }),
+      'the pinned clock node is not in the graph, so the canvas-absence above is the absence of ' +
+        'the whole module rather than of its canvas tile',
+    ).toBe('timelorde');
     await expect(
       page.locator('[data-testid="headless-source-host"][data-node-type="timelorde"]'),
-      'the pinned clock has no headless host — its producer would be dead (#1754)',
-    ).toHaveCount(1);
+      'a headless host is keeping a timelorde card alive — its producer is node-lifetime now, so ' +
+        'that mount would be a second owner of one display frame',
+    ).toHaveCount(0);
 
     await page.getByTestId('workflow-topbar-slot-clock').click();
     const menu = page.getByTestId('workflow-clock-menu');

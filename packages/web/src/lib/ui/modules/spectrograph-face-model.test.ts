@@ -33,7 +33,6 @@ function param(id: string) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_SRC = resolve(HERE, '../../audio/modules/spectrograph.ts');
-const CARD_SRC = resolve(HERE, 'SpectrographCard.svelte');
 const BODY_SRC = resolve(HERE, 'spectrograph/SpectrographOutputBody.svelte');
 
 describe('spectrograph face — promoted, and its tile paints NO picture', () => {
@@ -153,11 +152,15 @@ describe('spectrograph face — `view` PRESERVES an affordance, and is display-o
     expect(mod).not.toMatch(/params\.view|\.view\b/);
   });
 
-  it('the CARD reads the same param — the switch is named from ONE place', () => {
-    // Parity: the legacy card must not keep a private copy of this state, or
-    // the two surfaces would disagree about which colormap is previewed.
-    const card = stripSourceComments(readFileSync(CARD_SRC, 'utf8'));
-    expect(card).toMatch(/params\.view/);
-    expect(card, 'the old component-state spelling is gone').not.toMatch(/\$state\(false\)/);
+  it('the BODY reads the same param — the switch is named from ONE place', () => {
+    // ⚠ THIS LEG USED TO READ THE CARD, and the parity it asserted was between
+    // TWO surfaces: neither may keep a private copy of the view state, or they
+    // disagree about which colormap is previewed. With one surface left that
+    // disagreement is unspellable, and what remains is the half that still has
+    // a subject — the surviving body must read the PARAM rather than revive the
+    // component-state spelling the fix replaced.
+    const body = stripSourceComments(readFileSync(BODY_SRC, 'utf8'));
+    expect(body, 'the body must read the view PARAM').toMatch(/params\?\.view|params\.view/);
+    expect(body, 'the old component-state spelling is gone').not.toMatch(/\$state\(false\)/);
   });
 });

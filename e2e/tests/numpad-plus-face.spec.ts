@@ -17,10 +17,10 @@
 //     Cmd-Z's UndoManager, and arms REC and presses PLAY. ⚠ D1 is the one that
 //     matters: arming REC and pressing PLAY erases sixteen steps, and it used
 //     to be a bare SyncedStore proxy write that Cmd-Z could not reach.
-//  2. THAT THE KEYPAD STILL PLAYS WITH NO CARD MOUNTED. The whole worry about
-//     promoting this module is that its instrument is a document keyboard
-//     listener. It is in the FACTORY, and this is where that stops being an
-//     argument and becomes an observation.
+//  2. THAT THE KEYPAD PLAYS WITH NO MODULE SURFACE FOCUSED. This module's
+//     instrument is a document keyboard listener. It lives in the FACTORY, not
+//     on a surface, and this is where that stops being an argument and becomes
+//     an observation.
 //  3. THAT THE ADDED AFFORDANCE EXISTS. The def has promised
 //     click-and-drag-to-change-note since it shipped and no handler
 //     implemented it. `module-docs-lint` reads the DEF, so it was blind in
@@ -28,11 +28,6 @@
 //  4. THAT THE KEYMAP PANEL DOES NOT STAY ARMED. Its probe arms a listening
 //     mode; a panel left listening would capture the next keystroke anything
 //     types and silently rebind a key.
-//  5. THAT A FRESH LEGACY CARD IS STATIC. This PR DELETES this module's
-//     permanent VRT exemption, whose stated reason named two animations that
-//     are both gated on params defaulting to 0. That claim is measured HERE, on
-//     the artifact, because reading the source once is what produced the wrong
-//     sentence in the first place.
 //
 // Runs on /rack (no DB, no relay). The faceplate shell is the DEFAULT rack.
 
@@ -178,9 +173,8 @@ test.describe('NUMPAD+ face — the plate', () => {
     const dock = await openDock(page);
     const cell = dock.getByTestId('numpad-cell-0');
 
-    // The legacy card's cell was `Step 1` and the note lived in the painted
-    // text and NOWHERE else, so nothing assertable tracked it. This is an
-    // ADDITION, not a weakening of the removed readout.
+    // The note is on the cell's `aria-label`, so it is assertable state rather
+    // than painted text nothing can read back.
     await expect(cell).toHaveAttribute('aria-label', 'step 1 — off');
     await cell.click();
     await expect(cell, 'the octave default is 4, so a freshly lit step plays c4')
@@ -341,6 +335,33 @@ test.describe('NUMPAD+ face — the keymap panel', () => {
     ).toBeNull();
   });
 
+  test('an OCTAVE key is remappable exactly like a note key', async ({ page }) => {
+    // The panel's 14 caps are 12 notes + the two octave keys, and the octave
+    // pair is the half that is easy to leave out of a rebind path: it moves the
+    // octave rather than sounding a note, so a handler written for notes alone
+    // still looks complete.
+    await gotoShell(page);
+    await spawn(page);
+    const dock = await openDock(page);
+
+    const capUp = dock.getByTestId('numpad-key-12');
+    await expect(capUp, 'the 13th cap is the octave-UP key, bound to Numpad+')
+      .toHaveAttribute('aria-label', 'oct↑ — key +');
+
+    await capUp.click();
+    const hint = dock.getByTestId('numpad-key-hint');
+    await expect(hint, 'arming an octave cap moves the same witness a note cap does')
+      .toHaveText(/press any key to bind/);
+
+    await page.keyboard.press('b');
+    await expect(capUp).toHaveAttribute('aria-label', 'oct↑ — key B');
+    await expect(hint, 'the hint returns to empty once the bind lands').toHaveText('');
+
+    const km = await readKeymap(page);
+    expect(km, 'an octave rebind persists on the NODE, same as a note rebind').not.toBeNull();
+    expect(Object.keys(km!), 'the new physical key is in the map').toContain('KeyB');
+  });
+
   test('the remap MENU is portaled out and stays fully in view', async ({ page }) => {
     await gotoShell(page);
     await spawn(page);
@@ -366,12 +387,50 @@ test.describe('NUMPAD+ face — the keymap panel', () => {
   });
 });
 
-test.describe('NUMPAD+ face — the instrument survives promotion', () => {
-  test('⚠ the KEYPAD still plays with no card mounted, because the listener is in the FACTORY', async ({ page }) => {
+test.describe('NUMPAD+ face — POLY', () => {
+  test('the POLY control gates recording and the polyPitchGate output is on the node', async ({ page }) => {
+    // `poly` gates RECORDING (whether a capture stores every key held), never
+    // the `poly` OUTPUT — the cable is declared unconditionally. Both halves
+    // are asserted here so a change that made the output conditional on the
+    // param would be caught rather than absorbed.
     await gotoShell(page);
     await spawn(page);
-    // No card anywhere on this shell — the whole point.
-    await expect(page.locator('[data-testid="numpad-plus-card"]')).toHaveCount(0);
+    const dock = await openDock(page);
+
+    const control = dock.getByTestId('control-poly');
+    await expect(control, 'poly recording is a switch, and it rests OFF')
+      .toHaveAttribute('aria-checked', 'false');
+
+    const readPoly = () =>
+      page.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        return w.__patch.nodes[id]?.params.poly ?? 0;
+      }, NODE);
+
+    expect(await readPoly(), 'the param agrees with the switch at rest').toBe(0);
+
+    await control.click();
+    await expect(control, 'the switch tracks the param it writes')
+      .toHaveAttribute('aria-checked', 'true');
+    await expect
+      .poll(readPoly, { message: 'driving the face control writes the param' })
+      .toBe(1);
+
+    // The polyPitchGate output handle is declared and rendered on the tile,
+    // independent of the param above.
+    await expect(
+      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-handleid="poly"]`),
+      'the POLY cable is unconditional — it is not gated on the recording param',
+    ).toBeAttached();
+  });
+});
+
+test.describe('NUMPAD+ face — the instrument is not a surface', () => {
+  test('⚠ the KEYPAD plays with NO module surface focused, because the listener is in the FACTORY', async ({ page }) => {
+    await gotoShell(page);
+    await spawn(page);
     await expect
       .poll(() => page.evaluate((id) => {
         const w = globalThis as unknown as {
@@ -406,68 +465,5 @@ test.describe('NUMPAD+ face — the instrument survives promotion', () => {
     // the same state the factory writes.
     const dock = await openDock(page);
     await expect(dock.getByTestId('numpad-cell-0')).toHaveAttribute('aria-label', 'step 1 — d4');
-  });
-});
-
-test.describe('NUMPAD+ — ⚠ the VRT exemption this PR DELETES, measured on the artifact', () => {
-  test('a fresh legacy card is STATIC: neither named animation can reach a capture', async ({ page }) => {
-    // The deleted exemption read "card has a current-step highlight box + REC
-    // ARM pulse animation that animates whether the sequence is running or not."
-    // BOTH are gated on params that default to 0. This asserts it on the DOM,
-    // not on the source — reading the source once is what produced the wrong
-    // sentence, and a second reading would reproduce the same mistake.
-    await page.goto('/rack?shell=legacy&seed=none');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(page, [{ id: NODE, type: 'numpadPlus', position: { x: 200, y: 200 } }]);
-    const card = page.locator('[data-testid="numpad-plus-card"]');
-    await expect(card).toBeVisible();
-
-    const still = await page.evaluate(() => {
-      const el = document.querySelector('[data-testid="numpad-plus-card"]')!;
-      return {
-        activeStep: el.querySelectorAll('.cell.active').length,
-        armed: el.querySelectorAll('.rec-btn.armed').length,
-        listening: el.querySelectorAll('.kmap-key.listening').length,
-        animations: (document.getAnimations?.() ?? []).filter((a) => {
-          const t = (a as { effect?: { target?: Element | null } }).effect?.target ?? null;
-          return !!t && el.contains(t);
-        }).length,
-      };
-    });
-    expect(
-      still,
-      'a fresh NUMPAD+ card paints nothing that moves — which is why the permanent ' +
-        'VRT exemption naming those two animations described a state the capture never reaches',
-    ).toEqual({ activeStep: 0, armed: 0, listening: 0, animations: 0 });
-
-    // ⚠ THE POSITIVE CONTROL, AND IT IS THE HALF THAT MATTERS. Every count above
-    // is ZERO, which is also exactly what a WRONG SELECTOR returns — and this
-    // assertion is what licenses deleting a permanent VRT exemption, so "the
-    // probe read nothing" and "there is nothing to read" must be told apart.
-    // Arming REC and starting the transport makes BOTH named animations appear;
-    // if the selectors could not see them, that is a test certifying a baseline
-    // it never actually checked.
-    await page.evaluate((id) => {
-      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
-      const n = w.__patch.nodes[id];
-      if (n) { n.params.recArm = 1; n.params.isPlaying = 1; }
-    }, NODE);
-    await expect
-      .poll(
-        () => page.evaluate(() => {
-          const el = document.querySelector('[data-testid="numpad-plus-card"]')!;
-          return {
-            activeStep: el.querySelectorAll('.cell.active').length,
-            armed: el.querySelectorAll('.rec-btn.armed').length,
-          };
-        }),
-        {
-          timeout: 10_000,
-          message:
-            'the SAME selectors must be able to SEE both animations once the transport runs — ' +
-            'otherwise the zeros above are a wrong selector rather than a still card',
-        },
-      )
-      .toEqual({ activeStep: 1, armed: 1 });
   });
 });

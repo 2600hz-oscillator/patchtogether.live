@@ -10,9 +10,9 @@
 // ONE file: the card itself. Every `data-testid` that card emits appeared
 // NOWHERE else in the repository. Meanwhile the library beneath it is one of
 // the most heavily tested in the tree (ten unit files, ~6,300 lines) and it has
-// five e2e specs of its own — every one of which takes the `rack` fixture,
-// i.e. `?shell=legacy`, and drives `__launchpadTestInstall` / `__launchpadSim`
-// (installed by `Canvas.svelte`, not by the card).
+// five e2e specs of its own — every one of which takes the `rack` fixture and
+// drives `__launchpadTestInstall` / `__launchpadSim` (installed by
+// `Canvas.svelte`, never by a module surface).
 //
 // So the coverage is real, extensive, and ORTHOGONAL to the surface. Two facts
 // follow and they pull in opposite directions:
@@ -97,11 +97,10 @@ test.describe('LAUNCHPAD CONTROL faceplate', () => {
     await spawnPatch(page, [{ id: NODE, type: 'launchpadControlLeft', position: { x: 200, y: 200 } }]);
 
     const lane = laneShell(page, NODE);
-    await expect(lane, 'the lane renders ModuleShell, not LaunchpadControlCard').toBeVisible();
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] .launchpad-control-card`),
-      'and the legacy card is NOT mounted beside it',
-    ).toHaveCount(0);
+    await expect(lane, 'the lane renders ModuleShell').toBeVisible();
+    // ⚠ A `.launchpad-control-card` ABSENCE LEG RAN HERE AND IS DELETED: no
+    // file in the tree carries that class, so `toHaveCount(0)` could not fail.
+    // The positive leg above is the one with content.
 
     // Both gestures reach the lane: an `action` cell is not dock-restricted
     // (only `panel` is), which is the whole reason they are cells rather than

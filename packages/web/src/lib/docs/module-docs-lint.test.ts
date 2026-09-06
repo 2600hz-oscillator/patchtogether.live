@@ -35,6 +35,8 @@ import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ControlFamily, ModuleDocs } from '$lib/graph/types';
 import { STRICT_DOCS } from './strict-docs';
 import { resolveLegend, staticKey, type LegendEntry } from './control-doc-resolver';
+import { dockFacePlan, dockPlanControls } from '$lib/ui/workflow/curated-face';
+import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 interface DocPort {
   id: string;
@@ -356,22 +358,88 @@ describe('module-docs lint — edge/gate vocabulary coherence', () => {
   });
 });
 
-describe('module-docs lint — controlFamilies match the card (no drift)', () => {
-  it('every declared controlFamily.testidPrefix actually appears in the card source', () => {
-    const cards = allCardSource();
+describe('module-docs lint — every declared controlFamily has a REAL rendered home', () => {
+  // ⚠ THE OLD CLAUSE ASKED A QUESTION THAT IS ABOUT TO STOP HAVING AN ANSWER.
+  // It read: "`testidPrefix` must appear somewhere in UI source", because the
+  // card emitted `${testidPrefix}-${nodeId}-${i}` as a LITERAL and a declaration
+  // naming a prefix no card wrote was a phantom control in the docs.
+  //
+  // MEASURED against the surviving tree: 98 of 139 declared families have their
+  // prefix in a `*Card.svelte` and NOWHERE ELSE — and no amount of re-pointing
+  // the DECLARATION fixes that, because the faceplate does not emit the prefix
+  // at all. `ModuleShell` stamps `shell-cell-${familyId}` from an interpolation,
+  // so there is no per-family literal in shell source to grep for, by design:
+  // the shell renders a family GENERICALLY from the declaration, which is
+  // precisely the drift the old clause existed to catch, made structurally
+  // impossible instead of checked.
+  //
+  // So the CLAIM survives and the predicate moves. The claim was never "a string
+  // appears in a file", it was "a declared family is not a phantom — something
+  // really renders it", and after the migration there are two ways to be real:
+  //
+  //   (a) a BESPOKE SURFACE paints it, emitting the prefix as a literal — still
+  //       a source grep, still the only available check for a hand-written
+  //       surface, and still the branch that catches a renamed testid;
+  //   (b) the SHELL ranks it: `<familyId>-{n}` is on the face plan AND
+  //       `shellCellFor` resolves it to a live cell. Not a rubber stamp — a
+  //       family that is declared but never ranked, or ranked with no cell spec
+  //       registered for the type, fails here.
+  //
+  // Both branches are counted INDEPENDENTLY and asserted non-empty below,
+  // because a two-armed predicate where one arm carries the whole population is
+  // one arm nobody is testing. MEASURED at the re-point: all 139 families are
+  // ranked with a live cell, and 41 of them ALSO carry their prefix in a
+  // surviving surface — the panel-rendered ones (clipplayer's pads, kria's
+  // cells, the numpad keys, cube's view picker, the score tools), where the
+  // module's own component paints the members and a source grep still has real
+  // content. The other 98 have their prefix in a `*Card.svelte` and nowhere
+  // else, which is what the surface arm is about to stop seeing.
+  //
+  // PRESENCE-ONLY, unchanged: this proves the family has a renderer, not that
+  // its member COUNT is right (the DOM-scan oracle verifies size).
+  it('every declared controlFamily is painted by a surface or ranked as a shell cell', () => {
+    const surfaces = allCardSource();
     const missing: string[] = [];
+    let bySurface = 0;
+    let byCell = 0;
     for (const def of allDefs()) {
       for (const f of def.controlFamilies ?? []) {
-        // The card emits `${testidPrefix}-${nodeId}-${i}` — so the literal
-        // prefix string must appear somewhere in card markup. PRESENCE-ONLY:
-        // proves the family exists, not that its member COUNT is right (the
-        // DOM-scan oracle, a later phase, verifies size).
-        if (!cards.includes(f.testidPrefix)) {
-          missing.push(`${def.type}: controlFamily '${f.id}' testidPrefix '${f.testidPrefix}' not found in any card`);
-        }
+        // ⚠ BOTH ARMS ARE EVALUATED, never short-circuited, because the two
+        // counters below are the anti-vacuity claim and a `continue` would make
+        // them report evaluation ORDER instead of coverage.
+        const onSurface = surfaces.includes(f.testidPrefix);
+        const key = `${f.id}-{n}`;
+        const ctl = dockPlanControls(dockFacePlan(def as never) ?? []).find((c) => c.key === key);
+        const asCell = !!ctl && !!shellCellFor(def.type, ctl);
+        if (onSurface) bySurface++;
+        if (asCell) byCell++;
+        if (onSurface || asCell) continue;
+        missing.push(
+          `${def.type}: controlFamily '${f.id}' has no rendered home — its testidPrefix ` +
+            `'${f.testidPrefix}' appears in no UI source, and '${key}' is ` +
+            (ctl
+              ? 'ranked on the face but resolves to NO shell cell for this module type'
+              : 'not ranked on the face plan at all'),
+        );
       }
     }
-    expect(missing.join('\n'), 'declared control family has no matching card testid — the flag drifted off the card').toBe('');
+    expect(
+      missing.join('\n'),
+      'a declared control family renders nowhere — either a surface stopped emitting its ' +
+        'testid, or the family is declared for docs that no surface and no face cell backs',
+    ).toBe('');
+    // NEITHER ARM MAY GO EMPTY. If (a) empties, a bespoke surface renamed every
+    // testid and this clause stopped being a grep; if (b) empties, the face plan
+    // or the cell registry stopped resolving and every ranked family fell
+    // through to the surface branch by luck.
+    expect(
+      bySurface,
+      'NOT ONE family is proven by a surface-source literal — the grep arm has gone dead',
+    ).toBeGreaterThan(0);
+    expect(
+      byCell,
+      'NOT ONE family is proven by a ranked shell cell — the face-plan arm has gone dead',
+    ).toBeGreaterThan(0);
   });
 });
 

@@ -51,11 +51,53 @@ import {
   DOM_SOURCE_LANE_TYPES,
   CARD_PRODUCER_LANE_TYPES,
 } from '$lib/ui/workflow/dom-source-modules';
+import { NODE_VIDEO_SOURCE_TYPES } from '$lib/ui/media/node-video-source-registry';
+import { NODE_VARISPEED_TYPES } from '$lib/ui/media/node-varispeed-registry';
+import { NODE_HLS_SOURCE_TYPES } from '$lib/ui/media/node-hls-source-registry';
+import { NODE_LOOPBACK_SOURCE_TYPES } from '$lib/ui/media/node-loopback-source-registry';
+import { NODE_CAMERA_SOURCE_TYPES } from '$lib/ui/media/node-camera-source-registry';
+import { NODE_ARCHIVIST_SOURCE_TYPES } from '$lib/ui/media/node-archivist-source-registry';
 import { WORKER_FACTORY_TYPES } from './worker-factories';
 import { derivedBlockers, declaredLocus, disposition } from './worker-eligibility';
 
+/**
+ * ⚠ `domSourceTypes` IS A UNION, AND IT HAD TO BECOME ONE (legacy-removal S1).
+ *
+ * The `dom-source` blocker means "a live DOM `<video>`/`<img>` feeds this
+ * module's texture, so its picture is main-thread BY DEFINITION". This gate fed
+ * it `DOM_SOURCE_LANE_TYPES` alone, which is a narrower claim — "the CARD
+ * attaches the element and the engine keeps it". The two agreed for as long as
+ * every DOM source was card-owned, and they stop agreeing the moment a
+ * node-scoped controller takes one over: the element is every bit as live and
+ * every bit as main-thread, and the module silently reclassifies as a
+ * contract-clean CANDIDATE for the render worker.
+ *
+ * ⚠ THAT DIVERGENCE PRE-DATES THIS BRANCH BY THREE PHASES AND WENT UNSEEN,
+ * which is the part worth recording. videobox, videovarispeed, peertube and
+ * tvLibrarian all left `DOM_SOURCE_LANE_TYPES` in LEG-02 P1-P3 and all lost
+ * their `dom-source` blocker with it. None of them surfaced here because every
+ * one of them carries ANOTHER blocker — a video input, an audio port — so the
+ * disposition never moved. The hole was covered by a coincidence about those
+ * four modules' port shapes, not by anything this gate checks. `loopback` is
+ * simply the first node-owned DOM source with a clean enough contract to fall
+ * through it, and promoting it to the worker would have rendered a black
+ * picture: the worker realm cannot see a `<video>` element whoever owns it.
+ *
+ * Read the union as the durable question — "is a live DOM element pinned to the
+ * main thread for this module", not "which file holds the reference".
+ */
+const DOM_SOURCE_TYPES_ANY_OWNER: ReadonlySet<string> = new Set<string>([
+  ...DOM_SOURCE_LANE_TYPES,
+  ...NODE_VIDEO_SOURCE_TYPES,
+  ...NODE_VARISPEED_TYPES,
+  ...NODE_HLS_SOURCE_TYPES,
+  ...NODE_LOOPBACK_SOURCE_TYPES,
+  ...NODE_CAMERA_SOURCE_TYPES,
+  ...NODE_ARCHIVIST_SOURCE_TYPES,
+]);
+
 const INPUTS = {
-  domSourceTypes: DOM_SOURCE_LANE_TYPES,
+  domSourceTypes: DOM_SOURCE_TYPES_ANY_OWNER,
   cardProducerTypes: CARD_PRODUCER_LANE_TYPES,
 };
 
@@ -316,12 +358,30 @@ describe('#1811 render-locus gate', () => {
       'a CV-family INPUT is NOT a blocker — the main thread resolves it and forwards setParam',
     ).toEqual([]);
     expect(
-      derivedBlockers({ ...base, type: [...DOM_SOURCE_LANE_TYPES][0] } as typeof base, INPUTS),
-      'membership of DOM_SOURCE_LANE_TYPES is a blocker',
+      derivedBlockers({ ...base, type: [...DOM_SOURCE_TYPES_ANY_OWNER][0] } as typeof base, INPUTS),
+      // ⚠ READS THE UNION, NOT `DOM_SOURCE_LANE_TYPES`, which is EMPTY since
+      // legacy-removal S1 — `[...emptySet][0]` is `undefined`, and a classifier
+      // fed an undefined type returns no blockers, so this control would have
+      // reported the classifier broken when only its INPUT had emptied. The
+      // union is what the gate actually classifies on, so it is what the
+      // control must exercise.
+      'membership of the DOM-source union is a blocker',
     ).toContain('dom-source');
     expect(
-      derivedBlockers({ ...base, type: [...CARD_PRODUCER_LANE_TYPES][0] } as typeof base, INPUTS),
-      'membership of CARD_PRODUCER_LANE_TYPES is a blocker',
+      // ⚠ SYNTHETIC INPUTS, because the REAL set is empty by design since
+      // legacy-removal S1.5 (every card producer was extracted to a node
+      // owner) — `[...emptySet][0]` is `undefined` and a classifier fed an
+      // undefined type returns no blockers, the same trap the DOM-source
+      // control above dodged by reading the union. There is no union to read
+      // here: the classifier's inputs are INJECTED, so the control injects a
+      // population and requires the arm to fire on it. The arm stays in the
+      // classifier for the same reason the set stays exported — a module
+      // becoming card-owned again must classify as blocked, not as eligible.
+      derivedBlockers(
+        { ...base, type: 'synthetic-card-producer' } as typeof base,
+        { ...INPUTS, cardProducerTypes: new Set(['synthetic-card-producer']) },
+      ),
+      'membership of the injected card-producer set is a blocker',
     ).toContain('card-producer');
   });
 });

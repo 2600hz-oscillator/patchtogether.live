@@ -24,7 +24,7 @@
 // Output: e2e/vrt/__screenshots__/vrt-toybox.spec.ts/<id>.png
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 // The four bundled content ids + the layer `kind` each maps to (GEN → 'gen',
@@ -108,7 +108,7 @@ async function setContentAndFreeze(page: Page, id: string, kind: string, time: n
       // Freeze renders one frame at the pinned time + blits it to the canvas.
       g.__toyboxFreeze?.(time);
       const canvas = document.querySelector(
-        '[data-testid="toybox-canvas"]',
+        '[data-testid="toybox-face-canvas"]',
       ) as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
@@ -212,7 +212,7 @@ async function setObjAndFreeze(
       const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
       g.__toyboxFreeze?.(time);
       const canvas = document.querySelector(
-        '[data-testid="toybox-canvas"]',
+        '[data-testid="toybox-face-canvas"]',
       ) as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
@@ -250,7 +250,7 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -260,13 +260,15 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
         [],
       );
 
-      const card = page.locator('.svelte-flow__node-toybox').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+      // `tileBody` — the lane keeps the picture, the console is a dock-sized
+      // task — so the canvas this scene photographs lives in the `fullViewBody`.
+      await openToyboxDock(page, 'tb');
       await pinViewport(page);
 
       await setContentAndFreeze(page, c.id, c.kind, c.time);
 
-      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      const canvas = page.locator('[data-testid="toybox-face-canvas"]');
       await expect(canvas).toHaveScreenshot(`${c.id}.png`, {
         maskColor: '#ff00ff',
       });
@@ -290,7 +292,7 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
 
@@ -300,13 +302,15 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
         [],
       );
 
-      const card = page.locator('.svelte-flow__node-toybox').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+      // `tileBody` — the lane keeps the picture, the console is a dock-sized
+      // task — so the canvas this scene photographs lives in the `fullViewBody`.
+      await openToyboxDock(page, 'tb');
       await pinViewport(page);
 
       await setObjAndFreeze(page, m.id, m.matcap, m.time);
 
-      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      const canvas = page.locator('[data-testid="toybox-face-canvas"]');
       await expect(canvas).toHaveScreenshot(`obj-${m.id}.png`, {
         maskColor: '#ff00ff',
       });
@@ -387,7 +391,7 @@ async function setCombineAndFreeze(page: Page, time: number): Promise<void> {
         __toyboxPrevSig?: string;
       };
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -498,7 +502,7 @@ async function setCvRouteAndFreeze(page: Page, raw: number, time: number): Promi
         e?.getDomain<VE>('video')?.setParam('tb', 'cv2', raw);
       } catch { /* */ }
       w.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -533,7 +537,7 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -541,13 +545,15 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+      // `tileBody` — the lane keeps the picture, the console is a dock-sized
+      // task — so the canvas this scene photographs lives in the `fullViewBody`.
+      await openToyboxDock(page, 'tb');
       await pinViewport(page);
 
       await setCvRouteAndFreeze(page, drive.raw, 2.0);
 
-      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      const canvas = page.locator('[data-testid="toybox-face-canvas"]');
       await expect(canvas).toHaveScreenshot(`${drive.name}.png`, { maskColor: '#ff00ff' });
 
       expect(
@@ -611,7 +617,7 @@ async function loadPresetAndFreeze(page: Page, presetId: string, time: number): 
         __toyboxPrevSig?: string;
       };
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -644,7 +650,7 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -652,13 +658,15 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+      // `tileBody` — the lane keeps the picture, the console is a dock-sized
+      // task — so the canvas this scene photographs lives in the `fullViewBody`.
+      await openToyboxDock(page, 'tb');
       await pinViewport(page);
 
       await loadPresetAndFreeze(page, p.id, p.time);
 
-      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      const canvas = page.locator('[data-testid="toybox-face-canvas"]');
       await expect(canvas).toHaveScreenshot(`preset-${p.id}.png`, { maskColor: '#ff00ff' });
 
       expect(
@@ -757,7 +765,7 @@ async function setObjTexturedAndFreeze(page: Page, modelId: string, time: number
         __toyboxPrevSig?: string;
       };
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -789,7 +797,7 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -797,13 +805,15 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+      // `tileBody` — the lane keeps the picture, the console is a dock-sized
+      // task — so the canvas this scene photographs lives in the `fullViewBody`.
+      await openToyboxDock(page, 'tb');
       await pinViewport(page);
 
       await setObjTexturedAndFreeze(page, m.id, m.time);
 
-      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      const canvas = page.locator('[data-testid="toybox-face-canvas"]');
       await expect(canvas).toHaveScreenshot(`obj-tex-${m.id}.png`, { maskColor: '#ff00ff' });
 
       expect(
@@ -823,7 +833,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
     });
 
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -831,13 +841,13 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE (see the sibling blocks).
+    await openToyboxDock(page, 'tb');
     await pinViewport(page);
 
     await setCombineAndFreeze(page, 2.0);
 
-    const canvas = page.locator('[data-testid="toybox-canvas"]');
+    const canvas = page.locator('[data-testid="toybox-face-canvas"]');
     await expect(canvas).toHaveScreenshot('combine-composite.png', { maskColor: '#ff00ff' });
 
     expect(
@@ -854,7 +864,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
     });
 
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -862,8 +872,8 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE (see the sibling blocks).
+    await openToyboxDock(page, 'tb');
     await pinViewport(page);
 
     // Open the editor on the DEFAULT graph (seed it deterministically), so the
@@ -1006,7 +1016,7 @@ async function loadErosionAndFreeze(page: Page, time: number): Promise<void> {
       const ve = w.__engine?.().getDomain<VideoEngineStep>('video');
       for (let i = 0; i < 20; i++) ve?.step();
       w.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -1037,7 +1047,7 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -1045,13 +1055,13 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE (see the sibling blocks).
+    await openToyboxDock(page, 'tb');
     await pinViewport(page);
 
     await loadErosionAndFreeze(page, 2.0);
 
-    const canvas = page.locator('[data-testid="toybox-canvas"]');
+    const canvas = page.locator('[data-testid="toybox-face-canvas"]');
     await expect(canvas).toHaveScreenshot('preset-growing-peak.png', { maskColor: '#ff00ff' });
 
     expect(
@@ -1124,7 +1134,7 @@ async function setFragOverBaseAndFreeze(page: Page, fragId: string, time: number
         __toyboxPrevSig?: string;
       };
       g.__toyboxFreeze?.(time);
-      const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const canvas = document.querySelector('[data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
       if (!canvas) return false;
       const c2d = canvas.getContext('2d');
       if (!c2d) return false;
@@ -1153,7 +1163,7 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await spawnPatch(
@@ -1161,13 +1171,13 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('.svelte-flow__node-toybox').first();
-    await card.waitFor({ state: 'visible', timeout: 10_000 });
+    // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE (see the sibling blocks).
+    await openToyboxDock(page, 'tb');
     await pinViewport(page);
 
     await setFragOverBaseAndFreeze(page, 'frag-kaleido', 2.0);
 
-    const canvas = page.locator('[data-testid="toybox-canvas"]');
+    const canvas = page.locator('[data-testid="toybox-face-canvas"]');
     await expect(canvas).toHaveScreenshot('frag-kaleido.png', { maskColor: '#ff00ff' });
 
     expect(
@@ -1282,14 +1292,14 @@ async function setFeedbackAndFreeze(page: Page, mode: number, time: number): Pro
     ({ time, frames, maxMs }) => {
       const g = globalThis as unknown as { __toyboxFreeze?: (t?: number) => void };
       const canvas = document.querySelector(
-        '[data-testid="toybox-canvas"]',
+        '[data-testid="toybox-face-canvas"]',
       ) as HTMLCanvasElement | null;
       // Uniform shape on every return path — the caller reads `trail` on all of
       // them, and a union of differently-shaped objects makes that a type error
       // the moment the e2e workspace gains a tsconfig (it has none today, which
       // is exactly why this is written out rather than relied upon).
       const bail = (why: string) => ({ ok: false, why, advanced: 0, trail: [] as string[], sig: '', elapsedMs: 0 });
-      if (!canvas) return bail('no [data-testid="toybox-canvas"] in the DOM');
+      if (!canvas) return bail('no [data-testid="toybox-face-canvas"] in the DOM');
       const c2d = canvas.getContext('2d');
       if (!c2d) return bail('toybox canvas has no 2d context to sample');
 
@@ -1372,7 +1382,7 @@ test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
       });
 
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await spawnPatch(
@@ -1380,13 +1390,15 @@ test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
         [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
         [],
       );
-      const card = page.locator('.svelte-flow__node-toybox').first();
-      await card.waitFor({ state: 'visible', timeout: 10_000 });
+      // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+      // `tileBody` — the lane keeps the picture, the console is a dock-sized
+      // task — so the canvas this scene photographs lives in the `fullViewBody`.
+      await openToyboxDock(page, 'tb');
       await pinViewport(page);
 
       await setFeedbackAndFreeze(page, f.mode, f.time);
 
-      const canvas = page.locator('[data-testid="toybox-canvas"]');
+      const canvas = page.locator('[data-testid="toybox-face-canvas"]');
       await expect(canvas).toHaveScreenshot(`feedback-${f.name}.png`, { maskColor: '#ff00ff' });
 
       expect(

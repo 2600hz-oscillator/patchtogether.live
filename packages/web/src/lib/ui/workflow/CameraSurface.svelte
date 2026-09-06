@@ -28,20 +28,32 @@
   //   shared with canvas CAMERA cards) and immediately opens its source
   //   picker (the new camera's card host, pinned interactive).
   //
-  // ALWAYS-ON lifecycle (the whole point): each mapped camera's REAL
-  // CameraInputCard is hosted in a single-node SvelteFlow (the
-  // AudioIoSurface / DockZoneContainer pattern) that stays MOUNTED while
-  // the workflow shell is up — the card owns getUserMedia + the live
-  // <video> element and hands it to the engine via attachExternalSource,
-  // so closing the menu must not kill a camera the rack is compositing.
-  // Hidden hosts park OFF-SCREEN (fixed, left:-9999px) rather than
-  // display:none/visibility:hidden: an off-screen video element is the
-  // same scenario as a canvas card scrolled out of view — decode + rVFC
-  // keep running (the module's audio keep-alive holds the decode rate),
-  // where a non-rendered one could freeze the engine's texture.
+  // ALWAYS-ON lifecycle: each mapped camera's REAL faceplate is hosted in a
+  // single-node SvelteFlow (the AudioIoSurface / DockZoneContainer pattern)
+  // that stays MOUNTED while the workflow shell is up. Hidden hosts park
+  // OFF-SCREEN (fixed, left:-9999px) rather than display:none/
+  // visibility:hidden: an off-screen video element is the same scenario as a
+  // canvas tile scrolled out of view — decode + rVFC keep running (the
+  // module's audio keep-alive holds the decode rate), where a non-rendered one
+  // could freeze the engine's texture.
+  //
+  // ⚠ THIS HOST DOES NOT OWN THE CAMERA, AND THE NOTE THAT SAID IT DID WAS
+  // LEFT BEHIND BY ITS OWN FIX. It read "the card owns getUserMedia + the live
+  // <video> element", which was true until the capture moved OUT of the card
+  // and onto GRAPH lifetime: `$lib/ui/media/node-camera-source-registry` owns
+  // `getUserMedia`, the device roster, the saved-device rebind, the permission
+  // state machine and the engine attach, driven from `Canvas`'s own graph
+  // effect over `snapshot.nodes`. A mapped camera therefore streams whether or
+  // not this menu is open and whether or not anything is mounted here.
+  //
+  // What this host is really for is the PICTURE and the SOURCE PICKER — the
+  // surface the owner calls the "top camera area". That is worth stating
+  // exactly, because the stale note made a rendering bug look like it could
+  // stop a camera, which is the fastest way to make someone afraid to fix it.
 
   import { SvelteFlow } from '@xyflow/svelte';
   import type { ModuleNode } from '$lib/graph/types';
+  import { laneRenderKind, emittedTypeFor, isLaneNative } from '$lib/ui/workflow/legacy-fallback';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
   import {
     addWorkflowCamera,
@@ -180,13 +192,34 @@
     expandedId = expandedId === cam.id ? null : cam.id;
   }
 
-  /** Single-node host row — the AudioIoSurface / DockZoneContainer
-   *  mounting pattern (the REAL CameraInputCard, its own everything). */
+  /** Single-node host row — the AudioIoSurface / DockZoneContainer mounting
+   *  pattern, rendering the module's real faceplate.
+   *
+   *  ⚠ THE EMITTED TYPE GOES THROUGH `emittedTypeFor`, NOT `node.type`, AND
+   *  THAT IS THE WHOLE FIX. `nodeTypes` is no longer a per-module map: it holds
+   *  `dockStub` and `moduleShell`, and every module resolves to the faceplate
+   *  with its real type carried inside `data.node.type` for `ModuleShell` to
+   *  read. This host kept emitting the RAW type, so `nodeTypes['cameraInput']`
+   *  came back undefined and the always-mounted host painted nothing — the
+   *  topbar's live preview and source picker were simply blank.
+   *
+   *  ⚠ IT IS ROUTED THROUGH THE SHARED HELPERS RATHER THAN HARD-CODING
+   *  `'moduleShell'`, because this host is exactly the caller
+   *  `legacy-fallback.ts` warns about: *"there is a host that is not a
+   *  `DockCardHost` at all, which is why the 'fourth host' warning did not
+   *  catch it."* A literal here would be a fourth private copy of the lane
+   *  switch, and the next change to that switch would miss this file for the
+   *  second time. */
   function hostNodesFor(node: ModuleNode) {
+    const kind = laneRenderKind({
+      userDocked: false,
+      type: node.type,
+      laneNative: isLaneNative(node.type),
+    });
     return [
       {
         id: node.id,
-        type: node.type,
+        type: emittedTypeFor(kind, node.type),
         position: { x: 0, y: 0 },
         draggable: false,
         data: { node },

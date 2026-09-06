@@ -102,7 +102,7 @@ async function boot(
     out.push({ ctx, page, ...s });
   }
   for (const p of out) {
-    await p.page.goto('/rack?shell=legacy&seed=none');
+    await p.page.goto('/rack?seed=none');
     await p.page.waitForLoadState('networkidle');
     await p.page.waitForFunction(
       () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -144,7 +144,27 @@ async function assetsPresent(page: Page): Promise<boolean> {
   });
 }
 
+/**
+ * Bring THIS peer's DOOM faceplate up and wait for its `__doomCards` hook.
+ *
+ * ⚠ THE HOOK IS INSTALLED BY THE SURFACE, AND THE SURFACE IS THE DOCK
+ * FACEPLATE. `doom/DoomSurface.svelte` adopts the node session — the awareness
+ * observers, the lockstep pump, the keyboard capture and this hook — in its
+ * `onMount`, and on the default shell that component is the module's
+ * `fullViewBody`: it exists only while the pane is open. So opening the pane is
+ * this peer JOINING THE ROOM, not test decoration, and every peer whose state
+ * this file reads has to do it. (The card mounted the same component, so
+ * everything the hook exposes is byte-identical either way.)
+ *
+ * The wait below is unchanged: `timeout` still bounds the hook's arrival, and
+ * the pane-mount wait is its own, separate ceiling.
+ */
 async function cardHookReady(page: Page, id: string, timeout = 15000): Promise<void> {
+  await page.evaluate(
+    (nid) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(nid),
+    id,
+  );
+  await expect(page.getByTestId('doom-face-surface')).toBeVisible({ timeout: 20_000 });
   await page.waitForFunction(
     (nid) => !!(globalThis as unknown as { __doomCards?: Record<string, unknown> }).__doomCards?.[nid],
     id,
@@ -339,21 +359,96 @@ interface SharedSample {
   advanceB: number;
 }
 
-/** Co-sample both peers' (gametic → checksum) maps until enough OVERLAP of
- *  shared tics accrues (`minShared`) OR a generous wall-clock budget elapses.
+/** How many overlapping tics the checksum oracle needs before it means
+ *  anything — used BOTH as the sampler's target and as the assertion's floor,
+ *  so the two can never drift apart.
  *
- *  WHY ADAPTIVE: on a loaded CI runner the two WASM sims advance at DIFFERENT
- *  wall-clock rates (CPU contention), so a FIXED-window sample can catch only a
- *  tiny slice where their tic-ranges happen to overlap — even though BOTH peers
- *  are healthy (advancing 10-14 tics). The overlap is a timing artifact, not a
- *  correctness signal. Here we keep sampling: because both sims keep advancing,
- *  their tic-ranges WILL overlap given enough wall-clock time, so a slow runner
- *  just needs longer — not a weaker invariant. The correctness oracles
- *  (checksum-match at shared tics + per-peer advance) are unchanged.
+ *  ⚠ THE FLOOR USED TO BE 1 WHILE THE TARGET WAS 5, and the gap was a
+ *  concession to the old round-trip sampler: it could not reliably reach 5, so
+ *  the assertion accepted a ONE-TIC comparison — an oracle thin enough to be
+ *  luck. Per-frame in-page sampling collects two orders of magnitude more
+ *  readings, so the floor is now the target. A run that cannot reach it is
+ *  reporting something real about the peers, not about the instrument. */
+const MIN_SHARED_TICS = 5;
+
+/**
+ * Collect EVERY (gametic → checksum) this peer passes through, sampled IN THE
+ * PAGE for `ms` wall-clock, one reading per animation frame.
  *
- *  We sample the two peers' LIVE (tic, checksum) interleaved so the windows
- *  cover the same wall-clock span; comparison is still by TIC NUMBER, so it is
- *  race-free regardless of who is ahead. */
+ * ⚠ IT RUNS IN THE PAGE BECAUSE THE ROUND-TRIP VERSION COULD NOT SEE ENOUGH
+ * TICS TO COMPARE. The previous sampler awaited two `page.evaluate` calls per
+ * reading and slept 8 ms between them, so over a 12 s budget it collected
+ * FIFTEEN readings while each sim advanced ~120 tics — one sample per ~8 tics.
+ * Overlap between the two peers was then a lottery on their relative phase, and
+ * CI drew a losing ticket: `p1Tics=15 p2Tics=15 advanceA=117 advanceB=117` with
+ * ZERO shared tics. Both peers were perfectly healthy and perfectly in
+ * lockstep; the INSTRUMENT simply never looked at the same tic twice.
+ *
+ * ⚠ THE GUARD IS WHY THAT SURFACED AS A FAILURE RATHER THAN A GREEN RUN. With
+ * no shared tics there are no mismatches either, so the checksum oracle would
+ * have compared NOTHING and passed — the vacuity shape this repo keeps finding.
+ * The `sharedTics.length` assertion below is what turned it into a red, and it
+ * stays exactly where it is.
+ *
+ * Sampling per FRAME is the right rate for this subject: DOOM's game clock IS
+ * its frame clock, so a per-frame reading captures the tics as they are
+ * produced instead of guessing a polling interval. Nothing about DOOM's own
+ * waits or its lockstep pump is touched — this only changes how the TEST looks.
+ */
+async function collectTicChecksums(
+  page: Page,
+  id: string,
+  ms: number,
+): Promise<Array<[number, number]>> {
+  return page.evaluate(
+    ({ nid, dur }) =>
+      new Promise<Array<[number, number]>>((resolve) => {
+        const w = globalThis as unknown as {
+          __doomCards?: Record<
+            string,
+            { stateChecksum: () => number; getTics: () => { gametic: number } }
+          >;
+        };
+        const seen = new Map<number, number>();
+        const t0 = performance.now();
+        const tick = (): void => {
+          try {
+            const c = w.__doomCards?.[nid];
+            if (c) {
+              const t = c.getTics().gametic;
+              // FIRST checksum wins for a tic: the digest is deterministic per
+              // tic, so re-reading the same tic must not overwrite it with a
+              // later frame's value.
+              if (!seen.has(t)) seen.set(t, c.stateChecksum() >>> 0);
+            }
+          } catch {
+            /* runtime aborted (freeze) — stop recording, keep what we have */
+          }
+          if (performance.now() - t0 >= dur) {
+            resolve([...seen.entries()]);
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    { nid: id, dur: ms },
+  );
+}
+
+/** Co-sample both peers' (gametic → checksum) maps over the SAME wall-clock
+ *  window, repeating until enough OVERLAP accrues (`minShared`) or the budget
+ *  elapses.
+ *
+ *  ⚠ THE TWO WINDOWS RUN CONCURRENTLY (`Promise.all`), and that is load-bearing
+ *  rather than a speed-up: comparison is by TIC NUMBER, but two peers can only
+ *  share tics they were BOTH alive for. Sampling them one after the other would
+ *  cover disjoint wall-clock spans and reintroduce the very gap this replaces.
+ *
+ *  On a loaded runner the two sims advance at different wall-clock rates, so a
+ *  slow peer just needs a longer window — not a weaker invariant. The
+ *  correctness oracles (checksum match at shared tics, per-peer advance) are
+ *  unchanged. */
 async function sampleSharedTics(
   pageA: Page,
   pageB: Page,
@@ -361,40 +456,39 @@ async function sampleSharedTics(
 ): Promise<SharedSample> {
   const mapA = new Map<number, number>();
   const mapB = new Map<number, number>();
-  const order: { which: 'a' | 'b'; tic: number }[] = [];
-  const recordA = (r: { tic: number; sum: number } | null): void => {
-    if (r && !mapA.has(r.tic)) order.push({ which: 'a', tic: r.tic });
-    if (r) mapA.set(r.tic, r.sum);
-  };
-  const recordB = (r: { tic: number; sum: number } | null): void => {
-    if (r && !mapB.has(r.tic)) order.push({ which: 'b', tic: r.tic });
-    if (r) mapB.set(r.tic, r.sum);
-  };
+  const firstA: number[] = [];
+  const firstB: number[] = [];
   const sharedCount = (): number => [...mapA.keys()].filter((t) => mapB.has(t)).length;
+
   const deadline = Date.now() + opts.maxMs;
-  // Always burn a short minimum window so both maps fill even on a fast runner;
-  // then keep going until the overlap target is met or the budget runs out.
-  const minMs = 1500;
-  const minDeadline = Date.now() + minMs;
+  // One window is already ~120 frames of readings per peer, which is an order
+  // of magnitude more than the whole old budget produced.
+  const WINDOW_MS = 2000;
   while (Date.now() < deadline) {
-    const [ra, rb] = await Promise.all([checksumAt(pageA, NODE_ID), checksumAt(pageB, NODE_ID)]);
-    recordA(ra);
-    recordB(rb);
-    if (Date.now() >= minDeadline && sharedCount() >= opts.minShared) break;
-    await Promise.all([pageA.waitForTimeout(8), pageB.waitForTimeout(8)]);
+    const [a, b] = await Promise.all([
+      collectTicChecksums(pageA, NODE_ID, WINDOW_MS),
+      collectTicChecksums(pageB, NODE_ID, WINDOW_MS),
+    ]);
+    for (const [t, sum] of a) {
+      if (!mapA.has(t)) { mapA.set(t, sum); firstA.push(t); }
+    }
+    for (const [t, sum] of b) {
+      if (!mapB.has(t)) { mapB.set(t, sum); firstB.push(t); }
+    }
+    if (sharedCount() >= opts.minShared) break;
   }
-  const sharedTics = [...mapA.keys()].filter((t) => mapB.has(t)).sort((a, b) => a - b);
+
+  const sharedTics = [...mapA.keys()].filter((t) => mapB.has(t)).sort((x, y) => x - y);
   const mismatches = sharedTics.filter((t) => mapA.get(t) !== mapB.get(t));
-  // Per-peer advance over the run = (last tic recorded) − (first tic recorded).
-  const firstTic = (which: 'a' | 'b'): number => order.find((o) => o.which === which)?.tic ?? 0;
-  const lastTic = (m: Map<number, number>): number => Math.max(0, ...m.keys());
+  const advance = (first: number[], m: Map<number, number>): number =>
+    m.size === 0 ? 0 : Math.max(0, ...m.keys()) - (first[0] ?? 0);
   return {
     mapA,
     mapB,
     sharedTics,
     mismatches,
-    advanceA: lastTic(mapA) - firstTic('a'),
-    advanceB: lastTic(mapB) - firstTic('b'),
+    advanceA: advance(firstA, mapA),
+    advanceB: advance(firstB, mapB),
   };
 }
 
@@ -546,7 +640,7 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       // Co-sample both peers' (tic → checksum) maps ADAPTIVELY: keep going until
       // a healthy overlap accrues (or a generous budget elapses). Robust to a
       // slow runner where the two sims advance at different wall-clock rates.
-      const s = await sampleSharedTics(p1.page, p2.page, { minShared: 5, maxMs: 12000 });
+      const s = await sampleSharedTics(p1.page, p2.page, { minShared: MIN_SHARED_TICS, maxMs: 12000 });
       const { mapA, mapB, sharedTics, mismatches } = s;
 
       // (1) NO FREEZE — each peer kept advancing by a healthy margin over the
@@ -566,7 +660,7 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
         sharedTics.length,
         `P1 and P2 must share enough overlapping tics to compare checksums (both advancing in lockstep). ` +
           `p1Tics=${mapA.size} p2Tics=${mapB.size} advanceA=${s.advanceA} advanceB=${s.advanceB}`,
-      ).toBeGreaterThanOrEqual(1);
+      ).toBeGreaterThanOrEqual(MIN_SHARED_TICS);
       // (3) SHARED STATE — at EVERY tic both peers reached, the deterministic
       // checksums are EQUAL. This is the real divergence oracle (free-run main
       // disagrees on every overlapping tic); untouched by the timing fix.
@@ -797,7 +891,7 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       // accrues or a generous budget elapses — robust to a slow runner where the
       // two sims tick at different wall-clock rates) and assert EQUALITY at every
       // shared tic — the proof that per-peer CV did NOT diverge the sim.
-      const s = await sampleSharedTics(p1.page, p2.page, { minShared: 5, maxMs: 12000 });
+      const s = await sampleSharedTics(p1.page, p2.page, { minShared: MIN_SHARED_TICS, maxMs: 12000 });
       const { mapA, mapB, sharedTics, mismatches } = s;
 
       // Both sims advanced well past tic 0 (no freeze — CV is re-enabled + safe).
@@ -823,7 +917,7 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
         sharedTics.length,
         `both peers must share enough overlapping tics to compare checksums while CV drives. ` +
           `p1Tics=${mapA.size} p2Tics=${mapB.size} advanceA=${s.advanceA} advanceB=${s.advanceB}`,
-      ).toBeGreaterThanOrEqual(1);
+      ).toBeGreaterThanOrEqual(MIN_SHARED_TICS);
       expect(
         mismatches.length,
         `per-player CV must keep gamestate IDENTICAL at every shared tic (no per-peer CV divergence). ` +

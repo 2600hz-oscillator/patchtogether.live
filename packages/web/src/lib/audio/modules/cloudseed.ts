@@ -414,8 +414,8 @@ export const CLOUDSEED_MACRO_CPP_MAP: Readonly<Record<string, number>> = {
  *  hard-thresholds all ten at 0.5 (`scaleParam`, the `val < 0.5 ? 0 : 1` arm),
  *  so they have exactly two reachable states and `'linear'` was always a lie
  *  about the value space. It also made them invisible to the shell — nine of
- *  them painted as CONTINUOUS ROTARIES reading `0.00` where the legacy card
- *  drew ON/OFF pills, and `looksLikeToggle` (which requires `discrete`) could
+ *  them painted as CONTINUOUS ROTARIES reading `0.00` where the module used to
+ *  draw ON/OFF pills, and `looksLikeToggle` (which requires `discrete`) could
  *  not see any of them, so even the unclassified-switch gate was blind.
  *
  *  `options` names the states of a param whose two positions are not on/off
@@ -518,7 +518,7 @@ export const cloudseedDef: AudioModuleDef = {
   // Every knob on this module carries `format` = the module's OWN
   // `formatParameter` (the 1:1 mirror of CloudSeed's FormatParameter). The
   // normalized 0..1 a ParamDef stores is meaningless on a reverb whose knobs
-  // mean SECONDS, HERTZ, DECIBELS and COUNTS: the legacy card printed
+  // mean SECONDS, HERTZ, DECIBELS and COUNTS: the module used to print
   // `2.34 sec` / `4300 Hz` / `12` and the migrated shell printed `0.63`. One
   // `format` per param restores every one of those 45 readouts from a single
   // formatter instead of 45 re-typed unit strings — the range/meaning of a knob

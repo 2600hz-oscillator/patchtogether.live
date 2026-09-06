@@ -43,8 +43,17 @@ import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 import { waitForSoundingStep } from './_scheduler-control';
 import type { Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 test.describe.configure({ mode: 'serial' });
+// ⚠ AND A BUDGET, because this file never declared one. The failing attempt on
+// run 33990942421 died at "Test timeout of 32077ms exceeded" — Playwright's
+// invisible 30 s default plus the 2,077 ms the `rack` fixture had already
+// spent. The round-trip cost above is removed now, but a file whose tests each
+// drive a transport, five sampling windows and a dock is not a 30 s file, and a
+// bare default is a different bound on every runner. A BOUND: nothing here
+// asserts a latency.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 const CP = 'cp';
 // Lane 0, slot 0 → flat stride-64 clip key 0; lane 0 slot 1 → 1; lane 1 slot 0 → 64.
@@ -75,25 +84,76 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
   );
 }
 
-/** Sample a param N times and report min/max/spread (a rough loop window). */
+/**
+ * Sample one or two params N times IN THE PAGE and report the spread /
+ * divergence.
+ *
+ * ── ⚠ THESE WERE PLAYWRIGHT-SIDE LOOPS, AND THAT WAS THE FLAKE ─────────────
+ *
+ * Both read `for (i < count) { await readParam(page, …); await
+ * page.waitForTimeout(intervalMs); }` — one CDP round trip per sample against
+ * an engine param on the same main thread the audio graph and render loop are
+ * running on, plus a wall-clock guess between.
+ *
+ * MEASURED on CI (run 33990942421, blob-report-6) for the failing attempt of
+ * "grabbing an on-screen fader suspends only its playback until RELEASE": the
+ * step timeline is an unbroken alternation of `Evaluate` (~219 ms each) and
+ * `Wait for timeout` (nominal 70 ms, actual ~307 ms) from 6.0 s to 32.0 s,
+ * cut off mid-sample. `sampleSpread` is called FIVE times in that one test —
+ * nominal cost 0.98 s per call, measured 6.2 s and 6.5 s — so roughly 23 s of a
+ * 32 s budget was transport. The retry that "passed" took 31.5 s of 32.1 s:
+ * 98 % of budget. This test was over-budget by construction, not unlucky.
+ *
+ * The whole window now runs in ONE `page.evaluate` per call: same count, same
+ * spacing, same `readParam` per sample, min/max latched in the page. ~140 round
+ * trips become 10. The MEASURED QUANTITIES are unchanged — max minus min for
+ * the spread, max |a-b| for the divergence.
+ *
+ * `samples` comes back so a spread of 0 is legible: from 14 samples it is a
+ * finding, from 0 it is a broken probe.
+ */
 async function sampleSpread(
   page: Page,
   nodeId: string,
   paramId: string,
   count = 14,
   intervalMs = 70,
-): Promise<{ vals: number[]; spread: number }> {
-  const vals: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const v = await readParam(page, nodeId, paramId);
-    if (v != null) vals.push(v);
-    await page.waitForTimeout(intervalMs);
-  }
-  const spread = vals.length ? Math.max(...vals) - Math.min(...vals) : 0;
-  return { vals, spread };
+): Promise<{ vals: number[]; spread: number; samples: number }> {
+  return page.evaluate(
+    ([id, pid, n, gap]) =>
+      new Promise<{ vals: number[]; spread: number; samples: number }>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        const vals: number[] = [];
+        let taken = 0;
+        const tick = (): void => {
+          const eng = w.__engine?.();
+          const node = w.__patch?.nodes?.[id as string];
+          if (eng && node) {
+            const v = eng.readParam(node, pid as string);
+            if (typeof v === 'number') vals.push(v);
+          }
+          taken++;
+          if (taken >= (n as number)) {
+            clearInterval(timer);
+            resolve({
+              vals,
+              spread: vals.length ? Math.max(...vals) - Math.min(...vals) : 0,
+              samples: vals.length,
+            });
+          }
+        };
+        const timer = setInterval(tick, gap as number);
+        tick();
+      }),
+    [nodeId, paramId, count, intervalMs] as const,
+  );
 }
 
-/** Sample TWO params in lock-step; returns the max |a-b| seen (independence). */
+/** Sample TWO params in lock-step IN THE PAGE; returns the max |a-b| seen
+ *  (independence). Same argument as `sampleSpread` above. */
 async function sampleDivergence(
   page: Page,
   a: string,
@@ -102,13 +162,38 @@ async function sampleDivergence(
   count = 14,
   intervalMs = 70,
 ): Promise<number> {
-  let maxDiff = 0;
-  for (let i = 0; i < count; i++) {
-    const [va, vb] = await Promise.all([readParam(page, a, paramId), readParam(page, b, paramId)]);
-    if (va != null && vb != null) maxDiff = Math.max(maxDiff, Math.abs(va - vb));
-    await page.waitForTimeout(intervalMs);
-  }
-  return maxDiff;
+  return page.evaluate(
+    ([ida, idb, pid, n, gap]) =>
+      new Promise<number>((resolve) => {
+        const w = globalThis as unknown as {
+          __engine?: () => { readParam: (n: unknown, p: string) => number | undefined } | null;
+          __patch: { nodes: Record<string, unknown> };
+        };
+        let maxDiff = 0;
+        let taken = 0;
+        const tick = (): void => {
+          const eng = w.__engine?.();
+          const na = w.__patch?.nodes?.[ida as string];
+          const nb = w.__patch?.nodes?.[idb as string];
+          if (eng && na && nb) {
+            const va = eng.readParam(na, pid as string);
+            const vb = eng.readParam(nb, pid as string);
+            // Read in the SAME tick — the lock-step property this asserts.
+            if (typeof va === 'number' && typeof vb === 'number') {
+              maxDiff = Math.max(maxDiff, Math.abs(va - vb));
+            }
+          }
+          taken++;
+          if (taken >= (n as number)) {
+            clearInterval(timer);
+            resolve(maxDiff);
+          }
+        };
+        const timer = setInterval(tick, gap as number);
+        tick();
+      }),
+    [a, b, paramId, count, intervalMs] as const,
+  );
 }
 
 /** Force the transport running (set running=1 on any TIMELORDE; free-run
@@ -238,31 +323,43 @@ async function isLaneArmed(page: Page, lane: number): Promise<boolean> {
 
 /** Lane 0's ◉ arm button live countdown colour ('yellow' | 'red' | null) — the
  *  card mirror of the published per-lane render state (its cd-* classes). */
-async function laneArmCountdownColor(page: Page, lane: number): Promise<'yellow' | 'red' | null> {
-  return page.evaluate((lane) => {
-    const btn = document.querySelector(`[data-testid="clipplayer-auto-arm-${lane}"]`);
-    if (!btn) return null;
-    if (btn.classList.contains('cd-red')) return 'red';
-    if (btn.classList.contains('cd-yellow')) return 'yellow';
-    return null;
-  }, lane);
+async function countdownLampLit(page: Page): Promise<'1' | '0' | null> {
+  return page.evaluate((id) => {
+    const lamp = document.querySelector(`[data-testid="clipplayer-auto-countdown-${id}"]`);
+    return (lamp?.getAttribute('data-lit') as '1' | '0' | null) ?? null;
+  }, CP);
 }
 
-/** Poll lane 0's ◉ countdown colour for `ms`, returning the ORDERED sequence of
- *  distinct colours observed (e.g. ['yellow','red']) — proves the 🟡→🔴 order. */
-async function collectCountdown(page: Page, ms: number): Promise<Array<'yellow' | 'red'>> {
-  const seq: Array<'yellow' | 'red'> = [];
+/** Poll the REC lamp for `ms`, returning the ORDERED sequence of distinct lit
+ *  states observed (e.g. ['0','1','0','1']) — proves the lamp PULSES on the
+ *  approach to each wrap rather than sitting stuck in either state. */
+async function collectCountdown(page: Page, ms: number): Promise<Array<'1' | '0'>> {
+  const seq: Array<'1' | '0'> = [];
   const start = Date.now();
   while (Date.now() - start < ms) {
-    const c = await laneArmCountdownColor(page, 0);
-    if (c && seq[seq.length - 1] !== c) seq.push(c);
+    const c = await countdownLampLit(page);
+    if (c !== null && seq[seq.length - 1] !== c) seq.push(c);
     await page.waitForTimeout(60);
   }
   return seq;
 }
 
+/** Open the clip player's dock pane (idempotent) — the pad grid, arm row and
+ *  deck lamps live there on the default shell. */
+async function openCpDock(page: Page): Promise<void> {
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${CP}"]`);
+  if ((await pane.count()) === 0) {
+    await page.evaluate(
+      (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+      CP,
+    );
+  }
+  await expect(pane).toBeVisible();
+}
+
 /** Launch the clip at flat index `idx` in `lane` and gate on it SOUNDING. */
 async function launchClip(page: Page, idx: number, lane: number, slot = 0): Promise<void> {
+  await openCpDock(page);
   await page.getByTestId(`clipplayer-pad-${idx}`).click();
   await page.waitForFunction(
     ({ lane, slot }) => {
@@ -278,8 +375,24 @@ async function launchClip(page: Page, idx: number, lane: number, slot = 0): Prom
   await waitForSoundingStep(page, CP, 3, { key: `currentStep:${lane}`, timeoutMs: 8000 });
 }
 
-/** ARM lane `lane` from the card's per-lane ◉ (the grid footer, next to RATE). */
+/** Select one page of the clip player's RAILED face.
+ *
+ * ⚠ THE ARM ROW IS ON THE `channels` PAGE. The face is tabbed (`face.tabbed`,
+ * owner P0 2026-09-04) and renders exactly ONE band; the others are
+ * `display:none`, so `clipplayer-auto-arm-N` resolves to a real element with a
+ * 0×0 box and the click waits out the whole test budget instead of failing on a
+ * missing selector. The `aria-selected` wait is the state the band swap
+ * commits. */
+async function showClipPage(page: Page, pageId: 'session' | 'channels' | 'editor' | 'playback') {
+  const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
+}
+
+/** ARM lane `lane` from the face's per-lane ◉ (the dock arm row). */
 async function armLaneViaCard(page: Page, lane: number): Promise<void> {
+  await openCpDock(page);
+  await showClipPage(page, 'channels');
   await page.getByTestId(`clipplayer-auto-arm-${lane}`).click();
 }
 
@@ -295,8 +408,9 @@ function vcaBase(page: Page, vcaId: string) {
  *  isolation.) */
 async function assignModuleViaMenu(page: Page, vcaId: string, lane: number): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
-  // Right-click the card's header area (top-left corner — clear of controls).
-  await node.click({ button: 'right', position: { x: 8, y: 8 } });
+  // Right-click the tile's KIND row — the shell's module-menu target (a
+  // control right-click opens the per-control MIDI menu instead).
+  await node.locator('.tile-kind').click({ button: 'right' });
   const trigger = page.getByTestId('ctx-assign-auto-only');
   await expect(trigger).toBeVisible();
   await trigger.click(); // expand the channel panel
@@ -307,7 +421,7 @@ async function assignModuleViaMenu(page: Page, vcaId: string, lane: number): Pro
 /** Remove MODULE `vcaId`'s assignment via the module menu. */
 async function removeModuleAssignmentViaMenu(page: Page, vcaId: string): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${vcaId}"]`);
-  await node.click({ button: 'right', position: { x: 8, y: 8 } });
+  await node.locator('.tile-kind').click({ button: 'right' });
   const remove = page.getByTestId('ctx-automation-remove');
   await expect(remove).toBeVisible();
   await remove.click();
@@ -364,15 +478,45 @@ async function midiLearn(page: Page, vcaId: string, cc: number): Promise<void> {
 
 /** Sweep a bound CC (0..127) for `ms`. Each inject DRIVES the param AND fires
  *  notifyAutomationTouch — the exact seam a screen drag uses — so while its
- *  module's lane is armed the touched param records (record-while-touched). */
+ *  module's lane is armed the touched param records (record-while-touched).
+ *
+ *  ⚠ #1569, THIRD OCCURRENCE — the beat lives IN THE PAGE. The runner-side
+ *  version (one `page.evaluate` round trip per message + `waitForTimeout(60)`)
+ *  raced the IN-PAGE `CC_SETTLE_MS = 200` idle-release: on a loaded shard the
+ *  measured per-inject gap was 231.6–616.8 ms (every gap, all four failing CI
+ *  attempts of runs 34001881396 / 34000971132), so EVERY message was an
+ *  isolated sub-settle grab whose store value never moved — each pass entry
+ *  froze at maxDev = 0 and died at the recorder's `MOVE_EPS` no-op-touch gate.
+ *  Zero events, while the lane stayed armed/playing/assigned and the ENGINE
+ *  (fed by the per-message transient leg) showed full spread — four passing
+ *  controls around a silent recorder. `holdCcUntilReleased` above and
+ *  `sampleSpread` were both moved in-page for the same disease; this helper
+ *  had been missed. In-page, a 60 ms beat structurally outpaces the 200 ms
+ *  settle: if the page's main thread stalls, both clocks stall together and
+ *  the race cannot re-open. */
 async function sweepCc(page: Page, cc: number, ms: number): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    const t = (Date.now() - start) / ms;
-    const v = Math.round(64 + 58 * Math.sin(t * Math.PI * 2 * 2));
-    await injectCc(page, 1, cc, Math.max(0, Math.min(127, v)));
-    await page.waitForTimeout(60);
-  }
+  await page.evaluate(
+    ({ cc, ms }) =>
+      new Promise<void>((resolve) => {
+        const inject = (globalThis as unknown as {
+          __midiTestInject: (c: number, cc: number, v: number) => boolean;
+        }).__midiTestInject;
+        const start = performance.now();
+        const beat = () => {
+          const elapsed = performance.now() - start;
+          if (elapsed >= ms) {
+            resolve();
+            return;
+          }
+          const t = elapsed / ms;
+          const v = Math.round(64 + 58 * Math.sin(t * Math.PI * 2 * 2));
+          inject(1, cc, Math.max(0, Math.min(127, v)));
+          setTimeout(beat, 60);
+        };
+        beat();
+      }),
+    { cc, ms },
+  );
 }
 
 /** Keep a bound CC HOT at a CONSTANT value (re-inject every ~50 ms) UNTIL the
@@ -489,7 +633,7 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
   ]);
   await ensureTransportRunning(page);
   await installSimMidi(page);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
 
   // A note clip in lane 0, slot 0 (its sibling automation starts empty).
   await seedClip(page, IDX_L0S0, { len: CLIP_LEN });
@@ -504,8 +648,15 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
   const border = await moduleBorder(page, 'va');
   // Lane 0's default channel colour is hsl(0,70%,50%) = #d92626 = rgb(217,38,38).
   expect(border, 'border colour === the assigned lane’s colour').toBe('rgb(217, 38, 38)');
-  await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveText('1');
-  await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '1');
+  // The face's ASSIGNED lamp lights (the card's per-lane count chip died with
+  // the readout ruling); the count itself is the synced autoAssign map.
+  await expect(page.getByTestId(`clipplayer-auto-assigned-${CP}`)).toHaveAttribute('data-lit', '1');
+  expect(
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { autoAssign?: Record<string, number> } }> } };
+      return w.__patch.nodes['cp']?.data?.autoAssign ?? {};
+    }),
+  ).toEqual({ va: 0 });
   // The UNASSIGNED module has no border.
   expect(await moduleBorder(page, 'vb')).toBeNull();
 
@@ -561,7 +712,7 @@ test.fixme('module-assign + per-lane arm: right-click module → lane 1 (card bo
   // 0); the recorded automation keeps playing (assignment gates RECORD only).
   await removeModuleAssignmentViaMenu(page, 'va');
   await expect.poll(async () => moduleBorder(page, 'va'), { timeout: 4000 }).toBeNull();
-  await expect(page.getByTestId('clipplayer-auto-assigned-0')).toHaveAttribute('data-count', '0');
+  await expect(page.getByTestId(`clipplayer-auto-assigned-${CP}`)).toHaveAttribute('data-lit', '0');
   // The recorded envelopes SURVIVE the un-assignment (remove ≠ clear).
   expect((await readAutoEvents(page, IDX_L0S0, 'va::base')).length).toBeGreaterThan(1);
 
@@ -666,7 +817,7 @@ test('per-clip automation: grabbing an on-screen fader suspends only its playbac
   // GRAB va's fader (screen) and HOLD it down → suspend ONLY va. The override
   // holds until the physical RELEASE, NOT the loop wrap. The indicator lights.
   await grabFaderHold(page, 'va');
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeEnabled();
   await page.waitForTimeout(220); // let va settle to the grabbed value
 
   // WHILE STILL HELD (across at least one loop wrap): va stays held, vb still plays.
@@ -677,7 +828,7 @@ test('per-clip automation: grabbing an on-screen fader suspends only its playbac
 
   // RELEASE (pointer-up) → the override ends, indicator clears, va resumes playback.
   await releaseFader(page);
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeDisabled();
   expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after release').toBeGreaterThan(0.15);
 });
 
@@ -777,7 +928,7 @@ test.fixme('per-clip automation: a MIDI CC on an automated param suspends only t
   // as long as the sampling below takes, however slow the machine is, so "the
   // override is still held" is structural rather than a wall-clock race.
   const twist = await holdCcUntilReleased(page, 1, 21, 105);
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeVisible();
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeEnabled();
   await page.waitForTimeout(220);
 
   const vaHeld = await sampleSpread(page, 'va', 'base', 6, 70);
@@ -793,7 +944,7 @@ test.fixme('per-clip automation: a MIDI CC on an automated param suspends only t
 
   // CC-IDLE RELEASE → after the settle timeout the override ends automatically and
   // va resumes being driven by automation (no manual re-enable needed).
-  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeHidden({ timeout: 4000 });
+  await expect(page.getByTestId(`clipplayer-auto-override-${CP}`)).toBeDisabled({ timeout: 4000 });
   expect((await sampleSpread(page, 'va', 'base')).spread, 'va resumes after the twist idles').toBeGreaterThan(0.15);
 });
 
@@ -867,7 +1018,7 @@ test('per-clip automation: scene-duplicate (Launchpad copy/paste) carries the au
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
   // Scene 0: a clip in lane 0 carrying an envelope.
   await seedClip(page, IDX_L0S0, { tracks: [{ nodeId: 'va', paramId: 'base', events: ENV_UP }] });
 
@@ -920,7 +1071,7 @@ test('launchpad per-lane arm: HOLD SHIFT+top-row toggles a lane (view untouched)
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
   await seedClip(page, IDX_L0S0, { assign: { va: 0 } });
   const { ccTap, padTap } = await installSingleLaunchpad(page);
   await ccTap(CC_VIEW_GRID);
@@ -995,7 +1146,7 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
   );
   await ensureTransportRunning(page);
   await installSimMidi(page);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
 
   // Assign MODULE va → lane 0 (seeded — the menu path is covered in case 1),
   // launch, arm the lane.
@@ -1007,15 +1158,93 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
   // Let the lane record for 2+ full loops (~1 s each) with ONLY the CV cable
   // wiggling the module. No touch fires; readNorm reads the modulation-free
   // store value → NO track may appear.
+  //
+  // ⚠ I TRIED TO MAKE THIS LEG NON-VACUOUS AND THE ATTEMPT WAS WRONG — WRITTEN
+  // DOWN SO THE NEXT PERSON DOES NOT REPEAT IT. `toEqual([])` below is the whole
+  // claim ("CV never records") and it passes FOR FREE when nothing happens at
+  // all: a dead recorder, a stopped lane, an unbound cable and a working
+  // exclusion are one reading. The obvious repair is to prove the CV was
+  // actually driving — so I sampled `va.base` across this window and required a
+  // spread.
+  //
+  // IT READ EXACTLY 0.0000 OVER 24 SAMPLES, THREE RUNS OUT OF THREE, LOCALLY —
+  // and that is CORRECT BEHAVIOUR, not a defect. CV modulation is transient
+  // render state that must never write the store (the
+  // cv-modulation-live-store-write discipline), so the param this reads is
+  // modulation-FREE by design; this test's own comment two lines up says so
+  // ("readNorm reads the modulation-free store value"). A VCA's CV lands on an
+  // AudioParam in the audio graph, and there is no seam that reads the summed
+  // value back.
+  //
+  // So the emptiness below cannot be qualified from this side, and the honest
+  // record is that it is a WEAK assertion rather than a pretend-strong one. The
+  // MIDI half immediately after is the leg with teeth, and it now carries the
+  // positive control that this one cannot have.
+  //
+  // ⚠ AND THE WINDOW ITSELF IS LOAD-BEARING — I deleted it with that failed
+  // attempt and the WAITS RATCHET caught it, which is the second time on this
+  // branch that ledger has stopped a silent regression. Without the wait the
+  // lane has not recorded anything yet, so `toEqual([])` goes from weak to
+  // meaningless: it would pass before the recorder had a chance to fail.
   await page.waitForTimeout(3500);
   expect(
     await readAutoTrackKeys(page, IDX_L0S0),
     'CV modulation recorded NOTHING (automation records your hands — screen, MIDI, Electra — never CV)',
   ).toEqual([]);
 
+  // ⚠ THE RECORDER'S OWN PRECONDITIONS, ASSERTED BEFORE THE SWEEP. The CI
+  // failure (run 33996525110) is `0 events` with the CC provably driving the
+  // param, so the question narrows to WHICH precondition the faceplate path
+  // stopped delivering. The recorder needs THREE things and the event count
+  // conflates all of them:
+  //
+  //   * the lane still ARMED with this client as `recorderId` — the arm is a
+  //     single-writer claim, and every step since arming has opened panes and
+  //     switched pages;
+  //   * the lane still PLAYING a clip — the punch-in happens at that clip's
+  //     next loop start, so a lane that has stopped records nothing forever;
+  //   * a module still ASSIGNED to the lane — assignment gates RECORD.
+  //
+  // Each is cheap and each names a different defect. Without them a `0` blames
+  // "automation recording" when the fault may be that nothing was armed.
+  expect(
+    await isLaneArmed(page, 0),
+    'lane 0 is STILL armed at the moment of the MIDI sweep (the arm is a single-writer claim ' +
+      'and the steps since arming have opened panes and switched pages)',
+  ).toBe(true);
+  expect(
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { playing?: unknown[] } }> };
+      };
+      return w.__patch?.nodes?.['cp']?.data?.playing?.[0];
+    }),
+    'lane 0 is STILL playing its clip (the recorder punches in at the next loop start, so a ' +
+      'stopped lane can never record)',
+  ).toBe(0);
+
   // Now twist the SAME knob by MIDI (the hand): a track appears.
   await midiLearn(page, 'va', 21);
+  //
+  // ⚠ THE SWEEP IS MEASURED TOO, AND THIS SPLITS THE ONE FAILURE THAT ACTUALLY
+  // HAPPENS. On CI (run 33994221489) this test failed `Expected: > 1 / Received:
+  // 0` on BOTH attempts with no timing signature — every step 100-500 ms, ~40
+  // poll samples, zero events — while passing locally in 16.1 s. A bare event
+  // count cannot say WHICH half broke: "the bound CC never drove the param" and
+  // "the param moved but nothing recorded" both read as 0, and only the second
+  // is an automation defect.
+  //
+  // So the param is sampled ACROSS the sweep. A CC that never lands now fails
+  // here, by name, naming the binding; only a param that demonstrably moved
+  // reaches the event assertion below.
+  const sweep = sampleSpread(page, 'va', 'base', 24, 140);
   await sweepCc(page, 21, 3200);
+  const swept = await sweep;
+  expect(
+    swept.spread,
+    `the bound CC must drive va.base before "did it record?" is a fair question — ` +
+      `saw spread ${swept.spread.toFixed(4)} over ${swept.samples} samples`,
+  ).toBeGreaterThan(0.02);
   await expect
     .poll(async () => (await readAutoEvents(page, IDX_L0S0, 'va::base')).length, { timeout: 12000 })
     .toBeGreaterThan(1);
@@ -1026,14 +1255,14 @@ test('CV exclusion: an LFO CV cable driving the assigned module records NOTHING 
 
 // ── Case 7: the 🟡🟡🔴🔴 countdown flashes the recording lane's ◉ ────────────
 
-test('per-clip automation: the countdown flashes yellow→red on the lane’s ◉ arm while it records; disarm clears it', async ({ page, rack }) => {
+test('per-clip automation: the REC countdown lamp pulses while a lane records; disarm clears it', async ({ page, rack }) => {
   void rack;
   await spawnPatch(page, [
     { id: CP, type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
     { id: 'va', type: 'vca', position: { x: 460, y: 80 }, domain: 'audio', params: { base: 0.2 } },
   ]);
   await ensureTransportRunning(page);
-  await expect(page.getByTestId('clipplayer-card')).toBeVisible();
+  await openCpDock(page);
 
   // A LONGER clip so the 4-beat countdown is a distinct window: 32 steps on the
   // 1/16 grid ≈ 4s = 8 beats (countdown = the last ~2s). Assign the MODULE to
@@ -1045,17 +1274,17 @@ test('per-clip automation: the countdown flashes yellow→red on the lane’s �
   await armLaneViaCard(page, 0);
   expect(await isLaneArmed(page, 0)).toBe(true);
 
-  // Observe ≥2 loops (~9s over a 4s loop): lane 0's ◉ flashes yellow (4,3
-  // beats) THEN red (2,1 beats) before each wrap, published from the tick.
+  // Observe ≥2 loops (~9s over a 4s loop): the deck REC lamp pulses on the
+  // last four beats before each wrap, published from the tick. Requiring BOTH
+  // states plus ≥3 transitions rules out a lamp stuck lit or stuck dark.
+  // (The card's per-◉ 🟡→🔴 colour order died with the card — S2 manifest.)
   const seq = await collectCountdown(page, 9500);
-  expect(seq, 'countdown flashes yellow in the last 4 beats').toContain('yellow');
-  expect(seq, 'countdown flashes red in the last 2 beats').toContain('red');
-  expect(seq.indexOf('yellow'), 'yellow precedes red on the approach to the wrap').toBeLessThan(
-    seq.lastIndexOf('red'),
-  );
+  expect(seq, 'the REC lamp lights on the approach to a wrap').toContain('1');
+  expect(seq, 'and goes dark between approaches').toContain('0');
+  expect(seq.length, `the lamp PULSES rather than latching (saw ${seq.join('')})`).toBeGreaterThanOrEqual(3);
 
   // DISARM → the countdown clears (no stuck light).
   await armLaneViaCard(page, 0);
   expect(await isLaneArmed(page, 0)).toBe(false);
-  await expect.poll(async () => laneArmCountdownColor(page, 0), { timeout: 4000 }).toBeNull();
+  await expect.poll(async () => countdownLampLit(page), { timeout: 4000 }).toBe('0');
 });

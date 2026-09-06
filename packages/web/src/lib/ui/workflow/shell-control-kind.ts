@@ -17,7 +17,7 @@
 // A third case joined them: a plain 0/1 LATCHING switch (kickdrum/snaredrum
 // HARD) rendered as a KnobConic reading "0.00" — technically operable, but a
 // two-state control asking for a 200px drag and printing a float. It now paints
-// the same <Toggle> `.switch` the legacy cards use.
+// the fleet's own <Toggle> `.switch`.
 //
 // WHY momentary is DECLARED, not sniffed: a press-pad and a latching switch
 // have the IDENTICAL ParamDef shape (`0..1 discrete default 0` — tomtom
@@ -26,7 +26,7 @@
 // metadata — see ModuleFace; NOT the I/O contract) and module-face-lint fails a
 // promoted module that grows an unclassified switch-shaped param.
 
-import { looksLikeToggle } from '$lib/graph/group-controls';
+import { looksLikeToggle } from '$lib/graph/exposable-controls';
 import type { ParamDef } from '$lib/graph/types';
 
 /** The primitive a PARAM cell renders as. */
@@ -76,7 +76,7 @@ export type ParamCellKind =
  * ⚠ AND 'hue' IS NOT A KNOB. A hue is CIRCULAR — 0.99 and 0.01 are adjacent
  * reds — so a linear dial puts the cut at an arbitrary place in the middle of a
  * continuous space and makes the player travel the long way round. The wheel is
- * the affordance the module's own legacy card already used.
+ * the affordance the module already used.
  *
  * ⚠ 'grid' AND 'color' ARE INDISTINGUISHABLE TO EVERY RESOLVER IN THE REPO,
  * and that is the argument for declaring rather than sniffing. `1..32 discrete`
@@ -135,7 +135,7 @@ export type ParamCellTier = 'dock' | 'lane';
  * Does this param have the PRESS-PARAM SHAPE — a 0/1 switch resting at 0?
  * Shape alone does NOT mean momentary (a latching toggle looks identical); it
  * only marks the params that REQUIRE an explicit momentary/latching decision.
- * `looksLikeToggle` is the ONE canonical 0/1-switch detector (group-controls),
+ * `looksLikeToggle` is the ONE canonical 0/1-switch detector (exposable-controls),
  * shared with the auto-expose bar and the Toggle primitive. Pure.
  */
 export function looksLikeSwitch(p: ParamDef): boolean {
@@ -275,8 +275,8 @@ export function declaredParamCells(
  *               visible and one click away, which is what a named mode wants.
  *   selector  — the same roster at the DOCK with ≥ 7 states → <Selector>, whose
  *               portaled list stays readable where a button row would not.
- *   toggle    — an undeclared 0..1 discrete switch → <Toggle>, the same
- *               `.switch` primitive the legacy cards paint for it (kickdrum /
+ *   toggle    — an undeclared 0..1 discrete switch → <Toggle>, the fleet's own
+ *               `.switch` primitive for it (kickdrum /
  *               snaredrum HARD read `0.00` on a rotary and took a 200 px drag
  *               to flip a two-state control).
  *   knob      — everything else, the KnobConic every other param keeps. This is
@@ -317,8 +317,8 @@ export function paramCellKind(
   return 'knob';
 }
 
-/** The value a momentary pad writes on press / release. The pad is the same
- *  0/1 press-param the legacy cards write (`strike` high while held; the
+/** The value a momentary pad writes on press / release. The pad writes the same
+ *  0/1 press-param it always did (`strike` high while held; the
  *  worklet fires on its rising edge), so RELEASE returns it to REST — the
  *  def default — and nothing stuck is left behind in the Y.Doc. Pure. */
 export function momentaryValue(high: boolean, restValue = 0): number {

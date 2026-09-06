@@ -199,7 +199,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     // Pause the rAF loop + pin the clock BEFORE boot — kills LINES auto-scroll
     // (the OLD test's drift confound) so the param is the only thing that moves.
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -212,7 +212,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-lines-out', from: { nodeId: 'v-lines', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-lines'), 'LINES visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="lines"])'), 'LINES visible').toBeVisible();
 
     // BEFORE: read LINES' OWN FBO (amp=4 → a sparse line field, structured + non-black).
     const before = await stepAndReadStats(page, { nodeId: 'v-lines', steps: FIXED_STEPS });
@@ -248,7 +248,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     // test had to set speed:0 to fake this; the freeze does it for free + for
     // EVERY frame.time read, not just the one param.)
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -261,7 +261,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-in-out', from: { nodeId: 'v-in', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-inwards'), 'INWARDS visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="inwards"])'), 'INWARDS visible').toBeVisible();
 
     const before = await stepAndReadStats(page, { nodeId: 'v-in', steps: FIXED_STEPS });
     assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
@@ -289,7 +289,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -304,7 +304,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-destr-out',   from: { nodeId: 'v-destr', portId: 'out' }, to: { nodeId: 'v-out',   portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-destructor'), 'DESTRUCTOR visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="destructor"])'), 'DESTRUCTOR visible').toBeVisible();
 
     // DESTRUCTOR is a pure passthrough of its input + params (no frame.time, no
     // accumulator) — frozen-deterministic. Read DESTRUCTOR's OWN FBO.
@@ -332,7 +332,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // LUMA is a single-input luminance processor (gamma / contrast / posterize /
@@ -350,7 +350,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-luma-out',   from: { nodeId: 'v-luma',  portId: 'out' }, to: { nodeId: 'v-out',  portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="luma"])'), 'LUMA visible').toBeVisible();
 
     const before = await stepAndReadStats(page, { nodeId: 'v-luma', steps: FIXED_STEPS });
     assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
@@ -370,7 +370,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // CHROMA is a single-input hue-shifter / colorizer, pure (no frame.time). On
@@ -389,7 +389,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-chroma-out',   from: { nodeId: 'v-chroma', portId: 'out' }, to: { nodeId: 'v-out',    portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chroma'), 'CHROMA visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chroma"])'), 'CHROMA visible').toBeVisible();
 
     const before = await stepAndReadStats(page, { nodeId: 'v-chroma', steps: FIXED_STEPS });
     assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
@@ -412,7 +412,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // CHROMAKEY keys on HUE distance, so the FG must carry SATURATED color.
@@ -440,7 +440,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="chromakey"])'), 'CHROMAKEY visible').toBeVisible();
 
     // BEFORE (threshold 0): frame is the flat red FG. A flat fill has near-zero
     // spatial variance, so DON'T apply the variance floor here — assert non-black
@@ -470,7 +470,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // INWARDS (a denser-pixel source) is FG so the luma key has a varied luma
@@ -493,7 +493,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-lumakey'), 'LUMAKEY visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="lumakey"])'), 'LUMAKEY visible').toBeVisible();
 
     const before = await stepAndReadStats(page, { nodeId: 'v-key', steps: FIXED_STEPS });
     assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
@@ -513,7 +513,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // COLORIZER maps mono → solid tint (R = mono*tintR, etc), pure (no frame.time).
@@ -532,7 +532,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-color-out',   from: { nodeId: 'v-color', portId: 'out' }, to: { nodeId: 'v-out',   portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-colorizer'), 'COLORIZER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="colorizer"])'), 'COLORIZER visible').toBeVisible();
 
     const before = await stepAndReadStats(page, { nodeId: 'v-color', steps: FIXED_STEPS });
     assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
@@ -571,7 +571,8 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-fb-out',   from: { nodeId: 'v-fb',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    // The videoOut tile thumb — the wall-clock pixel surface on the shell.
+    const canvas = page.locator('.svelte-flow__node[data-id="v-out"] canvas[data-testid="video-tile-thumb"]');
     await page.waitForTimeout(500);
     const before = (await readCanvasStatsLegacy(canvas))!;
 
@@ -589,7 +590,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     test.setTimeout(60_000);
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Two visually-distinct, frozen-pure sources (LINES line field + INWARDS
@@ -610,7 +611,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
         { id: 'e-mix-out',   from: { nodeId: 'v-mix',   portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' },  sourceType: 'video',      targetType: 'video' },
       ],
     );
-    await expect(page.locator('.svelte-flow__node-videoMixer'), 'V-MIXER visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="videoMixer"])'), 'V-MIXER visible').toBeVisible();
 
     const before = await stepAndReadStats(page, { nodeId: 'v-mix', steps: FIXED_STEPS });
     assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });

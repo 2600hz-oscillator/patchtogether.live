@@ -23,6 +23,7 @@
 // observable state), NOT a render assertion. Goal: 0 waitForTimeout in the file.
 
 import { test, expect } from './_fixtures';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -46,7 +47,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     test.setTimeout(60_000);
 
     await freezeBentbox(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Spawn a SHAPES source feeding into BENTBOX so the bending pipeline has
@@ -70,27 +71,12 @@ test.describe('BENTBOX — CRT-emulation output', () => {
       ],
     );
 
+    // Presence on the default shell: the faceplate tile (the CRT preview is
+    // dock-only `fullViewBody`; the FBO reads below are the real pixel gate).
     await expect(
-      page.locator('.svelte-flow__node-bentbox'),
-      'BENTBOX node visible',
+      page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]'),
+      'BENTBOX faceplate visible',
     ).toBeVisible();
-    await expect(
-      page.locator('[data-testid="bentbox-card"]'),
-      'BENTBOX card present',
-    ).toHaveCount(1);
-
-    const canvas = page.locator('[data-testid="bentbox-canvas"]');
-    await expect(canvas, 'BENTBOX canvas mounted').toHaveCount(1);
-
-    // Confirm the canvas has a positive size (it's been laid out, not
-    // collapsed). 4:3 letterbox math means width should at least exceed
-    // the minimum card-width minus padding.
-    const dims = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      return { width: c.width, height: c.height };
-    });
-    expect(dims.width, 'canvas has positive width').toBeGreaterThan(100);
-    expect(dims.height, 'canvas has positive height').toBeGreaterThan(50);
 
     // Drive a FIXED burst synchronously, read BENTBOX's OWN out FBO once.
     // The CRT-decoded frame is non-black with spatial structure (the
@@ -112,7 +98,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     await spawnPatch(page, [
       { id: 'bb', type: 'bentbox', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="bentbox-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="bb"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Drive a bending knob via direct patch-store mutation (the same path
     // CV inputs use after the engine bridge writes through). Sweeping
@@ -159,20 +145,49 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     expect(params.feedback_gain).toBe(0.5);
   });
 
-  test('resize handle is present + drag grows the card', async ({ page, rack }) => {
+  test('resize handle is present + drag grows the preview (and persists the size)', async ({ page, rack }) => {
+    // ⚠ BARE 30 s DEFAULT — the family this branch has now repaired a dozen
+    // times. Failed on CI (run 34000971132) with a plain `Test timeout` and NO
+    // call log: nothing stuck, the test simply ran out. Re-pointing a spec off
+    // the deleted surface adds a dock open, and a dock mount no longer overlaps
+    // page load, so the boot moved in front of the first assertion. A BOUND,
+    // not a claim: this test asserts a slot selection / a resize, never a
+    // latency, and a bound costs wall-clock only when it is exceeded.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await spawnPatch(page, [
       { id: 'bb', type: 'bentbox', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
 
-    const card = page.locator('[data-testid="bentbox-card"]');
-    const handle = page.locator('[data-testid="bentbox-resize-handle"]');
-    await expect(card).toHaveCount(1);
+    // The face handle lives in the dock pane (`fullViewBody`) and sizes the
+    // PREVIEW there, writing the SAME `data.width`/`data.height` keys the
+    // card's node-resize wrote — one persisted truth per idea.
+    await page.waitForFunction(
+      () =>
+        typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+        'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'bb',
+    );
+    const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="bb"]');
+    await expect(pane.getByTestId('bentbox-output-body')).toBeVisible({ timeout: 60_000 });
+
+    const preview = pane.getByTestId('bentbox-face-canvas');
+    const handle = pane.getByTestId('bentbox-face-resize-handle');
+    await expect(preview).toHaveCount(1);
     await expect(handle, 'resize handle present').toHaveCount(1);
 
-    const initial = await card.evaluate(
+    const initial = await preview.evaluate(
       (el) => (el as HTMLElement).getBoundingClientRect(),
     );
 
+    // hover() auto-scrolls the pane so the handle is truly under the pointer
+    // (a boundingBox taken while it sits below the pane fold hands the drag to
+    // whatever is painted at those screen coordinates instead).
+    await handle.hover();
     const box = await handle.boundingBox();
     expect(box).not.toBeNull();
     if (!box) return;
@@ -185,21 +200,31 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     await page.mouse.move(sx + 200, sy + 160, { steps: 5 });
     await page.mouse.up();
 
-    // Deterministic wait: poll the card's measured width until the resize has
-    // committed (style width is driven by node.data.width after onMove writes
-    // through), replacing the old waitForTimeout(150) settle. The final-state
-    // assertions below re-read the box for the exact growth checks.
+    // Deterministic wait: poll the persisted truth both surfaces share — the
+    // drag writes `data.width`/`data.height` per pointermove (the pane's
+    // `max-width:100%` can CLAMP the painted wrap, so the store is the honest
+    // observable; the visual check below allows the clamp).
+    const readPersisted = () =>
+      page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: { width?: number; height?: number } }> };
+        };
+        const d = w.__patch.nodes['bb']?.data ?? {};
+        return { width: d.width ?? 0, height: d.height ?? 0 };
+      });
     await expect.poll(
-      () => card.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width),
-      'card width grew after the resize drag',
+      async () => (await readPersisted()).width,
+      'data.width grew after the resize drag',
     ).toBeGreaterThan(initial.width + 20);
+    const persisted = await readPersisted();
+    expect(persisted.height, `data.height persisted (${persisted.height})`).toBeGreaterThan(360);
 
-    const after = await card.evaluate(
-      (el) => (el as HTMLElement).getBoundingClientRect(),
-    );
-    expect(after.width, `card grew horizontally (${initial.width} -> ${after.width})`)
-      .toBeGreaterThan(initial.width + 20);
-    expect(after.height, `card grew vertically (${initial.height} -> ${after.height})`)
-      .toBeGreaterThan(initial.height + 20);
+    // The painted preview tracks data.width up to the pane's own width.
+    const paneWidth = await pane.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+    const painted = await preview.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+    expect(
+      painted,
+      `preview painted at data.width or the pane clamp (painted=${painted} pane=${paneWidth})`,
+    ).toBeGreaterThanOrEqual(Math.min(persisted.width, paneWidth) - 40);
   });
 });

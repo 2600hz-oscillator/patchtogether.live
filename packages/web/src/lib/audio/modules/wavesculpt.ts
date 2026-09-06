@@ -672,13 +672,13 @@ export function clampMasterGain(v: number): number {
 //
 // `fxType{1..4}`, `video_mode` and `blink_mode` are 3-state discrete params
 // that shipped with NO `options` roster. Nothing was broken — the values work
-// and the legacy card cycles them with bespoke buttons — but the shell had no
-// way to see the names, so under `?shell=1` all six rendered as ANONYMOUS
+// and bespoke buttons cycled them — but the shell had no way to see the names,
+// so all six rendered as ANONYMOUS
 // KNOBS printing `0.00`, `1.00`, `2.00`. That is the filter LP/HP/BP defect
 // (PF-1's founding case) six times over on one module.
 //
-// ⚠ THESE ARE EXPORTED SO THE CARD READS THEM TOO. The legacy card carried its
-// own `const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED
+// ⚠ THEY ARE EXPORTED SO EVERY READER SHARES ONE ROSTER. A surface used to
+// carry its own `const BLINK_MODE_NAMES = ['', 'SCOPES TRIAL', 'REALITY BASED
 // COMMUNITY']` plus three inline ternaries for the other two — a SECOND SOURCE
 // OF TRUTH for a vocabulary, which is the exact divergence `card-range-source`
 // records against FilterCard's private `const MODES = ['LP','HP','BP']`. One
@@ -1028,7 +1028,7 @@ export const wavesculptDef: AudioModuleDef = {
       controls[`wall${w}_distort`] = `WALL ${w} (${WALL[w - 1]}) DISTORT (0..1) — morphs the wall from a flat quad (0) to a convex dome bulging toward the room centre (1), a fisheye we look up into.`;
     }
     // Camera + master + look controls.
-    controls.pos_x = 'Camera X position (−1..+1) — the horizontal axis of the on-card XY pad. Moves the viewpoint left/right through the box.';
+    controls.pos_x = 'Camera X position (−1..+1) — the horizontal axis of the faceplate\'s XY pad. Moves the viewpoint left/right through the box.';
     controls.pos_y = 'Camera Y position (−1..+1) — the vertical axis of the XY pad.';
     controls.pos_z = 'Camera Z position / HEIGHT (−1..+1) — depth into the box (the HEIGHT slider).';
     controls.zoom  = 'Camera ZOOM / distance scalar (0.3..3, log) — closer (smaller) = bigger ribbons visually AND louder audibly (closer = louder, one shared distance number). CV via the zoom input.';
@@ -1389,8 +1389,8 @@ export const wavesculptDef: AudioModuleDef = {
      * The camera pad, painted by this module's OWN body rather than by a band
      * cell. `surface: 'body'` because it is a control OVER THE PICTURE — you
      * fly the camera by watching where it goes — so the gesture belongs next to
-     * its feedback, which is exactly why the legacy card put it beside the
-     * canvas. It costs a `face-xy-body-source` obligation: the body's source
+     * its feedback, which is exactly where this module has always put it. It
+     * costs a `face-xy-body-source` obligation: the body's source
      * must really paint it, which is checked by reading the body.
      *
      * ⚠ The pad shows the KNOB; CV moves the PICTURE. Those are two different

@@ -24,7 +24,7 @@
 // engages under the EXPLICIT flag (__videoWorkerEnabled / ?videoworker=1 —
 // only the dedicated render-worker-*.spec.ts files set it), so this spec
 // renders TOYBOX on the MAIN thread via its standard factory. The pixels it reads come from the on-card
-// 2D `toybox-canvas`, populated by __toyboxFreeze's DIRECT engine.step() +
+// 2D `toybox-face-canvas`, populated by __toyboxFreeze's DIRECT engine.step() +
 // blitOutputToDrawingBuffer — NOT from a free-running worker. The only reason this
 // blew its budget on CI's software renderer was TOYBOX's live main-thread rAF
 // render loop grinding UNPAUSED underneath the deterministic __toyboxFreeze frames.
@@ -39,7 +39,7 @@
 // needs the serialized real-GPU heavy lane — it runs in the normal parallel shards.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 
 type DLGlobal = {
@@ -118,16 +118,6 @@ f 1 5 6
 f 1 6 2
 `;
 
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
-
 async function spawnToybox(page: Page): Promise<void> {
   // SwiftShader-cheap: pause the engine's background rAF render loop + pin the
   // engine clock BEFORE boot so TOYBOX's live main-thread render doesn't grind the
@@ -136,15 +126,14 @@ async function spawnToybox(page: Page): Promise<void> {
   // unaffected, so every disk-loaded shader/OBJ render + lit-pixel/colour assertion
   // below still holds, byte-identical.
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
     [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
     [],
   );
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-  await pinViewport(page);
+  await openToyboxDock(page);
 }
 
 /** Set TOYBOX layer 0 directly on the live node — supports inline shaderSrc /
@@ -177,7 +166,7 @@ async function sampleCanvas(
   page: Page,
 ): Promise<{ lit: number; total: number; r: number; g: number; b: number }> {
   return page.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+    const canvas = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
     if (!canvas) return { lit: 0, total: 0, r: 0, g: 0, b: 0 };
     const c2d = canvas.getContext('2d');
     if (!c2d) return { lit: 0, total: 0, r: 0, g: 0, b: 0 };
@@ -301,7 +290,7 @@ test.describe('TOYBOX disk-loading (custom shaders + OBJ)', () => {
       await page.waitForTimeout(80);
     }
     // The card + canvas are still alive (no white-screen crash).
-    await expect(page.locator('[data-testid="toybox-canvas"]')).toBeVisible();
+    await expect(page.locator('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]')).toBeVisible();
     expect(pageErrors, 'a bad uploaded shader does not crash the page').toEqual([]);
 
     // Swapping back to a GOOD custom shader recovers (the cache is per-source).
@@ -346,6 +335,10 @@ async function faderLabels(page: Page): Promise<string[]> {
 async function dragControl(page: Page, label: string, dy: number): Promise<void> {
   const knob = page.locator(`[data-testid="toybox-controls"] [role="slider"][aria-label="${label}"]`);
   await expect(knob).toBeVisible({ timeout: 15_000 });
+  // The console lives in the dock pane, an ordinary scroll container taller
+  // than the viewport — bring the knob fully in before computing coordinates,
+  // or the mouse lands on whatever chrome overlaps its clipped centre.
+  await knob.scrollIntoViewIfNeeded();
   const box = (await knob.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;

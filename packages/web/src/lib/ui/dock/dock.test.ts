@@ -195,7 +195,6 @@ describe('dockStore — tombstone GC (the quicksave slot-switch scenario)', () =
   });
 
   const live = (...ids: string[]) => new Set(ids);
-  const none = new Set<string>();
 
   it('slot switch round-trip: absent → RETIRED (not wiped) → REVIVED when the id returns', () => {
     // The verifier's exact failure case for naive pruning: quickload swaps
@@ -204,15 +203,15 @@ describe('dockStore — tombstone GC (the quicksave slot-switch scenario)', () =
     dockStore.setScaleOf('mix-1', 1.25);
 
     // Slot 2 loads: a different patch, mix-1 absent — several commits pass.
-    expect(dockStore.sweep(live('other-a', 'other-b'), none)).toEqual([]);
+    dockStore.sweep(live('other-a', 'other-b'));
     expect(dockStore.isDocked('mix-1')).toBe(false); // retired, not rendered
     expect(dockStore.tombstoneCount).toBe(1);
-    dockStore.sweep(live('other-a'), none);
-    dockStore.sweep(live('other-a', 'other-c'), none);
+    dockStore.sweep(live('other-a'));
+    dockStore.sweep(live('other-a', 'other-c'));
     expect(dockStore.tombstoneCount).toBe(1); // aging, still held
 
     // Slot 1 reloads: mix-1 is back (quicksave/quickload keep node ids).
-    dockStore.sweep(live('mix-1', 'other-z'), none);
+    dockStore.sweep(live('mix-1', 'other-z'));
     expect(dockStore.isDocked('mix-1')).toBe(true);
     expect(dockStore.entryFor('mix-1')).toMatchObject({
       zone: 'left',
@@ -227,41 +226,41 @@ describe('dockStore — tombstone GC (the quicksave slot-switch scenario)', () =
     dockStore.__setStorageForTest(storage);
     dockStore.bind('rack-a');
     dockStore.dock('mix-1', 'top', { x: 5, y: 6 });
-    dockStore.sweep(live('unrelated'), none); // retire
+    dockStore.sweep(live('unrelated')); // retire
     expect(storage.map.get(DOCK_STORAGE_PREFIX + 'rack-a')).toContain('mix-1');
 
     dockStore.bind('rack-a'); // simulated reload (same rackspace key)
     expect(dockStore.tombstoneCount).toBe(1);
-    dockStore.sweep(live('mix-1'), none);
+    dockStore.sweep(live('mix-1'));
     expect(dockStore.entryFor('mix-1')).toMatchObject({ zone: 'top' });
   });
 
-  it('peer-grouped nodes are EVICTED (hard) and reported for the toast', () => {
-    dockStore.dock('g-child', 'top', { x: 0, y: 0 });
-    const evicted = dockStore.sweep(live('g-child'), new Set(['g-child']));
-    expect(evicted).toEqual(['g-child']);
-    expect(dockStore.isDocked('g-child')).toBe(false);
-    expect(dockStore.tombstoneCount).toBe(0); // no revive path for grouped
-  });
+  // ⚠ 'peer-grouped nodes are EVICTED (hard) and reported for the toast' IS
+  // DELETED WITH ITS SUBJECT. `sweep` took a second `groupedIds` set and
+  // hard-dropped (no tombstone, no revive) any docked node a peer had folded
+  // into a COLLAPSED GROUP, because such a node had no canvas presence left to
+  // stub; Canvas toasted the returned ids. The GROUP! module is deleted, so
+  // nothing can produce that state, the parameter is removed rather than left
+  // permanently empty, and `sweep` no longer returns anything.
 
   it('an explicit LOCAL delete hard-drops entry + tombstone (never revives)', () => {
     dockStore.dock('doomed', 'bottom', { x: 0, y: 0 });
     expect(dockStore.noteExplicitDelete(['doomed', 'not-docked'])).toEqual(['doomed']);
     expect(dockStore.isDocked('doomed')).toBe(false);
     // Even if the id reappears (fresh module reusing an id), no revive:
-    dockStore.sweep(live('doomed'), none);
+    dockStore.sweep(live('doomed'));
     expect(dockStore.isDocked('doomed')).toBe(false);
   });
 
   it('tombstones hard-drop by age (bounded) and by cap (oldest-absent first)', () => {
     dockStore.dock('old', 'top', { x: 0, y: 0 });
-    dockStore.sweep(live(), none); // retire
-    for (let i = 0; i <= 400; i++) dockStore.sweep(live(), none);
+    dockStore.sweep(live()); // retire
+    for (let i = 0; i <= 400; i++) dockStore.sweep(live());
     expect(dockStore.tombstoneCount).toBe(0); // aged out past the budget
 
     // Cap: 70 retired entries collapse to the newest 64.
     for (let i = 0; i < 70; i++) dockStore.dock(`n${i}`, 'top', { x: i, y: i });
-    dockStore.sweep(live(), none);
+    dockStore.sweep(live());
     expect(dockStore.tombstoneCount).toBe(64);
   });
 

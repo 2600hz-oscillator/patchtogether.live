@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "webglContentHash": "f12a9b0019f8f532b3dd7b88042d1ed9cbae4509a4801444af68dccb9a82f02b",
+  "attestedAt": "2026-09-06T04:08:25.544Z",
+  "attestedBy": "patchtogether-maintainer",
+  "gitHeadAtAttest": "e10a7b4d38c57eefc78c99fa132a53a602a4ad9b",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "machineClass": "local-trusted-gpu-workstation",
+  "preflight": {
+    "samples": 7,
+    "windowMs": 10204,
+    "maxForeignCpu": 0.5,
+    "thresholdCpu": 25,
+    "load1": 4.48779296875,
+    "cores": 10
+  },
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "appServer": {
+    "url": "http://127.0.0.1:62985",
+    "mode": "dev",
+    "root": "/Users/2600hz/Documents/workspace/wt-legacy-removal",
+    "commit": "e10a7b4d38c57eefc78c99fa132a53a602a4ad9b"
+  },
+  "repeatEach": 1,
+  "suites": {
+    "A-heavy": {
+      "specFiles": 60,
+      "passed": 207,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 2,
+      "flakyDetails": []
+    },
+    "A-serial": {
+      "specFiles": 6,
+      "passed": 36,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 1,
+      "flakyDetails": []
+    },
+    "B-leakers": {
+      "specFiles": 4,
+      "passed": 8,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    },
+    "C-camera": {
+      "specFiles": 1,
+      "passed": 1,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    }
+  },
+  "durationSec": 236
+}

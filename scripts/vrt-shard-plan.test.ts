@@ -137,11 +137,19 @@ const roster: T[] = Object.keys(timings)
 
 describe('the vrt-strict partition covers the lane exactly', () => {
   it('has real measured costs to plan with (not vacuous)', () => {
-    // Anchored to NAMES the artifact must contain, never to a count: one from
-    // each spec file, so a half-empty artifact cannot pass.
-    expect(Object.keys(timings)).toContain('vrt.spec.ts :: adsr card matches baseline');
+    // Anchored to NAMES the artifact must contain, never to a count.
+    //
+    // ⚠ IT USED TO NAME ONE ROW PER SPEC FILE, AND THERE IS ONE SPEC FILE NOW.
+    // The other anchor was `vrt.spec.ts :: adsr card matches baseline` — the
+    // per-module legacy-CARD sweep, deleted with the fleet. Two rows from the
+    // SURVIVING file, at opposite ends of the alphabet, keep the property that
+    // mattered: truncation drops rows in bulk, so a partial artifact cannot
+    // satisfy both.
     expect(Object.keys(timings)).toContain(
       'workflow-shell-faces.spec.ts :: face-adsr-dock: the dock full-view faceplate matches baseline',
+    );
+    expect(Object.keys(timings)).toContain(
+      'workflow-shell-faces.spec.ts :: face-vca-dock: the dock full-view faceplate matches baseline',
     );
     expect(Object.values(timings).every((v) => typeof v === 'number' && v > 0)).toBe(true);
   });
@@ -214,9 +222,18 @@ describe('the --grep selector picks exactly the planned tests', () => {
 
 describe('the planner refuses a plan it cannot select or cover', () => {
   it('throws on two tests sharing a leaf title across spec files', () => {
+    // The duplicate is minted FROM the roster, not spelled out: the leaf title
+    // it used to hard-code belonged to the deleted card sweep, so the "dup"
+    // collided with nothing and the planner had nothing to refuse. Taking
+    // `roster[0]`'s own title guarantees a real collision whatever the lane
+    // contains, and puts it in a DIFFERENT file, which is the case under test.
     const dup: T[] = [
       ...roster,
-      { file: 'workflow-shell-faces.spec.ts', title: 'adsr card matches baseline', titlePath: ['workflow-shell-faces.spec.ts', 'D', 'adsr card matches baseline'] },
+      {
+        file: 'zz-synthetic-collision.spec.ts',
+        title: roster[0]!.title,
+        titlePath: ['zz-synthetic-collision.spec.ts', 'D', roster[0]!.title],
+      },
     ];
     expect(() => planVrtShards(dup, timings, SHARDS)).toThrow(/duplicate test title/);
   });

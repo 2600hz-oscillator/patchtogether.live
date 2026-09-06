@@ -21,7 +21,7 @@
 // Output: e2e/vrt/__screenshots__/cube-adsr-composite.spec.ts/cube-adsr-midilane.png
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, canvasNode } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 test.describe.configure({ mode: 'default' });
@@ -69,7 +69,7 @@ test.describe('VRT: CUBE per-voice-ADSR composite', () => {
     // this the captured text metrics differ run-to-run and platform-to-platform.
     // Full root cause: e2e/vrt/_fonts.ts.
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
 
@@ -123,8 +123,11 @@ test.describe('VRT: CUBE per-voice-ADSR composite', () => {
       send([0x90, 67, 100]);
     });
 
-    const laneCard = page.locator('.svelte-flow__node-midiLane').first();
-    const cbCard = page.locator('.svelte-flow__node-cube').first();
+    // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+    // and every lane node is `moduleShell`, so a per-module class matches
+    // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+    const laneCard = canvasNode(page, 'lane');
+    const cbCard = canvasNode(page, 'cb');
     await laneCard.waitFor({ state: 'visible', timeout: 10_000 });
     await cbCard.waitFor({ state: 'visible', timeout: 10_000 });
 

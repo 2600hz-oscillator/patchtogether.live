@@ -2,18 +2,17 @@
 //
 // THE 9×9 MONITOR PREVIEW, drawn once and imported twice.
 //
-// This is the picture OUT TO LAUNCH is FOR: the def's own docs call it "the
-// on-card 9x9 preview shows exactly what the LEDs show, so you can dial it in
-// without hardware", which is the module's only surface on a machine with no
-// Launchpad attached.
+// This is the picture OUT TO LAUNCH is FOR: the def's own docs call it "the 9x9
+// preview shows exactly what the LEDs show, so you can dial it in without
+// hardware", which is the module's only surface on a machine with no Launchpad
+// attached.
 //
-// ⚠ IT LIVES HERE BECAUSE TWO SURFACES NOW DRAW IT. `OutToLaunchCard.svelte`
-// owned this arithmetic; the faceplate body needs the SAME picture, and
-// promotion means both exist at once (`?shell=legacy` still renders the card).
-// Re-typing the geometry or the transform in the body would be the "a card must
-// never RE-TYPE what its def declares" defect one layer over: no runtime gate
-// compares two `.svelte` files, so a divergence would be invisible and the face
-// would quietly show a DIFFERENT picture than the card and the hardware.
+// ⚠ IT LIVES HERE, NOT IN THE COMPONENT THAT DRAWS IT. The arithmetic used to
+// belong to whichever surface painted the preview, and re-typing the geometry
+// or the transform in a second one would be the "a surface must never RE-TYPE
+// what its def declares" defect one layer over: no runtime gate compares two
+// `.svelte` files, so a divergence would be invisible and a surface would
+// quietly show a DIFFERENT picture than the hardware.
 //
 // Everything here is pure 2-D canvas + arithmetic — no WebGL context is created,
 // so this file stays out of the WebGL attest basis (which takes from

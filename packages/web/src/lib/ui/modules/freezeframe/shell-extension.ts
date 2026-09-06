@@ -10,13 +10,13 @@
 // it lazily and never imports a freezeframe component itself, which is what
 // keeps `module-shell-import-guard` green.
 //
-// ⚠ WHY (#1934 / #1928): this module's SCREEN toggle shipped on its CARD in the
-// same change that promoted it into STRICT_FACES — and promotion is what stops
-// both surfaces from rendering that card, so the required control was deleted
-// by the promotion meant to keep it. There is no generic shell affordance to
+// ⚠ WHY (#1934 / #1928): this module's SCREEN toggle shipped on a surface in
+// the same change that promoted it into STRICT_FACES — and the promotion is
+// what stopped that surface from rendering, so the required control was deleted
+// by the change meant to deliver it. There is no generic shell affordance to
 // fall back on (`previewCollapsed` appears in zero shell files), and the spec
-// proving the toggle worked was pinned to `?shell=legacy`, the one surface
-// promotion does not change — so it could not have caught it.
+// proving the toggle worked was pinned to the one surface the promotion did not
+// change — so it could not have caught it.
 //
 // ONE slot: `fullViewBody` — the live picture plus the SCREEN switch, rendered
 // at the head of the DOCK full view. Dock-only, enforced by

@@ -2,9 +2,9 @@
 //
 // GIBRIBBON, against the FACEPLATE — the DEFAULT renderer.
 //
-// `gibribbon.spec.ts` rides the `rack` fixture (`?shell=legacy`), which is
-// correct as coverage of the legacy card but structurally cannot see anything
-// the default renderer paints. This file is the other half, deliberately
+// `gibribbon.spec.ts` rides the `rack` fixture, which was written against the
+// PRE-PROMOTION surface and structurally cannot see anything the faceplate
+// paints. This file is the other half, deliberately
 // SMALL: one test per seam the promotion moved. The game's arithmetic is
 // unit-pinned (gibribbon-engine.test.ts, gibribbon-liveness.test.ts,
 // gibribbon-face-model.test.ts); this proves the SURFFACE IS WIRED TO IT.

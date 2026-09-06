@@ -1,17 +1,20 @@
 // e2e/tests/clipplayer-card-erase.spec.ts
 //
-// STALE-NOTE FIX — card path (redesign §3.1, adversarial-review B2). The
-// on-screen note editor must RECONCILE the scheduler when you erase a note on a
+// STALE-NOTE FIX — on-screen editor path (redesign §3.1, adversarial-review
+// B2). The note editor must RECONCILE the scheduler when you erase a note on a
 // PLAYING clip, exactly like the Launchpad editor — otherwise the erased voice
-// rings out. This drives the REAL card DOM (double-click a pad → edit view →
-// launch → add notes by clicking cells → clear) through the REAL audio chain:
+// rings out. This drives the REAL dock full view (double-click a pad → editor
+// band → launch → add notes by clicking cells → clear) through the REAL audio
+// chain:
 //
 //   clipplayer.pitch1 → VCO.pitch ; VCO.sine → VCA.audio ;
 //   clipplayer.gate1  → VCA.cv    ; VCA.audio → SCOPE.ch1
 //
-// Notes ADDED from the card play back AUDIBLY; CLEARING them (⌫, which now calls
-// reconcileClipRemoval) makes the output go SILENT — proving the card erase path
-// is wired to the reconcile, not just the Launchpad path.
+// Notes ADDED from the editor play back AUDIBLY; CLEARING them (⌫, which now
+// calls reconcileClipRemoval) makes the output go SILENT — proving the
+// on-screen erase path is wired to the reconcile, not just the Launchpad path.
+// (Re-pointed at the dock full view by the S2 legacy-removal inversion; the
+// park predates the re-point.)
 
 import { test, expect, creditSetupBudget } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -48,7 +51,7 @@ async function setTransport(page: import('@playwright/test').Page, running: numb
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the stale-note class: erasing a note on a PLAYING clip from the card editor must reconcile the scheduler, or the erased voice rings out with nothing on screen to explain it.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
-test.fixme('@clipplayer card note-editor erase RECONCILES a playing clip — added notes sound, clearing silences them', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
+test.fixme('@clipplayer note-editor erase RECONCILES a playing clip — added notes sound, clearing silences them', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack, errorWatch }) => {
   // ARRANGE — everything up to the CLEAR click is setup, and it is expensive
   // and load-dependent: on run 31833587260 it ran to t=29.6 s of a 30 s budget
   // (eight cell clicks alone cost 13.9 s, 1.0-2.4 s each), so the 15 s silence
@@ -79,14 +82,17 @@ test.fixme('@clipplayer card note-editor erase RECONCILES a playing clip — add
         sourceType: 'audio', targetType: 'audio' },
     ],
   );
-  const card = page.getByTestId('clipplayer-card').first();
-  await card.waitFor({ state: 'visible' });
+  const tile = page.locator('.svelte-flow__node[data-id="ce-cp"] [data-testid="module-shell"]');
+  await tile.waitFor({ state: 'visible' });
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await dock.waitFor({ state: 'visible' });
 
-  // Open the note editor on lane 0 / slot 0 + LAUNCH the edited clip (so it is
+  // Bind the editor band to lane 0 / slot 0 + LAUNCH the edited clip (so it is
   // the PLAYING clip — the reconcile only fires on a playing clip).
-  await card.locator('.pad').first().dblclick();
-  await page.getByTestId('clipplayer-editor').waitFor({ state: 'visible' });
-  await page.getByTestId('clipplayer-edit-now').click();
+  await dock.locator('[data-clip="0"]').dblclick();
+  await dock.getByTestId('clipplayer-face-editor').waitFor({ state: 'visible' });
+  await dock.getByTestId('clipplayer-edit-now').click();
   await setTransport(page, 1);
 
   // Empty clip → silent.
@@ -96,7 +102,7 @@ test.fixme('@clipplayer card note-editor erase RECONCILES a playing clip — add
   // ADD notes on the bottom row across several steps → dense, reliably audible
   // over a loop window.
   for (const step of [0, 1, 2, 3, 4, 5, 6, 7]) {
-    await page.getByTestId(`clipplayer-cell-0-${step}`).click();
+    await dock.getByTestId(`clipplayer-cell-0-${step}`).click();
   }
   const during = await readScopePeakOverWindow(page, 'ce-scp', 1200);
   expect(during.polls, 'SCOPE polled').toBeGreaterThan(0);
@@ -104,13 +110,13 @@ test.fixme('@clipplayer card note-editor erase RECONCILES a playing clip — add
   expect(during.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
 
   // ── ACT ─────────────────────────────────────────────────────────────────
-  // CLEAR the clip from the card (⌫ → clearClip → reconcileClipRemoval): the
-  // playing voice is cut + no notes remain → the output goes SILENT.
+  // CLEAR the clip from the editor band (⌫ → clearClip → reconcileClipRemoval):
+  // the playing voice is cut + no notes remain → the output goes SILENT.
   //
   // Hand the arrange cost back FIRST, so the tolerance asserted below is the
   // 15 s it says it is rather than `30 s − whatever arranging cost` (#1648).
-  creditSetupBudget(setupAt, 'spawnPatch + editor open + 8 cell clicks');
-  await page.getByTestId('clipplayer-clear').click();
+  creditSetupBudget(setupAt, 'spawnPatch + dock open + 8 cell clicks');
+  await dock.getByTestId('clipplayer-clear').click();
 
   // ⚠ The SCOPE analyser ring is ~2048 samples (~43 ms at 48 kHz), so the
   // first observation window necessarily still contains pre-clear audio and
@@ -135,7 +141,7 @@ test.fixme('@clipplayer card note-editor erase RECONCILES a playing clip — add
       {
         timeout: 15_000,
         message:
-          'cleared notes go silent (card erase reconciles the scheduler) — ' +
+          'cleared notes go silent (the editor erase reconciles the scheduler) — ' +
           'rms max-held over a 400 ms in-page window, floor 0.03',
       },
     )

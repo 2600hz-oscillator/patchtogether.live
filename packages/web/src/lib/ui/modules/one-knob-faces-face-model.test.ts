@@ -8,8 +8,8 @@
 // one DISCRETE param, and the pair separates TWO questions that look like one:
 //
 //   · WHAT ARE THE STATES CALLED? sampleHold's ten scale NAMES already existed
-//     — the legacy card renders them in its own element above the knob — and
-//     the shell could not reach them, so they are PROMOTED into `options`.
+//     — they were rendered in a bespoke element above the knob — and the shell
+//     could not reach them, so they are PROMOTED into `options`.
 //     moog962's two states have no semantic names, so they are labelled with
 //     their own values ('2', '3'), which invents nothing.
 //   · CAN A PLAYER REACH EACH STATE? Both get a roster, because the roster is
@@ -22,7 +22,7 @@
 // 'stages' (param/knob): dragging the knob commits a param change into the
 // graph"*. A `2..3 discrete` param has exactly two reachable positions across
 // the dial's whole travel, so a drag quantises back to where it started and the
-// control is INERT — a real usability defect the legacy card shares.
+// control is INERT — a real usability defect, and an inherited one.
 //
 // So the rule is: a roster makes states SELECTABLE, and its labels must be the
 // module's real names where it has them and never fabricated semantics. That is
@@ -79,7 +79,7 @@ describe('one-knob faces — promotion, ranking and the defaults they were built
       // `tabbedOptIn` — so a wrong number there fails as a Playwright timeout
       // on a capture job, the slowest possible place to learn it.
       const plan = dockFacePlan(def as never);
-      expect(plan, `${type}: planned as UN-FACED — the legacy card would return`).not.toBeNull();
+      expect(plan, `${type}: planned as UN-FACED — the faceplate would come up empty`).not.toBeNull();
       expect(plan!.length, `${type}: dock band count (the roster's \`pages\`)`).toBe(1);
       // The face's completeness claim, both directions.
       expect(def.params.map((p) => p.id), `${type} param roster`).toEqual([only]);

@@ -19,7 +19,7 @@
 // The point of a declaration nobody consumes is nothing, so every consumer is
 // named here and each is a real behaviour change, not a gate verdict alone:
 //
-//   1. group-controls `listExposableControls` — a no-user-control param is
+//   1. exposable-controls `listExposableControls` — a no-user-control param is
 //      never auto-exposed on a GROUP's instrument bar. This is live today, on
 //      the un-faced modules that adopt it: before #1726 collapsing a rack
 //      containing `backdraft` offered its six gate params as knobs. It also

@@ -122,14 +122,6 @@ test.describe('OUT TO LAUNCH faceplate', () => {
 
     const lane = laneShell(page, NODE);
     await expect(lane, 'the lane renders ModuleShell, not OutToLaunchCard').toBeVisible();
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="out-to-launch-card"]`),
-      'and the legacy card is NOT mounted beside it',
-    ).toHaveCount(0);
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`),
-      'and it is no longer the empty placeholder',
-    ).toHaveCount(0);
 
     // An `action` cell is not dock-restricted (only `panel` is), which is the
     // whole reason CONNECT is a cell rather than a body control.

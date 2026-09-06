@@ -57,10 +57,11 @@ describe('trails status model — the FAULT predicate', () => {
     expect(ALL_KINDS.filter((k) => !trailsIsProblem(k))).toEqual(['idle', 'bound']);
   });
 
-  it('agrees with the LEGACY CARD, which still ships behind ?shell=legacy', () => {
-    // `TrailsCard.svelte:94` is `status.kind !== 'bound' && status.kind !== 'idle'`.
-    // Both shells are live while the migration is, and a player must not get two
-    // different verdicts about one device depending on which URL they opened.
+  it('is EXACTLY the fault predicate every surface has ever used', () => {
+    // The expression this replaced, spelled out rather than referenced:
+    // `status.kind !== 'bound' && status.kind !== 'idle'`. It was inlined in a
+    // component once, and pinning it here is what stops a re-expression drifting
+    // — a player must not get two verdicts about one device.
     for (const kind of ALL_KINDS) {
       expect(trailsIsProblem(kind), kind).toBe(kind !== 'bound' && kind !== 'idle');
     }

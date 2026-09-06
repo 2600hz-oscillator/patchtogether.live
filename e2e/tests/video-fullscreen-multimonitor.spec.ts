@@ -73,8 +73,11 @@ async function injectScreens(
   }, screens);
 }
 
-async function setup(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+/** Boot, spawn, open the OUTPUT's dock pane (the picture + the shared
+ *  VideoCanvasContextMenu live in `videoout-face-output`, `fullViewBody`) and
+ *  return the pane-scoped face canvas — the right-click target. */
+async function setup(page: Page) {
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -84,8 +87,23 @@ async function setup(page: Page): Promise<void> {
     ],
     [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
   );
-  await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'out',
+  );
+  const canvas = page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="out"]')
+    .locator('canvas[data-testid="videoout-face-canvas"]');
+  await expect(canvas).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(300);
+  return canvas;
 }
 
 test.describe('multi-monitor fullscreen — VIDEO OUT', () => {
@@ -94,9 +112,7 @@ test.describe('multi-monitor fullscreen — VIDEO OUT', () => {
       { label: 'Built-in Retina', isPrimary: true },
       { label: 'DELL U2720Q', isPrimary: false },
     ]);
-    await setup(page);
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const canvas = await setup(page);
     await canvas.click({ button: 'right' });
     const menu = page.locator('[data-testid="video-canvas-context-menu"]');
     await expect(menu).toBeVisible();
@@ -129,9 +145,7 @@ test.describe('multi-monitor fullscreen — VIDEO OUT', () => {
       { label: 'Built-in Retina', isPrimary: true },
       { label: 'DELL U2720Q', isPrimary: false },
     ]);
-    await setup(page);
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const canvas = await setup(page);
     await canvas.click({ button: 'right' });
     await page.locator('[data-testid="ctx-fullscreen-primary"]').click();
 
@@ -148,9 +162,7 @@ test.describe('multi-monitor fullscreen — VIDEO OUT', () => {
 
   test('single screen -> classic single "Fullscreen" item (unchanged)', async ({ page }) => {
     await injectScreens(page, [{ label: 'Only Display', isPrimary: true }]);
-    await setup(page);
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const canvas = await setup(page);
     await canvas.click({ button: 'right' });
     await expect(page.locator('[data-testid="video-canvas-context-menu"]')).toBeVisible();
 

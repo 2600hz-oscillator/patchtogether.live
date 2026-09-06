@@ -11,7 +11,7 @@ import { spawnPatch } from '../tests/_helpers';
 
 test('audio sample-rate probe', async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

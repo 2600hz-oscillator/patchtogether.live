@@ -201,18 +201,25 @@ test('poly-chord: chord-picker UI cycles mono -> maj -> min -> mono on click', a
     { id: 'seq', type: 'cartesian' },
   ]);
 
-  // The chord badge for pad 0 has data-testid `cart-chord-seq-0`.
-  const badge = page.getByTestId('cart-chord-seq-0');
+  // The chord badge lives on the dock FACE GRID on the shell
+  // (`cart-face-chord-0` — the card's `cart-chord-seq-0` died with it).
+  await page
+    .locator('.svelte-flow__node[data-id="seq"] [data-testid="module-shell"]')
+    .getByTestId('shell-open-dock')
+    .click();
+  await expect(page.getByTestId('dock-full-view')).toBeVisible();
+  const badge = page.getByTestId('cart-face-chord-0');
+  await badge.scrollIntoViewIfNeeded();
   await expect(badge).toBeVisible();
-  // Default is mono.
-  await expect(badge).toHaveAttribute('data-chord', 'mono');
+  // Default is mono — the face button speaks its chord in the aria-label.
+  await expect(badge).toHaveAttribute('aria-label', /chord: mono$/);
 
   await badge.click();
-  await expect(badge).toHaveAttribute('data-chord', 'maj');
+  await expect(badge).toHaveAttribute('aria-label', /chord: maj$/);
 
   await badge.click();
-  await expect(badge).toHaveAttribute('data-chord', 'min');
+  await expect(badge).toHaveAttribute('aria-label', /chord: min$/);
 
   await badge.click();
-  await expect(badge).toHaveAttribute('data-chord', 'mono');
+  await expect(badge).toHaveAttribute('aria-label', /chord: mono$/);
 });

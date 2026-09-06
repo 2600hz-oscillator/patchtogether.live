@@ -42,31 +42,56 @@ const HEAVY_MOUNT_TIMEOUT = 30_000;
 // ~6-10s; budget generously so the suite isn't flaky under load.
 test.setTimeout(150_000);
 
-/** Sample the OUTPUT canvas interior and return edge-pixel stats. We sample
- *  the centre 70% so the video-out 4:3 letterbox bars can't inflate counts.
- *  A pixel counts as a "white edge" when its mean luma is bright. */
+/** Sample the EDGES output frame's interior (centre 70%) and return edge-pixel
+ *  stats, read at the ENGINE seam (`vid.outputTexture('edg','out')` +
+ *  readPixels — the shell-agnostic instrument; the card-era probe read the
+ *  VIDEO-OUT card canvas, which does not mount on the default shell). The
+ *  downstream VIDEO-OUT displays exactly this texture. A pixel counts as a
+ *  "white edge" when its mean luma is bright. */
 async function readEdgeStats(
   page: import('@playwright/test').Page,
 ): Promise<{ whiteFrac: number; nonZeroFrac: number; n: number }> {
-  const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-  await expect(canvas).toHaveCount(1);
-  const stats = await canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const x0 = Math.floor(c.width * 0.15), x1 = Math.ceil(c.width * 0.85);
-    const y0 = Math.floor(c.height * 0.15), y1 = Math.ceil(c.height * 0.85);
-    const d = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+  const stats = await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      } | null;
+    };
+    const eng = w.__engine?.();
+    if (!eng) return null;
+    const vid = eng.getDomain('video');
+    const gl = vid.gl;
+    const tex = vid.outputTexture('edg', 'out');
+    if (!tex) return null;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const px = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    if (!complete) return null;
+    const x0 = Math.floor(W * 0.15), x1 = Math.ceil(W * 0.85);
+    const y0 = Math.floor(H * 0.15), y1 = Math.ceil(H * 0.85);
     let n = 0, white = 0, nonZero = 0;
-    for (let i = 0; i < d.length; i += 16) {
-      const v = (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
-      n++;
-      if (v > 8) nonZero++;
-      if (v > 160) white++; // a clearly-white edge pixel
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x += 4) {
+        const i = (y * W + x) * 4;
+        const v = (px[i]! + px[i + 1]! + px[i + 2]!) / 3;
+        n++;
+        if (v > 8) nonZero++;
+        if (v > 160) white++; // a clearly-white edge pixel
+      }
     }
     return { whiteFrac: white / n, nonZeroFrac: nonZero / n, n };
   });
-  expect(stats, 'canvas readable').not.toBeNull();
+  expect(stats, 'engine output frame readable').not.toBeNull();
   return stats!;
 }
 
@@ -76,7 +101,7 @@ async function captureEdges(
   page: import('@playwright/test').Page,
   edgesParams: { threshold: number; thickness: number },
 ): Promise<{ whiteFrac: number; nonZeroFrac: number; n: number }> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -92,8 +117,11 @@ async function captureEdges(
     ],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('.svelte-flow__node-edges'), 'EDGES visible').toBeVisible();
-  await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+  await expect(
+    page.locator('.svelte-flow__node[data-id="edg"] [data-testid="module-shell"]'),
+    'EDGES visible',
+  ).toBeVisible();
+  await expect(page.locator('.svelte-flow__node[data-id="vout"] [data-testid="module-shell"]')).toHaveCount(1);
   // A handful of rAFs so the SHAPES → EDGES → OUTPUT chain renders.
   await page.waitForTimeout(700);
   return readEdgeStats(page);
@@ -166,7 +194,7 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
       [],
       { mountTimeout: HEAVY_MOUNT_TIMEOUT },
     );
-    await expect(page.locator('[data-testid="edges-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="edg"] [data-testid="module-shell"]')).toHaveCount(1);
 
     await page.evaluate(() => {
       const w = globalThis as unknown as {

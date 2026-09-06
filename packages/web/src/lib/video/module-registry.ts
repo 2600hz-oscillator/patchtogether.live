@@ -67,21 +67,10 @@ export interface VideoModuleDef {
    *  union-typed defLookup can read `def.undeletable` without a
    *  per-domain branch. */
   undeletable?: boolean;
-  /**
-   * Module-grouping Phase 3A: see {@link AudioModuleDef#vizPassthrough}.
-   * When set, this module renders an on-card visualization that can be
-   * portaled into the parent GroupCard. No video modules opt in yet — the
-   * flag exists here so cross-domain GroupCard projection can treat audio
-   * + video viz uniformly when future video modules adopt it.
-   */
-  vizPassthrough?: boolean;
   /** Palette classification — see {@link PaletteCategory}. Omitted =
    *  Uncategorized. Lets a video module classify itself with no edit to the
    *  shared module-categories map. */
   palette?: PaletteCategory;
-  /** Card-component basename override (no '.svelte'). Only needed when the
-   *  `PascalCase(type)+'Card'` convention doesn't match the filename. */
-  card?: string;
   /**
    * Fix E (offscreen-canvas render worker) — where this module's GL compute
    * runs. Defaults to `'main'` (the existing in-thread VideoEngine path, used

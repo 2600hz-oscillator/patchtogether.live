@@ -383,8 +383,8 @@ export const foxyDef: AudioModuleDef = {
     // `value`, and the shell's own knob rounds for `discrete`
     // (`knob-conic-model.ts:71`) where the legacy primitive does not. So the
     // fractional write is unreachable on the surface promotion ships, and the
-    // legacy card keeps its tracked debt until `Knob.svelte` gains the branch
-    // its two sibling primitives already have — its own reviewed PR, because it
+    // debt stays tracked until `Knob.svelte` gains the branch its two sibling
+    // primitives already have — its own reviewed PR, because it
     // changes the drag feel of every discrete knob in the rack.
     {
       id: 'gen_mode', label: 'GEN', defaultValue: 0, min: 0, max: FOXY_GEN_MODE_MAX, curve: 'discrete',
@@ -468,9 +468,9 @@ export const foxyDef: AudioModuleDef = {
   // for the same reason rasterize declined it: a panel REQUIRES an operability
   // probe, and a read-only picture's only available probe watches a DIFFERENT
   // control — an aliveness check that cannot observe the thing it certifies.
-  // `fullViewBody` needs no such proxy. It also carries the two affordances the
-  // legacy card owns and a param cell cannot reach (the SCOPE/3D view flip and
-  // EXPORT TABLE), so nothing on that card becomes unreachable at the dock.
+  // `fullViewBody` needs no such proxy. It also carries the two affordances a
+  // param cell cannot reach (the SCOPE/3D view flip and EXPORT TABLE), so
+  // nothing the module had becomes unreachable at the dock.
   face: {
     order: [
       // ── the lane budget: ranks 1-6 (mini 1 · compact 2 with a glyph · plate 6)
@@ -559,14 +559,14 @@ export const foxyDef: AudioModuleDef = {
     }
     return {
       explanation:
-        "FOXY is a hybrid audio-visual wavetable oscillator that builds its own wavetable in realtime from an internal 3-source 'world'. Inside one card sits a complete chain: three mini-SWOLEVCO oscillators (sources A/B/C) each paint an internal raster image, those three rasters are combined into a volumetric heightfield (A = terrain, B = primary Z height, C = lateral warp + secondary Z), and that field is scanned into a 64×256 wavetable that is uploaded — ~24×/second — to an internal WAVECEL wavetable oscillator. Because the table is regenerated live, WAVECEL's 3D wavetable display visibly ANIMATES as you tune the three sources. You play FOXY like a normal oscillator (PITCH / FM in, TUNE/FINE/MORPH/SPREAD/FOLD on the WAVECEL surface, stereo out), while the three source oscillators + the XYZ volumetric controls (warp / Z-height / zoom / smooth) sculpt the timbre's underlying shape. FREEZE switches hold individual rasters or the whole table; SYNC ratio-locks B/C to A; GEN switches the build between the continuous XYZ heightfield and a discrete '3D Shape Gen' path. Three video outputs expose the scope, the 3D wavetable surface, and the active GEN scene; an EXPORT TABLE button saves the frozen wavetable as JSON.",
+        "FOXY is a hybrid audio-visual wavetable oscillator that builds its own wavetable in realtime from an internal 3-source 'world'. Inside one module sits a complete chain: three mini-SWOLEVCO oscillators (sources A/B/C) each paint an internal raster image, those three rasters are combined into a volumetric heightfield (A = terrain, B = primary Z height, C = lateral warp + secondary Z), and that field is scanned into a 64×256 wavetable that is uploaded — ~24×/second — to an internal WAVECEL wavetable oscillator. Because the table is regenerated live, WAVECEL's 3D wavetable display visibly ANIMATES as you tune the three sources. You play FOXY like a normal oscillator (PITCH / FM in, TUNE/FINE/MORPH/SPREAD/FOLD on the WAVECEL surface, stereo out), while the three source oscillators + the XYZ volumetric controls (warp / Z-height / zoom / smooth) sculpt the timbre's underlying shape. FREEZE switches hold individual rasters or the whole table; SYNC ratio-locks B/C to A; GEN switches the build between the continuous XYZ heightfield and a discrete '3D Shape Gen' path. Three video outputs expose the scope, the 3D wavetable surface, and the active GEN scene; an EXPORT TABLE button saves the frozen wavetable as JSON.",
       inputs,
       outputs: {
         out_l: 'Left audio output of the internal WAVECEL oscillator (stereo, post SPREAD/FOLD). Pair with OUT R.',
         out_r: 'Right audio output of the internal WAVECEL oscillator, the partner of OUT L.',
         scope_out: 'A mono-video scope-style waveform trace of the live output. Patch into a video destination.',
-        wave3d_out: "A video render of the 3D wavetable surface — it animates as the three rasters (and thus the table) evolve. Keeps emitting even with no card open.",
-        combined_out: "A video render of the active GEN-mode scene — the same content as the on-card XYZ window: the XYZ height-field in GEN=XYZ, or the vaporwave 3D-primitives scene in GEN=3D Shape Gen. Patch FOXY's internal world to VIDEO OUT / BENTBOX / RUTTETRA / etc.",
+        wave3d_out: "A video render of the 3D wavetable surface — it animates as the three rasters (and thus the table) evolve. Keeps emitting even with no faceplate open.",
+        combined_out: "A video render of the active GEN-mode scene — the same content as the faceplate's XYZ window: the XYZ height-field in GEN=XYZ, or the vaporwave 3D-primitives scene in GEN=3D Shape Gen. Patch FOXY's internal world to VIDEO OUT / BENTBOX / RUTTETRA / etc.",
       },
       controls: {
         ...controls,
@@ -582,8 +582,8 @@ export const foxyDef: AudioModuleDef = {
         freezeRasterA: 'FREEZE RASTER A (on/off) — holds source A\'s raster at its current frame so that axis (the terrain) of the wavetable stops evolving while the others keep moving.',
         freezeRasterB: 'FREEZE RASTER B (on/off) — holds source B\'s raster (the Y-row distribution) at its current frame.',
         freezeRasterC: 'FREEZE RASTER C (on/off) — holds source C\'s raster (the Z amplitude/warp) at its current frame.',
-        freezeTable: 'FREEZE TABLE (on/off) — pins the WAVETABLE: stops re-uploading to the internal WAVECEL so the oscillator keeps reading the last-pushed table even as the rasters keep evolving (the on-card scope keeps previewing what\'s queued). Reveals the EXPORT TABLE button.',
-        gen_mode: 'GEN mode — picks the raster→wavetable PATH: XYZ (the continuous volumetric heightfield, default) vs 3D Shape Gen (discrete primitives placed in a box, voxelized and scanned). The card shows the active mode name next to the knob.',
+        freezeTable: 'FREEZE TABLE (on/off) — pins the WAVETABLE: stops re-uploading to the internal WAVECEL so the oscillator keeps reading the last-pushed table even as the rasters keep evolving (the faceplate\'s scope keeps previewing what\'s queued). Reveals the EXPORT TABLE button.',
+        gen_mode: 'GEN mode — picks the raster→wavetable PATH: XYZ (the continuous volumetric heightfield, default) vs 3D Shape Gen (discrete primitives placed in a box, voxelized and scanned). The faceplate shows the active mode name next to the knob.',
       },
     };
   })(),

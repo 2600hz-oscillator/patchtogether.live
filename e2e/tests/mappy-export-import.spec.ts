@@ -87,11 +87,31 @@ async function readLayout(page: Page, id: string) {
   }, { id });
 }
 
+/** Open MAPPY's dock full view and return the PANE — the map body, the
+ *  import/export cells and the status live there (the card died with the
+ *  fleet; face-mappy.spec.ts is the recipe source). */
+async function openMappyPane(page: Page, id: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.locator('[data-testid="mappy-map-body"]')).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
+
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -115,11 +135,11 @@ test.describe('MAPPY — export map / import map (surface layout)', () => {
     await spawnPatch(page, [
       { id: 'mappy', type: 'mappy', position: { x: 200, y: 80 }, domain: 'video' },
     ] as Node[], []);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    const pane = await openMappyPane(page, 'mappy');
     await setLayout(page, 'mappy');
 
     // ── 2) export → intercept the download → read the JSON ──
-    const exportBtn = page.locator('[data-testid="mappy-export-map"]');
+    const exportBtn = pane.getByTestId('shell-cell-mappy-export-map');
     await expect(exportBtn).toBeVisible();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -148,14 +168,14 @@ test.describe('MAPPY — export map / import map (surface layout)', () => {
     await spawnPatch(page, [
       { id: 'mappy2', type: 'mappy', position: { x: 200, y: 80 }, domain: 'video' },
     ] as Node[], []);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    const pane2 = await openMappyPane(page, 'mappy2');
 
     // sanity: the fresh mappy is at its default single full-frame surface
     const before = await readLayout(page, 'mappy2');
     expect(before.count ?? 1).toBe(1);
 
-    // feed the exported file to the hidden import input (the button .click()s it)
-    await page.locator('[data-testid="mappy-import-file"]').setInputFiles({
+    // feed the exported file to the dock FILE cell's input
+    await pane2.getByTestId('shell-cell-mappy-import-map').setInputFiles({
       name: 'venue-map.json',
       mimeType: 'application/json',
       buffer: Buffer.from(json, 'utf8'),
@@ -169,9 +189,14 @@ test.describe('MAPPY — export map / import map (surface layout)', () => {
     approxCorners(after.surfaces[1]!.corners, S2);
     expect(after.surfaces[1]!.fit).toBe(true);
 
-    // a success status is surfaced + the surfaces show in the legend (2 live)
-    await expect(page.locator('[data-testid="mappy-map-status"]')).toHaveAttribute('data-status-kind', 'ok');
-    await expect(page.locator('[data-testid="mappy-count-n"]')).toHaveText('2');
+    // a success status is surfaced + the count is READABLE on the face —
+    // the card's `mappy-count-n` chip died; the six-state SURFACES segmented
+    // row is the visible count (its aria-checked radio), and legend 2 paints.
+    await expect(pane2.getByTestId('mappy-face-map-status')).toHaveAttribute('data-status-kind', 'ok');
+    await expect(
+      pane2.locator('[data-testid="control-surfaceCount"]').getByRole('radio', { name: '2', exact: true }),
+    ).toHaveAttribute('aria-checked', 'true');
+    await expect(pane2.locator('[data-testid="mappy-face-legend-2"]')).toBeVisible();
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
@@ -182,19 +207,19 @@ test.describe('MAPPY — export map / import map (surface layout)', () => {
     await spawnPatch(page, [
       { id: 'mappy', type: 'mappy', position: { x: 200, y: 80 }, domain: 'video' },
     ] as Node[], []);
-    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    const pane = await openMappyPane(page, 'mappy');
     await setLayout(page, 'mappy');
     const before = await readLayout(page, 'mappy');
 
     // feed a non-MAPPY JSON file
-    await page.locator('[data-testid="mappy-import-file"]').setInputFiles({
+    await pane.getByTestId('shell-cell-mappy-import-map').setInputFiles({
       name: 'not-a-map.json',
       mimeType: 'application/json',
       buffer: Buffer.from(JSON.stringify({ kind: 'patch', version: 1, nodes: [] }), 'utf8'),
     });
 
     // an error status is shown
-    await expect(page.locator('[data-testid="mappy-map-status"]')).toHaveAttribute('data-status-kind', 'err', { timeout: 10_000 });
+    await expect(pane.getByTestId('mappy-face-map-status')).toHaveAttribute('data-status-kind', 'err', { timeout: 10_000 });
 
     // …and the layout is UNCHANGED
     const after = await readLayout(page, 'mappy');
@@ -203,12 +228,12 @@ test.describe('MAPPY — export map / import map (surface layout)', () => {
     approxCorners(after.surfaces[1]!.corners, before.surfaces[1]!.corners);
 
     // also feed straight garbage bytes → still rejected, still no mutation
-    await page.locator('[data-testid="mappy-import-file"]').setInputFiles({
+    await pane.getByTestId('shell-cell-mappy-import-map').setInputFiles({
       name: 'garbage.json',
       mimeType: 'application/json',
       buffer: Buffer.from('{not valid json at all', 'utf8'),
     });
-    await expect(page.locator('[data-testid="mappy-map-status"]')).toHaveAttribute('data-status-kind', 'err', { timeout: 10_000 });
+    await expect(pane.getByTestId('mappy-face-map-status')).toHaveAttribute('data-status-kind', 'err', { timeout: 10_000 });
     const after2 = await readLayout(page, 'mappy');
     expect(after2.count).toBe(before.count);
     approxCorners(after2.surfaces[0]!.corners, before.surfaces[0]!.corners);

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # packages/web/scripts/prove-ssr-identical.sh
 #
-# THE NEGATIVE CONTROL for vite.config.ts's `ssrDropCardComponents()` plugin.
+# THE NEGATIVE CONTROL for vite.config.ts's `ssrDropBrowserOnlyGraph()` plugin.
+# (Its card-glob occupant retired with the card fleet; <Canvas> and /dev/** remain.)
 #
 # That plugin replaces the eager `*Card.svelte` glob with `{}` in the SSR build,
 # on the claim that the SERVER never renders a card (the patch graph is a Yjs

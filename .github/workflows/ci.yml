@@ -2323,12 +2323,12 @@ jobs:
           echo "All required CI jobs passed."
 
   # -----------------------------------------------------------------------
-  # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
-  # knob/fader cards listed in STRICT_VRT_MODULES (see
-  # e2e/vrt/vrt-exemptions.ts). These cards have committed baselines, no canvas
-  # masks, and no animated chrome — a diff here is a real UI regression, not
-  # GPU/timing flake. Same-platform by construction since #1458: the baseline
-  # this compares against was rendered by this same runner image.
+  # VRT (strict subset) — fast, deterministic gate. Runs ONLY the specs named
+  # in STRICT_MATCH (e2e/vrt/vrt.config.ts): the faceplate sweep. Those scenes
+  # have committed baselines, no canvas masks, and no animated chrome — a diff
+  # here is a real UI regression, not GPU/timing flake. Same-platform by
+  # construction since #1458: the baseline this compares against was rendered
+  # by this same runner image.
   #
   # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
   # ruleset (16042163) was flipped to require the AGGREGATOR job's name
@@ -2339,14 +2339,14 @@ jobs:
   # context — names are matched literally.
   #
   # ⚠ THIS IS NOW THE ONLY LANE THAT COMPARES A BASELINE. The full-sweep `vrt`
-  # job (canvas-driven + animated cards, `continue-on-error: true`) was DELETED
+  # job (canvas-driven + animated scenes, `continue-on-error: true`) was DELETED
   # 2026-08-17: it could never block a merge, and at a 50-minute cap it had
   # started reporting `cancelled` on main runs. The baselines it compared are
   # NOT deleted and are still AUTHORED — `vrt-update.yml`, `task vrt`,
   # `task vrt:commit` and `FULL_MATCH` in e2e/vrt/vrt.config.ts are untouched,
   # because `vrt:commit` reads FULL_MATCH to WRITE baselines and pruning it
   # would silently stop baseline authoring for the whole faceplate programme.
-  # What is gone is the COMPARISON of everything outside STRICT_VRT_MODULES.
+  # What is gone is the COMPARISON of everything outside STRICT_MATCH.
   # Widening this lane is how that comes back; resurrecting a non-gating sweep
   # is not.
   #
@@ -2518,10 +2518,10 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     env:
-      # The lane's identity. Narrows testMatch to vrt.spec.ts +
-      # workflow-shell-faces.spec.ts AND filters vrt.spec.ts to
-      # STRICT_VRT_MODULES — so it must be set for the DISCOVERY step too, or
-      # the plan would be computed over the informational lane's roster.
+      # The lane's identity. Narrows testMatch to STRICT_MATCH
+      # (workflow-shell-faces.spec.ts) — so it must be set for the DISCOVERY
+      # step too, or the plan would be computed over the informational lane's
+      # roster.
       VRT_STRICT: '1'
 
     steps:
@@ -2536,7 +2536,7 @@ jobs:
       # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
       # pull` (HIT → no-op, MISS → fetch only changed objects) — a ~95%
       # bandwidth cut. The strict subset still needs the real PNG bytes for its
-      # pure-DOM card comparisons.
+      # faceplate comparisons.
       - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
@@ -2618,42 +2618,11 @@ jobs:
       # No DB needed for the strict subset (it's pure card-render baselines).
       # No DOOM WASM needed either — DOOM is in EXEMPT_FROM_VRT.
 
-      # ---------------------------------------------------------------------
-      # CABLE-STRIPE PALETTE GATE — pure vitest, no browser, but it needs the
-      # REAL baseline PNG bytes, so it runs HERE rather than in `unit`. The
-      # `unit` lane checks out lfs:false, where every baseline is a pointer
-      # stub and the gate would self-skip into decoration (the exact way the
-      # ART fingerprint drift gate ran nowhere until #1174 exposed it). This
-      # job already does `git lfs pull --include "e2e/vrt/__screenshots__/**"`
-      # above, and it is REQUIRED, so this is the one lane that both CAN and
-      # MUST run it. VRT_STRIPE_PALETTE_REQUIRED=1 makes it FAIL rather than
-      # skip-pass if this job ever loses those bytes.
-      #
-      # Why it can't just be the VRT comparison below: a card's 2px `.stripe`
-      # is ~0.38 % of the card, under `maxDiffPixelRatio` (1 %), so a whole
-      # cable-palette generation goes stale with the screenshot gate green —
-      # and `--update-snapshots` won't repair it either, because Playwright
-      # only rewrites a snapshot when the comparison FAILS.
-      # Cost: MEASURED 1.10 s wall on darwin (vitest boot ~0.6 s + a full decode
-      # of the top 12 rows of 409 PNGs, twice — once for the sweep and once for
-      # the batched pixel negative control). The earlier "~1 s (191 PNG header
-      # reads)" was neither measured nor accurate: it fully inflates each IDAT,
-      # and the gate now reads every single-card baseline dir, not just
-      # vrt.spec.ts.
-      # ---------------------------------------------------------------------
-      #
-      # SHARD 1 ONLY. This is a WHOLE-POPULATION gate (it decodes every
-      # committed single-card baseline against the --cable-* tokens); it has
-      # nothing to do with which scenes a shard renders, so running it 4x would
-      # cost 3x10 s of runner for four identical answers. Shard 1 always exists
-      # (the matrix is non-empty and `scripts/vrt-shard-plan.test.ts` refuses an
-      # empty shard), and a failure here reds shard 1, which reds the
-      # aggregator — the required context still cannot go green without it.
-      - name: Cable-stripe palette gate (committed baselines vs --cable-* tokens)
-        if: matrix.shard == 1
-        env:
-          VRT_STRIPE_PALETTE_REQUIRED: '1'
-        run: flox activate -- npm exec -w packages/web -- vitest run --config vitest.config.ts vrt-cable-stripe
+      # (The cable-stripe palette gate that ran here shard-1-only died with
+      # the single-card baseline population it decoded — S3 deleted both the
+      # test file and its subject. A step that vitest-runs a deleted file
+      # exits 1 on "no test files found" before Playwright starts, so it
+      # could not simply stay.)
 
       # `vrt.spec.ts` iterates the registry manifest at file-parse time
       # (e2e/tests/_registry.ts), so the manifest has to be on disk before

@@ -2,19 +2,27 @@
 //
 // VRT: the WORKFLOW topbar 🎧 audio-I/O panel, OPEN — the owner-reported
 // breakage class this scene exists to catch ("this should have been caught
-// with vrt analysis"): the panel's two hosted card faces must render
-// PROPERLY FITTED (plain-mounted via DockCardHost — no clipped AUDIO IN, no
-// dead space around AUDIO OUT, no "Svelte Flow" attribution badge, columns
-// sized to the rack-sized card boxes) with the patch-out rows beneath the
-// input column.
+// with vrt analysis"): the panel's two hosted faceplates must render PROPERLY
+// FITTED (plain-mounted via DockCardHost — no clipped AUDIO IN, no dead space
+// around AUDIO OUT, no "Svelte Flow" attribution badge, columns sized to the
+// natural faceplate boxes) with the patch-out rows beneath the input column.
+//
+// ⚠ RE-POINTED ONTO THE FACEPLATE TESTIDS (legacy removal). This scene used to
+// gate on `audioin-device-select` and settle on `audioin-status[data-state]` —
+// BOTH emitted only by the surface both modules had before their promotion, and
+// `AudioInSourceControls.svelte` refuses those spellings BY NAME so the two
+// could never be confused. With that surface gone the precondition matched
+// nothing and the settle polled for an element that never appears, so the scene
+// could only ever time out. It now reads the face's own
+// `audioin-face-*` / `audioout-face-*` ids.
 //
 // ENVIRONMENT-DEPENDENT TEXT IS MASKED, layout/chrome stays in the diff:
 //   * the two device <select>s (OS device names differ per machine/CI),
-//   * the AUDIO IN status row (idle/permission text depends on the
-//     runner's getUserMedia posture and settles at different states on
+//   * the AUDIO IN action button and fault lamp (their caption and lit state
+//     depend on the runner's getUserMedia posture and settle differently on
 //     darwin-local vs CI headless).
-// Everything else — panel chrome, dock-card headers + zoom controls, card
-// faces, faders, patch-out rows — is unmasked geometry.
+// Everything else — panel chrome, dock-card headers + zoom controls, the
+// faceplates, faders, patch-out rows — is unmasked geometry.
 //
 // Baselines are authored by LINUX CI — one set, no {platform} segment (see
 // vrt.config.ts). `task vrt:commit` dispatches the capture; a local macOS run
@@ -50,7 +58,7 @@ test.describe('VRT: workflow 🎧 audio-I/O panel (open)', () => {
     page.on('pageerror', (e) => errors.push(e.message));
 
     await pinVrtFonts(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
     await waitForAudioPins(page);
@@ -68,17 +76,21 @@ test.describe('VRT: workflow 🎧 audio-I/O panel (open)', () => {
     const panel = page.getByTestId('workflow-io-panel');
     await expect(panel).toHaveAttribute('data-open', 'true');
     await expect(
-      panel.locator('[data-dock-card="pinned-audioIn"] [data-testid="audioin-device-select"]'),
+      panel.locator('[data-dock-card="pinned-audioIn"] [data-testid="audioin-face-device"]'),
     ).toBeVisible();
     await expect(panel.locator('[data-dock-card="pinned-audioOut"]')).toBeVisible();
 
-    // Let the AUDIO IN card's auto-acquire settle out of the transient
-    // 'requesting' state (masked anyway — this just stops a mid-transition
-    // frame from changing the row's LAYOUT, e.g. the enable button
-    // mounting/unmounting between baseline and actual).
+    // Let AUDIO IN's auto-acquire settle out of its transient state (masked
+    // anyway — this just stops a mid-transition frame from changing the row's
+    // LAYOUT, e.g. the action button's caption changing width between baseline
+    // and actual). `data-action` is `none` exactly while the state machine has
+    // no gesture to offer, which is the transient the old `data-state` poll
+    // named.
     await page.waitForFunction(() => {
-      const el = document.querySelector('[data-testid="audioin-status"]');
-      return !!el && el.getAttribute('data-state') !== 'requesting';
+      const el = document.querySelector(
+        '[data-audioin-node="pinned-audioIn"] [data-testid="audioin-face-action"]',
+      );
+      return !!el && el.getAttribute('data-action') !== 'none';
     }, undefined, { timeout: 10_000 });
 
     // Height-stability settle (the documented 1px-layout-rounding guard):
@@ -107,9 +119,10 @@ test.describe('VRT: workflow 🎧 audio-I/O panel (open)', () => {
     // anchored position under the 🎧 topbar slot.
     await expect(page).toHaveScreenshot(`${id}.png`, {
       mask: [
-        panel.locator('[data-testid="audioin-device-select"]'),
-        panel.locator('[data-testid="audioout-device-select"]'),
-        panel.locator('[data-testid="audioin-status"]'),
+        panel.locator('[data-testid="audioin-face-device"]'),
+        panel.locator('[data-testid="audioout-face-device-select"]'),
+        panel.locator('[data-testid="audioin-face-action"]'),
+        panel.locator('[data-testid="audioin-face-fault"]'),
         // Footer live status text (ctx/sr/lat + trace counter) — not part
         // of this scene's assertion.
         page.locator('footer.bottombar .status'),

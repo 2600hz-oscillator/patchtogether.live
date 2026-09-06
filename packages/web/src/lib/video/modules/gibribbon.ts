@@ -101,6 +101,7 @@ import {
   type GibOnsetState,
 } from './gibribbon-spectral';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { pulseTriggerNow } from '$lib/audio/gate-trigger';
 import {
   GIB_TUNING,
   EVENT_BUTTON,
@@ -191,7 +192,7 @@ export interface GibribbonHandleExtras {
   /** The lookahead lane (next-N upcoming buttons, nearest first). */
   getLane(): { button: GibButton; kind: GibEventKind; pos: number; hot: boolean }[];
   isDead(): boolean;
-  /** Alias of pushRestart (legacy card affordance name). */
+  /** Alias of pushRestart — the name the module's RESTART affordance uses. */
   reset(): void;
   /** Test-only: force-pulse a gate output WITHOUT a game event, so e2e/VRT
    *  can exercise the video→audio bridge deterministically. */
@@ -348,7 +349,7 @@ export const gibribbonDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: `An audio-driven rhythm line-runner in the spirit of Vib-Ribbon, cast with DOOM shareware sprites as fair-use artistic parody. Like the original game — which analyses the music (any CD the player inserts), looks ahead, and builds its obstacle course from interesting frequency changes — GIBRIBBON derives its course FROM THE SIGNAL you patch into AUDIO IN: the module's own analyser folds the input into four musical bands (bass 20-200 Hz, low-mid 200-1k, high-mid 1k-4k, treble 4k-16k), and an ADAPTIVE extractor spawns events on relative peaks against each band's own recent baseline, preferring spectral-flux onsets (the beat). Because prominence is relative, ANY source at ANY level plays — a quiet field recording and a hot drum bus alike — and silence or a stuck-flat signal spawns nothing. THE BAND IS THE EVENT: the low end shapes the ROAD (bass = LOOP pit-V dips, low-mid = JUMP humps) and the highs send the MONSTERS (high-mid = imps, treble = zombies/former-humans, rendered as real DOOM sprites when DOOM1.WAD is present, wireframe line-art otherwise). Clear each event with its ABXY button (loop=A, jump=B, imp=X, zombie=Y) inside the timing window as it reaches the marine; a ~2-bar lookahead lane names the next buttons. THE DAMAGE MODEL IS VIB-RIBBON'S: an event you fail to clear HITS the marine and degrades him one visible form down a DOOM ladder (the status-bar face grades from grinning to bloodied), like Vibri degrading rabbit-to-frog-to-insect; hits at the floor are GAME OVER; clean streaks heal forms back and a long streak reaches gold SUPER. Restart from the restart gate, the R key, or the RESET action — wire evt_gameover back to restart for an endless arcade loop. TEMPO sets the ribbon's course rate (the audio decides WHAT spawns, tempo decides how fast it approaches); DIFFICULTY scales density and speed together. An idle, unpatched module self-plays in ATTRACT mode — honestly labelled IN the picture, and its demo bot fumbles now and then so you can see the damage ladder work; any input (a button, the keyboard, or MOVING audio arriving at AUDIO IN) starts a real run. Play it three ways: patch a gamepad module's a/b/x/y gates + lx/ly axes straight in, click the screen and use the keyboard (F/D/J/K or arrows, R = restart), or sequence the rack from the event gate outputs — the game is half a sequencer.`,
+    explanation: `An audio-driven rhythm line-runner in the spirit of Vib-Ribbon, cast with DOOM shareware sprites as fair-use artistic parody. Like the original game — which analyses the music (any CD the player inserts), looks ahead, and builds its obstacle course from interesting frequency changes — GIBRIBBON derives its course FROM THE SIGNAL you patch into AUDIO IN: the module's own analyser folds the input into four musical bands (bass 20-200 Hz, low-mid 200-1k, high-mid 1k-4k, treble 4k-16k), and an ADAPTIVE extractor spawns events on relative peaks against each band's own recent baseline, preferring spectral-flux onsets (the beat). Because prominence is relative, ANY source at ANY level plays — a quiet field recording and a hot drum bus alike — and silence or a stuck-flat signal spawns nothing. THE BAND IS THE EVENT: the low end shapes the ROAD (bass = LOOP pit-V dips, low-mid = JUMP humps) and the highs send the MONSTERS (high-mid = imps, treble = zombies/former-humans, rendered as real DOOM sprites when DOOM1.WAD is present, wireframe line-art otherwise). Clear each event with its ABXY button (loop=A, jump=B, imp=X, zombie=Y) inside the timing window as it reaches the marine; a ~2-bar lookahead lane names the next buttons. THE DAMAGE MODEL IS VIB-RIBBON'S: an event you fail to clear HITS the marine and degrades him one visible form down a DOOM ladder (the status-bar face grades from grinning to bloodied), like Vibri degrading rabbit-to-frog-to-insect; hits at the floor are GAME OVER; clean streaks heal forms back and a long streak reaches gold SUPER. Restart from the restart gate, the R key, or the RESET action — wire evt_gameover back to restart for an endless arcade loop. TEMPO sets the ribbon's course rate (the audio decides WHAT spawns, tempo decides how fast it approaches); DIFFICULTY scales density and speed together. An idle, unpatched module self-plays in ATTRACT mode — honestly labelled IN the picture, and its demo bot fumbles now and then so you can see the damage ladder work; any input (a button, the keyboard, or MOVING audio arriving at AUDIO IN) starts a real run. Play it three ways: patch a gamepad module\'s a/b/x/y gates + lx/ly axes straight in, click the screen and use the keyboard (F/D/J/K or arrows, R = restart), or sequence the rack from the event gate outputs — the game is half a sequencer.`,
     inputs: {
       audio_in: "THE SOURCE. Patch any audio here — the whole course derives from it, like Vib-Ribbon generating stages from a music CD. The module's own AnalyserNode folds the signal into four musical bands (bass/low-mid/high-mid/treble) and spawns events on relative peaks against each band's own rolling baseline, biased toward spectral-flux onsets. Tap-only and inaudible: route the signal to AUDIO OUT separately to hear it. Moving audio also counts as player presence — it wakes the module out of ATTRACT into a live run.",
       x: "Aim X (bipolar -1..1): re-centres the judgement point by up to one hit-window (stick left = clear events slightly early, right = slightly late). Shifts the window, never widens it. Modulates the X control.",
@@ -573,9 +574,14 @@ export const gibribbonDef: VideoModuleDef = {
     function pulseGate(src: ConstantSourceNode | null, port: string): void {
       const ac = ctx.audioCtx;
       if (!ac || !src) return;
-      const t = ac.currentTime;
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + GATE_PULSE_S);
+      // ⚠ NOT a hand-rolled setValueAtTime pair. A rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING — on an affected boot, for EVERY pulse (run 34004453604
+      // shard 8: 134 pulses / 30 s / analyser peak 0.0000 with the bridge
+      // verified wired; reproduced on demand under CDP CPU throttle ×20).
+      // `pulseTriggerNow` is the shared render-robust primitive — the full
+      // mechanism and its measurements live on it in $lib/audio/gate-trigger.
+      pulseTriggerNow(src, GATE_PULSE_S);
       notifyPulse(port);
     }
     function gateFor(port: GibGatePort): ConstantSourceNode | null {

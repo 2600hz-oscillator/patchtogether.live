@@ -25,7 +25,7 @@ async function setup(page: import('@playwright/test').Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -35,7 +35,7 @@ async function canvasStats(
   page: import('@playwright/test').Page,
   testid: string,
 ): Promise<{ mean: number; max: number }> {
-  const handle = page.locator(`canvas[data-testid="${testid}"]`);
+  const handle = page.locator(testid.startsWith('.') ? testid : `canvas[data-testid="${testid}"]`);
   await expect(handle, `${testid} present`).toHaveCount(1);
   return await handle.evaluate((el) => {
     const c = el as HTMLCanvasElement;
@@ -57,7 +57,7 @@ async function canvasSignature(
   page: import('@playwright/test').Page,
   testid: string,
 ): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="${testid}"]`);
+  const handle = page.locator(testid.startsWith('.') ? testid : `canvas[data-testid="${testid}"]`);
   return await handle.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -128,11 +128,11 @@ async function assertReverseScrubAdvances(
 /** Load the fixture into a VIDEOVARISPEED card + start playback. */
 async function loadAndPlay(page: import('@playwright/test').Page) {
   await page.setInputFiles('[data-testid="videovarispeed-file-input"]', FIXTURE);
-  await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-has-local-file', 'true', { timeout: 8000 },
   );
   await page.click('[data-testid="videovarispeed-play-btn"]');
-  await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-is-playing', 'true', { timeout: 4000 },
   );
 }
@@ -170,9 +170,9 @@ async function assertDownstreamMoving(
   // Sample ~every 200ms. The throttled reverse scrub is ~10 Hz, so an 8s
   // window captures dozens of scrub steps even on a slow runner.
   while (Date.now() < deadline) {
-    const stats = await canvasStats(page, 'video-out-canvas');
+    const stats = await canvasStats(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     if (stats.max > maxBrightness) maxBrightness = stats.max;
-    sigs.add(await canvasSignature(page, 'video-out-canvas'));
+    sigs.add(await canvasSignature(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]'));
     // Early-out once both invariants hold so the happy path stays fast.
     if (maxBrightness > 40 && sigs.size >= 2) break;
     await page.waitForTimeout(200);
@@ -187,6 +187,29 @@ async function assertDownstreamMoving(
   ).toBeGreaterThanOrEqual(2);
 }
 
+
+/** Open a videovarispeed node's dock full view — every transport affordance
+ *  (file input, PLAY/LOOP, slots, crop) is its `fullViewBody`; the SAME
+ *  `videovarispeed-*` testids the card carried render there, including the
+ *  state attributes, which live on `videovarispeed-face-body`. Idempotent
+ *  (openFullView de-dupes). */
+async function openVvsPane(page: import('@playwright/test').Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="videovarispeed-face-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
+}
+
 test.describe('VIDEOVARISPEED output streams downstream at ALL speeds', () => {
   test('1× / 2× / 0.5× / reverse all keep VIDEO-OUT showing moving video', async ({ page }) => {
     const errors = await setup(page);
@@ -197,6 +220,7 @@ test.describe('VIDEOVARISPEED output streams downstream at ALL speeds', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'vv', portId: 'video' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
     );
+    await openVvsPane(page, 'vv');
 
     await loadAndPlay(page);
     await page.waitForTimeout(600);
@@ -243,6 +267,7 @@ test.describe('VIDEOVARISPEED transport', () => {
       [{ id: 'vv', type: 'videovarispeed', position: { x: 40, y: 40 }, domain: 'video' }],
       [],
     );
+    await openVvsPane(page, 'vv');
     await loadAndPlay(page);
     await page.waitForTimeout(400);
 
@@ -259,14 +284,15 @@ test.describe('VIDEOVARISPEED transport', () => {
       [{ id: 'vv', type: 'videovarispeed', position: { x: 40, y: 40 }, domain: 'video' }],
       [],
     );
+    await openVvsPane(page, 'vv');
     await page.setInputFiles('[data-testid="videovarispeed-file-input"]', FIXTURE);
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-has-local-file', 'true', { timeout: 8000 },
     );
 
     await setNodeParam(page, 'vv', 'start', 0.0);
     await setNodeParam(page, 'vv', 'end', 0.15);
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute('data-loop', 'true');
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute('data-loop', 'true');
     await page.click('[data-testid="videovarispeed-play-btn"]');
 
     const samples: number[] = [];
@@ -291,7 +317,8 @@ test.describe('VIDEOVARISPEED transport', () => {
       [{ id: 'vv', type: 'videovarispeed', position: { x: 40, y: 40 }, domain: 'video' }],
       [],
     );
-    const card = page.locator('[data-testid="videovarispeed-card"]');
+    await openVvsPane(page, 'vv');
+    const card = page.locator('[data-testid="videovarispeed-face-body"]');
     await expect(card).toHaveAttribute('data-loop', 'true');
     await page.click('[data-testid="videovarispeed-loop-btn"]');
     await expect(card).toHaveAttribute('data-loop', 'false');
@@ -306,12 +333,13 @@ test.describe('VIDEOVARISPEED transport', () => {
       [{ id: 'vv', type: 'videovarispeed', position: { x: 40, y: 40 }, domain: 'video' }],
       [],
     );
+    await openVvsPane(page, 'vv');
     await page.setInputFiles('[data-testid="videovarispeed-file-input"]', FIXTURE);
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-has-local-file', 'true', { timeout: 8000 },
     );
     await page.click('[data-testid="videovarispeed-loop-btn"]');
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute('data-loop', 'false');
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute('data-loop', 'false');
     await setNodeParam(page, 'vv', 'start', 0.0);
     await setNodeParam(page, 'vv', 'end', 0.1);
     await page.click('[data-testid="videovarispeed-play-btn"]');

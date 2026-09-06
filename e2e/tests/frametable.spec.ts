@@ -165,16 +165,19 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('real source chain: ACIDWARP → FRAMETABLE (default SMOOTH) → non-black STRUCTURED video_out', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, chainNodes(), chainEdges());
 
-    // DOM structure — the card + its mode selector + preview + the OUTPUT sink render.
-    await expect(page.locator('.svelte-flow__node-frametable'), 'card visible').toBeVisible();
-    await expect(page.locator('[data-testid="frametable-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="frametable-mode"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="frametable-preview"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    // DOM structure — the FRAMETABLE faceplate + the OUTPUT sink render on the
+    // default shell (the card's mode row / preview died with the card; the
+    // face MODE selector + preview body are asserted from the dock pane in the
+    // SAVE/LOAD leg, which opens it anyway).
+    await expect(
+      page.locator('.svelte-flow__node[data-id="ft"] [data-testid="module-shell"]'),
+      'FRAMETABLE faceplate visible',
+    ).toBeVisible();
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // Fill the ring; the default SMOOTH weighted-average field is non-black + structured.
     const out = await stepRead(page, { nodeId: 'ft', steps: FILL_FULL, scale: RENDER_SCALE });
@@ -184,7 +187,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('the three modes render DISTINCT non-black output over the same ring', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // A wide window over a ring holding TWO scenes → the modes differ maximally:
     // CHAOS per-pixel dithers the two scenes (high spatial variance), SMOOTH/MORPH
@@ -230,7 +233,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('FREEZE holds the output while the input changes; releasing tracks again', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // CHAOS + spread=1 → a single-frame DELTA on the newest ring layer (real-time),
     // so the output IS the most-recently-captured frame — the crispest way to see
@@ -260,7 +263,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('LAG contract: SMOOTH lags (holds) by default; LIVE forces real-time (tracks); CHAOS is always real-time', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // SMOOTH, deep read (morph=1 → trailing centre near the OLDEST frames), a flat
     // field (waveAmt=0) so the temporal read is clean, small spread for a tight read.
@@ -307,7 +310,7 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
   test('SAVE→LOAD round-trip: ring → PNG atlas → detile restores the buffer; card LOAD persists the file id', async ({ page, errorWatch }) => {
     void errorWatch;
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, chainNodes({ mode: MODE_CHAOS, morph: 0.5, spread: 20, shimmer: 0 }), chainEdges());
 
@@ -396,13 +399,30 @@ test.describe('FRAMETABLE — video wavetable oscillator (3 modes)', () => {
     });
     expect(atlasBytes.length, 'synthetic atlas PNG generated').toBeGreaterThan(50);
 
-    await page.setInputFiles('[data-testid="frametable-file-input"]', {
+    // The Load-table affordance lives on the dock ladder as a FILE CELL (the
+    // cell IS the input; its status line is `<testid>-status`). Programmatic
+    // dock open — the chain layout can put the ft tile outside the viewport,
+    // and scrollIntoView cannot pan an xyflow-transformed canvas.
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as { __openDockFullView?: (n: string) => void };
+      w.__openDockFullView?.(id);
+    }, 'ft');
+    const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="ft"]');
+    await expect(pane.getByTestId('frametable-output-body')).toBeVisible({ timeout: 60_000 });
+    // The cell IS the <input type=file>, visually hidden behind its label —
+    // setInputFiles works on hidden inputs; a visibility-waiting scroll never
+    // resolves.
+    const fileCell = pane.getByTestId('shell-cell-frametable-file-input');
+    await fileCell.setInputFiles({
       name: 'roundtrip.frametable.png',
       mimeType: 'image/png',
       buffer: Buffer.from(atlasBytes),
     });
     // The async handler decodes + uploads + persists → surfaces a status line.
-    await expect(page.getByTestId('frametable-file-status'), 'card reports a successful load').toContainText('loaded', { timeout: 15_000 });
+    await expect(
+      pane.getByTestId('shell-cell-frametable-file-input-status'),
+      'the face reports a successful load',
+    ).toContainText('loaded', { timeout: 15_000 });
 
     // node.data carries ONLY the tiny descriptor (the bytes live in IndexedDB).
     const meta = await page.evaluate(() => {

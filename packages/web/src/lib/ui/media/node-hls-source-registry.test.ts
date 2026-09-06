@@ -46,9 +46,7 @@ import {
 import {
   CARD_PRODUCER_LANE_TYPES,
   DOM_SOURCE_LANE_TYPES,
-  needsHeadlessSourceMount,
 } from '$lib/ui/workflow/dom-source-modules';
-import { laneRenderKind, type LaneRenderKind } from '$lib/ui/workflow/legacy-fallback';
 
 // ---------------------------------------------------------------------------
 // A fake world
@@ -431,66 +429,34 @@ describe('NODE_HLS_SOURCE_TYPES — the ownership anchor', () => {
   });
 });
 
-describe('THE FOUR LANE STATES — the reason this controller exists', () => {
-  // The table in the registry header, as an ASSERTION rather than prose, over
-  // the REAL pure decision. Prose rots; this cannot.
-  const KINDS: LaneRenderKind[] = ['legacy', 'shell', 'placeholder', 'stub'];
+describe('THE FOUR LANE STATES — retired with the decision they measured', () => {
+  // ⚠ THIS DESCRIBE USED TO DRIVE `needsHeadlessSourceMount` OVER THE FOUR LANE
+  // KINDS (legacy / shell / placeholder / stub), and every leg in it retired in
+  // steps its own prose predicted:
+  //   * "a card-owned tuner has NO CARD AT ALL in two of the four states" ran
+  //     out of subjects when `DOM_SOURCE_LANE_TYPES` emptied (S1) and was kept
+  //     as a population-gone assertion;
+  //   * "the DECISION still distinguishes the two halves" read its producer
+  //     subject from `CARD_PRODUCER_LANE_TYPES`, which emptied in S1.5;
+  //   * "a CONVERTED tuner is never hosted" became structural the moment the
+  //     decision and `<HeadlessSourceHost>` were deleted — there is no host
+  //     left for ANY module on ANY lane state, which is a stronger form of the
+  //     payoff than the enumeration was.
+  // What survives is the population statement, so a member returning to either
+  // set reddens HERE and whoever brings it back knows the four-state table has
+  // to come back with a real subject and a real decision — not be re-pointed
+  // at a synthetic type. See dom-source-modules.ts for the retirement record.
 
-  it('a card-owned tuner has NO CARD AT ALL in two of the four states', () => {
-    // Run over a module that is STILL card-owned, so the leg keeps measuring the
-    // defect after the conversion rather than measuring its absence. archivist
-    // is a DOM_SOURCE member and not a producer — the same arm peertube and
-    // tvLibrarian sat on.
-    const subject = 'archivist';
-    expect(DOM_SOURCE_LANE_TYPES.has(subject)).toBe(true);
-    expect(CARD_PRODUCER_LANE_TYPES.has(subject)).toBe(false);
-    const laneKind = laneRenderKind({
-      shellFaces: true,
-      userDocked: false,
-      type: subject,
-      hasCard: true,
-      migrated: false,
-    });
-    // 1. ordinary rack -> the off-screen host keeps the real card alive.
-    expect(needsHeadlessSourceMount({ kind: laneKind, type: subject }), 'lane placeholder').toBe(true);
-    // 2. dock full view -> no host, because the DOCK mounts the card.
+  it('both card-owned populations are EMPTY — the state the retirement rests on', () => {
     expect(
-      needsHeadlessSourceMount({ kind: laneKind, type: subject, hostedElsewhere: true }),
-      'dock full view open',
-    ).toBe(false);
-    // 3 + 4. collapsed group / canvas-hidden -> the lane emits no node AND the
-    // arm returns the producer answer, so there is no host EITHER. No card
-    // anywhere: this is the state the whole registry exists for.
+      DOM_SOURCE_LANE_TYPES.size,
+      'a card-owned DOM source exists again — the four-state table (and an owner for it) has to ' +
+        'come back before this module can rely on the structural no-host guarantee',
+    ).toBe(0);
     expect(
-      needsHeadlessSourceMount({ kind: laneKind, type: subject, laneOmitsNode: true }),
-      'inside a collapsed group / canvas-hidden',
-    ).toBe(false);
-    // ...and it is NOT shell-specific, which is the half a `?shell=1`-only fix
-    // would have missed.
-    const legacyKind = laneRenderKind({
-      shellFaces: false,
-      userDocked: false,
-      type: subject,
-      hasCard: true,
-      migrated: false,
-    });
-    expect(legacyKind).toBe('legacy');
-    expect(
-      needsHeadlessSourceMount({ kind: legacyKind, type: subject, laneOmitsNode: true }),
-      'the same two states under ?shell=legacy',
-    ).toBe(false);
-  });
-
-  it('a CONVERTED tuner is never hosted, on any lane state — the payoff', () => {
-    for (const type of NODE_HLS_SOURCE_TYPES) {
-      for (const kind of KINDS) {
-        expect(needsHeadlessSourceMount({ kind, type }), `${type} @ ${kind}`).toBe(false);
-        expect(
-          needsHeadlessSourceMount({ kind, type, laneOmitsNode: true }),
-          `${type} @ ${kind} with no lane node`,
-        ).toBe(false);
-      }
-    }
+      CARD_PRODUCER_LANE_TYPES.size,
+      'a card producer exists again — same consequence, producer half',
+    ).toBe(0);
   });
 });
 

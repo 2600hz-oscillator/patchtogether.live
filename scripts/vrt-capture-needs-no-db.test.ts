@@ -288,8 +288,8 @@ describe('negative controls: the scanners can actually fail', () => {
   });
 
   it('navigations() does NOT flag the capture real targets', () => {
-    const navs = navigations([['ok.spec.ts', "  await page.goto('/rack?shell=legacy&seed=none');\n"]]);
-    expect(navs[0].target).toBe('/rack?shell=legacy&seed=none');
+    const navs = navigations([['ok.spec.ts', "  await page.goto('/rack?seed=none');\n"]]);
+    expect(navs[0].target).toBe('/rack?seed=none');
     expect(DB_BACKED_PREFIXES.some((p) => (navs[0].target as string).startsWith(p))).toBe(false);
   });
 

@@ -28,7 +28,7 @@
 // literal instead of an inequality, and it is renderer-independent: no frame
 // budget, no wall-clock, no tuning.
 //
-// Runs on /rack?shell=legacy (no DB, no relay) — the normal e2e lane.
+// Runs on /rack (no DB, no relay) — the normal e2e lane.
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch, waitForLaneTier } from './_helpers';
@@ -39,7 +39,7 @@ const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 /** Boot the migrated shell (`?shell=1`) and wait for the workflow chrome. */
 async function gotoShell(page: Page): Promise<void> {
   await page.goto('/rack');
-  // The BOOT wait: the first test of a run pays SvelteKit's on-demand /rack?shell=legacy&seed=none
+  // The BOOT wait: the first test of a run pays SvelteKit's on-demand /rack
   // compile. Same bound the sibling workflow specs carry.
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({
     timeout: SLOW_RENDER ? 30_000 : 15_000,
@@ -291,12 +291,12 @@ test.describe('vca face — the knob readouts follow the graph', () => {
   });
 });
 
-// ── THE OTHER SURFACE: the LEGACY CARD, and the seam that feeds it. ─────────
+// ── THE SECOND ROUTE TO THE SAME VOCABULARY. ───────────────────────────────
 //
 // Everything above renders the CURATED FACE, which reads the def DIRECTLY
 // (`ModuleShell` passes `units={pd.units}` / `format={pd.format}` off the
-// ParamDef). The legacy card reaches the same def through `paramProps(def, id)`
-// — a SECOND route to the same vocabulary, and until now an unwitnessed one.
+// ParamDef). `paramProps(def, id)` is a SECOND route to that vocabulary, and
+// for a while it was an unwitnessed one.
 //
 // The gap that motivated this: `paramProps` did not forward `format`, so the
 // face printed `CLOSED` / `-12 dB` / `UNITY` while the card's value tag on the
@@ -365,33 +365,8 @@ test.describe('vca face — the two dials NAME their sense, and neither can see 
   });
 });
 
-test.describe('VCA legacy card — the def-owned readout reaches the card too', () => {
-  test('the base fader prints the DEF formatter, not the raw number', async ({ page }) => {
-    test.setTimeout(SLOW_RENDER ? 60_000 : 30_000);
-    // NO `shell=1`: this is the legacy card path, the one `paramProps` feeds.
-    await page.goto('/rack?shell=legacy');
-    await page.locator('.svelte-flow__pane:visible').first().waitFor({
-      state: 'visible',
-      timeout: SLOW_RENDER ? 30_000 : 15_000,
-    });
-    await spawnPatch(page, [
-      { id: 'v', type: 'vca', position: { x: 460, y: 240 }, params: { base: 0.25 } },
-    ]);
-
-    const card = page.locator('.svelte-flow__node[data-id="v"]');
-    const baseFader = card.getByTestId('control-base');
-    await expect(baseFader).toBeVisible();
-
-    // The tag exists only while hovering/dragging — which is exactly why no
-    // screenshot gate could ever have caught the divergence.
-    await baseFader.hover();
-    const tag = card.locator('.value-tag').first();
-    await expect(tag).toBeVisible();
-    await expect(
-      tag,
-      `the card's value tag must speak the DEF's vocabulary (ParamDef.format via ` +
-        `paramProps), not a bare number — the curated face already prints ` +
-        `${JSON.stringify(formatVcaBase(0.25))} for this same param.`,
-    ).toHaveText(formatVcaBase(0.25));
-  });
-});
+// A second describe (a hover value-tag speaking the DEF formatter via
+// `paramProps`) was DELETED by the S2 inversion: its subject was a readout path
+// that left the product with the surface that owned it. The def-owned
+// vocabulary itself is pinned above on the face readouts (`aria-valuetext` on
+// base/strength), the surface users get.

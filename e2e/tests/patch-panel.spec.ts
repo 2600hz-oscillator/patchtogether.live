@@ -1,17 +1,23 @@
 // e2e/tests/patch-panel.spec.ts
 //
 // Core invariants of the redesigned (no-drag / overlay-replace / portaled)
-// patch menu:
+// patch menu, on the DEFAULT shell (the lane tile's jack-rail variant):
 //
-//  1. Default state: handles are in the card DOM but opacity:0 +
-//     pointer-events:none, stacked at the affordance corner (the per-port
+//  1. Default state: handles are in the node DOM but opacity:0 +
+//     pointer-events:none, stacked at the affordance point (the per-port
 //     sweep + cable anchor depend on this). The menu chrome is NOT mounted.
-//  2. Click a trigger → the body-portaled chrome opens at the root view
-//     (INPUT / OUTPUT pivots, edge-aligned to the trigger side).
+//  2. Click the rail trigger → the body-portaled chrome opens at the root
+//     view (INPUT / OUTPUT pivots).
 //  3. Drilling into INPUT / OUTPUT shows verbose-labeled port rows.
-//  4. Both triggers open the SAME menu (state shared).
-//  5. Edge-alignment: the menu's anchored edge lines up with the matching
-//     card edge for left vs right triggers, never spilling past it.
+//  4. Hover alone never opens; an outside click closes.
+//  5. Edge-alignment: the menu's anchored edge lines up with the node's
+//     left edge, from the FIRST painted frame.
+//
+// ⚠ The card's LEFT/RIGHT corner trigger PAIR died with the card — the lane
+// rail has ONE drill-down trigger (`patch-trigger`; `patch-trigger-right`
+// exists only on the card variant of PatchPanel), so the "both triggers share
+// one menu" and right-edge anchoring claims left the product with the fleet
+// (S2 manifest).
 //
 // I/O-spec consistency (exact handle id matching) is covered separately in
 // io-spec-consistency.spec.ts / per-module-per-port.spec.ts.
@@ -24,10 +30,9 @@ function chrome(page: Page, nodeId: string) {
   return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
 }
 
-async function openFrom(page: Page, nodeId: string, side: 'left' | 'right' = 'left') {
-  const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
+async function openFrom(page: Page, nodeId: string) {
   await page
-    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="${testid}"]`)
+    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`)
     .click();
   await expect(chrome(page, nodeId)).toHaveAttribute('aria-hidden', 'false');
 }
@@ -97,9 +102,8 @@ async function readDeltas(page: Page, nodeId: string): Promise<AnchorSample> {
 async function openInPageAndSampleFirstFrame(
   page: Page,
   nodeId: string,
-  side: 'left' | 'right',
 ): Promise<AnchorSample> {
-  const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
+  const testid = 'patch-trigger';
   const sample = await page.evaluate(
     async ({ id, tid }) => {
       const btn = document.querySelector(
@@ -148,7 +152,7 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(hidden, 'closed-state handle is opacity:0 + pointer-events:none').toBe(true);
 
     // 2 + 3. Click-open + drill INPUT → verbose labels.
-    await openFrom(page, 'adsr', 'left');
+    await openFrom(page, 'adsr');
     await drill(page, 'adsr', 'inputs');
     const inputLabels = (
       await chrome(page, 'adsr').locator('[data-testid="port-row-label"]').allTextContents()
@@ -170,7 +174,7 @@ test.describe('PatchPanel: redesigned menu', () => {
 
   test('Filter drill uses verbose CUTOFF / RESONANCE labels', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'flt', type: 'filter', position: { x: 200, y: 200 } }]);
-    await openFrom(page, 'flt', 'left');
+    await openFrom(page, 'flt');
     await drill(page, 'flt', 'inputs');
     const labels = (
       await chrome(page, 'flt').locator('[data-testid="port-row-label"]').allTextContents()
@@ -180,21 +184,25 @@ test.describe('PatchPanel: redesigned menu', () => {
     expect(labels).not.toContain('CUT');
   });
 
-  test('both triggers open the same menu (shared state)', async ({ page, rack }) => {
+  test('the rail trigger opens ONE menu on click only; an outside click closes it', async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
-    const rightTrigger = page.locator(
-      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger-right"]`,
+    const trigger = page.locator(
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
     );
-    await expect(rightTrigger).toHaveCount(1);
+    await expect(trigger).toHaveCount(1);
 
     // Hover alone never opens.
-    await rightTrigger.hover();
+    await trigger.hover();
+    // pacing: a NEGATIVE observation window — the menu opens synchronously on
+    // click (openMenu in PatchPanel.svelte has no delay/debounce), so 150 ms of
+    // hover with no chrome mounted bounds "hover alone never opens" from above;
+    // there is no product interval to await because none may exist.
     await page.waitForTimeout(150);
     await expect(chrome(page, 'adsr')).toHaveCount(0);
 
-    // Click right → opens (one chrome instance).
-    await rightTrigger.click();
+    // Click → opens (one chrome instance).
+    await trigger.click();
     await expect(chrome(page, 'adsr')).toHaveAttribute('aria-hidden', 'false');
     await expect(chrome(page, 'adsr')).toHaveCount(1);
 
@@ -208,7 +216,10 @@ test.describe('PatchPanel: redesigned menu', () => {
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
   // LOST WHILE PARKED: that the body-portaled patch menu anchors to the side of its trigger — a menu that opens off-screen at a card near the viewport edge is an unreachable patch.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
-  test.fixme('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
+  // (Re-pointed at the shell's single rail trigger by the S2 legacy-removal
+  // inversion — the card's RIGHT-trigger half of this subject died with the
+  // card; see the header + manifest.)
+  test.fixme('edge-alignment: the rail trigger anchors the menu to the node edge from the FIRST frame', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 6 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page, rack }) => {
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 160 } }]);
 
     // ── Settled contract, measured in ONE layout pass and auto-retried ──────
@@ -219,26 +230,17 @@ test.describe('PatchPanel: redesigned menu', () => {
     // both rects inside a single page-side layout, and `expect.poll` retries
     // on the visible subject, so neither edge can be read from a layout the
     // other was not read from.
-    await openFrom(page, 'adsr', 'left');
+    await openFrom(page, 'adsr');
     await expect
       .poll(async () => (await readDeltas(page, 'adsr')).leftDelta, {
-        message: 'LEFT trigger: menu LEFT edge aligns to card LEFT edge (CSS px)',
-      })
-      .toBeLessThanOrEqual(4);
-    await page.mouse.click(8, 8);
-    await expect(chrome(page, 'adsr')).toHaveCount(0);
-
-    await openFrom(page, 'adsr', 'right');
-    await expect
-      .poll(async () => (await readDeltas(page, 'adsr')).rightDelta, {
-        message: 'RIGHT trigger: menu RIGHT edge aligns to card RIGHT edge (CSS px)',
+        message: 'rail trigger: menu LEFT edge aligns to node LEFT edge (CSS px)',
       })
       .toBeLessThanOrEqual(4);
     const settled = await readDeltas(page, 'adsr');
     expect(
-      settled.menuRight,
-      `menu must never spill PAST the anchored card edge — ${describeAnchor(settled)}`,
-    ).toBeLessThanOrEqual(settled.cardRight + 1);
+      settled.menuLeft,
+      `menu must never spill PAST the anchored node edge — ${describeAnchor(settled)}`,
+    ).toBeGreaterThanOrEqual(settled.cardLeft - 1);
     await page.mouse.click(8, 8);
     await expect(chrome(page, 'adsr')).toHaveCount(0);
 
@@ -261,15 +263,15 @@ test.describe('PatchPanel: redesigned menu', () => {
     // dispatched IN THE PAGE and the rect sampled in the same task, so no
     // Playwright round trip happens inside the window under test — the
     // measurement is frame-exact and renderer-independent by construction.
-    for (const side of ['left', 'right'] as const) {
-      const first = await openInPageAndSampleFirstFrame(page, 'adsr', side);
+    {
+      const first = await openInPageAndSampleFirstFrame(page, 'adsr');
       expect(
         first.mounted,
-        `the chrome must be in the DOM in the same task as the ${side} trigger click`,
+        'the chrome must be in the DOM in the same task as the trigger click',
       ).toBe(true);
-      expect(first.side, `chrome anchors to the ${side} side`).toBe(side);
+      expect(first.side, 'chrome anchors to the left side').toBe('left');
       expect(
-        side === 'left' ? first.leftDelta : first.rightDelta,
+        first.leftDelta,
         `#1647 — the FIRST frame the chrome exists must ALREADY be edge-aligned, ` +
           `not one frame behind at the previous open's anchor. ${describeAnchor(first)}`,
       ).toBeLessThanOrEqual(4);
@@ -299,24 +301,26 @@ test.describe('PatchPanel: redesigned menu', () => {
       page.locator(`.svelte-flow__edge[data-id="e1"] .svelte-flow__edge-path`),
     ).toHaveCount(1);
 
-    // Menu closed → the env output handle sits near the source card's
-    // top-left trigger (the corner stack), so the cable anchors there.
+    // Menu closed → the env output handle sits at the node's TOP-LEFT
+    // affordance point (the corner stack), so the cable anchors there. On the
+    // shell the DRILL trigger moved into the bottom jack rail, but the visual
+    // anchor corner did not — measured: handle centre ≈ 28 px inset from the
+    // node's top-left, rail ~250 px below it.
     await expect(chrome(page, 'adsr')).toHaveCount(0);
-    const trigger = page.locator(
-      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
-    );
-    const triggerBox = await trigger.boundingBox();
+    const nodeBox = await page.locator(`.svelte-flow__node[data-id="adsr"]`).boundingBox();
     const handleBox = await page
       .locator(
         `.svelte-flow__node[data-id="adsr"] .svelte-flow__handle[data-handleid="env"][class*="source"]`,
       )
       .boundingBox();
-    expect(triggerBox && handleBox).toBeTruthy();
-    if (!triggerBox || !handleBox) return;
-    const dx = Math.abs(handleBox.x + handleBox.width / 2 - (triggerBox.x + triggerBox.width / 2));
-    const dy = Math.abs(handleBox.y + handleBox.height / 2 - (triggerBox.y + triggerBox.height / 2));
-    expect(dx, `closed output handle anchors near trigger x (dx=${dx})`).toBeLessThan(30);
-    expect(dy, `closed output handle anchors near trigger y (dy=${dy})`).toBeLessThan(30);
+    expect(nodeBox && handleBox).toBeTruthy();
+    if (!nodeBox || !handleBox) return;
+    const dx = handleBox.x + handleBox.width / 2 - nodeBox.x;
+    const dy = handleBox.y + handleBox.height / 2 - nodeBox.y;
+    expect(dx, `closed output handle anchors at the node's top-left corner (dx=${dx})`).toBeLessThan(40);
+    expect(dy, `closed output handle anchors at the node's top-left corner (dy=${dy})`).toBeLessThan(40);
+    expect(dx, 'and inside the node, never off its edge').toBeGreaterThanOrEqual(0);
+    expect(dy, 'and inside the node, never off its edge').toBeGreaterThanOrEqual(0);
   });
 
   test('handles for every declared port stay in the card DOM with the menu closed (io-spec parity)', async ({ page, rack }) => {

@@ -39,7 +39,6 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 export const moog992Def: AudioModuleDef = {
   type: 'moog992',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog992Card',
   domain: 'audio',
   label: '992 control voltage panel',
   category: 'modulation',
@@ -74,7 +73,7 @@ export const moog992Def: AudioModuleDef = {
     },
     outputs: {
       cv_out:
-        "The summed control voltage: cv1·ATT1 + cv2·ATT2 + cv3·ATT3 − cv4·ATT4. Patch it wherever a single combined CV is wanted (a filter cutoff, an oscillator's pitch, another module's CV input).",
+        "The summed control voltage: cv1·ATT1 + cv2·ATT2 + cv3·ATT3 − cv4·ATT4. Patch it wherever a single combined CV is wanted (a filter cutoff, an oscillator's pitch, another module\'s CV input).",
     },
     controls: {
       atten1: "Attenuator for input 1: how much of cv1 reaches the sum, from 0 (muted) to 1 (unity / full level).",

@@ -16,19 +16,19 @@
 //   * THE 30 fps LED PUMP IS ON THE NODE, not on any component:
 //     $lib/ui/modules/node-launchpad-monitor-registry. It reads `grid9x9` and
 //     the live `bright`/`gamma` off the ENGINE and calls setMonitorFrame(). This
-//     is #1728 — a card unmounts on collapse and on LRU eviction, and a
+//     is #1728 — a surface unmounts on collapse and on LRU eviction, and a
 //     performer closing a pane is not a performer finished with their hardware.
 //   * THE SURFACE is the PF-20 faceplate ($lib/ui/modules/outToLaunch/): a
 //     ranked CONNECT cell that reaches the lane tile, plus a `fullViewBody`
 //     carrying the 9×9 preview, its SCREEN switch, the port picker, UNBIND and
-//     the MONITOR lamp. `OutToLaunchCard.svelte` still ships and still renders
-//     under `?shell=legacy`; both draw the preview through the SAME
-//     `out-to-launch-preview` module, so they cannot show different pictures.
+//     the MONITOR lamp. The preview picture itself is drawn by the shared
+//     `out-to-launch-preview` module rather than by the component, so what the
+//     performer sees and what the hardware is sent cannot diverge.
 //
-// ⚠ THE PARAGRAPH ABOVE USED TO SAY "the CARD owns the device … in its rAF
-// loop … setMonitorFrame() at a throttled ~30 fps", and it was already wrong
-// before this module was faced — #1728 moved the pump onto the node and left
-// the header describing the bug it had just fixed.
+// ⚠ THE PARAGRAPH ABOVE USED TO PUT THE DEVICE ON A SURFACE — "owns the device
+// … in its rAF loop … setMonitorFrame() at a throttled ~30 fps" — and it was
+// already wrong before this module was faced: #1728 moved the pump onto the
+// node and left the header describing the bug it had just fixed.
 //
 // pullExempt: the module drives EXTERNAL hardware (a real side effect with no
 // audio surface + no video output), so its draw() must keep running to refresh
@@ -134,10 +134,11 @@ export const outToLaunchDef: VideoModuleDef = {
   // them into cells they cannot be, for the mechanical reasons the face comment
   // below gives.
   //
-  // The `testidPrefix` is a literal the LEGACY CARD already emits
-  // (`OutToLaunchCard.svelte`, the Connect button), which is what
-  // module-docs-lint's card grep checks — so a rename on either surface is RED.
-  // The card file survives promotion: `?shell=legacy` still renders it.
+  // ⚠ THE `testidPrefix` IS NOT EMITTED AS A LITERAL BY ANY SURFACE —
+  // MEASURED. The shell stamps this family generically from the declaration, so
+  // module-docs-lint holds it through the CELL arm (`out-to-launch-connect-{n}`
+  // ranked on the face plan and resolving to a live shell cell), never a source
+  // grep.
   controlFamilies: [
     {
       id: 'out-to-launch-connect',
@@ -149,14 +150,14 @@ export const outToLaunchDef: VideoModuleDef = {
 
   docs: {
     explanation:
-      "out to launch turns a Novation Launchpad Mini Mk3 into a live 9x9 RGB video monitor. Patch any video source into it, and it downsamples that frame to a 9x9 grid on the GPU (each cell is a box-average of its slice of the frame, so it doesn't alias or flicker on moving video) and mirrors those 81 pixels onto the Launchpad's LEDs in real time. The Mini Mk3's whole addressable surface is a 9x9 grid — the 8x8 pads plus the top control row, the right scene column, and the corner logo — so the picture maps straight onto the hardware, upright, with the bottom-left of the frame on the bottom-left pad. Bind a device from the card (Connect, then pick a Launchpad); once bound it becomes a screen and its LEDs are driven by the video, so it can't be used for control at the same time (out to launch takes it over). It has no video output — it's an endpoint, like plugging a monitor into the end of a chain, except the monitor is a grid of buttons. Two knobs shape the look: BRIGHT scales overall LED brightness and GAMMA deepens or lifts the mid-tones. The on-card 9x9 preview shows exactly what the LEDs show, so you can dial it in without hardware. Great for a tiny confidence monitor, a lo-fi VJ output, or lighting a Launchpad from a camera/generator feed.",
+      "out to launch turns a Novation Launchpad Mini Mk3 into a live 9x9 RGB video monitor. Patch any video source into it, and it downsamples that frame to a 9x9 grid on the GPU (each cell is a box-average of its slice of the frame, so it doesn't alias or flicker on moving video) and mirrors those 81 pixels onto the Launchpad's LEDs in real time. The Mini Mk3's whole addressable surface is a 9x9 grid — the 8x8 pads plus the top control row, the right scene column, and the corner logo — so the picture maps straight onto the hardware, upright, with the bottom-left of the frame on the bottom-left pad. Bind a device from the faceplate (Connect, then pick a Launchpad); once bound it becomes a screen and its LEDs are driven by the video, so it can't be used for control at the same time (out to launch takes it over). It has no video output — it's an endpoint, like plugging a monitor into the end of a chain, except the monitor is a grid of buttons. Two knobs shape the look: BRIGHT scales overall LED brightness and GAMMA deepens or lifts the mid-tones. The faceplate\'s 9x9 preview shows exactly what the LEDs show, so you can dial it in without hardware. Great for a tiny confidence monitor, a lo-fi VJ output, or lighting a Launchpad from a camera/generator feed.",
     inputs: {
       in: "The video frame to display. It is box-averaged down to a 9x9 RGB grid and pushed to the bound Launchpad's LEDs; with nothing patched the grid is black (LEDs off). Accepts any video-domain source (the engine upcasts mono-video and image to video).",
     },
     outputs: {},
     controls: {
-      bright: "BRIGHT (0..1, default 1) scales the overall LED brightness — every cell's RGB is multiplied by this before it's sent, so lower values dim the whole monitor (useful because the RGB LEDs are very bright). Applied identically to the on-card preview.",
-      gamma: "GAMMA (0.5..3, default 2.2) is the gamma exponent applied to each colour channel before scaling. 1 is a literal what-you-see map; above 1 deepens the mid-tones and blacks (usually flatters the bright LEDs on a moving source); below 1 lifts dim detail. Applied identically to the on-card preview.",
+      bright: "BRIGHT (0..1, default 1) scales the overall LED brightness — every cell's RGB is multiplied by this before it's sent, so lower values dim the whole monitor (useful because the RGB LEDs are very bright). Applied identically to the faceplate\'s preview.",
+      gamma: "GAMMA (0.5..3, default 2.2) is the gamma exponent applied to each colour channel before scaling. 1 is a literal what-you-see map; above 1 deepens the mid-tones and blacks (usually flatters the bright LEDs on a moving source); below 1 lifts dim detail. Applied identically to the faceplate's preview.",
       // ⚠ THE `-{n}` SUFFIX IS REQUIRED: module-docs-lint resolves a docs key to
       // a control FAMILY only through `FAMILY_KEY = /^(.+)-\{n\}$/`, the same
       // spelling `face.order` uses. The bare family id reads as a param name and

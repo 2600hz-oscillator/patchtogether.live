@@ -45,8 +45,7 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 type Corners = [number, number][];
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. `?shell=legacy` is precisely the surface
-  // promotion does not change, and every existing mappy spec boots it.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
@@ -90,8 +89,8 @@ async function nodeState(page: Page, nodeId: string) {
   }, nodeId);
 }
 
-/** Seed the STALE `node.data` mirror an old rack (or a `?shell=legacy`
- *  collaborator) leaves behind, and set it to the OPPOSITE of the param — the
+/** Seed the STALE `node.data` mirror an old rack (or a collaborator on an
+ *  older build) leaves behind, and set it to the OPPOSITE of the param — the
  *  arrangement in which the pre-fix factory ignored the faceplate entirely. */
 async function seedStaleMirror(page: Page, nodeId: string): Promise<void> {
   await page.evaluate((id) => {

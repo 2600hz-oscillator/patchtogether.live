@@ -38,7 +38,6 @@
 // same recipe as workflow-shell-faces.spec.ts.
 
 import { test, expect, type Page } from '@playwright/test';
-import { REGISTRY } from './_registry';
 import { spawnPatch } from './_helpers';
 import { pressFlipKey } from './_flip-key';
 // The cartesian grid size, imported from the APP SOURCE for the same
@@ -80,7 +79,7 @@ async function gotoWorkflow(page: Page): Promise<void> {
   // CI-validated rather than guessed.
   //
   // ROOT CAUSE of the cold-server flake this replaces: SvelteKit dev compiles
-  // /rack?shell=legacy&seed=none ON DEMAND. The very FIRST navigation of a run — a fresh
+  // /rack ON DEMAND. The very FIRST navigation of a run — a fresh
   // `task e2e:serve`, or a cleared node_modules/.vite — pays that compile
   // before the topbar can mount, blowing the 5s expect default; every later
   // load hits the warm module graph, which is why ONLY the first invocation
@@ -656,198 +655,56 @@ test('no phase divergence: open → flip → close → the flip key turns the ca
   await expect(flipRackBtn(page)).toHaveAttribute('aria-pressed', 'false');
 });
 
-// ── (5) Canvas rear view must NOT hijack the dock full-view (owner P0) ──────
+// ── (5) DELETED WITH THE BRANCH IT WAS ABOUT ────────────────────────────────
 //
-// The drawer sits inside `.flow`, so with the canvas-wide rear view left ON a
-// docked LEGACY card inherited `.rear-view`: the ancestor-generic reveal rule
-// painted its OLD back panel (`.card-back-panel`, absolute inset:0 z-index:8)
-// OVER the pane front while the dock-sized front-inert mirror hid the front —
-// and with the flip key dock-owned while the full-view is open, there was NO route back
-// to the front ("no way to see the front of the panel", 2026-07-26). The fix
-// scopes a drawer exemption in _module-card.css (the .rl-tile precedent): the
-// full-view's ONLY rear is the RearCard, driven by dockStore.fullViewFlipped.
-test('canvas rear view left ON: a docked LEGACY pane still shows its FRONT, and the dock flip round-trips front⇄RearCard', async ({
-  page,
-}) => {
-  // ── THE INSTRUMENT FIRST, THEN THE MIGRATION (the `deriveFixture` order) ──
-  // A scan that recognises none of its candidates has gone BLIND, and a blind
-  // scan reports itself as a finished migration — so it must red here, before
-  // the skip below can absorb it. See `pickLegacyDockType`.
-  expect(
-    LEGACY_DOCK.kind === 'no-candidate' ? LEGACY_DOCK.why : null,
-    'the legacy-dock candidate scan recognised nothing',
-  ).toBeNull();
-  // An exhausted candidate set is the DESIGNED end state, not a failure: the
-  // `.fp-card-mount` branch this case is about is deleted with the legacy card
-  // fleet. A NAMED skip carrying the reason — never a silent pass, and never a
-  // throw that reads like a product regression (#2295).
-  test.skip(LEGACY_DOCK.kind === 'migration-complete', LEGACY_DOCK.why);
-
-  await gotoWorkflow(page);
-  // ⚠ THE SUBJECT IS DERIVED, AND IT USED TO BE THE HARD-CODED `scope`.
-  //
-  // This test's subject is A DOCKED LEGACY PANE — `DockFullView.svelte` renders
-  // `.fp-card-mount` only in its `{:else}` (un-migrated) branch — so the whole
-  // assertion is CONDITIONAL ON THE OCCUPANT NOT BEING FACED. `scope` was named
-  // here with the comment "NOT in STRICT_FACES", and promoting it (2026-08-23)
-  // made that comment false and `.fp-card-mount` count 0: the test went red on a
-  // change that broke nothing it was written to protect.
-  //
-  // Fixed at the SUBJECT rather than the threshold, and DERIVED rather than
-  // re-typed, because re-typing another module's name only moves the same trap
-  // to whoever promotes THAT one next. `LEGACY_DOCK_CANDIDATES` is a small
-  // ordered set of plain panel cards; the first one still un-faced wins, so this
-  // self-heals through the next several promotions and fails LOUDLY (naming the
-  // condition) rather than mysteriously if the fleet ever finishes them all.
-  //
-  // ⚠ The candidates are NAMED rather than "first un-faced module in the
-  // registry" on purpose: a bare registry scan would happily wander onto a
-  // device module needing hardware, or onto DOOM.
-  //
-  // ⚠ AND EXHAUSTION IS NO LONGER A THROW (#2295). It used to `throw new Error`
-  // from inside this body when every candidate was faced — a hard RED, in a
-  // migration state that is DESIGNED, on whichever unrelated PR happened to
-  // promote the last one. `moog960` and `cartesian` are already spent; the
-  // runway is one. The three outcomes are resolved above.
-  const legacyType = LEGACY_DOCK.type!;
-  await spawnPatch(page, [{ id: 'sc', type: legacyType, position: { x: 460, y: 240 } }]);
-
-  // Arm the trap: flip the CANVAS to rear view BEFORE docking.
-  await resetFocus(page);
-  await pressFlipKey(page);
-  await expect(canvasFlow(page)).toHaveClass(/rear-view/);
-
-  await openFullView(page, 'sc');
-
-  // THE FIX — the pane shows its FRONT even though an ancestor is .rear-view:
-  // the legacy card's front content is visible (not visibility:hidden'd by the
-  // dock-sized mirror rule) and its OLD back panel is suppressed entirely.
-  await expect(faceplate(page)).toHaveAttribute('data-flipped', 'false');
-  const frontCard = faceplate(page).locator(
-    '.fp-card-mount :is(.mod-card, .card, .moog-panel)',
-  ).first();
-  await expect(frontCard).toBeVisible();
-  await expect(faceplate(page).locator('.card-back-panel')).toBeHidden();
-
-  // FLIP (dock-owned): the flip side is the NEW RearCard — never the old panel.
-  await resetFocus(page);
-  await pressFlipKey(page);
-  await expect(faceplate(page)).toHaveAttribute('data-flipped', 'true');
-  await expect(rearCard(page)).toBeVisible();
-  await expect(faceplate(page).locator('.card-back-panel')).toBeHidden();
-
-  // FLIP again: the round trip the bug made impossible — FRONT restored.
-  await pressFlipKey(page);
-  await expect(faceplate(page)).toHaveAttribute('data-flipped', 'false');
-  await expect(frontCard).toBeVisible();
-
-  // Single-owner intact: none of that touched the canvas flip state.
-  await expect(canvasFlow(page)).toHaveClass(/rear-view/);
-});
-
-/**
- * Plain audio panel cards that make good stand-ins for "an un-faced module with
- * an ordinary legacy card", in preference order. Each must render one of the
- * front-card classes the test selects on (`.mod-card` / `.card` /
- * `.moog-panel`) and must need no hardware, no ROM and no file load.
- *
- * ⚠ NOT a registry scan. "The first module with `strictFace !== true`" would
- * also match device modules that want hardware and, worse, DOOM — which is
- * untouchable by owner ruling. A named set cannot wander.
- */
-const LEGACY_DOCK_CANDIDATES = ['moog956', 'moog960', 'cartesian'] as const;
-
-/**
- * What the candidate scan found — THREE outcomes, deliberately, and the shape
- * is `_face-fixtures.ts`'s `deriveFixture` rather than a fourth invention:
- *
- *   * `ok` — `type` is an un-faced candidate; run the case.
- *   * `migration-complete` — every candidate is REGISTERED and every one of
- *     them is FACED. That is the designed end state of the face programme, not
- *     a defect: `DockFullView`'s `{:else}` branch (`.fp-card-mount`) has no
- *     occupant left to prove, and the branch itself is scheduled for deletion
- *     with the legacy card fleet. A NAMED SKIP, never a silent pass.
- *   * `no-candidate` — the scan recognises NONE of the names. That cannot be a
- *     migration state (promotion moves a module between the two sets above; it
- *     never removes it from the registry), so it means the list has rotted or
- *     the manifest stopped loading. RED, with the names printed.
- *
- * ⚠ THE INSTRUMENT CHECK COMES FIRST, for the reason `deriveFixture` states at
- * length: a scan that recognises nothing presents itself as a finished
- * migration, and that failure is silent and green — the worse of the two.
- */
-type LegacyDockPick =
-  | { kind: 'ok'; type: string; why: string }
-  | { kind: 'migration-complete' | 'no-candidate'; type: null; why: string };
-
-function pickLegacyDockType(): LegacyDockPick {
-  const faced = new Set(REGISTRY.filter((m) => m.strictFace === true).map((m) => m.type));
-  const known = new Set(REGISTRY.map((m) => m.type));
-  const registered = LEGACY_DOCK_CANDIDATES.filter((t) => known.has(t));
-  const unfaced = registered.filter((t) => !faced.has(t));
-
-  if (registered.length === 0) {
-    return {
-      kind: 'no-candidate',
-      type: null,
-      why:
-        `workflow-rear-card: the registry manifest knows NONE of the LEGACY_DOCK_CANDIDATES ` +
-        `(${LEGACY_DOCK_CANDIDATES.join(', ')}). That is not a migration state — promotion moves ` +
-        'a module from un-faced to faced, it never unregisters one — so either these names were ' +
-        'renamed/deleted, or the manifest did not load. FIX THE LIST (or the manifest); do not ' +
-        'read a finished migration into it.',
-    };
-  }
-  if (unfaced.length === 0) {
-    return {
-      kind: 'migration-complete',
-      type: null,
-      why:
-        `workflow-rear-card: every LEGACY_DOCK_CANDIDATES entry (${registered.join(', ')}) is now ` +
-        'in STRICT_FACES, so the LEGACY dock pane has NO OCCUPANT LEFT, BY DESIGN. This case\'s ' +
-        "subject is the un-migrated branch of DockFullView (`.fp-card-mount`), which the face " +
-        'programme is finishing: when the last module is faced the branch is deleted and this ' +
-        'case goes with it. ⚠ DO NOT re-point it at a faced module — a faced occupant renders ' +
-        '<ModuleShell>, and the flip it would then exercise is the RearCard round-trip already ' +
-        'covered by sections (1) and (4) above. Delete this case with the branch instead.',
-    };
-  }
-  const type = unfaced[0]!;
-  return {
-    kind: 'ok',
-    type,
-    why: `legacy dock occupant: ${type} — first un-faced of ${registered.join(', ')}`,
-  };
-}
-
-const LEGACY_DOCK = pickLegacyDockType();
+// A case stood here: *"canvas rear view left ON: a docked LEGACY pane still
+// shows its FRONT, and the dock flip round-trips front⇄RearCard"*. Its subject
+// was `DockFullView`'s SECOND branch — the one that plain-mounted a module's
+// own card behind `.fp-card-mount` — and the owner P0 it guarded was that a
+// docked card inherited the canvas-wide `.rear-view` and painted its old
+// `.card-back-panel` over the pane front, with no route back.
+//
+// ⚠ THE DELETION IS THE ONE THIS FILE ASKED FOR, IN ITS OWN WORDS. The case
+// carried a three-outcome candidate scan whose `migration-complete` arm read:
+// *"when the last module is faced the branch is deleted and this case goes
+// with it. ⚠ DO NOT re-point it at a faced module — a faced occupant renders
+// <ModuleShell>, and the flip it would then exercise is the RearCard
+// round-trip already covered by sections (1) and (4) above. Delete this case
+// with the branch instead."* That is now what happened, so it is deleted
+// rather than re-pointed or skipped.
+//
+// COVERAGE, NAMED: the flip round-trip it shared with the rest of the file is
+// section (1) (`the flip key flips the open dock full-view to the rear card and
+// back`) and section (4) (`clicking holes patches through the shipped carry
+// seam`). What is NOT carried forward is the `.card-back-panel`-bleeds-through
+// half — and it cannot be, because `.card-back-panel` was emitted by the card
+// fleet. The `.rl-tile` exemption that replaced that rule is asserted by
+// section (6) below and by `flip-rack-rear-view.spec.ts`.
 
 // ── (5b) A CANVAS-HIDDEN OCCUPANT'S PICKUP STILL DRAWS A GHOST ─────────────
 //
-// THE DEFECT THIS GUARDS, which SHIPPED and was invisible: `PickupCable`
+// THE DEFECT THIS GUARDS, which shipped and was invisible: `PickupCable`
 // anchors its ghost to `.svelte-flow__node[data-id]`, and falls back to
 // `[data-dock-card] [data-dock-card-frame]` for — in its own words — "a PINNED
 // drawer/panel card [that] has NO canvas element at all (no stub, no handles),
 // so a pickup started from its port rows / back jacks rendered no ghost".
 //
-// Those dock anchors were emitted ONLY by `DockFullView`'s un-migrated branch,
-// so a FACED occupant's pane carried neither — and a canvas-hidden node has no
-// `.svelte-flow__node` to fall back to. Both lookups missed and the ghost path
-// came back as the empty string: flip the built-in clip player's pane (Tab),
-// click a back jack, and NOTHING attaches to your cursor. `Canvas.cardRectFor`
-// lost the same rect, which is the owner-reported "patch to is a mess in terms
-// of where the menu spawns" arriving by a second route.
+// Those dock anchors used to be emitted only by `DockFullView`'s second
+// branch. When that branch went, a full-view pane stopped carrying them, so for
+// a canvas-hidden occupant BOTH lookups missed and the ghost path came back as
+// the empty string: you could pick up a cable from the clip player's back jacks
+// and see nothing attached to your cursor. `Canvas.cardRectFor` lost the same
+// rect, which is the owner-reported "patch to is a mess in terms of where the
+// menu spawns" by a second route.
 //
-// ⚠ THE EXISTING CARRY-SEAM CASE CANNOT SEE IT, and that is why this is a
-// separate test rather than one more assertion there. Its subject is a spawned
-// `adsr` — a CANVAS node — so `PickupCable` resolves the FIRST selector and
-// never reaches the fallback at all. The bug exists only where a node has no
-// canvas element, so the subject has to be one that has none, or the new case
-// simply repeats the old blind spot.
+// ⚠ SECTION (4) CANNOT SEE IT, and that is why this case exists rather than an
+// extra assertion there. Its subject is a spawned `adsr` — a CANVAS node — so
+// `PickupCable` resolves the first selector and never reaches the fallback. The
+// bug lives only where a node has no canvas element, so the subject has to be
+// one that has none.
 //
 // `pinned-clipplayer` is that node: canvas-hidden by `isCanvasHiddenNode`, a
-// shipped always-on singleton, and the very occupant the fallback's own
-// comment describes.
+// shipped singleton, and the very occupant the fallback's comment describes.
 test('a CANVAS-HIDDEN occupant renders a pickup ghost from its rear card (dock-frame anchor)', async ({
   page,
 }) => {

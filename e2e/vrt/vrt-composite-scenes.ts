@@ -57,10 +57,13 @@ export interface CompositeVrtScene {
   /** Set up the rack: spawn modules + patch cables + apply any harness
    *  hooks. The page is already on `/` with the dev globals available. */
   setup: (page: Page) => Promise<void>;
-  /** SvelteFlow node-card selectors the spec must wait for before snapping.
-   *  Defaults to the NIBBLES→SCOPE pair (the original composite) when omitted,
-   *  so existing scenes keep working unchanged. */
-  cardSelectors?: string[];
+  /** The NODE IDS this scene's `setup` spawns that must be visible before it
+   *  snaps. Defaults to the NIBBLES→SCOPE pair (the original composite).
+   *
+   *  ⚠ IDS, NOT xyflow CLASSES. This field held `.svelte-flow__node-<type>`
+   *  selectors, and xyflow tags a lane node with its NODE TYPE — every lane node
+   *  is `moduleShell`, so none of them could ever match. */
+  cardNodeIds?: string[];
 }
 
 // ---- NIBBLES → SCOPE 5-step CV sweep -------------------------------------
@@ -313,12 +316,12 @@ function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
   };
 }
 
-const SNH_SEQ_SCOPE_CARDS = [
-  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
+const SNH_SEQ_SCOPE_NODES = [
+  // KRIA (`clk`) is the off-screen CLOCK for this scene and is deliberately NOT
   // composited — the cartesian is the module whose S&H the scene observes.
-  '.svelte-flow__node-cartesian',
-  '.svelte-flow__node-analogVco',
-  '.svelte-flow__node-scope',
+  'seq',
+  'vco',
+  'sc',
 ];
 
 // ---- VCO → SCOPE : an OSCILLATING trace from the REAL analyser ------------
@@ -380,7 +383,7 @@ const VCO_SCOPE_AUDIO_SCENES: CompositeVrtScene[] = [
       '__scopeVrtSeed: the trace is drawn from eng.read(node, "snapshot"), the ' +
       'live AnalyserNode buffer. The one baseline pinning an OSCILLATING ' +
       'waveform through the real analyser path.',
-    cardSelectors: ['.svelte-flow__node-analogVco', '.svelte-flow__node-scope'],
+    cardNodeIds: ['vco', 'sc'],
     setup: async (page: Page) => {
       await spawnPatch(
         page,
@@ -436,7 +439,7 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
       'note across the rest (trace stays high). ch2 is left unpatched — see the ' +
       'setup for why the VCO sine is deliberately not shown.',
     setup: setupSnhSeqScope(1),
-    cardSelectors: SNH_SEQ_SCOPE_CARDS,
+    cardNodeIds: SNH_SEQ_SCOPE_NODES,
   },
   {
     id: 'snh-seq-scope-off',
@@ -445,7 +448,7 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
       'Same sparse pattern with S&H OFF → SCOPE ch1: the pitch CV collapses to ' +
       '0 on the rest (trace centred); the legacy continuous behavior.',
     setup: setupSnhSeqScope(0),
-    cardSelectors: SNH_SEQ_SCOPE_CARDS,
+    cardNodeIds: SNH_SEQ_SCOPE_NODES,
   },
 ];
 
@@ -602,11 +605,7 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
   };
 }
 
-const ADSR_SUSTAIN_CARDS = [
-  '.svelte-flow__node-kria',
-  '.svelte-flow__node-adsr',
-  '.svelte-flow__node-scope',
-];
+const ADSR_SUSTAIN_NODES = ['seq', 'adsr', 'sc'];
 
 const ADSR_SUSTAIN_SCENES: CompositeVrtScene[] = [
   {
@@ -616,7 +615,7 @@ const ADSR_SUSTAIN_SCENES: CompositeVrtScene[] = [
       'A held gate drives an ADSR (sustain 0.2); SCOPE ch1 (audio mode) shows ' +
       'the env as a flat line just above centre — the held sustain level.',
     setup: setupAdsrSustainScope(0.2),
-    cardSelectors: ADSR_SUSTAIN_CARDS,
+    cardNodeIds: ADSR_SUSTAIN_NODES,
   },
   {
     id: 'adsr-sustain-high',
@@ -626,7 +625,7 @@ const ADSR_SUSTAIN_SCENES: CompositeVrtScene[] = [
       'near the top. The min↔max pair proves the sustain param drives the ' +
       'trace height (identical frames would mean the param is ignored).',
     setup: setupAdsrSustainScope(0.8),
-    cardSelectors: ADSR_SUSTAIN_CARDS,
+    cardNodeIds: ADSR_SUSTAIN_NODES,
   },
 ];
 
@@ -741,12 +740,12 @@ function setupDepolarizerScope(): (page: Page) => Promise<void> {
   };
 }
 
-const DEPOLARIZER_SCOPE_CARDS = [
-  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
-  // composited — the cartesian is the module whose S&H the scene observes.
-  '.svelte-flow__node-cartesian',
-  '.svelte-flow__node-depolarizer',
-  '.svelte-flow__node-scope',
+const DEPOLARIZER_SCOPE_NODES = [
+  // KRIA (`clk`) is the off-screen CLOCK for this scene and is deliberately
+  // NOT composited — the cartesian is the module whose S&H the scene observes.
+  'seq',
+  'depol',
+  'sc',
 ];
 
 const DEPOLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
@@ -758,7 +757,7 @@ const DEPOLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
       'ch1 = through DEPOLARIZER (out = (in+1)/2 → −1 maps to 0, a line at ' +
       'centre). Different heights = the remap worked; coincident = a regression.',
     setup: setupDepolarizerScope(),
-    cardSelectors: DEPOLARIZER_SCOPE_CARDS,
+    cardNodeIds: DEPOLARIZER_SCOPE_NODES,
   },
 ];
 
@@ -874,12 +873,12 @@ function setupScalerScope(): (page: Page) => Promise<void> {
   };
 }
 
-const SCALER_SCOPE_CARDS = [
-  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
-  // composited — the cartesian is the module whose S&H the scene observes.
-  '.svelte-flow__node-cartesian',
-  '.svelte-flow__node-scaler',
-  '.svelte-flow__node-scope',
+const SCALER_SCOPE_NODES = [
+  // KRIA (`clk`) is the off-screen CLOCK for this scene and is deliberately
+  // NOT composited — the cartesian is the module whose S&H the scene observes.
+  'seq',
+  'scl',
+  'sc',
 ];
 
 const SCALER_COMPOSITE_SCENES: CompositeVrtScene[] = [
@@ -891,7 +890,7 @@ const SCALER_COMPOSITE_SCENES: CompositeVrtScene[] = [
       'ch1 = through SCALER at AMOUNT 0.5 (out = in·0.5 → +0.5, half-height). ' +
       'Half height = the trim works; coincident lines = AMOUNT ignored.',
     setup: setupScalerScope(),
-    cardSelectors: SCALER_SCOPE_CARDS,
+    cardNodeIds: SCALER_SCOPE_NODES,
   },
 ];
 
@@ -1005,12 +1004,12 @@ function setupPolarizerScope(): (page: Page) => Promise<void> {
   };
 }
 
-const POLARIZER_SCOPE_CARDS = [
-  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
-  // composited — the cartesian is the module whose S&H the scene observes.
-  '.svelte-flow__node-cartesian',
-  '.svelte-flow__node-polarizer',
-  '.svelte-flow__node-scope',
+const POLARIZER_SCOPE_NODES = [
+  // KRIA (`clk`) is the off-screen CLOCK for this scene and is deliberately
+  // NOT composited — the cartesian is the module whose S&H the scene observes.
+  'seq',
+  'pol',
+  'sc',
 ];
 
 const POLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
@@ -1022,7 +1021,7 @@ const POLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
       'through POLARIZER (out = (2·in−1) → 0.25 maps to −0.5, clearly below ' +
       'centre). The sign-flip proves the [0,1]→[−1,+1] remap; coincident = a regression.',
     setup: setupPolarizerScope(),
-    cardSelectors: POLARIZER_SCOPE_CARDS,
+    cardNodeIds: POLARIZER_SCOPE_NODES,
   },
 ];
 
@@ -1152,12 +1151,12 @@ function setupMixerSumScope(): (page: Page) => Promise<void> {
   };
 }
 
-const MIXER_SUM_SCOPE_CARDS = [
-  // KRIA is the off-screen CLOCK for this scene and is deliberately NOT
-  // composited — the cartesian is the module whose S&H the scene observes.
-  '.svelte-flow__node-cartesian',
-  '.svelte-flow__node-mixer',
-  '.svelte-flow__node-scope',
+const MIXER_SUM_SCOPE_NODES = [
+  // KRIA (`clk`) is the off-screen CLOCK for this scene and is deliberately
+  // NOT composited — the cartesian is the module whose S&H the scene observes.
+  'seq',
+  'mix',
+  'sc',
 ];
 
 const MIXER_COMPOSITE_SCENES: CompositeVrtScene[] = [
@@ -1169,7 +1168,7 @@ const MIXER_COMPOSITE_SCENES: CompositeVrtScene[] = [
       'MIXER sums to +1.5. ch2 = raw +1 (20% above centre), ch1 = the sum +1.5 ' +
       '(30% above — distinctly higher). ch1 at/below ch2 = a summing regression.',
     setup: setupMixerSumScope(),
-    cardSelectors: MIXER_SUM_SCOPE_CARDS,
+    cardNodeIds: MIXER_SUM_SCOPE_NODES,
   },
 ];
 

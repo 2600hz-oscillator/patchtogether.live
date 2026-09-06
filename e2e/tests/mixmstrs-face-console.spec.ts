@@ -98,8 +98,8 @@ async function bootDock(
   nodes: { id: string; type: string; position: { x: number; y: number } }[],
   openId: string,
 ): Promise<void> {
-  // NOT the `rack` fixture: that navigates to `?shell=legacy`, where mixmstrs
-  // renders its LEGACY CARD and there is no faceplate to measure at all.
+  // NOT the shared `rack` fixture — this file owns its own boot so the dock
+  // open below is deterministic.
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

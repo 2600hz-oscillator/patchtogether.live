@@ -390,7 +390,7 @@ test.describe('#1811 render-locus parity', () => {
     // user with no flag, so forcing `__videoWorkerEnabled = true` here would
     // test a configuration nobody runs and hide a regression in
     // `workerLocusEligible`'s default-state branch.
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Boot the engine so the registry hooks are installed, then read the roster
@@ -588,7 +588,7 @@ test.describe('#1811 render-locus parity', () => {
     errorWatch,
   }) => {
     test.setTimeout(120_000);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Two ACIDWARPs on DIFFERENT scenes + palettes. Same module, deliberately

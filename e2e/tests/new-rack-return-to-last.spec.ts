@@ -4,7 +4,7 @@
 //
 //   * New rack (File menu, LOGGED-OUT scratch path here): a FRESH empty rack of
 //     a fresh empty rack — the shell's pinned singletons
-//     re-spawn, and any prior user modules are gone. Driven on /rack?shell=legacy&seed=none (no DB /
+//     re-spawn, and any prior user modules are gone. Driven on /rack?seed=none (no DB /
 //     relay) with the scratch IndexedDB replica OPTED IN, so the test proves the
 //     new rack genuinely discards the PERSISTED session (a new per-device
 //     scratch id ⇒ a fresh empty replica DB), not just an in-memory reset.
@@ -121,7 +121,7 @@ test.describe('File → New rack (scratch / logged-out)', () => {
   test('New rack gives a fresh empty rack (singletons present, prior module gone)', async ({
     page,
   }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(
@@ -167,12 +167,12 @@ test.describe('landing: Return to last rack', () => {
   });
 
   test('APPEARS after a scratch session persists, and REOPENS it', async ({ page }) => {
-    // Opt the replica in so /rack?shell=legacy&seed=none actually persists a DB the card can find.
+    // Opt the replica in so /rack?seed=none actually persists a DB the landing tile can find.
     await page.addInitScript(() => {
       (window as unknown as { __ptScratchReplica?: boolean }).__ptScratchReplica = true;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     const idbOk = await page.evaluate(
       () => typeof indexedDB !== 'undefined' && indexedDB !== null,

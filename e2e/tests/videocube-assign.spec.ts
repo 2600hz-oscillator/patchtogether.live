@@ -62,6 +62,29 @@ async function setParamRaw(page: Page, paramId: string, value: number) {
   }, [paramId, value] as const);
 }
 
+
+/** Open a node's dock full view and return the PANE. */
+async function openPane(
+  page: import('@playwright/test').Page,
+  id: string,
+  bodyTestId: string,
+): Promise<import('@playwright/test').Locator> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await pane.locator(`[data-testid="${bodyTestId}"]`).waitFor({ state: 'visible', timeout: 60_000 });
+  return pane;
+}
+
 test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Electra)', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(90_000);
@@ -69,7 +92,7 @@ test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Elec
   });
 
   test('slice-ROT X/Y assign buttons open the shared menu + bind the correct axis param + drive it', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'vc', type: 'videocube', position: { x: 40, y: 40 }, domain: 'video' },
@@ -77,14 +100,25 @@ test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Elec
       { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 40 }, domain: 'meta' },
     ]);
 
-    await expect(page.locator('[data-testid="videocube-card"]')).toBeVisible();
-    const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
-    await expect(surface).toBeVisible();
-
+    // The card's bespoke slice-rot joystick (and its per-axis assign buttons)
+    // died with the card — on the shell slice_rx/slice_ry are ordinary ladder
+    // knobs, and the SAME shared ControlContextMenu opens from a right-click
+    // on the control (the generic assign affordance, wider than the card's).
+    const vcPane = await openPane(page, 'vc', 'videocube-output-body');
+    // Control-heavy dock ⇒ TABBED (the foxy recipe): the slice-rot knobs live
+    // on the `slice` page — an inactive page's controls are display:none.
+    await vcPane.getByTestId('faceplate-tab-slice').click();
     const menu = page.locator('[data-testid="control-context-menu"]');
 
-    // ── X axis: assign button → shared menu (MIDI Learn present) → Send to surface ──
-    const btnX = page.locator('[data-testid="videocube-slice-rot-joystick-assign-x"]');
+    // ── X axis: the pad's own x ASSIGN button → shared menu → Send to surface.
+    // (The pad ROOT has no contextmenu handler on the shell — the per-axis
+    // buttons inside the XyPad are the assign gesture, same as the card's.)
+    const pad = vcPane.locator('[data-testid="control-slice_rx"]');
+    await pad.scrollIntoViewIfNeeded();
+    // The per-axis assign buttons are the pad's SIBLING group (outside the
+    // drag surface — XyPad's own layout, unlike the quadralogical body).
+    const assign = pad.locator('xpath=following-sibling::div[contains(@class, "xy-assign")]');
+    const btnX = assign.locator('.xy-assign-btn').first();
     await expect(btnX).toBeVisible();
     await btnX.click({ button: 'right' });
     await expect(menu).toBeVisible();
@@ -96,7 +130,7 @@ test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Elec
     ]);
 
     // ── Y axis button binds the OTHER axis param (slice_ry) ──
-    const btnY = page.locator('[data-testid="videocube-slice-rot-joystick-assign-y"]');
+    const btnY = assign.locator('.xy-assign-btn').nth(1);
     await expect(btnY).toBeVisible();
     await btnY.click({ button: 'right' });
     await expect(menu).toBeVisible();
@@ -106,9 +140,10 @@ test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Elec
       { moduleId: 'vc', paramId: 'slice_ry' },
     ]);
 
-    // Both proxies render on the surface (grouped under VIDEOCUBE).
-    const proxyX = surface.locator('[data-testid="control-surface-knob-vc-slice_rx"]');
-    const proxyY = surface.locator('[data-testid="control-surface-knob-vc-slice_ry"]');
+    // Both proxies render on the dock BOARD (grouped under VIDEOCUBE).
+    const surface = (await openPane(page, 'cs-1', 'cs-board')).getByTestId('cs-board');
+    const proxyX = surface.locator('[data-testid="cs-board-knob-vc-slice_rx"]');
+    const proxyY = surface.locator('[data-testid="cs-board-knob-vc-slice_ry"]');
     await expect(proxyX).toBeVisible();
     await expect(proxyY).toBeVisible();
 
@@ -117,13 +152,16 @@ test.describe('VIDEOCUBE — joystick axis assign buttons (MIDI / Surface / Elec
     // the source joystick param must change to the default, proving the assigned
     // surface control drives the joystick axis (the same param the pad drives).
     await setParamRaw(page, 'slice_rx', 1.2);
-    await proxyX.locator('[role="slider"]').dblclick();
+    await surface.locator('[data-testid="cs-board-dial-vc-slice_rx"]').dblclick();
     await expect.poll(async () => await readParam(page, 'slice_rx')).toBe(0);
 
-    // Left-clicking the assign button ALSO opens the menu (it never changes the value).
+    // LEFT-clicking the assign button ALSO opens the menu and never moves the
+    // pad (the XyPad's button guard — the destructive-click fix).
+    await pad.scrollIntoViewIfNeeded();
+    const before = await readParam(page, 'slice_rx');
     await btnX.click();
     await expect(menu).toBeVisible();
-    // "Remove from" is now offered (the axis is already on the surface).
+    expect(await readParam(page, 'slice_rx'), 'the assign click must not write the pad').toBe(before);
     await expect(menu.locator('[data-testid="ctx-surface-cs-1"]')).toContainText('Remove from');
   });
 });

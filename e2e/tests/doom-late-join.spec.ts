@@ -60,6 +60,29 @@ import { SIM_BUDGET_MS } from './_doom-helpers';
 
 const GS_LEVEL = 0;
 
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the `__doomCards` hook, the keyboard
+ *  capture, the identity badges and the "Click to load DOOM" gesture, so EVERY
+ *  peer opens its own faceplate before anything about it can be driven or read.
+ *  The card mounted the same component with `variant="card"`, so every probe,
+ *  overlay and testid below is byte-identical on both. */
+const SURFACE = 'doom-face-surface';
+
+/** THIS node's LANE tile — how a peer observes that the node has SYNCED to it,
+ *  before its own faceplate exists. */
+const laneTile = (nodeId: string): string =>
+  `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`;
+
+/** Open a node's dock faceplate through the app's own hook. The dock boot is
+ *  SEQUENTIAL — it does not overlap the page load — so this is a real wait. */
+async function openDoomFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
+
 /** Cap for "the marine appeared", NOT for "the level loaded".
  *
  *  GS_LEVEL is set by G_DoLoadLevel and P_SpawnPlayer places the mobj a few
@@ -100,7 +123,7 @@ async function openPair(browser: Browser): Promise<DoomPair> {
   const pageB = await ctxB.newPage();
 
   for (const p of [pageA, pageB]) {
-    await p.goto('/rack?shell=legacy&seed=none');
+    await p.goto('/rack?seed=none');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(() =>
       typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -143,7 +166,8 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<boolean> {
     { id: nodeId, type: 'doom', position: { x: 60, y: 60 }, domain: 'video' },
   ];
   await spawnPatch(page, nodes, []);
-  const card = page.locator('[data-testid="doom-card"]');
+  await openDoomFace(page, nodeId);
+  const card = page.locator(`[data-testid="${SURFACE}"]`);
   await card.locator('button.overlay', { hasText: /Click to load DOOM/i }).click();
   try {
     await page.waitForFunction(
@@ -256,7 +280,8 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
       // ─── A (arbiter / host) spawns + loads DOOM, joins as player 0 ───
       const aLoaded = await spawnAndLoadDoom(pair.pageA, NODE);
       if (!aLoaded) { test.skip(true, 'DOOM runtime failed to load on A within 25s'); return; }
-      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });
+      await pair.pageB.locator(laneTile(NODE)).waitFor({ timeout: 10000 });
+      await openDoomFace(pair.pageB, NODE);
       await waitForCardHook(pair.pageB, NODE);
 
       await join(pair.pageA, NODE);

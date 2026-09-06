@@ -123,9 +123,9 @@ export const treeohvoxDef: AudioModuleDef = {
   // can excite it — and this family is the fix.
   //
   // ⚠ TO WHOEVER AUTHORS THE FACEPLATE (queue Q3). This pad reaches the dock
-  // ONLY because treeohvox has no curated `face` yet: with none, the dock
-  // full-view renders the legacy card (measured — `dock-full-view` contains one
-  // `.mod-card`). The moment a `face` lands, the dock renders THAT instead and
+  // ONLY because treeohvox had no curated `face` when this was written: with
+  // none, the dock full-view rendered the module's own surface. The moment a
+  // `face` lands, the dock renders THAT instead and
   // this pad disappears from the dock unless the face ranks a gate cell of its
   // own — a `kind: 'action'`, `mode: 'gate'` entry in shell-cells.ts calling
   // `setManualGate`, exactly like meowbox's. THAT IS THE SIXSTRUM DEFECT
@@ -234,7 +234,7 @@ export const treeohvoxDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): the gate's rising edge starts the note and its falling edge ends it (so gate length is note length), and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
+      "A TB-303 acid-bass voice in one module: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): the gate's rising edge starts the note and its falling edge ends it (so gate length is note length), and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This module is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
     inputs: {
       pitch_in: "1V/oct pitch input — patch a sequencer or keyboard pitch CV here to set the note; the Tune knob adds a ±12-semitone offset on top.",
       gate_in: "The note gate, and it is a GATE, not a trigger: the rising edge starts the note (amplitude + filter envelopes) and the FALLING edge ends it, so how long you hold the gate is how long the note lasts. Patch a sequencer/clock gate here. If you hold the gate longer than the 303's fixed VCA decay (~1.2 s) the note fades out under you anyway — that is the hardware's behaviour. Retriggering while a note is still sounding glides into the new note instead of cutting it, so overlapping steps stay click-free.",

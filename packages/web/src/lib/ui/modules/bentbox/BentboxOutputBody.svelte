@@ -97,12 +97,12 @@
     fullscreen: fs,
   });
 
-  // The SAME `node.data.fullFrame` the legacy card persists, so the state is
-  // shared with `?shell=legacy` and syncs over Y.Doc rather than becoming a
-  // second competing truth. The card's own comment gives the reason it is
-  // synced at all — "so a wall-of-TVs layout survives reload + is shareable".
-  // Here it means "fill the dock body", the same meaning shift `videoOut`'s
-  // body documents for the same key.
+  // The SAME `node.data.fullFrame` a rack saved before this promotion already
+  // carries, so the switch keeps its state across the change and syncs over
+  // Y.Doc rather than becoming component-local, a second competing truth. The
+  // reason it is synced at all: so a wall-of-TVs layout survives reload and is
+  // shareable. Here it means "fill the dock body", the same meaning shift
+  // `videoOut`'s body documents for the same key.
   let fullFrame = $derived<boolean>(
     (patch.nodes[nodeId]?.data?.fullFrame as boolean | undefined) ?? false,
   );
@@ -252,9 +252,16 @@
 </script>
 
 <div class="bb-output" bind:this={rootEl} data-testid="bentbox-output-body">
+  <!-- `.fullscreen` + the fs-wrap testid: the state-machine surface its
+       videoOut / backdraft siblings' wraps already carry (`class:fullscreen`
+       on the fullscreen TARGET, which this wrap is — fs.setTarget(wrapEl)).
+       Parity, not a new idea: the class is how the state stays observable
+       whether or not the OS actually granted fullscreen. -->
   <div
     class="preview-wrap"
+    class:fullscreen={fs.isFullscreen}
     bind:this={wrapEl}
+    data-testid="bentbox-face-fs-wrap"
     data-preview-collapsed={previewCollapsed ? 'true' : 'false'}
     style={previewCollapsed ? undefined : `width:${boxW}px;max-width:100%;`}
   >

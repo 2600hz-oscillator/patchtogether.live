@@ -5,7 +5,8 @@
 // notes, converted to drum triggers in the modular rack — so the sequencer must
 // show only those four rows.
 //
-// This is the DOM gate on the real card. The pure row math is unit-tested
+// This is the DOM gate on the real editor, driven in the DOCK FULL VIEW (the
+// default shell's home for the piano roll). The pure row math is unit-tested
 // (clip-types.test.ts `visibleNoteRows`) and the hardware side is pinned in
 // clip-surface-map / launchpad-map / monome-map specs. What only an e2e can
 // prove is asserted here:
@@ -17,23 +18,19 @@
 //   * REMOVE unhides them and the note is still there, and the membership set
 //     SURVIVES the remove (re-applying is one click),
 //   * the filter is PER LANE — a second lane's editor is unaffected.
+//
+// ⚠ The legacy card needed `revealInPane` here (SvelteFlow undoes browser
+// scrolls of the canvas pane). The dock full view is an ordinary scroll
+// container — Playwright's own auto-scroll is safe, so that machinery left
+// with the card.
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './_fixtures';
-import {
-  getFlowViewport,
-  readPaneScrollUndo,
-  revealInPane,
-  setFlowViewport,
-  spawnPatch,
-  watchPaneScrollUndo,
-} from './_helpers';
+import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-const CARD = '.svelte-flow__node-clipplayer';
-// Default clip = major from C3 → 57 editable rows (pinned in clip-types.test.ts
-// and in clipplayer-clip-view-grid.spec.ts).
+// Default clip = major from C3 → 57 editable rows (pinned in clip-types.test.ts).
 const FULL_ROWS = 57;
 
 interface CPData {
@@ -68,9 +65,44 @@ async function clipNotes(page: Page, id: string, slot = '0'): Promise<number[]> 
   return (d?.clips?.[slot]?.steps ?? []).map((s) => s.midi).sort((a, b) => a - b);
 }
 
-// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-// NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
-// 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
+/** Open the clip player's dock full view (grid + roll + deck in one surface). */
+/** Bind a clip by double-clicking its PAD, returning to the grid band first.
+ *
+ *  The pad dblclick is what moves the railed face to `editor`, so a second bind
+ *  has to come back to `session` before the pads exist to click. */
+async function bindPad(page: Page, dock: import('@playwright/test').Locator, idx: number) {
+  const tab = dock.getByTestId('faceplate-tab-session');
+  await tab.click();
+  await expect(tab, 'the session page opens').toHaveAttribute('aria-selected', 'true');
+  await dock.locator(`[data-clip="${idx}"]`).dblclick();
+  await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
+}
+
+async function openDock(page: Page) {
+  const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  // ⚠ SELECT THE BAND THE PADS ARE ON. The face is RAILED (`face.tabbed`, owner
+  // P0 2026-09-04) and renders exactly ONE band: the launch grid is `session`,
+  // the piano roll is `editor`. An unselected band is `display:none`, so a
+  // `[data-clip]` locator resolves a real element with a 0×0 box and the
+  // dblclick every caller starts with times out instead of failing on a missing
+  // selector. Every test in this file opens with a pad, so the page is selected
+  // here rather than repeated per test; the pad dblclick then moves the face to
+  // `editor` itself, which is the product's own gesture.
+  const tab = dock.getByTestId('faceplate-tab-session');
+  await tab.click();
+  await expect(tab, 'the session page opens').toHaveAttribute('aria-selected', 'true');
+  return dock;
+}
+
+// ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body was re-pointed at the
+// dock full view by the S2 legacy-removal inversion (same assertions, shell
+// surface). NONDETERMINISM: 1 recovered-on-retry observation(s) across 1 SHA(s)
+// / 1 branch(es) in the 96 h CI census to 2026-08-18 — never a hard failure, so
+// every one of those jobs reported SUCCESS.
 // LOST WHILE PARKED: the per-lane note-row filter's non-destructive contract — hidden rows keep their notes and REMOVE restores them; a filter that eats data silently destroys the user's pattern.
 // Re-enable only on a root cause (#1847); "it passes now" is not one.
 test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SURVIVE → REMOVE restores', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 1 recovered-on-retry observation in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({
@@ -80,29 +112,29 @@ test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SU
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
   ]);
-  const card = page.locator(CARD);
-  await expect(card).toHaveCount(1);
+  const dock = await openDock(page);
 
-  // Open clip 0 (lane 0) → clip-view.
-  await card.locator('[data-clip="0"]').dblclick();
+  // Bind clip 0 (lane 0) into the editor band.
+  await dock.locator('[data-clip="0"]').dblclick();
   const roll = page.getByTestId('clipplayer-pianoroll');
   await expect(roll).toBeVisible();
   expect(await rowCount(page), 'starts on the full editable range').toBe(FULL_ROWS);
 
   // A note is placed FIRST, on a row we are about to hide (row 10 of the full
   // list) — that is what makes the D1 assertion below meaningful.
-  await page.getByTestId('clipplayer-cell-10-0').click();
+  await dock.getByTestId('clipplayer-cell-10-0').click();
   await expect.poll(async () => (await clipNotes(page, 'cp')).length).toBe(1);
   const [hiddenNote] = await clipNotes(page, 'cp');
 
   // APPLY is disabled with no membership yet (never let the grid go to 0 rows).
-  const apply = page.getByTestId('clipplayer-customscale-apply-cp');
+  const apply = dock.getByTestId('clipplayer-customscale-apply-cp');
+  await apply.scrollIntoViewIfNeeded();
   await expect(apply).toBeDisabled();
   await expect(apply).toHaveText('APPLY SCALE');
 
   // ── Open the picker: checkboxes appear, and the row list is still UNFILTERED
   // so rows can be ADDED (not just removed). ────────────────────────────────
-  await page.getByTestId('clipplayer-customscale-cp').click();
+  await dock.getByTestId('clipplayer-customscale-cp').click();
   await expect
     .poll(async () => (await pickerRowMidis(page)).length, { timeout: 5000 })
     .toBe(FULL_ROWS);
@@ -113,41 +145,16 @@ test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SU
   const chosen = [allMidis[8], allMidis[12], allMidis[20], allMidis[33]];
   expect(new Set(chosen).size, 'four distinct rows').toBe(4);
   expect(chosen, 'the note we placed is NOT one of them').not.toContain(hiddenNote);
-  // ⚠ ROW 33 IS BELOW THE PANE — measured y=819 CSS px against a 622 px pane —
-  // so it is NOT clickable where the card sits. Playwright's auto-scroll can
-  // reach it (the wrapper's scrollHeight is 1204), but SvelteFlow UNDOES that
-  // scroll by design, which made every green run a coin-toss and cost CI run
-  // 31726508578 shard 4/10 a 30 s timeout ("row g7 intercepts" = the element at
-  // the STALE point). `revealInPane` pans the flow viewport instead — the app's
-  // own scroll model, which nothing undoes — and is a no-op for the three rows
-  // already on the pane. Full derivation: the block comment in _helpers.ts.
-  const framed = await getFlowViewport(page);
-  await watchPaneScrollUndo(page);
   for (const m of chosen) {
-    const row = page.getByTestId(`clipplayer-scalerow-cp-${m}`);
-    await revealInPane(page, row);
+    const row = dock.getByTestId(`clipplayer-scalerow-cp-${m}`);
+    await row.scrollIntoViewIfNeeded();
     await row.check();
   }
-  // PERMANENT NEGATIVE-CONTROL LEG (it is verified to MOVE: before the fix this
-  // same recorder read [473, 0] on a PASSING local run). An empty reading is
-  // the proof that no click here depended on the scroll-undo race — if a future
-  // change grows the card or drops a reveal, this reddens at the cause.
-  expect(
-    await readPaneScrollUndo(page),
-    'no click may depend on a browser scroll SvelteFlow undoes (scrollTop values seen, CSS px)',
-  ).toEqual([]);
-  // Put the framing back so the rest of the spec sees the layout it was written
-  // against (APPLY/REMOVE live at the TOP of the card), then VERIFY it landed —
-  // "the two evaluates after this will surely have let the transform settle" is
-  // the same probably-fine reasoning that produced this flake. `revealInPane`
-  // converges either way and, whichever framing it ends on, leaves APPLY inside
-  // the pane rather than assuming it.
-  await setFlowViewport(page, framed);
-  await revealInPane(page, apply);
 
   await expect
     .poll(async () => (await nodeData(page, 'cp'))?.customScale?.[0]?.length ?? 0)
     .toBe(4);
+  await apply.scrollIntoViewIfNeeded();
   await expect(apply, 'APPLY enables once rows are checked').toBeEnabled();
 
   // ── APPLY: exactly the four checked rows remain. ──────────────────────────
@@ -155,7 +162,7 @@ test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SU
   await expect.poll(async () => rowCount(page), { timeout: 5000 }).toBe(4);
   await expect(apply).toHaveText('REMOVE SCALE');
   // Applying closes the picker — the point of APPLY is to see the filtered grid.
-  await expect(page.getByTestId(`clipplayer-scalerow-cp-${chosen[0]}`)).toHaveCount(0);
+  await expect(dock.getByTestId(`clipplayer-scalerow-cp-${chosen[0]}`)).toHaveCount(0);
   await expect
     .poll(async () => (await nodeData(page, 'cp'))?.customScaleOn?.[0] ?? false)
     .toBe(true);
@@ -185,29 +192,34 @@ test('custom scale is PER LANE — applying it on lane 0 leaves lane 1 on the fu
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' },
   ]);
-  const card = page.locator(CARD);
-  await expect(card).toHaveCount(1);
+  const dock = await openDock(page);
 
   // Lane 0, slot 0 → clip index 0. Apply a 3-row scale.
-  await card.locator('[data-clip="0"]').dblclick();
+  await dock.locator('[data-clip="0"]').dblclick();
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
-  await page.getByTestId('clipplayer-customscale-cp').click();
+  await dock.getByTestId('clipplayer-customscale-cp').scrollIntoViewIfNeeded();
+  await dock.getByTestId('clipplayer-customscale-cp').click();
   const midis = await pickerRowMidis(page);
   for (const m of [midis[5], midis[9], midis[14]]) {
-    await page.getByTestId(`clipplayer-scalerow-cp-${m}`).check();
+    const row = dock.getByTestId(`clipplayer-scalerow-cp-${m}`);
+    await row.scrollIntoViewIfNeeded();
+    await row.check();
   }
-  await page.getByTestId('clipplayer-customscale-apply-cp').click();
+  await dock.getByTestId('clipplayer-customscale-apply-cp').click();
   await expect.poll(async () => rowCount(page), { timeout: 5000 }).toBe(3);
 
-  // Back to the session grid, then open LANE 1's clip (index = lane*SCENE_STRIDE).
-  await page.getByTestId('clipplayer-back').click();
-  await card.locator('[data-clip="64"]').dblclick();
-  await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
-  expect(await rowCount(page), 'lane 1 is untouched by lane 0’s scale').toBe(FULL_ROWS);
-  await expect(page.getByTestId('clipplayer-customscale-apply-cp')).toHaveText('APPLY SCALE');
+  // Bind LANE 1's clip (index = lane*SCENE_STRIDE). Switching lanes means
+  // returning to the GRID band first: the pad dblclick above moved the face to
+  // `editor`, which is the product's own gesture, so the pads are no longer
+  // rendered. (This comment used to read "on the face the grid is always on
+  // screen" — true of the card, not of the railed face.)
+  await bindPad(page, dock, 64);
+  await expect
+    .poll(async () => rowCount(page), { timeout: 5000 })
+    .toBe(FULL_ROWS);
+  await expect(dock.getByTestId('clipplayer-customscale-apply-cp')).toHaveText('APPLY SCALE');
 
   // …and lane 0 still has its own filter when we go back to it.
-  await page.getByTestId('clipplayer-back').click();
-  await card.locator('[data-clip="0"]').dblclick();
+  await bindPad(page, dock, 0);
   await expect.poll(async () => rowCount(page), { timeout: 5000 }).toBe(3);
 });

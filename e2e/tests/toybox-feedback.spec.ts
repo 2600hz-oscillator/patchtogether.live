@@ -31,7 +31,7 @@
 //   - TUNNEL (0): a recursive zoom that looks distinct from BLUR.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openToyboxDock } from './_helpers';
 
 type PatchGlobal = {
   __patch: {
@@ -51,17 +51,6 @@ const FLAT_RED_SHADER = `
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }`;
-
-/** Pin the Svelte Flow viewport so the card body is in the visible region. */
-async function pinViewport(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const vp = document.querySelector('.svelte-flow__viewport') as HTMLElement | null;
-    if (!vp) return;
-    vp.style.transition = 'none';
-    vp.style.transform = 'translate(8px, -24px) scale(1)';
-  });
-  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-}
 
 /**
  * Seed a feedback graph: layer 0 = a bright GEN shader driving the loop;
@@ -112,7 +101,7 @@ async function seedFeedbackGraph(
  *  __toyboxFreeze(t) runs one engine.step() (= one feedback frame) then blits. */
 async function advance(page: Page, time: number, steps: number): Promise<void> {
   await page.waitForFunction(() => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+    const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement | null;
     return !!c && c.width > 0 && c.height > 0;
   }, { timeout: 30_000 });
   for (let i = 0; i < steps; i++) {
@@ -130,7 +119,7 @@ async function advance(page: Page, time: number, steps: number): Promise<void> {
 /** Average RGB of the on-card preview canvas. */
 async function average(page: Page): Promise<[number, number, number]> {
   return page.evaluate(() => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     let r = 0, g = 0, b = 0, n = 0;
@@ -151,7 +140,7 @@ async function stepAndAverage(page: Page, time: number, steps: number): Promise<
  *  the central 50%×50%). Used to compare the tunnel INTERIOR vs the whole frame. */
 async function regionAverage(page: Page, frac: number): Promise<[number, number, number]> {
   return page.evaluate((frac) => {
-    const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+    const c = document.querySelector('[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]') as HTMLCanvasElement;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
     const w = c.width, h = c.height;
     const x0 = Math.floor((w * (1 - frac)) / 2);
@@ -235,15 +224,14 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     // ── BLUR (mode 5): a diffusion that brightens over the first ~10 frames, so
     //    the early frame and the converged frame are measurably different — the
@@ -310,15 +298,14 @@ test.describe('TOYBOX FEEDBACK node (stateful combine op)', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
       [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }],
       [],
     );
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
+    await openToyboxDock(page);
 
     await seedFlatRedTunnel(page);
     // Let the recursion recede deep enough that the nest darkens toward the

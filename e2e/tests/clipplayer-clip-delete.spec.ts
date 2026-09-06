@@ -6,14 +6,18 @@
 // pointing at a slot whose clip no longer exists strands the lane on a dangling
 // index — the pad reads lit while nothing sounds. Delete stops the lane FIRST,
 // through the same immediate-stop seam ■ STOP-ALL uses, so the engine clears
-// `playing[lane]` via its single owner instead of the card writing it behind the
-// engine's back.
+// `playing[lane]` via its single owner instead of the surface writing it behind
+// the engine's back.
+//
+// On the default shell the launch grid lives in the DOCK FULL VIEW (the lane
+// tile is the strip + STOP-ALL); the grid pad is the same ClipplayerLaunchPanel
+// the card mounted, so `data-state` and the shared clip menu carry over intact.
 //
 // ⚠ The menu row itself (it is `clear`, it targets the RIGHT-CLICKED pad, it
 // removes the whole clip RECORD, ↶ restores it, and an empty pad offers it
 // DISABLED) is asserted in clipplayer-right-click-menu.spec.ts, which owns the
-// menu on both surfaces. This file deliberately keeps only the engine invariant
-// so the two do not pay for the same coverage twice.
+// menu. This file deliberately keeps only the engine invariant so the two do
+// not pay for the same coverage twice.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -55,16 +59,21 @@ test('deleting a PLAYING clip stops its lane — no lane left pointing at a clip
     { id: 'tl', type: 'timelorde', position: { x: 40, y: 40 }, domain: 'audio' },
     { id: 'cp', type: 'clipplayer', position: { x: 420, y: 40 }, domain: 'audio' },
   ]);
-  await expect(page.locator('[data-clip="0"]')).toBeVisible();
+  const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  const grid = page.getByTestId('dock-full-view').getByTestId('clipplayer-face-grid');
+  const pad = grid.getByTestId('clipplayer-pad-0');
+  await expect(pad).toBeVisible();
   await seedClip(page, 0); // lane 0, slot 0
 
   // Launch it for real through the pad (single click → the 220ms debounce →
   // launchPad), then wait for the ENGINE to report it playing.
-  await page.locator('[data-clip="0"]').click();
-  await expect(page.locator('[data-clip="0"]')).toHaveAttribute('data-state', 'playing', { timeout: 10_000 });
+  await pad.click();
+  await expect(pad).toHaveAttribute('data-state', 'playing', { timeout: 10_000 });
   expect((await readData(page)).playing?.[0], 'engine reports lane 0 playing slot 0').toBe(0);
 
-  await page.locator('[data-clip="0"]').click({ button: 'right' });
+  await pad.click({ button: 'right' });
   await page.getByTestId('clipplayer-menu-clear-cp').click();
 
   expect((await readData(page)).clips?.['0']).toBeUndefined();
@@ -75,5 +84,5 @@ test('deleting a PLAYING clip stops its lane — no lane left pointing at a clip
       timeout: 10_000,
     })
     .not.toBe(0);
-  await expect(page.locator('[data-clip="0"]')).toHaveAttribute('data-state', 'empty');
+  await expect(pad).toHaveAttribute('data-state', 'empty');
 });

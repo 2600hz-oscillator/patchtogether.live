@@ -36,7 +36,7 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
-import { TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
+import { TRIGGER_PULSE_S, pulseTriggerNow } from '$lib/audio/gate-trigger';
 
 // Shader: passthrough of the source texture with a mute-time idle pattern so an
 // empty card reads as "alive but empty" (mirrors VIDEOBOX / CAMERA idle look).
@@ -145,7 +145,7 @@ export const tvLibrarianDef: VideoModuleDef = {
   ],
 
   docs: {
-    explanation: "An international live-TV source: pick a country (click the 2D equirectangular world map, which snaps to the nearest country centroid that has channels, or use the country dropdown), pick a channel from that country's list, and the NODE attaches that channel's HLS (.m3u8) stream via hls.js to an internal crossorigin video element — the stream's lifetime belongs to the node, not to whichever surface is mounted, so it tunes, keeps playing and answers its triggers with no card and no faceplate open. The engine samples that element into a WebGL framebuffer — the fragment shader is a straight passthrough of the live frame (when no stream is up it draws a dim near-black idle gradient so the card reads as \"alive but empty\"), so the video output is a genuine downstream-usable texture, not play-only. Frames are uploaded at the source's decode cadence (requestVideoFrameCallback, Firefox falls back to a currentTime-advance check) and downscaled to the engine resolution, so a high-bitrate stream doesn't flood GPU texture traffic. The stream's audio track is split into a stereo pair on the audio outs, with a silent gain-0 keep-alive that keeps the element decoding at full rate even when audio isn't patched. Channel metadata (country + channel name + stream URL) is persisted to the node so rack-mates tune to the SAME stream; geo-blocked entries are kept and marked, youtube-only entries are dropped, and a stream that fails to load (no CORS/ACAO under COEP, or 12s with no frame) is marked unavailable and auto-skips to the next channel rather than hanging. The faceplate's tuner body carries a 16:9 picture of the module's own video output with a SCREEN on/off switch, a map/list segmented toggle, the country picker, the channel list (geo-blocked entries badged) and \"random\" / \"next ▸\" buttons (DOM-only, not module params), plus a legal disclaimer and Famelack/iptv-org attribution; the legacy card shows the same picker under ?shell=legacy. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next to channel-surf hands-free, or random to roulette.",
+    explanation: "An international live-TV source: pick a country (click the 2D equirectangular world map, which snaps to the nearest country centroid that has channels, or use the country dropdown), pick a channel from that country's list, and the NODE attaches that channel's HLS (.m3u8) stream via hls.js to an internal crossorigin video element — the stream's lifetime belongs to the node, not to whichever surface is mounted, so it tunes, keeps playing and answers its triggers with no card and no faceplate open. The engine samples that element into a WebGL framebuffer — the fragment shader is a straight passthrough of the live frame (when no stream is up it draws a dim near-black idle gradient so the card reads as \"alive but empty\"), so the video output is a genuine downstream-usable texture, not play-only. Frames are uploaded at the source's decode cadence (requestVideoFrameCallback, Firefox falls back to a currentTime-advance check) and downscaled to the engine resolution, so a high-bitrate stream doesn't flood GPU texture traffic. The stream's audio track is split into a stereo pair on the audio outs, with a silent gain-0 keep-alive that keeps the element decoding at full rate even when audio isn't patched. Channel metadata (country + channel name + stream URL) is persisted to the node so rack-mates tune to the SAME stream; geo-blocked entries are kept and marked, youtube-only entries are dropped, and a stream that fails to load (no CORS/ACAO under COEP, or 12s with no frame) is marked unavailable and auto-skips to the next channel rather than hanging. The faceplate\'s tuner body carries a 16:9 picture of the module\'s own video output with a SCREEN on/off switch, a map/list segmented toggle, the country picker, the channel list (geo-blocked entries badged) and \"random\" / \"next ▸\" buttons (DOM-only, not module params), plus a legal disclaimer and Famelack/iptv-org attribution. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next to channel-surf hands-free, or random to roulette.",
     inputs: {
       next: "Trigger (gate cable, edge:'trigger'): a rising edge advances to the NEXT channel in the current country's list, wrapping to the first. Level-while-high does nothing; it fires once per rising edge. Patch a clock here to channel-surf in time.",
       random: "Trigger (gate cable, edge:'trigger'): a rising edge tunes a RANDOM channel from the current country (picked from the OTHERS when more than one exists, so it reliably changes). Fires once per rising edge, not while held.",
@@ -208,7 +208,7 @@ export const tvLibrarianDef: VideoModuleDef = {
   // no-user-control.ts) and it is also the TRUE one.
   //
   // ⚠ IT IS NOT COSMETIC BEYOND THE FACEPLATE, and the PR body says so:
-  // `group-controls.ts` drops a `noUserControl` param from
+  // `exposable-controls.ts` drops a `noUserControl` param from
   // `listExposableControls` and `push-card-schema.ts` drops it from the Push 2
   // card. tvLibrarian has no explicit `PUSH_CARD_CONTROLS` entry, so its push
   // card is resolved from the live def and re-ranks itself from three params to
@@ -325,13 +325,14 @@ export const tvLibrarianDef: VideoModuleDef = {
 
     function pulseChannelChanged(): void {
       if (!ctx.audioCtx || !chChangedGate) return;
-      const ac = ctx.audioCtx;
-      const t = ac.currentTime;
       // Short rising-edge pulse (canonical trigger width); a downstream
       // edge-detector counts exactly one edge.
-      chChangedGate.offset.cancelScheduledValues(t);
-      chChangedGate.offset.setValueAtTime(1, t);
-      chChangedGate.offset.setValueAtTime(0, t + TRIGGER_PULSE_S);
+      //
+      // ⚠ NOT a hand-rolled setValueAtTime pair — a rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING, per boot, for every pulse. The shared primitive carries
+      // the mechanism + measurements ($lib/audio/gate-trigger).
+      pulseTriggerNow(chChangedGate, TRIGGER_PULSE_S);
     }
 
     function setStreamOnline(on: boolean): void {

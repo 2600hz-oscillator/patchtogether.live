@@ -61,7 +61,7 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
-import { TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
+import { TRIGGER_PULSE_S, pulseTriggerNow } from '$lib/audio/gate-trigger';
 import type { ArchivistMediaType } from './archivist-query';
 
 // Passthrough shader with an idle pattern for an empty / play-only card —
@@ -225,14 +225,14 @@ export const archivistDef: VideoModuleDef = {
       writer: 'cv-port',
       why:
         'written by the `play_trigger` gate bridge as a raw level (0..1). It is a CACHE, not a '
-        + 'setting: the card polls it and edge-detects a rising crossing of mid-scale to toggle '
+        + 'setting: the faceplate polls it and edge-detects a rising crossing of mid-scale to toggle '
         + 'play/pause, so a player turning a dial here would be overwritten by the next bridge '
         + 'write.',
     },
   ],
 
   docs: {
-    explanation: "ARCHIVIST is a universal Internet Archive (archive.org) media source for the VIDEO domain. You pick a media type (image / audio / video / any) and a search term (plus an optional year-from/year-to range), and the module runs an archive.org advancedsearch query, picks a RANDOM matching public item, and loads it into a 16:9 preview. Restricted/lending items are always excluded from the query, and the file picker only chooses HTML5-playable derivatives (jpg/png/gif/webp for images; mp3/ogg/m4a/flac/wav for audio; h.264/theora/webm-class video, rejecting bare MPEG-4-Part-2 / HEVC), auto-advancing to another random match if a chosen derivative will not decode — so it lands on something that plays instead of hanging on \"Loading\". CORS BEHAVIOR IS PER-TYPE: only IMAGE and AUDIO items are CORS-clean and deliver real downstream signal — an image becomes a clean WebGL texture on the `image` output (and free-upcasts to `video` so it can drive video inputs), and an audio item routes clean stereo to `audio_l`/`audio_r` via the cross-domain audio bridge. VIDEO items are PLAY-ONLY: archive.org video lacks CORS on the served file, so the texture is tainted and the `video` output stays the idle pattern (a CLEAN OUT lamp reports it), and a video item's audio track is likewise CORS-tainted so its audio jacks are effectively dead. So archivist is video-output-only for VIDEO items, but its audio jacks ARE live and clean for genuine AUDIO items. Search and metadata are CORS-open and fetched directly with no proxy. Usage: choose \"image\" to feed clean stills into the video graph, or \"audio\" to pull found-sound stereo into the audio graph; use \"video\" only for preview/scrubbing and its PLAYING/PLAYHEAD/ENDED jacks. Multiplayer-aware: the loaded item, search inputs, and play state mirror on the node so peers see and drive the same item. The faceplate ranks ONE control (GAIN, as a fader) and carries everything else on its bodies, because none of it is param-shaped: the dock full view holds the 16:9 preview of the module's OWN engine output with a SCREEN on/off switch, the media-type picker, the search term, the year bounds, Search and \\u21bb next, the transport (play/pause, -10s/+10s, a random-position jump and a seek bar), the attribution link to the item's archive.org details page, and a CLEAN OUT lamp that reports the per-type CORS limit. The LANE TILE carries a compact copy of the same search and transport, because a fresh archivist has no item until a search runs and a tile with no search box could never be given one. Both are one shared component, so the two surfaces cannot drift. The legacy card (?shell=legacy) mounts that same component over its own preview of the node-owned elements, and adds a corner-drag resize of its rack tile (persisted size; default 360x540, min 360x360). SCREEN OFF collapses the picture only: the item goes on playing and the jacks go on firing, because the elements and the playhead pump belong to the card rather than to any preview.",
+    explanation: "ARCHIVIST is a universal Internet Archive (archive.org) media source for the VIDEO domain. You pick a media type (image / audio / video / any) and a search term (plus an optional year-from/year-to range), and the module runs an archive.org advancedsearch query, picks a RANDOM matching public item, and loads it into a 16:9 preview. Restricted/lending items are always excluded from the query, and the file picker only chooses HTML5-playable derivatives (jpg/png/gif/webp for images; mp3/ogg/m4a/flac/wav for audio; h.264/theora/webm-class video, rejecting bare MPEG-4-Part-2 / HEVC), auto-advancing to another random match if a chosen derivative will not decode — so it lands on something that plays instead of hanging on \"Loading\". CORS BEHAVIOR IS PER-TYPE: only IMAGE and AUDIO items are CORS-clean and deliver real downstream signal — an image becomes a clean WebGL texture on the `image` output (and free-upcasts to `video` so it can drive video inputs), and an audio item routes clean stereo to `audio_l`/`audio_r` via the cross-domain audio bridge. VIDEO items are PLAY-ONLY: archive.org video lacks CORS on the served file, so the texture is tainted and the `video` output stays the idle pattern (a CLEAN OUT lamp reports it), and a video item's audio track is likewise CORS-tainted so its audio jacks are effectively dead. So archivist is video-output-only for VIDEO items, but its audio jacks ARE live and clean for genuine AUDIO items. Search and metadata are CORS-open and fetched directly with no proxy. Usage: choose \"image\" to feed clean stills into the video graph, or \"audio\" to pull found-sound stereo into the audio graph; use \"video\" only for preview/scrubbing and its PLAYING/PLAYHEAD/ENDED jacks. Multiplayer-aware: the loaded item, search inputs, and play state mirror on the node so peers see and drive the same item. The faceplate ranks ONE control (GAIN, as a fader) and carries everything else on its bodies, because none of it is param-shaped: the dock full view holds the 16:9 preview of the module\'s OWN engine output with a SCREEN on/off switch, the media-type picker, the search term, the year bounds, Search and \\u21bb next, the transport (play/pause, -10s/+10s, a random-position jump and a seek bar), the attribution link to the item's archive.org details page, and a CLEAN OUT lamp that reports the per-type CORS limit. The LANE TILE carries a compact copy of the same search and transport, because a fresh archivist has no item until a search runs and a tile with no search box could never be given one. Both are one shared component, so the two surfaces cannot drift. SCREEN OFF collapses the picture only: the item goes on playing and the jacks go on firing, because the elements and the playhead pump belong to the card rather than to any preview.",
     inputs: {
       play_trigger: "Gate input (declared edge=gate, routed on the gate cable): the card reads its level and toggles play/pause for the loaded time-media item (audio or video) when the level crosses above mid-scale (high). No-op for an image item. It targets the cv_play_trigger param internally, so the same toggle can be driven from that synthetic param.",
     },
@@ -248,7 +248,7 @@ export const archivistDef: VideoModuleDef = {
     },
     controls: {
       gain: "Output gain, linear 0..2 (default 1). A post-multiplier applied to the sampled RGB in the passthrough shader (the uGain uniform), so 0 blacks the output, 1.0 is the identity and 2 doubles it (clipped at full scale by the 8-bit framebuffer). Only affects the picture, not the audio outs.",
-      cv_play_trigger: "Synthetic edge-detector param (linear 0..1, default 0) mirroring the play_trigger gate input; the card polls it and edge-detects a rising crossing of mid-scale (0.5) to toggle play/pause. Normally driven through the play_trigger jack rather than directly.",
+      cv_play_trigger: "Synthetic edge-detector param (linear 0..1, default 0) mirroring the play_trigger gate input; the faceplate polls it and edge-detects a rising crossing of mid-scale (0.5) to toggle play/pause. Normally driven through the play_trigger jack rather than directly.",
     },
   },
   factory(ctx, node): VideoNodeHandle {
@@ -324,10 +324,11 @@ export const archivistDef: VideoModuleDef = {
     /** Emit a short rising-edge pulse on a ConstantSource (trigger). */
     function pulse(src: ConstantSourceNode | null): void {
       if (!src || !ctx.audioCtx) return;
-      const t = ctx.audioCtx.currentTime;
-      src.offset.cancelScheduledValues(t);
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + TRIGGER_PULSE_S);
+      // ⚠ NOT a hand-rolled setValueAtTime pair — a rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING, per boot, for every pulse. The shared primitive carries
+      // the mechanism + measurements ($lib/audio/gate-trigger).
+      pulseTriggerNow(src, TRIGGER_PULSE_S);
     }
 
     function wireAudio(): void {

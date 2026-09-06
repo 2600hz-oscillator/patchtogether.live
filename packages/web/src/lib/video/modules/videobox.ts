@@ -196,7 +196,7 @@ export const videoboxDef: VideoModuleDef = {
   // (`play_trigger` declares `paramTarget`, so `'internal'` is RED at
   // no-user-control.ts) and it is also the TRUE one.
   //
-  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `group-controls.ts` drops a
+  // ⚠ NOT COSMETIC BEYOND THE FACEPLATE: `exposable-controls.ts` drops a
   // `noUserControl` param from `listExposableControls` and `push-card-schema`
   // drops it from the Push 2 card, which re-ranks itself from two params to
   // one — an improvement (a raw gate cache should never have been on a

@@ -14,8 +14,8 @@
 //     a new position.
 //   * The pad UI lives on the `joystick` extension's `fullViewBody`
 //     (JoystickPadBody.svelte — there is no shared xy cell in this design;
-//     see the face block below) and, in the lane under ?shell=legacy, on
-//     JoystickCard; the audio module exposes a pair of internal params
+//     see the face block below). The audio module exposes a pair of
+//     internal params
 //     `pos_x` and `pos_y` (range -1..+1) that the pad writes via the
 //     normal param path. The factory mirrors those into
 //     the ConstantSource offsets so the engine's per-param tap

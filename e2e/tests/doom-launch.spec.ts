@@ -36,6 +36,29 @@ import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 
+/** The DOOM game surface — `doom/DoomSurface.svelte`, mounted by the shell's
+ *  dock full view. It owns the runtime, the `__doomCards` hook, the keyboard
+ *  capture, the identity badges and the "Click to load DOOM" gesture, so EVERY
+ *  peer opens its own faceplate before anything about it can be driven or read.
+ *  The card mounted the same component with `variant="card"`, so every probe,
+ *  overlay and testid below is byte-identical on both. */
+const SURFACE = 'doom-face-surface';
+
+/** THIS node's LANE tile — how a peer observes that the node has SYNCED to it,
+ *  before its own faceplate exists. */
+const laneTile = (nodeId: string): string =>
+  `.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`;
+
+/** Open a node's dock faceplate through the app's own hook. The dock boot is
+ *  SEQUENTIAL — it does not overlap the page load — so this is a real wait. */
+async function openDoomFace(page: Page, nodeId: string): Promise<void> {
+  await page.evaluate(
+    (n) => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView(n),
+    nodeId,
+  );
+  await expect(page.getByTestId(SURFACE)).toBeVisible({ timeout: 20_000 });
+}
+
 interface DoomPair {
   pageA: Page;
   pageB: Page;
@@ -66,7 +89,7 @@ async function openPair(browser: Browser): Promise<DoomPair> {
   const pageB = await ctxB.newPage();
 
   for (const p of [pageA, pageB]) {
-    await p.goto('/rack?shell=legacy&seed=none');
+    await p.goto('/rack?seed=none');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(() =>
       typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -104,8 +127,9 @@ async function openPair(browser: Browser): Promise<DoomPair> {
   };
 }
 
-/** Read the video domain's own load state for a node. The card's `loadStatus`
- *  is component-local; this is the engine-side truth the app writes. */
+/** Read the video domain's own load state for a node. The surface's
+ *  `loadStatus` is component-local; this is the engine-side truth the app
+ *  writes. */
 async function readLoadState(page: Page, nodeId: string): Promise<{ loaded: unknown; loadError: unknown }> {
   return await page.evaluate((id) => {
     const w = globalThis as unknown as {
@@ -143,7 +167,8 @@ async function spawnAndLoadDoom(page: Page, nodeId: string): Promise<string | nu
     { id: nodeId, type: 'doom', position: { x: 60, y: 60 }, domain: 'video' },
   ];
   await spawnPatch(page, nodes, []);
-  const card = page.locator('[data-testid="doom-card"]');
+  await openDoomFace(page, nodeId);
+  const card = page.locator(`[data-testid="${SURFACE}"]`);
   await card.locator('button.overlay', { hasText: /Click to load DOOM/i }).click();
   try {
     await page.waitForFunction(
@@ -184,7 +209,7 @@ async function waitForCardHook(page: Page, nodeId: string, timeout = 10000): Pro
  *
  * ⚠ THE ONE UNBOUNDED AWAIT IN THIS SPEC, AND IT AWAITS AN APP PROMISE.
  * `page.evaluate` takes no timeout, and the promise it awaits here —
- * `DoomCard.joinGame()` — awaits `tryLoad()` → `extras.ensureLoaded()` →
+ * `DoomSurface.joinGame()` — awaits `tryLoad()` → `extras.ensureLoaded()` →
  * `DoomRuntime.load()` (a dynamic `import()` of /doom/doom.js plus the
  * emscripten module factory) and `loadWad()` (a 4 MB fetch). Not one link in
  * that chain has a timeout, so a stall anywhere in it consumed the WHOLE 180 s
@@ -221,7 +246,7 @@ async function join(page: Page, nodeId: string, budgetMs = SYNC_BUDGET_MS): Prom
         `__doomCards["${nodeId}"].join() did not settle within ${budgetMs} ms ` +
           `(elapsed ${Date.now() - t0} ms). joinGame() awaits the WASM+WAD load, so the ` +
           `stall is almost certainly there. video domain: loaded=${JSON.stringify(st.loaded)}, ` +
-          `loadError=${JSON.stringify(st.loadError)}; card: ${JSON.stringify(card)}.`,
+          `loadError=${JSON.stringify(st.loadError)}; session: ${JSON.stringify(card)}.`,
       );
     }
   } finally {
@@ -284,8 +309,9 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
       const aLoadError = await spawnAndLoadDoom(pair.pageA, NODE);
       expect(aLoadError, "A's DOOM runtime must come up").toBeNull();
 
-      // ─── B sees the SAME node via Yjs sync; load its hook ───
-      await pair.pageB.locator('[data-testid="doom-card"]').waitFor({ timeout: 10000 });
+      // ─── B sees the SAME node via Yjs sync; open its faceplate + hook ───
+      await pair.pageB.locator(laneTile(NODE)).waitFor({ timeout: 10000 });
+      await openDoomFace(pair.pageB, NODE);
       await waitForCardHook(pair.pageB, NODE);
 
       // ─── A joins (auto player 0 as host) ───
@@ -377,7 +403,7 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
 
       // ─── A moves its OWN marine (ArrowUp held) — B does NOT press a key ───
       await pair.pageA.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
+        const c = document.querySelector('[data-testid="doom-face-surface"]') as HTMLElement | null;
         c?.focus();
       });
       await pair.pageA.evaluate(() => {

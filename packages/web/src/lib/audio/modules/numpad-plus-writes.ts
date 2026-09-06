@@ -4,8 +4,8 @@
 // (`data.layers`) and the player's own keyboard layout (`data.keymap`).
 //
 // `numpad-plus.ts` owns the arithmetic and the engine; this file owns the
-// WRITES. Four surfaces call it — the legacy card, the faceplate's step-grid
-// panel, its keymap panel, and the FACTORY's live recording path — which is
+// WRITES. Three callers — the faceplate's step-grid panel, its keymap panel,
+// and the FACTORY's live recording path — which is
 // what makes "the recorded write and the clicked write take the same path" a
 // property of the code rather than a thing to re-verify.
 //
@@ -192,8 +192,8 @@ export function setNumpadStep(
 /**
  * Toggle one step of one layer on/off, keeping (or seeding) its note.
  *
- * The seeded note is the octave's C — the same arithmetic the legacy card's
- * `toggleStep` used, kept in ONE place so the card and the panel cannot
+ * The seeded note is the octave's C — the same arithmetic `toggleStep` has
+ * always used, kept in ONE place so no two callers can
  * disagree about what a freshly lit step plays.
  */
 export function toggleNumpadStep(

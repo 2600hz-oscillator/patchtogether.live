@@ -61,7 +61,7 @@ test.describe('PatchPanel: click-open / outside-click-close', () => {
     page: Page;
   }) => {
     const setupAt = Date.now();
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
     creditSetupBudget(setupAt, 'nav + spawnPatch (engine boot)'); // #1648

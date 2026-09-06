@@ -44,7 +44,7 @@ const SMALL_FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', impor
 const FIXTURE = existsSync(LOCAL_CLIP) ? LOCAL_CLIP : SMALL_FIXTURE;
 
 async function setup(page: import('@playwright/test').Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 }
 
@@ -69,13 +69,31 @@ async function readVbox(
   );
 }
 
+async function openVbPane(page: import('@playwright/test').Page, id = 'vb'): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="videobox-face-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
+}
+
 async function loadAndPlay(page: import('@playwright/test').Page) {
+  await openVbPane(page); // the picker + state attrs live on the dock face body
   await page.setInputFiles('[data-testid="videobox-file-input"]', FIXTURE);
-  await expect(page.locator('[data-testid="videobox-card"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="videobox-face-body"]')).toHaveAttribute(
     'data-has-local-file', 'true', { timeout: 10_000 },
   );
   await page.click('[data-testid="videobox-play-btn"]');
-  await expect(page.locator('[data-testid="videobox-card"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="videobox-face-body"]')).toHaveAttribute(
     'data-is-playing', 'true', { timeout: 4000 },
   );
 }

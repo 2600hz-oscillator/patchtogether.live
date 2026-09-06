@@ -5,11 +5,36 @@
 // other module keeps the static numbered-face view (the live card is the
 // redesign; the face is now the no-JS / not-yet-promoted fallback).
 //
-// This is the prototype gate: only modules proven on a live card belong here, so
-// a card that misbehaves under the doc sandbox can't break its doc page — it
-// falls back to the static face. Grow it as modules are verified (mirrors the
+// This is the prototype gate: only modules proven on a live surface belong
+// here, so one that misbehaves under the doc sandbox can't break its doc page —
+// it falls back to the static face. Grow it as modules are verified (mirrors the
 // STRICT_DOCS ratchet, but a SEPARATE axis: a module can be STRICT-documented
-// yet not yet vetted on the live doc card).
+// yet not yet vetted on the live doc surface).
+//
+// ⚠ THE SURFACE THIS LIST ADMITS MODULES TO IS NOW THE FACEPLATE, NOT THE CARD,
+// and every per-batch note below predates that. VirtualModule mounted the real
+// `*Card.svelte` through the glob card-map until the face rebuild; it now mounts
+// `<ModuleShell view='drawer'>`. READ THE BATCH NOTES AS PROVENANCE — they
+// record the CARD-shaped argument that admitted each member ("pure Knob/Fader +
+// PatchPanel, no onMount/canvas/rAF/WebSerial") and are true of the day they
+// were written. They are NOT a live claim about what mounts today, and a member
+// is NOT re-qualified by re-reading one.
+//
+// WHAT KEEPS MEMBERSHIP HONEST INSTEAD is `docs-virtual-module.spec.ts`: every
+// member carries a PROBES row that boots its real doc page, waits on the
+// faceplate's own `data-face-ready`, hovers a control, and asserts ZERO uncaught
+// page errors across the whole flow. That is the live gate; this list is its
+// roster.
+//
+// ⚠ AND THE CARD-SHAPED REASONS FOR *EXCLUSION* ARE THE HALF THAT IS NOW STALE
+// IN A WAY THAT MATTERS. Most non-members are named below as "its CARD runs a
+// canvas/rAF loop / a WebSerial init / a file picker" — arguments about a file
+// that is being deleted. A face is declarative and shares the shell's cells, so
+// several of those exclusions may no longer hold. Widening the list is a
+// deliberate, owner-previewable change (it swaps ~140 doc pages from a static
+// PNG to a live surface), verified the same way membership always was: add the
+// name, add its PROBES row, watch it pass. It is NOT a side effect of the
+// rebuild, and nothing here was widened by it.
 
 export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // Prototype wave (2026-06-25): the CV/control overlap demo + a Y.Doc-backed

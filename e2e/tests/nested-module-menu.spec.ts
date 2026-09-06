@@ -34,7 +34,7 @@ test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ pag
   await page.getByTestId('palette-sub-vcos').click();
   await page.getByTestId('palette-item-analogVco').click();
 
-  await expect(page.locator('.svelte-flow__node-analogVco')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="analogVco"])')).toHaveCount(1);
   await expect(page.locator('.module-palette')).not.toBeVisible();
 });
 
@@ -46,7 +46,7 @@ test('nested palette: Video modules → Sources → spawn LINES', async ({ page,
   await page.getByTestId('palette-sub-sources').click();
   await page.getByTestId('palette-item-lines').click();
 
-  await expect(page.locator('.svelte-flow__node-lines')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="lines"])')).toHaveCount(1);
 });
 
 test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async ({ page, rack }) => {
@@ -56,7 +56,7 @@ test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async (
   // Hybrid is flat — the item shows up without an intermediate sub click.
   await page.getByTestId('palette-item-scope').click();
 
-  await expect(page.locator('.svelte-flow__node-scope')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="scope"])')).toHaveCount(1);
 });
 
 test('nested palette: typing flattens to search-mode results', async ({ page, rack }) => {
@@ -73,5 +73,5 @@ test('nested palette: typing flattens to search-mode results', async ({ page, ra
 
   // Enter picks the first match — preserving the original keyboard flow.
   await page.keyboard.press('Enter');
-  await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="reverb"])')).toHaveCount(1);
 });

@@ -15,6 +15,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { openSamsloopPane, samsloopIsRecording } from './_samsloop-helpers';
 
 async function setupPage(page: Page) {
   const errors: string[] = [];
@@ -22,7 +23,7 @@ async function setupPage(page: Page) {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('domcontentloaded');
   return errors;
 }
@@ -75,12 +76,17 @@ test.describe('SAMSLOOP persistence', () => {
       ],
     );
 
-    const rec = page.locator('[data-testid="samsloop-rec-button"]');
+    const pane = await openSamsloopPane(page, 's');
+    const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await rec.click();
-    await expect(rec).toContainText('STOP', { timeout: 3000 });
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
     await page.waitForTimeout(500);
     await rec.click();
-    await expect(rec).toContainText('REC');
+    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
+    // The encode-and-commit on stop is async — poll for the persisted take.
+    await expect
+      .poll(async () => (await readSampleMeta(page, 's')) !== null, { message: 'take committed' })
+      .toBe(true);
 
     // Pre-reload state.
     const before = await readSampleMeta(page, 's');
@@ -111,8 +117,8 @@ test.describe('SAMSLOOP persistence', () => {
       w.__persistence!.load!(env);
     }, envelope);
 
-    // Card should remount with the persisted sample intact.
-    await expect(page.locator('.svelte-flow__node-samsloop')).toHaveCount(1, { timeout: 10_000 });
+    // The node should remount with the persisted sample intact.
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="samsloop"])')).toHaveCount(1, { timeout: 10_000 });
 
     const after = await readSampleMeta(page, 's');
     expect(after, 'expected sample to be present after reload').not.toBeNull();

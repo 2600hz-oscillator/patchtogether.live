@@ -434,13 +434,18 @@ function deviceMutatorImports(source: string): string[] {
   return [...found].sort();
 }
 
-describe('THE SOURCE GUARD — a card may ask the device layer, never command it', () => {
+describe('THE SOURCE GUARD — a surface may ask the device layer, never command it', () => {
   const files = svelteFilesUnder(REPO_UI);
 
   it('scanned a real, non-trivial set of components (else the gate is vacuous)', () => {
     // A bad path resolves to zero files and every assertion below passes for
-    // free. Anchor on the ARTIFACT: the card under test must be among them.
-    expect(files.some((f) => f.endsWith('modules/OutToLaunchCard.svelte'))).toBe(true);
+    // free. Anchor on the ARTIFACT: the surface under test must be among them.
+    // It used to be OutToLaunchCard.svelte; the monitor pump's surface is
+    // OutToLaunchMonitorBody.svelte, which is what the shell mounts and what
+    // the exemption list below is really about.
+    expect(
+      files.some((f) => f.endsWith('modules/outToLaunch/OutToLaunchMonitorBody.svelte')),
+    ).toBe(true);
     expect(files.length).toBeGreaterThan(1);
   });
 

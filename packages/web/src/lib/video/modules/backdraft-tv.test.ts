@@ -787,23 +787,32 @@ describe('BACKDRAFT — VIRTUAL CAMERA ORIENTATION', () => {
     }
   });
 
-  it('V10 — the CARD\'s joystick ranges match the DEF (no hardcoded +-1)', () => {
-    // This is a real bug that shipped past every other gate: the def was
-    // constrained to +-0.2 / +-0.5 while the card still passed xMin={-1}
-    // xMax={1} to both XyPads, so the UI showed -- and WROTE -- values the
-    // contract forbids. Nothing caught it, because the def tests read the def
-    // and the e2e never touched the pads. Pin the card source instead.
-    const card = readFileSync(
-      new URL('../../ui/modules/BackdraftCard.svelte', import.meta.url), 'utf8',
-    );
-    // The pads must be driven by the exported constants, not by literals.
-    expect(card).toContain('xMin={-BACKDRAFT_CAM_TILT_RANGE}');
-    expect(card).toContain('yMax={BACKDRAFT_CAM_TILT_RANGE}');
-    expect(card).toContain('xMin={-BACKDRAFT_CAM_POS_RANGE}');
-    expect(card).toContain('yMax={BACKDRAFT_CAM_POS_RANGE}');
-    // …and no XyPad may carry a hardcoded unit range.
-    expect(card).not.toContain('xMin={-1}');
-    expect(card).not.toContain('yMin={-1}');
+  it('V10 — the joystick BOUNDS live on the DEF, so a pad cannot widen them', () => {
+    // ⚠ THIS READ THE CARD SOURCE, and the bug it was written for is worth
+    // keeping in front of a reader: the def was constrained to +-0.2 / +-0.5
+    // while the card still passed `xMin={-1} xMax={1}` to both XyPads, so the
+    // UI showed — and WROTE — values the contract forbids. Nothing caught it,
+    // because the def tests read the def and the e2e never touched the pads.
+    //
+    // The surviving pad is the shell's ONE `xy` cell, which takes its bounds
+    // from the ParamDef, so a re-typed literal has nowhere to live. What is
+    // asserted instead is the half that made the card's literals wrong: the
+    // params really are constrained to the exported constants, so any renderer
+    // reading the def is inside the contract by construction.
+    for (const id of ['camTiltX', 'camTiltY'] as const) {
+      const p = backdraftDef.params.find((q) => q.id === id)!;
+      expect(p.min, `${id} min`).toBe(-BACKDRAFT_CAM_TILT_RANGE);
+      expect(p.max, `${id} max`).toBe(BACKDRAFT_CAM_TILT_RANGE);
+    }
+    for (const id of ['camPosX', 'camPosY'] as const) {
+      const p = backdraftDef.params.find((q) => q.id === id)!;
+      expect(p.min, `${id} min`).toBe(-BACKDRAFT_CAM_POS_RANGE);
+      expect(p.max, `${id} max`).toBe(BACKDRAFT_CAM_POS_RANGE);
+    }
+    // …and the constants really are narrower than the unit range the card used
+    // to pass, so this is a bound and not a restatement of +-1.
+    expect(BACKDRAFT_CAM_TILT_RANGE).toBeLessThan(1);
+    expect(BACKDRAFT_CAM_POS_RANGE).toBeLessThan(1);
   });
 
   it('V8 — the faceplate calls mode 1 VIRTUAL CAMERA', () => {

@@ -11,19 +11,25 @@
 // is WebGL-heavy: it reads DOM facts, graph state and a media clock, and
 // samples no pixels.
 //
-// ⚠ THE SHIPPED `archivist.spec.ts` BOOTS `?shell=legacy` (×3), which is
-// precisely the surface promotion does not change — so all of it stays green
-// while covering a surface no player meets. This file is the default-shell leg
+// ⚠ THE SHIPPED `archivist.spec.ts` WAS WRITTEN AGAINST THE PRE-PROMOTION
+// SURFACE (×3) — the one promotion does not change — so all of it stays green
+// while covering a surface no player meets. This file is the shipping-shell leg
 // it owes.
 //
-// ⚠ AND THE PRECONDITION HERE IS THE OPPOSITE OF PEERTUBE'S, WHICH IS THE WHOLE
-// POINT OF THIS MODULE'S PROMOTION. peertube left `DOM_SOURCE_LANE_TYPES`, so
-// its face spec asserts NO card exists anywhere. archivist is STILL IN that
-// set: its card is MOUNTED, in `<HeadlessSourceHost>`, which is what keeps the
-// three node-owned elements attached and a loaded item playing — and it is
-// parked at `left:-9999px` with `pointer-events: none`, so nothing on it can be
-// clicked. "The card still has those controls" is therefore TRUE and USELESS at
-// the same time, and that is the exact combination no unit gate can express.
+// ⚠ THE PRECONDITION HERE USED TO BE THE OPPOSITE OF PEERTUBE'S, AND IS NOT ANY
+// MORE (legacy-removal S1, 2026-09-03). This header said archivist was STILL in
+// `DOM_SOURCE_LANE_TYPES`, its card MOUNTED in `<HeadlessSourceHost>` and parked
+// at `left:-9999px` — "the card still has those controls" being TRUE and USELESS
+// at the same time. `$lib/ui/media/node-archivist-source-registry` owns the
+// archive.org chain, the three elements, the attach, the audio wire and both
+// loops now, so archivist has joined peertube: NO card is mounted anywhere, the
+// set is EMPTY, and the three elements exist parked with no surface at all.
+//
+// ⚠ WHICH MOVES WHERE THIS FILE'S WEIGHT SITS. A mount count distinguished the
+// two worlds when a card was hosted; zero mounts is the intended state now, so
+// it distinguishes nothing. What separates "the controller owns it" from
+// "everything is broken" is whether the module still FINDS, LOADS and PLAYS an
+// item with nothing mounted — legs 1 and 5 below. Read those as the gate.
 //
 // `archivist-face-model.test.ts` pins the ranking, the cell kind, the
 // noUserControl declaration, the shader's `uGain` read, the one-component-
@@ -35,9 +41,13 @@
 //     archivist has NO item and the factory searches nothing on its own, so
 //     with the face declared and no body mounted the module would be a media
 //     source that can never be given any media. This is a RENDER fact.
-//  2. THAT THE PARKED CARD IS REALLY UNREACHABLE — the premise of the whole
-//     design. If the headless host were somehow clickable, the bodies would be
-//     redundant rather than load-bearing, and a future author would delete them.
+//  2. THAT NO CARD IS MOUNTED AT ALL, and that the three node-owned elements
+//     exist anyway. This used to read "the parked card is really unreachable —
+//     if the headless host were somehow clickable the bodies would be redundant
+//     and a future author would delete them". The same argument now has nothing
+//     left to be tempted by, and the element-existence half is what replaces the
+//     unreachability measurement: `absent` is the failure a controller that
+//     never ran produces.
 //  3. THAT THE LANE TILE ALONE IS ENOUGH. cameraInput shipped `fullViewBody`-
 //     only and lost its only route to a first capture. This drives the TILE
 //     with the dock never opened.
@@ -64,16 +74,18 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
  * ⚠ EVERY LANE ASSERTION IS SCOPED TO THE MAIN CANVAS, AND ON THIS MODULE THAT
  * IS LOAD-BEARING RATHER THAN TIDY.
  *
- * `HeadlessSourceHost` mounts the parked card inside its OWN single-node
- * `<SvelteFlow>`, so it contributes a second `.svelte-flow__node[data-id=farc]`
- * carrying a second `archivist-card`. A bare
+ * `HeadlessSourceHost` mounts a hosted card inside its OWN single-node
+ * `<SvelteFlow>`, so it contributes a second `.svelte-flow__node[data-id=…]`
+ * carrying a second card. A bare
  * `.svelte-flow__node[data-id="farc"] [data-testid="archivist-card"]` therefore
- * matches the PARKED card and reports "the legacy card is still in the lane" on
+ * matched the PARKED card and reported "the legacy card is still in the lane" on
  * a perfectly correct promotion — which is exactly what the first draft of this
- * file did. `MAIN_CANVAS` is `_helpers`' own answer (`.flow > .svelte-flow`,
- * the CHILD combinator the host's grandchild flow cannot satisfy), and
- * archivist is the one module where the host is guaranteed present, so the
- * distinction can never be skipped here.
+ * file did. `MAIN_CANVAS` is `_helpers`' own answer (`.flow > .svelte-flow`, the
+ * CHILD combinator the host's grandchild flow cannot satisfy).
+ *
+ * ⚠ ARCHIVIST NO LONGER HAS A HOST (legacy-removal S1), so the trap cannot fire
+ * here today. The scoping stays: six CARD_PRODUCER modules still get hosts, and
+ * relaxing a discipline one file at a time is how it stops being one.
  */
 const laneNode = (nodeId: string) =>
   `${MAIN_CANVAS} .svelte-flow__node[data-id="${nodeId}"]`;
@@ -164,8 +176,7 @@ const VIDEO_MOCK = {
 } as const;
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. `archivist.spec.ts`'s `?shell=legacy` is
-  // precisely the surface promotion does not change.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   // `canvasPane` rather than `.svelte-flow__pane:visible.first()` — the hosts
@@ -266,7 +277,7 @@ test.describe('ARCHIVIST face — the promotion is what makes it reachable', () 
     });
   });
 
-  test('the card is PARKED and UNCLICKABLE, and the face still SEARCHES and LOADS @video', async ({ page }) => {
+  test('NO card is mounted, the elements exist anyway, and the face still SEARCHES and LOADS @video', async ({ page }) => {
     // Serialises the dock's lazy body chunk plus a real webm decode behind the
     // boot — bounded from the one export site, never a flat literal.
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
@@ -283,22 +294,42 @@ test.describe('ARCHIVIST face — the promotion is what makes it reachable', () 
     const laneCard = page.locator(`${laneNode('farc')} [data-testid="archivist-card"]`);
     await expect(laneCard).toHaveCount(0);
 
-    // ...and it MUST be alive in the headless host, because that mount is what
-    // keeps the three node-owned elements attached. A promotion that lost it
-    // would take the module's source with it.
+    // ⚠ ...AND THERE IS NO PARKED CARD EITHER, WHICH INVERTS THIS LEG
+    // (legacy-removal S1, 2026-09-03). It asserted the card WAS alive in a
+    // headless host, "because that mount is what keeps the three node-owned
+    // elements attached". `$lib/ui/media/node-archivist-source-registry` keeps
+    // them attached now, on graph lifetime, so archivist left
+    // `DOM_SOURCE_LANE_TYPES` and gets no host at all.
+    //
+    // ⚠ THE FILE'S TITLE CLAIM SURVIVES AND GETS STRONGER. "The card is PARKED
+    // and UNCLICKABLE" was the reason the bodies had to exist; "there is no card
+    // at all" is the same reason, with nothing left to be tempted by. What
+    // carried the weight was never the mount count — it is the SEARCHES AND
+    // LOADS half below, which drives the face and reads a real picture out of
+    // the engine.
     const host = page.locator('[data-testid="headless-source-host"][data-node-id="farc"]');
-    await expect(host).toHaveCount(1, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await expect(host.locator('[data-testid="archivist-card"]')).toHaveCount(1);
+    await expect(host).toHaveCount(0, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await expect(
+      page.getByTestId('archivist-card'),
+      'no ArchivistCard is mounted anywhere — not in a host, not in the lane, not in the dock',
+    ).toHaveCount(0);
 
-    // ⚠ AND IT IS GENUINELY UNREACHABLE — the premise of the whole design,
-    // measured rather than assumed. If this ever became clickable the bodies
-    // would be redundant and a future author would delete them.
-    const parked = await host.evaluate((el) => {
-      const cs = getComputedStyle(el);
-      return { pointerEvents: cs.pointerEvents, left: cs.left, ariaHidden: el.getAttribute('aria-hidden') };
-    });
-    expect(parked.pointerEvents, 'the headless host must not take pointer events').toBe('none');
-    expect(parked.ariaHidden).toBe('true');
+    // ⚠ AND THE THREE NODE-OWNED ELEMENTS EXIST ANYWAY, which is the claim that
+    // replaces "the card is parked": the controller `ensure`s them with no host,
+    // so they are present and attachable with no surface mounted. `absent` here
+    // is the real failure — it is what a controller that never ran produces.
+    const parkedEls = await page.evaluate(() =>
+      ['archivist-video', 'archivist-audio', 'archivist-image'].map((t) => ({
+        testid: t,
+        count: document.querySelectorAll(`[data-testid="${t}"]`).length,
+      })),
+    );
+    expect(parkedEls, 'the node-owned elements must exist with no card mounted').toEqual([
+      { testid: 'archivist-video', count: 1 },
+      { testid: 'archivist-audio', count: 1 },
+      { testid: 'archivist-image', count: 1 },
+    ]);
+
 
     // The face body is the only reachable surface, and it works.
     const dock = await openDock(page, 'farc');
@@ -357,10 +388,18 @@ test.describe('ARCHIVIST face — the promotion is what makes it reachable', () 
       const v = document.querySelector('video[data-testid="archivist-video"]');
       return {
         inHost: !!v?.closest('[data-testid="headless-source-host"]'),
+        inParking: !!v?.closest('[data-testid="node-media-parking"]'),
         inDock: !!v?.closest('[data-testid="dock-full-view"]'),
       };
     });
-    expect(whereIsElement.inHost, 'the element must stay parked with its owner').toBe(true);
+    // ⚠ `parking`, NOT `host` (legacy-removal S1). There is no headless host for
+    // archivist any more; the controller `ensure`s the element, which parks it.
+    // The claim is the same one and it is the one that matters — the body BLITS
+    // the engine output and must NEVER adopt, because a DOM node has one parent
+    // and adopting here would move the element out from under whoever is
+    // showing it.
+    expect(whereIsElement.inHost, 'there is no headless host for archivist any more').toBe(false);
+    expect(whereIsElement.inParking, 'the node-owned element stays parked').toBe(true);
     expect(whereIsElement.inDock, 'the body must BLIT, never ADOPT').toBe(false);
 
     // The transport appears for time media, and the picture's accessible name

@@ -1230,7 +1230,7 @@ freezeframe param quant_b 0..1 linear default=0
 freezeframe param quant_g 0..1 linear default=0
 freezeframe param quant_luma 0..1 linear default=0
 freezeframe param quant_r 0..1 linear default=0
-frogger meta domain=audio vizPassthrough
+frogger meta domain=audio
 frogger in down_gate gate edge=trigger
 frogger in left_gate gate edge=trigger
 frogger in right_gate gate edge=trigger
@@ -1345,7 +1345,6 @@ graphicEq param gain 0.5..4 linear default=1.6
 graphicEq param hue 0..1 linear default=0
 graphicEq param peak 0.5..0.99 linear default=0.92
 graphicEq param style 0..1 discrete default=1
-group meta domain=meta
 illogic meta domain=audio
 illogic in in1 cv
 illogic in in2 cv
@@ -1996,7 +1995,7 @@ mixmstrs stereo ch7L+ch7R
 mixmstrs stereo ch8L+ch8R
 mixmstrs stereo ret1L+ret1R
 mixmstrs stereo ret2L+ret2R
-modtris meta domain=audio vizPassthrough
+modtris meta domain=audio
 modtris in drop_fast gate edge=trigger
 modtris in move_l gate edge=trigger
 modtris in move_r gate edge=trigger
@@ -2514,7 +2513,7 @@ polarizer meta domain=audio
 polarizer in in cv
 polarizer out out cv
 polarizer param depth 0..1 linear default=1
-pong meta domain=audio vizPassthrough
+pong meta domain=audio
 pong in paddle_left cv
 pong in paddle_right cv
 pong out score_left gate edge=trigger
@@ -2736,7 +2735,7 @@ scaler meta domain=audio
 scaler in in audio accepts=cv,gate,pitch
 scaler out out audio adopts=in
 scaler param amount 0.1..10 log default=1
-scope meta domain=audio vizPassthrough
+scope meta domain=audio
 scope in ch1 audio accepts=cv,gate,pitch
 scope in ch1Offset cv param=ch1Offset cvScale=linear
 scope in ch1Range cv param=ch1Range cvScale=discrete
@@ -2942,7 +2941,7 @@ sixstrum param sustain 0..1 linear default=1
 sixstrum param tuning 0..2 discrete default=0
 sixstrum family sixstrum-preset kind=other prefix=sixstrum-preset
 sixstrum family sixstrum-strum kind=other prefix=sixstrum-strum
-skifree meta domain=audio maxInstances=1 vizPassthrough
+skifree meta domain=audio maxInstances=1
 skifree in x cv
 skifree in y cv
 skifree out gate gate edge=trigger
@@ -3121,7 +3120,6 @@ stereovca out out_l audio
 stereovca out out_r audio
 stereovca param level 0..1 linear default=1
 stereovca param offset -1..1 linear default=0
-sticky meta domain=meta
 swolevco meta domain=audio
 swolevco in fm audio
 swolevco in fold cv param=fold cvScale=linear

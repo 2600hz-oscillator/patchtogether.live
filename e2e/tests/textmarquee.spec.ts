@@ -6,8 +6,10 @@
 // Graph:
 //   TEXTMARQUEE.out --> OUTPUT
 //
-// TEXTMARQUEE is a video SOURCE: the user types styled text in the card's
-// contenteditable editor; it serializes to a rich-text model (node.data
+// TEXTMARQUEE is a video SOURCE: the user types styled text in the face's
+// dock-only contenteditable editor (TextmarqueeEditorBody, `fullViewBody` —
+// a 192px lane tile cannot carry the toolbar, so the editor lives in the
+// dock full view and every editor locator pane-scopes); it serializes to a rich-text model (node.data
 // .richText), renders to an offscreen 2D canvas (system fonts), and draws into
 // the module's FBO. We assert the UNIQUE store/editor wiring (not the render):
 //   1. typing text persists a rich-text model into node.data.richText,
@@ -39,7 +41,7 @@ async function readModel(page: Page, id: string): Promise<unknown> {
 }
 
 async function spawnMarquee(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -52,19 +54,40 @@ async function spawnMarquee(page: Page): Promise<void> {
     ],
     { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
-  await expect(page.locator('[data-testid="textmarquee-card"]')).toHaveCount(1);
-  await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node[data-id="txt"] [data-testid="module-shell"]')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node[data-id="vout"] [data-testid="module-shell"]')).toHaveCount(1);
+}
+
+/** Open the dock full view for the marquee and return the PANE-SCOPED editor
+ *  body locator. The editor is dock-only (`fullViewBody`); testids repeat
+ *  pane-to-pane, so everything scopes under the pane. */
+async function openMarqueePane(page: Page) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'txt',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="txt"]');
+  await expect(pane.getByTestId('textmarquee-editor-body')).toBeVisible({ timeout: 60_000 });
+  return pane;
 }
 
 test.describe('TEXTMARQUEE — rich-text marquee video generator', () => {
   test('typing serializes a rich-text model into the patch store', async ({ page, errorWatch }) => {
 
     await spawnMarquee(page);
+    const pane = await openMarqueePane(page);
 
     // Type into the editor — the contenteditable → oninput → mutateNode round-trip
     // persists a rich-text model. This is the UNIQUE editor→store wiring; the
     // LIVE render of the text is textmarquee-render-smoke.spec.ts (deterministic).
-    const editor = page.locator('[data-testid="textmarquee-editor"]');
+    const editor = pane.locator('[data-testid="textmarquee-editor"]');
     await editor.click();
     await page.keyboard.type('HELLO MARQUEE');
 
@@ -79,7 +102,8 @@ test.describe('TEXTMARQUEE — rich-text marquee video generator', () => {
 
   test('BOLD toolbar applies a bold run to the selection', async ({ page }) => {
     await spawnMarquee(page);
-    const editor = page.locator('[data-testid="textmarquee-editor"]');
+    const pane = await openMarqueePane(page);
+    const editor = pane.locator('[data-testid="textmarquee-editor"]');
     await editor.click();
     await page.keyboard.type('boldme');
     // Let the debounced persist settle (so its re-render can't steal focus mid
@@ -94,7 +118,7 @@ test.describe('TEXTMARQUEE — rich-text marquee video generator', () => {
       sel?.removeAllRanges();
       sel?.addRange(range);
     });
-    await page.locator('[data-testid="textmarquee-bold"]').click();
+    await pane.locator('[data-testid="textmarquee-bold"]').click();
 
     await expect.poll(async () => {
       const m = await readModel(page, 'txt') as { paragraphs?: { runs?: { bold?: boolean }[] }[] } | null;

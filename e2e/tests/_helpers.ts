@@ -544,10 +544,10 @@ export async function spawnPatch(
       //
       // ⚠ UNCONDITIONAL, and that is the fix. This used to be gated on
       // `page.url().includes('mode=workflow')` — a URL SNIFF standing in for
-      // "is this the shell?". Every rack is the shell now, and `?shell=legacy`
-      // does not contain that substring, so the gate would have silently
+      // "is this the shell?". Every rack is the shell now, and the URL it
+      // sniffed for stopped being written, so the gate would have silently
       // stopped firing for the entire suite the moment the default flipped:
-      // hundreds of specs timing out on an off-screen card with no signal
+      // hundreds of specs timing out on an off-screen node with no signal
       // pointing here. `revealWorkflowNodes` already no-ops when the nodes are
       // framed and clickable, so the CHECK decides — not the URL.
       await revealWorkflowNodes(page, nodes.map((n) => n.id));
@@ -573,12 +573,12 @@ export async function spawnPatch(
  *
  * ⚠ `.svelte-flow__pane` AND `.svelte-flow__node` ARE AMBIGUOUS ON A WORKFLOW
  * RACK, AND THE AMBIGUITY GREW, WHICH IS WHY THIS EXISTS. `HeadlessSourceHost`
- * mounts each hosted module's REAL card inside its OWN single-node SvelteFlow —
- * parked at `left:-9999px`, `aria-hidden`, `pointer-events:none` — so every one
- * of them contributes a second `.svelte-flow__pane` and its own
+ * mounts each hosted module's REAL surface inside its OWN single-node
+ * SvelteFlow — parked at `left:-9999px`, `aria-hidden`, `pointer-events:none` —
+ * so every one of them contributes a second `.svelte-flow__pane` and its own
  * `.svelte-flow__node[data-id=…]`. MEASURED on this tree: `/rack` has THREE
- * panes (the canvas + the timelorde and synesthesia hosts) and
- * `/rack?shell=legacy` has TWO; this selector resolves to exactly ONE in both.
+ * panes (the canvas + the timelorde and synesthesia hosts); this selector
+ * resolves to exactly ONE whatever the host count is.
  *
  * ⚠ THE HOSTS LIVE *INSIDE* `.flow`, so `.flow …` does NOT scope them out — and
  * that was the premise several specs were written on. The distinguishing fact is
@@ -658,9 +658,7 @@ export const LANE_SHELL_TIER = `${MAIN_CANVAS} [data-shell-tier]`;
  * geometry read that follows races a tile that is not there yet. A COUNT taken
  * as a FLOOR (`not.toHaveCount(0)`) simply stops being able to fail.
  */
-export const LANE_TILES =
-  `${MAIN_CANVAS} [data-testid="module-shell-placeholder"], ` +
-  `${MAIN_CANVAS} [data-testid="module-shell"]`;
+export const LANE_TILES = `${MAIN_CANVAS} [data-testid="module-shell"]`;
 
 /**
  * Wait until every LANE tile reports LOD tier `tier`.
@@ -779,9 +777,18 @@ export async function openModulePalette(
 // (a blind click would CLOSE an already-open section). These ensure the section
 // is open without depending on its current state.
 
-/** Ensure a TOYBOX section is OPEN: only click the toggle when the section's
- *  content (`contentTestId`) isn't already visible. Safe to call whatever the
- *  default open-state is. */
+/** The faceplate's tab rail replaces the card's per-section ▾ toggles — the
+ *  toggles render only on `layout === 'card'` (see ToyboxConsole's combineZone
+ *  header: two hide-controls for one panel would strand each other). */
+const TOYBOX_FACE_TAB_FOR_TOGGLE: Record<string, string> = {
+  'toybox-combine-toggle': 'toybox-face-tab-combine',
+  'toybox-cv-toggle': 'toybox-face-tab-cv',
+};
+
+/** Ensure a TOYBOX section is OPEN, on EITHER surface: on the faceplate the
+ *  mapped tab shows it (idempotent — re-selecting the active tab is a no-op);
+ *  on the card, only click the toggle when the section's content
+ *  (`contentTestId`) isn't already visible. Safe whatever the default state. */
 export async function ensureToyboxSectionOpen(
   page: Page,
   toggleTestId: string,
@@ -789,12 +796,23 @@ export async function ensureToyboxSectionOpen(
 ): Promise<void> {
   const content = page.locator(`[data-testid="${contentTestId}"]`);
   if (await content.isVisible().catch(() => false)) return;
-  // Cold SwiftShader (CI + local --use-angle=swiftshader) can take well over 5s
-  // to FIRST-paint the toybox card. Several sections (the combine editor) are
-  // open-by-default — clicking the toggle on a not-yet-rendered-but-open section
-  // would CLOSE it, then the old 5s wait timed out on now-hidden content (the
-  // systemic toybox setup flake). So give the content a generous window to appear
-  // naturally first; only toggle if it is genuinely still collapsed after that.
+  // FACEPLATE: the console body's tab rail is the section control. Callers
+  // reach this after their spawn helper has already waited for the console
+  // body, so a present tab is a settled tab.
+  const faceTabId = TOYBOX_FACE_TAB_FOR_TOGGLE[toggleTestId];
+  const faceTab = faceTabId ? page.locator(`[data-testid="${faceTabId}"]`) : null;
+  if (faceTab && (await faceTab.count()) > 0) {
+    await faceTab.click();
+    await content.waitFor({ state: 'visible', timeout: 15_000 });
+    return;
+  }
+  // CARD: cold SwiftShader (CI + local --use-angle=swiftshader) can take well
+  // over 5s to FIRST-paint the toybox card. Several sections (the combine
+  // editor) are open-by-default — clicking the toggle on a
+  // not-yet-rendered-but-open section would CLOSE it, then the old 5s wait
+  // timed out on now-hidden content (the systemic toybox setup flake). So give
+  // the content a generous window to appear naturally first; only toggle if it
+  // is genuinely still collapsed after that.
   const appeared = await content
     .waitFor({ state: 'visible', timeout: 12_000 })
     .then(() => true)
@@ -808,6 +826,58 @@ export async function ensureToyboxSectionOpen(
 export async function ensureCombineOpen(page: Page): Promise<void> {
   await ensureToyboxSectionOpen(page, 'toybox-combine-toggle', 'toybox-graph-svg');
 }
+
+/** Open TOYBOX's dock full view for node `id` and wait for the console body.
+ *  TOYBOX has NO tileBody (shell-extension.ts: the console is a dock-sized
+ *  task; the tile keeps the picture) — so the console, every section control,
+ *  the `__toyboxRoll` hook and the `toybox-face-canvas` ALL live here. Uses
+ *  the shipped `__openDockFullView` hook, not a click on `shell-open-dock`:
+ *  the cell is not reliably actionable under parallel shards (measured on
+ *  face-toybox.spec.ts, CI shard 1/12). */
+export async function openToyboxDock(page: Page, id = 'tb'): Promise<void> {
+  await page
+    .locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`)
+    .waitFor({ state: 'visible', timeout: 30_000 });
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  // Pane-scoped: two dock panes can be open at once and testids repeat
+  // pane-to-pane, so an unscoped read strict-mode-violates the moment a
+  // second toybox joins.
+  await expect(
+    page
+      .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`)
+      .getByTestId('toybox-face-body'),
+  ).toBeVisible({ timeout: 60_000 });
+}
+
+/** Select a TOYBOX console face tab and wait for its pane. presetZone (the
+ *  dice, REVERT, preset select/save/IO) mounts only while the presets tab is
+ *  active; cvZone and combineZone likewise — the card painted every section
+ *  at once, the faceplate's tab rail is the one collapse control. Idempotent. */
+export async function openToyboxFaceTab(
+  page: Page,
+  tab: 'cv' | 'combine' | 'presets',
+): Promise<void> {
+  await page.getByTestId(`toybox-face-tab-${tab}`).click();
+  await expect(page.getByTestId('toybox-face-pane')).toHaveAttribute('data-tab', tab);
+}
+
+/** TOYBOX's preview canvas — `toybox-face-canvas`, in the dock pane.
+ *
+ *  ⚠ IT IS STILL AN `OR`, AND THAT IS DELIBERATE. The console once carried a
+ *  second spelling for a second host, and every caller here reads pixels rather
+ *  than asserting an id — so the union costs nothing and the day a second
+ *  surface paints the picture again, the reads keep working. */
+export const TOYBOX_CANVAS_SEL = '[data-testid="toybox-face-canvas"]';
 
 // (openToyboxNodeMenu / ensureCvOpen were pruned as unreferenced exports —
 // LoC campaign row 16. The toybox specs that needed them roll their own or

@@ -2,7 +2,7 @@
 //
 // E2E coverage for the per-monster-type kill + per-player death gates
 // added in feat/doom-per-type-death-gates. Each new gate output is the
-// same shape as the existing evt_kill / evt_door / evt_gun_pN ports:
+// same shape as the existing evt_kill / evt_door / evt_gun_pN gate ports:
 // 10 ms pulse, subscribePulse-compatible, routed through the cross-domain
 // audio bridge. We drive them via the same `extras.forcePulse(port)` test
 // hook as video-audio-cvgate-coverage.spec.ts (no in-game-kill flake) and
@@ -24,6 +24,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { pollGatePulsePeak, gatePulseMsg } from '../_helpers/scope-poll';
 
 // Per-port forcePulse pair — same shape as
 // video-audio-cvgate-coverage.spec.ts but for the NEW gates only. Coverage
@@ -57,38 +58,12 @@ async function doomWasmPresent(page: Page): Promise<boolean> {
   });
 }
 
-async function firePulse(
-  page: Page,
-  sourceNodeId: string,
-  port: string,
-  repeats = 1,
-  spacingMs = 40,
-): Promise<boolean> {
-  return await page.evaluate(
-    async ({ nodeId, p, n, s }) => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      if (!eng) return false;
-      const node = w.__patch.nodes[nodeId];
-      if (!node) return false;
-      const extras = eng.read(node, 'extras') as
-        | { forcePulse?: (port: string) => void }
-        | undefined;
-      if (!extras || typeof extras.forcePulse !== 'function') return false;
-      for (let i = 0; i < n; i++) {
-        extras.forcePulse(p);
-        if (i < n - 1) await new Promise((r) => setTimeout(r, s));
-      }
-      return true;
-    },
-    { nodeId: sourceNodeId, p: port, n: repeats, s: spacingMs },
-  );
-}
+// ⚠ A LOCAL `firePulse` HELPER STOOD HERE AND IS DELETED. It fired N pulses
+// spaced `spacingMs` apart from the TEST side, once per `expect.poll` round, so
+// every pulse cost a CDP round trip on the same main thread as the audio graph
+// and DOOM's own frame loop. `pollGatePulsePeak` fires from inside the page on
+// its own timer, beside the sampler that latches the result — see its header
+// for why the coincidence this replaced could not survive a loaded shard.
 
 async function readScopePeak(
   page: Page,
@@ -131,7 +106,7 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse �
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
 
       const present = await doomWasmPresent(page);
@@ -160,7 +135,10 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse �
         ],
       );
 
-      await page.locator('.svelte-flow__node-scope').first()
+      // Shell-agnostic node locator: xyflow stamps the wrapper class from the
+      // EMITTED node type, which is `moduleShell` for every lane node, so a
+      // per-type class matches nothing. `:has` keeps the wrapper semantics.
+      await page.locator('.svelte-flow__node:has([data-shell-type="scope"])').first()
         .waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(400);
 
@@ -168,27 +146,48 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse �
       // after forcePulse is the assertion.
       const before = await readScopePeak(page, scopeNodeId);
 
-      // Fire-then-read loop: a 10ms pulse against ~43ms analyser refresh is
-      // borderline, so we re-fire until the snapshot lands during a HIGH
-      // window. Empirically 4-5 rounds suffice on the CI box.
-      let after: { peak: number; rms: number } | null = null;
-      await expect.poll(
-        async () => {
-          const fired = await firePulse(page, doomNodeId, pair.port, 3, 20);
-          if (!fired) return 0;
-          after = await readScopePeak(page, scopeNodeId);
-          return after?.peak ?? 0;
-        },
-        // 20s ceiling, not 6s: the poll RE-FIRES the pulse each round so a
-        // bigger ceiling is free when healthy (~1.7-4.5s locally), but on a
-        // loaded SwiftShader runner DOOM boot + worklet start + kill event
-        // can exceed a flat 6s — evt_kill_demon/imp went 0-amplitude on CI
-        // (clap run 29156798711) while 189 shard-mates passed.
-        { timeout: 20_000, intervals: [50, 80, 120, 200, 300] },
-      ).toBeGreaterThan(0.1);
+      // ⚠ THE FIRE-THEN-READ LOOP IS GONE, AND ITS OWN COMMENT SAID WHY IT HAD
+      // TO. It read: "a 10ms pulse against ~43ms analyser refresh is borderline,
+      // so we re-fire until the snapshot lands during a HIGH window." That is a
+      // probe built on a COINCIDENCE — the pulse must still be inside the
+      // analyser window at the moment one particular CDP round trip reads it —
+      // and each round trip runs on the same main thread as the audio graph.
+      // On a loaded shard the coincidence stops happening: `evt_kill_demon`
+      // went 0-amplitude on CI again on 2026-09-05, exactly as the note
+      // predicted, and gibribbon's identical hand-rolled probe lost a DIFFERENT
+      // port on each of two runs.
+      //
+      // `pollGatePulsePeak` pulses AND samples in the page on independent
+      // timers and LATCHES the peak, so the pulse only has to be caught once by
+      // any sample, ever. Measured on gibribbon's five ports, which share this
+      // shape: ~5-6 s each and rotating failures, down to 1.4 s each and stable.
+      //
+      // ⚠ DOOM'S OWN WAITS ARE UNTOUCHED. The `10_000` locator wait and the
+      // `waitForTimeout(400)` settle above are deliberate, predate this file's
+      // current shape, and belong to the game-clock-is-frame-clock discipline
+      // (#345 lockstep starvation) — the seam change lands entirely below them
+      // and needed no help from either. They stay exactly as they are.
+      const r = await pollGatePulsePeak(page, {
+        sourceNodeId: doomNodeId,
+        port: pair.port,
+        scopeNodeId,
+        threshold: 0.1,
+        // Unchanged in value from the ceiling this replaces: DOOM boot +
+        // worklet start still has to fit, and a latched probe that is healthy
+        // returns in ~1-2 s, so the ceiling costs nothing when it is not needed.
+        boundMs: 20_000,
+      });
+
+      expect(
+        r.hookFound,
+        `${pair.id}: extras.forcePulse never resolved — ${gatePulseMsg(pair.id, r)}`,
+      ).toBe(true);
+      expect(
+        r.reachedThreshold,
+        `${pair.id}: pulse never reached SCOPE.ch1 — ${gatePulseMsg(pair.id, r)}`,
+      ).toBe(true);
 
       expect(before, `${pair.id}: baseline scope read must succeed`).not.toBeNull();
-      expect(after,  `${pair.id}: post-drive scope read must succeed`).not.toBeNull();
 
       expect(
         errors.filter((e) =>

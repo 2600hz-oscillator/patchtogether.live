@@ -1,15 +1,15 @@
 // packages/web/src/lib/ui/modules/chromaconsole-cell-actions.ts
 //
 // THE CHROMA CONSOLE'S NON-PARAM GESTURES, as one plain-TypeScript seam called
-// by BOTH surfaces — the ranked `chromaconsole-connect-{n}` and
-// `chromaconsole-pushall-{n}` action cells, the shell extension's device body,
-// and the legacy card.
+// by every surface that offers them — the ranked `chromaconsole-connect-{n}`
+// and `chromaconsole-pushall-{n}` action cells, and the shell extension's
+// device body.
 //
 // ⚠ WHY CONNECT IS A CELL AND NOT A BODY BUTTON. midiclock's argument (#2187),
 // inherited verbatim: this module transmits nothing until Web MIDI is granted
-// AND an output port is chosen, and until promotion the only affordance that
-// could ask for the grant lived on the legacy card — which the default shell
-// paints as a lane PLACEHOLDER. An `action` cell is NOT dock-restricted (only
+// AND an output port is chosen, and before promotion the only affordance that
+// could ask for the grant was behind an expand. An `action` cell is NOT
+// dock-restricted (only
 // `panel` is, by `panelCellKeys`), so ranking the key puts the gesture on the
 // LANE TILE where the module is met.
 //
@@ -50,9 +50,9 @@ import type { ModuleNode } from '$lib/graph/types';
 // `nodeVersion`. So a surface whose reads are keyed on the node repaints for
 // none of them.
 //
-// ⚠ AND THE PROMOTION IS WHAT MADE THAT BITE. On the legacy card the connect
-// button was INSIDE the component, so its handler could bump the card's own
-// counter after the grant resolved. The face moves that gesture to a ranked
+// ⚠ AND THE PROMOTION IS WHAT MADE THAT BITE. The connect button used to sit
+// INSIDE the component, so its handler could bump that component's own counter
+// after the grant resolved. The face moves that gesture to a ranked
 // `action` cell, which lives out here and cannot reach the body's local state:
 // press CONNECT with the faceplate already open — the path the body's own empty
 // state instructs, "Press Connect MIDI to grant access and pick the pedal" —
@@ -66,8 +66,8 @@ import type { ModuleNode } from '$lib/graph/types';
 // that cause it.
 //
 // ⚠ NOT A TIMER AND NOT A POLL. The resting render of this module must stay
-// byte-stable for a committed VRT baseline (the legacy card's header records
-// why), so the surface may only be woken by something that ACTUALLY HAPPENED.
+// byte-stable for a committed VRT baseline, so the surface may only be woken
+// by something that ACTUALLY HAPPENED.
 // Subscribers are notified from event handlers and promise callbacks, never
 // from inside a `$derived` — a bump during derivation is `state_unsafe_mutation`
 // and permanently poisons the consumer's deriveds, which is the failure ptzcam's

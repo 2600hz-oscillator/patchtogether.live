@@ -189,15 +189,32 @@ describe('agent context files describe the real tree', () => {
   });
 
   it('the docs CLAUDE.md and AGENTS.md point at are really there', () => {
-    const cited = new Set<string>();
-    for (const file of [CLAUDE_MD, AGENTS_MD]) {
-      const text = readFileSync(file, 'utf8');
-      for (const [, path] of text.matchAll(/\((docs\/[a-z0-9./-]+\.md)\)/g)) cited.add(path);
-    }
+    const extract = (text: string): string[] =>
+      [...text.matchAll(/\((docs\/[a-z0-9./-]+\.md)\)/g)].map(([, path]) => path);
+    const sources = [CLAUDE_MD, AGENTS_MD].map((f) => readFileSync(f, 'utf8'));
+    // The files were READ. An unreadable one would give an empty scan and make
+    // the dangling check below agree about nothing.
+    expect(sources.every((t) => t.length > 0), 'both context files must be readable').toBe(true);
+    const cited = new Set(sources.flatMap(extract));
     // A pointer is only useful if it resolves; this is the same anchor rule as above.
     expect([...cited].filter((p) => !existsSync(join(REPO_ROOT, p)))).toEqual([]);
-    // Non-vacuity: anchored to a NAME the set must contain, not to a count.
-    expect([...cited]).toContain('docs/design/face-migration.generated.md');
+
+    // ⚠ THE NON-VACUITY ANCHOR IS A POSITIVE CONTROL NOW, NOT A NAME, AND THE
+    // REASON IS WHAT HAPPENED TO THE LAST NAME. It read
+    // `expect([...cited]).toContain('docs/design/face-migration.generated.md')`
+    // — the right shape (a name, not a count) right up until the legacy-card
+    // removal deleted that generated doc and the AGENTS.md sentence citing it.
+    // AGENTS.md now links NO docs page, so any name would be a guess about
+    // prose rather than a fact about the tree, and an empty `cited` would let
+    // the dangling filter pass on nothing.
+    //
+    // So the extractor is proved against known answers instead: it must FIND a
+    // real citation when one is present and must NOT invent one when it is not.
+    // That is checkable forever, regardless of how the prose moves.
+    expect(extract('see the [catalog](docs/design/game-modules.md) for more')).toEqual([
+      'docs/design/game-modules.md',
+    ]);
+    expect(extract('a bare mention of docs/design/game-modules.md is not a link')).toEqual([]);
   });
 
   it('every `.myrobots` record the standing docs point at still exists', () => {

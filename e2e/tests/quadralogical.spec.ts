@@ -22,7 +22,7 @@
 // blocker → NOTHING is deferred.
 //
 // ── HOW EACH ORIGINAL ASSERTION'S INTENT IS PRESERVED ────────────────────────
-//   1. card / canvas / pad / diamond / dot / video-out-canvas mount  → kept
+//   1. face quadrants / diamond / puck + videoOut node mount  → kept
 //      as-is (DOM structural assertions; deterministic already).
 //   2. wired MIX renders a non-trivial structured frame + TL corner ⇒ in1 (red)
 //      dominant  → DRS: freeze+pause, set joystick to TL via the ENGINE domain
@@ -209,19 +209,30 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     // (LINES → identical frame every step) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, buildNodes(), buildEdges());
 
-    // DOM-structural assertions (deterministic already) — preserved as-is.
-    await expect(page.locator('.svelte-flow__node-quadralogical'), 'QUADRALOGICAL visible').toBeVisible();
-    await expect(page.locator('[data-testid="quadralogical-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="quadralogical-canvas"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="quadralogical-pad"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="quadralogical-diamond"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="quadralogical-dot"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    // DOM-structural assertions, on the FACE surfaces (the card's canvas/pad/
+    // diamond/dot died with the card; the dock screen body carries the
+    // quadrants view, the mix diamond and the position puck).
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="quadralogical"])'), 'QUADRALOGICAL visible').toBeVisible();
+    await page.waitForFunction(
+      () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'quad',
+    );
+    const quadPane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="quad"]');
+    await expect(quadPane.locator('[data-testid="quadralogical-screen-body"]')).toBeVisible({ timeout: 60_000 });
+    await expect(quadPane.locator('[data-testid="quadralogical-face-quadrants"]')).toHaveCount(1);
+    await expect(quadPane.locator('[data-testid="quadralogical-face-diamond"]')).toHaveCount(1);
+    await expect(quadPane.locator('[data-testid="quadralogical-face-puck"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]'), 'videoOut node mounted').toHaveCount(1);
 
     // ---- TL corner ⇒ in1 (red) dominates ----
     // Joystick to TL via the engine domain (pos_x=-1, pos_y=+1), inside the same
@@ -245,7 +256,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Same sources, but route quad.preview → videoOut.in (the secondary output).
@@ -257,7 +268,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     edges.push({ id: 'prev', from: { nodeId: 'quad', portId: 'preview' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' });
     await spawnPatch(page, nodes, edges);
 
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]'), 'videoOut node mounted').toHaveCount(1);
 
     // Read QUADRALOGICAL's `preview` output texture (the 2×2 raw-input tile).
     const stats = await setStepRead(page, { nodeId: 'quad', portId: 'preview', steps: FIXED_STEPS });
@@ -289,10 +300,10 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, buildNodes(), buildEdges());
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]'), 'videoOut node mounted').toHaveCount(1);
 
     // §3 directive — TWO-FROZEN-READS, NOT animation-diff. Sit ON the top edge
     // (in1 red ↔ in2 green, edge 1–2 active), midway → both contribute. For each
@@ -340,10 +351,10 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, buildNodes(), buildEdges());
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]'), 'videoOut node mounted').toHaveCount(1);
 
     // §3 directive — TWO-FROZEN-READS. Sit on the BOTTOM edge (in3 blue ↔ in4
     // yellow) — that's edge 3–4. Edge 1–2's mass is ≈ 0 here, so changing

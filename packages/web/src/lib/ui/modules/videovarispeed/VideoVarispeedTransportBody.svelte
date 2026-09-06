@@ -14,12 +14,12 @@
   //
   // ⚠ THE PICTURE IS BLITTED FROM THE ENGINE AND NO `<video>` IS EVER ADOPTED
   // HERE — the videobox / tvLibrarian constraint, for the same two reasons. A
-  // DOM node has exactly one parent and the LEGACY card may be adopting the
-  // node's element at the same moment (`?shell=legacy`), so adopting it here
-  // would move it out from under that mount. And `blitOutputForPreview` reads
-  // the module's OWN output texture — which is what the CROP output windows and
+  // DOM node has exactly one parent, and this one belongs to a NODE-lifetime
+  // owner that keeps it alive with nothing mounted, so adopting it here would
+  // move it out from under that owner. And `blitOutputForPreview` reads the
+  // module's OWN output texture — which is what the CROP output windows and
   // what downstream modules receive, letterboxed exactly as they see it, which
-  // the card's raw-element preview structurally cannot show.
+  // a raw-element preview structurally cannot show.
   //
   // ⚠ NOT A SECOND OWNER. The seven elements, their object URLs, the engine
   // attach, the audio wire, the transport loop, the seven virtual playheads,

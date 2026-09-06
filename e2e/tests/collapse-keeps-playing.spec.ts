@@ -8,12 +8,11 @@
 //   spawn → expand (dock full-view) → load a file → play → COLLAPSE →
 //   assert the element is STILL PLAYING.
 //
-// ⚠ THE DEFAULT SHELL IS THE POINT. The pre-existing videovarispeed specs all
-// boot `/rack?shell=legacy`, which keeps the real card in the LANE — so the
-// card never moves between mounts and the entire bug class is invisible to
-// them. `shellFaces` is TRUE unless `?shell=legacy` is passed
-// (Canvas.svelte), i.e. those specs were validating a mode users do not have.
-// This spec goes to plain `/rack` deliberately; do not add a shell param.
+// ⚠ THE SHIPPING SHELL IS THE POINT. The pre-existing videovarispeed specs
+// were written against a renderer that kept the module's own surface in the
+// LANE — so the surface never moved between mounts and the entire bug class was
+// invisible to them. This spec goes to plain `/rack`, where a collapse really
+// does unmount the surface.
 //
 // ⚠ AND BOTH REAL PLAYERS ARE NOW FACED (videobox wave 3, videovarispeed wave
 // 4, both 2026-09-01), so the placement leg below takes its FACED branch for
@@ -52,6 +51,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join, relative } from 'node:path';
 import { spawnPatch } from './_helpers';
 // ⚠ THE PROMOTION SET, imported (the `_face-fixtures.ts` precedent — pure data,
 // no registry read). A FACED member's dock pane mounts a ModuleShell body that
@@ -149,35 +149,90 @@ function videoSourceTypes(): string[] {
   const hlsOwned = parseHlsProfileTypes(
     '../../packages/web/src/lib/ui/media/node-hls-source-registry.ts',
   );
-  const all = [...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned])].sort();
+  // ⚠ ...AND THE LOOPBACK OWNER SET (legacy-removal S1), which the paragraph
+  // above predicted for the THIRD time and which was MISSED for a day rather
+  // than caught: loopback left `DOM_SOURCE_LANE_TYPES` when its capture moved to
+  // a node controller, this union was not updated, and it dropped out of this
+  // sweep with the whole lane still green.
+  //
+  // ⚠ AND THE VACUITY GUARD BELOW STRUCTURALLY CANNOT SEE THAT, which is worth
+  // recording because the guard was written to stop exactly this. It asserts the
+  // sweep still enrols a real FILE PLAYER, and loopback is a CAPTURE module: it
+  // skips on every run, contributes nothing to `realPlayerTypes()`, and its
+  // departure therefore moves no reading the guard takes. "Not empty" and "not
+  // vacuous" were correctly separated; "still has the subjects it had" is a
+  // THIRD property, and nothing here checks it. The union line is the only
+  // defence, so a conversion must add its owner set here in the same commit —
+  // there is no gate that will notice if it does not.
+  const loopbackOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-loopback-source-registry.ts',
+    'NODE_LOOPBACK_SOURCE_TYPES',
+  );
+  const cameraOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-camera-source-registry.ts',
+    'NODE_CAMERA_SOURCE_TYPES',
+  );
+  const archivistOwned = parseTypeSet(
+    '../../packages/web/src/lib/ui/media/node-archivist-source-registry.ts',
+    'NODE_ARCHIVIST_SOURCE_TYPES',
+  );
+  const all = [
+    ...new Set([...cardOwned, ...nodeOwned, ...varispeedOwned, ...hlsOwned, ...loopbackOwned, ...cameraOwned, ...archivistOwned]),
+  ].sort();
   if (all.length === 0) throw new Error('EVERY source-owner set parsed EMPTY — refusing to pass vacuously');
   return all;
 }
 
 const TYPES = videoSourceTypes();
 
-/** A subject is a REAL PLAYER iff its card offers both a local-file input and a
- *  transport play button — the same pair the per-test enrolment checks at
- *  runtime, read here from the card SOURCE so the population is knowable
- *  without spawning anything. */
+/** A subject is a REAL PLAYER iff its SURFACE offers both a local-file input and
+ *  a transport play button — the same pair the per-test enrolment checks at
+ *  runtime, read here from source so the population is knowable without spawning
+ *  anything.
+ *
+ *  ⚠ IT READ THE CARD DIRECTORY, AND THAT WOULD NOW MEASURE ZERO. The old
+ *  version scanned `packages/web/src/lib/ui/modules/` for `<Type>Card.svelte`
+ *  and grepped each file for the two testids. With the fleet deleted that scan
+ *  finds no cards, every subject resolves "not a player", and the per-type legs
+ *  below — which are guarded by `realPlayerTypes().includes(type)` — would stop
+ *  asserting anything while still reporting green. The population floor at the
+ *  bottom of this file is what makes that a RED instead of a silent shrink, and
+ *  it is the reason the derivation is re-pointed rather than deleted.
+ *
+ *  It now walks the surviving surface tree RECURSIVELY, because that is where
+ *  the testids live: `videobox/VideoboxScreenBody.svelte` and
+ *  `videovarispeed/VideoVarispeedTransportBody.svelte` are one directory down,
+ *  and a flat scan would reproduce the same zero. The type→file mapping is a
+ *  case-insensitive PREFIX match on the directory name or the component
+ *  basename, for the reason the old comment gave and which has not changed:
+ *  `videovarispeed`'s component is `VideoVarispeed…` with an inner capital the
+ *  type id does not carry, so a rebuilt filename passes on case-insensitive
+ *  macOS and returns "not a player" on LINUX CI. */
 function realPlayerTypes(): string[] {
-  const cardDir = fileURLToPath(new URL('../../packages/web/src/lib/ui/modules/', import.meta.url));
-  // ⚠ RESOLVED BY A CASE-INSENSITIVE DIRECTORY SCAN, NOT BY REBUILDING THE
-  // FILENAME. `PascalCase(type) + 'Card.svelte'` gets `videovarispeed` wrong —
-  // the file is `VideoVarispeedCard.svelte`, with an inner capital the type id
-  // does not carry. macOS resolves that anyway because its filesystem is
-  // case-INsensitive, so a hand-built name passes locally and returns "not a
-  // player" on LINUX CI — where this sweep's population would then silently
-  // shrink, which is the exact failure this whole guard exists to prevent.
-  const entries = readdirSync(cardDir).filter((f) => f.endsWith('Card.svelte'));
+  const uiRoot = fileURLToPath(new URL('../../packages/web/src/lib/ui/modules/', import.meta.url));
+  const svelteFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, ent.name);
+      if (ent.isDirectory()) walk(full);
+      else if (ent.name.endsWith('.svelte')) svelteFiles.push(full);
+    }
+  };
+  walk(uiRoot);
   return TYPES.filter((type) => {
-    const want = `${type}card.svelte`.toLowerCase();
-    const file = entries.find((f) => f.toLowerCase() === want);
-    if (!file) return false;
-    const src = readFileSync(new URL(file, `file://${cardDir}`), 'utf8');
-    return (
-      /data-testid="[\w-]*-file-input"/.test(src) && /data-testid="[\w-]*-play-btn"/.test(src)
-    );
+    const want = type.toLowerCase();
+    const mine = svelteFiles.filter((f) => {
+      const rel = relative(uiRoot, f).toLowerCase();
+      const dir = rel.includes('/') ? rel.slice(0, rel.indexOf('/')) : '';
+      const base = rel.slice(rel.lastIndexOf('/') + 1).replace('.svelte', '');
+      return dir === want || base.startsWith(want);
+    });
+    return mine.some((f) => {
+      const src = readFileSync(f, 'utf8');
+      return (
+        /data-testid="[\w-]*-file-input"/.test(src) && /data-testid="[\w-]*-play-btn"/.test(src)
+      );
+    });
   });
 }
 
@@ -529,9 +584,9 @@ test('the sweep is NOT VACUOUS: it still exercises real file players', () => {
   //
   // ⚠ DELIBERATELY NOT A TYPED FLOOR (`>= 2`), and the distinction is the repo
   // standard rather than taste. The real player population is videobox +
-  // videovarispeed — both now FACED, and the predicate that derives them still
-  // reads their LEGACY CARDS, which are alive at `?shell=legacy` and keep their
-  // `-file-input` / `-play-btn` testids for exactly that reason. It is expected
+  // videovarispeed — both now FACED, and the predicate that derives them reads
+  // their surviving surfaces for the `-file-input` / `-play-btn` testids the
+  // migration deliberately carried over unrenamed. It is expected
   // to STAY that pair across this whole epic —
   // so a literal `2` would sit EXACTLY ON the population, which is a ratchet in
   // behaviour whatever it is in intent: the next legitimate change to that set
@@ -658,32 +713,34 @@ for (const type of TYPES) {
     // Re-pointing the queries document-wide is what keeps this sweep ALIVE for
     // a faced member; this leg is what keeps it HONEST about the two ownership
     // shapes it now spans, in both directions:
-    //   * FACED (STRICT_FACES): the body blits and must NEVER adopt — the
-    //     element a peer's legacy card may need has ONE parent. Found in the
-    //     dock pane here means a body adopted it after all.
-    //   * UN-FACED: the legacy card in the dock pane adopts it for display —
-    //     found anywhere else means the dock stopped mounting the real card.
-    // Without this, a face PR that quietly adopted the element (or a dock that
-    // dropped the card) would keep every progress assertion green.
+    //   The dock body BLITS and must NEVER adopt: the node-owned element has
+    //   ONE parent, and found in the dock pane here means a body adopted it
+    //   after all. Without this, a face PR that quietly adopted the element
+    //   would keep every progress assertion green.
+    //
+    // ⚠ AN `else` ARM FOR AN UN-FACED SUBJECT STOOD HERE AND IS DELETED. It
+    // asserted the opposite placement — the dock pane adopting the element for
+    // a module with no face — and it is now UNREACHABLE: every subject this
+    // sweep enrols is in STRICT_FACES, because every module is. A branch that
+    // cannot be taken reads as coverage and is not, so the FACED arm is
+    // asserted unconditionally and `STRICT_FACES` membership is asserted as
+    // the precondition it has become.
     const placedWhilePlaying = await liveMedia(page);
-    if (STRICT_FACES.has(type)) {
-      expect(
-        placedWhilePlaying.some((m) => m.where === 'dock'),
-        `${type} is FACED: its dock body must BLIT, never adopt — yet the node-owned <video> is ` +
-          `inside the dock pane: ${JSON.stringify(placedWhilePlaying)}`,
-      ).toBe(false);
-      expect(
-        placedWhilePlaying.some((m) => m.where === 'parking'),
-        `${type} is FACED and no surface adopts its element, so it must be PARKED while playing: ` +
-          `${JSON.stringify(placedWhilePlaying)}`,
-      ).toBe(true);
-    } else {
-      expect(
-        placedWhilePlaying.some((m) => m.where === 'dock'),
-        `${type} is UN-FACED: the dock pane mounts its legacy card, which adopts the element — ` +
-          `not found in the pane: ${JSON.stringify(placedWhilePlaying)}`,
-      ).toBe(true);
-    }
+    expect(
+      STRICT_FACES.has(type),
+      `${type} is not in STRICT_FACES — every module is faced, so this sweep's placement claim ` +
+        'below no longer describes it and the subject needs re-deriving rather than a second arm',
+    ).toBe(true);
+    expect(
+      placedWhilePlaying.some((m) => m.where === 'dock'),
+      `${type}: its dock body must BLIT, never adopt — yet the node-owned <video> is ` +
+        `inside the dock pane: ${JSON.stringify(placedWhilePlaying)}`,
+    ).toBe(false);
+    expect(
+      placedWhilePlaying.some((m) => m.where === 'parking'),
+      `${type}: no surface adopts its element, so it must be PARKED while playing: ` +
+        `${JSON.stringify(placedWhilePlaying)}`,
+    ).toBe(true);
 
     // ── THE FIXTURE OUTLASTS THE SPEC — DERIVED, THEN ASSERTED (#1553/#1577) ──
     //

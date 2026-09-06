@@ -60,16 +60,25 @@ async function waitForProbe(
   return { ok: false, last };
 }
 
-/** Luma stats of a card canvas (2D readback — SwiftShader-tolerant floors
- *  only; mirrors shapegen.spec.ts / edges.spec.ts readEdgeStats). */
+const VIDEO_SINK_THUMB = 'canvas[data-testid="video-tile-thumb"][data-thumb-node="sink"]';
+
+/** Luma stats of one canvas, addressed by a full CSS SELECTOR (2D readback —
+ *  SwiftShader-tolerant floors only; mirrors shapegen.spec.ts / edges.spec.ts
+ *  readEdgeStats).
+ *
+ *  ⚠ IT TAKES A SELECTOR, NOT A TESTID, and that is the whole point. The
+ *  VIDEOOUT read below used to name `video-out-canvas` — a testid only
+ *  `VideoOutCard.svelte` emitted — and an absent canvas returns ZEROS here, so
+ *  on the shell a player gets the poll would have been waiting on a surface
+ *  that never existed. The videoOut sink is now addressed by NODE ID through
+ *  the lane tile's `VideoTileThumb`, which paints from the same central engine
+ *  frame the card canvas took. */
 async function readCanvasStats(
   page: Page,
-  testid: string,
+  selector: string,
 ): Promise<{ nonZeroFrac: number; variance: number }> {
-  return await page.evaluate((testid) => {
-    const canvas = document.querySelector(
-      `canvas[data-testid="${testid}"]`,
-    ) as HTMLCanvasElement | null;
+  return await page.evaluate((selector) => {
+    const canvas = document.querySelector(selector) as HTMLCanvasElement | null;
     if (!canvas) return { nonZeroFrac: 0, variance: 0 };
     const probe = document.createElement('canvas');
     probe.width = canvas.width;
@@ -89,7 +98,7 @@ async function readCanvasStats(
     }
     const mean = sum / n;
     return { nonZeroFrac: nonZero / n, variance: sumSq / n - mean * mean };
-  }, testid);
+  }, selector);
 }
 
 function collectErrors(page: Page): string[] {
@@ -108,15 +117,16 @@ test.describe('LUSH GARDEN — generative garden source', () => {
 
   test('continuous mode: plants spawn at RATE and the clean preview renders non-black', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
       { id: 'lg', type: 'lushgarden', position: { x: 300, y: 100 }, domain: 'video' },
     ]);
-    await expect(page.locator('[data-testid="lushgarden-card"]')).toHaveCount(1);
-    // No gate patched → no badge.
-    await expect(page.locator('[data-testid="lushgarden-gated-badge"]')).toHaveCount(0);
+    await expect(page.locator('.svelte-flow__node[data-id="lg"] [data-testid="module-shell"]')).toHaveCount(1);
+    // No gate patched → gated mode is not latched (the card's [GATED] badge
+    // died with the card; `growPatched` is the engine truth it painted).
+    expect(await readProbe(page, 'lg', 'growPatched')).toBe(0);
 
     // Manifest loads, plants spawn on the internal RATE clock (default
     // 2/s), and at least one cutout finishes its texture bake.
@@ -129,10 +139,27 @@ test.describe('LUSH GARDEN — generative garden source', () => {
     const bakedTex = await waitForProbe(page, 'lg', 'readyCount', (n) => n > 0, 15000);
     expect(bakedTex.ok, `at least one cutout baked (readyCount=${bakedTex.last})`).toBe(true);
 
-    // Preview = the CLEAN composite. Renderer-tolerant floors only
+    // Preview = the CLEAN composite, on the face canvas (dock pane — the
+    // screen body is `fullViewBody`). Renderer-tolerant floors only
     // (SwiftShader): some plant pixels lit + non-flat content.
+    await page.waitForFunction(
+      () =>
+        typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+        'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'lg',
+    );
+    await expect(
+      page
+        .locator('[data-testid="dock-fullview-pane"][data-pane-node="lg"]')
+        .getByTestId('lushgarden-face-canvas'),
+    ).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(700); // one grow-in + a few blits
-    const stats = await readCanvasStats(page, 'lushgarden-screen');
+    const stats = await readCanvasStats(page, 'canvas[data-testid="lushgarden-face-canvas"]');
     expect(stats.nonZeroFrac, `preview lit fraction ${stats.nonZeroFrac}`).toBeGreaterThan(0.005);
     expect(stats.variance, `preview variance ${stats.variance}`).toBeGreaterThan(5);
 
@@ -141,7 +168,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
 
   test('grow gate: [GATED] badge, rate-spawning stops, one plant per rising edge, reset clears', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Two STOPPED sequencers: growSeq → grow, rstSeq → reset. Both idle at
@@ -164,14 +191,10 @@ test.describe('LUSH GARDEN — generative garden source', () => {
     );
     await seedKriaGate(page, 'growSeq');
     await seedKriaGate(page, 'rstSeq');
-    await expect(page.locator('[data-testid="lushgarden-card"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node[data-id="lg"] [data-testid="module-shell"]')).toHaveCount(1);
 
-    // Badge: the grow edge is wired (regardless of pulses).
-    await expect(
-      page.locator('[data-testid="lushgarden-gated-badge"]'),
-      '[GATED] badge appears when grow is patched',
-    ).toBeVisible();
-
+    // The card's [GATED] badge died with the card; the latch it painted is
+    // `growPatched`, asserted below at the engine seam.
     // The CV bridge writes the (low) gate level every block → gated mode
     // latches even with the sequencer stopped.
     const latched = await waitForProbe(page, 'lg', 'growPatched', (n) => n === 1, 15000);
@@ -245,7 +268,7 @@ test.describe('LUSH GARDEN — generative garden source', () => {
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('background input passes through the clean output outside plant silhouettes', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 3 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Keep the garden EMPTY (gated mode via a stopped sequencer → zero
@@ -282,12 +305,12 @@ test.describe('LUSH GARDEN — generative garden source', () => {
     // (plantless) clean composite — a large lit fraction, since with zero
     // plants EVERY pixel is outside a silhouette. Coarse floors only.
     await expect
-      .poll(async () => (await readCanvasStats(page, 'video-out-canvas')).nonZeroFrac, {
+      .poll(async () => (await readCanvasStats(page, VIDEO_SINK_THUMB)).nonZeroFrac, {
         message: 'background passthrough lights the clean output',
         timeout: 15000,
       })
       .toBeGreaterThan(0.2);
-    const stats = await readCanvasStats(page, 'video-out-canvas');
+    const stats = await readCanvasStats(page, VIDEO_SINK_THUMB);
     expect(stats.variance, `backdrop variance ${stats.variance}`).toBeGreaterThan(5);
     expect(await readProbe(page, 'lg', 'plantCount'), 'garden stayed empty').toBe(0);
 

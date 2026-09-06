@@ -98,8 +98,27 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     await freezeVideoRender(page);
   });
 
+
+/** Open a node's dock full view and return the PANE (testids repeat across
+ *  panes, so everything below is pane-scoped). */
+async function openPane(page: Page, id: string, bodyTestId: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.locator(`[data-testid="${bodyTestId}"]`)).toBeVisible({ timeout: 60_000 });
+  return pane;
+}
   test('send X + Y to a Control Surface → proxies appear, named QUAD X/Y, and drive node.params.pos_x/pos_y', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'quad', type: 'quadralogical', position: { x: 80, y: 80 }, domain: 'video' },
@@ -108,19 +127,18 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
       { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 80 }, domain: 'meta' },
     ]);
 
-    const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
-    await expect(surface).toBeVisible();
-    await expect(surface.locator('[data-testid="control-surface-empty"]')).toBeVisible();
-
-    const pad = page.locator('[data-testid="quadralogical-pad"]');
-    await expect(pad).toBeVisible();
+    // The quad's screen body is dock-only (fullViewBody); its ASSIGN buttons
+    // open the SAME axis menu the card's pad right-click did.
+    const quadPane = await openPane(page, 'quad', 'quadralogical-screen-body');
+    const assignX = quadPane.getByTestId('quadralogical-face-assign-x');
+    const assignY = quadPane.getByTestId('quadralogical-face-assign-y');
 
     // ── Send X to the surface ──
-    await pad.click({ button: 'right' });
-    const menu = page.locator('[data-testid="quadralogical-axis-menu"]');
+    await assignX.click();
+    const menu = page.locator('[data-testid="control-context-menu"]');
     await expect(menu).toBeVisible();
-    const sendX = menu.locator('[data-testid="quadralogical-surface-x-cs-1"]');
-    await expect(sendX).toContainText('Send X to');
+    const sendX = menu.locator('[data-testid="ctx-surface-cs-1"]');
+    await expect(sendX).toContainText('Send to');
     // force: bypass the actionability/stability wait that starves under the
     // heavy-GL main-thread load on CI's SwiftShader renderer (visibility +
     // text already asserted above, so the interaction stays meaningful).
@@ -128,11 +146,11 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     await expect(menu).toHaveCount(0);
 
     // ── Send Y to the surface ──
-    await pad.click({ button: 'right' });
-    const sendY = page.locator('[data-testid="quadralogical-axis-menu"] [data-testid="quadralogical-surface-y-cs-1"]');
-    await expect(sendY).toContainText('Send Y to');
+    await assignY.click();
+    const sendY = page.locator('[data-testid="control-context-menu"] [data-testid="ctx-surface-cs-1"]');
+    await expect(sendY).toContainText('Send to');
     await sendY.click({ force: true });
-    await expect(page.locator('[data-testid="quadralogical-axis-menu"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="control-context-menu"]')).toHaveCount(0);
 
     // Both bindings recorded as pointers with the friendly preset names.
     await expect.poll(async () => await readSurfaceBindings(page, 'cs-1')).toEqual([
@@ -140,12 +158,14 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
       { moduleId: 'quad', paramId: 'pos_y', name: 'QUAD Y' },
     ]);
 
-    // Both proxied controls render on the surface, grouped under QUADRALOGICAL.
-    const proxyX = surface.locator('[data-testid="control-surface-knob-quad-pos_x"]');
-    const proxyY = surface.locator('[data-testid="control-surface-knob-quad-pos_y"]');
+    // Both proxied controls render on the dock BOARD, grouped under
+    // QUADRALOGICAL (the card surface died with the fleet — drain-13 recipes).
+    const surface = (await openPane(page, 'cs-1', 'cs-board')).getByTestId('cs-board');
+    const proxyX = surface.locator('[data-testid="cs-board-knob-quad-pos_x"]');
+    const proxyY = surface.locator('[data-testid="cs-board-knob-quad-pos_y"]');
     await expect(proxyX).toBeVisible();
     await expect(proxyY).toBeVisible();
-    await expect(surface.locator('[data-testid="control-surface-group-label"]')).toContainText('QUADRALOGICAL');
+    await expect(surface.locator('[data-testid="cs-board-group-label"]')).toContainText(/quadralogical/i);
     // The custom names show on the proxies.
     await expect(proxyX).toContainText('QUAD X');
     await expect(proxyY).toContainText('QUAD Y');
@@ -155,17 +175,17 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     // the source joystick param must change to the default, proving the surface
     // control drives the joystick axis.
     await setAxis(page, 'pos_x', 0.83);
-    await proxyX.locator('[role="slider"]').dblclick();
+    await surface.locator('[data-testid="cs-board-dial-quad-pos_x"]').dblclick();
     await expect.poll(async () => await readAxis(page, 'pos_x')).toBe(0); // surface reset the SOURCE axis
 
     await setAxis(page, 'pos_y', -0.77);
-    await proxyY.locator('[role="slider"]').dblclick();
+    await surface.locator('[data-testid="cs-board-dial-quad-pos_y"]').dblclick();
     await expect.poll(async () => await readAxis(page, 'pos_y')).toBe(0);
 
-    // Remove X via the pad menu → only Y remains on the surface.
-    await pad.click({ button: 'right' });
-    const removeX = page.locator('[data-testid="quadralogical-axis-menu"] [data-testid="quadralogical-surface-x-cs-1"]');
-    await expect(removeX).toContainText('Remove X from');
+    // Remove X via the face's assign menu → only Y remains on the surface.
+    await assignX.click();
+    const removeX = page.locator('[data-testid="control-context-menu"] [data-testid="ctx-surface-cs-1"]');
+    await expect(removeX).toContainText('Remove from');
     await removeX.click({ force: true });
     await expect.poll(async () => await readSurfaceBindings(page, 'cs-1')).toEqual([
       { moduleId: 'quad', paramId: 'pos_y', name: 'QUAD Y' },
@@ -174,7 +194,7 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
   });
 
   test('send X + Y to an Electra Control (fixed Row × knob slots) → proxies render, named QUAD X/Y, and drive node.params.pos_x/pos_y', async ({ page }) => {
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'quad', type: 'quadralogical', position: { x: 80, y: 80 }, domain: 'video' },
@@ -182,12 +202,13 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
       { id: 'ec-1', type: 'electraControl', position: { x: 900, y: 80 }, domain: 'meta' },
     ]);
 
-    const card = page.locator('[data-testid="electra-control-card"][data-node-id="ec-1"]');
-    await expect(card).toBeVisible();
+    // The Electra grid is its dock fullViewBody (card testids verbatim).
+    const card = await openPane(page, 'ec-1', 'electra-control-grid');
     await expect(card.locator('[data-testid^="electra-control-slot-"][data-filled="true"]')).toHaveCount(0);
 
-    const pad = page.locator('[data-testid="quadralogical-pad"]');
-    await expect(pad).toBeVisible();
+    const quadPane = await openPane(page, 'quad', 'quadralogical-screen-body');
+    const assignX = quadPane.getByTestId('quadralogical-face-assign-x');
+    const assignY = quadPane.getByTestId('quadralogical-face-assign-y');
 
     // ── Send X → Row1 → knob1 = slotIndex(1,1) = 0 ──
     // The cascade is hover-driven (onmouseenter) but each trigger ALSO has an
@@ -195,29 +216,29 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     // deterministically without depending on a hover that the heavy-GL load can
     // disrupt. After each level's click we wait for the next level's submenu to
     // render before clicking into it (the submenus mount conditionally).
-    await pad.click({ button: 'right' });
-    let menu = page.locator('[data-testid="quadralogical-axis-menu"]');
-    const xTrigger = menu.locator('[data-testid="quadralogical-electra-x-ec-1"]');
+    await assignX.click();
+    let menu = page.locator('[data-testid="control-context-menu"]');
+    const xTrigger = menu.locator('[data-testid="ctx-electra-ec-1"]');
     await expect(xTrigger).toBeVisible();
     await xTrigger.click({ force: true });
-    const xRow1 = menu.locator('[data-testid="quadralogical-electra-x-ec-1-row-1"]');
+    const xRow1 = menu.locator('[data-testid="ctx-electra-ec-1-row-1"]');
     await expect(xRow1).toBeVisible();
     await xRow1.click({ force: true });
-    const xKnob1 = menu.locator('[data-testid="quadralogical-electra-x-ec-1-row-1-knob-1"]');
+    const xKnob1 = menu.locator('[data-testid="ctx-electra-ec-1-row-1-knob-1"]');
     await expect(xKnob1).toBeVisible();
     await xKnob1.click({ force: true });
     await expect(menu).toHaveCount(0);
 
     // ── Send Y → Row2 → knob2 = slotIndex(2,2) = 7 ──
-    await pad.click({ button: 'right' });
-    menu = page.locator('[data-testid="quadralogical-axis-menu"]');
-    const yTrigger = menu.locator('[data-testid="quadralogical-electra-y-ec-1"]');
+    await assignY.click();
+    menu = page.locator('[data-testid="control-context-menu"]');
+    const yTrigger = menu.locator('[data-testid="ctx-electra-ec-1"]');
     await expect(yTrigger).toBeVisible();
     await yTrigger.click({ force: true });
-    const yRow2 = menu.locator('[data-testid="quadralogical-electra-y-ec-1-row-2"]');
+    const yRow2 = menu.locator('[data-testid="ctx-electra-ec-1-row-2"]');
     await expect(yRow2).toBeVisible();
     await yRow2.click({ force: true });
-    const yKnob2 = menu.locator('[data-testid="quadralogical-electra-y-ec-1-row-2-knob-2"]');
+    const yKnob2 = menu.locator('[data-testid="ctx-electra-ec-1-row-2-knob-2"]');
     await expect(yKnob2).toBeVisible();
     await yKnob2.click({ force: true });
     await expect(menu).toHaveCount(0);
@@ -245,10 +266,10 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     await slotY.locator('[role="slider"]').dblclick();
     await expect.poll(async () => await readAxis(page, 'pos_y')).toBe(0);
 
-    // Remove X from the Electra via the pad menu → only Y's slot remains.
-    await pad.click({ button: 'right' });
-    const clearX = page.locator('[data-testid="quadralogical-axis-menu"] [data-testid="quadralogical-electra-x-ec-1-clear"]');
-    await expect(clearX).toContainText('Remove X from');
+    // Remove X from the Electra via the face's assign menu → only Y's slot remains.
+    await assignX.click();
+    const clearX = page.locator('[data-testid="control-context-menu"] [data-testid="ctx-electra-ec-1-clear"]');
+    await expect(clearX).toContainText('Remove from');
     await clearX.click({ force: true });
     await expect.poll(async () => Object.keys((await readSlots(page, 'ec-1')) ?? {})).toEqual(['7']);
     await expect(slotX).toHaveAttribute('data-filled', 'false');

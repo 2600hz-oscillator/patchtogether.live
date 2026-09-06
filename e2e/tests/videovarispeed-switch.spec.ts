@@ -288,17 +288,26 @@ async function readSwitchBackCapture(page: Page): Promise<SwitchBackCapture | nu
  *  every slot's virtual playhead wraps inside [start,end]·dur, so a reset-to-0
  *  lands unambiguously OUTSIDE it (no loop-end↔zero circular-adjacency). */
 async function setWindow(page: Page, startFrac: number, endFrac: number): Promise<void> {
-  const card = page.locator(`.svelte-flow__node[data-id="${VVS_ID}"]`);
-  for (const [testid, val] of [
-    ['videovarispeed-start', startFrac],
-    ['videovarispeed-end', endFrac],
-  ] as const) {
-    await card.locator(`[data-testid="${testid}"]`).evaluate((el, v) => {
-      const input = el as HTMLInputElement;
-      input.value = String(v);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }, val);
-  }
+  // The card's START/END range inputs died with the card (the face renders
+  // the window as ladder knobs). The window here is SETUP for the switch
+  // assertions, not the subject — write the params at the store seam, the
+  // same values the knobs commit (the knob gesture itself is pinned by
+  // samsloop-window's recipe elsewhere).
+  await page.evaluate(
+    ({ id, startFrac, endFrac }) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[id];
+        if (!n) return;
+        n.params.start = startFrac;
+        n.params.end = endFrac;
+      });
+    },
+    { id: VVS_ID, startFrac, endFrac },
+  );
 }
 
 /** Assert the decode→upload path is LIVE after a switch: uploadCount climbs over
@@ -319,33 +328,45 @@ async function assertFramesAdvance(page: Page, label: string): Promise<void> {
 /** Load `file` into VVS slot `slot` via the REAL card pickers. Slot 0 = main
  *  picker; slots 1..6 = the "Load multiple…" panel. */
 async function loadSlot(page: Page, slot: number): Promise<void> {
-  const card = page.locator(`.svelte-flow__node[data-id="${VVS_ID}"]`);
+  await openVvsPane(page, VVS_ID); // idempotent — the pickers live in the dock pane
+  const card = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${VVS_ID}"]`);
   if (slot === 0) {
     await card.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
-    await expect(card.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(card.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-has-local-file', 'true', { timeout: T(10000) },
     );
     return;
   }
-  // dispatchEvent (not .click): the card repaints from its transport rAF so
-  // Playwright's actionability "stable" check never settles (same as perfzip).
-  await card.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
+  // The 7-slot bank is ALWAYS-ON in the dock face — the card's right-click
+  // reveal, its close button and the lingering ctx-overlay dance all died
+  // with the card. Load the slot input directly.
   await expect(card.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: T(5000) });
   await card.locator(`[data-testid="videovarispeed-slot-input-${slot}"]`).setInputFiles(AV_FIXTURE);
   await expect(card.locator(`[data-testid="videovarispeed-slot-${slot}"]`))
     .toHaveAttribute('data-slot-local', 'true', { timeout: T(10000) });
-  // Close the panel so it doesn't overlay the transport controls.
-  await card.locator('[data-testid="videovarispeed-multi-close"]').dispatchEvent('click');
-  // The synthetic contextmenu that opened the panel ALSO pops the global
-  // selection context-menu backdrop (onCardContextMenu preventDefaults but does
-  // NOT stopPropagation, so the event bubbles to the pane). That full-screen
-  // .ctx-overlay lingers after multi-close and intercepts later transport
-  // clicks — dismiss it (it closes on click, onclick={onclose}).
-  const overlay = page.locator('.ctx-overlay');
-  if ((await overlay.count()) > 0) {
-    await overlay.first().click();
-    await expect(overlay).toHaveCount(0, { timeout: T(4000) });
-  }
+}
+
+
+/** Open a videovarispeed node's dock full view — every transport affordance
+ *  (file input, PLAY/LOOP, slots, crop) is its `fullViewBody`; the SAME
+ *  `videovarispeed-*` testids the card carried render there, including the
+ *  state attributes, which live on `videovarispeed-face-body`. Idempotent
+ *  (openFullView de-dupes). */
+async function openVvsPane(page: import('@playwright/test').Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  await page
+    .locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"] [data-testid="videovarispeed-face-body"]`)
+    .waitFor({ state: 'visible', timeout: 60_000 });
 }
 
 test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)', () => {
@@ -364,7 +385,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
       if (t.includes('[videovarispeed] createMediaElementSource failed')) keepAliveWarnings.push(t);
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Patch: VIDEOVARISPEED → VIDEO-OUT, alongside a clip player (the realistic
@@ -404,7 +425,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     // Start playback (loop default) + let slot 0 (active) advance into the window
     // before we switch away.
     await page.click('[data-testid="videovarispeed-play-btn"]', { timeout: T(15_000) });
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-is-playing', 'true', { timeout: T(4000) },
     );
     await page.waitForTimeout(1200);
@@ -527,13 +548,13 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
 
     // (3) Play/pause works AFTER the switches: pause halts, play resumes.
     await page.click('[data-testid="videovarispeed-play-btn"]', { timeout: T(15_000) }); // → pause
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-is-playing', 'false', { timeout: T(4000) },
     );
     await expect.poll(async () => (await activeVideoState(page)).paused, { timeout: T(4000) }).toBe(true);
 
     await page.click('[data-testid="videovarispeed-play-btn"]', { timeout: T(15_000) }); // → play again
-    await expect(page.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+    await expect(page.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
       'data-is-playing', 'true', { timeout: T(4000) },
     );
     await assertFramesAdvance(page, 'play AFTER a switch resumes frame advance');
@@ -543,7 +564,6 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
       keepAliveWarnings,
       `createMediaElementSource must NEVER fail across switches: ${keepAliveWarnings.join(' | ')}`,
     ).toEqual([]);
-
     // Every loaded slot kept a persistent keep-alive (none torn down on switch):
     // exactly 2 distinct elements wired across all the A↔B churn.
     await expect.poll(async () => readEngine(page, 'keepAliveCount'), { timeout: T(4000) }).toBe(2);

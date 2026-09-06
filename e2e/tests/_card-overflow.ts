@@ -101,12 +101,20 @@ export async function measureOverflow(page: Page, nodeType: string): Promise<Ove
       found: false, cardW: 0, cardH: 0, scale: 1, horizontalOverflow: 0,
       worstRight: 0, worstRightSel: '', worstBottom: 0, worstBottomSel: '',
     };
+    // ⚠ BY NODE ID FIRST. xyflow stamps the wrapper class from the EMITTED node
+    // type and every lane node emits `moduleShell`, so a per-type node class
+    // matches nothing — and `found: false` is reported as a clean measurement
+    // by every caller. The `data-shell-type` lookup is the by-type route that
+    // still works; the per-type class is gone.
     const flowNode =
-      (document.querySelector(`.svelte-flow__node-${type}`) as HTMLElement | null) ??
-      (document.querySelector('.svelte-flow__node[data-id="sut"]') as HTMLElement | null);
+      (document.querySelector('.svelte-flow__node[data-id="sut"]') as HTMLElement | null) ??
+      (document
+        .querySelector(`[data-testid="module-shell"][data-shell-type="${type}"]`)
+        ?.closest('.svelte-flow__node') as HTMLElement | null) ??
+      null;
     if (!flowNode) return empty;
     const card =
-      (flowNode.querySelector('.mod-card, .card, .moog-panel') as HTMLElement | null) ?? flowNode;
+      (flowNode.querySelector('[data-testid="module-shell"]') as HTMLElement | null) ?? flowNode;
     const cardRect = card.getBoundingClientRect();
     if (cardRect.width === 0 || cardRect.height === 0) return empty;
 
@@ -147,19 +155,70 @@ export async function measureOverflow(page: Page, nodeType: string): Promise<Ove
       return cls ? `${el.tagName.toLowerCase()}.${cls}` : el.tagName.toLowerCase();
     };
 
+    /** The visible rect of `el` — its own box intersected with every CLIPPING
+     *  ancestor between it and `card` (inclusive).
+     *
+     *  ⚠ WITHOUT THIS THE GATE REPORTS OVERFLOW THAT CANNOT PAINT. A live glyph
+     *  strip is deliberately drawn oversized inside a `overflow: hidden` body so
+     *  it fills its band; its BOX hangs 44–52 px below the tile while not a
+     *  pixel of it renders there. Comparing raw `getBoundingClientRect()` against
+     *  the tile called that a control running off the surface — 25 modules'
+     *  worth of it, all of them clipped, none of them visible. A clipped child
+     *  is not an overflow, so the comparison is against the CLIPPED rect. */
+    const visibleRect = (el: Element): DOMRect => {
+      const r = el.getBoundingClientRect();
+      let top = r.top, right = r.right, bottom = r.bottom, left = r.left;
+      // ⚠ STOP BEFORE `card` — ITS OWN CLIP MUST NOT EXCUSE THE OVERFLOW.
+      // `card` is the box being measured against, and it clips
+      // (`module-shell` is `overflow: hidden`). Folding its rect in here would
+      // clamp EVERY descendant to the card and make the gate structurally
+      // incapable of reporting anything: worstRight/worstBottom would be 0 for
+      // all input, forever green. Only clips STRICTLY INSIDE the card count.
+      let a: Element | null = el.parentElement;
+      while (a && a !== card) {
+        const acs = getComputedStyle(a);
+        if (acs.overflowX !== 'visible' || acs.overflowY !== 'visible') {
+          const ar = a.getBoundingClientRect();
+          if (acs.overflowX !== 'visible') {
+            left = Math.max(left, ar.left);
+            right = Math.min(right, ar.right);
+          }
+          if (acs.overflowY !== 'visible') {
+            top = Math.max(top, ar.top);
+            bottom = Math.min(bottom, ar.bottom);
+          }
+        }
+        a = a.parentElement;
+      }
+      return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+    };
+
     let worstRight = 0, worstBottom = 0, worstRightSel = '', worstBottomSel = '';
     for (const el of Array.from(card.querySelectorAll('*'))) {
       const cs = getComputedStyle(el);
       // Skip decorations + portaled/anchored chrome + hidden nodes:
       //  - absolute/fixed: stripes, patch triggers, the (opacity-0) handle
       //    stack, hover-only value tags, MIDI badges, corner lock glyph — these
-      //    are intentionally edge-anchored and not "controls running off"; the
-      //    horizontalOverflow (scrollWidth) check below is the backstop that
-      //    still catches an absolutely-positioned element spilling right.
+      //    are intentionally edge-anchored and not "controls running off".
+      //
+      //    ⚠ THE `horizontalOverflow` BACKSTOP NO LONGER COVERS THAT SKIP, and
+      //    saying so is the point of this note. It is `scrollWidth -
+      //    clientWidth` on the measured box, and the measured box is the shell
+      //    tile, which is `overflow: hidden` — on a clipping element those two
+      //    are equal by definition, so the figure is now structurally 0 and
+      //    cannot report anything. It is kept because it costs nothing and
+      //    stays meaningful for any non-clipping subject a caller passes.
+      //
+      //    What that skip loses is bounded rather than open-ended: on a
+      //    fixed-size clipping tile an absolutely-positioned spill cannot PAINT
+      //    outside either, so it is no longer a user-visible defect. The claim
+      //    this instrument still makes is the one that survives clipping —
+      //    in-flow content laid out beyond the visible box, i.e. a control that
+      //    is present but unreachable.
       //  - display:none / visibility:hidden / opacity:0: not visible.
       if (cs.position === 'absolute' || cs.position === 'fixed') continue;
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
-      const r = el.getBoundingClientRect();
+      const r = visibleRect(el);
       if (r.width === 0 || r.height === 0) continue;
       // Screen px here; normalised to CSS px in the return below.
       const ro = r.right - cardRect.right;

@@ -139,8 +139,8 @@ export const meowboxDef: AudioModuleDef = {
   // ADSR. FOUR knobs — and one of them indexes THIRTEEN five-entry tables
   // (meowbox.dsp:29-63), so MORPH alone moves all three formant frequencies, all
   // three Qs, all three weights, the voiced/noise balance, the pitch contour's
-  // rise AND fall, and the decay scale. The legacy card presents that fader and
-  // an output trim as peers in one knob row.
+  // rise AND fall, and the decay scale. The pre-promotion panel presented that
+  // fader and an output trim as peers in one knob row.
   //
   // THREE OF THOSE THIRTEEN CHANGE NUMBERS THE OTHER KNOBS ARE LABELLED WITH,
   // which is what the hero strip is for and why not one of its three readouts is
@@ -262,7 +262,7 @@ export const meowboxDef: AudioModuleDef = {
     explanation:
       "A gate-held cat-vocal synth voice: hold a gate and it sings one 'meow' at the patched pitch. Under the hood it's a formant synth — four harmonic sines (F, 2F, 3F, 4F) crossfaded against white noise, pushed through three parallel resonant band-passes, with the right channel a short delayed copy of the left so the result spreads across the L/R outputs. MORPH crossfades FIVE CAT ANCHORS — kitten, adult meow, purr, yowl, hiss — and it is far more than a tone control: one fader moves all three formant frequencies, all three resonances, their three weights, the voiced/noise balance, the pitch contour and the decay scale together, interpolating linearly between whichever two anchors you are between. Decay sets the release, but the anchor multiplies it (0.6x at hiss, 2.0x at yowl), so the same dial is a different number of seconds at every morph position. Pitch tracks a true 1V/oct input so you can play it from a keyboard or sequencer like any other oscillator, with the Pitch knob acting as a transposition on top — though the voice's own contour settles slightly SHARP of the note you ask for, by an amount MORPH decides.",
     inputs: {
-      gate: "The GATE, and it is level-sensitive on BOTH edges: the amplitude envelope attacks, decays to a sustain of 0.4 and HOLDS there for as long as you keep the level up, then releases when it falls. So the meow's length is how long you hold it PLUS the Decay tail — not Decay alone. (A short trigger pulse works too and gives a clipped chirp; it is the same envelope, released early.) Patch a sequencer gate, a keyboard gate or a clock here — or hold the card's MEOW pad, which drives the same input.",
+      gate: "The GATE, and it is level-sensitive on BOTH edges: the amplitude envelope attacks, decays to a sustain of 0.4 and HOLDS there for as long as you keep the level up, then releases when it falls. So the meow's length is how long you hold it PLUS the Decay tail — not Decay alone. (A short trigger pulse works too and gives a clipped chirp; it is the same envelope, released early.) Patch a sequencer gate, a keyboard gate or a clock here — or hold the faceplate\'s MEOW pad, which drives the same input.",
       pitch: "A true 1V/oct pitch input (0 V = middle C). The DSP reads the volts directly and the Pitch knob is added on top as a transposition, so patch a sequencer or keyboard pitch CV here to play melodies; with nothing patched it sits at C4.",
       morph: "CV that adds to the Morph control, walking the voice between the five cat anchors in real time — so an envelope here can start a note as a yowl and land it as a purr. Remember what it moves: the formants, their resonances, the noise balance, the pitch contour AND the decay scale, all at once.",
       decay: "CV that scales the tail Decay time (logarithmic), for shorter chirps or longer wails. It scales the knob, which the current anchor then multiplies again.",

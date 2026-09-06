@@ -15,7 +15,8 @@
 // of these is not covered by the basis:
 //   (1) every domain:'video' module def (mechanically, from the registry),
 //   (2) every audio module def flagged `rendersWebGL: true` (CUBE/WAVESCULPT),
-//   (3) every CARD whose source creates a WebGL context (getContext('webgl…')).
+//   (3) every SOURCE FILE that creates a WebGL context (getContext('webgl…')),
+//       module surfaces included — the scan is by CONTENT, never by filename.
 // It ALSO asserts:
 //   (4) the heavy WebGL spec glob still resolves the expected COUNT (so a spec is
 //       never silently dropped/mis-classified) — but e2e specs are NOT hashed,
@@ -23,10 +24,13 @@
 //       tests stay OUT (V6) and e2e test code stays OUT (2026-06-26: "changing
 //       tests should not change our attest hashes"; the spec is the DRIVER, not
 //       the rendered content),
-//   (6) the rendersWebGL flag ↔ card-getContext cross-check holds in BOTH
-//       directions, so the marker can't drift away from reality.
+//   (6) the rendersWebGL flag ↔ module-surface-getContext cross-check holds in
+//       BOTH directions, so the marker can't drift away from reality. The
+//       forward direction walks the module's real MOUNT SITES (the node viz
+//       host, the module's own shell extension); the reverse attributes a
+//       WebGL-creating surface to its owning module by DIRECTORY.
 //
-// Unlike the modules-card-map / DESCRIPTIONS guards, this one is mechanical end
+// Unlike the DESCRIPTIONS guards, this one is mechanical end
 // to end (no hand-maintained allowlist of covered files) and FAIL-CLOSED: a
 // missed file is a hard red, never a silent skip.
 
@@ -41,7 +45,10 @@ import '$lib/video/modules';
 
 import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
-import { conventionalCardName } from '$lib/ui/modules-card-map';
+// ⚠ THE NODE RENDER-TREE ROOT (legacy-removal S1). A module whose renderer is
+// mounted by the NODE rather than by one of its own surfaces is not reachable
+// from the module's own files at all — see `renderTreeRootsFor` below.
+import { NODE_VIZ_SURFACE_TYPES } from '$lib/ui/media/node-viz-surfaces';
 
 import {
   resolveWebglBasis,
@@ -363,47 +370,210 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
     return { found: visit(cardAbs), scanned };
   }
 
-  it('(6) rendersWebGL ↔ card-getContext cross-check holds in both directions', () => {
-    // Forward: every rendersWebGL-flagged audio module's CARD RENDER TREE must
+  /**
+   * The SAME walk, EXHAUSTIVELY — every relative `.svelte` a root renders,
+   * with no short-circuit on the first WebGL hit.
+   *
+   * ⚠ IT EXISTS BECAUSE THE SHORT-CIRCUIT MADE THE SCAN RECORD UNUSABLE AS AN
+   * ANCHOR, which is a thing worth stating rather than quietly working around:
+   * `cardTreeCreatesWebglContext` stops the moment it finds a context, so its
+   * `scanned` list is "what it happened to read before the first hit", not "the
+   * render tree". Asking that list whether it reached a particular module's
+   * directory answers by import ORDER — the node host reaches wavesculpt first
+   * and returns, so the identical question about cube reads as a stale roster
+   * entry. This walk answers the question that was actually being asked.
+   */
+  function renderTreeFiles(rootAbs: string): string[] {
+    const seen = new Set<string>();
+    const files: string[] = [];
+    const visit = (abs: string): void => {
+      if (seen.has(abs) || !existsSync(abs)) return;
+      seen.add(abs);
+      files.push(abs.slice(REPO_ROOT.length + 1));
+      const src = readFileSync(abs, 'utf8');
+      for (const m of stripComments(src).matchAll(/from\s+['"](\.[^'"]*\.svelte)['"]/g)) {
+        visit(resolve(dirname(abs), m[1]!));
+      }
+    };
+    visit(rootAbs);
+    return files;
+  }
+
+  /**
+   * The ROOTS of a module's render tree — the files that MOUNT its renderer.
+   *
+   * ⚠ THE CARD WAS NEVER THE RIGHT SUBJECT, IT WAS MERELY THE ONLY ONE, AND
+   * THIS LEG FOUND THAT ITSELF TWICE. `rendersWebGL` claims "this module IS a
+   * GPU render path", and until legacy-removal S1 the only way to reach a
+   * module's renderer was through its card. wavesculpt's renderer then moved to
+   * the NODE (`$lib/ui/media/NodeVizSurfaceHost`, one mount per node) and the
+   * card merely ADOPTED its canvas — so a card-rooted walk called a perfectly
+   * live flag stale, one level up from the "why the tree and not the file" note
+   * above. cube followed. Now the card is gone entirely and the roots are the
+   * two real mount sites:
+   *
+   *   1. the NODE VIZ SURFACE HOST, for a module the roster actually names;
+   *   2. the module's own SHELL EXTENSION entry
+   *      (`modules/<face.extension>/shell-extension.ts`), the one file a module
+   *      is allowed to statically import its own components from.
+   *
+   * STILL FAIL-CLOSED, in the direction that matters: the host is a root ONLY
+   * for a rostered module, so a module that stopped rendering WebGL anywhere
+   * still reddens, and a module that quietly left the roster loses the extra
+   * root rather than keeping a free pass. Both root kinds import their
+   * components RELATIVELY for this walk's sake — see the note in
+   * `NodeVizSurfaceHost.svelte`, and `shell-extensions.ts`'s "the module OWNS
+   * that file; it may statically import its own components there".
+   */
+  const NODE_VIZ_SURFACE_HOST = 'packages/web/src/lib/ui/media/NodeVizSurfaceHost.svelte';
+  const MODULE_SURFACE_ROOT = 'packages/web/src/lib/ui/modules';
+  function renderTreeRootsFor(type: string, def: unknown): string[] {
+    const roots: string[] = [];
+    if (NODE_VIZ_SURFACE_TYPES.has(type)) roots.push(NODE_VIZ_SURFACE_HOST);
+    const ext = (def as { face?: { extension?: string } }).face?.extension;
+    if (ext) roots.push(`${MODULE_SURFACE_ROOT}/${ext}/shell-extension.ts`);
+    return roots;
+  }
+
+  it('(6) rendersWebGL ↔ render-tree getContext cross-check holds in both directions', () => {
+    // Forward: every rendersWebGL-flagged audio module's RENDER TREE must
     // actually create a WebGL context (the flag is real, not stale).
     const flagged = listModuleDefs().filter((d) => (d as { rendersWebGL?: boolean }).rendersWebGL);
     for (const def of flagged) {
-      // Convention: PascalCase(type) + 'Card.svelte' (override via def.card).
-      const cardName = (def as { card?: string }).card ?? conventionalCardName(def.type);
-      const cardPath = `packages/web/src/lib/ui/modules/${cardName}.svelte`;
-      const abs = join(REPO_ROOT, cardPath);
-      expect(existsSync(abs), `card for rendersWebGL module ${def.type} not found at ${cardPath}`).toBe(true);
-      const { found, scanned } = cardTreeCreatesWebglContext(abs);
+      const roots = renderTreeRootsFor(def.type, def);
+      expect(
+        roots,
+        `module ${def.type} is flagged rendersWebGL but MOUNTS its renderer from nowhere — ` +
+          'it is on no node-viz-surface roster and declares no face.extension, so there is no ' +
+          'render tree to walk and the flag is unprovable',
+      ).not.toEqual([]);
+      const scannedAll: string[] = [];
+      let found = false;
+      for (const root of roots) {
+        const abs = join(REPO_ROOT, root);
+        expect(existsSync(abs), `render-tree root ${root} for ${def.type} not found`).toBe(true);
+        const r = cardTreeCreatesWebglContext(abs);
+        scannedAll.push(...r.scanned);
+        if (r.found) {
+          found = true;
+          break;
+        }
+      }
       expect(
         found,
-        `module ${def.type} is flagged rendersWebGL but NEITHER ${cardPath} NOR any .svelte ` +
-          `it renders creates a WebGL context — stale flag. Scanned:\n  ${scanned.join('\n  ')}`,
+        `module ${def.type} is flagged rendersWebGL but NONE of its render-tree roots ` +
+          `(${roots.join(', ')}) NOR any .svelte they render creates a WebGL context — stale ` +
+          `flag. Scanned:\n  ${scannedAll.join('\n  ')}`,
       ).toBe(true);
     }
 
-    // Reverse: every AUDIO-domain card that DOES create a WebGL context must
-    // have its module def flagged rendersWebGL (so the marker can't be missed
-    // on a new audio-domain WebGL module). Video-domain cards are covered by
-    // the lib/video sweep, not the flag, so they're excluded here.
+    // ⚠ THE HOST ROOT IS ANCHORED, so this leg cannot go quietly blind.
+    // If the roster empties, the root stops being added and nothing above
+    // would say so — the forward legs would simply pass on the other roots.
+    expect(
+      NODE_VIZ_SURFACE_TYPES.size,
+      'no module has a node-mounted viz surface — if that is intended, delete the host ' +
+        'render-tree root with the registry; if it is not, the root has silently stopped ' +
+        'covering anything',
+    ).toBeGreaterThan(0);
+    for (const type of NODE_VIZ_SURFACE_TYPES) {
+      const def = listModuleDefs().find((d) => d.type === type);
+      if (!def) continue; // a video-domain surface is covered by the lib/video sweep
+      expect(
+        (def as { rendersWebGL?: boolean }).rendersWebGL,
+        `${type}'s renderer is mounted by the node host, so its flag is only provable through ` +
+          'the host root — an unflagged member would leave that root untested',
+      ).toBe(true);
+
+      // ⚠ POSITIVE CONTROL ON THE HOST ROOT: walking it must actually DESCEND
+      // into this module's own surface directory. Without this the leg above
+      // would pass just as happily if the host itself created a context, or if
+      // the walk stopped at the first file — and the root would be proving
+      // something about the host rather than about the module. Derived from the
+      // walk's own scan record, so there is no path re-typed here to go stale.
+      const viaHost = renderTreeFiles(join(REPO_ROOT, NODE_VIZ_SURFACE_HOST));
+      const owned = viaHost.filter((f) => f.startsWith(`${MODULE_SURFACE_ROOT}/${type}/`));
+      expect(
+        owned,
+        `the node-host render tree contains NO file under ${MODULE_SURFACE_ROOT}/${type}/, so the ` +
+          `host root proves nothing about ${type}. Either the host stopped importing this ` +
+          'surface RELATIVELY (the walk follows relative .svelte imports only) or the roster ' +
+          `entry is stale. Walked:\n  ${viaHost.join('\n  ')}`,
+      ).not.toEqual([]);
+      // …and one of those files is really where the context comes from, so the
+      // host is reaching the module's RENDERER rather than some sibling panel.
+      expect(
+        owned.some((f) => sourceCreatesWebglContext(readFileSync(join(REPO_ROOT, f), 'utf8'))),
+        `the node host reaches ${type}'s directory but none of the files it renders there ` +
+          `creates a WebGL context: ${owned.join(', ')}`,
+      ).toBe(true);
+
+      // ⚠ AND THE OTHER ROOTS MUST NOT REACH IT: a root that can be deleted
+      // with every leg still green is a root nobody is testing. If the module's
+      // own shell extension reaches a context too, the renderer has been mounted
+      // a SECOND time — which for a node-owned surface is the #1587 defect, not
+      // a redundancy — and the host root has stopped being load-bearing.
+      for (const other of renderTreeRootsFor(type, def).filter((r) => r !== NODE_VIZ_SURFACE_HOST)) {
+        const abs = join(REPO_ROOT, other);
+        if (!existsSync(abs)) continue;
+        const r = cardTreeCreatesWebglContext(abs);
+        expect(
+          r.found,
+          `${type}'s render tree reaches a WebGL context from ${other} as well as from the node ` +
+            'host, so the host root proves nothing. A node-owned surface must have exactly ONE ' +
+            `mount site. Scanned:\n  ${r.scanned.join('\n  ')}`,
+        ).toBe(false);
+      }
+    }
+
+    // Reverse: every AUDIO-domain MODULE SURFACE that creates a WebGL context
+    // must have its module def flagged rendersWebGL (so the marker can't be
+    // missed on a new audio-domain WebGL module). Video-domain modules are
+    // covered by the lib/video sweep, not the flag, so they're excluded here.
+    //
+    // ⚠ ATTRIBUTION IS BY DIRECTORY, which is the shell-extension glob's own
+    // convention (`modules/<id>/…`) and the same string the def declares as
+    // `face.extension`. A renderer sitting FLAT in `modules/` belongs to no
+    // module — nothing can attribute it, so it is reported rather than skipped.
     const audioTypes = new Set(listModuleDefs().map((d) => d.type));
     const flaggedTypes = new Set(flagged.map((d) => d.type));
-    const webglCards = findAllWebglSourceFiles().filter((f) =>
-      f.startsWith('packages/web/src/lib/ui/modules/') && f.endsWith('Card.svelte'),
+    const webglSurfaces = findAllWebglSourceFiles().filter((f) =>
+      f.startsWith(`${MODULE_SURFACE_ROOT}/`),
     );
-    for (const cardPath of webglCards) {
-      const base = cardPath.split('/').pop()!.replace(/Card\.svelte$/, '');
-      const typeGuess = base.charAt(0).toLowerCase() + base.slice(1);
-      // Only enforce the flag for AUDIO-domain cards (video cards aren't in the
-      // audio registry). If the card's lowercased basename matches a registered
-      // AUDIO module type, that module MUST be flagged.
-      if (audioTypes.has(typeGuess)) {
+    // Non-vacuity: cube and wavesculpt live here, so an empty result means the
+    // content scan or the prefix has broken rather than that the tree is clean.
+    expect(
+      webglSurfaces,
+      'NO module surface creates a WebGL context — the content scan or the path prefix broke',
+    ).not.toEqual([]);
+    const unattributed: string[] = [];
+    for (const surfacePath of webglSurfaces) {
+      const rest = surfacePath.slice(MODULE_SURFACE_ROOT.length + 1);
+      const slash = rest.indexOf('/');
+      if (slash === -1) {
+        unattributed.push(surfacePath);
+        continue;
+      }
+      const owner = rest.slice(0, slash);
+      // Only enforce the flag for AUDIO-domain modules (video modules aren't in
+      // the audio registry). If the owning directory names a registered AUDIO
+      // module type, that module MUST be flagged.
+      if (audioTypes.has(owner)) {
         expect(
-          flaggedTypes.has(typeGuess),
-          `audio-domain card ${cardPath} creates a WebGL context but module ` +
-            `'${typeGuess}' is NOT flagged rendersWebGL — add rendersWebGL:true to its def`,
+          flaggedTypes.has(owner),
+          `audio-domain module surface ${surfacePath} creates a WebGL context but module ` +
+            `'${owner}' is NOT flagged rendersWebGL — add rendersWebGL:true to its def`,
         ).toBe(true);
       }
     }
+    expect(
+      unattributed,
+      'These files create a WebGL context but sit FLAT in the module-surface directory, so no ' +
+        'module owns them and the flag cross-check cannot reach them:\n  ' +
+        `${unattributed.join('\n  ')}\n` +
+        `Move each into its module's own directory (${MODULE_SURFACE_ROOT}/<type>/), which is ` +
+        'the same convention the shell-extension glob and `face.extension` already use.',
+    ).toEqual([]);
   });
 });
 

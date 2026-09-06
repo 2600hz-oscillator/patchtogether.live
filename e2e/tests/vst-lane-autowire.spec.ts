@@ -206,7 +206,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('lane drop wires vstInstrument like an internal instrument, inserts vstFx, and the clip drives audible RMS through both', async ({ page }) => {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await waitForPinnedTrio(page);
 
   // 1. Drop the instrument card into channel 1 — the tidyVco wiring shape.
@@ -244,12 +244,27 @@ test('lane drop wires vstInstrument like an internal instrument, inserts vstFx, 
   // 3. Mount the mock sine instrument on the dropped card (fx card stays
   //    unmounted = bit-transparent echo through the helper), run the clip,
   //    and demand audible RMS at the mixer meter AND the audio out.
-  await expect(page.getByTestId(`vst-status-${inst}`)).toContainText('mock-vst-bridge', { timeout: 15_000 });
-  const picker = page.getByTestId(`vst-picker-${inst}`);
+  // The picker/lamps are the dock face body (fullViewBody; the card's text
+  // rows live in the lamps' aria-label sentences — vst-status-model.ts).
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    inst,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${inst}"]`);
+  await expect(pane.getByTestId(`vst-face-body-${inst}`)).toBeVisible({ timeout: 30_000 });
+  await expect(pane.getByTestId(`vst-led-bridge-${inst}`)).toHaveAttribute('aria-label', /mock-vst-bridge/, { timeout: 15_000 });
+  const picker = pane.getByTestId(`vst-face-picker-${inst}`);
   await picker.scrollIntoViewIfNeeded().catch(() => {});
   await picker.selectOption('mock:sine');
-  await page.getByTestId(`vst-mount-${inst}`).click();
-  await expect(page.getByTestId(`vst-mounted-${inst}`)).toContainText('mock sine synth', { timeout: 10_000 });
+  await pane.getByTestId(`vst-face-mount-${inst}`).click();
+  await expect(pane.getByTestId(`vst-led-plugin-${inst}`)).toHaveAttribute('aria-label', /mock sine synth/, { timeout: 10_000 });
 
   await seedAndRun(page, [0]);
   const audio = await pollAudio(page, 12_000);

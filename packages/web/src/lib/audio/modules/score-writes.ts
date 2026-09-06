@@ -4,9 +4,9 @@
 //
 // `score-data.ts` owns the arithmetic and is pure (no store, no Y.Doc);
 // `score-layout.ts` owns the pixels. This file owns the WRITES, and it is the
-// only place `node.data` is edited for this module. Three surfaces call it —
-// the legacy card, the faceplate's staff panel, and the faceplate's band cells
-// — so "the card and the face write the same keys through the same helper" is a
+// only place `node.data` is edited for this module. Two callers — the
+// faceplate's staff panel and its band cells — so "every writer goes through the
+// same helper" is a
 // property of the code rather than something to re-verify per PR.
 //
 // ==========================================================================
@@ -174,8 +174,8 @@ function readRawSelectedNoteId(node: ModuleNode | undefined): string | null {
 // ⚠ THE MARK CELLS ARE ARMED STATE THAT *ALSO* EDITS THE SELECTION, AND THAT IS
 // NOT A CONCESSION — IT IS HOW A NOTATION EDITOR WORKS. Select a note and the
 // accidental button rewrites it; select nothing and the same button ARMS what
-// you write next. The legacy card had only the second half, as a MODE you had to
-// remember you were in; the face has both, in one control, with no mode.
+// you write next. The module used to have only the second half, as a MODE you
+// had to remember you were in; the face has both, in one control, with no mode.
 //
 // ⚠ AND IT IS WHAT MAKES THEM LIVE ON A FRESH SCORE. A cell that acts only on a
 // selection is INERT the moment there is nothing selected — which on a
@@ -533,8 +533,8 @@ export function setNoteValue(nodeId: string, duration: NoteDuration): void {
  * was already selected — delete it.
  *
  * ⚠ ONE COMPARISON IS THE WHOLE OF DEFECT 2's FIX, and it is deliberately here
- * rather than in the panel: the legacy card calls it too, so the affordance the
- * def's own `docs.controls` has always promised ("click a note to select/remove
+ * rather than in the panel: every caller shares it, so the affordance the def's
+ * own `docs.controls` has always promised ("click a note to select/remove
  * it") becomes true on BOTH surfaces in the same commit.
  */
 export function selectOrDeleteNote(nodeId: string, noteId: string): 'selected' | 'deleted' {

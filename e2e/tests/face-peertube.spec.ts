@@ -13,10 +13,10 @@
 // WebGL-heavy: it reads DOM facts, graph state and a media clock, and samples
 // no pixels.
 //
-// ⚠ EVERY OTHER PEERTUBE E2E BOOTS `?shell=legacy` (`peertube.spec.ts` ×3,
-// `node-source-hls.spec.ts`), so all of it stays green after promotion while
-// covering a surface no player meets. This file is the default-shell leg those
-// owe.
+// ⚠ NO OTHER PEERTUBE E2E DRIVES THIS SURFACE (`peertube.spec.ts` ×3,
+// `node-source-hls.spec.ts` reach the module through graph state instead), so
+// all of it can stay green while covering no surface at all. This file is the
+// leg those owe.
 //
 // `peertube-face-model.test.ts` pins the ranking, the cell kind, the
 // noUserControl declaration, the shader's `uGain` read, the shared-picker
@@ -140,7 +140,7 @@ async function installMocks(page: Page, media: Buffer = SHORT_WEBM): Promise<voi
 }
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The legacy specs' `?shell=legacy` is
+  // Plain /rack — the shell every player gets. The other specs' boot is
   // precisely the surface promotion does not change.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -260,12 +260,14 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
       mountTimeout: BOOT_MS,
     });
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON: on the default shell no
-    // peertube card is mounted anywhere — not in the lane, not in a headless
-    // host (peertube left DOM_SOURCE_LANE_TYPES in LEG-02 P3). If this ever
-    // finds a card, the rest proves nothing about the face.
-    await expect(page.locator('[data-testid="peertube-card"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="headless-source-host"][data-node-id="fpt1"]')).toHaveCount(0);
+    // ⚠ TWO PRECONDITION GATES RAN HERE AND ARE DELETED. They required
+    // `peertube-card` and an off-screen `headless-source-host` to be absent.
+    // Neither testid is emitted by any file in the tree, so both matchers were
+    // satisfied by a page that rendered nothing at all — the precondition this
+    // file "rests on" could not fail, which makes it decoration rather than a
+    // precondition. What it stood for is now true by construction: there is one
+    // surface and one source owner. The positive assertions below are what
+    // actually hold the file up.
 
     const dock = await openDock(page, 'fpt1');
     const body = dock.locator('[data-testid="peertube-face-body"]');
@@ -313,7 +315,7 @@ test.describe('PEERTUBE face — the promotion is what makes it searchable', () 
     expect(
       media!.where,
       'the face body must BLIT the engine output — the node-owned <video> has ONE parent ' +
-        '(the legacy card adopts it under ?shell=legacy) and must stay PARKED under the shell',
+        'and must stay PARKED under the shell rather than adopted by a body',
     ).toBe('parking');
     expect(
       media!.muted,

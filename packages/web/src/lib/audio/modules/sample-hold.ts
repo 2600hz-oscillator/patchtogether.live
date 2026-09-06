@@ -91,9 +91,9 @@ export const sampleHoldDef: AudioModuleDef = {
       // THE SCALE NAMES, PROMOTED OUT OF THE CARD (PF-1).
       //
       // These names already existed and the shell could not reach them: the
-      // card renders `sampleHoldScaleName(scale)` in its own `.scale-name`
-      // element above the knob, so a player using the LEGACY card has always
-      // seen "Major" / "Dorian", while a faceplate could only ever have shown
+      // module used to render `sampleHoldScaleName(scale)` in its own
+      // `.scale-name` element above the knob, so a player has always seen
+      // "Major" / "Dorian", while a faceplate could only ever have shown
       // an anonymous ten-position dial. That is the gatemaiden shape — the
       // module's only state names existing nowhere a shared surface can read.
       //
@@ -113,7 +113,7 @@ export const sampleHoldDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Two classic CV tools in one: a sample & hold AND a scale quantizer. Each rising edge at the GATE input grabs the current value at the CV input and holds it steady until the next edge — the staircase-random / random-arpeggio trick when you feed it noise or an LFO and clock it. The QUANT output additionally snaps that held value to the nearest note of the selected musical scale (1V/oct, root = C at 0V, 12-ET semitones per octave). When NOTHING is patched to GATE the module stops holding and instead passes CV through continuously — so QUANT becomes a live, free-running scale quantizer for any incoming pitch CV. The card shows the active scale name above the knob and a S&H / QUANTIZER hint reflecting whether the gate is patched. The sample/hold + quantize math runs in a DSP worklet.",
+      "Two classic CV tools in one: a sample & hold AND a scale quantizer. Each rising edge at the GATE input grabs the current value at the CV input and holds it steady until the next edge — the staircase-random / random-arpeggio trick when you feed it noise or an LFO and clock it. The QUANT output additionally snaps that held value to the nearest note of the selected musical scale (1V/oct, root = C at 0V, 12-ET semitones per octave). When NOTHING is patched to GATE the module stops holding and instead passes CV through continuously — so QUANT becomes a live, free-running scale quantizer for any incoming pitch CV. The faceplate shows the active scale name above the knob and a S&H / QUANTIZER hint reflecting whether the gate is patched. The sample/hold + quantize math runs in a DSP worklet.",
     inputs: {
       cv_in: "The value to sample (when gated) or quantize (when ungated). Typically a noise source, LFO or random CV for the classic stepped-random effect, or a pitch CV when used as a pure quantizer.",
       gate_in:

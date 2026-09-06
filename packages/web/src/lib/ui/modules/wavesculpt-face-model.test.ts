@@ -35,7 +35,6 @@ const FAMILY_IDS = (wavesculptDef.controlFamilies ?? []).map((f) => f.id);
 
 const cell = (key: string) => shellCellFor('wavesculpt', { kind: 'family', key } as never);
 
-const CARD = readFileSync(new URL('./WavesculptCard.svelte', import.meta.url), 'utf8');
 const BODY = readFileSync(
   new URL('./wavesculpt/WavesculptOutputBody.svelte', import.meta.url),
   'utf8',
@@ -141,14 +140,31 @@ describe('wavesculpt — the declared cells', () => {
     expect(BODY).toContain('data-control-params="pos_x,pos_y"');
   });
 
-  it('⚠ the SCREEN switch must never UNMOUNT the surface', () => {
-    // Unmounting runs the surface's onDestroy, which disposes the GL context
-    // AND uninstalls the video_out frame drawer — so a collapsed preview would
-    // black out an OUTPUT other modules consume. The body hides with CSS.
-    expect(BODY).toContain('<WavesculptVizSurface');
+  it('⚠ the SCREEN switch must never DROP the surface claim', () => {
+    // ⚠ THIS LEG USED TO READ `<WavesculptVizSurface`, AND THE MOUNT IT PINNED
+    // IS GONE (legacy-removal S1). The renderer belongs to the NODE now —
+    // `$lib/ui/media/NodeVizSurfaceHost` mounts exactly one per node, parked
+    // off-screen — and this body CLAIMS its canvas into the pad. A second mount
+    // is not merely redundant: the surface stamps `data-testid="wavesculpt-
+    // canvas"` on its own canvas, so two mounts put two of them in the document
+    // and `wavesculpt.spec.ts` asserts exactly one.
+    //
+    // The RULE is unchanged and is what this leg still pins: the picture must
+    // not sit inside an `{#if}` on the SCREEN state. What SCREEN OFF costs has
+    // shrunk (a dropped claim parks the canvas; it no longer disposes the GL
+    // context or uninstalls the `video_out` drawer) but a released claim still
+    // leaves a BLANK PAD with a live crosshair and dot drawn on it, which reads
+    // as a broken surface. Hide the wrapper; never drop the host.
+    expect(BODY).toContain('nodeVizSurfaces.claim(');
+    expect(BODY, 'the body must not mount a second renderer').not.toContain(
+      '<WavesculptVizSurface',
+    );
+    // The claim host div, and the SCREEN state reaching it as a CLASS.
+    expect(/class="viz"[^>]*class:hidden=\{previewCollapsed\}[^>]*bind:this=\{vizHost\}/.test(BODY))
+      .toBe(true);
     expect(
-      /\{#if !previewCollapsed\}[\s\S]{0,200}<WavesculptVizSurface/.test(BODY),
-      'the surface must not sit inside an {#if} on the SCREEN state',
+      /\{#if !previewCollapsed\}[\s\S]{0,200}bind:this=\{vizHost\}/.test(BODY),
+      'the claim host must not sit inside an {#if} on the SCREEN state',
     ).toBe(false);
   });
 });
@@ -294,13 +310,15 @@ describe('wavesculpt — the wavetable strip reaches the faceplate', () => {
     expect(seen[0], 'and the one answer is the preset they all hold').toBe('zap');
   });
 
-  it('⚠ STOP 2 — the strip does not live only on the card', () => {
-    // Promotion deletes the card from both surfaces. The writes therefore have
-    // to live somewhere both can reach, and the CARD has to be the thing that
-    // moved rather than a second copy left behind.
-    expect(CARD).toContain('wavesculpt/wavetable-actions');
-    const loadCell = cell('wavesculpt-osc1-load-{n}');
-    expect(loadCell?.kind).toBe('file');
+  it('⚠ STOP 2 — the strip lives in a shared seam, reachable with no card', () => {
+    // ⚠ THE PREMISE HALF READ THE CARD for its `wavesculpt/wavetable-actions`
+    // import — the proof that the writes had MOVED rather than been copied.
+    // With the card gone the move is complete, and what has to stay true is
+    // that the seam is reachable from the faceplate: every load is a ranked
+    // file cell rather than a gesture that lived on a surface nobody mounts.
+    for (const osc of [1, 2, 3, 4] as const) {
+      expect(cell(`wavesculpt-osc${osc}-load-{n}`)?.kind, `osc${osc} load`).toBe('file');
+    }
   });
 });
 

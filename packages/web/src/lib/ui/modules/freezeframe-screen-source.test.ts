@@ -27,26 +27,56 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CARD = resolve(HERE, 'FreezeframeCard.svelte');
-const SRC = readFileSync(CARD, 'utf8');
+// ⚠ THE SUBJECT MOVED FROM THE CARD TO THE BODY, and the gate is unchanged
+// otherwise: the collapse guard, the re-arm and the persisted flag are the same
+// three lines in the same shape on the surface that survives. This file always
+// read "the shipped source"; the shipped source is now the fullViewBody.
+const SURFACE = resolve(HERE, 'freezeframe/FreezeframeOutputBody.svelte');
+const SRC = readFileSync(SURFACE, 'utf8');
 
-/** The collapsed guard inside `draw()`, whatever whitespace it is written in. */
-const COLLAPSED_GUARD =
-  /if\s*\(\s*previewCollapsed\s*\)\s*\{([^}]*)\}/;
+/** The head of the collapsed guard inside `draw()`, whatever whitespace it is
+ *  written in — used to LOCATE the branch, never to slice it. */
+const COLLAPSED_GUARD = /if\s*\(\s*previewCollapsed\s*\)\s*\{/;
+
+/**
+ * The collapsed branch's BODY, brace-matched from the guard's opening `{`.
+ *
+ * ⚠ A `\{([^}]*)\}` CAPTURE IS NOT ENOUGH AND THIS FILE PROVED IT. The branch
+ * now wraps its `markWatched` in a `try { … } catch { … }`, so a
+ * first-close-brace capture returns `"try { videoEngine.markWatched(nodeId);"`
+ * — everything AFTER the nested block, including the re-arm this gate exists to
+ * find, falls outside the slice. That reads as a missing re-arm: a FALSE RED,
+ * which is the safe direction, but it would have been repaired by weakening the
+ * regex rather than by matching braces.
+ */
+function collapsedBranchBody(src: string): string | null {
+  const m = COLLAPSED_GUARD.exec(src);
+  if (!m) return null;
+  const open = src.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(open + 1, i);
+    }
+  }
+  return null;
+}
 
 describe('freezeframe SCREEN OFF — the draw loop keeps running', () => {
-  it('the card HAS a collapsed guard inside its draw loop', () => {
+  it('the surface HAS a collapsed guard inside its draw loop', () => {
     // Anchored: if the toggle is ever reimplemented without this branch, the
     // test that follows would be checking a guard that no longer exists, so it
     // must fail LOUDLY rather than pass on an empty match.
     expect(
       COLLAPSED_GUARD.test(SRC),
-      'FreezeframeCard.draw() must branch on previewCollapsed — the SCREEN OFF fast path',
+      'the draw loop must branch on previewCollapsed — the SCREEN OFF fast path',
     ).toBe(true);
   });
 
   it('that guard RE-ARMS the rAF before returning', () => {
-    const body = SRC.match(COLLAPSED_GUARD)![1]!;
+    const body = collapsedBranchBody(SRC)!;
     expect(
       /requestAnimationFrame\s*\(\s*draw\s*\)/.test(body),
       'SCREEN OFF must skip the BLIT, not the LOOP: the collapsed branch has to ' +
@@ -60,7 +90,7 @@ describe('freezeframe SCREEN OFF — the draw loop keeps running', () => {
     // Proves the assertion above can FAIL, on the exact shape it exists to
     // refuse. Without this leg a regex that matched nothing would look green.
     const wrong = 'function draw() {\n  if (previewCollapsed) { return; }\n}';
-    const body = wrong.match(COLLAPSED_GUARD)![1]!;
+    const body = collapsedBranchBody(wrong)!;
     expect(/requestAnimationFrame\s*\(\s*draw\s*\)/.test(body)).toBe(false);
   });
 
@@ -69,7 +99,7 @@ describe('freezeframe SCREEN OFF — the draw loop keeps running', () => {
     // on expand. That reintroduces the stale-frame window at the seam and adds
     // a race; the toggle must not appear in a cancel path at all.
     const cancels = [...SRC.matchAll(/cancelAnimationFrame\s*\([^)]*\)/g)].map((m) => m[0]);
-    expect(cancels.length, 'the card cancels its rAF exactly once, in onDestroy').toBe(1);
+    expect(cancels.length, 'the surface cancels its rAF exactly once, in onDestroy').toBe(1);
     const onDestroyIdx = SRC.indexOf('onDestroy');
     const cancelIdx = SRC.indexOf('cancelAnimationFrame');
     expect(cancelIdx, 'the only cancelAnimationFrame is inside onDestroy').toBeGreaterThan(onDestroyIdx);
@@ -81,7 +111,7 @@ describe('freezeframe SCREEN OFF — the draw loop keeps running', () => {
     // remount. The e2e asserts the VALUE persists; this asserts the MECHANISM.
     expect(/data\?\.previewCollapsed/.test(SRC), 'reads the flag off node.data').toBe(true);
     expect(
-      /mutateNode\(\s*id\s*,/.test(SRC),
+      /mutateNode\(\s*\w+\s*,/.test(SRC),
       'writes it through mutateNode, so it syncs and persists',
     ).toBe(true);
   });

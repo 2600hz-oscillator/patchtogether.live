@@ -145,13 +145,14 @@ function runtimeSkips() {
 // classifications instead of 370 — because the thing that decides the
 // disposition is WHAT THE SWEEP GATES, which is a property of the list:
 //
-//   'legacy-card' — the sweep screenshots a `?shell=legacy` CARD
-//     (vrt.spec.ts spawns `/rack?shell=legacy&seed=none` and captures the card
-//     element). LEG-08 #1519 deletes the card fleet; LEG-06 #1517 replaces the
-//     visual coverage with full-tier FACE baselines and states the policy in
-//     as many words: "Do NOT backfill 'baseline pending' exemptions … the masks
-//     die with the cards." So an entry here is not debt anyone should pay — it
-//     is work that will be DELETED, and paying it is double-paying.
+//   'legacy-card' — ⚠ THIS SUBJECT NOW HAS NO POPULATION, WHICH IS THE POINT.
+//     It classified sweeps that screenshot a module's own pre-promotion surface, and its whole
+//     disposition was "do not pay this — the entries will be DELETED with the
+//     cards". They were: the per-module card sweep and the four exemption tables
+//     it applied are gone. The classification is kept rather than removed
+//     because it is what the ledger's own report says about a bucket that
+//     emptied, and because re-introducing a card-shaped sweep must land in a
+//     named bucket rather than in a new one nobody argued for.
 //
 //   'engine' — the sweep drives the audio/video GRAPH and survives the legacy
 //     deletion untouched. These are the entries where "payable debt" is a real
@@ -164,7 +165,6 @@ function runtimeSkips() {
 // instead is derived: this per-list subject, plus the DOM-source capability
 // derivation below, both read off artifacts that move on their own.
 const RECORD_EXEMPTIONS = [
-  { id: 'vrt.EXEMPT_FROM_VRT', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'EXEMPT_FROM_VRT', subject: 'legacy-card', desc: 'modules skipped from the per-card VRT sweep' },
   { id: 'behavioral.BEHAVIORAL_MODULE_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_MODULE_EXEMPT', subject: 'engine', desc: 'whole-module skips of the behavioral CONTROL→PATCHED delta sweep' },
   { id: 'behavioral.BEHAVIORAL_SWEEP_EXEMPT', file: 'e2e/tests/per-module-per-port-behavioral.spec.ts', konst: 'BEHAVIORAL_SWEEP_EXEMPT', subject: 'engine', desc: 'per-PORT skips of the behavioral delta sweep (module still enrolled)' },
   { id: 'per-port.SKIP_SPAWN', file: 'e2e/tests/_per-module-per-port-shared.ts', konst: 'SKIP_SPAWN', subject: 'engine', desc: 'modules skipped from the per-module-per-port spawn (handle/emit/drive) sweep' },
@@ -177,11 +177,13 @@ const RECORD_EXEMPTIONS = [
  *  instead of being maintained forever. Rendered beside the population. */
 const SUBJECT_ANCHORS = {
   'legacy-card': {
-    label: 'LEGACY-RETIRING — the subject is a `?shell=legacy` card',
+    label: 'RETIRED — its subject was a surface the lane no longer renders',
     anchor:
-      'deleted by LEG-08 (#1519, the 195-card fleet); replacement visual coverage is LEG-06 ' +
-      '(#1517), whose delete-on-migrate policy says in as many words: do NOT backfill ' +
-      '"baseline pending" exemptions. Paying one of these is work that will be deleted.',
+      'EMPTY, and it emptied the way it was supposed to. Every member was an exemption from ' +
+      'the per-module card VRT sweep, whose stated disposition was "do not backfill these — ' +
+      'they die with the cards". The sweep and its four exemption tables are deleted; the ' +
+      'replacement visual coverage is the full-tier FACE baselines. A population appearing ' +
+      'here again means a card-shaped sweep came back.',
   },
   engine: {
     label: 'LIVE — the subject is the audio/video graph',
@@ -222,7 +224,6 @@ const SET_EXEMPTIONS = [];
 // exemption). Reported for drift visibility, clearly separated from opt-outs.
 const RATCHETS = [
   { id: 'docs.STRICT_DOCS', file: 'packages/web/src/lib/docs/strict-docs.ts', konst: 'STRICT_DOCS', desc: 'modules held to the FULL living-docs completeness bar (deny-missing-docs)' },
-  { id: 'vrt.STRICT_VRT_MODULES', file: 'e2e/vrt/vrt-exemptions.ts', konst: 'STRICT_VRT_MODULES', desc: 'modules whose card MUST ship a VRT baseline (deny-missing-baseline)' },
 ];
 
 function bucket2() {

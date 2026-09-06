@@ -68,8 +68,7 @@ async function boot(page: Page): Promise<void> {
   await page.addInitScript((seed) => {
     (globalThis as unknown as { __nibblesVrtSeed?: number }).__nibblesVrtSeed = seed;
   }, NIBBLES_SEED);
-  // Plain /rack — the DEFAULT shell. `?shell=legacy` is precisely the surface
-  // promotion does not change, and every existing nibbles spec boots it.
+  // Plain /rack — the shipping shell, which is the whole subject of this file.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });

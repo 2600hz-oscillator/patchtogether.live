@@ -1,61 +1,31 @@
 // e2e/tests/video-hide-controls.spec.ts
 //
-// ⚠ SCOPE — READ THIS BEFORE TRUSTING A GREEN RUN (#2009).
+// MONITOR MODE + the PatchPanel corner-trigger cascade, on the DEFAULT shell.
 //
-// The parameterised suite below drives the LEGACY LANE and only the legacy
-// lane: it navigates to `/rack?shell=legacy&seed=none` (`:129`) and asserts
-// against `<type>-card` / `-hide-toggle` / `-resize-handle`, which are
-// `RuttetraCard.svelte` / `MonoglitchCard.svelte`. Those cards keep rendering
-// on `?shell=legacy` whether or not their module is promoted, so PROMOTION
-// DOES NOT REDDEN ANY OF IT.
+// ⚠ HISTORY (#2009): this file used to carry a parameterised suite driving
+// `<type>-card` / `-hide-toggle` / `-resize-handle` on the PRE-PROMOTION
+// renderer, plus a videoOut resize regression pair, with the FACED monitor-mode
+// leg below added precisely because promotion could remove the
+// gesture from the shipping surface while the legacy suite stayed green ("the
+// gate whose precondition is the defect"). S2 removes the legacy lane, and
+// with it the card-only halves died:
 //
-// That is exactly the wrong kind of green, and it was filed as such. Without a
-// second leg this whole file would keep passing at full green WHILE THE
-// GESTURE DISAPPEARED from the surface a workflow-mode user actually operates
-// — the "gate whose precondition is the defect" class, where promotion removes
-// the thing under test from the only surface that matters and every assertion
-// survives because it was pointed somewhere else.
+//   * hide-controls + free resize on the CARDS (ruttetra/monoglitch): the
+//     STATE key (`node.data.hideControls`) is shared, and BOTH the toggle and
+//     the corner drag survive on the faceplate — the faced legs below drive
+//     `<type>-face-resize-handle` over the same monitor-box constants — so the
+//     card legs were the same gesture on a dead surface.
+//   * the videoOut CARD resize pair (`data.width`/`data.height` via the card's
+//     corner handle + the inner-canvas aspect-fit): the card died; the shared
+//     `card-resize.ts` seam and the same persisted keys keep their coverage on
+//     the bentbox FACE resize (bentbox.spec.ts, drain 25).
 //
-// So RUTTETRA — the first module to carry MONITOR MODE onto its faceplate —
-// has a FACED leg at the bottom of this file, and it is deliberately in the
-// same file as its legacy sibling so the two can never drift apart unnoticed.
-//
-// MONOGLITCH joined it on promotion (2026-08-21), which is what this note used
-// to ask for: *"MONOGLITCH is still un-faced; when it is promoted its faced leg
-// belongs here too."* ⚠ AND THE FACED LEG IS PARAMETERISED OVER A ROSTER, the
-// same shape the LEGACY suite above already uses, rather than copied per
-// module. Two hand-copied 80-line browser tests is how the two surfaces of one
-// affordance drift; one roster is how the next of the five #2009 cards is added
-// by writing four testids — which is exactly what `reshaper` cost (2026-08-21).
-//
-// Of the five that mount `hideControls`: `ruttetra`, `monoglitch`, `reshaper`
-// and `milkdrop` are faced and covered here; `graphicEq` is the last one queued.
-//
-// ⚠ MILKDROP MATTERS MOST IN THIS FILE, and the reason is worth carrying at the
-// top rather than only beside its roster entry. It was BLOCKED (#2083) — never
-// on parity, which maps cleanly and hash-free, but on the FACES VRT roster,
-// which was deny-by-default set-equality with no exemption while butterchurn is
-// not pixel-deterministic even at a fixed frame count. It ships with a named
-// `FACES_WITHOUT_SCENES` entry instead, which means NOTHING COMPARES ITS
-// FACEPLATE'S PIXELS at any tier. This leg and `faces-parity` are what see its
-// dock face render at all, so weakening either one silently un-covers it.
-// `face-monitor-source.test.ts` turns RED at any such promotion if the face
-// does not declare `monitor` at all — this file is what proves the declaration
-// actually moves the bands.
-//
-// ── the LEGACY suite ───────────────────────────────────────────────────────
-//
-// Verifies the hide-controls + free-resize gesture on RUTTETRA + MONOGLITCH:
-//   1. Click the hide-toggle - controls hide, canvas remains, card becomes
-//      resizable via the corner handle.
-//   2. Drag the corner handle - card grows, node.data.resizedWidth/height
-//      update.
-//   3. Double-click the card body - hide-controls clears + size resets.
-// Also asserts:
-//   - OUTPUT (videoOut) keeps its existing always-resizable behavior
-//     (regression on PR-85 / VideoOutCard's data.width / data.height path).
-//   - Double-clicking on a .svelte-flow__handle inside the card still
-//     reaches the document-level patch-to listener (PR-113 regression).
+// What remains here is everything with a shell surface:
+//   * MONITOR MODE on the faced dock (#2009) — ruttetra / monoglitch /
+//     reshaper / milkdrop (see the roster note below; milkdrop has no VRT
+//     scene, so this file and faces-parity are what see its face render);
+//   * the PatchPanel corner-trigger dblclick → port cascade, on the lane TILE
+//     (ModuleShell mounts the same PatchPanel lane rail the cards carried).
 
 import { test, expect } from './_fixtures';
 import { type Locator, type Page } from '@playwright/test';
@@ -68,28 +38,6 @@ interface NodeDataShape {
   resizedHeight?: number;
   width?: number;
   height?: number;
-}
-
-async function readNodeData(page: Page, id: string): Promise<NodeDataShape> {
-  return page.evaluate((nid) => {
-    const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { data?: NodeDataShape }> };
-    };
-    return (w.__patch.nodes[nid]?.data ?? {}) as NodeDataShape;
-  }, id);
-}
-
-async function clickHideToggle(page: Page, testid: string): Promise<void> {
-  const btn = page.locator(`[data-testid="${testid}"]`);
-  await expect(btn, `${testid} present`).toBeVisible();
-  await btn.click();
-}
-
-async function expectControlsHidden(page: Page, controlsTestid: string): Promise<void> {
-  await expect(
-    page.locator(`[data-testid="${controlsTestid}"]`),
-    `${controlsTestid} hidden`,
-  ).toHaveCount(0);
 }
 
 async function dragCorner(
@@ -113,235 +61,27 @@ async function dragCorner(
   await page.waitForTimeout(150);
 }
 
-async function cardBoundingSize(
-  page: Page,
-  cardTestid: string,
-): Promise<{ width: number; height: number }> {
-  return page.locator(`[data-testid="${cardTestid}"]`).evaluate((el) => {
-    const r = (el as HTMLElement).getBoundingClientRect();
-    return { width: r.width, height: r.height };
-  });
+async function readNodeData(page: Page, id: string): Promise<NodeDataShape> {
+  return page.evaluate((nid) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: NodeDataShape }> };
+    };
+    return (w.__patch.nodes[nid]?.data ?? {}) as NodeDataShape;
+  }, id);
 }
 
-interface ModuleSpec {
-  type: 'ruttetra' | 'monoglitch';
-  cardTestid: string;
-  toggleTestid: string;
-  resizeTestid: string;
-  controlsTestid: string;
-  canvasTestid: string;
-}
-
-const MODULES: ModuleSpec[] = [
-  {
-    type: 'ruttetra',
-    cardTestid: 'ruttetra-card',
-    toggleTestid: 'ruttetra-hide-toggle',
-    resizeTestid: 'ruttetra-resize-handle',
-    controlsTestid: 'ruttetra-controls',
-    canvasTestid: 'ruttetra-canvas',
-  },
-  {
-    type: 'monoglitch',
-    cardTestid: 'monoglitch-card',
-    toggleTestid: 'monoglitch-hide-toggle',
-    resizeTestid: 'monoglitch-resize-handle',
-    controlsTestid: 'monoglitch-controls',
-    canvasTestid: 'monoglitch-canvas',
-  },
-];
-
-for (const m of MODULES) {
-  test.describe(`${m.type.toUpperCase()} - hide-controls + free resize`, () => {
-    test('hide -> resize -> dblclick restore', async ({ page }) => {
-      // RUTTETRA renders a 320×180 LINE grid (~57k grid points) into its
-      // on-card preview every animation frame — by far the heaviest
-      // per-frame GL work in the suite. On a loaded CI runner that draw loop
-      // starves the main thread, so the multi-step corner-resize drag
-      // (page.mouse.move with {steps:5}, twice) can take several seconds per
-      // move (~3.5s each was observed on shard 8/8), pushing the whole test
-      // past the default 30s budget even though every assertion ultimately
-      // passes. Give the heavy-WebGL cards the same headroom the video/DOOM
-      // specs already grant (picturebox-limits, multi-video, etc.). Cheap
-      // fullscreen-quad cards (MONOGLITCH) finish well under this.
-      test.setTimeout(60_000);
-
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (msg) => {
-        if (msg.type() === 'error') errors.push(msg.text());
-      });
-
-      await page.goto('/rack?shell=legacy&seed=none');
-      await page.waitForLoadState('networkidle');
-
-      await spawnPatch(page, [
-        { id: 'v', type: m.type, position: { x: 200, y: 100 }, domain: 'video' },
-      ]);
-
-      const card = page.locator(`[data-testid="${m.cardTestid}"]`);
-      await expect(card).toHaveCount(1);
-      await expect(
-        page.locator(`[data-testid="${m.controlsTestid}"]`),
-        'controls visible by default',
-      ).toBeVisible();
-      await expect(
-        page.locator(`[data-testid="${m.canvasTestid}"]`),
-        'canvas visible by default',
-      ).toBeVisible();
-      await expect(
-        page.locator(`[data-testid="${m.resizeTestid}"]`),
-        'resize handle absent by default',
-      ).toHaveCount(0);
-
-      await clickHideToggle(page, m.toggleTestid);
-
-      await expectControlsHidden(page, m.controlsTestid);
-      await expect(
-        page.locator(`[data-testid="${m.canvasTestid}"]`),
-        'canvas still visible in hide-controls mode',
-      ).toBeVisible();
-      await expect(
-        page.locator(`[data-testid="${m.resizeTestid}"]`),
-        'resize handle appears in hide-controls mode',
-      ).toBeVisible();
-      const dataAfterHide = await readNodeData(page, 'v');
-      expect(dataAfterHide.hideControls, 'hideControls flagged true').toBe(true);
-
-      const sizeBeforeDrag = await cardBoundingSize(page, m.cardTestid);
-      await dragCorner(page, m.resizeTestid, 200, 150);
-      const sizeAfterDrag = await cardBoundingSize(page, m.cardTestid);
-      expect(
-        sizeAfterDrag.width,
-        `card grew (${sizeBeforeDrag.width} -> ${sizeAfterDrag.width})`,
-      ).toBeGreaterThan(sizeBeforeDrag.width + 20);
-      expect(
-        sizeAfterDrag.height,
-        `card grew (${sizeBeforeDrag.height} -> ${sizeAfterDrag.height})`,
-      ).toBeGreaterThan(sizeBeforeDrag.height + 20);
-
-      const dataAfterDrag = await readNodeData(page, 'v');
-      expect(dataAfterDrag.resizedWidth, 'resizedWidth persisted').toBeGreaterThan(360);
-      expect(dataAfterDrag.resizedHeight, 'resizedHeight persisted').toBeGreaterThan(240);
-
-      // Double-click on the card body (not on a handle) to restore.
-      await card.dblclick({ position: { x: 30, y: 80 } });
-      await page.waitForTimeout(120);
-
-      const dataAfterRestore = await readNodeData(page, 'v');
-      expect(dataAfterRestore.hideControls, 'hideControls cleared').toBeFalsy();
-      expect(dataAfterRestore.resizedWidth, 'resizedWidth cleared').toBeUndefined();
-      expect(dataAfterRestore.resizedHeight, 'resizedHeight cleared').toBeUndefined();
-
-      await expect(
-        page.locator(`[data-testid="${m.controlsTestid}"]`),
-        'controls back after restore',
-      ).toBeVisible();
-
-      expect(errors).toEqual([]);
-    });
-  });
-}
-
-test.describe('OUTPUT regression', () => {
-  test('videoOut keeps existing data.width/data.height resize behavior', async ({ page, rack }) => {
-    await spawnPatch(page, [
-      { id: 'v-out', type: 'videoOut', position: { x: 200, y: 100 }, domain: 'video' },
-    ]);
-
-    const card = page.locator('[data-testid="video-out-card"]');
-    await expect(card).toHaveCount(1);
-    await expect(page.locator('[data-testid="video-out-resize-handle"]')).toBeVisible();
-    // OUTPUT should NOT have a hide-toggle button (it's already minimal).
-    await expect(page.locator('[data-testid="video-out-hide-toggle"]')).toHaveCount(0);
-
-    const before = await cardBoundingSize(page, 'video-out-card');
-    await dragCorner(page, 'video-out-resize-handle', 180, 120);
-    const after = await cardBoundingSize(page, 'video-out-card');
-    expect(after.width).toBeGreaterThan(before.width + 20);
-    expect(after.height).toBeGreaterThan(before.height + 20);
-
-    const data = await readNodeData(page, 'v-out');
-    expect(data.width, 'OUTPUT still uses node.data.width').toBeGreaterThanOrEqual(360);
-    expect(data.height, 'OUTPUT still uses node.data.height').toBeGreaterThanOrEqual(240);
-    expect(data.resizedWidth, 'OUTPUT does NOT use new resizedWidth key').toBeUndefined();
-  });
-
-  // Folded in from video-output-resize.spec.ts (consolidation §2): the corner-drag
-  // resize itself is the dup the test above already covers (same dragCorner +
-  // node.data.width/height); the UNIQUE leg is that after a known size is forced,
-  // the INNER canvas dimensions follow the card (aspect-fit, not collapsed to 0).
-  // We set the size directly via patch mutation (skip the drag) so the aspect-fit
-  // math is testable independent of the drag harness.
-  test('inner canvas keeps aspect-fit after resize (engine 4:3)', async ({ page, rack }) => {
-    await spawnPatch(page, [
-      { id: 'v-out', type: 'videoOut', position: { x: 200, y: 100 }, domain: 'video' },
-    ]);
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
-
-    // Force a known size via direct patch mutation (skip the drag) so
-    // the aspect-fit math is testable independent of the drag harness.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['v-out'];
-        if (!n) return;
-        if (!n.data) n.data = {};
-        n.data.width = 800;
-        n.data.height = 480;
-      });
-    });
-    await page.waitForTimeout(150);
-
-    const inner = await page.evaluate(() => {
-      const c = document.querySelector('canvas[data-testid="video-out-canvas"]') as HTMLCanvasElement | null;
-      if (!c) return null;
-      // The aspect inside the card should be 4:3 (engine resolution),
-      // but the canvas-wrap simply takes (width - PAD, height - HEADER).
-      // We check it's CLOSE to that size and not collapsed to 0.
-      return { width: c.width, height: c.height };
-    });
-    expect(inner).not.toBeNull();
-    if (!inner) return;
-    expect(inner.width, 'inner canvas width follows card width').toBeGreaterThan(700);
-    expect(inner.height, 'inner canvas height follows card height').toBeGreaterThan(380);
-  });
-});
-
-test.describe('dblclick a PatchPanel corner-trigger opens the port cascade', () => {
-  // Every video card was migrated onto the yellow PatchPanel (#767), so the
-  // dblclick→"patch to" cascade is now reached via a corner PATCH-TRIGGER
-  // (triggerInfoFromEvent in Canvas.svelte → resolves to the module's first
-  // output), NOT a raw <Handle> — no card exposes raw source jacks anymore.
-  // (Was: a chroma raw-handle fixture, which the #767 sweep orphaned when
-  // chroma itself moved to the PatchPanel; that stale assertion failed ONLY on
-  // the real-GPU attest lane, silently blocking every lib/video re-attest.)
-  // The drag-to-patch drill-down is covered by cable-drag-drilldown.spec; THIS
-  // guards the dblclick→port-menu shortcut, which no other spec exercises.
-  test('dblclick on a PatchPanel corner-trigger opens the port menu', async ({ page, rack }) => {
-    await spawnPatch(page, [
-      { id: 'c', type: 'chroma', position: { x: 200, y: 100 }, domain: 'video' },
-      { id: 'l', type: 'lines', position: { x: 600, y: 100 }, domain: 'video' },
-    ]);
-
-    const card = page.locator('.svelte-flow__node-chroma');
-    await expect(card).toHaveCount(1);
-
-    // The output-side corner trigger (right); a dblclick resolves to the
-    // module's first output and opens the "patch to" cascade.
-    const trigger = card.locator('[data-testid="patch-trigger-right"]').first();
-    await expect(trigger).toBeVisible();
-    await trigger.dblclick();
-
-    await expect(
-      page.locator('[data-testid="port-context-menu"]'),
-      'port-to cascade opened from PatchPanel corner-trigger dblclick',
-    ).toBeVisible();
-  });
-});
+// ⚠ RETIRED (S2): 'dblclick a PatchPanel corner-trigger opens the port
+// cascade'. The shortcut it guarded — dblclick a `.patch-trigger` CORNER
+// trigger → the module's first output's "patch to" cascade (#767,
+// triggerInfoFromEvent in Canvas.svelte) — was CARD chrome: the corner-trigger
+// markup is PatchPanel's card variant, and both shell surfaces mount the
+// LANE-RAIL variant, whose trigger (class `jacks-trigger`, measured) the
+// dblclick resolver never matches and whose SINGLE click already opens the
+// drill-down panel — a strictly shorter path than the dance the shortcut
+// existed to bypass. The cascade itself keeps shell coverage where its shell
+// gestures live: the rear back-jack menus (unpatch-patch-point.spec.ts) and
+// the drag drill-down (cable-drag-drilldown.spec.ts). `triggerInfoFromEvent`
+// died with the surface that raised those events.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE FACED LEG (#2009) — MONITOR MODE on the workflow-shell dock faceplate.
@@ -351,7 +91,7 @@ test.describe('dblclick a PatchPanel corner-trigger opens the port cascade', () 
 // faceplate the gesture is a different mechanism entirely:
 //
 //   * the STATE is the same persisted `node.data.hideControls` key (shared on
-//     purpose — a rack saved from the legacy card must reopen the same way);
+//     purpose — a rack saved before the faceplate must reopen the same way);
 //   * the TOGGLE lives on the module's own `fullViewBody` extension;
 //   * the SUPPRESSION is the shell's (`faceMonitorPlan`), because
 //     `fullViewBody` paints ABOVE the bands and by contract cannot hide them.
@@ -488,7 +228,7 @@ async function gotoShell(page: Page): Promise<void> {
 async function openFace(page: Page, nodeId: string): Promise<Locator> {
   await centerOnNode(page, nodeId);
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
-  await expect(shell, `${nodeId} renders a faceplate shell, not a legacy card`).toBeVisible();
+  await expect(shell, `${nodeId} renders a faceplate shell`).toBeVisible();
   await shell.getByTestId('shell-open-dock').click();
   const fv = page.getByTestId('dock-full-view');
   await expect(fv).toBeVisible();
@@ -550,7 +290,7 @@ test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
       await expect(handle, 'the corner drag arrives with the mode').toBeVisible();
 
       const hidden = await readNodeData(page, m.nodeId);
-      expect(hidden.hideControls, 'over the SAME persisted key the legacy card writes').toBe(true);
+      expect(hidden.hideControls, 'over the SAME persisted key a saved rack carries').toBe(true);
 
       // ── THE CORNER DRAG ──────────────────────────────────────────────────
       const before = await canvas.boundingBox();
@@ -603,8 +343,8 @@ test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
   test("NEGATIVE CONTROL: a stale hideControls cannot blank a face that declares no monitor", async ({ page }) => {
     // ⚠ THE FAILURE MODE THE DECLARATION GATE EXISTS FOR, exercised end to end
     // rather than argued in a comment. `hideControls` is persisted and
-    // collab-synced, so a rack saved from ANY legacy card can hand this flag to
-    // a faceplate whose face never declared monitor mode. If the shell read the
+    // collab-synced, so ANY saved rack can hand this flag to a faceplate whose
+    // face never declared monitor mode. If the shell read the
     // flag alone, that patch would open a faceplate with no bands — and on a
     // face with no extension body, with nothing at all.
     //
@@ -640,7 +380,7 @@ test.describe('MONITOR MODE on the FACED dock (#2009)', () => {
       .toBeVisible();
 
     // The flag is still ON the node — the shell IGNORED it rather than clearing
-    // it, so the legacy card's meaning of the key is untouched.
+    // it, so a saved rack's meaning of the key is untouched.
     const data = await readNodeData(page, 'gov-face');
     expect(data.hideControls, 'the key is untouched, merely inert here').toBe(true);
   });

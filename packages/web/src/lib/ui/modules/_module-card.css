@@ -1,134 +1,31 @@
-/* Shared module-card styling. Per-card .svelte files import this from a global
- * include in +layout.svelte (cleaner than re-pasting CSS in every card). */
-
-.mod-card {
-  /* --panel-bg is the sprite-skin extension hook (set by skin-store
-   * when the active skin defines a panelBg data:URL). It layers ABOVE
-   * the flat --module-bg so skins without panel art (the four legacy
-   * ones) render exactly the same; only Vintage et al. paint a texture.
-   * The two-prop form (background-image + background-color) is used
-   * rather than the `background` shorthand so we don't reset the other
-   * background-* properties that the legacy snapshots baked in. */
-  background-color: var(--module-bg);
-  background-image: var(--panel-bg, none);
-  background-size: cover;
-  /* Skin-aware: --border lifts the literal #2a2f3a so non-default
-   * skins recolour every audio module card consistently.
-   *
-   * --module-border-color is an OPTIONAL skin token (DINER's thin purple
-   * neon tube). It defaults to --border, so the six pre-existing skins
-   * paint the exact same border colour they did before (byte-identical
-   * VRT baselines). */
-  border: 1px solid var(--module-border-color, var(--border));
-  /* --module-radius is OPTIONAL (DINER's curved corners). Fallback `2px`
-   * reproduces the legacy hard-edged value for every other skin. */
-  border-radius: var(--module-radius, 2px);
-  color: var(--text);
-  /* Rack-compaction trim (#759): tightened from 18/14 so marginal cards fit
-   * their EXACT tier (no content spill). Applies to every .mod-card. */
-  padding-top: 10px;
-  padding-bottom: 9px;
-  position: relative;
-  /* --module-glow is OPTIONAL (DINER's soft purple neon-tube glow). The
-   * fallback is the legacy drop-shadow only, so non-DINER skins get no
-   * extra glow layer and their baselines stay identical. */
-  box-shadow: var(--module-glow, 0 2px 8px rgba(0, 0, 0, 0.3));
-  transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-}
-.svelte-flow__node:hover .mod-card {
-  border-color: var(--accent-dim);
-}
-.svelte-flow__node.selected .mod-card {
-  border-color: var(--accent);
-  /* Selected keeps the accent ring + legacy drop-shadow; when a skin sets
-   * --module-glow (DINER), layer the neon glow underneath so a selected
-   * card still reads as lit. The empty fallback adds nothing for the six
-   * legacy skins, preserving their selected-state baseline. */
-  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3),
-    var(--module-glow, 0 0 #0000);
-}
-.mod-card .stripe {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  /* --module-stripe-radius is OPTIONAL; fallback reproduces the legacy
-   * top-only 2px rounding so the stripe follows a rounded card top on
-   * DINER but is unchanged elsewhere. */
-  border-radius: var(--module-stripe-radius, 2px 2px 0 0);
-}
-.mod-card .title {
-  /* Sprite-skin extension: --font-silkscreen is set by skin-store when
-   * the active skin defines a silkscreenFontFamily (Vintage et al.).
-   * The `inherit` fallback preserves the previous behavior for the four
-   * legacy CSS-only skins — they didn't set font-family at all and the
-   * title inherited from body, which is what `inherit` here recreates. */
-  font-family: var(--font-silkscreen, inherit);
-  font-size: 0.85rem;
-  font-weight: 500;
-  text-align: center;
-  margin: 0 0 8px;
-  letter-spacing: 0.02em;
-}
-.mod-card .port-label {
-  position: absolute;
-  font-size: 0.6rem;
-  color: var(--text-dim);
-  pointer-events: none;
-  font-family: ui-monospace, monospace;
-}
-.mod-card .port-label.left  { left: 14px; }
-.mod-card .port-label.right { right: 14px; }
-.mod-card .fader-row {
-  /* Rack-compaction trim (#759): margin 28→11, side padding 26→16 so fader
-   * cards fit their EXACT tier (no content spill) + snap to hp width. */
-  margin-top: 11px;
-  display: flex;
-  gap: 6px;
-  padding: 0 16px;
-  justify-content: center;
-}
-
-/* ── .vcard — the legacy/video card chrome ──────────────────────────────────
- * ~46 cards (mostly video-domain plus the pre-skin audio cards using a `.card`
- * root) carried this EXACT chrome block copy-pasted in their scoped styles
- * (LoC campaign row 6 extraction — proven by a zero-diff VRT run).
+/* Shared lane/dock chrome — imported once from a global include in
+ * +layout.svelte.
  *
- * Deliberately NOT merged into .mod-card: these cards predate the skin tokens
- * and must keep rendering byte-identically under every skin — flat
- * `--module-bg` (no --panel-bg sprite hook, no --module-border-color /
- * --module-radius / --module-glow), and the pre-compaction 18/14 padding.
+ * ⚠ WHAT THIS FILE STILL OWNS, after the legacy removal pruned it from 561
+ * lines to what is here: the RACK-TIER sizing tokens, the RACKLINE tile box,
+ * and the whole REAR-VIEW patchbay (`.card-back-panel`, its jacks, the two flip
+ * keyframes and the dock exemptions). All of those have live subjects.
  *
- * Per-card deviations stay in the card's scoped <style> and win by
- * specificity: a scoped `.card.svelte-hash` (0,2,0) deterministically beats
- * this global `.vcard` (0,1,0), so e.g. AUDIO OUT's 10/9 compaction padding
- * and opaque #000 underlay override cleanly with no source-order dependence. */
-.vcard {
-  background: var(--module-bg);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  color: var(--text);
-  padding-top: 18px;
-  padding-bottom: 14px;
-  position: relative;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
-}
-.svelte-flow__node:hover .vcard {
-  border-color: var(--accent-dim);
-}
-.svelte-flow__node.selected .vcard {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.vcard .stripe {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  /* Video is the dominant stripe colour; cards with another colour keep a
-   * scoped `background` (or an inline style), which wins over this. */
-  background: var(--cable-video);
-}
+ * ⚠ WHAT WENT, AND WHY IT COULD NOT MOVE A PIXEL: every rule whose ONLY
+ * selector branches were `.mod-card`, `.vcard`, a bare `.card` class,
+ * `.moog-panel` or `.dock-rack-sized`. MEASURED — those five classes are
+ * emitted by ZERO files in the tree, so each rule had no possible subject and a
+ * rule that matches nothing contributes nothing. Proved as well as asserted:
+ * four scenes (a rear view, a compact lane tile, a dock faceplate and a zoomed
+ * rack) were captured on this machine before and after the prune. Three came
+ * back BYTE-IDENTICAL. The fourth (`workflow-shell-zoom-130`) has ~120 px of
+ * its own antialiasing noise — five runs of IDENTICAL code produced three
+ * different byte streams — which is why a byte comparison is a stricter
+ * instrument than that scene's own 1500 px budget, and why it can attribute
+ * nothing to this change.
+ *
+ * ⚠ TWO RULES THAT LOOK DEAD ARE KEPT, DELIBERATELY. The `.rack-sized` and
+ * `.dock-rack-sized` tier rules select those same dead roots, so they match
+ * nothing today — but Canvas still STAMPS `rack-sized` + `--rack-u`/`--rack-hp`
+ * on every sized node, and `rack-sizing.test.ts` pins these exact declarations
+ * as the CSS half of the rack-grid contract. Removing them means retiring the
+ * stamping and that gate too, which is a change to the lane derivation rather
+ * than a CSS prune. Named rather than folded in. */
 
 /* ── Rack sizing (Nu height tiers · 1u×1u square grid) ──────────────────────
  * One square grid tile = --rack-unit (180px). A sized card is `--rack-hp` tiles
@@ -156,9 +53,8 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
-/* P0.3b RACKLINE lane tiles (ModuleShell / ModuleShellPlaceholder). Their roots
- * are deliberately NOT .mod-card/.card/.moog-panel, so they need their own
- * sizing rule.
+/* RACKLINE lane tiles (ModuleShell). Their roots are deliberately NOT
+ * .mod-card/.card/.moog-panel, so they need their own sizing rule.
  *
  * ⚠ That root choice used to be justified here as "so rear-view never
  * mirrors/hides them". It no longer is, and the claim was removed rather than
@@ -167,15 +63,15 @@
  * Nothing about cable traceability turned on it; the rear view has always kept
  * cables painted on the edge layer, which is a separate surface from the card.
  *
- * UNIFORM WIDTH (re-spec): every shell/placeholder tile is the SAME `--shell-tile-w`
+ * UNIFORM WIDTH (re-spec): every shell tile is the SAME `--shell-tile-w`
  * (192px, the mock's uniform tile) — NO LONGER keyed to the module's per-module
  * `--rack-hp` (which made recorderbox/synesthesia/tidyvco render at different
  * widths). The owner "same-size all modules HORIZONTALLY" premise. Canvas's
  * wcolCardWidthPx short-circuits to the SAME SHELL_TILE_W under the preview, so
- * the RESERVED column slot == the rendered tile and band-centering (card center ==
- * channel-number center) stays exact. (NON_SHELL_LANE_TYPES — group/sticky/
- * clipplayer/control-surfaces — keep their legacy card + native width; they never
- * mount a .module-shell tile, so this rule never touches them.)
+ * the RESERVED column slot == the rendered tile and band-centering (tile center
+ * == channel-number center) stays exact. (NON_SHELL_LANE_TYPES is down to
+ * `{cadillac}`, which renders its own roaming surface at its own width and
+ * never mounts a .module-shell tile, so this rule never touches it.)
  *
  * TIER-INVARIANT HEIGHT (zoom-reposition fix, option (c)): the OUTER slot box is
  * ONE FIXED height (--shell-tile-h 180, the mock's .mod/.plate design point) at
@@ -193,8 +89,8 @@
  * Pinning the OUTER box here is load-bearing: the content swap must NEVER resize
  * the measured node — at ANY tier — so the channel-column stack math never
  * recomputes / thrashes on zoom (§3.1 / §9). */
-.svelte-flow__node > :is(.module-shell, .module-shell-placeholder),
-.svelte-flow__node > * > :is(.module-shell, .module-shell-placeholder) {
+.svelte-flow__node > .module-shell,
+.svelte-flow__node > * > .module-shell {
   box-sizing: border-box;
   width: var(--shell-tile-w, 192px);
   height: var(--shell-tile-h, 180px);
@@ -256,11 +152,6 @@
  * — identical to look at, but fully hit-testable. A short 2D flip-IN keyframe on
  * the back panel preserves the "card turns over" feel without a 3D subtree
  * (reduced-motion drops it, below). The patchbay still reads + now patches. */
-.flow .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
-.flow .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
-  transform-style: flat;
-}
-
 /* The back panel — rendered by PatchPanel, hidden by default, shown only in rear
  * view. Absolutely positioned to cover the whole card. NO rotateY (it's a flat
  * overlay, so it reads correctly AND hit-tests), revealed only under
@@ -310,10 +201,6 @@
  * "turns back over" instead of just snapping to front. The class clears once
  * the keyframe settles. Targets all three card roots, same as the rear-view
  * hide rule. */
-.flow.flip-back .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
-.flow.flip-back .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
-  animation: card-front-flip-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
 @keyframes card-front-flip-in {
   from {
     transform: perspective(1200px) rotateY(90deg);
@@ -335,17 +222,12 @@
  * direct child) and `visibility` (which inherits) would also hide the back panel
  * inside it — so we explicitly re-assert `visibility:visible` on the back panel
  * below. */
-.rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
-  visibility: hidden;
-  pointer-events: none;
-}
-/* RACKLINE LANE TILES — ModuleShell + ModuleShellPlaceholder (#1605).
+/* RACKLINE LANE TILES — ModuleShell (#1605).
  *
  * The tile root is `.module-shell.rl-tile`, deliberately NOT one of the three
- * legacy card roots, so the rule above never reached it and the shell rack did
+ * older plate roots, so the rule above never reached it and the shell rack did
  * not flip at all: `rearView` toggled, the Flip control read aria-pressed=true,
- * and the screen did not change. Both tile components render PatchPanel
+ * and the screen did not change. The tile renders PatchPanel
  * (lane-rail) — which has ALWAYS put a live `.card-back-panel` in the tile — so
  * the rear face exists and only the reveal was missing.
  *
@@ -369,7 +251,7 @@
   pointer-events: none;
 }
 /* …and the return leg, so the tile "turns back over" instead of snapping —
- * same keyframe, same 360ms `.flip-back` window as the legacy card roots. */
+ * same keyframe, same 360ms `.flip-back` window as the older plate roots. */
 .flow.flip-back .rl-tile:has(> .patch-panel-host > .card-back-panel) {
   animation: card-front-flip-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
@@ -384,13 +266,6 @@
  * (.rear-view …) — DockRail stamps .rear-view on every rail (the bottom
  * drawer also inherits it from .flow), while the topbar card hosts (the
  * 🎧 panel) have no .rear-view ancestor and correctly never flip. */
-.rear-view .dock-rack-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .dock-natural-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .dock-natural-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
-  visibility: hidden;
-  pointer-events: none;
-}
 .rear-view .card-back-panel,
 .rear-view .card-back-panel * {
   visibility: visible;
@@ -405,13 +280,6 @@
  * the pinned DockRail keeps its deliberate rear-view patching. */
 .dock-fullview-drawer .card-back-panel {
   display: none !important;
-}
-.rear-view .dock-fullview-drawer .dock-rack-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .dock-fullview-drawer .dock-rack-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .dock-fullview-drawer .dock-natural-sized > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
-.rear-view .dock-fullview-drawer .dock-natural-sized > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
-  visibility: visible;
-  pointer-events: auto;
 }
 /* Front view: the back panel is display:none, but keep it fully inert as a
  * belt-and-braces guard so it can never steal a click from the live card. */
@@ -533,8 +401,7 @@
   .rear-view .card-back-panel {
     animation: none;
   }
-  .flow.flip-back .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
-  .flow.flip-back .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
+  .flow.flip-back .rl-tile:has(> .patch-panel-host > .card-back-panel) {
     animation: none;
   }
 }
@@ -547,16 +414,3 @@
  * reads as "fixed" without competing with the card content. The glyph is a
  * pseudo-element on the card root so it works across all three card roots
  * (.mod-card / .card / .moog-panel) and needs no per-card markup. */
-.svelte-flow__node.node-locked > :is(.mod-card, .card, .moog-panel)::after,
-.svelte-flow__node.node-locked > * > :is(.mod-card, .card, .moog-panel)::after {
-  content: '\1F512'; /* 🔒 */
-  position: absolute;
-  top: 3px;
-  left: 5px;
-  font-size: 0.62rem;
-  line-height: 1;
-  opacity: 0.7;
-  color: var(--accent, #60a5fa);
-  pointer-events: none;
-  z-index: 2;
-}

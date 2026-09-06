@@ -239,7 +239,7 @@ test.describe('per-module: output-alive smoke', () => {
         if (m.type() === 'error') errors.push(`console: ${m.text()}`);
       });
 
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
 
       // DOOM-specific: gate on the WASM blob being available. The build
       // is .gitignored (deterministic from source — contributors + CI
@@ -328,7 +328,14 @@ test.describe('per-module: output-alive smoke', () => {
       // menu cursor sound plays. Without a key event the title screen
       // is silent (i_pcmgen mixer idle).
       if (mod.type === 'doom') {
-        const card = page.locator('[data-testid="doom-card"]');
+        // ⚠ THE SURFACE, NOT A CARD. DOOM's canvas node renders the lane tile;
+        // its interactive surface (`doom-face-surface`) is the same component
+        // the card used to host, reached through the dock pane.
+        await page.evaluate(
+          () => (globalThis as unknown as { __openDockFullView(x: string): void }).__openDockFullView('sut'),
+        );
+        const card = page.locator('[data-testid="doom-face-surface"]');
+        await card.waitFor({ state: 'visible', timeout: 20_000 });
         await card.locator('button.overlay', { hasText: /Click to load DOOM/i }).click();
         // Wait up to 15s for the runtime to load + WAD to fetch. The
         // first spawn pays the network + emcc-module-instantiate cost.

@@ -117,9 +117,6 @@ export interface MetaModuleDef {
   /** Palette classification — see {@link PaletteCategory}. Omitted =
    *  Uncategorized. */
   palette?: PaletteCategory;
-  /** Card-component basename override (no '.svelte'). Only needed when the
-   *  `PascalCase(type)+'Card'` convention doesn't match the filename. */
-  card?: string;
 }
 
 const registry = new Map<ModuleType, MetaModuleDef>();

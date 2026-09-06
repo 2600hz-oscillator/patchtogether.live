@@ -222,7 +222,7 @@ describe('the LIVE registry — which faces are tabbed today', () => {
       // reason that is not density at all. It has FOUR bands, three under the
       // threshold, and it is railed because the owner reported the untabbed
       // face as a P0 defect: the launch grid and the piano roll are two VIEWS
-      // of one instrument (the legacy card's `cardView`), and only band hiding
+      // of one instrument, and only band hiding
       // can make double-clicking a pad REPLACE the grid with the editor. Its
       // `face.hero` was removed in the same change, because a hero paints above
       // every tab panel and therefore cannot be hidden. Both dock baselines
@@ -283,7 +283,7 @@ const FACE_TAB_OPT_IN: readonly TabOptIn[] = [
     type: 'spirographs',
     instruction: '"this should just be 3 tabs, one per spiro"',
     why:
-      "The three spiros are INDEPENDENT FIGURES, not three sections of one idea: each has its own complete ten-param bank and its own centre drifting across the frame. The module's own legacy card already shipped a role=\"tablist\" with a 1/2/3 selector and edited one spiro at a time, so the rail restores a structure the module had rather than compressing a column that was merely tall.",
+      'The three spiros are INDEPENDENT FIGURES, not three sections of one idea: each has its own complete ten-param bank and its own centre drifting across the frame. The module already shipped a role="tablist" with a 1/2/3 selector and edited one spiro at a time before the faceplate, so the rail restores a structure the module had rather than compressing a column that was merely tall.',
   },
   {
     type: 'clipplayer',

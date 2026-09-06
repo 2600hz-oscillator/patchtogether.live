@@ -17,13 +17,10 @@
 //                                    🎧 tray mounts `view='drawer'` and
 //                                    `dockFullViewHeadPlan` paints the full-view
 //                                    body there;
-//   * `AudioinCard.svelte`         — still the lane surface under
-//                                    `?shell=legacy`, which must keep working
-//                                    for the whole migration.
 //
-// Three components each re-deriving "which device, with which constraints, and
-// may I open it unattended?" is three chances to disagree about a resource whose
-// teardown is IRREVERSIBLE.
+// Two components each re-deriving "which device, with which constraints, and
+// may I open it unattended?" is two chances to disagree about a resource whose
+// teardown is IRREVERSIBLE — and a third surface is one file away.
 //
 // ── THE OWNERSHIP LINE THIS FILE DOES NOT CROSS ────────────────────────────
 //

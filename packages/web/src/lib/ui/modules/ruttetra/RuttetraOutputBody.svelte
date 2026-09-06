@@ -81,8 +81,7 @@
   // ⚠ THE SAME KEYS THE CARD USES, all three of them, deliberately. A rack
   // saved before this promotion already carries them, and reading a different
   // key would silently re-open every collapsed preview and forget every sized
-  // monitor. It also means the two surfaces agree while both exist: a monitor
-  // opened on `?shell=legacy` is still open on the faceplate.
+  // monitor — the promotion is invisible to a rack that was saved before it.
   let previewCollapsed = $derived<boolean>(
     (patch.nodes[nodeId]?.data?.previewCollapsed as boolean | undefined) ?? false,
   );

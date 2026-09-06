@@ -72,7 +72,6 @@ const SECTIONS_LOW_TO_HIGH: readonly string[] = [
 export const moog907aDef: AudioModuleDef = {
   type: 'moog907a',
   palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
-  card: 'Moog907aCard',
   domain: 'audio',
   label: '907a fixed filter bank',
   category: 'filters',

@@ -19,13 +19,14 @@ test.describe.configure({ mode: 'parallel' });
 // shape CLAUDE.md names, where a loaded runner starves both and "frozen" and
 // "never looked" are indistinguishable from the output.
 
-test('rings: drop module → card mounts with no console errors', async ({ page, rack, errorWatch }) => {
+test('rings: drop module → the shell tile mounts with no console errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'r', type: 'rings', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-rings');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('RINGS');
-  // The model-readout testid shows the current model name (MODAL by default).
-  await expect(page.getByTestId('rings-model-name')).toHaveText(/MODAL|SYMPATHETIC/);
+  const tile = page.locator('.svelte-flow__node:has([data-shell-type="rings"])');
+  await expect(tile).toBeVisible();
+  await expect(tile).toContainText('RINGS');
+  // The card's `rings-model-name` readout died with the density ruling
+  // (readouts are gone from faces); the model's OBSERVABLE state is the param,
+  // asserted by the MODEL-toggle test below.
 });
 
 test('rings: NOISE exciter into RINGS produces audio at ODD output (sympathetic strings, looped)', async ({ page, rack }) => {
@@ -106,19 +107,34 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
   expect(stats.peak).toBeLessThanOrEqual(1.0);
 });
 
-test('rings: model button cycles MODAL ↔ SYMPATHETIC and updates label', async ({ page, rack }) => {
+test('rings: the MODEL toggle drives node.params.model 0 ↔ 1 (dock full view)', async ({ page, rack }) => {
+  // Was the card's `rings-model-btn` + `rings-model-name` label cycle. On the
+  // shell the model is an anonymous <Toggle> in the dock ladder
+  // (`control-model` — the 0/1 discrete param has no options roster), and the
+  // label half of the old assertion died with the readout ruling. What is
+  // OBSERVABLE and load-bearing is the param the toggle writes — the audio
+  // identity of the two models is pinned by the model-switch audio test below.
   await spawnPatch(page, [{ id: 'r', type: 'rings', position: { x: 200, y: 200 } }]);
+  const tile = page.locator('.svelte-flow__node[data-id="r"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
 
-  const modelBtn = page.getByTestId('rings-model-btn');
-  const modelName = page.getByTestId('rings-model-name');
-  await expect(modelBtn).toBeVisible();
-  await expect(modelName).toHaveText('MODAL');
-
-  await modelBtn.click();
-  await expect(modelName).toHaveText('SYMPATHETIC');
-
-  await modelBtn.click();
-  await expect(modelName).toHaveText('MODAL');
+  const model = dock.getByTestId('control-model');
+  await expect(model).toBeVisible();
+  const readModel = () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params?: Record<string, number> }> };
+      };
+      return Math.round(w.__patch.nodes['r']?.params?.model ?? 0);
+    });
+  expect(await readModel()).toBe(0);
+  await model.click();
+  await expect.poll(readModel).toBe(1);
+  await model.click();
+  await expect.poll(readModel).toBe(0);
 });
 
 test('rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio', async ({ page, rack }) => {

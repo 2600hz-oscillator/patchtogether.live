@@ -78,59 +78,81 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
 
-/** Coarse pixel signature for change detection over a VIDEO-OUT canvas,
- *  scoped to a specific node id (multiple VIDEO-OUTs on the rack). */
-async function outSignature(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
-  return await handle.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return 0;
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    let sig = 0;
-    for (let i = 0; i < data.length; i += 256) {
-      sig += (data[i]! + data[i + 1]! * 2 + data[i + 2]! * 3) * ((i % 997) + 1);
-    }
-    return sig;
-  });
+/** One frame read at the ENGINE seam (`vid.outputTexture(nodeId, port)` +
+ *  readPixels — the shell-agnostic instrument): max sampled brightness + a
+ *  coarse pixel signature. The card-era probe read each VIDEO-OUT's card
+ *  canvas; on the default shell the only DOM video surface is the lane tile
+ *  thumb, which is VISIBILITY-GATED by design (VideoTileThumb's
+ *  IntersectionObserver — an offscreen tile stops blitting, so its pixels
+ *  measure the instrument, not the decode). The engine FBO sees every node
+ *  regardless of viewport. */
+async function outFrameStats(
+  page: Page,
+  nodeId: string,
+  portId?: string,
+): Promise<{ maxBright: number; sig: number }> {
+  return await page.evaluate(
+    ({ nodeId, portId }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          getDomain: (d: string) => {
+            gl: WebGL2RenderingContext;
+            outputTexture: (id: string, port?: string) => WebGLTexture | null;
+            res: { width: number; height: number };
+          };
+        } | null;
+      };
+      const eng = w.__engine?.();
+      if (!eng) return { maxBright: 0, sig: 0 };
+      const vid = eng.getDomain('video');
+      const gl = vid.gl;
+      const tex = vid.outputTexture(nodeId, portId);
+      if (!tex) return { maxBright: 0, sig: 0 };
+      const { width: W, height: H } = vid.res;
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      const px = new Uint8Array(W * H * 4);
+      if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fb);
+      let maxBright = 0;
+      let sig = 0;
+      for (let i = 0; i < px.length; i += 256) {
+        const v = (px[i]! + px[i + 1]! + px[i + 2]!) / 3;
+        if (v > maxBright) maxBright = v;
+        sig += (px[i]! + px[i + 1]! * 2 + px[i + 2]! * 3) * ((i % 997) + 1);
+      }
+      return { maxBright, sig };
+    },
+    { nodeId, portId },
+  );
 }
 
-/** Brightest sampled pixel over a node's VIDEO-OUT (non-idle => real frame). */
-async function outMaxBrightness(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
-  return await handle.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return 0;
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    let max = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-      if (v > max) max = v;
-    }
-    return max;
-  });
-}
-
-/** Poll a node's VIDEO-OUT over a window; return whether it BOTH showed a real
- *  (non-idle) frame AND its signature changed (the source is advancing). */
+/** Poll a producing node's output over a window; return whether it BOTH showed
+ *  a real (non-idle) frame AND its signature changed (the source is
+ *  advancing). `nodeId`/`portId` name the PRODUCER (a varispeed's `video`
+ *  port, the mixer's `out`) — the operator-facing VIDEO-OUT displays exactly
+ *  this texture. */
 async function outAdvances(
   page: Page,
   nodeId: string,
   windowMs = 6000,
+  portId?: string,
 ): Promise<{ moved: boolean; maxBright: number; distinct: number }> {
   const sigs = new Set<number>();
   let maxBright = 0;
   const deadline = Date.now() + windowMs;
   while (Date.now() < deadline) {
-    const b = await outMaxBrightness(page, nodeId);
+    const { maxBright: b, sig } = await outFrameStats(page, nodeId, portId);
     if (b > maxBright) maxBright = b;
-    sigs.add(await outSignature(page, nodeId));
+    sigs.add(sig);
     if (maxBright > 40 && sigs.size >= 2) break;
     await page.waitForTimeout(150);
   }
@@ -162,18 +184,42 @@ async function writePlaying(page: Page, nodeId: string, next: boolean): Promise<
   );
 }
 
-/** Load the AV fixture into a specific VIDEOVARISPEED card (scoped by node id)
- *  and start playback via the data layer. */
+/** Load the AV fixture into a specific VIDEOVARISPEED via its dock full-view
+ *  pane (the transport face is `fullViewBody`; the picker and the state
+ *  attributes — on `videovarispeed-face-body` — live only there) and start
+ *  playback via the data layer. Pane-scoped throughout: panes are LRU'd, so
+ *  each load opens its own pane and finishes inside it. */
 async function loadAndPlay(page: Page, nodeId: string): Promise<void> {
-  const card = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
-  await card.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
-  await expect(card.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    nodeId,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${nodeId}"]`);
+  await expect(pane.locator('[data-testid="videovarispeed-face-body"]')).toBeVisible({ timeout: 60_000 });
+  await pane.locator('[data-testid="videovarispeed-file-input"]').setInputFiles(AV_FIXTURE);
+  await expect(pane.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-has-local-file', 'true', { timeout: 8000 },
   );
   await writePlaying(page, nodeId, true);
-  await expect(card.locator('[data-testid="videovarispeed-card"]')).toHaveAttribute(
+  await expect(pane.locator('[data-testid="videovarispeed-face-body"]')).toHaveAttribute(
     'data-is-playing', 'true', { timeout: 4000 },
   );
+}
+
+/** Close the dock full view (whole-view Escape — Canvas's plain listener) so
+ *  the LANE is the visible surface again; the local-only visual checks read
+ *  lane tile thumbs. Playback is node-lifetime (extras-producers), so closing
+ *  the panes stops nothing. */
+async function closeFullView(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid="dock-fullview-pane"]')).toHaveCount(0);
 }
 
 /** Drive the video engine's render step() a bounded number of times with a
@@ -324,6 +370,7 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     // each module's OWN silent keep-alive. (If we patched audio_l -> scope
     // first, the scope's analyser would pull the element and mask the bug.)
     for (let i = 0; i < 4; i++) await loadAndPlay(page, `vv${i}`);
+    await closeFullView(page);
 
     // Each source's keep-alive must be live — this is the throttle fix. A null
     // keep-alive is exactly the pre-fix state where, unpatched, the
@@ -362,7 +409,7 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     if (visualChecksEnabled()) {
       const results: Array<{ i: number; moved: boolean; maxBright: number; distinct: number }> = [];
       for (let i = 0; i < 4; i++) {
-        const r = await outAdvances(page, `out${i}`);
+        const r = await outAdvances(page, `vv${i}`, 6000, 'video');
         results.push({ i, ...r });
       }
       await page.screenshot({ path: 'test-results/multi-video-4src.png' });
@@ -384,7 +431,7 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     // the per-source uploadCount liveness above + the audibility assertion
     // below are the deterministic CI guards.
     if (visualChecksEnabled()) {
-      const mix = await outAdvances(page, 'mixout');
+      const mix = await outAdvances(page, 'mix', 6000, 'out');
       expect(
         mix.moved,
         `mixer output moving (maxBright=${mix.maxBright} distinct=${mix.distinct})`,
@@ -445,12 +492,13 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     await spawnPatch(page, nodes, edges);
 
     for (let i = 0; i < N; i++) await loadAndPlay(page, `vv${i}`);
+    await closeFullView(page);
     await addEdges(page, audioEdges);
     await page.waitForTimeout(800);
 
     const results: Array<{ i: number; moved: boolean; maxBright: number; distinct: number }> = [];
     for (let i = 0; i < N; i++) {
-      const r = await outAdvances(page, `out${i}`, 8000);
+      const r = await outAdvances(page, `vv${i}`, 8000, 'video');
       results.push({ i, ...r });
     }
     const advancing = results.filter((r) => r.moved).length;

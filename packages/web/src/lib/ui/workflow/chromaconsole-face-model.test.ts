@@ -19,7 +19,7 @@
 // the comment on each says which edit.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import '$lib/audio/modules';
 import { chromaconsoleDef } from '$lib/audio/modules/chromaconsole';
@@ -184,25 +184,54 @@ describe('chromaconsole face — AUTO-DETECT has ONE implementation', () => {
     expect(src).toMatch(/matchPortByHint\(CHROMA_CONSOLE, ports\)/);
   });
 
-  it('⚠ AND THE CARD CALLS THE SEAM RATHER THAN MATCHING AGAIN', () => {
+  it('⚠ AND NO SURFACE MATCHES AGAIN — the seam is the only matcher', () => {
     // The regression this file exists to prevent: a future edit "inlines the
-    // little helper back into the card for clarity" and the two surfaces start
-    // choosing different ports again, with nothing red anywhere.
-    const card = SRC('../modules/ChromaconsoleCard.svelte');
-    expect(card, 'the card delegates').toMatch(/chromaconsoleAutoSelectPort\(a\)/);
+    // little helper back into the surface for clarity" and two callers start
+    // choosing different ports, with nothing red anywhere. The legacy card was
+    // the second caller and was read here by name; the shell cells are the
+    // caller now, and the deny is made of the surviving surfaces instead.
+    // The seam is BOTH the matcher and the only caller of itself: the connect
+    // action inside `chromaconsole-cell-actions.ts` auto-selects through the
+    // same function, so a second implementation would have to appear as a
+    // second `portHints.some(` somewhere in the module's own sources.
+    const seam = SRC('../modules/chromaconsole-cell-actions.ts');
+    expect(seam, 'the connect action auto-selects through the shared helper')
+      .toMatch(/chromaconsoleAutoSelectPort\(api\)/);
+    const matches = [...seam.matchAll(/portHints\.some\(/g)].length;
+    expect(matches, 'the hint match has exactly ONE implementation').toBeLessThanOrEqual(1);
+    const cells = SRC('./shell-cells.ts');
     expect(
-      /portHints\.some\(/.test(card),
-      'the card no longer re-implements the hint match',
+      /portHints\.some\(/.test(cells),
+      'the shell cells must not re-implement the hint match',
     ).toBe(false);
   });
 
   it('⚠ AND THE SLOT NAME HAS ONE IMPLEMENTATION TOO', () => {
-    // The card's `knobLabel` and the body's chip caption must be the same
-    // arithmetic: a hand-copy is how a qualified label ("amount · character")
-    // starts being shortened one way on one surface and another way on the
-    // other.
-    const card = SRC('../modules/ChromaconsoleCard.svelte');
-    expect(card).toMatch(/const knobLabel = chromaconsoleSlotName;/);
+    // The claim is unchanged — one arithmetic for the slot caption, because a
+    // hand-copy is how a qualified label ("amount · character") starts being
+    // shortened one way on one surface and another way on the other. What moved
+    // is which surfaces there are to disagree.
+    //
+    // ⚠ IT NAMED THE CARD'S `knobLabel`, AND THE CARD IS GONE. Reading a deleted
+    // file is an ENOENT, not a green — but the shape to avoid is the one next
+    // door: a `.not.toMatch` against an absent file passes for free. So this is
+    // stated POSITIVELY against the model that owns the arithmetic, plus a deny
+    // over the surviving surfaces.
+    const model = SRC('../modules/chromaconsole/chromaconsole-status-model.ts');
+    expect(model, 'the slot caption is computed in ONE exported place')
+      .toMatch(/export function chromaconsoleSlotName\(/);
+    expect(model, '…and the status rows are built from it rather than re-deriving')
+      .toMatch(/name: chromaconsoleSlotName\(/);
+    // …and there is exactly ONE definition of it in the module's sources, which
+    // is the claim a second surface would break. Counted over the DIRECTORY
+    // rather than grepped out of one file: the card was named here by hand, and
+    // a name is what stops being checkable when the file goes.
+    const dir = resolve(__dirname, '../modules/chromaconsole');
+    const defs = readdirSync(dir)
+      .filter((f) => !f.endsWith('.test.ts'))
+      .map((f) => readFileSync(resolve(dir, f), 'utf8'))
+      .reduce((n, src) => n + [...src.matchAll(/function chromaconsoleSlotName\(/g)].length, 0);
+    expect(defs, 'the slot caption must have exactly one implementation').toBe(1);
   });
 });
 

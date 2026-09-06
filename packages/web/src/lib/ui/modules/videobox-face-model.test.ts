@@ -23,10 +23,10 @@
 //      soundtrack over the module's own picture) and the dead-glyph clause
 //      would NOT catch it.
 //
-//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>` — one parent, and the
-//      legacy card adopts it under `?shell=legacy`. Its ONE element access is
-//      a NON-OWNING `nodeMedia.peek` for the playhead position, because
-//      `VideoSourceStatus` publishes no position or duration.
+//   3. THE BODY MUST NOT ADOPT THE NODE-OWNED `<video>` — one parent, and a
+//      NODE-lifetime owner that keeps it alive with nothing mounted. Its ONE
+//      element access is a NON-OWNING `nodeMedia.peek` for the playhead
+//      position, because `VideoSourceStatus` publishes no position or duration.
 //
 //   4. THE RESIZE WRITES THE CARD'S OWN KEYS — `width`/`height`, never the
 //      graphicEq/milkdrop `resizedWidth`/`resizedHeight` pair, which would
@@ -62,12 +62,10 @@ const read = (rel: string) => readFileSync(resolve(HERE, rel), 'utf8');
 
 const defSource = read('../../video/modules/videobox.ts');
 const bodySource = read('videobox/VideoboxScreenBody.svelte');
-const cardSource = read('VideoboxCard.svelte');
 
 // The code-only views. A raw grep cannot tell code from a comment, and several
 // legs below forbid a construct whose natural explanation NAMES it.
 const bodyCode = stripSourceComments(bodySource);
-const cardCode = stripSourceComments(cardSource);
 
 /** The LIVE `ParamDef`. */
 function param(id: string) {
@@ -225,9 +223,8 @@ describe('⚠ THE STOP-2 — the handle acquisition is ported VERBATIM, per elem
 
 describe('the two surfaces agree, and the body is not a second owner', () => {
   it('the BODY never adopts the node-owned <video>', () => {
-    // One parent; the legacy card adopts it under ?shell=legacy. A body that
-    // adopted it too would move it out from under that mount — silently, and
-    // only in the arrangement where both are alive.
+    // One parent, and a NODE-lifetime owner. A body that adopted it would move
+    // it out from under the owner that keeps it alive — silently.
     expect(bodyCode).not.toMatch(/\.adopt\(/);
     expect(bodyCode).not.toMatch(/nodeMedia\.ensure\(/);
   });
@@ -246,11 +243,14 @@ describe('the two surfaces agree, and the body is not a second owner', () => {
     expect(bodyCode).toMatch(/<canvas/);
   });
 
-  it('the CARD still adopts it — promotion did not move the element', () => {
-    expect(cardCode).toMatch(/nodeMedia\.adopt\(/);
-  });
+  // ⚠ 'the CARD still adopts it — promotion did not move the element' STOOD HERE.
+  // It asserted `nodeMedia.adopt(` in the legacy card, pinning that promotion had
+  // not moved the <video> element off the surface that owned it. With one
+  // surface left there is no second adopter to disagree, and the element's real
+  // owner is `node-video-source-registry` on graph lifetime — which is what the
+  // legs above and card-media-lifetime hold.
 
-  it('the RESIZE writes the CARD\'S OWN keys — width/height, and tracked', () => {
+  it('the RESIZE writes VIDEOBOX\'S OWN keys — width/height, and tracked', () => {
     // `resizedWidth`/`resizedHeight` are graphicEq/milkdrop/monoglitch keys;
     // reading them here would ignore every saved rack's wall-of-TVs size.
     expect(bodyCode).toMatch(/live\.data\.width = w/);
@@ -258,22 +258,19 @@ describe('the two surfaces agree, and the body is not a second owner', () => {
     expect(bodyCode).not.toMatch(/resizedWidth|resizedHeight/);
   });
 
-  it('FULL FRAME rides the SAME node.data.fullFrame key on both surfaces, tracked on both', () => {
+  it('FULL FRAME rides node.data.fullFrame, and the write is TRACKED', () => {
     // The boy-scout half of this promotion: the card's fullFrame and resize
-    // writes were bare proxy writes (no origin → no Cmd-Z). Both surfaces now
-    // route through mutateNode.
-    for (const [name, code] of [['card', cardCode], ['body', bodyCode]] as const) {
-      expect(code, `${name} reads data.fullFrame`).toMatch(/data\.fullFrame/);
-      expect(code, `${name} writes through mutateNode`).toMatch(/mutateNode\(/);
-    }
+    // writes were bare proxy writes (no origin → no Cmd-Z). The surviving
+    // surface routes through mutateNode, so the write lands on the undo stack.
+    expect(bodyCode, 'the body reads data.fullFrame').toMatch(/data\.fullFrame/);
+    expect(bodyCode, 'the body writes through mutateNode').toMatch(/mutateNode\(/);
     expect(bodyCode).toMatch(/live\.data\.fullFrame = on/);
-    expect(cardCode).toMatch(/live\.data\.fullFrame = on/);
   });
 
-  it('presenting surfaces hold a render lease on BOTH surfaces', () => {
+  it('the presenting surface holds a render lease', () => {
     // Fullscreen / full-frame outlive the viewport rect; without the lease a
     // presented picture freezes when the surface scrolls off-screen.
-    for (const [name, code] of [['card', cardCode], ['body', bodyCode]] as const) {
+    for (const [name, code] of [['body', bodyCode] as const]) {
       expect(code, `${name} holds the lease`).toMatch(/attachRenderLease\(/);
       expect(code, `${name} presents on fullscreen OR full-frame`).toMatch(
         /presenting: \(\) => fs\.isFullscreen \|\| fullFrame/,

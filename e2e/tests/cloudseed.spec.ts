@@ -1,52 +1,52 @@
 // e2e/tests/cloudseed.spec.ts
 //
-// CLOUDSEED end-to-end smoke. Spawns ANALOGVCO → CLOUDSEED → AUDIOOUT,
-// verifies the card mounts, the 4 preset slots cycle, the DECAY readout
-// updates, and a sweep of macro knobs doesn't produce console errors.
+// CLOUDSEED end-to-end smoke on the shell the user gets. The card's 4-slot
+// preset strip + name/DECAY readouts became: the dock ladder's
+// `control-preset_index` radiogroup (selection), the TILE's preset knob
+// whose aria-valuetext speaks the preset NAME, and the decay slider whose
+// aria-valuetext is the same def-formatted seconds the card readout printed.
+// The card's prev/next wrap-around arrows were a card-only affordance and
+// died with it (S2 ledger manifest); selection itself is covered here.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-test('CLOUDSEED preset slots cycle + name and DECAY readout update', async ({ page, rack }) => {
+test('CLOUDSEED presets drive the name + DECAY the def prints (dock radiogroup → tile aria)', async ({ page, rack }) => {
   await spawnPatch(
     page,
     [{ id: 'a-cs', type: 'cloudseed', position: { x: 100, y: 100 } }],
     [],
   );
 
-  await expect(page.locator('.svelte-flow__node-cloudseed')).toHaveCount(1);
+  const tile = page.locator('.svelte-flow__node[data-id="a-cs"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
 
-  // Slot 0 active by default (DIVINE INSPIRATION).
-  const slot0 = page.locator('[data-testid="cs-preset-slot-0"]');
-  const slot1 = page.locator('[data-testid="cs-preset-slot-1"]');
-  const slot3 = page.locator('[data-testid="cs-preset-slot-3"]');
-  const name  = page.locator('[data-testid="cs-preset-name"]');
-  const decay = page.locator('[data-testid="cs-decay-readout"]');
+  const name = tile.getByTestId('control-preset_index');
+  const decay = tile.getByTestId('control-late_line_decay');
+  await expect(name).toHaveAttribute('aria-valuetext', /divine inspiration/i);
+  const startDecay = await decay.getAttribute('aria-valuetext');
 
-  await expect(slot0).toBeVisible();
-  await expect(name).toContainText('DIVINE INSPIRATION');
-  const startDecay = await decay.innerText();
+  await tile.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible();
+  const slots = dock.getByTestId('control-preset_index').locator('[role="radio"]');
+  await expect(slots).toHaveCount(4);
 
-  // Click slot 1 (SHORT ROOM).
-  await slot1.click();
-  await expect(name).toContainText('SHORT ROOM');
-  // Decay readout should change vs the start.
-  const shortDecay = await decay.innerText();
+  // Slot 1 (SHORT ROOM): name follows, decay moves.
+  await slots.nth(1).click();
+  await expect(name).toHaveAttribute('aria-valuetext', /short room/i);
+  const shortDecay = await decay.getAttribute('aria-valuetext');
   expect(shortDecay).not.toBe(startDecay);
 
-  // Click slot 3 (INFINITE PAD) — longest tail.
-  await slot3.click();
-  await expect(name).toContainText('INFINITE PAD');
-  const infDecay = await decay.innerText();
+  // Slot 3 (INFINITE PAD) — longest tail; decay moves again.
+  await slots.nth(3).click();
+  await expect(name).toHaveAttribute('aria-valuetext', /infinite pad/i);
+  const infDecay = await decay.getAttribute('aria-valuetext');
   expect(infDecay).not.toBe(shortDecay);
 
-  // Click prev arrow — goes to BRIGHT HALL.
-  await page.locator('[data-testid="cs-preset-prev"]').click();
-  await expect(name).toContainText('BRIGHT HALL');
-  // Click next twice — wraps around back to DIVINE INSPIRATION via INFINITE PAD.
-  await page.locator('[data-testid="cs-preset-next"]').click();
-  await page.locator('[data-testid="cs-preset-next"]').click();
-  await expect(name).toContainText('DIVINE INSPIRATION');
+  // Back to slot 0: the full cycle lands where it started.
+  await slots.nth(0).click();
+  await expect(name).toHaveAttribute('aria-valuetext', /divine inspiration/i);
 });

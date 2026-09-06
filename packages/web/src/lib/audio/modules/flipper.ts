@@ -18,7 +18,6 @@ export const flipperDef: AudioModuleDef = {
   domain: 'audio',
   label: 'flipper',
   category: 'utilities',
-  card: 'FlipperCard',
 
   inputs: [
     { id: 'in1', type: 'gate', edge: 'gate' },

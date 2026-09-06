@@ -15,7 +15,7 @@
 // Each module carries its OWN one-shot latch (on the pinned mixer) so a user
 // DELETE is respected forever — the last test deletes recorderbox, reloads, and
 // proves it does NOT respawn (the scratch IndexedDB replica rehydrates the
-// latch). Driving /rack?shell=legacy keeps it in the normal e2e lane (no
+// latch). Driving /rack keeps it in the normal e2e lane (no
 // DB/relay). The pure spawn layout + wire plan are unit-tested in
 // channel-columns.test.ts; this spec is the end-to-end WIRING proof.
 
@@ -113,7 +113,7 @@ test.describe('workflow video zone defaults (recorderbox + synesthesia auto-wire
   test('spawns exactly one videoOut/recorderbox/synesthesia and wires master A/V', async ({
     page,
   }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await waitForPatch(page);
     await waitForVideoZoneTrio(page);
@@ -134,7 +134,7 @@ test.describe('workflow video zone defaults (recorderbox + synesthesia auto-wire
   });
 
   test('deleting recorderbox does NOT respawn it on reload (one-shot latch)', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const idbOk = await page.evaluate(() => typeof indexedDB !== 'undefined' && indexedDB !== null);

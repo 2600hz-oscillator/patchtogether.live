@@ -78,7 +78,9 @@ test('@webgl-smoke fixture pack registers through the REAL seam and composites t
   // are the same bytes — determinism is a property of the pack, asserted.
   const sample = () =>
     page.evaluate(() => {
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement;
+      const c = document.querySelector(
+        '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+      ) as HTMLCanvasElement;
       const { data } = c.getContext('2d')!.getImageData(
         Math.round(c.width / 2),
         Math.round(c.height / 2),
@@ -190,7 +192,7 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
     // broken fixture (the silently-black-layer class). Negative control of
     // the registration instrument.
     test.setTimeout(60_000);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await expect
       .poll(() => page.evaluate(() => typeof (globalThis as unknown as FixtureG).__toyboxRegisterFixtureContent))

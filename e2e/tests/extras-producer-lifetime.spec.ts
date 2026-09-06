@@ -422,8 +422,8 @@ async function blueJpeg(page: Page): Promise<string> {
 }
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT faceplate shell, which is the whole point: under
-  // `?shell=legacy` the real card renders in the lane and the bug is invisible.
+  // Plain /rack — the shipping faceplate shell, which is the whole point: with
+  // the module's own surface pinned in the lane the bug is invisible.
   await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
 }
@@ -542,7 +542,7 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
       await expect(
         page.locator(
           `.svelte-flow__node[data-id="${seeded}"] ` +
-            `[data-testid="${isMigrated ? 'module-shell' : 'module-shell-placeholder'}"]`,
+            `[data-testid="module-shell"]`,
         ),
         `${type} must be swapped to a lane TILE (${isMigrated ? 'a promoted face' : 'the un-migrated placeholder'}), ` +
           'or this test proves nothing',
@@ -759,7 +759,7 @@ test.describe('EXTRAS-channel producers are NODE-lifetime (#1720)', () => {
     await expect(
       page.locator(
         `.svelte-flow__node[data-id="${id}"] ` +
-          `[data-testid="${STRICT_FACES.has('picturebox') ? 'module-shell' : 'module-shell-placeholder'}"]`,
+          `[data-testid="module-shell"]`,
       ),
     ).toHaveCount(1, { timeout: 20_000 });
     await expect(

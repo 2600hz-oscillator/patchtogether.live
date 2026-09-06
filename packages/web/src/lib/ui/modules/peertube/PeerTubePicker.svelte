@@ -1,13 +1,11 @@
 <script lang="ts">
   // packages/web/src/lib/ui/modules/peertube/PeerTubePicker.svelte
   //
-  // THE BROWSE SURFACE, SHARED BY BOTH SURFACES — the search box with its rate
-  // limiter, the transport, the attribution anchor, the results roster and the
-  // legal disclaimer.
+  // THE BROWSE SURFACE — the search box with its rate limiter, the transport,
+  // the attribution anchor, the results roster and the legal disclaimer.
   //
-  // ⚠ WHY THIS IS ONE COMPONENT RATHER THAN TWO COPIES. Promotion stops BOTH
-  // surfaces rendering `PeerTubeCard.svelte`, so the faceplate needs this
-  // surface; `?shell=legacy` still renders the card, so the card needs it too.
+  // ⚠ WHY THIS IS ONE COMPONENT RATHER THAN A COPY PER MOUNT. The faceplate
+  // body needs this surface, and so does ARCHIVIST's browse control.
   // Two copies of a picker is how the two drift, and THIS MODULE PAIR HAS A
   // DOCUMENTED INSTANCE of correctness travelling by hand-copy and arriving
   // late — the `muted = false` audio trap that tvLibrarian hit one day before

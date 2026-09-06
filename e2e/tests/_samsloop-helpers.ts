@@ -60,3 +60,42 @@ export async function readSample(page: Page, nodeId: string): Promise<SamsloopSa
     };
   }, nodeId);
 }
+
+// ── DEFAULT-SHELL surface helpers (S2) ──────────────────────────────────────
+//
+// The card is gone from the default boot; SAMSLOOP's non-ranked affordances —
+// the FILE cell, REC/EXPORT, the waveform — live in the dock full view.
+// Everything is PANE-scoped because the lane tile ranks some of the same cell
+// testids (`shell-cell-samsloop-trigger`).
+
+import { expect } from '@playwright/test';
+
+/** Open the SAMSLOOP dock full view and return the PANE locator. */
+export async function openSamsloopPane(page: Page, id = 's') {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId('samsloop-face-canvas')).toBeVisible({ timeout: 30_000 });
+  return pane;
+}
+
+/** The NODE-keyed registry's recording flag — the recording-state observable
+ *  on the shell (the card's REC/STOP label flip died with the card; the cell
+ *  label is static by design). */
+export async function samsloopIsRecording(page: Page, id = 's'): Promise<boolean> {
+  return page.evaluate(
+    (n) =>
+      (globalThis as unknown as { __samsloopRecording: (x: string) => { recording: boolean } })
+        .__samsloopRecording(n).recording,
+    id,
+  );
+}

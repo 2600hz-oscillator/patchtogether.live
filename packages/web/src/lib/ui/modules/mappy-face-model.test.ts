@@ -9,8 +9,9 @@
 //   1. ⚠ THE INERT-CONTROL TRAP. The factory PREFERRED a `node.data` mirror
 //      over the param for BOTH ranked controls, while every generic shell cell
 //      writes the param ALONE. On a fresh node the faceplate would have worked;
-//      on any node the card, a map import or a `?shell=legacy` collaborator had
-//      touched, the mirror was present and the GRID toggle and SURFACES control
+//      on any node a MIRROR WRITER had touched — a map import, a collaborator
+//      on an older build — the mirror was present and the GRID toggle and
+//      SURFACES control
 //      were DEAD — with the params declared, the cells rendered, and
 //      faces-parity's `readParam` oracle watching the param move. Every leg
 //      below that says "reads the param" is pinning that.
@@ -54,7 +55,6 @@ const read = (rel: string) => readFileSync(resolve(HERE, rel), 'utf8');
 
 const defSource = read('../../video/modules/mappy.ts');
 const bodySource = read('mappy/MappyMapBody.svelte');
-const cardSource = read('MappyCard.svelte');
 const editorSource = read('MappyEditor.svelte');
 const editSource = read('mappy-edit.ts');
 
@@ -62,7 +62,6 @@ const editSource = read('mappy-edit.ts');
 // legs below FORBID a construct whose natural explanation names it.
 const defCode = stripSourceComments(defSource);
 const bodyCode = stripSourceComments(bodySource);
-const cardCode = stripSourceComments(cardSource);
 const editorCode = stripSourceComments(editorSource);
 const editCode = stripSourceComments(editSource);
 
@@ -122,9 +121,7 @@ describe('mappy face — promoted, and the tile shows the module', () => {
     // held two. All three surfaces now read the shared pumps
     // (`node-versions.svelte.ts`), so none of them depends on a neighbour
     // re-rendering.
-    for (const [name, code] of [
-      ['MappyMapBody', bodyCode],
-      ['MappyCard', cardCode],
+    for (const [name, code] of [['MappyMapBody', bodyCode],
       ['MappyEditor', editorCode],
     ] as const) {
       expect(code, `${name} must read nodeVersion() for its node-scoped deriveds`)
@@ -259,7 +256,7 @@ describe('⚠ the INERT-CONTROL TRAP — the params are the ONE source, in every
     // ⚠ THE "A FIX LANDS ONLY ON THE SURFACE YOU LOOKED AT" GUARD. Repairing
     // the body while the editor still read the mirror would print "GRID OFF"
     // over a screen full of grid and make its first press a no-op.
-    for (const [name, code] of [['MappyCard', cardCode], ['MappyEditor', editorCode]] as const) {
+    for (const [name, code] of [['MappyEditor', editorCode] as const]) {
       expect(code, `${name} must read the GRID override through the shared param reader`)
         .toMatch(/getShowGrid\(/);
       expect(code, `${name} must not read a node.data.showGrid mirror`)
@@ -302,7 +299,7 @@ describe('⚠ the COUNT’s write SHAPE — the override registry, driven both w
   });
 });
 
-describe('the two ranked control FAMILIES are real cells the card already names', () => {
+describe('the two ranked control FAMILIES are real, live shell cells', () => {
   it('both resolve a cell spec, of the right kind, under the RANKED key', () => {
     // ⚠ Keyed by the `-{n}` TEMPLATE, not the bare family id: a bare family id
     // resolves to nothing and the shell paints an inert cell — the failure the
@@ -324,24 +321,24 @@ describe('the two ranked control FAMILIES are real cells the card already names'
       .toEqual({ kind: 'audition', seam: 'file-export' });
   });
 
-  it('the testid prefixes ALREADY exist on the legacy card — no card edit was needed', () => {
-    for (const f of mappyDef.controlFamilies ?? []) {
-      expect(cardCode, `${f.id}: the card must already emit ${f.testidPrefix}`)
-        .toContain(`data-testid="${f.testidPrefix}"`);
-    }
-  });
+  // ⚠ 'the testid prefixes ALREADY exist on the legacy card — no card edit was
+  // needed' STOOD HERE. It grepped `MappyCard.svelte` for each declared
+  // `controlFamily.testidPrefix`, the module-local half of `module-docs-lint`'s
+  // card-drift leg. That leg no longer asks whether a prefix appears in card
+  // markup — it cannot, because the shell stamps `shell-cell-<familyId>` from
+  // an interpolation — and instead resolves each family to a live SHELL CELL.
+  // Both of mappy's families are asserted to do exactly that above.
 
   it('the venue file format has ONE implementation — the shared action seam', () => {
-    // A second copy is how the card, the ranked cells and the faceplate come to
-    // disagree about what a `.json` map means, with nothing red. The card and
-    // the cells both call `mappy-map-actions`; nothing re-implements the
-    // serializer or the download.
-    expect(cardCode).toMatch(/from '\.\/mappy-map-actions'/);
+    // A second copy is how the ranked cells and the faceplate come to disagree
+    // about what a `.json` map means, with nothing red. The cells call
+    // `mappy-map-actions`; nothing re-implements the serializer or the
+    // download.
     const cells = stripSourceComments(
       readFileSync(resolve(HERE, '../workflow/shell-cells.ts'), 'utf8'),
     );
     expect(cells).toMatch(/from '\$lib\/ui\/modules\/mappy-map-actions'/);
-    for (const [name, code] of [['MappyCard', cardCode], ['MappyMapBody', bodyCode]] as const) {
+    for (const [name, code] of [['MappyMapBody', bodyCode] as const]) {
       expect(code, `${name} may not re-implement serializeMap`).not.toMatch(/serializeMap\(/);
       expect(code, `${name} may not re-implement the download`).not.toMatch(/createObjectURL/);
     }

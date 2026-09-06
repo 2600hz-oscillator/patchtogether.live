@@ -65,28 +65,11 @@ interface ExemptCall {
 
 const EXEMPT_CALLS: readonly ExemptCall[] = [
   {
-    file: 'FoxyCard.svelte',
-    receiver: 'c',
-    firstArg: 'stage',
-    why:
-      'DELIBERATELY CRISP. The line above sets imageSmoothingEnabled = false: FOXY is ' +
-      'pixel art and hard edges are the look. A box-filtered downscale would soften ' +
-      'exactly what the card exists to show, and #1846 says so by name.',
-  },
-  {
-    file: 'RasterizeCard.svelte',
-    receiver: 'ctx2d',
-    firstArg: 'stage',
-    why:
-      'DELIBERATELY CRISP, same as FOXY — imageSmoothingEnabled = false two lines above. ' +
-      'RASTERIZE renders a coarse pixel grid on purpose; smoothing it is the bug, not the fix.',
-  },
-  {
     file: 'rasterize/RasterizeOutputBody.svelte',
     receiver: 'ctx2d',
     firstArg: 'stage',
     why:
-      'DELIBERATELY CRISP — the RasterizeCard entry above, on the FACE surface. Promotion ' +
+      'DELIBERATELY CRISP — RasterizeCard carried this exemption too, until the fleet went. ' +
       'moves this module from its card to a fullViewBody extension, and the picture is the ' +
       'same coarse pixel grid for the same reason, so the same exemption applies: ' +
       'imageSmoothingEnabled = false two lines above, and smoothing it is the bug. ⚠ It is ' +
@@ -100,7 +83,7 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
     receiver: 'ctx2d',
     firstArg: 'stage',
     why:
-      'DELIBERATELY CRISP — the FoxyCard entry above, on the FACE surface, and it is here for ' +
+      'DELIBERATELY CRISP — FoxyCard carried this exemption too, until the fleet went, and it is here for ' +
       'the reason the DELIBERATELY_CRISP header states rather than by analogy: promotion makes ' +
       "`migrated()` true, so from this PR onward nothing renders FoxyCard on either default " +
       'surface and an assertion about ITS smoothing stops protecting anything a player can ' +
@@ -111,9 +94,9 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'card resamples the SHARED WebGL DRAWING BUFFER, and these pixels never touch it — foxy ' +
       'is an AUDIO def whose rasters are painted on the audio side and handed over as ImageData.',
   },
-  // ── SKIFREE — the pair added BY the bug this form fixes ──────────────────
+  // ── SKIFREE — the entry added BY the bug this form fixes ─────────────────
   //
-  // ⚠ THESE TWO ENTRIES EXIST BECAUSE THE THREE-ARGUMENT FORM WAS THE DEFECT
+  // ⚠ THIS ENTRY EXISTS BECAUSE THE THREE-ARGUMENT FORM WAS THE DEFECT
   // HERE, WHICH IS THE OPPOSITE OF EVERY OTHER ROW ABOVE. `SkifreeCard` drew
   // `drawImage(src, 0, 0)` under a comment arguing it was "genuinely 1:1, both
   // canvases are sized from the SAME exported constant". The premise is FALSE:
@@ -130,27 +113,11 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
   // than from `SKIFREE_CANVAS_SIZE`, because the source size is the bundle's to
   // choose.
   {
-    file: 'SkifreeCard.svelte',
-    receiver: 'c2d',
-    firstArg: 'src',
-    why:
-      'DELIBERATELY CRISP, and the resample is REAL rather than incidental — the source is the '
-      + 'vendored skifree.js bundle\'s own canvas, which it sizes to `width * devicePixelRatio`, '
-      + 'so this is a genuine 2:1 downscale on a retina display and a 1:1 copy elsewhere. SKIFREE '
-      + 'is 1991 pixel art (imageSmoothingEnabled = false three lines above) and a box-filtered '
-      + 'downscale would soften exactly the sprite grid the game exists to show — the FOXY / '
-      + 'RASTERIZE argument, on a source this repo does not own. ⚠ It is also OUT of scope for '
-      + 'the #1846 defect on its merits, not merely by preference: that bug is aliasing when a '
-      + 'card resamples the SHARED WebGL DRAWING BUFFER, and these pixels never touch it — '
-      + 'skifree is an AUDIO def whose canvas is painted by a 2-D context inside a committed '
-      + 'third-party IIFE.',
-  },
-  {
     file: 'skifree/SkifreeScreen.svelte',
     receiver: 'c2d',
     firstArg: 'src',
     why:
-      'DELIBERATELY CRISP — the SkifreeCard entry above, on the FACE surface, and the shared one: '
+      'DELIBERATELY CRISP — SkifreeCard carried this exemption too, until the fleet went, and this is the shared one: '
       + 'this ONE component is both the dock `fullViewBody` (320 CSS px, steerable) and the lane '
       + '`tileBody` (104 CSS px, read-only), so the lane tile is a genuine ~6:1 downscale of the '
       + 'bundle\'s 640-px canvas and smoothing it would turn a sprite field into grey mush. '
@@ -162,9 +129,15 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       + 'WebGL drawing buffer.',
   },
   {
-    file: 'SynesthesiaCard.svelte',
+    // ⚠ MOVED FILE, NOT SUBSTANCE (legacy-removal S1) — the same shape as the
+    // four wavesculpt entries below. The cross-domain pixel path left
+    // `SynesthesiaCard.svelte` for `$lib/ui/media/frame-producers.ts` when the
+    // pump became node-lifetime; the CALL is unchanged, so the entry is
+    // re-pointed rather than deleted, and `EXTRA_SCANNED` (see `cardFiles`)
+    // keeps that file inside this sweep's subject.
+    file: '../media/frame-producers.ts',
     receiver: 'ctx2d',
-    firstArg: 'imageSource',
+    firstArg: 'image as CanvasImageSource',
     why:
       'NOT A DISPLAY — an ANALYSIS readback. The very next lines getImageData() this ' +
       'canvas and run videoChannelLevels() over it to derive audio levels. Changing the ' +
@@ -234,39 +207,47 @@ const EXEMPT_CALLS: readonly ExemptCall[] = [
       'progressive halving, and this file is in the WebGL attest basis.',
   },
   {
-    file: 'TimelordeCard.svelte',
+    // ⚠ TWO OF TIMELORDE'S THREE ENTRIES MOVED FILE (legacy-removal S1) AND THE
+    // THIRD IS GENUINELY DEAD — the distinction the ANCHOR clause forces, and the
+    // reason it is worth having. The composite left `TimelordeCard.svelte` for
+    // `$lib/ui/media/frame-producers.ts` when the display became node-lifetime,
+    // so the upstream-frame blit and the owl blit are RE-POINTED. The third —
+    // `sctx.drawImage(displayCanvas, …)` — was the card copying its own visible
+    // canvas into a staging scratch before handing it over; the producer
+    // composites straight into the scratch, so that copy does not exist any
+    // more and its entry is DELETED rather than moved.
+    file: '../media/frame-producers.ts',
     receiver: 'ctx2d',
-    firstArg: 'img',
+    firstArg: 'image as CanvasImageSource',
     why:
       'NOT A DISPLAY — this paints an UPSTREAM frame into TIMELORDE\'s own scratch, which ' +
-      'is then pushed back into the graph as displayFrame. It is a CONTENT path: changing ' +
+      'is then pushed back into the graph as its display frame. It is a CONTENT path: changing ' +
       'the filter changes what downstream modules receive, not how a preview looks.',
   },
   {
-    file: 'TimelordeCard.svelte',
+    file: '../media/frame-producers.ts',
     receiver: 'ctx2d',
-    firstArg: 'owlImg',
+    firstArg: 'owl as unknown as CanvasImageSource',
     why:
       'A decorative still image (the idle owl) aspect-fitted into the frame, not the shared ' +
       'engine drawing buffer. It already sets imageSmoothingEnabled = true, and the reduction ' +
       'from the asset to the frame is small.',
   },
-  {
-    file: 'TimelordeCard.svelte',
-    receiver: 'sctx',
-    firstArg: 'displayCanvas',
-    why:
-      'NOT A DISPLAY — the DISPLAY_W x DISPLAY_H staging copy that becomes an ImageBitmap ' +
-      'written back to the engine as displayFrame. Content path, same as the img entry above.',
-  },
 ];
 
-/** The cards the owner reported in #1846. Anchoring the fix itself: if any of
+/** The surfaces the owner reported in #1846. Anchoring the fix itself: if any of
  *  these stops routing through the helper the gate is red, whatever the rest of
- *  the tree does. */
+ *  the tree does.
+ *
+ *  ⚠ THE TWO CARDS ARE NOW THEIR FACE BODIES. The owner reported the aliasing on
+ *  VIDEO OUT and BENTBOX, and both modules paint through
+ *  `<module>/<Module>*Body.svelte` on the surface a player actually sees. Naming
+ *  the card would anchor the fix to a file about to stop rendering; naming the
+ *  body keeps it anchored to the picture. MEASURED: both bodies already route
+ *  through the helper, so this is a re-point and not a relaxation. */
 const REPORTED_IN_1846 = [
-  'VideoOutCard.svelte',
-  'BentboxCard.svelte',
+  'videoOut/VideoOutBody.svelte',
+  'bentbox/BentboxOutputBody.svelte',
   'VideoTileThumb.svelte',
 ] as const;
 
@@ -275,15 +256,12 @@ const REPORTED_IN_1846 = [
  *
  *  ⚠ THE FACE BODY IS IN THIS LIST FOR A REASON THAT WOULD OTHERWISE HAVE BEEN
  *  LOST. Promoting a module makes `migrated()` true, and neither surface renders
- *  its card after that — so from the promotion onward `RasterizeCard.svelte` is
- *  code nobody looks at, and an assertion about ITS smoothing stops protecting
- *  anything a user can see. The face body is where the guarantee has to live to
- *  keep meaning what it meant. The card stays listed too: it is still the
- *  `?shell=legacy` surface, and dropping it would quietly narrow the claim. */
+ *  its card after that — so `RasterizeCard.svelte` became code nobody looks at,
+ *  and an assertion about ITS smoothing stopped protecting anything a user can
+ *  see. The face body is where the guarantee has to live to keep meaning what it
+ *  meant, and now that the fleet is going it is the only place it CAN live. */
 const DELIBERATELY_CRISP = [
-  'FoxyCard.svelte',
   'foxy/FoxyOutputBody.svelte',
-  'RasterizeCard.svelte',
   'rasterize/RasterizeOutputBody.svelte',
 ] as const;
 
@@ -356,16 +334,52 @@ function findResamplingDraws(src: string, file: string): FoundCall[] {
   return out;
 }
 
+/**
+ * Non-`.svelte` files that hold a resampling tap this sweep must keep seeing.
+ *
+ * ⚠ NAMED, AND KEPT SHORT ON PURPOSE. The walk below is `.svelte` under this
+ * directory because that was the whole population when #1846 was filed. The
+ * legacy-removal producer extractions move rAF bodies OUT of cards and into
+ * node-lifetime `.ts` controllers, and a tap that changes file must not fall out
+ * of the subject on the way — which is exactly the failure the four WAVESCULPT
+ * entries above record from when their renderer moved. Following every `.ts`
+ * edge instead would redefine the subject as "the whole app", the blind-gate
+ * failure inverted; naming the destination keeps the population honest and the
+ * reason visible at the point of the edit.
+ */
+const EXTRA_SCANNED = ['../media/frame-producers.ts'] as const;
+
+/**
+ * ⚠ `*Card.svelte` IS OUT OF THIS SWEEP, and the three rows that used to name a
+ * card are why. Every one — `FoxyCard`, `RasterizeCard`, `SkifreeCard` — had a
+ * FACE TWIN listed directly beneath it, and each `why` said in its own words
+ * that "promotion makes `migrated()` true, so nothing renders the card on either
+ * default surface and an assertion about ITS smoothing stops protecting anything
+ * a player can see". The fleet deletion is that promotion finishing.
+ *
+ * Dropping the card rows and the card half of the walk TOGETHER is what keeps
+ * the ANCHOR clause honest. Either alone is a wrong answer: an exemption naming
+ * a call in a deleted file is stale, and a card left in the walk with its
+ * exemption removed is a reported offender. The twins carry the whole claim, and
+ * they are the surfaces a player actually sees.
+ */
 function cardFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.isFile() && p.endsWith('.svelte')) out.push(p);
+      else if (e.isFile() && p.endsWith('.svelte') && !p.endsWith('Card.svelte')) out.push(p);
     }
   };
   walk(HERE);
+  for (const rel of EXTRA_SCANNED) {
+    const abs = join(HERE, rel);
+    // ANCHORED: a named file that stops existing is a scan the sweep silently
+    // stopped performing, so it throws rather than skipping.
+    if (!existsSync(abs)) throw new Error(`EXTRA_SCANNED names a missing file: ${rel}`);
+    out.push(abs);
+  }
   return out.sort();
 }
 
@@ -376,8 +390,8 @@ const ALL_DRAWS: FoundCall[] = cardFiles().flatMap((abs) =>
   findResamplingDraws(readFileSync(abs, 'utf8'), relative(HERE, abs).split('\\').join('/')),
 );
 
-describe('#1846 — no card resamples a picture in a single drawImage tap', () => {
-  it('the scanner is looking at cards at all', () => {
+describe('#1846 — no surface resamples a picture in a single drawImage tap', () => {
+  it('the scanner is looking at surfaces at all', () => {
     // Vacuity leg with real slack: the sweep below asserts an EMPTY offender
     // list, which a scanner that found no files would also produce.
     expect(cardFiles().length).toBeGreaterThan(EXEMPT_CALLS.length);
@@ -412,14 +426,14 @@ describe('#1846 — no card resamples a picture in a single drawImage tap', () =
     expect(thin).toEqual([]);
   });
 
-  it('the cards reported in #1846 route through the helper', () => {
+  it('the surfaces reported in #1846 route through the helper', () => {
     const missing = REPORTED_IN_1846.filter(
       (f) => !readFileSync(join(HERE, f), 'utf8').includes(HELPER),
     );
     expect(missing).toEqual([]);
   });
 
-  it('NEGATIVE CONTROL: the deliberately-crisp cards stay crisp and stay OUT', () => {
+  it('NEGATIVE CONTROL: the deliberately-crisp surfaces stay crisp and stay OUT', () => {
     // The claim "#1846 did not touch foxy/rasterize", pinned. Both halves: the
     // smoothing is still off, AND neither imports the smoothing helper.
     for (const f of DELIBERATELY_CRISP) {

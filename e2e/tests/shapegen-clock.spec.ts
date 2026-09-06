@@ -190,13 +190,13 @@ test.describe('SHAPEGEN — CLOCK gate sample-and-hold', () => {
     );
     await seedKriaGate(page, 'clkSeq');
 
-    await expect(page.locator('[data-testid="shapegen-card"]')).toHaveCount(1);
-
-    // The [CLOCKED] badge should show once the clock_in edge is wired.
     await expect(
-      page.locator('[data-testid="shapegen-clocked-badge"]'),
-      '[CLOCKED] badge appears when clock_in is patched',
-    ).toBeVisible();
+      page.locator('.svelte-flow__node:has([data-shell-type="shapegen"])'),
+    ).toHaveCount(1);
+
+    // ⚠ The card's [CLOCKED] badge died with the card (no shell home — the
+    // clock state's observable is the regen counters this test pins below);
+    // recorded in the S2 legacy-removal manifest.
 
     // ---- 1. Wait for at least 2 regenerations (each rising edge fires
     //         exactly one + the first-draw regen seeds count to 1, so

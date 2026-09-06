@@ -18,13 +18,13 @@
 //   VRT_PROBE=1 npx playwright test --config=vrt/vrt.config.ts vrt-geom-probe
 
 import { test, expect } from '@playwright/test';
-import { spawnPatch, ensureCombineOpen } from '../tests/_helpers';
+import { spawnPatch, ensureCombineOpen, openToyboxDock } from '../tests/_helpers';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
 
 test('combine-editor capture geometry', async ({ page }) => {
   test.setTimeout(90_000);
   await pinVrtFonts(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await spawnPatch(
@@ -59,7 +59,16 @@ test('combine-editor capture geometry', async ({ page }) => {
         tick();
       }),
   );
-  const card = page.locator('.svelte-flow__node-toybox').first();
+  // ⚠ BY NODE ID, NOT NODE TYPE. xyflow tags a lane node with its NODE TYPE
+  // and every lane node is `moduleShell`, so a per-module class matches
+  // nothing (the mechanism `e2e/tests/ptzcam.spec.ts` records).
+  // ⚠ THE CONSOLE IS IN THE DOCK PANE, NOT THE LANE. TOYBOX declares no
+  // `tileBody`, so the graph SVG this probe measures lives in the
+  // `fullViewBody` and the geometry it reports is the PANE's.
+  await openToyboxDock(page, 'tb');
+  const card = page
+    .locator('[data-testid="dock-fullview-pane"][data-pane-node="tb"]')
+    .getByTestId('toybox-face-body');
   await card.waitFor({ state: 'visible', timeout: 15_000 });
   // eslint-disable-next-line no-console
   console.log('[geom] BIRTH trace:\n  ' + (await birth).join('\n  '));
@@ -186,7 +195,10 @@ test('combine-editor capture geometry', async ({ page }) => {
   const m = await page.evaluate(() => {
     const s = document.querySelector('[data-testid="toybox-graph-svg"]') as SVGElement;
     const w = document.querySelector('[data-testid="toybox-graph-wrap"]') as HTMLElement;
-    const c = document.querySelector('.svelte-flow__node-toybox') as HTMLElement;
+    // The DOCK PANE's console body — the box the graph really lives in.
+    const c = document.querySelector(
+      '[data-testid="dock-fullview-pane"][data-pane-node="tb"] [data-testid="toybox-face-body"]',
+    ) as HTMLElement;
     const sr = s.getBoundingClientRect();
     const wr = w.getBoundingClientRect();
     const cr = c.getBoundingClientRect();

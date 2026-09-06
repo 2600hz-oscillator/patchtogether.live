@@ -670,15 +670,13 @@ export const FACES = [
   // so no key leaves a band and neither can be emptied. Three cells, one packed
   // dock row.
   //
-  // ⚠ THE ONE MEMBER OF ITS COHORT IN `STRICT_VRT_MODULES` — it has a COMMITTED
-  // legacy-card baseline, unlike moog911/moogCp3/moog921Vco which are exempt.
-  // That card baseline is NOT expected to move: `vrt.spec.ts` navigates to
-  // `/rack?shell=legacy`, so promotion does not change what it captures, and the
-  // `options[]` roster this face adds is read by the SHELL — the card builds its
-  // own mode name from `MOOG911A_MODE_NAMES` and is untouched. Verified by
-  // capturing the card scene on this branch and against `main` on the same
-  // machine and diffing the two actuals, which is the only same-platform
-  // comparison a local run can honestly make.
+  // ⚠ THE ONE MEMBER OF ITS COHORT THAT ONCE HAD A COMMITTED LANE BASELINE,
+  // unlike moog911/moogCp3/moog921Vco which were exempt. It did NOT move on
+  // promotion: that scene captured the module's own pre-promotion surface,
+  // which builds its mode name from `MOOG911A_MODE_NAMES` and never reads the
+  // `options[]` roster this face adds. Verified at the time by diffing two
+  // local actuals, the only same-platform comparison a local run can honestly
+  // make. (Scene and baseline were both deleted in S3.)
   //
   // PIXEL-DETERMINISTIC: the module emits nothing until a trigger arrives (its
   // factory's only source is a ConstantSource pinned at 0), `glyph: 'none'` is
@@ -1473,8 +1471,9 @@ export const FACES = [
   // because the two are unrelated. The hero is a PANEL, not a live trace: the
   // picture is drawn from the wavetable in `node.data` plus the morph/spread
   // knobs plus the CV taps, and the component draws in an EFFECT over those
-  // inputs rather than a `requestAnimationFrame` loop (the legacy card uses
-  // rAF; the panel deliberately does not). With the graph frozen the taps read
+  // inputs rather than a `requestAnimationFrame` loop (the module's earlier
+  // surface used rAF; the panel deliberately does not). With the graph frozen
+  // the taps read
   // 0 and every input is pinned, so the picture is a pure function of its
   // declared state and needs no mask — which matters, because a masked hero
   // picture asserts nothing.
@@ -3567,8 +3566,9 @@ export const FACES = [
     // record. Re-derive from the picture, not from the reasoning, when this
     // changes.
     //
-    // This module's legacy card is EXEMPT_FROM_VRT precisely because its state
-    // "depends on getUserMedia permission + audioinput presence". The face is
+    // This module's earlier scene was EXEMPT_FROM_VRT precisely because its
+    // state "depends on getUserMedia permission + audioinput presence". The face
+    // is
     // not, and the difference is a PRODUCT guarantee rather than a test flag:
     //
     //   1. NOTHING IS EVER ACQUIRED IN A FRESH CONTEXT. Both face surfaces bind
@@ -3959,10 +3959,9 @@ export const FACES = [
     // board through the real assign path), but installing that in the VRT
     // harness is a change to the harness rather than to this module, and it is
     // the boundary `gamepad` and `midiclock` both drew. The filled surface is
-    // covered by `e2e/tests/electra-control.spec.ts` (the card, verbatim, under
-    // `?shell=legacy`), by `e2e/tests/workflow-drawer-face.spec.ts` (this body,
-    // in the pinned `e` tray, on the DEFAULT shell) and by
-    // `electracontrol-face-model.test.ts`.
+    // covered by `e2e/tests/electra-control.spec.ts`, by
+    // `e2e/tests/workflow-drawer-face.spec.ts` (this body, in the pinned `e`
+    // tray) and by `electracontrol-face-model.test.ts`.
     //
     // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
     // canvas, no engine node — so `hasVideoSurface` is false and the AUDIO boot
@@ -4011,9 +4010,8 @@ export const FACES = [
     // bound board through the real Send-to path), but installing that in the
     // VRT harness is a harness change, the boundary gamepad / midiclock /
     // electraControl all drew. The bound surface is covered by
-    // `e2e/tests/control-surface.spec.ts` (the card, verbatim, under
-    // `?shell=legacy`), by `e2e/tests/controlsurface-face.spec.ts` (the board
-    // body and tile, on the DEFAULT shell) and by
+    // `e2e/tests/control-surface.spec.ts`, by
+    // `e2e/tests/controlsurface-face.spec.ts` (the board body and tile) and by
     // `controlsurface-face-model.test.ts`.
     //
     // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'meta'` — no ports, no
@@ -4110,9 +4108,9 @@ export const FACES = [
     // there is no canvas anywhere on the plate. There is no clock to pin
     // because nothing on the plate reads one.
     //
-    // The module is already in `STRICT_VRT_MODULES` — its legacy CARD has held
-    // committed linux baselines since #953 on the same determinism argument —
-    // so this scene extends an existing claim to the faceplate rather than
+    // The module is already in `STRICT_VRT_MODULES` — it has held committed
+    // linux baselines since #953 on the same determinism argument — so this
+    // scene extends an existing claim to the faceplate rather than
     // making a new one.
   },
   // ── VFPGA-RUNNER — the reconfigurable HOST, and the roster's only face whose
@@ -4313,9 +4311,10 @@ export const FACES = [
     // connecting → close → `scheduleReconnect()` on a doubling 1 s→5 s backoff
     // forever.
     //
-    // On the LEGACY CARD that makes the status row phase-dependent — it paints
-    // `stateLabel`, which alternates between "connecting…" and "bridge not
-    // found". THE FACE DOES NOT PAINT IT AT ALL. Every one of those strings is
+    // On the pre-promotion surface that made the status row phase-dependent —
+    // it painted `stateLabel`, which alternates between "connecting…" and
+    // "bridge not found". THE FACE DOES NOT PAINT IT AT ALL. Every one of those
+    // strings is
     // deleted by the resting-text ruling (see `es9-status-model.ts`, which is
     // where they went), so what remains is:
     //
@@ -4432,11 +4431,12 @@ export const FACES = [
     // unlikely — there is no path to it without a click, so the capture cannot
     // DRIFT into the hardware-dependent state.
     //
-    // ⚠ ITS `EXEMPT_FROM_VRT` CARD ENTRY IS DELIBERATELY LEFT STANDING. That
-    // exemption is about the LEGACY CARD scene in `vrt.spec.ts`, which is a
-    // different subject from these two face scenes, and the block those entries
-    // share is explicit that discharging the argument for one module does not
-    // discharge it for a sibling. Draining it is a separate, deliberate edit on
+    // ⚠ ITS EXEMPTION ENTRY WAS DELIBERATELY LEFT STANDING AT THE TIME. That
+    // exemption was about the lane scene in `vrt.spec.ts`, a different subject
+    // from these two face scenes, and the block those entries shared is explicit
+    // that discharging the argument for one module does not discharge it for a
+    // sibling. (The scene and its table are both deleted in S3.) Draining it was
+    // a separate, deliberate edit on
     // its own evidence; this promotion does not make it.
     //
     // ⚠ WHAT THIS BASELINE DOES **NOT** COVER, stated rather than implied: the
@@ -4474,11 +4474,7 @@ export const FACES = [
     // nothing to diverge from. The DIVERGED state is a workflow-lane condition
     // this harness does not construct, and it is asserted in
     // `midi-out-buddy-status-model.test.ts` (both the boolean and the sentence)
-    // plus `workflow-channel-columns.spec.ts` on the legacy card, which
-    // survives under `?shell=legacy`.
-    //
-    // ⚠ ITS `EXEMPT_FROM_VRT` CARD ENTRY IS ALSO LEFT STANDING, for the reason
-    // the sibling entry gives.
+    // plus `workflow-channel-columns.spec.ts`.
     //
     // ⚠ NO `videoFaceWhy` AND NO `simPin`. `domain: 'audio'`, `outputs: []`,
     // and no canvas anywhere on the surface. The lamps change only when
@@ -4518,10 +4514,10 @@ export const FACES = [
   //     `if (!source.trim()) return`, so an empty body never fires and the lamp
   //     is dark in every frame.
   //
-  // The CARD exemptions STAY. They are about `?shell=legacy`, where the card
-  // paints its own live status line, and this is the rings / attenumix / es9
-  // precedent: a face is baselined while its legacy card is not, on evidence
-  // that belongs to the surface being captured.
+  // ⚠ THE LANE EXEMPTIONS THAT STOOD BESIDE THIS ENTRY ARE GONE WITH THEIR
+  // SCENES (S3). They were about a second renderer painting its own live status
+  // line — the rings / attenumix / es9 precedent, where a face is baselined on
+  // evidence that belongs to the surface being captured.
   {
     type: 'clockedRunner',
     // ONE band: the single DIV selector cell. `params: []`, so nothing else
@@ -4553,8 +4549,8 @@ export const FACES = [
   // ONE band each (`bridge`, holding CONNECT + DISCONNECT). No hero, so nothing
   // empties it and the post-hero count is the authored count.
   //
-  // ⚠ THE DETERMINISM ARGUMENT IS THE INVERSE OF THE LEGACY CARD'S, AND THE FACE
-  // IS WHAT SUPPLIES IT. Both defs' factories call `acquireVstBridge`
+  // ⚠ THE DETERMINISM ARGUMENT IS THE INVERSE OF THE ONE THE OLD SCENE MADE,
+  // AND THE FACE IS WHAT SUPPLIES IT. Both defs' factories call `acquireVstBridge`
   // UNCONDITIONALLY, `SharedArrayBuffer` is present on `/rack` (COOP/COEP for
   // Faust), so `vstBridgeAvailable()` is true on every runner, the transport
   // Worker really does spawn, really does fail to reach ws://127.0.0.1:9309, and
@@ -4694,7 +4690,7 @@ export const FACES = [
           + 'cell and no gate has fired. ⚠ It REACHES this factory only because frogger is '
           + 'main-thread: simPin installs boot-time globals via addInitScript, so a worker '
           + 'renderLocus would put it out of reach (the acidwarp case). ⚠ THE SAME GLOBAL PINS '
-          + 'THE LEGACY CARD SCENE in vrt-scenes.ts, which is what let frogger leave '
+          + 'THE LANE SCENE in vrt-scenes.ts, which is what let frogger leave '
           + 'EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in this same commit — one hook, three '
           + 'baselines, and the exemption\'s own stated exit condition met rather than argued '
           + 'around. ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME: its runTic() runs inside '
@@ -4763,7 +4759,7 @@ export const FACES = [
           + 'two are ONE pin in two halves and neither works alone. ⚠ It REACHES this factory '
           + 'only because modtris is main-thread: simPin installs boot-time globals via '
           + 'addInitScript, so a worker renderLocus would put it out of reach (the acidwarp '
-          + 'case). ⚠ THE SAME PAIR PINS THE LEGACY CARD SCENE in vrt-scenes.ts, which is what '
+          + 'case). ⚠ THE SAME PAIR PINS THE LANE SCENE in vrt-scenes.ts, which is what '
           + 'let modtris leave EXEMPT_FROM_VRT and ALLOWED_PERMANENT_EXEMPT in this same commit '
           + '— one hook, three baselines. ⚠ DOOM IS EXCLUDED FROM THIS MECHANISM BY NAME: its '
           + 'runTic() runs inside surface.draw, so its game clock IS its frame clock and a tick '
@@ -5270,7 +5266,7 @@ export const FACES = [
       'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
       + 'without this field bootWithFace waits out the full test timeout for a column membership '
       + 'a video node never acquires. ⚠ AND IT IS CAPTURABLE DESPITE ITS OLD `EXEMPT_FROM_VRT` '
-      + 'ENTRY, which is narrowed to the legacy card in this same diff: the exemption said '
+      + 'ENTRY, which is narrowed to the lane scene in this same diff: the exemption said '
       + '"nothing patched is non-deterministic chrome over a black preview", and an unpatched '
       + 'mappy paints its NUMBERED CALIBRATION GRID — a pure function of the surface uv with no '
       + 'clock, no accumulator and no uniform that is not a param (the def says so in as many '
@@ -5755,7 +5751,7 @@ export const FACES = [
       + 'an EMPTY op log, the node-lifetime producer fills its canvas with PAINT_BG, and the '
       + 'shader returns opaque white when nothing is bound at all — painter is never a dead black '
       + 'frame, which is also what satisfies the per-port emit sweep. ⚠ AND THIS MODULE\'S '
-      + 'EXEMPT_FROM_VRT ENTRY IS NARROWED TO THE LEGACY CARD in this same diff: it said the '
+      + 'EXEMPT_FROM_VRT ENTRY IS NARROWED TO THE LANE SCENE in this same diff: it said the '
       + 'canvas was "op-driven, non-deterministic first paint", which is true of a canvas someone '
       + 'has DRAWN ON and false of a fresh spawn, and its exit condition named a darwin+linux '
       + 'two-platform capture that cannot be satisfied because there is only one baseline set.',
@@ -5862,7 +5858,7 @@ export const FACES = [
   //    NON_SHELL_LANE_TYPES ────────────────────────────────────────────────
   //
   // ⚠ A FRESHLY SPAWNED CLIP PLAYER IS DETERMINISTIC BY CONSTRUCTION, and the
-  // reason is worth stating because this module's LEGACY CARD is one of the
+  // reason is worth stating because this module's LANE SCENE was one of the
   // ones the strict roster refuses (`clipplayer` is NOT in
   // `STRICT_VRT_MODULES` — its chrome animates: blinking queued pads, the
   // record blink, the automation countdown pulse). NOT ONE of those animations
@@ -5899,9 +5895,8 @@ export const FACES = [
   // LOADED player. Launched pads, drawn notes, armed lanes, a counting scene
   // and the automation lamps are all invisible to it — which is most of the
   // module's subject. That surface is covered by `face-clipplayer.spec.ts`
-  // (which drives the real face through the real dock), by the eighteen
-  // existing clipplayer specs under `?shell=legacy`, and by
-  // `clipplayer-face-model.test.ts`.
+  // (which drives the real face through the real dock), by the eighteen other
+  // clipplayer specs, and by `clipplayer-face-model.test.ts`.
   {
     type: 'clipplayer',
     // FOUR bands: session (the launch grid + the scene repeats its rows are),
@@ -5912,8 +5907,9 @@ export const FACES = [
     // IS NOT DENSITY. Owner P0, 2026-09-04: "we do NOT want the clip viewer
     // always visible. we want to see it when we double click on a grid cell, at
     // which point, we do not see the grid." The launcher and the piano roll are
-    // the legacy card's two mutually exclusive `cardView` branches, and band
-    // hiding is the only mechanism that reproduces them. The face also lost its
+    // the two mutually exclusive `cardView` branches the module already had,
+    // and band hiding is the only mechanism that reproduces them. The face also
+    // lost its
     // `face.hero` in the same change, because a hero is painted ABOVE every tab
     // panel and therefore cannot be hidden. `dock-tabs-model.test.ts` carries
     // the instruction verbatim; `shell-faces-roster.test.ts` joins this flag to
@@ -6053,9 +6049,8 @@ export const FACES = [
  * EQUALITY between `STRICT_FACES` and `FACES` in both directions, so before this
  * list a module could be promoted only if two pixel-stable scenes could be
  * captured for it. For a genuinely non-deterministic renderer that is not a bar
- * to clear, it is a permanent refusal — the module can hold a legacy card
- * forever and never reach the faceplate, regardless of how cleanly its controls
- * map.
+ * to clear, it is a permanent refusal — the module could never have reached the
+ * faceplate at all, regardless of how cleanly its controls map.
  *
  * ⚠ AND THE CARD ROSTER ALREADY HAS THIS CONCEPT, for the same module, with a
  * written argument. `e2e/vrt/vrt-exemptions.ts` carries milkdrop in
@@ -6330,8 +6325,8 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       + 'fixed delta): every state the picture could be held in is a function of how many wall-'
       + 'clock ticks elapsed between boot and capture, on a runner whose WASM cold-boot is '
       + 'measured at 20-25 s and varies with shard load. '
-      + 'The CARD roster reached the same verdict about this renderer long ago (EXEMPT_FROM_VRT '
-      + 'in vrt-exemptions.ts, whose `why` this PR rewrites to cover the legacy card only).',
+      + 'The LANE roster reached the same verdict about this renderer long ago (EXEMPT_FROM_VRT '
+      + 'in vrt-exemptions.ts, whose `why` this PR narrowed to that scene alone).',
     coveredBy: [
       // The engine itself, in a real browser: it boots out-of-box from the
       // bundled shareware, the drip border is lit (the ART alias), and the idle
@@ -6339,8 +6334,8 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       // measurement.
       'e2e/tests/blood-mount.spec.ts',
       // The whole chain from a menu key to audible PCM at a downstream SCOPE —
-      // re-pointed onto the DEFAULT shell in this PR, so it is the leg that
-      // proves the FACE boots the engine rather than the legacy card.
+      // re-pointed onto the shipping shell in this PR, so it is the leg that
+      // proves the FACE boots the engine.
       'e2e/tests/blood-audio-output.spec.ts',
       // Driving the menu into a level and reading the in-game framebuffer.
       'e2e/tests/blood-ingame.spec.ts',
@@ -6426,8 +6421,8 @@ export const FACES_WITHOUT_SCENES: readonly UnbaselinableFace[] = [
       // set — the registry-driven sweep this face auto-enrols in.
       'e2e/tests/faces-parity.spec.ts',
       // The SESSION belongs to the NODE, on the DEFAULT shell — the lifetime
-      // legs whose locator this promotion re-points from the legacy card to the
-      // faceplate body. This is the spec that would catch a face body which
+      // legs whose locator this promotion re-points onto the faceplate body.
+      // This is the spec that would catch a face body which
       // failed to adopt the node session, which is the promotion's whole risk.
       'e2e/tests/doom-session-survives-card-collapse.spec.ts',
       // The engine contract, pixel-free and untouched by this PR: the WASM

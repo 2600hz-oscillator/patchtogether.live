@@ -83,26 +83,10 @@ async function readFroggerSnapshot(page: Page, nodeId: string): Promise<FroggerS
   }, nodeId);
 }
 
-test('frogger: drop module → card mounts with no console errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(page, [{ id: 'f', type: 'frogger', position: { x: 200, y: 200 } }]);
-  const card = page.locator('.svelte-flow__node-frogger');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('FROGGER');
-  const canvas = card.locator('[data-testid="frogger-canvas"]');
-  await expect(canvas).toBeVisible();
-  const size = await canvas.evaluate((el: Element) => {
-    const c = el as HTMLCanvasElement;
-    return { w: c.width, h: c.height };
-  });
-  expect(size.w).toBeGreaterThan(0);
-  expect(size.h).toBeGreaterThan(0);
-  expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
-});
+// ⚠ The legacy "card mounts" test folded in the S2 legacy-removal inversion:
+// its subject (the module spawns, its screen paints, no console errors) is
+// covered on the shipping surface by the FACE describe below (the dock body
+// paints a LIVE board + errorWatch). S2 manifest.
 
 test('frogger: auto-starts on spawn (no user input — isGameInPlay flips + sprites advance)', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'f', type: 'frogger', position: { x: 200, y: 200 } }]);
@@ -169,8 +153,8 @@ test('frogger: BUGGLES.clock patched into start_gate restarts the game', async (
 // THE FACE, ON THE DEFAULT SHELL.
 //
 // ⚠ NOTHING IN THIS SUITE HAD EVER OBSERVED FROGGER UNDER THE SHIPPING SHELL.
-// Every test above drives `?shell=legacy` (and the shared `rack` fixture is
-// `?shell=legacy` by construction), so the surface a player actually gets was
+// Every test above once drove the PRE-INVERSION renderer (the shared `rack`
+// fixture flipped to the shipping shell in S2), so the surface a player gets was
 // unexercised — which is how frogger sat for months rendering a BLANK
 // PLACEHOLDER in the lane while its game ran and pulsed gates underneath.
 // These legs navigate the DEFAULT shell deliberately.

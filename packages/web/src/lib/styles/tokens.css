@@ -67,8 +67,8 @@
   --r-plate: 10px;
   --r-dock: 11px;
 
-  /* tile geometry (compact / overview) — RACKLINE lane-tile SIZE (P0.3b re-spec).
-   * The uniform shell/placeholder tile is `--shell-tile-w` WIDE (every module the
+  /* tile geometry (compact / overview) — RACKLINE lane-tile SIZE.
+   * The uniform shell tile is `--shell-tile-w` WIDE (every module the
    * SAME width — the owner "same-size horizontally" premise) and `--shell-tile-h`
    * TALL at EVERY LOD tier (the mock's 180px .mod/.plate design point): the OUTER
    * slot box is TIER-INVARIANT — zooming swaps only the CONTENT inside the tile,
@@ -76,8 +76,7 @@
    * boundary (the owner zoom-reposition fix). Both mirror the TS SHELL_TILE_W /
    * SHELL_TILE_H_SLOT constants (module-shell-model.ts); a unit gate locks
    * CSS↔TS so a drift can't float the baseline number badge. Only the
-   * `.module-shell`/`.module-shell-placeholder` tiles read these (preview-only
-   * elements) — preview-off never mounts them, so this is inert by default. */
+   * `.module-shell` lane tiles read these. */
   --spine-w: 4px;
   --shell-tile-w: 192px;
   --shell-tile-h: 180px;

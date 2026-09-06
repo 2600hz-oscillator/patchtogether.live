@@ -110,6 +110,9 @@ function makeFakeAudioCtx(): FakeAudioCtxFixture {
         stop: vi.fn(),
         connect: vi.fn(),
         disconnect: vi.fn(),
+        // Real nodes carry their owning context; pulseTriggerNow reads the
+        // clock through it to time the falling edge off RENDERED progress.
+        get context() { return ctx; },
       };
       constants.push(n);
       return n;
@@ -463,36 +466,52 @@ describe('nibblesDef.factory — extras.forcePulse() test hook', () => {
   });
 
   it('forcePulse("pellet") pulses the same ConstantSourceNode exposed via audioSources.pellet', () => {
-    const { handle, fixture } = spawn();
-    // The pellet gate is the 1st CSN constructed.
-    const pelletCsn = fixture!.constants[0]!;
-    const audioSrc = handle.audioSources?.get('pellet');
-    expect(audioSrc?.node).toBe(pelletCsn);
-    // Drop any construction-time setValueAtTime so we count only the
-    // post-force pulse.
-    pelletCsn.offset.setValueAtTime.mockClear();
-    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    extras.forcePulse('pellet');
-    // pulseGate sets offset=1 at t, then offset=0 at t + 10ms.
-    const calls = pelletCsn.offset.setValueAtTime.mock.calls;
-    expect(calls.length).toBe(2);
-    expect(calls[0]![0]).toBe(1);    // rising edge
-    expect(calls[1]![0]).toBe(0);    // falling edge
-    expect(calls[1]![1]).toBeCloseTo(calls[0]![1] + 0.01, 4);  // 10 ms gap
+    // pulseGate goes through the shared pulseTriggerNow primitive: the RISE is
+    // a direct value write (a scheduled pair can land wholly behind the render
+    // frontier and collapse to nothing — see $lib/audio/gate-trigger), and the
+    // FALL waits for RENDERED audio progress, driven here by advancing the
+    // fake context clock under fake timers.
+    vi.useFakeTimers();
+    try {
+      const { handle, fixture } = spawn();
+      // The pellet gate is the 1st CSN constructed.
+      const pelletCsn = fixture!.constants[0]!;
+      const audioSrc = handle.audioSources?.get('pellet');
+      expect(audioSrc?.node).toBe(pelletCsn);
+      const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+      extras.forcePulse('pellet');
+      // Rising edge: synchronous, and stale automation is cleared first.
+      expect(pelletCsn.offset.value).toBe(1);
+      expect(pelletCsn.offset.cancelScheduledValues).toHaveBeenCalled();
+      // No rendered audio yet → the line HOLDS (wall time alone can't drop it).
+      vi.advanceTimersByTime(50);
+      expect(pelletCsn.offset.value).toBe(1);
+      // ≥ 10 ms of audio renders → the falling edge lands.
+      (fixture!.ctx as unknown as { currentTime: number }).currentTime += 0.02;
+      vi.advanceTimersByTime(20);
+      expect(pelletCsn.offset.value).toBe(0);
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('forcePulse("death") + ("dir_change") each pulse their own gate CSN', () => {
-    const { handle, fixture } = spawn();
-    const deathCsn = fixture!.constants[1]!;
-    const dirCsn   = fixture!.constants[2]!;
-    deathCsn.offset.setValueAtTime.mockClear();
-    dirCsn.offset.setValueAtTime.mockClear();
-    const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    extras.forcePulse('death');
-    expect(deathCsn.offset.setValueAtTime).toHaveBeenCalledTimes(2);
-    expect(dirCsn.offset.setValueAtTime).toHaveBeenCalledTimes(0);
-    extras.forcePulse('dir_change');
-    expect(dirCsn.offset.setValueAtTime).toHaveBeenCalledTimes(2);
+    vi.useFakeTimers();
+    try {
+      const { handle, fixture } = spawn();
+      const deathCsn = fixture!.constants[1]!;
+      const dirCsn   = fixture!.constants[2]!;
+      const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+      extras.forcePulse('death');
+      expect(deathCsn.offset.value).toBe(1);
+      expect(dirCsn.offset.value).toBe(0);
+      extras.forcePulse('dir_change');
+      expect(dirCsn.offset.value).toBe(1);
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('forcePulse("length_cv", v) linear-ramps length_cv.offset toward v', () => {

@@ -17,7 +17,7 @@ const FIXED_STEPS = 4;
 test('TEMPEST — vector well renders non-black + structured (deterministic smoke)', async ({ page }) => {
   test.setTimeout(60_000);
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -25,7 +25,7 @@ test('TEMPEST — vector well renders non-black + structured (deterministic smok
     [{ id: 'tp', type: 'tempest', position: { x: 120, y: 120 }, domain: 'video', params: { rim: 0, shape: 0 } }],
     [],
   );
-  await expect(page.locator('[data-testid="tempest-card"]'), 'card mounted').toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="tempest"])'), 'tile mounted').toHaveCount(1);
 
   const stats = await stepAndReadStats(page, { nodeId: 'tp', steps: FIXED_STEPS });
   // Vector lines are sparse vs a fullscreen fill → use modest floors (renderer-

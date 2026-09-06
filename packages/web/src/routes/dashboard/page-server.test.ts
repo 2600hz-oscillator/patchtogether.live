@@ -1,12 +1,20 @@
 // packages/web/src/routes/dashboard/page-server.test.ts
 //
-// Regression for the dashboard load fallback: a failure inside
-// `listSavedGroupsForUser` (missing table, transient Neon error, …)
-// must NOT take the dashboard down. Rackspaces is core — failures there
-// still bubble so SvelteKit can 500.
+// The dashboard's server load: rackspaces is CORE, so a failure there still
+// bubbles and SvelteKit 500s, and an unauthenticated request redirects before
+// anything touches the data layer.
 //
-// See incident: dev hard-500 on 2026-05-17 from the `saved_groups`
-// table not yet existing in the dev Neon branch.
+// ⚠ THIS FILE'S ORIGINAL SUBJECT IS GONE, AND THE COVERAGE LOSS IS REAL. Three
+// cases covered the SAVED-GROUPS FALLBACK: `listSavedGroupsForUser` throwing
+// (missing table / transient Neon error) had to degrade to an empty library
+// rather than take the page down, with a greppable single-line warn carrying the
+// user id, the Postgres message and the SQLSTATE. It existed for an incident —
+// dev hard-500 on 2026-05-17, `saved_groups` not yet existing in the dev Neon
+// branch. The GROUP! module is deleted and with it the library, the
+// `/api/saved-groups` routes and that second query, so the load has ONE call
+// again and there is no secondary surface left to degrade. The lesson belongs to
+// whatever the next secondary surface is; it is recorded here and in
+// `+page.server.ts` rather than kept alive against a query that no longer runs.
 //
 // Filename note: SvelteKit reserves any path under `src/routes` whose
 // basename starts with `+` — naming this `+page.server.test.ts` makes
@@ -17,14 +25,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const listRackspacesForUserMock = vi.fn();
-const listSavedGroupsForUserMock = vi.fn();
 
 vi.mock('$lib/server/rackspaces', () => ({
   listRackspacesForUser: listRackspacesForUserMock,
-}));
-
-vi.mock('$lib/server/saved-groups', () => ({
-  listSavedGroupsForUser: listSavedGroupsForUserMock,
 }));
 
 const { load } = await import('./+page.server');
@@ -46,76 +49,18 @@ const RACK = {
   memberUserIds: ['user_test_1'],
 };
 
-describe('dashboard load — saved-groups fallback', () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
-
+describe('dashboard load', () => {
   beforeEach(() => {
     listRackspacesForUserMock.mockReset();
-    listSavedGroupsForUserMock.mockReset();
-    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  it('returns savedGroups=[] when listSavedGroupsForUser throws (missing table)', async () => {
+  it('returns the rackspace list + the user id on success', async () => {
     listRackspacesForUserMock.mockResolvedValue([RACK]);
-    const dbErr = Object.assign(new Error('relation "saved_groups" does not exist'), {
-      code: '42P01',
-    });
-    listSavedGroupsForUserMock.mockRejectedValue(dbErr);
-
-    const out = await load(makeEvent());
-
-    expect(out).toEqual({
-      rackspaces: [RACK],
-      savedGroups: [],
-      userId: 'user_test_1',
-    });
-    // Log line must include the user id, the Postgres error message,
-    // and the SQLSTATE code so on-call can grep Cloudflare Workers logs.
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    const line = String(warnSpy.mock.calls[0][0]);
-    expect(line).toMatch(/\[dashboard\] saved-groups load failed/);
-    expect(line).toContain('user_test_1');
-    // Postgres message is JSON-stringified into the log payload, so the
-    // embedded double-quotes around `saved_groups` are escaped. Match the
-    // unescaped substrings on either side instead of the raw message.
-    expect(line).toContain('relation ');
-    expect(line).toContain('saved_groups');
-    expect(line).toContain('does not exist');
-    expect(line).toContain('42P01');
-  });
-
-  it('returns savedGroups=[] for a non-Error rejection (defensive)', async () => {
-    listRackspacesForUserMock.mockResolvedValue([]);
-    listSavedGroupsForUserMock.mockRejectedValue('plain string boom');
-
-    const out = (await load(makeEvent())) as { savedGroups: unknown[] };
-
-    expect(out.savedGroups).toEqual([]);
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(String(warnSpy.mock.calls[0][0])).toContain('plain string boom');
-  });
-
-  it('passes saved groups through unchanged on success', async () => {
-    listRackspacesForUserMock.mockResolvedValue([RACK]);
-    const sg = {
-      id: 'sg_1',
-      userId: 'user_test_1',
-      label: 'FILTERS',
-      payload: { label: 'FILTERS', exposedPorts: [], children: [], internalEdges: [] },
-      createdAt: 1,
-      updatedAt: 2,
-    };
-    listSavedGroupsForUserMock.mockResolvedValue([sg]);
-
-    const out = (await load(makeEvent())) as { savedGroups: unknown[] };
-
-    expect(out.savedGroups).toEqual([sg]);
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(await load(makeEvent())).toEqual({ rackspaces: [RACK], userId: 'user_test_1' });
   });
 
   it('still bubbles a rackspaces failure (rackspaces is core; failing fast is correct)', async () => {
     listRackspacesForUserMock.mockRejectedValue(new Error('rackspaces table is down'));
-    listSavedGroupsForUserMock.mockResolvedValue([]);
 
     await expect(load(makeEvent())).rejects.toThrow('rackspaces table is down');
   });
@@ -126,6 +71,5 @@ describe('dashboard load — saved-groups fallback', () => {
       location: '/sign-in?redirect_url=/dashboard',
     });
     expect(listRackspacesForUserMock).not.toHaveBeenCalled();
-    expect(listSavedGroupsForUserMock).not.toHaveBeenCalled();
   });
 });

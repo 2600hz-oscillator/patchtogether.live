@@ -39,10 +39,17 @@ sweep could include it, exclude DOOM by name and record the reason.
 
 - Linux CI authors the single baseline set. Local VRT is diagnostic only.
 - Dispatch the narrowest explicit scope with `task vrt:commit`; use `ALL=1`
-  only for a deliberate full sweep.
-- The capture path intentionally uses `--update-snapshots=all` with zero
-  tolerance. Do not restore `=changed`, widen tolerance/scope, or rely on the
-  CLI default.
+  only for a deliberate full sweep. `task vrt:commit` derives the scope from the
+  branch diff and PRINTS it — when it answers FULL because no changed path names
+  a module, the blast radius really is not derivable and `ALL=1` is the honest
+  dispatch, not a shortcut.
+- ⚠ THE TWO PATHS USE DIFFERENT FLAGS, and only one of them writes the baseline
+  set. The CI capture (`vrt-update.yml`, the ONLY baseline author) runs
+  `--update-snapshots=changed`, so the bot's commit is exactly the scenes that
+  FAILED — a stuck-but-PASSING baseline is refreshed by DELETING the PNG and
+  re-dispatching, never by widening the flag. Local `task vrt:update` runs `=all`
+  and is diagnostic only. Do not swap either, widen tolerance/scope, or rely on
+  the CLI default.
 - Predict which files should move, compare that with the bot commit, and inspect
   the images. An unexplained zero or extra file is a failed instrument check.
 - A baseline matching current output proves equality, not correctness. Fix a

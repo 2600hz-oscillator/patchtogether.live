@@ -92,6 +92,7 @@
 
   import { onDestroy } from 'svelte';
   import { patch } from '$lib/graph/store';
+  import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import { StatusLed } from '$lib/ui/controls';
   import type { ModuleNode } from '$lib/graph/types';
   import type { VstPersisted } from '$lib/audio/vst/vst-persistence';
@@ -114,7 +115,18 @@
   let { nodeId }: { nodeId: string } = $props();
 
   let node = $derived(patch.nodes[nodeId] as ModuleNode | undefined);
-  let persisted = $derived((node?.data as { vst?: VstPersisted } | undefined)?.vst);
+  // ⚠ PUMPED by nodeVersion — the proxy-identity lesson. The store proxy keeps
+  // ONE identity for the node's life, so a bare `$derived(node?.data?.vst)`
+  // never re-ran when the driver's discrete-event write landed `stateB64` on
+  // node.data (measured: the PLUGIN lamp kept saying "nothing is saved in the
+  // patch yet" over a populated node.data.vst — vst-bridge.spec.ts). The
+  // per-node version counter is the established invalidation seam
+  // (TimelordeDisplayBody's cardVersion).
+  let cardVersion = $derived(nodeVersion(nodeId));
+  let persisted = $derived.by(() => {
+    void cardVersion;
+    return (node?.data as { vst?: VstPersisted } | undefined)?.vst;
+  });
   let kinds = $derived(vstPluginKindsForType(node?.type));
 
   // svelte-ignore state_referenced_locally -- SEED only. The $effect below

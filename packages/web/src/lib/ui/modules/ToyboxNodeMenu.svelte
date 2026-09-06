@@ -103,16 +103,26 @@
 
   // Window-level Escape handler (context menus don't take focus — Esc must
   // dismiss regardless of where focus sits). Mirrors NodeContextMenu.
+  //
+  // ⚠ CAPTURE PHASE + stopPropagation, and the dock is why. Canvas's
+  // dock-close Escape listener is a PLAIN window listener by design ("so
+  // capture-phase ESC consumers win first" — its own comment). The pre-fix
+  // plain listener here meant one Esc press with this menu open over the
+  // faceplate console dismissed the menu AND closed the whole dock full view
+  // out from under the player (measured: toybox-node-menu.spec.ts's Escape
+  // leg — the console unmounted mid-press). While the menu is open it is the
+  // topmost occupant, so it claims the key outright.
   $effect(() => {
     if (!open) return;
     const onWindowKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onclose();
       }
     };
-    window.addEventListener('keydown', onWindowKeydown);
-    return () => window.removeEventListener('keydown', onWindowKeydown);
+    window.addEventListener('keydown', onWindowKeydown, true);
+    return () => window.removeEventListener('keydown', onWindowKeydown, true);
   });
 
   // Structural gating helpers.

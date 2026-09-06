@@ -34,7 +34,7 @@
 import type { ParamDef, NoUserControlParam } from '$lib/graph/types';
 import { curatedFace, type FaceDefLike } from '$lib/ui/workflow/curated-face';
 import { momentaryParamIds } from '$lib/ui/workflow/shell-control-kind';
-import { looksLikeToggle } from '$lib/graph/group-controls';
+import { looksLikeToggle } from '$lib/graph/exposable-controls';
 import { PUSH_CARD_CONTROLS } from './push-card-config';
 
 /** Strips on a push card = display encoders on a Push 2. Fixed by hardware. */

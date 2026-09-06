@@ -31,6 +31,8 @@ import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch, type SpawnEdge } from './_helpers';
 import { collectPageErrors } from './_page-errors';
+import { AUDIO_READY_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { pollGatePulsePeak, gatePulseMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -208,17 +210,20 @@ async function readScopePeak(page: Page, scopeNodeId: string): Promise<number | 
 test('gibribbon: card mounts cleanly + the playfield renders the white ribbon', async ({ page }) => {
   const errors = collectPageErrors(page);
 
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
 
-  const card = page.locator('.svelte-flow__node-gibribbon');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])');
   await expect(card).toBeVisible();
-  await expect(card).toContainText('GIBRIBBON');
+  await expect(card).toContainText(/gibribbon/i);
 
-  const canvas = card.locator('[data-testid="gibribbon-screen"]');
+  // The playfield lives in the DOCK face body on the default shell (the same
+  // GibribbonScreen component, same canvas testid).
+  await page.evaluate(() => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('g'));
+  const canvas = page.getByTestId('dock-full-view').locator('[data-testid="gibribbon-screen"]');
   await expect(canvas).toBeVisible();
   const size = await canvas.evaluate((el: Element) => {
     const c = el as HTMLCanvasElement;
@@ -233,7 +238,7 @@ test('gibribbon: card mounts cleanly + the playfield renders the white ribbon', 
       async () =>
         await page.evaluate(() => {
           const c = document.querySelector(
-            '.svelte-flow__node-gibribbon [data-testid="gibribbon-screen"]',
+            '[data-testid="dock-full-view"] [data-testid="gibribbon-screen"]',
           ) as HTMLCanvasElement | null;
           if (!c) return 0;
           const ctx = c.getContext('2d');
@@ -259,7 +264,7 @@ test('gibribbon: ATTRACT is honest — a bare module self-plays AND says so', as
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
   expect(await readStr(page, 'g', 'mode')).toBe('attract');
 
@@ -310,7 +315,7 @@ test('gibribbon: REAL AUDIO CABLE — noise into audio_in wakes attract and spaw
       } as SpawnEdge,
     ],
   );
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
   // Wiggle the source level ~4 Hz from the test (the cable and the analysis
   // are fully real; only the modulation hand is ours) until the audio
@@ -373,7 +378,7 @@ test('gibribbon: the REAL CHAIN — fake pad → GAMEPAD module → cables → t
       { id: 'e-ly', from: { nodeId: 'gp', portId: 'ly' }, to: { nodeId: 'g', portId: 'y' }, sourceType: 'cv', targetType: 'cv' },
     ] as SpawnEdge[],
   );
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
 
   const pressesBefore = (await readNum(page, 'g', 'presses')) ?? 0;
@@ -435,7 +440,7 @@ test('gibribbon: a band spike spawns its imp → the correct press clears it (sc
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
 
   expect(await readNum(page, 'g', 'score')).toBe(0);
@@ -478,7 +483,7 @@ test('gibribbon: an uncleared event HITS the marine — health drops below healt
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
 
   expect(await readStr(page, 'g', 'health')).toBe('healthy');
@@ -499,7 +504,7 @@ test('gibribbon: THE DEATH PATH — repeated hits reach GAME OVER, restart PORT 
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
   ]);
-  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
   await deterministicPlay(page, 'g');
   await warmPastCountIn(page, 'g');
 
@@ -531,6 +536,14 @@ const GATE_PORTS = ['evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover
 
 for (const port of GATE_PORTS) {
   test(`gibribbon: ${port} bridges into scope.ch1 (forcePulse)`, async ({ page, rack }) => {
+    // ⚠ THE INNER CAP MUST FIT INSIDE THE OUTER BUDGET, and the first attempt
+    // at this fix did not. Raising the poll to `AUDIO_READY_MS` (30 s on CI)
+    // without touching the test budget put a 30 s wait inside Playwright's 30 s
+    // default, so the test died at 31.5 s with a BARE `Test timeout` and the
+    // poll never got to report its own message — a strictly worse failure than
+    // the one being repaired, because it says nothing about the subject.
+    // Nested bounds: the budget covers the spawn AND the audio cap.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const scopeId = `scope-${port}`;
     await spawnPatch(
       page,
@@ -548,39 +561,96 @@ for (const port of GATE_PORTS) {
         } as SpawnEdge,
       ],
     );
-    await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
 
     expect((await readScopePeak(page, scopeId)) ?? 0).toBeLessThan(0.2);
 
-    const ok = await page.waitForFunction(
-      ({ id, p, sid }) => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-          } | null;
-          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-        };
-        const eng = w.__engine?.();
-        if (!eng) return false;
-        const node = w.__patch.nodes[id];
-        const scope = w.__patch.nodes[sid];
-        if (!node || !scope) return false;
-        const extras = eng.read(node, 'extras') as { forcePulse?: (p: string) => void } | undefined;
-        if (!extras || typeof extras.forcePulse !== 'function') return false;
-        extras.forcePulse(p);
-        const snap = eng.read(scope, 'snapshot') as { ch1: Float32Array } | undefined;
-        if (!snap) return false;
-        let peak = 0;
-        for (let i = 0; i < snap.ch1.length; i++) {
-          const a = Math.abs(snap.ch1[i]!);
-          if (a > peak) peak = a;
-        }
-        return peak > 0.4;
-      },
-      { id: 'g', p: port, sid: scopeId },
-      { timeout: 6000, polling: 50 },
-    ).catch(() => null);
-
-    expect(ok, `${port} should pulse SCOPE.ch1 above the floor via the gate bridge`).toBeTruthy();
+    // ⚠ THE HAND-ROLLED FIRE-THEN-READ LOOP IS GONE — see `pollGatePulsePeak`.
+    // It called `forcePulse` and read the analyser ring in the SAME synchronous
+    // tick, so it read the ring BEFORE the pulse had been rendered into it and
+    // depended on a LATER round trip coinciding with a still-high window. That
+    // coincidence stops happening on a loaded shard, and the failure MOVED
+    // between members of this very loop: `evt_hit` on one CI run, `evt_kill`
+    // and `evt_miss` on the next. Five interchangeable ports cannot have five
+    // separate bridge defects.
+    //
+    // The seam pulses AND samples in the page, on independent timers, and
+    // LATCHES the peak — so a pulse only has to be caught once by any sample,
+    // ever, instead of by the one sample that happens to follow it.
+    const r = await pollGatePulsePeak(page, {
+      sourceNodeId: 'g',
+      port,
+      scopeNodeId: scopeId,
+      threshold: 0.4,
+      boundMs: AUDIO_READY_MS,
+    });
+    expect(r.hookFound, `${port}: extras.forcePulse never resolved — ${gatePulseMsg(port, r)}`).toBe(true);
+    expect(
+      r.reachedThreshold,
+      `${port} should pulse SCOPE.ch1 above the floor via the gate bridge — ${gatePulseMsg(port, r)}`,
+    ).toBe(true);
   });
 }
+
+// ⚠ THE NEGATIVE CONTROL FOR THE LATCH ITSELF, and it is not optional. A
+// monotone "highest peak ever seen" probe is exactly the kind of instrument
+// that can quietly stop being able to report ZERO — a stray reading, a wrong
+// scope id resolving to a live node, or a latch that starts non-empty would all
+// make every port above pass for the wrong reason, forever, and no amount of
+// re-running the positive legs could tell.
+//
+// ⚠ THE FIRST VERSION OF THIS CONTROL WAS WRONG, AND CI CAUGHT IT — WHICH IS
+// THE CONTROL WORKING, JUST NOT AT WHAT I AIMED IT. It kept the `evt_hit` edge
+// wired and merely stopped PULSING, then required the scope to rest near zero.
+// It failed with `peak 1.0000 from 21 sample(s) / 0 pulse(s)`, and the reading
+// was HONEST: gibribbon SELF-PLAYS in ATTRACT mode and its demo bot
+// deliberately fumbles, so a fumble fires `evt_hit` for real. The probe was
+// reporting a pulse the TEST had not sent but the MODULE had — so the leg could
+// never distinguish "the latch invented signal" from "the game scored a hit".
+//
+// The subject is the LATCH, not the module, so the control now removes the only
+// path signal could take: gibribbon and the scope are spawned with NO EDGE
+// BETWEEN THEM. Nothing the game does can reach ch1. Any non-zero reading is
+// then manufactured by the instrument by definition, which is exactly — and
+// only — the claim this leg makes.
+test('gibribbon: with NO cable, the latched probe reads zero — it cannot manufacture a pulse', async ({
+  page,
+  rack,
+}) => {
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
+  const scopeId = 'scope-control';
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 120 }, domain: 'video' },
+    // Deliberately UNPATCHED — see the note above. The gibribbon is spawned at
+    // all so the page carries the same load as the positive legs.
+    { id: scopeId, type: 'scope', position: { x: 560, y: 120 }, domain: 'audio' },
+  ]);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="gibribbon"])')).toBeVisible();
+
+  // A SHORTER bound than the positive legs, deliberately: this one is waiting
+  // for nothing to happen, so it should spend the whole window and say so
+  // rather than exit early.
+  const r = await pollGatePulsePeak(page, {
+    sourceNodeId: 'g',
+    port: 'evt_hit',
+    scopeNodeId: scopeId,
+    threshold: 0.4,
+    boundMs: 3_000,
+    pulseEveryMs: 0, // ← the control: arm the latch, never fire
+  });
+
+  expect(r.pulses, `the control must not pulse — ${gatePulseMsg('control', r)}`).toBe(0);
+  expect(
+    r.samples,
+    `the control must actually SAMPLE, or it proves nothing — ${gatePulseMsg('control', r)}`,
+  ).toBeGreaterThan(0);
+  expect(
+    r.reachedThreshold,
+    `an UNCABLED scope crossed the floor — the latch is reporting signal that had no path to it: ` +
+      gatePulseMsg('control', r),
+  ).toBe(false);
+  expect(
+    r.peak,
+    `an uncabled scope must rest at zero — ${gatePulseMsg('control', r)}`,
+  ).toBeLessThan(0.2);
+});

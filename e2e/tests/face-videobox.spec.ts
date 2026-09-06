@@ -59,7 +59,7 @@ const OBSERVE_MS = 3_000;
 const MIN_PROGRESS_S = 0.4;
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. The legacy specs' `?shell=legacy` is
+  // Plain /rack — the shell every player gets. The other specs' boot is
   // precisely the surface promotion does not change.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
@@ -172,11 +172,10 @@ test.describe('VIDEOBOX face — the promotion is what makes it loadable', () =>
       mountTimeout: BOOT_MS,
     });
 
-    // ⚠ THE PRECONDITION THIS WHOLE FILE RESTS ON: on the default shell no
-    // videobox card is mounted anywhere — not in the lane, not in a headless
-    // host (videobox left DOM_SOURCE_LANE_TYPES in LEG-02 P1). If this ever
-    // finds a card, the rest proves nothing about the face.
-    await expect(page.locator('[data-testid="videobox-card"]')).toHaveCount(0);
+    // ⚠ A PRECONDITION GATE RAN HERE AND IS DELETED. It required
+    // `videobox-card` to be absent; nothing in the tree emits that testid, so
+    // the matcher was satisfied by a page that rendered nothing at all. The
+    // positive assertions below are what hold this file up.
 
     const dock = await openDock(page, 'fvb1');
     const body = dock.locator('[data-testid="videobox-face-body"]');
@@ -214,7 +213,7 @@ test.describe('VIDEOBOX face — the promotion is what makes it loadable', () =>
     expect(
       media!.where,
       'the face body must BLIT the engine output — the node-owned <video> has ONE parent ' +
-        '(the legacy card adopts it under ?shell=legacy) and must stay PARKED under the shell',
+        'and must stay PARKED under the shell rather than adopted by a body',
     ).toBe('parking');
     await expect(body.locator('[data-testid="videobox-face-canvas"]')).toBeVisible();
 

@@ -209,8 +209,8 @@ const SUBJECTS: readonly Subject[] = [
 
   // ── MONITOR-MODE modules — the body carries a SECOND switch (#2009/#2053) ──
   //
-  // These four mount `hideControls` on their legacy cards and their faced bodies
-  // carry a MONITOR toggle beside the SCREEN one. Worth covering precisely
+  // These four carry `hideControls`, and their faced bodies carry a MONITOR
+  // toggle beside the SCREEN one. Worth covering precisely
   // because two switches on one surface is where a mis-wired `aria-pressed` or a
   // shared handler would hide: this file drives the SCREEN one specifically.
   { type: 'ruttetra', prefix: 'ruttetra', domain: 'video', why: 'the Rutt/Etra scan processor\'s raster preview — plus a MONITOR toggle and a corner resize on the same surface, so the SCREEN switch has neighbours to be confused with.' },
@@ -490,7 +490,7 @@ const SUBJECTS: readonly Subject[] = [
   // toolbar would keep this row green and start losing the last ~250 ms of
   // typing on every collapse; that specific failure is covered by
   // `textmarquee-face-editor.spec.ts`, not here.
-  { type: 'textmarquee', prefix: 'textmarquee', domain: 'video', why: 'the rich-text marquee\'s live OUT preview — and the ONLY subject in this table whose body is not rescuing a picture but a WRITER. All four of textmarquee\'s params (ScrlX/ScrlY/PosX/PosY) merely MOVE the ribbon; what it SAYS is node.data.richText, which nothing but the legacy card could write before this promotion, so the same body carries a contenteditable, a 9-control formatting toolbar and the layer background swatch. A SOURCE with no video input, so the retained watch mark is the sharpest form of the #2015 argument — a lapsed mark would not stall a preview of somebody else\'s picture, it would MUTE the generator every downstream node samples. ⚠ AND ITS PREVIEW IS THE ONE PICTURE IN THIS TABLE THAT IS TEXT: with an empty model the node-lifetime rasterizer clears the texture and the FACTORY placeholder (the word "textmarquee" in 64px sans-serif) shows through, which is why this module\'s face scenes carry a stated glyph-determinism argument in _shell-faces.ts rather than inheriting the fleet\'s.' },
+  { type: 'textmarquee', prefix: 'textmarquee', domain: 'video', why: 'the rich-text marquee\'s live OUT preview — and the ONLY subject in this table whose body is not rescuing a picture but a WRITER. All four of textmarquee\'s params (ScrlX/ScrlY/PosX/PosY) merely MOVE the ribbon; what it SAYS is node.data.richText, which only a bespoke surface could write before this promotion, so the same body carries a contenteditable, a 9-control formatting toolbar and the layer background swatch. A SOURCE with no video input, so the retained watch mark is the sharpest form of the #2015 argument — a lapsed mark would not stall a preview of somebody else\'s picture, it would MUTE the generator every downstream node samples. ⚠ AND ITS PREVIEW IS THE ONE PICTURE IN THIS TABLE THAT IS TEXT: with an empty model the node-lifetime rasterizer clears the texture and the FACTORY placeholder (the word "textmarquee" in 64px sans-serif) shows through, which is why this module\'s face scenes carry a stated glyph-determinism argument in _shell-faces.ts rather than inheriting the fleet\'s.' },
 
   // ── VIDEOBOX (2026-09-01, wave 3) — the LOCAL-FILE PLAYER ─────────────────
   //
@@ -579,10 +579,10 @@ const SUBJECTS: readonly Subject[] = [
   // ⚠ IT NEEDS THE `canvas` OVERRIDE, and for a THIRD distinct reason — neither
   // quadralogical's (no conventionally-named canvas exists) nor twotracks'
   // (there are two pictures). Here the canvas is deliberately named
-  // `nibbles-screen`, VERBATIM from the legacy card, because that is the testid
-  // `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` already read — both of
-  // which drive `?shell=legacy`, so carrying the name means the face and the
-  // card describe the same element rather than forking the vocabulary.
+  // `nibbles-screen`, VERBATIM from the pre-promotion surface, because that is
+  // the testid `nibbles.spec.ts` and `nibbles-render-smoke.spec.ts` already
+  // read — carrying the name means both describe the same element rather than
+  // forking the vocabulary.
   //
   // Verified before writing rather than assumed: the body uses the standard
   // `{#if !previewCollapsed}` REMOVES mechanism and declares
@@ -639,7 +639,7 @@ const SUBJECTS: readonly Subject[] = [
   //    subjects, and `quadralogical` is this file's own recorded case of
   //    assuming otherwise and leaving a switch at zero live coverage while
   //    everyone believed it covered.
-  { type: 'toybox', prefix: 'toybox', domain: 'video', why: 'the FOUR-LAYER COMPOSITOR\'s live output picture and its SCREEN switch — an ADDITION, since ToyboxCard has a preview and no switch at all. ⚠ THE WATCH-MARK CASE IS THE STRONGEST IN THIS TABLE, and it is about HISTORY rather than about a source. Every other row here protects a picture that would merely stop being copied; toybox\'s combine roster includes FEEDBACK, FRAMEDELAY, EXQUISITE and DATAMOSH, each of which accumulates state BETWEEN frames, so a lapsed mark would not pause the picture — it would destroy the nest, and switching the screen back on would show a black or stale frame with the patch still visibly wired. `out` is a real cable other modules sample, so the same lapse idles every downstream consumer too. ⚠ AND THERE IS NO CARD ANYWHERE TO FALL BACK ON. toybox is in none of DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES / HEADLESS_MOUNT_LANE_TYPES, so unlike archivist, cameraInput and loopback there is no parked card still holding the module up: this body IS the module\'s surface, and the screen is the only picture of it. ⚠ THE SWITCH DELIBERATELY REMOVES THE PICTURE ONLY, not the console under it — the layer band and all three tabs stay fully operable, because building a patch blind on a projector is the normal show posture and the graph editor must keep working with the screen off. That is the opposite of painter, one row up, where the picture IS the instrument and OFF puts the whole paint set away. Verified before writing rather than assumed: `type == prefix == extension id` (\'toybox\'); the toggle is the conventional `toybox-face-screen-toggle` carrying `aria-pressed` and SCREEN ON/OFF text; the body uses the standard `{#if screenOn}` REMOVES mechanism; and the console declares the conventional `toybox-face-canvas` on the faceplate (the legacy card keeps `toybox-canvas`), so no `canvas` override is needed.' },
+  { type: 'toybox', prefix: 'toybox', domain: 'video', why: 'the FOUR-LAYER COMPOSITOR\'s live output picture and its SCREEN switch — an ADDITION, since ToyboxCard has a preview and no switch at all. ⚠ THE WATCH-MARK CASE IS THE STRONGEST IN THIS TABLE, and it is about HISTORY rather than about a source. Every other row here protects a picture that would merely stop being copied; toybox\'s combine roster includes FEEDBACK, FRAMEDELAY, EXQUISITE and DATAMOSH, each of which accumulates state BETWEEN frames, so a lapsed mark would not pause the picture — it would destroy the nest, and switching the screen back on would show a black or stale frame with the patch still visibly wired. `out` is a real cable other modules sample, so the same lapse idles every downstream consumer too. ⚠ AND THERE IS NOTHING ELSE TO FALL BACK ON. toybox is in none of DOM_SOURCE_LANE_TYPES / CARD_PRODUCER_LANE_TYPES / HEADLESS_MOUNT_LANE_TYPES, so unlike archivist, cameraInput and loopback nothing else was ever holding the module up: this body IS the module\'s surface, and the screen is the only picture of it. ⚠ THE SWITCH DELIBERATELY REMOVES THE PICTURE ONLY, not the console under it — the layer band and all three tabs stay fully operable, because building a patch blind on a projector is the normal show posture and the graph editor must keep working with the screen off. That is the opposite of painter, one row up, where the picture IS the instrument and OFF puts the whole paint set away. Verified before writing rather than assumed: `type == prefix == extension id` (\'toybox\'); the toggle is the conventional `toybox-face-screen-toggle` carrying `aria-pressed` and SCREEN ON/OFF text; the body uses the standard `{#if screenOn}` REMOVES mechanism; and the console declares the conventional `toybox-face-canvas`, so no `canvas` override is needed.' },
 
   // ── ⚠ DOOM IS DELIBERATELY **NOT** ROSTERED HERE (2026-09-02) ─────────────
   //
@@ -743,8 +743,8 @@ function nodeId(type: string): string {
 
 /**
  * Boot the DEFAULT shell (what actually ships) ONCE and spawn a whole BATCH of
- * subjects into one rack. ⚠ NOT `?shell=legacy`: that is precisely the surface
- * promotion does NOT change, and testing it is the #1934 mistake this file must not
+ * subjects into one rack. ⚠ THE SHIPPING SHELL, deliberately: booting the
+ * surface a promotion does NOT change is the #1934 mistake this file must not
  * repeat.
  *
  * ⚠ ONE BOOT PER BATCH, NOT PER MODULE — and the number is MEASURED, not guessed.

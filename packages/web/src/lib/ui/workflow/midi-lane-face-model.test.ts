@@ -161,11 +161,12 @@ describe('midiLane face — the promotion itself', () => {
 
 describe('midiLane face — the TYPED-ENTRY decision', () => {
   it('the note field is an `entry` cell, not a roster', () => {
-    // ⚠ THE PERMANENT LEG FOR THE CENTRAL DESIGN DECISION. Swapping this cell
-    // for a `selector` would keep every other gate green — it renders, it
-    // operates, it writes the same key — and would silently redden the
-    // face-migration inventory's TYPED-ENTRY parity leg, because the legacy
-    // card keeps its `<input type="number">` under `?shell=legacy`.
+    // ⚠ THE PERMANENT LEG FOR THE CENTRAL DESIGN DECISION, and after the
+    // removal it is the ONLY one. Swapping this cell for a `selector` would keep
+    // every other gate green — it renders, it operates, it writes the same key.
+    // The inventory's typed-entry parity leg used to catch it by comparing the
+    // face against a pre-promotion `<input type="number">`; there is no second
+    // surface to compare against, so this leg is the whole guard.
     expect(shellCellKindsFor('midiLane')).toContain('entry');
   });
 

@@ -7,19 +7,33 @@
 // deletes the clip."
 //
 // ⚠ WHY THIS FILE REPLACES THE PREVIOUS MENU SPEC. The first restructure shipped
-// with a spec that drove the real card through its real mount — and asserted the
-// menu on the PIANO-ROLL NOTE CELL only. The owner right-clicks the LAUNCHER PAD,
-// whose menu was a different code path and stayed a flat 40-row list. The spec was
-// green the whole time. So the load-bearing property here is not "the menu has the
-// owner's rows" — it is "BOTH surfaces have them", and the strongest form of that
-// is DERIVED: read the top level off one surface, read it off the other, and
-// assert the two are EQUAL. A future change that reaches one menu and not the
-// other reddens on the comparison without anyone having to remember the second
-// surface exists.
+// with a spec that drove the real surface through its real mount — and asserted
+// the menu on the PIANO-ROLL NOTE CELL only. The owner right-clicks the LAUNCHER
+// PAD, whose menu was a different code path and stayed a flat 40-row list. The
+// spec was green the whole time. So the load-bearing property here is not "the
+// menu has the owner's rows" — it is "BOTH surfaces have them", and the
+// strongest form of that is DERIVED: read the top level off one surface, read it
+// off the other, and assert the two are EQUAL. A future change that reaches one
+// menu and not the other reddens on the comparison without anyone having to
+// remember the second surface exists.
 //
-// Everything here is the real user path: a real card mounted on the canvas, real
+// Both right-clickable surfaces live in the DOCK FULL VIEW; the menu itself is
+// portaled to <body> and shared. Everything here is the real user path: real
 // clicks to create the clip and draw the note, real right-clicks, and every
 // assertion of effect read back off the SYNCED node data every peer sees.
+//
+// ⚠ THE TWO SURFACES ARE ON DIFFERENT PAGES OF A TABBED FACE, AND THIS FILE
+// USED TO ASSUME THEY WERE BOTH ON SCREEN AT ONCE. That was true of the card,
+// which stacked the launch grid and the piano roll in one column. The faceplate
+// is railed (`face.tabbed`, owner P0 2026-09-04): the grid is the `session`
+// page, the roll is `editor`, and a railed face renders exactly ONE band — the
+// others are `display:none`, so a pad locator resolves to a real element with a
+// 0×0 box and every click on it times out.
+//
+// So the page is SELECTED before each surface is used, which is also what a
+// player does. Double-clicking a pad SWITCHES the face to `editor` on its own
+// (that is the gesture's product behaviour, not a test detail), so anything
+// that touches a pad afterwards has to come back to `session` first.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
@@ -54,27 +68,41 @@ async function spawn(page: Page) {
     { id: 'tl', type: 'timelorde', position: { x: 40, y: 40 }, domain: 'audio' },
     { id: 'cp', type: 'clipplayer', position: { x: 420, y: 40 }, domain: 'audio' },
   ]);
-  await expect(page.locator('[data-clip="0"]')).toBeVisible();
+  const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
+  await expect(tile).toBeVisible();
+  await tile.getByTestId('shell-open-dock').click();
+  await expect(page.getByTestId('dock-full-view').locator('[data-clip="0"]')).toBeVisible();
 }
 
-async function backToGrid(page: Page) {
-  await page.getByTestId('clipplayer-strip-2-cp').click();
-  await expect(page.locator('[data-clip="0"]')).toBeVisible();
+/**
+ * Open one page of the clip player's railed face — the same helper shape
+ * `face-clipplayer.spec.ts` uses.
+ *
+ * ⚠ THE `aria-selected` WAIT IS NOT DECORATION: clicking a chip and reading a
+ * cell in the same breath races the band swap, and the attribute is the state
+ * the swap actually commits.
+ */
+async function showPage(page: Page, pageId: 'session' | 'editor') {
+  const tab = page.getByTestId('dock-full-view').getByTestId(`faceplate-tab-${pageId}`);
+  await tab.click();
+  await expect(tab, `the ${pageId} page opens`).toHaveAttribute('aria-selected', 'true');
 }
 
-/** Create clip `idx` and draw its notes THE WAY A USER DOES: double-click the pad
- *  (which creates the clip and opens the editor), click cells to place notes,
- *  then return to the launch grid so every test starts from the same view. */
+/** Create clip `idx` and draw its notes THE WAY A USER DOES: double-click the
+ *  pad (which creates the clip and binds the editor band to it), click cells to
+ *  place notes. On the face the grid and the roll are both always on screen, so
+ *  there is no view to return to. */
 async function drawClip(page: Page, idx: number, cells: Array<[row: number, step: number]>) {
+  await showPage(page, 'session');
   await page.locator(`[data-clip="${idx}"]`).dblclick();
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
   for (const [row, step] of cells) await page.getByTestId(`clipplayer-cell-${row}-${step}`).click();
   await expect.poll(async () => (await readClip(page, idx))?.steps?.length ?? 0).toBe(cells.length);
-  await backToGrid(page);
 }
 
 /** Right-click a launcher PAD — the surface in the owner's screenshot. */
 async function openPadMenu(page: Page, idx: number) {
+  await showPage(page, 'session');
   await page.locator(`[data-clip="${idx}"]`).click({ button: 'right' });
   const menu = page.getByTestId('clipplayer-clip-prob-menu-cp');
   await expect(menu).toBeVisible();
@@ -83,7 +111,10 @@ async function openPadMenu(page: Page, idx: number) {
 
 /** Right-click the note in the piano roll — the editor surface. */
 async function openNoteMenu(page: Page, idx: number) {
+  await showPage(page, 'session');
   await page.locator(`[data-clip="${idx}"]`).dblclick();
+  // The dblclick is what moves the face to `editor`; assert the roll rather
+  // than the chip, so a change to that gesture reds here by name.
   await expect(page.getByTestId('clipplayer-pianoroll')).toBeVisible();
   await page.locator('[data-testid="clipplayer-pianoroll"] .cell.note').first().click({ button: 'right' });
   const menu = page.getByTestId('clipplayer-prob-menu-cp');
@@ -150,7 +181,6 @@ test('BOTH surfaces show the SAME top level — the property the wrong-surface r
   const noteMenu = await openNoteMenu(page, 0);
   const fromNote = await topLevel(noteMenu).allInnerTexts();
   await closeMenu(page);
-  await backToGrid(page);
 
   // The launcher PAD.
   const padMenu = await openPadMenu(page, 0);
@@ -292,7 +322,8 @@ test('clear DELETES the clip from the pad menu, and ↶ brings it back with its 
   await expect.poll(() => readClip(page, 0), { timeout: 5000 }).toBeNull();
   await expect(page.locator('[data-clip="0"]')).toHaveAttribute('data-state', 'empty');
 
-  // Undoable — the reason clear has no confirm dialog. ↶ is control-strip 6.
+  // Undoable — the reason clear has no confirm dialog. ↶ is the deck's own
+  // undo button, in the same dock view.
   await page.getByTestId('clipplayer-strip-6-cp').click();
   await expect.poll(async () => (await readClip(page, 0))?.steps?.length, { timeout: 5000 }).toBe(1);
   expect((await readClip(page, 0))?.steps?.[0]?.midi).toBe(before?.steps?.[0]?.midi);

@@ -1,16 +1,16 @@
 // e2e/tests/workflow-shell.spec.ts
 //
 // P0.3b — the WORKFLOW-SHELL legacy-fallback bridge, end to end. Proves the
-// core day-one guarantee: under the `?shell=1` preview an UN-MIGRATED module
-// renders a uniform styled PLACEHOLDER in its lane (cables stay attached), while
-// its REAL, unchanged legacy card opens verbatim in the bottom dock full-view
-// and is fully OPERABLE there (drive a control → the graph param changes).
+// core day-one guarantee: a module renders a uniform styled tile in its lane
+// (cables stay attached), while its full surface opens in the bottom dock
+// full-view and is fully OPERABLE there (drive a control → the graph param
+// changes).
 //
 // And the NO-OP guarantee: with the preview OFF (the default) the module renders
 // its real card in the lane EXACTLY as today — the bridge is inert until owner
 // sign-off, so nothing else in workflow mode changes.
 //
-// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane, same as
+// Runs on /rack (no DB/relay) — the normal e2e lane, same as
 // workflow-dock.spec.ts. Shell state is transient/local (never in the Y.Doc).
 
 import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
@@ -19,8 +19,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { LANE_TILES, MAIN_CANVAS, spawnPatch, waitForLaneTier } from './_helpers';
 import { REGISTRY } from './_registry';
 import {
-  AUDIO_OPERABLE_FIXTURE,
-  AUDIO_PLACEHOLDER_FIXTURE,
+  AUDIO_DOCK_FIXTURE,
   CONTRACT_MODULE_TYPES,
   DENIED,
   fixtureProblems,
@@ -62,8 +61,8 @@ import { NON_SHELL_LANE_TYPES } from '../../packages/web/src/lib/ui/workflow/leg
 // ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
-async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page): Promise<void> {
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible', timeout: BOOT_MS });
 }
@@ -83,7 +82,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
 
 /** The node's WHOLE param map. The legacy-fallback test drives the docked
  *  card's first fader and asserts *some* param moved — module-agnostic, since
- *  the fixture module is derived (AUDIO_OPERABLE_FIXTURE / AUDIO_PLACEHOLDER_FIXTURE) rather than named,
+ *  the fixture module is derived (AUDIO_DOCK_FIXTURE) rather than named,
  *  so no specific param id like delay's 'time' can be assumed. */
 async function readParams(page: Page, nodeId: string): Promise<Record<string, number>> {
   return page.evaluate((nodeId) => {
@@ -180,40 +179,41 @@ async function dropAndSettle(page: Page, spawn: () => Promise<unknown>, what: st
 
 /** Drive the REAL palette-drop path into channel column `ch`. */
 /**
- * A module type that renders a `module-shell-placeholder` in a lane — DERIVED
- * from the live registry, never named, and RESOLVED AS A VALUE rather than
- * returned-or-thrown (see `PlaceholderSubject` below).
+ * A module type that renders a lane TILE — DERIVED from the live registry,
+ * never named, and RESOLVED AS A VALUE rather than returned-or-thrown.
  *
- * ⚠ WHY THIS EXISTS. A placeholder is what an UNPROMOTED module renders, so
- * every hard-coded placeholder subject in this file was a standing bet that the
- * module would stay unfaced. `synesthesia` lost that bet (#2194) and took three
- * tests with it — the failing precondition WAS the promotion. `strictFace` is
- * the manifest's own projection of STRICT_FACES membership, emitted for exactly
- * this question, so selecting on it cannot drift from the thing it describes.
+ * ⚠ WHY IT IS STILL DERIVED NOW THAT EVERY MODULE RENDERS A TILE. The pool is
+ * wider than it was, but the two exclusions below are real and the geometry
+ * cases genuinely cannot use an arbitrary module — so the subject is still
+ * chosen by PROPERTY rather than by name. Naming one was the original defect:
+ * `synesthesia` was hard-coded here and took three tests with it when it was
+ * faced (#2194), and a name would rot again the next time a module joins an
+ * exclusion.
  *
  * ⚠ ONE SUBJECT, SELECTED BY A PROPERTY — deliberately NOT a registry-wide
  * render sweep (the banned shape). Nothing here spawns a scene per module.
  *
- * `NON_SHELL_LANE_TYPES` are excluded because they render their real card in the
- * lane and never a placeholder at all — including them would swap a stale
+ * `NON_SHELL_LANE_TYPES` are excluded because they render their own roaming
+ * surface and never a lane tile at all — including them would swap a stale
  * subject for a vacuous one. The second exclusion is narrower and each entry
  * carries its reason: a module whose SPAWN reaches for hardware or a permission
  * prompt would make this geometry test depend on the runner's devices.
  */
 
 /**
- * The derivation's THREE outcomes — the same shape `_face-fixtures.ts`'s
- * `deriveFixture` returns, and for the same reason: "the predicate went blind"
- * and "the migration consumed every eligible subject" produce the same empty
- * list and need OPPOSITE responses.
+ * The derivation's TWO outcomes. It used to have three: a `migration-complete`
+ * arm existed because "the filter went blind" and "every eligible subject got
+ * faced" produced the same empty list and needed opposite answers. The second
+ * of those states cannot occur any more — being faced is no longer a reason to
+ * leave the pool — so the arm is deleted rather than left unreachable.
  */
-type PlaceholderSubject =
+type TileSubject =
   | { kind: 'ok'; type: string; pool: readonly string[]; why: string }
-  | { kind: 'migration-complete' | 'no-candidate'; type: null; pool: readonly string[]; why: string };
+  | { kind: 'no-candidate'; type: null; pool: readonly string[]; why: string };
 
-function derivePlaceholderSubject(): PlaceholderSubject {
+function deriveTileSubject(): TileSubject {
   /**
-   * Renders its verbatim legacy card in the lane — never a placeholder.
+   * Renders its own roaming surface in the lane — never a tile.
    *
    * ⚠ IMPORTED, NOT RE-TYPED, AND THAT IS A REPAIR. This used to be a hand
    * copy of `NON_SHELL_LANE_TYPES`, and by the time anyone looked it named TWO
@@ -240,70 +240,45 @@ function derivePlaceholderSubject(): PlaceholderSubject {
     'vstFx',          // a plugin host / user-supplied binary
     'vstInstrument',  // as vstFx
   ]);
-  /** Shell-eligible audio modules across the WHOLE population — promoted and
-   *  un-promoted alike. THE INSTRUMENT'S NEGATIVE CONTROL: promotion moves a
-   *  module out of the POOL, never out of this, so an empty result here means
-   *  the fitness rule itself stopped working (the `<Fader>` → `<NeonFader>`
-   *  rename class) and no amount of migration can cause it. */
+  /** Shell-eligible audio modules across the WHOLE population. THE
+   *  INSTRUMENT'S NEGATIVE CONTROL: an empty result here means the fitness rule
+   *  itself stopped working — `domain`, `NON_SHELL_LANE_TYPES` or the manifest
+   *  changed shape — rather than the tree lacking a subject. */
   const eligible = REGISTRY.filter(
     (m) => m.domain === 'audio' && !NON_SHELL.has(m.type) && !NEEDS_HARDWARE.has(m.type),
   ).map((m) => m.type);
   const candidates = REGISTRY.filter(
-    (m) => m.strictFace !== true
-      && m.domain === 'audio'
-      && !NON_SHELL.has(m.type)
-      && !NEEDS_HARDWARE.has(m.type),
+    (m) => m.domain === 'audio' && !NON_SHELL.has(m.type) && !NEEDS_HARDWARE.has(m.type),
   )
     .map((m) => m.type)
     // Sorted so the pick is DETERMINISTIC across runs and shards — a test that
     // measured a different module each run would be unreproducible.
     .sort();
 
-  // ⚠ THE INSTRUMENT CHECK COMES BEFORE THE MIGRATION CHECK, exactly as in
-  // `deriveFixture` (:527 before :552). A blind filter presents itself as a
-  // finished migration, and that failure is SILENT AND GREEN — the worse of
-  // the two — so it must be reachable ahead of the skip that would absorb it.
+  // THE INSTRUMENT CHECK, exactly as in `deriveFixture`: a filter that accepts
+  // nothing anywhere is broken, and it fails in the direction that looks like
+  // "there is simply no subject" — silent and green — so it is checked first.
   if (eligible.length === 0) {
     return {
       kind: 'no-candidate',
       type: null,
       pool: candidates,
       why:
-        `the placeholder-subject filter accepts NOTHING across the whole registry `
-        + `(${REGISTRY.length} modules, promoted and un-promoted alike). That cannot be a `
-        + 'migration state: promotion removes modules from the un-promoted POOL, never from the '
-        + 'population measured here. So the filter itself stopped working — `domain`, '
-        + '`NON_SHELL_LANE_TYPES` or the manifest changed shape. FIX THE FILTER; do not read a '
-        + 'finished migration into it.',
-    };
-  }
-  // ⚠ AND EXHAUSTION IS A NAMED SKIP, NOT A THROW (#2295). This used to
-  // `throw new Error` from inside a test body, which is a hard RED in a state
-  // that is DESIGNED — the face programme finishing — landing on whichever
-  // unrelated PR promotes the last audio module. Runway measured 2026-09-01: 5.
-  if (candidates.length === 0) {
-    return {
-      kind: 'migration-complete',
-      type: null,
-      pool: candidates,
-      why:
-        'no un-promoted, shell-eligible audio module is left to use as a PLACEHOLDER subject — '
-        + `every one of the ${eligible.length} the filter accepts is now in STRICT_FACES. That is `
-        + 'the END STATE of the face programme, not a failure: nothing renders a '
-        + '`module-shell-placeholder` any more, so a tile-geometry test written about one has no '
-        + 'subject. Retire the case with the placeholder tile — do NOT re-point it at a faced '
-        + 'module, whose geometry is the faces suites\' subject and is covered there.',
+        'the tile-subject filter accepts NOTHING across the whole registry '
+        + `(${REGISTRY.length} modules). The filter itself stopped working — \`domain\`, `
+        + '`NON_SHELL_LANE_TYPES` or the manifest changed shape. FIX THE FILTER; do not read '
+        + '"there is no subject" into it.',
     };
   }
   return {
     kind: 'ok',
     type: candidates[0]!,
     pool: candidates,
-    why: `placeholder subject: ${candidates[0]} — first by name of ${candidates.length} un-promoted, shell-eligible audio modules`,
+    why: `tile subject: ${candidates[0]} — first by name of ${candidates.length} shell-eligible audio modules`,
   };
 }
 
-const PLACEHOLDER_SUBJECT = derivePlaceholderSubject();
+const TILE_SUBJECT = deriveTileSubject();
 
 /**
  * The named reason a case skips when the derived pool cannot supply the
@@ -319,11 +294,11 @@ const PLACEHOLDER_SUBJECT = derivePlaceholderSubject();
  * zone's tile instead of dropping a subject of its own. Each now drops what it
  * needs and says so when it cannot.
  */
-function placeholderPoolShortfall(need: number): string {
+function tilePoolShortfall(need: number): string {
   return (
     `the derived placeholder pool cannot supply ${need} distinct un-promoted subject(s): it holds `
-    + `${PLACEHOLDER_SUBJECT.pool.length} (${PLACEHOLDER_SUBJECT.pool.join(', ') || 'none'}). `
-    + PLACEHOLDER_SUBJECT.why
+    + `${TILE_SUBJECT.pool.length} (${TILE_SUBJECT.pool.join(', ') || 'none'}). `
+    + TILE_SUBJECT.why
   );
 }
 
@@ -360,7 +335,7 @@ async function measureTiles(page: Page): Promise<{ node: string | null; tier: st
     const scope = document.querySelector('.flow > .svelte-flow');
     const tiles = Array.from(
       (scope ?? document).querySelectorAll(
-        '[data-testid="module-shell-placeholder"], [data-testid="module-shell"]',
+        '[data-testid="module-shell"]',
       ),
     ) as HTMLElement[];
     return tiles.map((t) => ({
@@ -401,9 +376,8 @@ async function setZoomTier(page: Page, zoom: number, expectTier: string): Promis
 //
 // `fixtureProblems` carries the checks (pick ∈ pool, `pool ∪ rejections ===
 // unpromoted`, and slack), so the audio and video gates cannot drift apart.
-test('the derived audio legacy-fallback fixtures are healthy', () => {
-  expect(fixtureProblems(AUDIO_PLACEHOLDER_FIXTURE), AUDIO_PLACEHOLDER_FIXTURE.why).toEqual([]);
-  expect(fixtureProblems(AUDIO_OPERABLE_FIXTURE), AUDIO_OPERABLE_FIXTURE.why).toEqual([]);
+test('the derived audio dock fixture is healthy', () => {
+  expect(fixtureProblems(AUDIO_DOCK_FIXTURE), AUDIO_DOCK_FIXTURE.why).toEqual([]);
 
   // ── THE INSTRUMENT'S PERMANENT NEGATIVE CONTROL, BOTH DIRECTIONS (#2137) ──
   //
@@ -418,10 +392,7 @@ test('the derived audio legacy-fallback fixtures are healthy', () => {
   // ⚠ IT CALLS THE PREDICATE UNDER TEST, NOT A PARAPHRASE OF IT. `probe` is the
   // exact closure `deriveFixture` ran; a re-implementation here could agree with
   // a broken predicate and certify it.
-  for (const [name, f] of [
-    ['AUDIO_PLACEHOLDER', AUDIO_PLACEHOLDER_FIXTURE],
-    ['AUDIO_OPERABLE', AUDIO_OPERABLE_FIXTURE],
-  ] as const) {
+  for (const [name, f] of [['AUDIO_DOCK', AUDIO_DOCK_FIXTURE]] as const) {
     // POSITIVE — the predicate still ACCEPTS things. A predicate that accepts
     // nothing anywhere is broken, and it is broken in the direction that LOOKS
     // like a finished migration: this is the leg that catches the `<Fader>` →
@@ -476,129 +447,115 @@ test('the derived audio legacy-fallback fixtures are healthy', () => {
 });
 
 test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
-  test('un-migrated module → placeholder in lane + legacy card operable in the dock', async ({ page }) => {
-    // A still-UN-migrated module, DERIVED from STRICT_FACES rather than named:
-    // a hard-coded fixture rots as each P1 wave promotes more modules (vca was
-    // consumed by batch 1, delay by batch 3 — both turned this red for a
-    // non-bug). See AUDIO_OPERABLE_FIXTURE in _face-fixtures.ts.
+  test('a lane tile + the dock faceplate: full chrome, and a control that really drives the graph', async ({ page }) => {
+    // ⚠ THE ONLY PLACE THE DOCK FACEPLATE'S CHROME IS ASSERTED AS A WHOLE.
+    // Individual face specs click `faceplate-tab-<id>`; nothing else checks the
+    // grip, the badge, the name/sub pair, the window trio or the domain-classed
+    // frame. That is why this leg is rewritten rather than deleted — its title
+    // named a render branch, but its BODY is about the dock faceplate, which is
+    // entirely live.
     //
-    // When every audio module is promoted this case has no subject BY DESIGN —
-    // a NAMED skip carrying the reason, never a silent pass (#1864).
-    test.skip(AUDIO_OPERABLE_FIXTURE.kind === 'migration-complete', AUDIO_OPERABLE_FIXTURE.why);
-    await gotoWorkflow(page, { shell: true });
-    await spawnPatch(page, [
-      { id: NODE, type: fixtureType(AUDIO_OPERABLE_FIXTURE), position: { x: 460, y: 240 } },
-    ]);
+    // What went with the branch: the lane assertion is `module-shell` rather
+    // than a placeholder testid, and the dock half drives the FACEPLATE's own
+    // control instead of a verbatim card's `<NeonFader>`.
+    const subject = fixtureType(AUDIO_DOCK_FIXTURE);
+    await gotoWorkflow(page);
+    await spawnPatch(page, [{ id: NODE, type: subject, position: { x: 460, y: 240 } }]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
     await expect(laneNode).toHaveCount(1);
 
-    // 1) The lane shows the UNIFORM PLACEHOLDER — not the legacy vca card.
-    const placeholder = laneNode.locator('[data-testid="module-shell-placeholder"]');
-    await expect(placeholder).toBeVisible();
-    // No legacy controls in the lane (they moved to the dock):
-    await expect(laneNode.locator('[data-testid^="control-"]')).toHaveCount(0);
+    // 1) The lane shows the module's faceplate tile.
+    const tile = laneNode.locator('[data-testid="module-shell"]');
+    await expect(tile).toBeVisible();
     // Cables stay attached: the node keeps its full invisible handle stack.
     await expect(laneNode.locator('.svelte-flow__handle').first()).toHaveCount(1);
 
     // 2) Open in dock (the jack-rail "⤢" expand) → the RACKLINE full-view
-    //    FACEPLATE opens in the bottom drawer (NOT a generic .dock-card).
-    await placeholder.getByTestId('shell-open-dock').click();
+    //    FACEPLATE opens in the bottom drawer.
+    await tile.getByTestId('shell-open-dock').click();
     const faceplate = page.getByTestId('dock-full-view');
     await expect(faceplate).toBeVisible();
     // The spec chrome: grip, title bar (badge + name + mono sub), the window-
-    // control trio (collapse + close in P0.3b; undock omitted), the tab-rail
-    // seam with a single "MODULE" tab, and the domain-classed faceplate frame.
+    // control trio, the tab-rail seam, and the domain-classed faceplate frame.
     await expect(faceplate.getByTestId('faceplate-grip')).toBeVisible();
     await expect(faceplate.locator('.faceplate-bar .face-badge')).toBeVisible();
     await expect(faceplate.locator('.faceplate-bar .face-name')).toBeVisible();
-    // The mono sub reads "<module label> · lane N" — assert the "lane" descriptor.
     await expect(faceplate.locator('.faceplate-bar .face-sub')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-close')).toBeVisible();
     await expect(faceplate.getByTestId('faceplate-collapse')).toBeVisible();
-    await expect(faceplate.getByTestId('faceplate-tab')).toHaveText('MODULE');
-    // The plate carries the module's DERIVED domain class.
-    //
-    // ⚠ THIS USED TO BE A HARD-CODED `.faceplate.audio` (#2137), and the
-    // hard-coding was not cosmetic — it was the whole reason the audio fixture
-    // carried a "must be audio-class" predicate that rejected 31 of 38
-    // un-promoted candidates and shrank the pool to two. Deriving the class
-    // instead makes this leg STRICTER, not looser: it now proves the plate
-    // carries the RIGHT class for whatever subject the derivation handed it,
-    // rather than proving one class for a subject filtered to have it. The
-    // widening immediately changed the answer — today's pick is gate-class, so
-    // `.faceplate.audio` would now be simply WRONG.
-    const domainClass = AUDIO_OPERABLE_FIXTURE.kind === 'ok' ? AUDIO_OPERABLE_FIXTURE.domainClass : null;
-    expect(domainClass, 'the operable fixture must resolve a determinate domain class').not.toBeNull();
+    await expect(faceplate.locator('[data-testid="faceplate-tabrail"]')).toBeVisible();
+
+    // The plate carries the module's DERIVED domain class — read from the
+    // contract golden, never hard-coded, so this proves the plate carries the
+    // RIGHT class for whatever subject the derivation handed it.
+    const domainClass = AUDIO_DOCK_FIXTURE.kind === 'ok' ? AUDIO_DOCK_FIXTURE.domainClass : null;
+    expect(domainClass, 'the dock fixture must resolve a determinate domain class').not.toBeNull();
     await expect(
       faceplate.locator(`.faceplate.${domainClass}`),
-      `${fixtureType(AUDIO_OPERABLE_FIXTURE)}: the dock plate carries its derived domain class (.faceplate.${domainClass})`,
+      `${subject}: the dock plate carries its derived domain class (.faceplate.${domainClass})`,
     ).toHaveCount(1);
 
-    // …and the REAL, unchanged legacy card mounts verbatim in .editor at native
-    //  scale (carrying the data-dock-card anchor so PickupCable/patch-menu work).
-    const dockCard = faceplate.getByTestId('faceplate-editor').locator(`[data-dock-card="${NODE}"]`);
-    await expect(dockCard).toBeVisible();
-    await expect(dockCard.locator('.mod-card, .card, .moog-panel').first()).toBeVisible();
     // The faceplate hosts NO xyflow handles / node wrappers (PatchPanel self-gates):
     await expect(faceplate.locator('.svelte-flow__handle')).toHaveCount(0);
     await expect(faceplate.locator('.svelte-flow__node')).toHaveCount(0);
 
-    // 3) The lane placeholder STILL shows (Option #1: lane face + dock faceplate
+    // 3) The lane tile STILL shows (Option #1: lane face + dock faceplate
     //    coexist — the module was never persist-docked / swapped to a stub).
-    await expect(placeholder).toBeVisible();
+    await expect(tile).toBeVisible();
     await expect(laneNode.locator('[data-testid="dock-stub"]')).toHaveCount(0);
 
-    // 4) Drive a control in the mounted card → the graph params change
-    //    (operable). Module-AGNOSTIC: the fixture is derived, so we diff the
-    //    whole param map rather than naming one id.
+    // 4) Drive a control in the dock → the graph params change (OPERABLE).
+    //
+    // ⚠ THE CONTROL IS FOUND IN THE DOM, NOT PREDICTED FROM SOURCE. This used
+    // to demand the subject's card mount a `<NeonFader>` so it could drag
+    // `.fader-wrap .track` by name — a requirement that broke when the
+    // component was renamed and again when the components were deleted. Taking
+    // the faceplate's FIRST ranked slider proves the real surface is operable,
+    // whatever it chose to mount, and cannot go stale against a file it never
+    // reads.
     const before = await readParams(page, NODE);
-    const track = dockCard.locator('.fader-wrap .track').first();
+    const control = faceplate.locator('[role="slider"]').first();
+    await expect(
+      control,
+      `${subject}: the dock faceplate must mount at least one ranked control to drive`,
+    ).toBeVisible();
     // ⚠ SCROLL IT INTO VIEW BEFORE MEASURING, and this is a REAL FIX rather than
     // defensive noise (#2137). This leg drives raw `page.mouse` at coordinates
     // from `boundingBox()`, which reports where an element IS — including when
     // it is scrolled outside the dock's clipped viewport. The pointer then lands
     // on whatever actually occupies those screen coordinates, the drag commits
-    // nothing, and the failure reads as "this card is not operable" rather than
-    // "the test never touched it".
-    //
-    // It was latent for as long as the fixture happened to resolve SHORT cards.
-    // The derivation now offers `modtris`, whose card is a game board with its
-    // two faders far below the fold, and the leg failed with an empty param map
-    // — the card mounted correctly and both sliders were present in the
-    // accessibility tree. That is a defect in the LEG, not evidence against the
-    // candidate, so the fix belongs here and not in a `DENIED` entry: denying
-    // the module would have hidden a fragility that the next tall card hits
-    // again.
-    await track.scrollIntoViewIfNeeded();
-    const box = await track.boundingBox();
-    expect(box, 'a fader track should be present in the docked card').toBeTruthy();
+    // nothing, and the failure reads as "this surface is not operable" rather
+    // than "the test never touched it".
+    await control.scrollIntoViewIfNeeded();
+    const box = await control.boundingBox();
+    expect(box, 'a ranked control should be present in the dock faceplate').toBeTruthy();
     if (!box) return;
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
-    // The grab lands on the track's MIDPOINT, so there is guaranteed travel in
-    // both directions — a fixed drag off a rail-parked fader is the
+    // The grab lands on the control's MIDPOINT, so there is guaranteed travel in
+    // both directions — a fixed drag off a rail-parked control is the
     // false-failure class faces-parity's dragKnob guards against.
     await page.mouse.move(cx, cy - 34, { steps: 6 });
     await page.mouse.up();
     await expect
       .poll(async () => JSON.stringify(await readParams(page, NODE)), {
-        message: `${fixtureType(AUDIO_OPERABLE_FIXTURE)}: driving the docked card's first fader commits a param change`,
+        message: `${subject}: driving the dock faceplate's first control commits a param change`,
       })
       .not.toBe(JSON.stringify(before));
 
-    // 5) ESC closes the full-view faceplate; the placeholder remains in the lane.
+    // 5) ESC closes the full-view faceplate; the lane tile remains.
     await page.keyboard.press('Escape');
     await expect(faceplate).toHaveCount(0);
-    await expect(placeholder).toBeVisible();
+    await expect(tile).toBeVisible();
   });
 
   test('placeholder tiles are UNIFORM WIDTH + the FIXED slot height with a consistent badge anchor', async ({ page }) => {
     // The owner "same-size all modules HORIZONTALLY" + "tiles non-uniform / smaller
     // than the mock" fix: under ?shell=1 the tile-swapped defaults render as the
-    // SAME uniform RACKLINE tile whatever their LEGACY card measured — identical
+    // SAME uniform RACKLINE tile whatever the module used to measure — identical
     // WIDTH (SHELL_TILE_W) and the ONE fixed slot HEIGHT (SHELL_TILE_H_SLOT —
     // tier-invariant, the zoom-reposition fix), so the baseline number badges
     // cap them flush. (A PROMOTED occupant is out of scope here by construction:
@@ -637,8 +594,8 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // A filter that accepts nothing anywhere reads exactly like a finished
     // migration and fails GREEN, so it reds here — ahead of the skip.
     expect(
-      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
-      'the placeholder-subject derivation went blind',
+      TILE_SUBJECT.kind === 'no-candidate' ? TILE_SUBJECT.why : null,
+      'the tile-subject derivation went blind',
     ).toBeNull();
     // An exhausted pool is the DESIGNED end state: with every audio module
     // faced, nothing renders a `module-shell-placeholder` and a test about
@@ -649,9 +606,9 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // "Uniform" is trivially true of a set of one, so this case needs two
     // DISTINCT placeholder types — and it used to get the second one from the
     // seeded rack, which is a borrowed subject, not a derived one.
-    test.skip(PLACEHOLDER_SUBJECT.pool.length < 2, placeholderPoolShortfall(2));
+    test.skip(TILE_SUBJECT.pool.length < 2, tilePoolShortfall(2));
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ BOTH SUBJECTS ARE NOW DROPPED, AND THE SEEDED RACK IS NOT COUNTED ON.
     // This used to drop ONE and rely on the default rack for the other, with a
@@ -663,15 +620,15 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // which reads like a tile-geometry regression. Dropping both makes the
     // population this case measures its OWN, and the skip above states the one
     // condition under which it cannot have it.
-    for (const t of PLACEHOLDER_SUBJECT.pool.slice(0, 2)) {
+    for (const t of TILE_SUBJECT.pool.slice(0, 2)) {
       await dropInColumn(page, t, 1);
     }
-    const placeholders = page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`);
+    const placeholders = page.locator(`${MAIN_CANVAS} [data-testid="module-shell"]`);
     await expect(placeholders.first()).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
 
     const metrics = await page.evaluate((canvasSel) => {
       const tiles = Array.from(
-        document.querySelectorAll(`${canvasSel} [data-testid="module-shell-placeholder"]`),
+        document.querySelectorAll(`${canvasSel} [data-testid="module-shell"]`),
       ) as HTMLElement[];
       return tiles.map((tile) => {
         const badge = tile.querySelector('.tile-badge') as HTMLElement | null;
@@ -713,12 +670,12 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // The mixed population below needs ONE un-promoted subject; without it the
     // placeholder half of the claim has nothing to measure. NAMED skip (#2295).
     expect(
-      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
-      'the placeholder-subject derivation went blind',
+      TILE_SUBJECT.kind === 'no-candidate' ? TILE_SUBJECT.why : null,
+      'the tile-subject derivation went blind',
     ).toBeNull();
-    test.skip(PLACEHOLDER_SUBJECT.pool.length < 1, placeholderPoolShortfall(1));
+    test.skip(TILE_SUBJECT.pool.length < 1, tilePoolShortfall(1));
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ THE THIRD MEMBER IS DERIVED, AND IT USED TO BE THE LITERAL `delay`
     // (#2295). The three drops exist to put BOTH lane kinds in ONE column — the
@@ -730,7 +687,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // reason the test never states. Measured 2026-09-01: promote `recorderbox`
     // — the rack's last seeded placeholder — and this case reds with
     // "Received: 0" on a change that breaks nothing it was written to protect.
-    const types = ['tidyVco', 'vca', PLACEHOLDER_SUBJECT.pool[0]!];
+    const types = ['tidyVco', 'vca', TILE_SUBJECT.pool[0]!];
     for (const t of types) {
       await dropInColumn(page, t, 1);
     }
@@ -744,7 +701,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // that was re-scoped to the canvas in the same pass. It would have gone on
     // certifying the next lane-mount regression in silence.
     await expect(
-      page.locator(`${MAIN_CANVAS} [data-testid="module-shell-placeholder"]`),
+      page.locator(`${MAIN_CANVAS} [data-testid="module-shell"]`),
     ).not.toHaveCount(0);
     await expect(page.locator(`${MAIN_CANVAS} [data-testid="module-shell"]`)).not.toHaveCount(0);
 
@@ -787,7 +744,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // palette drop lands in the correct NARROWED column via the pitch-aware
     // hit-test, (b) the rendered column pitch is ~SHELL_COLUMN_W, and (c) tiles don't
     // overlap (clean gutter).
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
 
     // Anchor each spawn INSIDE the narrow band of columns 1..3 (X selects the
@@ -838,7 +795,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
         const inode = w.__flow.getInternalNode(id);
         const x = inode?.internals?.positionAbsolute?.x ?? inode?.position?.x ?? NaN;
         const el = document.querySelector(
-          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"], .svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`,
+          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"], .svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`,
         ) as HTMLElement | null;
         out.push({ ch, x, w: el?.offsetWidth ?? 0 });
       }
@@ -873,22 +830,22 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // Same shape as the case above: the tier/box invariants are asserted across
     // BOTH lane kinds, so one un-promoted subject is a precondition. NAMED skip.
     expect(
-      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
-      'the placeholder-subject derivation went blind',
+      TILE_SUBJECT.kind === 'no-candidate' ? TILE_SUBJECT.why : null,
+      'the tile-subject derivation went blind',
     ).toBeNull();
-    test.skip(PLACEHOLDER_SUBJECT.pool.length < 1, placeholderPoolShortfall(1));
+    test.skip(TILE_SUBJECT.pool.length < 1, tilePoolShortfall(1));
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ THE PLACEHOLDER IS DROPPED, NOT BORROWED (#2295). Both drops here are
     // promoted, so the assertion below was being satisfied by whatever
     // placeholder the SEEDED rack happened to still have — measured
     // 2026-09-01, that is `recorderbox` and nothing else, so its promotion
     // reddens this case with "Received: 0" for a non-defect.
-    for (const t of ['tidyVco', 'vca', PLACEHOLDER_SUBJECT.pool[0]!]) {
+    for (const t of ['tidyVco', 'vca', TILE_SUBJECT.pool[0]!]) {
       await dropInColumn(page, t, 1);
     }
-    await expect(page.locator('[data-testid="module-shell-placeholder"]')).not.toHaveCount(0);
+    await expect(page.locator('[data-testid="module-shell"]')).not.toHaveCount(0);
 
     /** EVERY patch node's absolute flow-space position, keyed by id — the full
      *  layout, not just the ch1 stack (a cascade-shift anywhere must fail). */
@@ -962,12 +919,11 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     //
     // Instrument first, then the migration — the `deriveFixture` order.
     expect(
-      PLACEHOLDER_SUBJECT.kind === 'no-candidate' ? PLACEHOLDER_SUBJECT.why : null,
-      'the placeholder-subject derivation went blind',
+      TILE_SUBJECT.kind === 'no-candidate' ? TILE_SUBJECT.why : null,
+      'the tile-subject derivation went blind',
     ).toBeNull();
-    test.skip(PLACEHOLDER_SUBJECT.kind === 'migration-complete', PLACEHOLDER_SUBJECT.why);
 
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     // ⚠ THE LONGEST-NAMED CANDIDATE, not the alphabetical pick the sibling test
     // uses, because THE NAME IS THIS TEST'S SUBJECT: the reported bug was a long
@@ -983,7 +939,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     // instead: the "renders in FULL / no ellipsis" leg gets weaker the shorter
     // the longest remaining name is, while the rule, gap and badge-row geometry
     // legs are length-independent and keep their full strength.
-    const longestNamed = [...PLACEHOLDER_SUBJECT.pool].sort(
+    const longestNamed = [...TILE_SUBJECT.pool].sort(
       (a, b) => b.length - a.length || a.localeCompare(b),
     )[0]!;
     await dropInColumn(page, longestNamed, 1);
@@ -994,7 +950,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const ids = await page.evaluate(
       (canvasSel) =>
         Array.from(
-          document.querySelectorAll(`${canvasSel} [data-testid="module-shell-placeholder"]`),
+          document.querySelectorAll(`${canvasSel} [data-testid="module-shell"]`),
         )
           .map((tile) => tile.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '')
           .filter((id) => id !== ''),
@@ -1009,7 +965,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     ).not.toEqual([]);
     for (const id of ids) {
       await expect(
-        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`),
+        page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`),
       ).toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
     }
     // The compact tier (the truncation report's tier) — the tile is 192px wide.
@@ -1018,7 +974,7 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
     const metrics = await page.evaluate((nodeIds) => {
       return nodeIds.map((id) => {
         const tile = document.querySelector(
-          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell-placeholder"]`,
+          `.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`,
         ) as HTMLElement | null;
         const rule = tile?.querySelector('.tile-rule') as HTMLElement | null;
         const name = tile?.querySelector('.tile-name') as HTMLElement | null;
@@ -1084,18 +1040,6 @@ test.describe('P0.3b workflow-shell legacy-fallback bridge', () => {
       expect(m!.badgeTop, `${m!.id}: badge sits on a row BELOW the name`).toBeGreaterThan(m!.nameTop + 8);
     }
   });
-
-  test('preview OFF (default) is a strict no-op: the legacy card renders in the lane', async ({ page }) => {
-    await gotoWorkflow(page, { shell: false });
-    await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
-
-    const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
-    await expect(laneNode).toHaveCount(1);
-    // The REAL card + its controls render in the lane, exactly as today.
-    await expect(laneNode.locator('[data-testid="control-base"]')).toBeVisible();
-    // …and NO placeholder is emitted.
-    await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-  });
 });
 
 // ─── P0.3b ?shell=1 bug fixes (video-zone inset · lane-snap · expand button) ──
@@ -1105,7 +1049,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   /** The video-zone default's LANE TILE under the shell — EITHER KIND.
    *
    *  ⚠ THIS USED TO BE A PER-ID TERNARY AND IT HAD ALREADY BEEN EDITED ONCE FOR
-   *  EXACTLY THIS REASON. It first named videoOut's verbatim legacy card
+   *  EXACTLY THIS REASON. It first named videoOut's own plate
    *  (`video-out-card`), because videoOut was a NON_SHELL video-surface
    *  snowflake; #1821 promoted it and the arm was rewritten to `module-shell`,
    *  leaving `recorderbox`/`synesthesia` on the placeholder arm — and the note
@@ -1126,7 +1070,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
    *  renders. It cannot go stale on the next promotion, or the one after. */
   const vzFaceSelector = (id: string) =>
     `.svelte-flow__node[data-id="${id}"] `
-    + ':is([data-testid="module-shell"], [data-testid="module-shell-placeholder"])';
+    + ':is([data-testid="module-shell"], [data-testid="module-shell"])';
 
   /** Drop `type` at the tight SHELL pitch so the pitch-aware hit-test resolves the
    *  intended narrowed column `ch` (the wide COLUMN_W anchor would land elsewhere). */
@@ -1167,7 +1111,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // jack rail straddled the line + collided with the lane-number badges. The shell
   // render override now insets them DOWN, fully inside the darker video area.
   test('video-zone tiles sit INSIDE the video area (below COLUMN_BASELINE_Y)', async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     for (const id of VZONE_IDS) {
       await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
     }
@@ -1188,7 +1132,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // far right of the lane ("off-lane"). The persisted X now uses the active pitch,
   // so persisted + rendered both equal the tight column centre, flush-stacked.
   test('a lane drop persists + renders at the tight column centre, flush-stacked, no invalid state', async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     for (const t of ['tidyVco', 'vca']) {
       await dropInShellColumn(page, t, 1);
@@ -1236,26 +1180,21 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // only button (undiscoverable). It is now a clear, LABELLED pill; the wired path
   // (onExpand → dockStore.openFullView → the .dock-faceplate full view) is unchanged.
   test('the EXPAND affordance is a labelled button that opens the dock faceplate + ESC closes', async ({ page }) => {
-    // A still-UN-migrated module (DERIVED — see AUDIO_PLACEHOLDER_FIXTURE), so
-    // this stays the PLACEHOLDER's expand path; the migrated shell's expand is
-    // covered by workflow-shell-faces.spec.ts.
-    //
-    // ⚠ THE **PLACEHOLDER** FIXTURE, NOT THE OPERABLE ONE (#2137). This leg
-    // clicks a pill and presses ESC; it never drives a control and never reads
-    // the plate's domain class, so requiring its subject's legacy card to mount
-    // a fader was a requirement borrowed from a different test. Sharing one
-    // fixture meant the strictest leg's predicates silenced this one too.
-    test.skip(AUDIO_PLACEHOLDER_FIXTURE.kind === 'migration-complete', AUDIO_PLACEHOLDER_FIXTURE.why);
-    await gotoWorkflow(page, { shell: true });
+    // ⚠ THE SUBJECT IS DERIVED, NOT NAMED, and the requirement is only "a
+    // module that renders a lane tile" — this leg clicks a pill and presses
+    // ESC. It used to demand an UN-FACED subject so it exercised the
+    // placeholder's expand path specifically; there is one expand path now, so
+    // the distinction is gone and the leg simply asserts it.
+    await gotoWorkflow(page);
     await spawnPatch(page, [
-      { id: NODE, type: fixtureType(AUDIO_PLACEHOLDER_FIXTURE), position: { x: 460, y: 240 } },
+      { id: NODE, type: fixtureType(AUDIO_DOCK_FIXTURE), position: { x: 460, y: 240 } },
     ]);
 
     const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
-    const placeholder = laneNode.locator('[data-testid="module-shell-placeholder"]');
-    await expect(placeholder).toBeVisible();
+    const tile = laneNode.locator('[data-testid="module-shell"]');
+    await expect(tile).toBeVisible();
 
-    const expandBtn = placeholder.getByTestId('shell-open-dock');
+    const expandBtn = tile.getByTestId('shell-open-dock');
     await expect(expandBtn).toBeVisible();
     // DISCOVERABILITY: the button carries a readable text LABEL (not a bare glyph),
     // so it reads as a clear "expand" action.
@@ -1267,10 +1206,10 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     await expect(faceplate).toBeVisible();
     await expect(faceplate).toHaveClass(/dock-faceplate/);
 
-    // ESC closes it; the lane placeholder remains.
+    // ESC closes it; the lane tile remains.
     await page.keyboard.press('Escape');
     await expect(faceplate).toHaveCount(0);
-    await expect(placeholder).toBeVisible();
+    await expect(tile).toBeVisible();
   });
 
   // BUG 4 — port-heavy tiles overflowed the fixed 192px rail: synesthesia's 8
@@ -1295,9 +1234,9 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // Pick an unpromoted subject BY PORT COUNT and re-derive those numbers.
   // The BODY IS DELIBERATELY UNTOUCHED, per the park's own terms.
   test.fixme('port-heavy rail FITS the tile: EXPAND fully visible, surplus dots collapse into "···" that opens the drill-down', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     const tile = page.locator(
-      '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell-placeholder"]',
+      '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell"]',
     );
     await expect(tile).toBeVisible({ timeout: 15_000 });
     const expand = tile.getByTestId('shell-open-dock');
@@ -1326,7 +1265,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     // UNSCALED layout metrics (immune to the xyflow zoom transform).
     const m = await page.evaluate(() => {
       const tile = document.querySelector(
-        '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell-placeholder"]',
+        '.svelte-flow__node[data-id="workflow-synesthesia"] [data-testid="module-shell"]',
       ) as HTMLElement;
       const rail = tile.querySelector('[data-testid="lane-jack-rail"]') as HTMLElement;
       const expand = tile.querySelector('[data-testid="shell-open-dock"]') as HTMLElement;
@@ -1377,7 +1316,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
   // tier boundary (0.30 / 0.52 / 0.95) plus the owner's repro range, normalizes
   // by zoom, and asserts every relative pair is identical within 2 flow px.
   test('zoom is a geometric NO-OP on SCREEN: tiles hold position vs lane lines, badges, the video band, and each other', async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
     for (const id of VZONE_IDS) {
       await expect(page.locator(vzFaceSelector(id))).toBeVisible({ timeout: 15_000 });
@@ -1513,7 +1452,7 @@ test.describe('P0.3b workflow-shell ?shell=1 bug fixes', () => {
     // vca is MIGRATED as of P1 batch 1 — the lane tile is the curated
     // ModuleShell, which carries the SAME PatchPanel lane-rail contract the
     // placeholder does (all 4 dots, no overflow, EXPAND inside the tile).
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await spawnPatch(page, [{ id: NODE, type: 'vca', position: { x: 460, y: 240 } }]);
     const tile = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);
     await expect(tile).toBeVisible();
@@ -1577,7 +1516,7 @@ test.describe('LANE HEADROOM: the band grows with the fullest stack (?shell=1)',
   // LOST WHILE PARKED: the lane stacking geometry — headroom above the top tile, a single shared band top, and badges that are not clipped; the layout invariants that keep a 4-module stack readable.
   // Re-enable only on a root cause (#1847); "it passes now" is not one.
   test.fixme('4-stack lane: ≥90px headroom above the top tile, ONE shared band top, badges fully visible', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: 2 recovered-on-retry observations in the 96 h census to 2026-08-18; parked until root-caused' } }, async ({ page }) => {
-    await gotoWorkflow(page, { shell: true });
+    await gotoWorkflow(page);
     await waitForHooks(page);
 
     // Lane 1 = the FULLEST lane (4 uniform tiles); lane 2 = a 1-tile lane (its

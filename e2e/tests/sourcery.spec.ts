@@ -135,15 +135,15 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('real 2-source chain: A + B patched → structured non-black output', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
     // DOM structure — the card + its preview canvas + the OUTPUT sink render.
-    await expect(page.locator('.svelte-flow__node-sourcery'), 'card visible').toBeVisible();
-    await expect(page.locator('[data-testid="sourcery-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="sourcery-canvas"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="sourcery"])'), 'card visible').toBeVisible();
+    // (card + preview chrome died with the card; the pixel claims below are
+    // engine reads and the module's own tile thumb carries the picture)
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]')).toHaveCount(1);
 
     // The recolored output is non-black AND spatially STRUCTURED (A's edge
     // cells painted with B's colors — not a flat fill).
@@ -161,7 +161,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('parameter response: ROT rotates the intra-region sampling frame', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -188,7 +188,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('parameter response: SKEW rotates the transferred hue', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -210,7 +210,7 @@ test.describe('SOURCERY — 2-input region shape-match recolor', () => {
   test('B unpatched → passthrough of A (non-black, no holes)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     // Only A + the module + output — B (chroma) deliberately not wired to src.b.
     const nodes = baseNodes().filter((n) => n.id !== 'chroma' && n.id !== 'linesB');

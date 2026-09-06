@@ -16,12 +16,12 @@
 // ── AND WHY THE LEGACY SPECS CANNOT COVER IT ──────────────────────────────
 //
 // `audio-in.spec.ts` carries the only automated coverage of the setSinkId
-// picker, and BOTH of its relevant tests drive `/rack?shell=legacy`. They pass
-// unchanged across this promotion — and they would pass unchanged if the face
-// had shipped with no picker at all, because under that flag `shellFaces` is
-// false and the card is what renders. That is a suite going green-and-blind on
-// the surface a user now actually gets. This file is the same claims on the
-// DEFAULT shell.
+// picker, and BOTH of its relevant tests were written against the
+// PRE-PROMOTION surface. They pass unchanged across this promotion — and they
+// would pass unchanged if the face had shipped with no picker at all, because
+// the renderer they booted was the one the promotion does not touch. That is a
+// suite going green-and-blind on the surface a user now actually gets. This
+// file is the same claims on the shipping shell.
 //
 // ── WHAT THIS SPEC STRUCTURALLY CANNOT SEE ────────────────────────────────
 //
@@ -32,7 +32,7 @@
 //     there. The legs below therefore assert the picker is PRESENT and that its
 //     state is NAMED, both of which are capability-independent; the apply path
 //     is the unit lane's and the handle's.
-//   * The `?shell=legacy` arm — `audio-in.spec.ts` keeps it.
+//   * The setSinkId APPLY path — the unit lane's and the handle's.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, canvasNode } from './_helpers';

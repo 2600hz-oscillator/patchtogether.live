@@ -18,6 +18,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+import { BOOT_MS, PLACEHOLDER_PAINT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const PNG = readFileSync(fileURLToPath(new URL('../fixtures/tiny.png', import.meta.url)));
 const WAV = readFileSync(fileURLToPath(new URL('../fixtures/samsloop-test.wav', import.meta.url)));
@@ -78,26 +79,76 @@ async function mockArchive(
 }
 
 async function gotoApp(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 }
 
-async function spawnArchivist(page: Page): Promise<void> {
+/** Spawn + open the dock full view (the archive browser is `fullViewBody`;
+ *  the shared BrowseControls render there with the `archivist-face-*` testid
+ *  prefix) and return the PANE locator every UI read scopes under. */
+async function spawnArchivist(page: Page) {
   await spawnPatch(page, [
     { id: 'arc', type: 'archivist', position: { x: 80, y: 80 }, domain: 'video' },
   ]);
-  await expect(page.locator('[data-testid="archivist-card"]')).toHaveCount(1);
+  await expect(
+    page.locator('.svelte-flow__node[data-id="arc"] [data-testid="module-shell"]'),
+  ).toHaveCount(1);
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    // Derived, not hand-typed — and it has to be SMALLER than the test
+    // budget below or it can never fire. See the describe's note.
+    { timeout: BOOT_MS },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    'arc',
+  );
+  const pane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="arc"]');
+  await expect(pane.locator('[data-testid="archivist-face-body"]'))
+    .toBeVisible({ timeout: PLACEHOLDER_PAINT_MS });
+  return pane;
 }
 
-async function search(page: Page, type: string, term: string): Promise<void> {
-  await page.locator('[data-testid="archivist-type"]').selectOption(type);
-  await page.locator('[data-testid="archivist-search"]').fill(term);
-  // Press Enter rather than clicking the button: a real pointer .click() on an
-  // element inside a SvelteFlow node is captured by the node's pan/drag handler
-  // (even with `nodrag`), so it never reaches the button's onclick. Enter in the
-  // search field calls runSearch directly — the same code path a user hits.
-  await page.locator('[data-testid="archivist-search"]').press('Enter');
+type Pane = Awaited<ReturnType<typeof spawnArchivist>>;
+
+async function search(pane: Pane, type: string, term: string): Promise<void> {
+  await pane.locator('[data-testid="archivist-face-type"]').selectOption(type);
+  await pane.locator('[data-testid="archivist-face-search"]').fill(term);
+  // Enter in the search field calls runSearch directly — the same code path a
+  // user hits (and no SvelteFlow pan handler exists in the dock pane).
+  await pane.locator('[data-testid="archivist-face-search"]').press('Enter');
 }
+
+// ── ⚠ THE BUDGET WAS BARE, AND ITS INNER CAPS WERE INVERTED (2026-09-05) ───
+//
+// The VIDEO leg timed out on CI at 32.9 s against Playwright's 30 s default,
+// which this file never overrode. Read off the blob report, the three legs
+// share one scaffold and only VIDEO overruns:
+//
+//     IMAGE passed 13.0 s · AUDIO passed 13.4 s · VIDEO timedOut 33.0 s
+//
+// ⚠ EVERY ASSERTION HAD ALREADY PASSED when the ceiling came down — the log
+// carries "video duration 1.968301 is finite + > 0" and each data-lit /
+// data-clean-output attribute. Nothing about the product is implicated; the
+// test was killed on its way out.
+//
+// WHY IT MOVED: this branch re-pointed the file off `?shell=legacy`, and a dock
+// mount no longer overlaps page load (memory:
+// repointing-a-spec-off-legacy-serializes-cold-boots). The branch's own cost
+// re-pin measures it: `archivist.spec.ts` 13.1 s -> 33.2 s, 2.5x, straight
+// through the 30 s default nobody had declared.
+//
+// ⚠ AND THE TWO INNER CAPS WERE LARGER THAN THE BUDGET CONTAINING THEM — a
+// `waitForFunction(..., { timeout: 30_000 })` and a `toBeVisible({ timeout:
+// 60_000 })` inside a 30 s test. Neither could EVER fire: the outer default
+// always won, so both were decoration that read as care. They are derived from
+// the shared bounds now, and both are smaller than the budget.
+//
+// This is a BOUND, not a claim: nothing here asserts a latency.
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 test.describe('ARCHIVIST (archive.org, mocked)', () => {
   test('IMAGE: search → loads a random image with a CLEAN output', async ({ page }) => {
@@ -106,10 +157,10 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
       file: 'cat.png', format: 'PNG', bytes: PNG, contentType: 'image/png',
     });
     await gotoApp(page);
-    await spawnArchivist(page);
-    await search(page, 'image', 'cats');
+    const pane = await spawnArchivist(page);
+    await search(pane, 'image', 'cats');
 
-    const card = page.locator('[data-testid="archivist-card"]');
+    const card = pane.locator('[data-testid="archivist-face-body"]');
     await expect(card).toHaveAttribute('data-has-item', 'true', { timeout: 10_000 });
     await expect(card).toHaveAttribute('data-media-type', 'image');
     // image = clean downstream output.
@@ -121,11 +172,11 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
     // card draws the same shared control, so both surfaces agree by
     // construction. `data-lit` is the stronger assertion of the two anyway —
     // absence cannot tell "clean" apart from "the lamp was deleted".
-    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveAttribute('data-lit', '0');
+    await expect(pane.locator('[data-testid="archivist-face-cors-warn"]')).toHaveAttribute('data-lit', '0');
     // the <img> got the mocked src.
     await expect(page.locator('[data-testid="archivist-image"]')).toHaveJSProperty('complete', true);
     // attribution link points at the details page.
-    await expect(page.locator('[data-testid="archivist-meta"] a')).toHaveAttribute(
+    await expect(pane.locator('[data-testid="archivist-face-meta"] a')).toHaveAttribute(
       'href',
       /archive\.org\/details\/img1/,
     );
@@ -137,19 +188,19 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
       file: 'tune.wav', format: 'VBR MP3', bytes: WAV, contentType: 'audio/wav',
     });
     await gotoApp(page);
-    await spawnArchivist(page);
-    await search(page, 'audio', 'jazz');
+    const pane = await spawnArchivist(page);
+    await search(pane, 'audio', 'jazz');
 
-    const card = page.locator('[data-testid="archivist-card"]');
+    const card = pane.locator('[data-testid="archivist-face-body"]');
     await expect(card).toHaveAttribute('data-has-item', 'true', { timeout: 10_000 });
     await expect(card).toHaveAttribute('data-media-type', 'audio');
     await expect(card).toHaveAttribute('data-clean-output', 'true');
     // time-media → transport + seek bar present.
-    await expect(page.locator('[data-testid="archivist-play"]')).toBeVisible();
-    await expect(page.locator('[data-testid="archivist-seek"]')).toBeVisible();
-    await expect(page.locator('[data-testid="archivist-rand-pos"]')).toBeVisible();
+    await expect(pane.locator('[data-testid="archivist-face-play"]')).toBeVisible();
+    await expect(pane.locator('[data-testid="archivist-face-seek"]')).toBeVisible();
+    await expect(pane.locator('[data-testid="archivist-face-rand-pos"]')).toBeVisible();
     // Mounted and UNLIT — see the IMAGE leg's note on the lamp.
-    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveAttribute('data-lit', '0');
+    await expect(pane.locator('[data-testid="archivist-face-cors-warn"]')).toHaveAttribute('data-lit', '0');
   });
 
   test('VIDEO: search → PLAY-ONLY (warning shown, no clean output)', async ({ page }) => {
@@ -158,21 +209,21 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
       file: 'film.webm', format: 'WebM', bytes: WEBM, contentType: 'video/webm',
     });
     await gotoApp(page);
-    await spawnArchivist(page);
-    await search(page, 'video', 'nasa');
+    const pane = await spawnArchivist(page);
+    await search(pane, 'video', 'nasa');
 
-    const card = page.locator('[data-testid="archivist-card"]');
+    const card = pane.locator('[data-testid="archivist-face-body"]');
     await expect(card).toHaveAttribute('data-has-item', 'true', { timeout: 10_000 });
     await expect(card).toHaveAttribute('data-media-type', 'video');
     // video = NO clean output (archive.org video lacks CORS on the served file).
     await expect(card).toHaveAttribute('data-clean-output', 'false');
     // the play-only warning is shown — and LIT, which is what now carries the
     // distinction the two clean legs assert the other side of.
-    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toBeVisible();
-    await expect(page.locator('[data-testid="archivist-cors-warn"]')).toHaveAttribute('data-lit', '1');
+    await expect(pane.locator('[data-testid="archivist-face-cors-warn"]')).toBeVisible();
+    await expect(pane.locator('[data-testid="archivist-face-cors-warn"]')).toHaveAttribute('data-lit', '1');
     // still plays/scrubs in the preview (transport present).
-    await expect(page.locator('[data-testid="archivist-play"]')).toBeVisible();
-    await expect(page.locator('[data-testid="archivist-seek"]')).toBeVisible();
+    await expect(pane.locator('[data-testid="archivist-face-play"]')).toBeVisible();
+    await expect(pane.locator('[data-testid="archivist-face-seek"]')).toBeVisible();
 
     // The clip ACTUALLY decoded: the <video> reached metadata (a finite,
     // positive duration) — the fix for the old "hangs on Loading at 0:00/0:00"
@@ -201,7 +252,7 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
     // (it genuinely plays + the playhead advances) rather than capability-skipped.
     // Real users click Play with a gesture on a real browser and get audio.
     await video.evaluate((el: HTMLVideoElement) => { el.muted = true; });
-    const playBtn = page.locator('[data-testid="archivist-play"]');
+    const playBtn = pane.locator('[data-testid="archivist-face-play"]');
     const box = await playBtn.boundingBox();
     expect(box).not.toBeNull();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);

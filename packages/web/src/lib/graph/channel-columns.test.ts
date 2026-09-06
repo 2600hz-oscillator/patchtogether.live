@@ -679,8 +679,12 @@ describe('SHELL_COLUMN_W — the ?shell=1 tight column pitch (192 tile, 10 HP)',
   });
 
   it('columnPitch resolves the active pitch by the preview flag', () => {
-    expect(columnPitch(false)).toBe(COLUMN_W); // preview OFF → 765 (unchanged)
-    expect(columnPitch(true)).toBe(SHELL_COLUMN_W); // preview ON → 225 (tight, 10 HP)
+    // ⚠ THE `false` ARM IS GONE WITH THE ESCAPE HATCH. `columnPitch` took a
+    // `shellFaces` boolean and answered COLUMN_W (765) for the legacy renderer;
+    // there is no legacy renderer, so it answers the one pitch a lane of uniform
+    // shell tiles has. COLUMN_W is still asserted below as the SEND-BOX unit,
+    // which is the use that survived.
+    expect(columnPitch()).toBe(SHELL_COLUMN_W); // 225 (tight, 10 HP)
   });
 
   it('PREVIEW-OFF BYTE-IDENTICAL: every default-arg call equals the explicit COLUMN_W call', () => {

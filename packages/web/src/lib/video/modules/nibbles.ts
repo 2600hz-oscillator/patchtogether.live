@@ -45,6 +45,7 @@ import {
   type NibblesState,
 } from './nibbles-game';
 import { chooseDirection } from './nibbles-bot';
+import { pulseTriggerNow } from '$lib/audio/gate-trigger';
 
 // ---- Calibration: 95th-percentile bot-game death length -------------------
 //
@@ -265,7 +266,7 @@ export const nibblesDef: VideoModuleDef = {
   },
 
   docs: {
-    explanation: "A playable QBasic-Nibbles snake game rendered as a patchable video source. The classic snake roams an 80x50 grid (CPU-rasterised to a 320x200 frame with a gentle CRT scanline darken) eating one pellet at a time, growing its body, and dying on a wall or self collision. Drive it two ways: open the module's faceplate, click the game screen to focus it and steer with the arrow keys, or flip AUTO on to let the built-in greedy bot self-play (it walks toward the pellet, avoiding its own tail, with no foresight so it eventually traps and dies — then auto-restarts). Arrow keys are ignored while AUTO is on, so the two drivers never fight. The game advances at the rate set by Tick. Beyond the video frame, the snake's life becomes control voltage and sound: gate pulses fire on pellet/death/direction-change, a length CV tracks how long the snake has grown, and two square-wave audio outs are pitched by the snake's length (length 4 = A2/110 Hz, every +12 length = +1 octave). Patch the gates into envelopes/triggers and the length CV into pitch or filter cutoff to sonify the game. The faceplate's game screen carries three controls of its own, overlaid on its corners. SCREEN collapses the picture to reclaim its space WITHOUT stopping anything — the snake keeps moving and every gate, CV and audio output keeps firing, because the game ticks inside the module's own draw. SCALE cycles the 320x200 source through 1x / 2x / 3x / 4x zoom (image-rendering: pixelated, so it stays crisp); above 1x the picture scrolls inside its own box rather than widening the plate. Both are per-view preferences stored on the node, so they survive a collapse, an eviction and a reload. RESET starts a fresh game immediately — a new snake at length 4, a newly-placed pellet, the length CV and both pitches re-derived — independent of AUTO, writing nothing to the patch and not undoable, because the game is the module's own internal state and is deliberately never persisted.",
+    explanation: "A playable QBasic-Nibbles snake game rendered as a patchable video source. The classic snake roams an 80x50 grid (CPU-rasterised to a 320x200 frame with a gentle CRT scanline darken) eating one pellet at a time, growing its body, and dying on a wall or self collision. Drive it two ways: open the module's faceplate, click the game screen to focus it and steer with the arrow keys, or flip AUTO on to let the built-in greedy bot self-play (it walks toward the pellet, avoiding its own tail, with no foresight so it eventually traps and dies — then auto-restarts). Arrow keys are ignored while AUTO is on, so the two drivers never fight. The game advances at the rate set by Tick. Beyond the video frame, the snake's life becomes control voltage and sound: gate pulses fire on pellet/death/direction-change, a length CV tracks how long the snake has grown, and two square-wave audio outs are pitched by the snake's length (length 4 = A2/110 Hz, every +12 length = +1 octave). Patch the gates into envelopes/triggers and the length CV into pitch or filter cutoff to sonify the game. The faceplate\'s game screen carries three controls of its own, overlaid on its corners. SCREEN collapses the picture to reclaim its space WITHOUT stopping anything — the snake keeps moving and every gate, CV and audio output keeps firing, because the game ticks inside the module\'s own draw. SCALE cycles the 320x200 source through 1x / 2x / 3x / 4x zoom (image-rendering: pixelated, so it stays crisp); above 1x the picture scrolls inside its own box rather than widening the plate. Both are per-view preferences stored on the node, so they survive a collapse, an eviction and a reload. RESET starts a fresh game immediately — a new snake at length 4, a newly-placed pellet, the length CV and both pitches re-derived — independent of AUTO, writing nothing to the patch and not undoable, because the game is the module\'s own internal state and is deliberately never persisted.",
     inputs: {},
     outputs: {
       out: "Video output — the 320x200 rasterised game frame (dark-slate board, red pellet, lime head, green body) with every other scanline dimmed ~15% for a mild CRT look.",
@@ -440,9 +441,11 @@ export const nibblesDef: VideoModuleDef = {
     function pulseGate(src: ConstantSourceNode): void {
       const ac = ctx.audioCtx;
       if (!ac) return;
-      const t = ac.currentTime;
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + GATE_PULSE_S);
+      // ⚠ NOT a hand-rolled setValueAtTime pair — a rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING, per boot, for every pulse. The shared primitive carries
+      // the mechanism + measurements ($lib/audio/gate-trigger).
+      pulseTriggerNow(src, GATE_PULSE_S);
     }
 
     /** Trigger the GATED envelope: 15 ms linear attack to peak, 100 ms

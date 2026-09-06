@@ -99,7 +99,7 @@ test.describe('Cable hover affordances', () => {
     // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(5, { timeout: 10_000 });
 
-    const seqNode = page.locator('.svelte-flow__node-kria').first();
+    const seqNode = page.locator('.svelte-flow__node:has([data-shell-type="kria"])').first();
     await seqNode.hover();
 
     // No settle: the attribute assertion below auto-retries, so the sleep only
@@ -148,7 +148,7 @@ test.describe('Undo / redo', () => {
     await expect(page.locator('.module-palette')).toBeVisible();
     await page.keyboard.type('Reverb');
     await page.getByRole('button', { name: 'reverb', exact: true }).click();
-    await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="reverb"])')).toHaveCount(1);
 
     // Click somewhere on the canvas pane to drop focus from the palette
     // (palette is closed but body is the safest target for keydown).
@@ -156,11 +156,11 @@ test.describe('Undo / redo', () => {
 
     // Cmd-Z removes the spawned node.
     await page.keyboard.press('Meta+z');
-    await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(0, { timeout: 5000 });
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="reverb"])')).toHaveCount(0, { timeout: 5000 });
 
     // Cmd-Shift-Z restores it.
     await page.keyboard.press('Meta+Shift+z');
-    await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1, { timeout: 5000 });
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="reverb"])')).toHaveCount(1, { timeout: 5000 });
   });
 
   test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page, rack }) => {
@@ -173,16 +173,16 @@ test.describe('Undo / redo', () => {
 
     // Right-click the VCO and delete it (4 edges touch the VCA — exercising
     // the multi-op-in-one-transact path that should still be one undo).
-    await page.locator('.svelte-flow__node-vca').first().click({ button: 'right' });
+    await page.locator('.svelte-flow__node:has([data-shell-type="vca"])').first().locator('.tile-name').click({ button: 'right' });
     await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
     await page.locator('[role="menuitem"]', { hasText: 'Delete' }).click();
-    await expect(page.locator('.svelte-flow__node-vca')).toHaveCount(0);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="vca"])')).toHaveCount(0);
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(2);
 
     // One Cmd-Z restores the VCA + all its edges (single undo entry).
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Meta+z');
-    await expect(page.locator('.svelte-flow__node-vca')).toHaveCount(1, { timeout: 5000 });
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="vca"])')).toHaveCount(1, { timeout: 5000 });
     // A stereo LEG GROUP renders as ONE bezier (PR-4): the demo's
     // `vd-vca.audio → vd-out.L` + `→ R` pair is 2 edges and 1 cable, so 6
     // graph edges draw 5. Pinned in stereo-only-channel.spec.ts.
@@ -193,12 +193,16 @@ test.describe('Undo / redo', () => {
     await loadVoiceDemo(page);
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-    // The demo gives the undo stack real content; CARTESIAN supplies the text
-    // input. (It was the deleted SEQUENCER card's note input until 2026-08-24 —
-    // CARTESIAN is the surviving NoteEntry host, and NoteEntry is the component
-    // that owns the keydown behaviour under test, so the subject is unchanged.)
-    await spawnPatch(page, [{ id: 'ur-cart', type: 'cartesian', position: { x: 1700, y: 60 } }]);
-    const note = page.locator('input.note-input').first();
+    // The demo gives the undo stack real content; the TILE NAME EDITOR
+    // supplies the text input on the shell (the cartesian card's note input
+    // was card DOM — NoteEntry's own keydown guard keeps its coverage in
+    // note-entry.spec.ts). The claim here is the global one: focus in a text
+    // input must suppress canvas undo.
+    await page
+      .locator('.svelte-flow__node[data-id="vd-vca"] [data-testid="tile-name-label-button"]')
+      .click();
+    const note = page.locator('[data-testid="tile-name-label-input"]').first();
+    await expect(note).toBeVisible();
     await note.click();
 
     const beforeCount = await page.locator('.svelte-flow__node').count();

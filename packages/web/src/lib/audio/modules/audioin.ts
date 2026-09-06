@@ -17,22 +17,21 @@
 //     `$lib/ui/modules/node-audio-input-registry.svelte.ts` owns
 //     `getUserMedia`, the engine attach and the late-engine reconciler on
 //     GRAPH lifetime (#1590 — `MediaStreamTrack.stop()` is irreversible,
-//     and a card unmount used to call it).
+//     and a SURFACE unmount used to call it).
 //
 //   - The DEVICE ROSTER and the saved keys belong to
 //     `$lib/audio/input-device.svelte.ts` — one `enumerateDevices()` and
 //     one `devicechange` listener for the whole app, whichever of the
 //     module's surfaces happen to be painting a picker.
 //
-//   - The SURFACES (the faceplate's `tileBody` + `fullViewBody`, and
-//     `AudioinCard.svelte` under `?shell=legacy`) render a projection and
-//     invoke `$lib/ui/modules/audioIn/audio-in-actions.ts`. None of them
-//     owns the resource, which is what lets any of them unmount.
+//   - The SURFACES (the faceplate's `tileBody` + `fullViewBody`) render a
+//     projection and invoke `$lib/ui/modules/audioIn/audio-in-actions.ts`.
+//     Neither owns the resource, which is what lets either of them unmount.
 //
-// ⚠ THIS PARAGRAPH USED TO SAY "the CARD owns the getUserMedia permission
-// flow, the device dropdown, the devicechange subscription, the status LED
-// and the lifecycle of the MediaStream". Every clause of that is now false:
-// #1590 moved the stream to the node, and the face moved the other four.
+// ⚠ ALL FIVE OF THOSE RESPONSIBILITIES USED TO SIT ON ONE COMPONENT — the
+// getUserMedia permission flow, the device dropdown, the devicechange
+// subscription, the status LED and the lifetime of the MediaStream. #1590
+// moved the stream to the node, and the face moved the other four.
 //
 // Why this seam: engine code stays jsdom-testable (no MediaStream / mic
 // permission shims) and the permission UX lives on a rendered surface,
@@ -123,7 +122,6 @@ export interface AudioInAttachPayload {
 export const audioInDef: AudioModuleDef = {
   type: 'audioIn',
   palette: { top: 'Audio modules', sub: 'I/O' },
-  card: 'AudioinCard',
   domain: 'audio',
   label: 'audio in',
   category: 'sources',

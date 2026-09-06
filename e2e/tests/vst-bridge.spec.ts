@@ -50,9 +50,32 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript((url) => {
     (globalThis as unknown as { __vstBridgeUrlOverride?: string }).__vstBridgeUrlOverride = url;
   }, mock.url);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
 });
+
+
+/** Open a vst node's dock full view and return the PANE — the face body
+ *  (picker, mount/unmount, the three lamps) is `fullViewBody`, dock-only.
+ *  The card's status/mounted/state-size text rows died with the card; their
+ *  content lives verbatim in the lamps' aria-label sentences
+ *  (vst-status-model.ts). */
+async function openVstPane(page: import('@playwright/test').Page, id: string) {
+  await page.waitForFunction(
+    () =>
+      typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+      'function',
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.evaluate(
+    (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+    id,
+  );
+  const pane = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${id}"]`);
+  await expect(pane.getByTestId(`vst-face-body-${id}`)).toBeVisible({ timeout: 30_000 });
+  return pane;
+}
 
 test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the path; unmount restores it', async ({ page }) => {
   await spawnPatch(
@@ -70,7 +93,8 @@ test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the pat
 
   // The factory auto-connects (owner acquire at reconcile) — the card reads
   // the mock's helperInfo name once the hello handshake lands.
-  await expect(page.getByTestId('vst-status-fx')).toContainText('mock-vst-bridge', { timeout: 15_000 });
+  const fxPane = await openVstPane(page, 'fx');
+  await expect(fxPane.getByTestId('vst-led-bridge-fx')).toHaveAttribute('aria-label', /mock-vst-bridge/, { timeout: 15_000 });
 
   // 1. CONNECTED + NOTHING MOUNTED: the bridge echoes bit-transparently, so
   //    the lane audio survives the round trip (rings → WS → mock → back).
@@ -82,9 +106,9 @@ test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the pat
 
   // 2. MOUNT the mute plugin THROUGH THE CARD UI: output goes silent —
   //    proving the helper path (not the local bypass) is what we hear.
-  await page.getByTestId('vst-picker-fx').selectOption('mock:mute');
-  await page.getByTestId('vst-mount-fx').click();
-  await expect(page.getByTestId('vst-mounted-fx')).toContainText('mock mute fx', { timeout: 10_000 });
+  await fxPane.getByTestId('vst-face-picker-fx').selectOption('mock:mute');
+  await fxPane.getByTestId('vst-face-mount-fx').click();
+  await expect(fxPane.getByTestId('vst-led-plugin-fx')).toHaveAttribute('aria-label', /mock mute fx/, { timeout: 10_000 });
   await expect
     .poll(
       async () => (await readScopePeakOverWindow(page, 'sc', SILENCE_WINDOW_MS)).peak,
@@ -113,11 +137,11 @@ test('vstFx: helper echo carries lane audio; a mounted mute plugin is IN the pat
       message: 'the driver must capture the plugin state blob after mount',
     })
     .toBe('string');
-  await expect(page.getByTestId('vst-state-size-fx')).toContainText('state saved in patch');
+  await expect(fxPane.getByTestId('vst-led-plugin-fx')).toHaveAttribute('aria-label', /state travels with the patch/);
 
   // 3. UNMOUNT: back to the echo, lane audio returns — and the persisted
   //    record clears (explicit unmount is the ONLY clearing signal).
-  await page.getByTestId('vst-unmount-fx').click();
+  await fxPane.getByTestId('vst-face-unmount-fx').click();
   await expect
     .poll(async () => await persisted(), { timeout: 10_000, message: 'explicit unmount clears node.data.vst' })
     .toBeNull();
@@ -198,12 +222,13 @@ test('vstInstrument: kria-clocked cartesian → card → audible RMS; c3/c4/a4 a
   }, 'seq');
   await seedKriaGate(page, 'seq-clk');
 
-  await expect(page.getByTestId('vst-status-inst')).toContainText('mock-vst-bridge', { timeout: 15_000 });
+  const instPane = await openVstPane(page, 'inst');
+  await expect(instPane.getByTestId('vst-led-bridge-inst')).toHaveAttribute('aria-label', /mock-vst-bridge/, { timeout: 15_000 });
 
   // Mount the sine instrument through the card UI.
-  await page.getByTestId('vst-picker-inst').selectOption('mock:sine');
-  await page.getByTestId('vst-mount-inst').click();
-  await expect(page.getByTestId('vst-mounted-inst')).toContainText('mock sine synth', { timeout: 10_000 });
+  await instPane.getByTestId('vst-face-picker-inst').selectOption('mock:sine');
+  await instPane.getByTestId('vst-face-mount-inst').click();
+  await expect(instPane.getByTestId('vst-led-plugin-inst')).toHaveAttribute('aria-label', /mock sine synth/, { timeout: 10_000 });
 
   // Everything is wired and mounted — start the transport.
   await setNodeParams(page, 'seq-clk', { running: 1 });

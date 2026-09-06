@@ -111,17 +111,27 @@ async function ledAt(page: Page, index: number): Promise<number[] | null> {
 }
 
 /**
- * Drive the app's OWN connect gesture: click CONNECT on the card, then click
- * the port it lists. ⚠ Deliberately NOT a `bindUnit` call from the harness —
- * the gesture, the enumeration and the claim are exactly the code path this
- * spec exists to prove, and pre-wiring them would leave it untested.
+ * Drive the app's OWN connect gesture: open the dock face, click CONNECT, then
+ * click the port the picker lists. ⚠ Deliberately NOT a `bindUnit` call from
+ * the harness — the gesture, the enumeration and the claim are exactly the
+ * code path this spec exists to prove, and pre-wiring them would leave it
+ * untested. (On the default shell the binder lives on the dock face body:
+ * `seqtris-face-connect` → `seqtris-face-port-{i}` → `seqtris-face-unbind`;
+ * the port buttons are keyed by INDEX because Windows reports identical names
+ * for a Launchpad's two ports.)
  */
 async function connectAndBind(page: Page): Promise<void> {
-  await page.getByTestId(`seqtris-connect-${NODE}`).click();
-  const port = page.getByTestId(`seqtris-port-0-${NODE}`);
+  await page.evaluate(
+    (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
+    NODE,
+  );
+  const pane = page.locator(`[data-testid="dock-full-view"][data-fullview-node="${NODE}"]`);
+  await expect(pane).toBeVisible();
+  await pane.getByTestId('seqtris-face-connect').click();
+  const port = pane.getByTestId('seqtris-face-port-0');
   await port.waitFor({ state: 'visible' });
   await port.click();
-  await expect(page.getByTestId(`seqtris-unbind-${NODE}`)).toBeVisible();
+  await expect(pane.getByTestId('seqtris-face-unbind')).toBeVisible();
 }
 
 /**

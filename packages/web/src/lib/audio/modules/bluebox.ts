@@ -139,7 +139,7 @@ export const blueboxDef: AudioModuleDef = {
     // continuous control on this module, and `linear` was a claim about
     // resolution that made the auto-expose path paint twelve 0..1 ROTARIES for
     // twelve buttons (`looksLikeToggle` requires `discrete` —
-    // $lib/graph/group-controls). It is also what lets the face's
+    // $lib/graph/exposable-controls). It is also what lets the face's
     // switch-classification ratchet see them at all: `looksLikeSwitch` is
     // `looksLikeToggle && defaultValue === 0`, so with `linear` these twelve
     // press-pads were invisible to module-face-lint's "every switch-shaped
@@ -195,14 +195,14 @@ export const blueboxDef: AudioModuleDef = {
   // here because it is this faceplate's honest limit, not hidden. `face.momentary`
   // is the correct classification (the card writes 1 on pointerdown and 0 on
   // pointerup, `docs.controls` says "held = 1, released = 0", and it is what
-  // makes `restedParams` repair a rack the legacy card saved mid-hold). But a
+  // makes `restedParams` repair a rack that was saved mid-hold). But a
   // momentary press writes the ENGINE ONLY by design ($lib/audio/momentary-params
   // — a rack must not be saveable with a pad held down) and a GATE CABLE is a
   // worklet node input, so NEITHER reaches `node.params`, which is the single
   // source `ModuleShell.readoutValue` and this face's panel both read. The bank
   // and the readouts are therefore live for every DURABLE route into the keys
   // (the auto-exposed group/instrument bar, a MIDI-learned CC, an automation
-  // lane, a preset recall, the legacy card) and dark for the two transient ones.
+  // lane, a preset recall) and dark for the two transient ones.
   // Latching the keys instead would have made everything live and was rejected:
   // it contradicts the card, the docs and the tidyVco `hold` precedent. Filed as
   // a platform follow-up (a live-engine reader for `FaceReadout`); the numbers
@@ -280,7 +280,7 @@ export const blueboxDef: AudioModuleDef = {
     // DURABLE value, by deliberate platform design. On this module that reader
     // is not merely incomplete, it is CONSTANT ZERO FOREVER: every param is
     // momentary, a press writes the engine only, AND any durable write from the
-    // group bar / MIDI / automation / preset / legacy card is scrubbed back to
+    // group bar / MIDI / automation / preset is scrubbed back to
     // rest within a frame by ModuleShell's own `clearStuckMomentaryParams`
     // `$effect` (it reads `node.params`, so it re-fires on every write —
     // MEASURED: `btn_1 = 1` through `__ydoc.transact` reads back 0). Declaring
@@ -336,25 +336,25 @@ export const blueboxDef: AudioModuleDef = {
       const param = buttonParamId(name);
       if (name === 'bluebox') {
         inputs[gate] =
-          'Hold gate for the BLUEBOX key: while the level is high the single 2600 Hz supervisory sine plays, and it stops on the falling edge. ORs with the on-card BLUEBOX button — either source can hold the tone open. Level-sensitive, not edge-triggered: the worklet reads the LEVEL every sample and detects no edge anywhere. There is no musical envelope you can dial — just a one-pole anti-click ramp (\u03c4 \u2248 1 ms) that is inaudibly fast on the way up and takes about 15 ms to reach silence on release.';
+          'Hold gate for the BLUEBOX key: while the level is high the single 2600 Hz supervisory sine plays, and it stops on the falling edge. ORs with the faceplate\'s BLUEBOX button — either source can hold the tone open. Level-sensitive, not edge-triggered: the worklet reads the LEVEL every sample and detects no edge anywhere. There is no musical envelope you can dial — just a one-pole anti-click ramp (\u03c4 \u2248 1 ms) that is inaudibly fast on the way up and takes about 15 ms to reach silence on release.';
         controls[param] =
-          'The BLUEBOX key (held = 1, released = 0): plays a single 2600 Hz sine — the in-band supervisory tone AT&T used on long-distance trunks, the basis of the 1970s blue-box phreaking lineage. Held by the on-card button or by a gate patched into BLUEBOX in; multiple held keys sum.';
+          'The BLUEBOX key (held = 1, released = 0): plays a single 2600 Hz sine — the in-band supervisory tone AT&T used on long-distance trunks, the basis of the 1970s blue-box phreaking lineage. Held by the faceplate\'s button or by a gate patched into BLUEBOX in; multiple held keys sum.';
       } else if (name === 'redbox') {
         inputs[gate] =
-          'Hold gate for the REDBOX key: while the level is high the 1700 Hz + 2200 Hz coin-tone pair plays and it stops on the falling edge. ORs with the on-card REDBOX button. Level-sensitive, not edge-triggered \u2014 the worklet reads the level, never an edge. No musical envelope: a one-pole anti-click ramp only (\u03c4 \u2248 1 ms up, about 15 ms to silence on release).';
+          'Hold gate for the REDBOX key: while the level is high the 1700 Hz + 2200 Hz coin-tone pair plays and it stops on the falling edge. ORs with the faceplate\'s REDBOX button. Level-sensitive, not edge-triggered \u2014 the worklet reads the level, never an edge. No musical envelope: a one-pole anti-click ramp only (\u03c4 \u2248 1 ms up, about 15 ms to silence on release).';
         controls[param] =
-          'The REDBOX key (held = 1, released = 0): plays 1700 Hz + 2200 Hz together — the US payphone coin-acceptance tone pair. Held by the on-card button or by a gate patched into REDBOX in; sums with any other held keys.';
+          'The REDBOX key (held = 1, released = 0): plays 1700 Hz + 2200 Hz together — the US payphone coin-acceptance tone pair. Held by the faceplate\'s button or by a gate patched into REDBOX in; sums with any other held keys.';
       } else {
         const letters = BLUEBOX_DIGIT_LETTERS[name];
         const letterNote = letters ? ` (keypad letters ${letters})` : '';
         inputs[gate] =
-          `Hold gate for digit ${name}${letterNote}: while the level is high this digit's Bell dual tone (${toneStr(name)}) plays, stopping on the falling edge. ORs with the on-card "${name}" key — either path holds it down. Level-sensitive, not edge-triggered \u2014 the worklet reads the level, never an edge. No musical envelope: a one-pole anti-click ramp only (\u03c4 \u2248 1 ms up, about 15 ms to silence on release). Keys that share a frequency collapse onto one phase accumulator inside the worklet, so two simultaneous presses of frequency-sharing digits make a single louder tone rather than two beating oscillators.`;
+          `Hold gate for digit ${name}${letterNote}: while the level is high this digit's Bell dual tone (${toneStr(name)}) plays, stopping on the falling edge. ORs with the faceplate\'s "${name}" key — either path holds it down. Level-sensitive, not edge-triggered \u2014 the worklet reads the level, never an edge. No musical envelope: a one-pole anti-click ramp only (\u03c4 \u2248 1 ms up, about 15 ms to silence on release). Keys that share a frequency collapse onto one phase accumulator inside the worklet, so two simultaneous presses of frequency-sharing digits make a single louder tone rather than two beating oscillators.`;
         controls[param] =
-          `Digit ${name}${letterNote} (held = 1, released = 0): plays the Bell-System dual tone for this keypad position (${toneStr(name)}). Held by the on-card key or by a gate into the matching gate input; multiple held keys sum into the single mono OUT.`;
+          `Digit ${name}${letterNote} (held = 1, released = 0): plays the Bell-System dual tone for this keypad position (${toneStr(name)}). Held by the faceplate's key or by a gate into the matching gate input; multiple held keys sum into the single mono OUT.`;
       }
     }
     controls['bluebox-tonebank-{n}'] =
-      'THE TONE BANK — ten bars, one per oscillator, and the picture of what this module actually is. There is no oscillator per key: there is ONE fixed bank of ten sines (the four DTMF rows 697/770/852/941, the three columns 1209/1336/1477, and 1700 / 2200 / 2600), and a held key raises the target amplitude of each frequency it lights by a quarter. That word "raises" is the module: two keys that share a tone drive ONE bar twice as hard instead of running two independent voices, which is why holding 1 and 4 (both pull column 1209) is 1.76 dB louder than holding 1 and 5 — even though both hold two keys, both make four tone activations, and both peak at the same level. A bar carrying more than one held key is marked with its count, so the stacking is labelled rather than inferred, and every bar is outlined to its CAPACITY — how many keys could ever light it — so column 1336 reads as the tall one (2, 5, 8 and 0 all pull it) before anything is pressed. The bars are tinted by band: DTMF rows, DTMF columns, and the in-band tones that belong to no digit at all. The vertical scale is FIXED at four keys, the most any one slot can stack, so a bar growing is a bar growing rather than the axis rescaling under your hand. The label button flips the captions between each oscillator\'s frequency and the keys that light it, which is the Bell grid read backwards and the direct answer to "why did those two stack"; it is a display setting, private to your screen, not shared with the rackspace and not saved with the patch. Every height is computed from the live key state through the worklet\'s own frequency table, so it is the target the bank is heading for rather than an analyser reading. It does NOT move while you hold a key down on the faceplate or drive one from a gate cable: a momentary press writes only the audio engine and a gate is an audio-rate input, so neither is visible to any host-side reader — the bank lights when the keys are set durably (an instrument or group bar, a MIDI-mapped control, an automation lane, a preset recall, or the classic card).';
+      'THE TONE BANK — ten bars, one per oscillator, and the picture of what this module actually is. There is no oscillator per key: there is ONE fixed bank of ten sines (the four DTMF rows 697/770/852/941, the three columns 1209/1336/1477, and 1700 / 2200 / 2600), and a held key raises the target amplitude of each frequency it lights by a quarter. That word "raises" is the module: two keys that share a tone drive ONE bar twice as hard instead of running two independent voices, which is why holding 1 and 4 (both pull column 1209) is 1.76 dB louder than holding 1 and 5 — even though both hold two keys, both make four tone activations, and both peak at the same level. A bar carrying more than one held key is marked with its count, so the stacking is labelled rather than inferred, and every bar is outlined to its CAPACITY — how many keys could ever light it — so column 1336 reads as the tall one (2, 5, 8 and 0 all pull it) before anything is pressed. The bars are tinted by band: DTMF rows, DTMF columns, and the in-band tones that belong to no digit at all. The vertical scale is FIXED at four keys, the most any one slot can stack, so a bar growing is a bar growing rather than the axis rescaling under your hand. The label button flips the captions between each oscillator\'s frequency and the keys that light it, which is the Bell grid read backwards and the direct answer to "why did those two stack"; it is a display setting, private to your screen, not shared with the rackspace and not saved with the patch. Every height is computed from the live key state through the worklet\'s own frequency table, so it is the target the bank is heading for rather than an analyser reading. It does NOT move while you hold a key down on the faceplate or drive one from a gate cable: a momentary press writes only the audio engine and a gate is an audio-rate input, so neither is visible to any host-side reader — the bank lights when the keys are set durably (an instrument or group bar, a MIDI-mapped control, an automation lane, or a preset recall).';
     return {
       explanation:
         "A DTMF telephone dialer with two phone-phreaking buttons. BLUEBOX is a 12-key touch-tone pad — digits 0–9 plus BLUEBOX and REDBOX — where every key is a press-and-hold tone source with no musical envelope: hold it down and its tone(s) sound, release and they stop (a one-pole ramp at each edge kills the click; it is inaudibly fast on the way up and takes about 15 ms to reach silence on the way down). Each digit emits the standard Bell-System dual tone (a row frequency 697/770/852/941 Hz plus a column frequency 1209/1336/1477 Hz); BLUEBOX emits a single 2600 Hz supervisory sine (the classic trunk-seizing tone) and REDBOX emits the 1700 + 2200 Hz payphone coin pair. You can hold a key with the mouse OR by patching a gate cable into its gate input — the worklet ORs the two as levels, so either drives it and neither detects an edge. Held keys sum into one mono output through a fixed divide-by-four, and keys that share a frequency (e.g. 1 and 4 both use 1209 Hz) collapse onto a single shared oscillator so they reinforce instead of beating — which also makes them LOUDER than a pair that shares nothing. Watch the headroom: one digit sits 18 dB below full scale, eight simultaneous digits reach it, and all twelve keys overshoot by about 2.5 dB.",

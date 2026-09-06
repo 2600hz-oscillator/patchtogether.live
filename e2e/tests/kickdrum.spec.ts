@@ -83,7 +83,7 @@ test('KICK DRUM real chain: SEQUENCER → trigger_in → stereo AUDIOOUT — aud
     ],
   );
 
-  const card = page.locator('.svelte-flow__node-kickdrum');
+  const card = page.locator('.svelte-flow__node:has([data-shell-type="kickdrum"])');
   await expect(card).toHaveCount(1);
   // The title renders the auto-assigned node name (type-uppercased →
   // "KICKDRUM", possibly numbered) or the def label ("kick drum" uppercased).

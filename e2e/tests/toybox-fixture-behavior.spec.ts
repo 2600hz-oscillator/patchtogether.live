@@ -17,6 +17,7 @@
 // re-scan, never a silent skip.
 
 import { test, expect } from '@playwright/test';
+import { openToyboxFaceTab } from './_helpers';
 import {
   CHAIN_TOLERANCE,
   FLAT_TOLERANCE,
@@ -103,7 +104,9 @@ test.describe('toybox fixture-based app behavior — exact pixels', () => {
     expect(after, 'roll must change the patch').not.toEqual(before);
     // Probe-moves control: wait for the rolled composite to leave exact blue.
     await page.waitForFunction(() => {
-      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      const c = document.querySelector(
+        '[data-testid="toybox-canvas"], [data-testid="toybox-face-canvas"]',
+      ) as HTMLCanvasElement | null;
       if (!c) return false;
       const c2d = c.getContext('2d');
       if (!c2d) return false;
@@ -111,6 +114,8 @@ test.describe('toybox fixture-based app behavior — exact pixels', () => {
       return Math.abs(data[0]! - 0) > 12 || Math.abs(data[1]! - 0) > 12 || Math.abs(data[2]! - 255) > 12;
     }, undefined, { timeout: 20_000 });
 
+    // REVERT lives on the presets tab of the faceplate console.
+    await openToyboxFaceTab(page, 'presets');
     await page.getByTestId('toybox-randomize-revert').click();
     await expectPixel(page, 0.5, 0.5, BLUE, FLAT_TOLERANCE, 'post-revert blue');
   });

@@ -10,9 +10,9 @@
 //
 // ⚠ WHY THIS SPEC IS PARAMETRIZED OVER THE RENDERER (#1605).
 //
-// It used to run only through the `rack` fixture, i.e. only on
-// `?shell=legacy` — the verbatim *Card.svelte renderer. The DEFAULT rack, the
-// one every user on dev and prod actually gets, renders each module as a
+// It used to run only through the `rack` fixture, i.e. only against the
+// PRE-INVERSION renderer. The rack every user on dev and prod actually gets
+// renders each module as a
 // RACKLINE TILE (ModuleShell / ModuleShellPlaceholder), and on that rack the
 // flip was a total visual NO-OP for months: one line of CSS
 // (`.rl-tile .card-back-panel{display:none!important}`, written when the shell
@@ -41,15 +41,14 @@ import { pressFlipKey } from './_flip-key';
 
 test.describe.configure({ mode: 'parallel' });
 
-/** The two rack renderers, both reachable in production.
+/** The rack renderers this spec runs the flip against.
  *
- *  `shell` is the DEFAULT — no query flag — and is listed first deliberately:
- *  it is what a user gets. `legacy` is the `?shell=legacy` opt-out that most of
- *  this suite still runs through (see the `rack` fixture). A renderer that
- *  cannot satisfy the body below is a renderer whose flip is broken. */
+ *  Since the S2 inversion there is ONE — the shipping shell. The second arm was
+ *  DELETED with the fixture flip: its subject was the opt-out renderer itself,
+ *  which left the product in S4. A renderer that cannot satisfy the body below
+ *  is a renderer whose flip is broken. */
 const RENDERERS = [
   { name: 'shell (default rack)', url: '/rack?seed=none' },
-  { name: 'legacy (?shell=legacy)', url: '/rack?shell=legacy&seed=none' },
 ] as const;
 
 /** What `elementFromPoint` resolves at the CENTRE of `selector`, described as

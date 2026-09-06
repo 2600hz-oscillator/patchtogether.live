@@ -1,6 +1,6 @@
 // e2e/tests/workflow-dock.spec.ts
 //
-// WORKFLOW MODE P2.5a — the DOCKING CORE on /rack?shell=legacy:
+// WORKFLOW MODE P2.5a — the DOCKING CORE on /rack:
 //
 //   * THE SPIKE (gated PatchPanel): a REAL module card renders in a dock
 //     rail OUTSIDE the SvelteFlow provider — zero pageerrors, functional
@@ -19,7 +19,7 @@
 //   * Dawless unchanged: no rails, no dock menu entries, PatchPanel's
 //     canvas handle stack intact.
 //
-// Driving /rack?shell=legacy keeps this in the NORMAL e2e lane (no
+// Driving plain /rack keeps this in the NORMAL e2e lane (no
 // DB/relay) — same rationale as workflow-mode.spec.ts. Docking is LOCAL
 // state (never in the Y.Doc), so no multi-context spec here (the tagged
 // multi-user dock spec is P2.5b's, per the owner's attest answer).
@@ -34,7 +34,7 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 //
 // This file bounds its boot waits with `BOOT_MS` — 30 000 on CI, IDENTICAL to
 // the 30 000 default budget they were running inside. 2 sites, 1.00x, and the
-// legacy-card handle test declares BOOT_MS + 10 000 = 40 000 ms in it.
+// lane-node handle test declares BOOT_MS + 10 000 = 40 000 ms in it.
 //
 // An inner bound at or above the budget that CONTAINS it can never come true:
 // the outer clock kills the test first, so a legible `element not found` is
@@ -76,23 +76,28 @@ async function answerWidthChooser(page: Page, mode: 'left' | 'right' | 'both'): 
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Right-click a canvas node (on its TITLE — the card body is full of
+/** Right-click a canvas node (on its KIND row — the tile body is full of
  *  knobs/faders whose own contextmenu handlers would win) and pick a
- *  context-menu entry by testid. Dock STUBS have no .title; their whole
+ *  context-menu entry by testid. Dock STUBS have no kind row; their whole
  *  face is a neutral surface, so fall back to the node element. */
 async function nodeMenuPick(page: Page, nodeId: string, entryTestId: string): Promise<void> {
   const node = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
-  const title = node.locator('.title');
-  if ((await title.count()) > 0) {
-    await title.first().click({ button: 'right' });
-  } else {
-    await node.click({ button: 'right' });
-  }
+  // ⚠ TWO DIFFERENT OCCUPANTS, AND THE TARGET IS NOT THE SAME ON BOTH.
+  //  * an UNDOCKED node is a shell tile: right-clicking its BODY lands on a
+  //    control and opens THAT control's menu, which carries no dock entries —
+  //    so the click "works" and the entry lookup is what fails, which reads
+  //    like the dock feature is gone. The NAME row is a rename button, so the
+  //    KIND row is the module-menu target.
+  //  * a DOCKED node is the `dock-stub` face, which has no kind row at all;
+  //    the stub itself is the target (that is where `ctx-undock` lives).
+  const kind = node.locator('.tile-kind');
+  const target = (await kind.count()) > 0 ? kind.first() : node;
+  await target.click({ button: 'right' });
   await page.getByTestId(entryTestId).click();
 }
 
@@ -108,10 +113,10 @@ test.describe('P2.5a docking core (workflow racks)', () => {
       (globalThis as unknown as { __dock: { dock: (id: string, z: string) => void } }).__dock.dock('mx', 'left');
     });
 
-    // The rail hosts the REAL MixerCard as a plain mount (no flow host):
+    // The rail hosts the module's REAL faceplate as a plain mount (no flow host):
     const railCard = page.locator('[data-dock-card="mx"]');
     await expect(railCard).toBeVisible();
-    await expect(railCard.locator('.mod-card, .card, .moog-panel').first()).toBeVisible();
+    await expect(railCard.locator('[data-testid="module-shell"]').first()).toBeVisible();
     // …with PatchPanel's chrome trigger present (the gated panel mounts
     // its UI — only the provider-coupled handle stack self-disables):
     await expect(railCard.getByTestId('patch-trigger')).toBeVisible();
@@ -130,10 +135,36 @@ test.describe('P2.5a docking core (workflow racks)', () => {
     await railCard.getByTestId('patch-trigger').click();
     const chrome = page.locator('[data-patch-panel-chrome="mx"]');
     await expect(chrome).toBeVisible();
-    // Edge-aligned to the rail frame (not the 0×0 viewport-origin bug):
+    // Edge-aligned to the rail frame (not the 0×0 viewport-origin bug).
+    // ⚠ REPORTED AS NUMBERS. This was one `toBeTruthy()` over a three-term
+    // conjunction, so a failure said "Received: false" and named neither which
+    // term failed nor by how much — the shape that makes a real geometry
+    // regression indistinguishable from a null box.
     const chromeBox = await chrome.boundingBox();
     const frameBox = await railCard.locator('[data-dock-card-frame]').boundingBox();
-    expect(chromeBox && frameBox && Math.abs(chromeBox.x - frameBox.x) < 200).toBeTruthy();
+    expect(chromeBox, 'the patch chrome must be laid out').toBeTruthy();
+    expect(frameBox, 'the rail card must expose a [data-dock-card-frame] to align to').toBeTruthy();
+    // ⚠ MEASURED FROM THE NEAREST EDGE, NOT FROM `left`. This read
+    // `|chrome.x - frame.x| < 200`, which is only "adjacent" while the occupant
+    // is under ~200 px wide — an unstated assumption about one card's width
+    // rather than a statement about alignment. `edgeAlignedMenuPos` aligns to a
+    // SIDE, so for a left-rail card the chrome opens off the frame's RIGHT
+    // edge; a wider occupant pushed that past the old tolerance and the test
+    // failed for a geometry that was correct. Stated against whichever edge it
+    // aligned to, the assertion is width-invariant and needs no re-tuning when
+    // a face's design changes.
+    const edgeGap = Math.min(
+      Math.abs(chromeBox!.x - frameBox!.x),
+      Math.abs(chromeBox!.x - (frameBox!.x + frameBox!.width)),
+    );
+    expect(
+      edgeGap,
+      `patch chrome x=${chromeBox!.x} vs rail frame [${frameBox!.x}, ${frameBox!.x + frameBox!.width}] `
+        + `(w=${frameBox!.width}) — the chrome edge-aligns to the dock frame, so a large gap from `
+        + 'BOTH edges means cardRectFor missed the frame and fell back',
+    ).toBeLessThan(60);
+    // …and the bug this test is named for: not parked at the viewport origin.
+    expect(chromeBox!.x, 'the pre-fix bug spawned the chrome at the top-left').toBeGreaterThan(0);
     await page.keyboard.press('Escape');
 
     expect(errors, `pageerrors: ${errors.join(' | ')}`).toEqual([]);
@@ -158,12 +189,15 @@ test.describe('P2.5a docking core (workflow racks)', () => {
     await stub.click();
     await expect(rail.locator('[data-dock-card="mm"]')).toHaveClass(/dock-flash/);
 
-    // Undock from the stub's context menu → the full card returns at the
-    // dock-time position (single-user path writes node.position).
+    // Undock from the stub's context menu → the module's own surface returns
+    // at the dock-time position (single-user path writes node.position).
     await nodeMenuPick(page, 'mm', 'ctx-undock');
     await expect(page.locator('[data-dock-card="mm"]')).toHaveCount(0);
     await expect(page.locator('.svelte-flow__node[data-id="mm"] [data-testid="dock-stub"]')).toHaveCount(0);
-    await expect(page.locator('.svelte-flow__node[data-id="mm"] [data-testid="matrixmix-card"]')).toBeVisible();
+    await expect(
+      page.locator('.svelte-flow__node[data-id="mm"] [data-testid="module-shell"]'),
+      'undocking puts the module back on the canvas, not a stub and not nothing',
+    ).toBeVisible();
     const pos = await page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { position: { x: number; y: number } }> } };
       return w.__patch.nodes['mm']?.position;
@@ -382,10 +416,10 @@ test.describe('P2.5b pan cable tail (workflow racks)', () => {
 // PatchPanel handle stack (5 handles on a mixer), because the gate is
 // provider-presence and canvas cards are inside the provider — is kept below
 // against the real shell, where it is now the only place it can be true.
-test.describe('canvas cards keep their full PatchPanel handle stack', () => {
-  test('a legacy-card lane node mounts every handle and offers the dock menu', async ({ page }) => {
+test.describe('canvas nodes keep their full PatchPanel handle stack', () => {
+  test('a lane node mounts every handle and offers the dock menu', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await canvasPane(page).waitFor({ state: 'visible' });
 
@@ -396,9 +430,10 @@ test.describe('canvas cards keep their full PatchPanel handle stack', () => {
     // Dock entries EXIST now (they were workflow-only, and everything is the
     // shell) — the inverse of what this block used to assert, which is exactly
     // why it could not simply be re-pointed.
-    // Right-click the card TITLE, matching nodeMenuPick above — a right-click
-    // on the node BODY lands on a control and opens that control's menu.
-    await node.locator('.title').first().click({ button: 'right' });
+    // Right-click the tile's KIND row, matching nodeMenuPick above — a
+    // right-click on the node BODY lands on a control and opens that control's
+    // menu, and the NAME row is a rename button.
+    await node.locator('.tile-kind').first().click({ button: 'right' });
     await expect(page.locator('.ctx-menu')).toBeVisible();
     await expect(page.getByTestId('ctx-dock-top')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -420,51 +455,6 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
       id,
       { timeout: 10_000 },
     );
-  }
-
-  /** Open the pinned CLIPPLAYER's bottom-dock surface via the C keymap.
-   *
-   *  Since 2026-07-26 `c` opens it as a dock FULL-VIEW PANE (owner: "opening
-   *  clip player with c is same as expanding any other module") rather than
-   *  the exclusive pinned drawer — but the mount contract these tests depend
-   *  on is IDENTICAL either way: the un-migrated branch of DockFullView plain-
-   *  mounts the verbatim card with the same `data-dock-card` /
-   *  `data-dock-card-frame` anchors DockCardHost uses, which is exactly what
-   *  Canvas.cardRectFor resolves. So the patch-menu + rear-view contracts
-   *  below are unchanged; only the container moved. */
-  async function openClipplayerDrawer(page: Page) {
-    // ⚠ THE PINNED CLIP PLAYER IS FORCED ONTO THE UN-MIGRATED PATH, and the
-    // reason is that the SUBJECT of the two tests below is the dock's
-    // VERBATIM-CARD BRANCH, not the clip player. `clipplayer` was promoted
-    // so `DockFullView` now mounts its faceplate and there is no
-    // `data-dock-card` frame for `Canvas.cardRectFor` to resolve — which is
-    // precisely the platform contract the picker-position fix is about.
-    //
-    // #2068's seam is the sanctioned answer to exactly this, and its own header
-    // says so: a spec whose subject is that path "keeps a subject after the last
-    // un-promoted module is gone", and nominating another un-migrated module
-    // would make a preserved un-migrated module a dependency of the suite. The
-    // occupant stays the pinned clip player because it is the one node the `c`
-    // key opens and the picker geometry is measured against ITS frame.
-    const forced = await page.evaluate(() => {
-      const w = globalThis as unknown as { __forceUnmigrated?: (t: string[]) => string[] };
-      if (typeof w.__forceUnmigrated !== 'function') return null;
-      return w.__forceUnmigrated(['clipplayer']);
-    });
-    expect(
-      forced,
-      '__forceUnmigrated hook not present — a DEV/VITE_E2E_HOOKS build is expected (the same gate '
-        + 'as __patch / __ydoc / __openDockFullView)',
-    ).toEqual(['clipplayer']);
-    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
-    await page.keyboard.press('c');
-    const pane = page.locator(
-      '[data-testid="dock-fullview-pane"][data-pane-node="pinned-clipplayer"]',
-    );
-    await expect(pane).toBeVisible();
-    const card = pane.locator('[data-dock-card="pinned-clipplayer"]');
-    await expect(card).toBeVisible();
-    return card;
   }
 
   /** Open the pinned MIXMSTRS in the exclusive bottom DRAWER via the M keymap
@@ -497,15 +487,34 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
     // lookup missed and fell back to a stale (0,0): the menu opened at the
     // TOP-LEFT of the screen, nowhere near the bottom-drawer card. Fixed by
     // resolving the dock frame ([data-dock-card-frame]) first.
+    //
+    // ⚠ THE OCCUPANT IS THE PINNED MIXMSTRS, AND THE PRECONDITION IS ITS
+    // CANVAS ABSENCE — the exact words of the paragraph above. Any pinned
+    // singleton satisfies it (`isCanvasHiddenNode`: no stub, no handles, no
+    // `.svelte-flow__node`), so `cardRectFor` has no canvas rect to fall back
+    // to and MUST resolve the dock frame or miss. Against an ordinary canvas
+    // module the fallback would quietly cover for a broken dock and this test
+    // would pass on the bug it was written for.
+    //
+    // ⚠ IT USED TO DRIVE THE CLIP PLAYER'S FULL-VIEW PANE, WHICH HAS NO JACK
+    // RAIL. `ModuleShell` gates it on `view !== 'dock-full'` — a full-view pane
+    // deliberately drops the rail and patches through its REAR CARD instead
+    // (Tab), so there is no `patch-trigger` in that pane to start this drill
+    // from. The spec had been forcing that pane onto a second render branch to
+    // get a jack rail back; with that branch gone the honest subject is the
+    // surface that really does own this gesture — the M drawer, whose
+    // `DockCardHost` mounts the rail as the tray's only patch surface. The
+    // full-view pane's own rear-card patch seam is covered by
+    // `workflow-rear-card.spec.ts`.
     const errors = collectErrors(page);
     await gotoWorkflow(page);
-    await waitForPin(page, 'pinned-clipplayer');
-    const card = await openClipplayerDrawer(page);
+    await waitForPin(page, 'pinned-mixmstrs');
+    const card = await openMixmstrsDrawer(page);
 
     // Drill: patch trigger → OUTPUT → jack-click a row (begins the carry)
     // → the root "patch to…" entry opens the target picker.
     await card.getByTestId('patch-trigger').click();
-    const chrome = page.locator('[data-patch-panel-chrome="pinned-clipplayer"]');
+    const chrome = page.locator('[data-patch-panel-chrome="pinned-mixmstrs"]');
     await expect(chrome).toBeVisible();
     await chrome.locator('[data-testid="patch-panel-nav"][data-nav="outputs"]').click();
     await chrome.locator('[data-testid="patch-panel-port-row"][data-direction="output"]').first().click();

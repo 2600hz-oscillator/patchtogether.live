@@ -20,11 +20,12 @@ has been explicitly consumed.
 
 ## Product state
 
-- The v2 `ModuleShell` face is the default UI. The legacy card UI still exists
-  behind `?shell=legacy`; both must work while the migration is incomplete.
-- Never globally remove legacy cards or fallback paths until the generated
-  [face migration inventory](docs/design/face-migration.generated.md) says every
-  module has a face, bespoke surface, or non-migration disposition.
+- The `ModuleShell` face is the ONLY module UI. There is no legacy card, no
+  `?shell=legacy`, and no fallback renderer: a lane node resolves to the
+  faceplate, the dock stub, or — for the one organizational-native type — to
+  nothing at all. A module ships a `face`; `module-face-lint` is the gate.
+- `STRICT_FACES` is the promoted set. Derive any module count from it or from the
+  registry — never hand-type one and never keep a parallel list.
 - Module registries are glob-derived. Never maintain a parallel population list
   or hand-type a module count; derive it from the registry or generated artifact.
 - Pushes to `main` deploy dev/autotest. Production is shipped nightly from the
@@ -65,7 +66,6 @@ Golden updates are explicit accept loops. Review every generated diff:
 ```sh
 flox activate -- task docs:accept
 flox activate -- task art:update
-flox activate -- task face:inventory:accept
 flox activate -- task vrt:commit
 ```
 

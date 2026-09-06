@@ -89,7 +89,7 @@ async function stepEngineFrames(page: Page, steps: number): Promise<number> {
  *  stay true (no "mid-paint wrong frame" race). Re-drives a single engine step
  *  each poll so a not-yet-rendered FBO gets filled. */
 async function settleFrozenCanvas(page: Page, testid: string): Promise<void> {
-  const handle = page.locator(`canvas[data-testid="${testid}"]`);
+  const handle = page.locator(testid);
   await expect(handle, `${testid} present`).toHaveCount(1);
   // Re-step once between polls so the (paused) engine keeps publishing the
   // frozen FBO while the card's present rAF picks it up; convergence is on the
@@ -208,7 +208,7 @@ async function injectCameraSourceAndSettle(page: Page, brightHalf: 'top' | 'bott
   // now-winning injected source, then settle the present blit on rendered state.
   const delta = await stepEngineFrames(page, FIXED_STEPS);
   expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-  await settleFrozenCanvas(page, 'video-out-canvas');
+  await settleFrozenCanvas(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
 }
 
 /** Read a card canvas and return, per displayed row band, the count and
@@ -219,7 +219,7 @@ async function analyzeTriangleOrientation(
   page: import('@playwright/test').Page,
   testid: string,
 ): Promise<{ topBright: number; bottomBright: number; total: number; verdict: 'up' | 'down' | 'ambiguous' }> {
-  const handle = page.locator(`canvas[data-testid="${testid}"]`);
+  const handle = page.locator(testid);
   await expect(handle, `${testid} present`).toHaveCount(1);
   const r = await handle.evaluate((el, MIN_BRIGHT_TOTAL) => {
     const c = el as HTMLCanvasElement;
@@ -327,7 +327,7 @@ async function setupFrozen(page: Page) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   // Pause the engine rAF loop + pin the clock BEFORE the app boots.
   await installRenderSmokeHooks(page);
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -339,7 +339,7 @@ async function setupLive(page: import('@playwright/test').Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -376,8 +376,8 @@ test.describe('video orientation — SHAPES triangle reference @webgl-serial', (
     // the card's present blit on rendered state (no wall-clock wait).
     const delta = await stepEngineFrames(page, FIXED_STEPS);
     expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-    await settleFrozenCanvas(page, 'video-out-canvas');
-    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    await settleFrozenCanvas(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-1-shapes-output.png' });
     expect(r.verdict, `SHAPES->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
@@ -399,7 +399,7 @@ test.describe('video orientation — SHAPES triangle reference @webgl-serial', (
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bb', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
     await page.waitForTimeout(600);
-    const r = await analyzeTriangleOrientation(page, 'bentbox-canvas');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="bb"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-2-shapes-bentbox.png' });
     expect(r.verdict, `SHAPES->BENTBOX verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
@@ -419,7 +419,7 @@ test.describe('video orientation — SHAPES triangle reference @webgl-serial', (
       ],
     );
     await page.waitForTimeout(600);
-    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-3-shapes-bentbox-output.png' });
     expect(r.verdict, `SHAPES->BENTBOX->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
@@ -458,7 +458,7 @@ test.describe('video orientation — SHAPES triangle reference @webgl-serial', (
       [{ id: 'e1', from: { nodeId: 'cam', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
     );
     await injectCameraSourceAndSettle(page, 'top');
-    const rc = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    const rc = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-6-camera-output.png' });
     expect(rc.topBright, `CAMERA->OUTPUT bright-top should dominate (top=${rc.topBright} bottom=${rc.bottomBright})`)
       .toBeGreaterThan(rc.bottomBright * 1.5);
@@ -481,7 +481,7 @@ test.describe('video orientation — SHAPES triangle reference @webgl-serial', (
       ],
     );
     await page.waitForTimeout(600);
-    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-4-shapes-bb-bb-output.png' });
     expect(r.verdict, `SHAPES->BB->BB->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
@@ -505,8 +505,8 @@ test.describe('video orientation — SHAPES triangle reference @webgl-serial', (
     );
     const delta = await stepEngineFrames(page, FIXED_STEPS);
     expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-    await settleFrozenCanvas(page, 'ruttetra-canvas');
-    const r = await analyzeTriangleOrientation(page, 'ruttetra-canvas');
+    await settleFrozenCanvas(page, '.svelte-flow__node[data-id="re"] canvas[data-testid="video-tile-thumb"]');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="re"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-7-shapes-ruttetra.png' });
     expect(r.verdict, `SHAPES->RUTTETRA verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
@@ -594,8 +594,8 @@ test.describe('video orientation — parametrized transform/keyer lock @webgl-se
       // rendered state. No waitForTimeout, no poll-over-a-fixed-budget.
       const delta = await stepEngineFrames(page, FIXED_STEPS);
       expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-      await settleFrozenCanvas(page, 'video-out-canvas');
-      const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+      await settleFrozenCanvas(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
+      const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
       await page.screenshot({ path: `test-results/orient-param-${tc.type}.png` });
       expect(r.verdict, `SHAPES->${tc.label}->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
     });
@@ -626,7 +626,7 @@ test.describe('video orientation — parametrized transform/keyer lock @webgl-se
     // vertical MIRROR (bright BOTTOM half). injectCameraSourceAndSettle wins the
     // card's attach race + settles on the frozen injected content.
     await injectCameraSourceAndSettle(page, 'bottom');
-    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-guard-bottom.png' });
     expect(r.bottomBright, `bright-BOTTOM source must read bottom-dominant (top=${r.topBright} bottom=${r.bottomBright}) — else the lock is vacuous`)
       .toBeGreaterThan(r.topBright * 1.5);
@@ -762,8 +762,8 @@ test.describe('video orientation — PICTUREBOX image source @webgl-serial', () 
 
     const delta = await stepEngineFrames(page, FIXED_STEPS);
     expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
-    await settleFrozenCanvas(page, 'video-out-canvas');
-    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    await settleFrozenCanvas(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
+    const r = await analyzeTriangleOrientation(page, '.svelte-flow__node[data-id="out"] canvas[data-testid="video-tile-thumb"]');
     await page.screenshot({ path: 'test-results/orient-picturebox.png' });
     // The injected band is a solid bright TOP half (not a triangle), so we
     // assert the TOP band dominates directly rather than the triangle verdict.

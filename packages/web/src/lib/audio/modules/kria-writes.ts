@@ -4,8 +4,8 @@
 //
 // `kria-types.ts` owns the arithmetic and is pure (no store, no Y.Doc). This
 // file owns the WRITES, and it is the only module that touches `node.data` for
-// kria. Three surfaces call it — the legacy card, the faceplate's step-grid
-// panel and its band cells, and the monome grid bridge — which is what makes
+// kria. Two callers — the faceplate's step-grid panel with its band cells, and
+// the monome grid bridge — which is what makes
 // "the grid path and the face write the same keys through the same helper" a
 // property of the code rather than a thing to re-verify.
 //

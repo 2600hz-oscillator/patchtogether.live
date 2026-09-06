@@ -16,7 +16,7 @@ test('palette: pane right-click opens palette and spawns the chosen module', asy
   // The palette has the search field focused — type to filter.
   await page.keyboard.type('Reverb');
   await page.getByRole('button', { name: 'reverb', exact: true }).click();
-  await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="reverb"])')).toHaveCount(1);
   await expect(page.locator('.module-palette')).not.toBeVisible();
 });
 
@@ -34,7 +34,7 @@ test('palette: Enter picks the first filtered match', async ({ page, rack }) => 
   // "Scop" uniquely matches Scope.
   await page.keyboard.type('Scop');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.svelte-flow__node-scope')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="scope"])')).toHaveCount(1);
 });
 
 test('palette: right-click on canvas pane opens at cursor', async ({ page, rack }) => {
@@ -49,5 +49,5 @@ test('palette: right-click on canvas pane opens at cursor', async ({ page, rack 
   await page.getByTestId('palette-top-audio-modules').click();
   await page.getByTestId('palette-sub-mixing').click();
   await page.getByTestId('palette-item-mixer').click();
-  await expect(page.locator('.svelte-flow__node-mixer')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="mixer"])')).toHaveCount(1);
 });

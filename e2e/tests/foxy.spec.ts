@@ -38,7 +38,7 @@ test.describe('FOXY hybrid module', () => {
   // FOXY mounts a lot before the rasters paint: 3 SwoleBlocks (osc graph each),
   // 3 RasterPainters (256×256 buffers), a WAVECEL worklet, plus the per-tick
   // box-blur + bilinear-sample pass added in v4.1. On slow Linux CI runners the
-  // 30s default budget runs out before the 'foxy-xyz' canvas appears. Bump.
+  // 30s default budget runs out before the 'foxy-face-xyz' canvas appears. Bump.
   test.setTimeout(90_000);
   test('renders the full internal chain + animates the live wavetable + makes audio', async ({ page, rack, errorWatch }) => {
     // FOXY alone (self-driving) → audio OUTPUT (so the WAVECEL VCO actually
@@ -69,17 +69,20 @@ test.describe('FOXY hybrid module', () => {
       ],
     );
 
-    const card = page.locator('.svelte-flow__node-foxy');
+    const card = page.locator('.svelte-flow__node:has([data-shell-type="foxy"])');
     await expect(card, 'FOXY card visible').toBeVisible();
 
     // All preview canvases exist: RASTER A + RASTER B + RASTER C + XYZ + WAVETABLE.
     // (v3 replaced the BOX 3D preview with a third raster C feeding the new
     //  3-axis distribution wavetable: A=X, B=Y, C=Z.)
-    await expect(card.locator('[data-testid="foxy-raster-a"]'), 'raster A canvas').toHaveCount(1);
-    await expect(card.locator('[data-testid="foxy-raster-b"]'), 'raster B canvas').toHaveCount(1);
-    await expect(card.locator('[data-testid="foxy-raster-c"]'), 'raster C canvas').toHaveCount(1);
-    await expect(card.locator('[data-testid="foxy-xyz"]'), 'xyz canvas').toHaveCount(1);
-    await expect(card.locator('[data-testid="foxy-wavetable"]'), 'wavetable canvas').toHaveCount(1);
+    // The five preview canvases live in the DOCK face body on the shell.
+    await card.locator('[data-testid="module-shell"]').getByTestId('shell-open-dock').click();
+    await expect(page.getByTestId('dock-full-view')).toBeVisible();
+    await expect(page.locator('[data-testid="foxy-face-raster-a"]'), 'raster A canvas').toHaveCount(1);
+    await expect(page.locator('[data-testid="foxy-face-raster-b"]'), 'raster B canvas').toHaveCount(1);
+    await expect(page.locator('[data-testid="foxy-face-raster-c"]'), 'raster C canvas').toHaveCount(1);
+    await expect(page.locator('[data-testid="foxy-face-xyz"]'), 'xyz canvas').toHaveCount(1);
+    await expect(page.locator('[data-testid="foxy-face-wavetable"]'), 'wavetable canvas').toHaveCount(1);
 
     // WAVECEL's full IO surface is present on the card.
     for (const h of ['pitch', 'fm', 'morph_cv', 'spread_cv', 'fold_cv']) {
@@ -98,11 +101,11 @@ test.describe('FOXY hybrid module', () => {
       .poll(
         async () => {
           const sums = await Promise.all([
-            canvasSum(page, 'foxy-raster-a'),
-            canvasSum(page, 'foxy-raster-b'),
-            canvasSum(page, 'foxy-raster-c'),
-            canvasSum(page, 'foxy-xyz'),
-            canvasSum(page, 'foxy-wavetable'),
+            canvasSum(page, 'foxy-face-raster-a'),
+            canvasSum(page, 'foxy-face-raster-b'),
+            canvasSum(page, 'foxy-face-raster-c'),
+            canvasSum(page, 'foxy-face-xyz'),
+            canvasSum(page, 'foxy-face-wavetable'),
           ]);
           return Math.min(...sums);
         },
@@ -114,9 +117,9 @@ test.describe('FOXY hybrid module', () => {
     //    first (the table regenerates from the evolving XYZ field). Polling
     //    absorbs a transient frame stall instead of flaking on a single
     //    fixed-wait diff.
-    const wt1 = await canvasSum(page, 'foxy-wavetable');
+    const wt1 = await canvasSum(page, 'foxy-face-wavetable');
     await expect
-      .poll(async () => Math.abs((await canvasSum(page, 'foxy-wavetable')) - wt1), {
+      .poll(async () => Math.abs((await canvasSum(page, 'foxy-face-wavetable')) - wt1), {
         timeout: 10_000,
         message: `FOXY wavetable display animates frame-to-frame (wt1 ${wt1})`,
       })
@@ -127,8 +130,10 @@ test.describe('FOXY hybrid module', () => {
     //    internal WAVECEL worklet, so non-trivial pixels here prove the audio-
     //    side wavetable is live (not a static factory table). Poll the variance
     //    (same transient-tolerance rationale as the previews).
-    const voutCanvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(voutCanvas).toHaveCount(1);
+    // On the shell the OUTPUT's live picture is the face tile's thumb canvas
+    // (the same selector workflow-shell-video pins for the default renderer).
+    const voutCanvas = page.locator('.svelte-flow__node[data-id="vout"] [data-testid="module-shell"] canvas').first();
+    await expect(voutCanvas).toBeVisible();
     await expect
       .poll(
         async () =>

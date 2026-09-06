@@ -124,23 +124,26 @@ export interface RackSession {
  * The rack URL a sweep boots, as a WORKER-SCOPED OPTION.
  *
  * ⚠ IT HAS TO BE AN OPTION, NOT A CONSTANT, AND THAT IS NOT A GENERALISATION
- * FOR ITS OWN SAKE — the two sweeps genuinely need different renderers:
+ * FOR ITS OWN SAKE — the two sweeps genuinely need different racks, and it is
+ * the SEED they disagree about, not the renderer:
  *
- *   per-module-per-port-inputs   `/rack?shell=legacy&seed=none`  verbatim cards
- *   faces-parity*                `/rack`                          FACEPLATE tiles
+ *   per-module-per-port-inputs   `/rack?seed=none`   an EMPTY rack
+ *   faces-parity*                `/rack`             the SEEDED rack
  *
- * `?shell=legacy` renders each module's own *Card.svelte; the bare default
- * renders `ModuleShell` faceplates, and the faces sweep asserts on
- * `[data-testid="module-shell"]`, which does not exist under the legacy
- * renderer. Hard-coding the legacy URL here failed 51 of 58 faces-parity rows
- * with `element(s) not found` — a shared-session bug that reads exactly like a
- * missing face.
+ * The per-port sweep spawns exactly the module under test and one driver, so a
+ * seeded rack is noise it would have to filter. The faces sweep needs the seed:
+ * a face whose control is a SELECTOR over other nodes — matrixMix's
+ * `matrixmix-x-{n}` routing roster is the measured case — offers exactly ONE
+ * option on an empty rack, and `driveCell` requires more than one to have
+ * something to switch TO. Collapsing both onto `?seed=none` fails that row with
+ * "the roster offers options", which reads like a broken face rather than an
+ * empty rack.
  *
  * Because it is WORKER-scoped, Playwright allocates a separate worker per
  * distinct value, so two suites wanting different racks can never end up
  * sharing one booted page.
  */
-export const LEGACY_RACK_URL = '/rack?shell=legacy&seed=none';
+export const EMPTY_RACK_URL = '/rack?seed=none';
 export const FACEPLATE_RACK_URL = '/rack';
 
 const BOOT_TIMEOUT_MS = 60_000;
@@ -387,7 +390,7 @@ export const test = base.extend<
   }
 >({
   // Declared `option: true` so a suite sets it with `test.use({ rackUrl })`.
-  rackUrl: [LEGACY_RACK_URL, { scope: 'worker', option: true }],
+  rackUrl: [EMPTY_RACK_URL, { scope: 'worker', option: true }],
 
   rackHost: [
     async ({ browser, rackUrl }, use) => {

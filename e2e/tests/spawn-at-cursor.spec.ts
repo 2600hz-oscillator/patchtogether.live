@@ -44,7 +44,7 @@ async function paneBox(page: Page) {
 }
 
 async function ready(page: Page) {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };
@@ -107,8 +107,8 @@ test('newly-spawned overlapping module renders ON TOP via elevated zIndex', asyn
   // xyflow renders the per-node zIndex onto the .svelte-flow__node element
   // as inline style: `z-index: <n>;`. The mixer keeps the default (0); the
   // reverb gets 1000 from topNodeId.
-  const reverbNode = page.locator('.svelte-flow__node-reverb').first();
-  const mixerNode = page.locator('.svelte-flow__node-mixer').first();
+  const reverbNode = page.locator('.svelte-flow__node:has([data-shell-type="reverb"])').first();
+  const mixerNode = page.locator('.svelte-flow__node:has([data-shell-type="mixer"])').first();
   await expect(reverbNode).toBeVisible();
   await expect(mixerNode).toBeVisible();
   const reverbZ = await reverbNode.evaluate((el) => Number((el as HTMLElement).style.zIndex || '0'));
@@ -122,7 +122,7 @@ test('elementFromPoint at the overlap center returns the newly-spawned card', as
   // Wait for the underneath card to settle so its rect is stable, then
   // spawn at the same flow-coord. Use a measured-rect center for the hit
   // test so we're testing visual stacking, not flow-coord math.
-  const underneathBox = await page.locator('.svelte-flow__node-mixer').first().boundingBox();
+  const underneathBox = await page.locator('.svelte-flow__node:has([data-shell-type="mixer"])').first().boundingBox();
   expect(underneathBox).toBeTruthy();
   const flowPos = await page.evaluate(() => {
     const w = window as unknown as {
@@ -137,10 +137,10 @@ test('elementFromPoint at the overlap center returns the newly-spawned card', as
     w.__spawnAtFlowPos('reverb', pos);
   }, flowPos);
   // Wait for the reverb DOM to mount.
-  await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="reverb"])')).toHaveCount(1);
   // Hit test: at any point inside the underneath card's rect that the new
   // card also covers, the topmost element should belong to the reverb.
-  const reverbBox = await page.locator('.svelte-flow__node-reverb').first().boundingBox();
+  const reverbBox = await page.locator('.svelte-flow__node:has([data-shell-type="reverb"])').first().boundingBox();
   expect(reverbBox).toBeTruthy();
   const overlapCenterX = Math.max(underneathBox!.x, reverbBox!.x)
     + Math.min(underneathBox!.x + underneathBox!.width, reverbBox!.x + reverbBox!.width)
@@ -161,7 +161,7 @@ test('elementFromPoint at the overlap center returns the newly-spawned card', as
   expect(hitNodeId).not.toBeNull();
   expect(hitNodeId).not.toBe('underneath');
   // Sanity: the hit id is the reverb's data-id.
-  const reverbId = await page.locator('.svelte-flow__node-reverb').first().getAttribute('data-id');
+  const reverbId = await page.locator('.svelte-flow__node:has([data-shell-type="reverb"])').first().getAttribute('data-id');
   expect(hitNodeId).toBe(reverbId);
 });
 
@@ -177,7 +177,7 @@ test('spawn → palette UI flow: cursor-anchored at right-click point with overl
   // Click in the upper-mid area of the pane: well clear of the topbar
   // (header), the bottom-right minimap, and the bottom-left Controls
   // affordance. The mixer's measured DOM rect tells us where to dodge.
-  const mixerBox = await page.locator('.svelte-flow__node-mixer').first().boundingBox();
+  const mixerBox = await page.locator('.svelte-flow__node:has([data-shell-type="mixer"])').first().boundingBox();
   const safeX = mixerBox
     ? Math.min(mixerBox.x + mixerBox.width + 80, box.x + box.width - 220)
     : box.x + box.width / 2;

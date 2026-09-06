@@ -5,7 +5,7 @@
 // user A spawns a PICTUREBOX and loads an image into it, and user B's
 // PICTUREBOX is asserted to:
 //   1. receive the same `imageBytes` string in node.data, AND
-//   2. render data-has-image="true" on its card.
+//   2. render data-has-image="true" on its face canvas (dock pane).
 //
 // The image is generated in-browser (no fixture file needed) by
 // drawing a known checkerboard pattern onto a canvas, exporting as
@@ -33,7 +33,7 @@ async function openTwoContexts(
   const pageB = await ctxB.newPage();
 
   for (const p of [pageA, pageB]) {
-    await p.goto('/rack?shell=legacy&seed=none');
+    await p.goto('/rack?seed=none');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () =>
@@ -197,23 +197,33 @@ test.describe('@collab PICTUREBOX multiplayer image sync', () => {
         )
         .toBe(aBytes);
 
-      // B's PICTUREBOX card should render data-has-image="true" once
-      // the bytes have been decoded + applied to the texture. The card
-      // sets this attribute reactively from `imageBytes !== null`.
-      const cardSelector = `.svelte-flow__node-picturebox [data-testid="picturebox-card"]`;
-      await expect(s.pageB.locator(cardSelector)).toHaveAttribute(
-        'data-has-image',
-        'true',
-        { timeout: 15_000 },
-      );
-
-      // A's card should also be has-image (sanity: same code path runs
-      // on the writer too).
-      await expect(s.pageA.locator(cardSelector)).toHaveAttribute(
-        'data-has-image',
-        'true',
-        { timeout: 15_000 },
-      );
+      // Each side's PICTUREBOX face should render data-has-image="true"
+      // once the bytes have been decoded + applied. The attribute lives on
+      // the face CANVAS (not the body root), and the assets body is
+      // `fullViewBody` — dock-only — so open the dock pane on each page and
+      // read pane-scoped. B first (the receiver is the subject), then A
+      // (sanity: same code path runs on the writer too).
+      for (const pg of [s.pageB, s.pageA]) {
+        await pg.waitForFunction(
+          () =>
+            typeof (globalThis as unknown as { __openDockFullView?: unknown })
+              .__openDockFullView === 'function',
+          undefined,
+          { timeout: 30_000 },
+        );
+        await pg.evaluate(
+          (i) =>
+            (globalThis as unknown as { __openDockFullView: (x: string) => void })
+              .__openDockFullView(i),
+          NODE,
+        );
+        const pane = pg.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${NODE}"]`);
+        await expect(pane.locator('[data-testid="picturebox-face-canvas"]')).toHaveAttribute(
+          'data-has-image',
+          'true',
+          { timeout: 15_000 },
+        );
+      }
     } finally {
       await s.close();
     }

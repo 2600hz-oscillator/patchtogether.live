@@ -9,7 +9,7 @@
 // launder a marker out of the gate's sight.
 
 import { expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { openToyboxDock, spawnPatch, TOYBOX_CANVAS_SEL } from './_helpers';
 import { TOYBOX_FIXTURE_PACK, toBytes, type Rgb01 } from '../_fixtures/toybox-fixture-shaders';
 
 export type FixtureG = {
@@ -32,13 +32,16 @@ export type FixtureG = {
   __ydoc: { transact: (fn: () => void) => void };
 };
 
-/** Spawn a lone TOYBOX (id 'tb') on the legacy shell and register the whole
- *  fixture pack through the harness hook, asserting every entry compiles. */
+/** Spawn a lone TOYBOX (id 'tb') on the DEFAULT shell, open its dock (the
+ *  console — and with it the preview canvas — mounts there), and register the
+ *  whole fixture pack through the harness hook, asserting every entry
+ *  compiles. (`__toyboxRegisterFixtureContent` itself is layout-level, but the
+ *  pixel gates these specs run need the console's canvas.) */
 export async function spawnWithFixtures(page: Page): Promise<void> {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 420, y: 40 }, domain: 'video' }]);
-  await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+  await openToyboxDock(page);
   await expect
     .poll(
       () => page.evaluate(() => typeof (globalThis as unknown as FixtureG).__toyboxRegisterFixtureContent),
@@ -116,8 +119,8 @@ export async function expectPixel(
   const want = toBytes(expected);
   try {
     await page.waitForFunction(
-      ({ fx, fy, want, tol }) => {
-        const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      ({ fx, fy, want, tol, sel }) => {
+        const c = document.querySelector(sel) as HTMLCanvasElement | null;
         if (!c) return false;
         const c2d = c.getContext('2d');
         if (!c2d) return false;
@@ -132,7 +135,7 @@ export async function expectPixel(
           Math.abs(data[2]! - want[2]!) <= tol
         );
       },
-      { fx, fy, want, tol },
+      { fx, fy, want, tol, sel: TOYBOX_CANVAS_SEL },
       { timeout: 20_000 },
     );
   } catch (err) {

@@ -33,13 +33,6 @@
     annotateActive?: boolean;
     /** Toggle on-canvas annotate mode for this node (hover → authored docs). */
     onannotate?: () => void;
-    /** Module-grouping Phase 1: when true the menu surfaces "Ungroup" and
-     *  group-specific actions (Phase 2 adds Edit knob positions, Edit
-     *  exposed jacks, Duplicate). */
-    isGroup?: boolean;
-    /** Module-grouping Phase 2A: current expanded state of the group.
-     *  Drives the label of the "Edit knob positions" toggle. */
-    groupExpanded?: boolean;
     /** Virtual-rack Phase 2: whether this module is "screwed down" to its rack
      *  slot. Drives the Lock/Unlock entry label + which callback fires. */
     locked?: boolean;
@@ -59,25 +52,6 @@
     onlock?: () => void;
     /** Virtual-rack Phase 2: unscrew the module so it free-floats / drags. */
     onunlock?: () => void;
-    onungroup?: () => void;
-    /** Module-grouping Phase 2A — toggle data.expanded on the group. */
-    ontoggleexpanded?: () => void;
-    /** Module-grouping Phase 2B — re-open the group builder for an
-     *  existing group, pre-checking currently-exposed ports. */
-    oneditexposed?: () => void;
-    /** Module-grouping Phase 4 — open the exposed-controls picker
-     *  modal for a group. */
-    onconfigurecontrols?: () => void;
-    /** Module-grouping Phase 2C — duplicate group + every child with
-     *  fresh ids + cascade offset. */
-    onduplicategroup?: () => void;
-    /** Saved-groups library — Canvas passes this for signed-in users when
-     *  the right-clicked node is a group. Renders "Save group to library…". */
-    onsavegroup?: () => void;
-    /** Saved-groups library — gates the menu entry. The wiring up in
-     *  Canvas already constrains this to signed-in users + group nodes;
-     *  the menu just respects whatever the parent asserts. */
-    canSaveGroup?: boolean;
     /** Control colour — the module's CURRENT resolved colour (6-digit hex, no
      *  `#`), shown as the menu's preview swatch. */
     currentControlColor?: string | null;
@@ -134,8 +108,6 @@
     hasDocs = false,
     annotateActive = false,
     onannotate,
-    isGroup = false,
-    groupExpanded = false,
     locked = false,
     ondelete,
     ondetachdisplay,
@@ -145,13 +117,6 @@
     onunpatch,
     onlock,
     onunlock,
-    onungroup,
-    ontoggleexpanded,
-    oneditexposed,
-    onconfigurecontrols,
-    onduplicategroup,
-    onsavegroup,
-    canSaveGroup = false,
     currentControlColor = null,
     hasCustomControlColor = false,
     onsetcontrolcolor,
@@ -251,16 +216,21 @@
 
   // Window-level Escape handler — context menus traditionally don't take focus,
   // and the user expects Esc to dismiss regardless of where focus actually sits.
+  // ⚠ CAPTURE + stopPropagation: Canvas's dock-close Escape listener is a
+  // PLAIN window listener by design ("capture-phase ESC consumers win first").
+  // A plain listener here let one Esc press dismiss this menu AND close the
+  // whole dock full view underneath it (the ToyboxNodeMenu class, same seam).
   $effect(() => {
     if (!open) return;
     const onWindowKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onclose();
       }
     };
-    window.addEventListener('keydown', onWindowKeydown);
-    return () => window.removeEventListener('keydown', onWindowKeydown);
+    window.addEventListener('keydown', onWindowKeydown, true);
+    return () => window.removeEventListener('keydown', onWindowKeydown, true);
   });
 
   function pickDelete() {
@@ -299,30 +269,6 @@
     onannotate?.();
     onclose();
   }
-  function pickUngroup() {
-    onungroup?.();
-    onclose();
-  }
-  function pickToggleExpanded() {
-    ontoggleexpanded?.();
-    onclose();
-  }
-  function pickEditExposed() {
-    oneditexposed?.();
-    onclose();
-  }
-  function pickConfigureControls() {
-    onconfigurecontrols?.();
-    onclose();
-  }
-  function pickDuplicateGroup() {
-    onduplicategroup?.();
-    onclose();
-  }
-  function pickSaveGroup() {
-    onsavegroup?.();
-    onclose();
-  }
 </script>
 
 {#if open}
@@ -334,7 +280,7 @@
     aria-label="Module actions"
   >
     <div class="ctx-header">{nodeLabel}</div>
-    {#if nodeType && !isGroup}
+    {#if nodeType}
       <button class="ctx-item" onclick={pickDocs} role="menuitem">
         Docs
       </button>
@@ -354,271 +300,223 @@
       {/if}
       <div class="ctx-sep" role="presentation"></div>
     {/if}
-    {#if isGroup}
-      <!-- Instruments v1 — "Edit Instrument" toggles the new edit-mode
-           layout engine (free-form drag + resize). The legacy
-           "Edit knob positions" expanded-card mode is kept under the same
-           data-testid so existing tests continue to address the toggle. -->
+    <!-- ⚠ THE WHOLE `isGroup` ARM IS GONE with the GROUP! module: Edit
+         instrument, Edit exposed patch jacks…, Configure exposed controls…,
+         Duplicate (group), Save instrument to library… and Break apart
+         instrument. Every module now takes the branch that used to be the
+         `{:else}` — so this menu has ONE shape again. -->
+    {#if onsetcontrolcolor}
+      <!-- Assign control color ▸ — sets the module's tag colour that passes
+           through onto Control Surface / ElectraControl stripes + Electra. -->
       <button
-        class="ctx-item"
-        onclick={pickToggleExpanded}
+        class="ctx-item ctx-has-submenu"
+        onclick={openColorSubmenu}
         role="menuitem"
-        data-testid="ctx-toggle-expanded"
+        aria-haspopup="true"
+        aria-expanded={colorSubmenuOpen}
+        data-testid="ctx-assign-control-color"
       >
-        {groupExpanded ? 'Finish editing instrument' : 'Edit instrument'}
+        <span
+          class="ctx-color-swatch"
+          style:background={`#${currentControlColor ?? 'FFFFFF'}`}
+          aria-hidden="true"
+        ></span>
+        Assign control color
+        <span class="ctx-caret" aria-hidden="true">{colorSubmenuOpen ? '▾' : '▸'}</span>
       </button>
+      {#if colorSubmenuOpen}
+        <div class="ctx-color-panel" data-testid="ctx-color-panel" role="group" aria-label="Control colour">
+          <div class="ctx-swatches">
+            {#each CONTROL_COLOR_PALETTE as sw (sw.hex)}
+              <button
+                type="button"
+                class="ctx-swatch-btn"
+                class:selected={currentControlColor === sw.hex}
+                style:background={`#${sw.hex}`}
+                title={sw.name}
+                aria-label={sw.name}
+                data-testid={`ctx-color-swatch-${sw.hex}`}
+                onclick={() => pickColor(sw.hex)}
+              ></button>
+            {/each}
+          </div>
+          <div class="ctx-custom-row">
+            <label class="ctx-custom-label" title="Custom colour">
+              <input
+                type="color"
+                class="ctx-color-input nodrag"
+                bind:value={customHex}
+                data-testid="ctx-color-custom-input"
+                aria-label="Custom control colour"
+              />
+              <span
+                class="ctx-custom-preview"
+                style:background={`#${customPreview}`}
+                title={`Hardware (RGB565): #${customPreview}`}
+                aria-hidden="true"
+              ></span>
+              <span class="ctx-custom-hex">#{customPreview}</span>
+            </label>
+            <button
+              type="button"
+              class="ctx-custom-apply"
+              onclick={pickCustomColor}
+              data-testid="ctx-color-custom-apply"
+            >
+              Apply
+            </button>
+          </div>
+          {#if hasCustomControlColor}
+            <button
+              type="button"
+              class="ctx-item ctx-reset"
+              onclick={pickResetColor}
+              role="menuitem"
+              data-testid="ctx-color-reset"
+            >
+              Reset to default
+            </button>
+          {/if}
+        </div>
+      {/if}
+    {/if}
+    {#if channelColors.length > 0}
+      <!-- WORKFLOW "Assign to channel N" — the folded-together action. ONE
+           right-click wires channel N end-to-end: (a) assign this MODULE to
+           automation lane N (ALWAYS — automation is universal); (b) if the
+           module is a playable instrument, wire clip N → it; (c) if it has a
+           main audio out, send it → mixer channel N. Whatever the module can't
+           accept is simply skipped (graceful subset). The channel colour IS
+           the automation-lane colour (the per-channel clip colour). One lane
+           per module: picking another channel MOVES the assignment. -->
       <button
-        class="ctx-item"
-        onclick={pickEditExposed}
+        class="ctx-item ctx-has-submenu"
+        onclick={toggleChannelSubmenu}
         role="menuitem"
-        data-testid="ctx-edit-exposed"
+        aria-haspopup="true"
+        aria-expanded={channelSubmenuOpen}
+        title={channelActionHint}
+        data-testid="ctx-assign-channel"
       >
-        Edit exposed patch jacks…
+        Assign to channel
+        <span class="ctx-caret" aria-hidden="true">{channelSubmenuOpen ? '▾' : '▸'}</span>
       </button>
-      <button
-        class="ctx-item"
-        onclick={pickConfigureControls}
-        role="menuitem"
-        data-testid="ctx-configure-controls"
-      >
-        Configure exposed controls…
-      </button>
-      <button
-        class="ctx-item"
-        onclick={pickDuplicateGroup}
-        role="menuitem"
-        data-testid="ctx-duplicate-group"
-      >
-        Duplicate
-      </button>
-      {#if canSaveGroup && onsavegroup}
-        <button
-          class="ctx-item"
-          onclick={pickSaveGroup}
-          role="menuitem"
-          data-testid="ctx-save-group"
+      {#if channelSubmenuOpen}
+        <div
+          class="ctx-lane-panel"
+          data-testid="ctx-assign-channel-panel"
+          role="group"
+          aria-label="Assign to channel"
         >
-          Save instrument to library…
+          {#each channelColors as color, ch (ch)}
+            <button
+              type="button"
+              class="ctx-lane-btn"
+              class:assigned={assignedChannel === ch}
+              style:--lane-color={color}
+              title={`Channel ${ch + 1} — ${channelActionHint}`}
+              aria-label={`assign to channel ${ch + 1}`}
+              data-testid={`ctx-assign-channel-${ch}`}
+              onclick={() => pickAssignToChannel(ch)}
+            >{ch + 1}{assignedChannel === ch ? ' ✓' : ''}</button>
+          {/each}
+        </div>
+      {/if}
+      <!-- "Assign automation only" — automation lane N with NO clip/mixer
+           wiring, so several modules can share one automation lane. -->
+      <button
+        class="ctx-item ctx-has-submenu"
+        onclick={toggleAutoOnlySubmenu}
+        role="menuitem"
+        aria-haspopup="true"
+        aria-expanded={autoOnlySubmenuOpen}
+        data-testid="ctx-assign-auto-only"
+      >
+        Assign automation only
+        <span class="ctx-caret" aria-hidden="true">{autoOnlySubmenuOpen ? '▾' : '▸'}</span>
+      </button>
+      {#if autoOnlySubmenuOpen}
+        <div
+          class="ctx-lane-panel"
+          data-testid="ctx-assign-auto-only-panel"
+          role="group"
+          aria-label="Assign automation only"
+        >
+          {#each channelColors as color, ch (ch)}
+            <button
+              type="button"
+              class="ctx-lane-btn"
+              class:assigned={assignedChannel === ch}
+              style:--lane-color={color}
+              title={`Automation lane ${ch + 1} only`}
+              aria-label={`assign automation only to channel ${ch + 1}`}
+              data-testid={`ctx-assign-auto-only-${ch}`}
+              onclick={() => pickAssignAutomationOnly(ch)}
+            >{ch + 1}{assignedChannel === ch ? ' ✓' : ''}</button>
+          {/each}
+        </div>
+      {/if}
+      {#if assignedChannel !== null}
+        <button
+          class="ctx-item ctx-subtle"
+          onclick={pickRemoveAutomationLane}
+          role="menuitem"
+          title="Stops FUTURE recording of this module's controls — already-recorded envelopes keep playing (Clear recorded automation lives on each control's right-click menu)"
+          data-testid="ctx-automation-remove"
+        >
+          Remove automation assignment
         </button>
       {/if}
-      <button class="ctx-item" onclick={pickUngroup} role="menuitem" data-testid="ctx-ungroup">
-        Break apart instrument
+      <div class="ctx-sep" role="presentation"></div>
+    {/if}
+    {#if docked && onundock}
+      <!-- DOCKING P2.5a: the node's canvas presence is a DockStubCard —
+           undock returns the full card to its dock-time position. NOT
+           undoable (dock state is local; undock is the explicit inverse). -->
+      <button class="ctx-item" onclick={pickUndock} role="menuitem" data-testid="ctx-undock">
+        ⇲ Undock — return to canvas
       </button>
       <div class="ctx-sep" role="presentation"></div>
-    {:else}
-      {#if onsetcontrolcolor}
-        <!-- Assign control color ▸ — sets the module's tag colour that passes
-             through onto Control Surface / ElectraControl stripes + Electra. -->
-        <button
-          class="ctx-item ctx-has-submenu"
-          onclick={openColorSubmenu}
-          role="menuitem"
-          aria-haspopup="true"
-          aria-expanded={colorSubmenuOpen}
-          data-testid="ctx-assign-control-color"
-        >
-          <span
-            class="ctx-color-swatch"
-            style:background={`#${currentControlColor ?? 'FFFFFF'}`}
-            aria-hidden="true"
-          ></span>
-          Assign control color
-          <span class="ctx-caret" aria-hidden="true">{colorSubmenuOpen ? '▾' : '▸'}</span>
-        </button>
-        {#if colorSubmenuOpen}
-          <div class="ctx-color-panel" data-testid="ctx-color-panel" role="group" aria-label="Control colour">
-            <div class="ctx-swatches">
-              {#each CONTROL_COLOR_PALETTE as sw (sw.hex)}
-                <button
-                  type="button"
-                  class="ctx-swatch-btn"
-                  class:selected={currentControlColor === sw.hex}
-                  style:background={`#${sw.hex}`}
-                  title={sw.name}
-                  aria-label={sw.name}
-                  data-testid={`ctx-color-swatch-${sw.hex}`}
-                  onclick={() => pickColor(sw.hex)}
-                ></button>
-              {/each}
-            </div>
-            <div class="ctx-custom-row">
-              <label class="ctx-custom-label" title="Custom colour">
-                <input
-                  type="color"
-                  class="ctx-color-input nodrag"
-                  bind:value={customHex}
-                  data-testid="ctx-color-custom-input"
-                  aria-label="Custom control colour"
-                />
-                <span
-                  class="ctx-custom-preview"
-                  style:background={`#${customPreview}`}
-                  title={`Hardware (RGB565): #${customPreview}`}
-                  aria-hidden="true"
-                ></span>
-                <span class="ctx-custom-hex">#{customPreview}</span>
-              </label>
-              <button
-                type="button"
-                class="ctx-custom-apply"
-                onclick={pickCustomColor}
-                data-testid="ctx-color-custom-apply"
-              >
-                Apply
-              </button>
-            </div>
-            {#if hasCustomControlColor}
-              <button
-                type="button"
-                class="ctx-item ctx-reset"
-                onclick={pickResetColor}
-                role="menuitem"
-                data-testid="ctx-color-reset"
-              >
-                Reset to default
-              </button>
-            {/if}
-          </div>
-        {/if}
-      {/if}
-      {#if channelColors.length > 0}
-        <!-- WORKFLOW "Assign to channel N" — the folded-together action. ONE
-             right-click wires channel N end-to-end: (a) assign this MODULE to
-             automation lane N (ALWAYS — automation is universal); (b) if the
-             module is a playable instrument, wire clip N → it; (c) if it has a
-             main audio out, send it → mixer channel N. Whatever the module can't
-             accept is simply skipped (graceful subset). The channel colour IS
-             the automation-lane colour (the per-channel clip colour). One lane
-             per module: picking another channel MOVES the assignment. -->
-        <button
-          class="ctx-item ctx-has-submenu"
-          onclick={toggleChannelSubmenu}
-          role="menuitem"
-          aria-haspopup="true"
-          aria-expanded={channelSubmenuOpen}
-          title={channelActionHint}
-          data-testid="ctx-assign-channel"
-        >
-          Assign to channel
-          <span class="ctx-caret" aria-hidden="true">{channelSubmenuOpen ? '▾' : '▸'}</span>
-        </button>
-        {#if channelSubmenuOpen}
-          <div
-            class="ctx-lane-panel"
-            data-testid="ctx-assign-channel-panel"
-            role="group"
-            aria-label="Assign to channel"
-          >
-            {#each channelColors as color, ch (ch)}
-              <button
-                type="button"
-                class="ctx-lane-btn"
-                class:assigned={assignedChannel === ch}
-                style:--lane-color={color}
-                title={`Channel ${ch + 1} — ${channelActionHint}`}
-                aria-label={`assign to channel ${ch + 1}`}
-                data-testid={`ctx-assign-channel-${ch}`}
-                onclick={() => pickAssignToChannel(ch)}
-              >{ch + 1}{assignedChannel === ch ? ' ✓' : ''}</button>
-            {/each}
-          </div>
-        {/if}
-        <!-- "Assign automation only" — automation lane N with NO clip/mixer
-             wiring, so several modules can share one automation lane. -->
-        <button
-          class="ctx-item ctx-has-submenu"
-          onclick={toggleAutoOnlySubmenu}
-          role="menuitem"
-          aria-haspopup="true"
-          aria-expanded={autoOnlySubmenuOpen}
-          data-testid="ctx-assign-auto-only"
-        >
-          Assign automation only
-          <span class="ctx-caret" aria-hidden="true">{autoOnlySubmenuOpen ? '▾' : '▸'}</span>
-        </button>
-        {#if autoOnlySubmenuOpen}
-          <div
-            class="ctx-lane-panel"
-            data-testid="ctx-assign-auto-only-panel"
-            role="group"
-            aria-label="Assign automation only"
-          >
-            {#each channelColors as color, ch (ch)}
-              <button
-                type="button"
-                class="ctx-lane-btn"
-                class:assigned={assignedChannel === ch}
-                style:--lane-color={color}
-                title={`Automation lane ${ch + 1} only`}
-                aria-label={`assign automation only to channel ${ch + 1}`}
-                data-testid={`ctx-assign-auto-only-${ch}`}
-                onclick={() => pickAssignAutomationOnly(ch)}
-              >{ch + 1}{assignedChannel === ch ? ' ✓' : ''}</button>
-            {/each}
-          </div>
-        {/if}
-        {#if assignedChannel !== null}
-          <button
-            class="ctx-item ctx-subtle"
-            onclick={pickRemoveAutomationLane}
-            role="menuitem"
-            title="Stops FUTURE recording of this module's controls — already-recorded envelopes keep playing (Clear recorded automation lives on each control's right-click menu)"
-            data-testid="ctx-automation-remove"
-          >
-            Remove automation assignment
-          </button>
-        {/if}
-        <div class="ctx-sep" role="presentation"></div>
-      {/if}
-      {#if docked && onundock}
-        <!-- DOCKING P2.5a: the node's canvas presence is a DockStubCard —
-             undock returns the full card to its dock-time position. NOT
-             undoable (dock state is local; undock is the explicit inverse). -->
-        <button class="ctx-item" onclick={pickUndock} role="menuitem" data-testid="ctx-undock">
-          ⇲ Undock — return to canvas
-        </button>
-        <div class="ctx-sep" role="presentation"></div>
-      {:else if dockable && ondock}
-        <!-- DOCKING P2.5a: workflow racks, allowlisted control modules +
-             scope only (owner Q3). Three zones (owner Q5). -->
-        <button class="ctx-item" onclick={() => pickDock('top')} role="menuitem" data-testid="ctx-dock-top">
-          ⇱ Dock to top rail
-        </button>
-        <button class="ctx-item" onclick={() => pickDock('left')} role="menuitem" data-testid="ctx-dock-left">
-          ⇱ Dock to left rail
-        </button>
-        <button class="ctx-item" onclick={() => pickDock('bottom')} role="menuitem" data-testid="ctx-dock-bottom">
-          ⇱ Dock to bottom drawer
-        </button>
-        <div class="ctx-sep" role="presentation"></div>
-      {/if}
-      <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
-        Duplicate
+    {:else if dockable && ondock}
+      <!-- DOCKING P2.5a: workflow racks, allowlisted control modules +
+           scope only (owner Q3). Three zones (owner Q5). -->
+      <button class="ctx-item" onclick={() => pickDock('top')} role="menuitem" data-testid="ctx-dock-top">
+        ⇱ Dock to top rail
       </button>
-      <!-- TOYBOX is a node-map module: "Unpatch all" (remove every cable
-           touching the module) is confusing alongside the in-card combine
-           graph's own per-node disconnect, so it's hidden for type==='toybox'.
-           The combine editor's contextual menu provides node-map disconnects. -->
-      {#if nodeType !== 'toybox'}
-        <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
-          Unpatch all
-        </button>
-      {/if}
-      <!-- Virtual-rack Phase 2: "screw down" the module to its rack slot
-           (snap to the 180px grid + pin non-draggable), or release it. -->
-      {#if (onlock || onunlock) && !docked}
-        <!-- Lock (screw-down) is a canvas-position op — meaningless while
-             the node's canvas presence is a dock stub, so hidden then. -->
-        <button
-          class="ctx-item"
-          onclick={pickLock}
-          role="menuitemcheckbox"
-          data-testid="ctx-lock"
-          aria-checked={locked}
-        >
-          {locked ? 'Unlock' : 'Lock'}
-        </button>
-      {/if}
+      <button class="ctx-item" onclick={() => pickDock('left')} role="menuitem" data-testid="ctx-dock-left">
+        ⇱ Dock to left rail
+      </button>
+      <button class="ctx-item" onclick={() => pickDock('bottom')} role="menuitem" data-testid="ctx-dock-bottom">
+        ⇱ Dock to bottom drawer
+      </button>
+      <div class="ctx-sep" role="presentation"></div>
+    {/if}
+    <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
+      Duplicate
+    </button>
+    <!-- TOYBOX is a node-map module: "Unpatch all" (remove every cable
+         touching the module) is confusing alongside the in-card combine
+         graph's own per-node disconnect, so it's hidden for type==='toybox'.
+         The combine editor's contextual menu provides node-map disconnects. -->
+    {#if nodeType !== 'toybox'}
+      <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
+        Unpatch all
+      </button>
+    {/if}
+    <!-- Virtual-rack Phase 2: "screw down" the module to its rack slot
+         (snap to the 180px grid + pin non-draggable), or release it. -->
+    {#if (onlock || onunlock) && !docked}
+      <!-- Lock (screw-down) is a canvas-position op — meaningless while
+           the node's canvas presence is a dock stub, so hidden then. -->
+      <button
+        class="ctx-item"
+        onclick={pickLock}
+        role="menuitemcheckbox"
+        data-testid="ctx-lock"
+        aria-checked={locked}
+      >
+        {locked ? 'Unlock' : 'Lock'}
+      </button>
     {/if}
     <!-- DETACH DISPLAY (#1821) — the OTHER of the two entry points the owner
          asked for: *"we can right click either it OR the underlying video output
@@ -649,7 +547,7 @@
       </button>
     {/if}
     <button class="ctx-item danger" onclick={pickDelete} role="menuitem">
-      {isGroup ? 'Delete instrument + modules' : 'Delete'}
+      Delete
     </button>
   </div>
 {/if}

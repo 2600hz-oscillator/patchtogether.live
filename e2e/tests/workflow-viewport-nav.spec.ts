@@ -15,10 +15,11 @@
 // The pure translate math is unit-tested in channel-columns.test.ts; this spec
 // asserts the WIRING end-to-end by projecting the target flow point through the
 // LIVE viewport (flowToScreenPosition) after the pan settles and checking where
-// it lands on screen. Driving /rack?shell=legacy keeps it in the normal e2e
+// it lands on screen. Driving the default /rack keeps it in the normal e2e
 // lane (no DB/relay).
 
 import { test, expect, type Page } from '@playwright/test';
+import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
@@ -50,7 +51,9 @@ const COLUMN_SLOT_H = RACK_UNIT * 4; // 720
 const COLUMN_MAX_SLOTS = 6;
 const COLUMN_BASELINE_Y = COLUMN_SLOT_H * COLUMN_MAX_SLOTS; // 4320
 const VIDEO_AREA_HEIGHT = RACK_UNIT * 3; // 540
-const columnBandCenterX = (ch: number) => (ch - 1) * COLUMN_W + COLUMN_W / 2;
+// ⚠ THE SHELL PITCH, imported — the default shell packs lanes at
+// SHELL_COLUMN_W (225), not the legacy 765 band this file was written against.
+const columnBandCenterX = (ch: number) => (ch - 1) * SHELL_COLUMN_W + SHELL_COLUMN_W / 2;
 const videoArea = () => ({ x0: 0, y1: COLUMN_BASELINE_Y + VIDEO_AREA_HEIGHT });
 
 async function waitForPinnedTrio(page: Page): Promise<void> {
@@ -127,7 +130,7 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
   });
 
   test("'3' centers column 3 horizontally with its baseline at the viewport bottom", async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
     await waitForFlowHook(page);
 
@@ -161,7 +164,7 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
   });
 
   test("'V' snaps the video area's lower-left corner to the viewport's lower-left corner", async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
     await waitForFlowHook(page);
 
@@ -187,7 +190,7 @@ test.describe('workflow viewport navigation (keyboard pan)', () => {
   });
 
   test('GUARD: a number pressed while a text input is focused does NOT pan', async ({ page }) => {
-    await page.goto('/rack?shell=legacy');
+    await page.goto('/rack');
     await waitForPinnedTrio(page);
     await waitForFlowHook(page);
 

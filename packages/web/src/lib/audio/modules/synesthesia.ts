@@ -187,8 +187,8 @@ export const synesthesiaDef: AudioModuleDef = {
     // a NAMED two-state control instead of an unnamed switch. `paramCellKind`
     // (shell-control-kind.ts:312-316) tests `p.options?.length` BEFORE
     // `looksLikeToggle`, so without a roster this resolves to a bare `toggle`
-    // whose two positions carry no words at all — and the legacy card has
-    // printed `AUDIO` / `VIDEO` on its own button since it shipped
+    // whose two positions carry no words at all — and this module has printed
+    // `AUDIO` / `VIDEO` on its own button since it shipped
     // (SynesthesiaCard.svelte:233). The labels below are THAT string, verbatim,
     // and the same pair the def's own `docs.controls` and the worklet header
     // (packages/dsp/src/synesthesia.ts:30) use. An option NAME is permitted
@@ -495,8 +495,8 @@ export const synesthesiaDef: AudioModuleDef = {
     const controls: Record<string, string> = {};
     for (const c of COPIES) {
       const C = c.toUpperCase();
-      controls[`${c}_mode`] = `Copy ${C} MODE — AUDIO (analyse the audio input into 4 spectral bands) vs VIDEO (the 4 lanes become R / G / B / Luma of the patched ${c}_video_in frame, sampled card-side). Toggle on the card.`;
-      controls[`${c}_bipolar`] = `Copy ${C} env POLARITY — UNIPOLAR (env CV outputs run 0..1, the default) vs BIPOLAR (−1..+1, so a strong onset sweeps a destination's FULL range through a knob-centred CV→video bridge). Toggle on the card.`;
+      controls[`${c}_mode`] = `Copy ${C} MODE — AUDIO (analyse the audio input into 4 spectral bands) vs VIDEO (the 4 lanes become R / G / B / Luma of the patched ${c}_video_in frame, sampled surface-side). Toggle on the faceplate.`;
+      controls[`${c}_bipolar`] = `Copy ${C} env POLARITY — UNIPOLAR (env CV outputs run 0..1, the default) vs BIPOLAR (−1..+1, so a strong onset sweeps a destination's FULL range through a knob-centred CV→video bridge). Toggle on the faceplate.`;
       controls[`${c}_master`] = `Copy ${C} MASTER gain (0.5×..1.5×, unity at noon) — raises or lowers the floor of all four of copy ${C}'s bands together.`;
       for (const b of BANDS) {
         controls[`${c}_gain${b}`] = `Copy ${C} band ${b} GAIN (1×..2×) — boosts the ${BAND_NAMES[b]} band's level for copy ${C} (affects its audio tap + how hard it drives the envelopes/gate/meter).`;
@@ -511,12 +511,12 @@ export const synesthesiaDef: AudioModuleDef = {
     }
     return {
       explanation:
-        "SYNESTHESIA is a dual 4-band audio analyser + envelope/gate/trigger generator — an audio-reactive modulation source. It holds TWO independent copies (A and B); each takes a mono input and splits it into four MUSICAL bands (bass / low-mid / high-mid / treble). For every band of every copy it emits a rich fan of outputs: the isolated band audio, a SLOW (~500 ms) and a FAST (~50 ms) envelope-follower CV, a hysteresis GATE that opens while the band is loud, a beat TRIGGER fired on each spectral-flux onset in that band, and a mono-video RASTER of the band's waveform — 4 bands × 6 kinds × 2 copies = 48 outputs. Each copy can instead run in VIDEO mode, where the 4 lanes become R/G/B/Luma of a patched video frame (sampled card-side) and flow through the same envelope/gate/meter stage. Per-band GAIN, per-copy MASTER, an env-output DEPTH per band, and a UNIPOLAR/BIPOLAR polarity switch shape the modulation; a 10-bar VU meter per band is drawn on the card.",
+        "SYNESTHESIA is a dual 4-band audio analyser + envelope/gate/trigger generator — an audio-reactive modulation source. It holds TWO independent copies (A and B); each takes a mono input and splits it into four MUSICAL bands (bass / low-mid / high-mid / treble). For every band of every copy it emits a rich fan of outputs: the isolated band audio, a SLOW (~500 ms) and a FAST (~50 ms) envelope-follower CV, a hysteresis GATE that opens while the band is loud, a beat TRIGGER fired on each spectral-flux onset in that band, and a mono-video RASTER of the band's waveform — 4 bands × 6 kinds × 2 copies = 48 outputs. Each copy can instead run in VIDEO mode, where the 4 lanes become R/G/B/Luma of a patched video frame (sampled surface-side) and flow through the same envelope/gate/meter stage. Per-band GAIN, per-copy MASTER, an env-output DEPTH per band, and a UNIPOLAR/BIPOLAR polarity switch shape the modulation; a 10-bar VU meter per band is drawn on the faceplate.",
       inputs: {
         a_in: 'Copy A audio input — the mono signal copy A splits into its 4 spectral bands (in AUDIO mode).',
         b_in: 'Copy B audio input — the mono signal copy B splits into its 4 spectral bands (in AUDIO mode).',
-        a_video_in: "Copy A video input — used only when copy A is in VIDEO mode: the card reads this frame's pixels, averages them to R/G/B/Luma levels, and feeds those through copy A's 4 lanes (the frame handoff happens card-side, not as an audio edge).",
-        b_video_in: 'Copy B video input — the VIDEO-mode frame source for copy B (same card-side handoff as copy A).',
+        a_video_in: "Copy A video input — used only when copy A is in VIDEO mode: the module reads this frame's pixels, averages them to R/G/B/Luma levels, and feeds those through copy A's 4 lanes (the frame handoff happens surface-side, not as an audio edge).",
+        b_video_in: 'Copy B video input — the VIDEO-mode frame source for copy B (same surface-side handoff as copy A).',
       },
       outputs,
       controls,

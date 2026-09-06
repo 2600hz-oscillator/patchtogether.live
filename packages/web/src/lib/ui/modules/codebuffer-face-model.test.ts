@@ -39,7 +39,7 @@ import { glyphBinding } from '$lib/ui/workflow/shell-glyph-live';
 import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 import { dockFacePlan } from '$lib/ui/workflow/curated-face';
 import { NON_SHELL_LANE_TYPES } from '$lib/ui/workflow/legacy-fallback';
-import { HEADLESS_MOUNT_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
+import { CARD_PRODUCER_LANE_TYPES, DOM_SOURCE_LANE_TYPES } from '$lib/ui/workflow/dom-source-modules';
 import {
   CODE_BUFFER_FACE_H,
   CODE_BUFFER_FACE_MIN_W,
@@ -56,8 +56,6 @@ const LIVECODE_DEF_SRC = 'lib/audio/modules/livecode.ts';
 const CLOCKED_BODY = 'lib/ui/modules/clockedRunner/ClockedRunnerEditorBody.svelte';
 const LIVECODE_BODY = 'lib/ui/modules/livecode/LivecodeEditorBody.svelte';
 const LIVECODE_ACTIONS = 'lib/ui/modules/livecode-cell-actions.ts';
-const LIVECODE_CARD = 'lib/ui/modules/LivecodeCard.svelte';
-const CLOCKED_CARD = 'lib/ui/modules/ClockedRunnerCard.svelte';
 
 describe('the code-buffer pair — the ladder', () => {
   it('BOTH are PROMOTED, so the dock swap and the lane swap fire on each', () => {
@@ -86,16 +84,25 @@ describe('the code-buffer pair — the ladder', () => {
     }
   });
 
-  it('each family\'s testidPrefix is a literal its LEGACY CARD already emits', () => {
-    // module-docs-lint's card-drift leg greps real UI source for every declared
-    // prefix. Neither promotion added a dead testid to satisfy it — both cards
-    // carried these before the faces existed, and both survive under
-    // `?shell=legacy`. Asserted here so a rename on either surface is red in the
-    // unit lane too, where the message can say why.
-    expect(read(CLOCKED_CARD)).toContain('data-testid="clocked-runner-division"');
-    expect(read(LIVECODE_CARD)).toContain('data-testid="livecode-run"');
+  it('each family declares its testidPrefix, and each resolves to a live cell', () => {
+    // ⚠ THIS USED TO READ TWO PRE-FACEPLATE SURFACES. module-docs-lint's
+    // source-grep leg checked real UI source for every declared prefix, and
+    // neither promotion added a dead testid to satisfy it — both carried these
+    // before the
+    // faces existed. The shell stamps `shell-cell-<familyId>` from an
+    // interpolation, so there is no per-family literal left to grep; that gate
+    // resolves each family to a live cell instead, and so does this leg, at the
+    // module, where the message can say why.
     expect(clockedRunnerDef.controlFamilies?.[0]?.testidPrefix).toBe('clocked-runner-division');
     expect(livecodeDef.controlFamilies?.[0]?.testidPrefix).toBe('livecode-run');
+    for (const def of [clockedRunnerDef, livecodeDef]) {
+      for (const f of def.controlFamilies ?? []) {
+        expect(
+          shellCellFor(def.type, { kind: 'family', key: `${f.id}-{n}` } as never),
+          `${def.type}/${f.id} has no shell cell`,
+        ).toBeTruthy();
+      }
+    }
   });
 
   it('declares NO pages, NO rear and NO hero — one cell is one band', () => {
@@ -194,10 +201,12 @@ describe('CLAIM 2 — the evaluation survives a rack with no card mounted', () =
   it('NEITHER module is in a lane set that would keep its card alive', () => {
     for (const t of ['clockedRunner', 'livecode']) {
       expect(NON_SHELL_LANE_TYPES.has(t), `${t}: the lane swaps to a face`).toBe(false);
-      // Not in DOM_SOURCE ∪ CARD_PRODUCER, so there is no off-screen
-      // `<HeadlessSourceHost>` mount: after promotion the card is simply GONE.
+      // Not in DOM_SOURCE ∪ CARD_PRODUCER — and since legacy-removal S1.5 the
+      // off-screen `<HeadlessSourceHost>` is retired outright, so after
+      // promotion NO card is kept mounted for ANY module. The two halves are
+      // asserted separately because the union export retired with the host.
       expect(
-        HEADLESS_MOUNT_LANE_TYPES.has(t),
+        DOM_SOURCE_LANE_TYPES.has(t) || CARD_PRODUCER_LANE_TYPES.has(t),
         `${t}: nothing keeps this card mounted, so anything living only on it is deleted`,
       ).toBe(false);
     }
@@ -211,9 +220,11 @@ describe('CLAIM 2 — the evaluation survives a rack with no card mounted', () =
     expect(src).toContain('const clock = getSchedulerClock();');
     expect(src).toContain('unsubscribeTick = clock.subscribe(tick);');
     expect(src).toContain('unsubscribeTick?.();');
-    // And the card only ever READ it: the poll goes through `engine.read`, which
-    // writes nothing.
-    expect(read(CLOCKED_CARD)).toContain("e.read(node, 'lastError')");
+    // ⚠ AND THE SURFACE ONLY EVER READ IT — the poll goes through
+    // `engine.read`, which writes nothing. That was asserted on the legacy
+    // card, which was the surface at the time; it is asserted on the body now.
+    expect(read(CLOCKED_BODY), 'the body polls the shared telemetry reader, which only reads')
+      .toContain('clockedRunnerTelemetry(nodeId)');
   });
 
   it('livecode\'s factory does NOTHING, so its run had to leave the component', () => {
@@ -225,27 +236,24 @@ describe('CLAIM 2 — the evaluation survives a rack with no card mounted', () =
     expect(src).not.toContain('setInterval');
     expect(src).toContain('// no-op — LIVECODE has no params');
 
-    // The evaluation now lives in a plain `.ts` module, reachable from the
-    // ranked cell (and therefore from the LANE TILE), the faceplate body and the
-    // legacy card.
+    // The evaluation lives in a plain `.ts` module, reachable from the ranked
+    // cell (and therefore from the LANE TILE) and from the faceplate body.
     const actions = read(LIVECODE_ACTIONS);
     expect(actions).toContain('export function runLivecodeNode');
     expect(actions).toContain("from '$lib/livecode/runtime'");
   });
 
-  it('ALL THREE surfaces call the SAME run, so none can drift', () => {
+  it('BOTH surviving surfaces call the SAME run, so neither can drift', () => {
     // Two evaluators would be two answers to "what does Run do". The registry
-    // entry, the body's test hook and the card all name the shared action.
+    // entry and the body's test hook both name the shared action. (The legacy
+    // card was the third caller and is gone; the shared action is exactly what
+    // made its departure free.)
     expect(read('lib/ui/workflow/shell-cells.ts')).toContain('runLivecodeNode(nodeId)');
     expect(read(LIVECODE_BODY)).toContain('runLivecodeNode(nodeId)');
-    expect(read(LIVECODE_CARD)).toContain('runLivecodeNode(id)');
     // ⚠ AND THE RUN IS NOT DEFINED IN ANY COMPONENT. A `.svelte` copy is exactly
     // the regression this whole claim is about, so it is denied by name.
-    for (const f of [LIVECODE_BODY, LIVECODE_CARD]) {
-      expect(read(f), `${f}: the run is called, never re-implemented`).not.toContain(
-        'function runLivecodeNode',
-      );
-    }
+    expect(read(LIVECODE_BODY), 'the run is called, never re-implemented')
+      .not.toContain('function runLivecodeNode');
   });
 
   it('the RUN cell reads the LIVE buffer, not the 250 ms-old committed one', () => {
@@ -256,7 +264,7 @@ describe('CLAIM 2 — the evaluation survives a rack with no card mounted', () =
     const actions = read(LIVECODE_ACTIONS);
     expect(actions).toContain('export function registerLivecodeEditor');
     expect(actions).toContain('const flush = editors.get(nodeId);');
-    for (const f of [LIVECODE_BODY, LIVECODE_CARD]) {
+    for (const f of [LIVECODE_BODY]) {
       expect(read(f), `${f}: publishes its flush`).toContain('registerLivecodeEditor(');
       expect(read(f), `${f}: and releases it on unmount`).toContain('releaseEditor');
     }
@@ -304,13 +312,15 @@ describe('CLAIM 3 — the resting status text is GONE, not relocated', () => {
     expect(body).toContain('caption="RUN"');
   });
 
-  it('the CARDS keep theirs — the rulings are about FACEPLATES', () => {
-    // The legacy cards are explicitly untouched by the 2026-08-19 rulings, and
-    // they still render under `?shell=legacy`. Asserted so a later sweep does not
-    // "finish the job" on a surface the ruling never covered.
-    expect(read(LIVECODE_CARD)).toContain('Type a script and press Run');
-    expect(read(CLOCKED_CARD)).toContain('data-testid="clocked-runner-status"');
-  });
+  // ⚠ A 'the OTHER surfaces keep theirs' CLAUSE STOOD HERE. The 2026-08-19
+  // resting-text rulings are faceplate-scoped and the surfaces this branch
+  // deletes were explicitly untouched by them, so this asserted they still
+  // painted their placeholder and their status testid — guarding against a later sweep
+  // "finishing the job" on a surface the ruling never covered. NAMED COVERAGE
+  // LOSS: livecode's "Type a script and press Run" placeholder and the clocked
+  // runner's visible status line were painted on the card and are painted on no
+  // surviving surface, which is the ruling working as intended rather than a
+  // regression — but it is a thing a player could read and now cannot.
 
   it('NEGATIVE CONTROL — the absence checks can SEE a painted string', () => {
     // Three of the four assertions above are `not.toContain`, which passes on an

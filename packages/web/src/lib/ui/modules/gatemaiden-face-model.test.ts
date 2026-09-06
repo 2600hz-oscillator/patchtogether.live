@@ -25,7 +25,7 @@
 // reads still say what the face was built on.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gatemaidenDef } from '$lib/audio/modules/gatemaiden';
 import { paramCellKind, SEGMENTED_MAX_OPTIONS } from '$lib/ui/workflow/shell-control-kind';
@@ -207,56 +207,77 @@ function stripComments(src: string): string {
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
 
-describe('gatemaiden face — the CARD no longer owns anything the face needs', () => {
-  const rawCardSrc = readFileSync(
-    join(import.meta.dirname, 'GatemaidenCard.svelte'),
-    'utf-8',
-  );
-  const cardSrc = stripComments(rawCardSrc);
+describe('gatemaiden — the SHAPE roster has exactly ONE home', () => {
+  // ⚠ THIS DESCRIBE USED TO READ `GatemaidenCard.svelte` AND HELD THREE CLAIMS.
+  // Two of them are now unspellable rather than untested, and the third — the
+  // one that actually protected the player — is asserted at its real source.
+  //
+  //   1. "the stripper removes COMMENTS and keeps CODE". An instrument control
+  //      on a comment-stripper that existed only to read the card safely. With
+  //      no card source to read, the stripper has no caller and goes with it.
+  //   2. "the shape button writes through the TRACKED path, not the store". A
+  //      card-source deny (`.params.trigShape =`, `patch.nodes[`) anchoring a
+  //      paid `raw-write-ledger` debt. The surviving surface writes every param
+  //      through `shellParamWrite`, and `mutate.guard.test.ts` holds the
+  //      raw-write rule across the whole tree, so the untracked write has no
+  //      module-local place left to come back to. NAMED: the card-scoped
+  //      converse ("a write that came BACK while the ledger entry stayed
+  //      deleted") loses its module-local witness here.
+  //   3. "the card does NOT re-declare the state names" — kept, and re-pointed
+  //      below. The defect was a card-local
+  //      `const shapeLabels = ['\u25b3 TRI', '\u25ad SQR']`, and the fix was ONE
+  //      home for the names. That fix is checkable without a card: the def owns
+  //      the roster, and no other source may re-type it.
 
-  // ── THE INSTRUMENT'S OWN NEGATIVE CONTROLS, both directions, permanent ────
-  it('INSTRUMENT — the stripper removes COMMENTS and keeps CODE', () => {
-    // Direction 1: prose that would trip the denies is removed. Asserted
-    // against the REAL card, so this leg dies the day the comments do — which
-    // is the honest anchor, since that is also the day the strip stops being
-    // load-bearing.
-    expect(rawCardSrc).toMatch(/shapeLabels\s*=/); // …in a comment
-    expect(rawCardSrc).toMatch(/\.params\.trigShape\s*=/); // …in a comment
-    expect(stripComments(rawCardSrc)).not.toMatch(/shapeLabels\s*=/);
+  it('the DEF owns the roster, and the names are not re-typed on any surface', () => {
+    const options = param('trigShape').options ?? [];
+    expect(options.length, 'the def declares the two shape states').toBe(2);
 
-    // Direction 2: it does NOT eat real code. Without this, a stripper that
-    // returned '' would pass every deny below and certify anything.
-    expect(cardSrc).toMatch(/<NeonFader/);
-    expect(cardSrc).toMatch(/function cycleShape/);
-    expect(cardSrc.length).toBeGreaterThan(rawCardSrc.length / 4);
+    // \u26a0 THE SCAN LOOKS FOR THE RETIRED SPELLING, NOT THE DEF'S OWN LABELS, and
+    // that is a deliberate narrowing rather than a weaker check. The def's names
+    // are `TRI` and `SQR` \u2014 three-letter tokens that occur inside `TRIG`,
+    // `TRIGGER` and `SQRT` all over the tree, so grepping for them reports 39
+    // surfaces that have nothing to do with this roster. The card-local array
+    // this leg exists for carried DECORATIVE GLYPHS the def deliberately does
+    // not (`\u25b3 TRI`, `\u25ad SQR`), and that exact spelling is what a second, prettier
+    // copy of the roster would be written as.
+    const RETIRED = ['\u25b3 TRI', '\u25ad SQR'];
 
-    // Direction 2b: the synthetic case, so the guarantee does not depend on
-    // what this particular card happens to contain.
-    expect(stripComments("const a = 1; // note\nconst b = 'https://x/y';")).toContain(
-      "'https://x/y'",
-    );
-    expect(stripComments('code(); /* gone */ more();')).toBe('code();  more();');
-  });
-
-  it('the card does NOT re-declare the state names (ONE roster, on the def)', () => {
-    // The defect was a card-local `const shapeLabels = ['△ TRI', '▭ SQR']`.
-    // Deleting it is not enough on its own — the point is that the names now
-    // have ONE home, so a rename cannot leave two surfaces disagreeing.
-    expect(cardSrc).not.toMatch(/shapeLabels\s*=/);
-    expect(cardSrc).toMatch(/paramSpec\(gatemaidenDef,\s*'trigShape'\)\.options/);
-    // Both names must be absent as card literals. (The decorative glyphs may
-    // stay; the NAMES may not.)
-    expect(cardSrc).not.toMatch(/'△ TRI'/);
-    expect(cardSrc).not.toMatch(/'▭ SQR'/);
-  });
-
-  it('the shape button writes through the TRACKED path, not the store', () => {
-    // The paid `raw-write-ledger` debt. Anchored to the card SOURCE because the
-    // ledger's own stale-entry check is: an entry naming a write that no longer
-    // exists is RED, and the converse — a write that came BACK while the entry
-    // stayed deleted — is what this leg holds.
-    expect(cardSrc).not.toMatch(/\.params\.trigShape\s*=/);
-    expect(cardSrc).not.toMatch(/\bpatch\.nodes\[/);
-    expect(cardSrc).toMatch(/set\('trigShape'\)/);
+    // …and NOWHERE ELSE writes them. The scan is over every module-owned
+    // surface — flat, plus one level of module subdirectory, the depth the
+    // shell-extension glob loads a body from — so a re-typed roster in a face
+    // body reddens exactly as a re-typed roster in a card used to.
+    //
+    // ⚠ COMMENTS ARE STRIPPED FIRST, for the reason the old card-scoped legs
+    // stripped them: the surfaces around this module EXPLAIN the deleted
+    // `shapeLabels` array in prose, quoting both names, and a raw grep cannot
+    // tell the quotation from the defect. That is exactly the pressure that gets
+    // explanations deleted to keep a regex green.
+    const dir = import.meta.dirname;
+    const offenders: string[] = [];
+    const visit = (rel: string, abs: string): void => {
+      const src = stripComments(readFileSync(abs, 'utf8'));
+      for (const label of RETIRED) {
+        if (src.includes(label)) offenders.push(`${rel} re-types the state name ${label}`);
+      }
+      if (/shapeLabels\s*=/.test(src)) offenders.push(`${rel} declares its own shapeLabels`);
+    };
+    let scanned = 0;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        for (const inner of readdirSync(join(dir, entry.name))) {
+          if (!inner.endsWith('.svelte')) continue;
+          scanned++;
+          visit(`${entry.name}/${inner}`, join(dir, entry.name, inner));
+        }
+        continue;
+      }
+      if (!entry.name.endsWith('.svelte')) continue;
+      scanned++;
+      visit(entry.name, join(dir, entry.name));
+    }
+    // A walk that resolved nothing would report an empty offender list too.
+    expect(scanned, 'the surface walk resolved no .svelte files').toBeGreaterThan(0);
+    expect(offenders, 'the state names must have exactly one home — the def').toEqual([]);
   });
 });

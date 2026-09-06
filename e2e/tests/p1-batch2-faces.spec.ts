@@ -8,9 +8,9 @@
 // in STRICT_FACES, render a perfect dock faceplate, and still show the uniform
 // un-migrated PLACEHOLDER in its lane. That is the bug this spec exists for:
 //
-//   1. LANE — the curated ModuleShell renders in the lane under `?shell=1`,
-//      NOT `module-shell-placeholder`, and the legacy card's controls are gone
-//      from the lane (they live in the dock now).
+//   1. LANE — the curated ModuleShell renders in the lane, NOT
+//      `module-shell-placeholder`, and the full control set is gone from the
+//      lane (it lives in the dock now).
 //   2. DOCK — the full-view faceplate mounts at the 'dock' face tier and
 //      renders exactly the module's declared `face.pages` as labeled section
 //      bands, in order.
@@ -28,7 +28,7 @@
 // preview OFF (the default) a batch-2 module still renders its REAL legacy
 // card in the lane. Promotion to STRICT_FACES must not leak out of `?shell=1`.
 //
-// Runs on /rack?shell=legacy (no DB/relay) — the normal e2e lane.
+// Runs on /rack (no DB/relay) — the normal e2e lane.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -74,7 +74,7 @@ const BATCH2 = [
     // four pages, different set.
     pages: ['voice', 'algorithm · operators', 'performance', 'master adsr'],
     holes: 4,
-    /** A param the lane face must NOT be showing as a legacy card control. */
+    /** A param the lane face must NOT be showing — it belongs to the dock. */
     laneParam: 'algorithm',
   },
   {
@@ -93,8 +93,8 @@ const BATCH2 = [
 
 const NODE = 'b2';
 
-async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void> {
-  await page.goto(opts.shell ? '/rack' : '/rack?shell=legacy');
+async function gotoWorkflow(page: Page): Promise<void> {
+  await page.goto('/rack');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
@@ -102,7 +102,7 @@ async function gotoWorkflow(page: Page, opts: { shell: boolean }): Promise<void>
 test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', () => {
   for (const { type, pages, holes, laneParam } of BATCH2) {
     test(`${type}: curated shell in the lane, ${pages.length} dock pages, ${holes}-hole rear field`, async ({ page }) => {
-      await gotoWorkflow(page, { shell: true });
+      await gotoWorkflow(page);
       await spawnPatch(page, [{ id: NODE, type, position: { x: 460, y: 240 } }]);
 
       const laneNode = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);
@@ -111,13 +111,8 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       // ── 1) LANE: the curated shell, NOT the un-migrated placeholder. ──
       const shell = laneNode.locator('[data-testid="module-shell"]');
       await expect(shell).toBeVisible();
-      await expect(
-        laneNode.locator('[data-testid="module-shell-placeholder"]'),
-        `${type} is in STRICT_FACES, so the bridge must swap it — a placeholder here means ` +
-          'the face was authored + promoted but never actually reached the lane',
-      ).toHaveCount(0);
-      // The LEGACY CARD itself is gone from the lane — the shell replaced it,
-      // it did not wrap it. (Scoped to the card ROOT, not `control-*`: the
+      // No pre-faceplate surface root is in the lane — the shell replaced it,
+      // it did not wrap it. (Scoped to the ROOT class, not `control-*`: the
       // shell's own curated cells carry the same `control-<paramId>` testids,
       // so a testid-based negative would be vacuous. The preview-OFF case
       // below asserts the positive on this exact selector, which is what keeps
@@ -133,7 +128,7 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       await expect(faceplate).toBeVisible();
       await expect(
         faceplate.locator('[data-testid="module-shell"][data-shell-tier="dock"]'),
-        `${type}: the dock mounts the CURATED shell (not the legacy card fallback)`,
+        `${type}: the dock mounts the CURATED shell at the dock tier`,
       ).toBeVisible();
       const bands = faceplate.locator('[data-testid="face-page"]');
       await expect(bands).toHaveCount(pages.length);
@@ -164,23 +159,4 @@ test.describe('P1 batch 2 — the migrated faces land on lane + dock + rear', ()
       await expect(faceplate.locator('[data-testid="face-page"]')).toHaveCount(pages.length);
     });
   }
-
-  test('preview OFF (default) stays a strict no-op for the batch-2 types', async ({ page }) => {
-    await gotoWorkflow(page, { shell: false });
-    await spawnPatch(page, [
-      { id: 'off-dx7', type: 'dx7', position: { x: 200, y: 240 } },
-      { id: 'off-ss', type: 'sixstrum', position: { x: 1100, y: 240 } },
-    ]);
-
-    for (const id of ['off-dx7', 'off-ss']) {
-      const laneNode = page.locator(`.svelte-flow__node[data-id="${id}"]`);
-      await expect(laneNode).toHaveCount(1);
-      // The REAL card renders in the lane, exactly as before the promotion…
-      await expect(laneNode.locator('.mod-card, .card, .moog-panel').first()).toBeVisible();
-      await expect(laneNode.locator('[data-testid^="control-"]').first()).toBeVisible();
-      // …and NEITHER shell surface is emitted.
-      await expect(laneNode.locator('[data-testid="module-shell"]')).toHaveCount(0);
-      await expect(laneNode.locator('[data-testid="module-shell-placeholder"]')).toHaveCount(0);
-    }
-  });
 });

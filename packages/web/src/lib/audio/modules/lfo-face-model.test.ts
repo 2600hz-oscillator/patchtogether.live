@@ -266,105 +266,43 @@ describe('lfoDepthReadout — the SWING, not the knob position', () => {
   });
 });
 
-describe('SOURCE guard — the card cannot re-type a range the def declares', () => {
-  // The CLAUDE.md backdraft rule, applied at the only altitude that can see it.
-  // Every runtime gate here reads the DEF; a CARD passing its own literals to a
-  // control is invisible to all of them (BackdraftCard shipped ±1 XyPads into a
-  // ±0.2 contract and every def-reading assertion stayed green). LfoCard used
-  // to hand-type all three ranges AND its own three-entry shape-glyph roster;
-  // both now come from the def/model, and this is what keeps them there.
-  const cardSrc = readFileSync(
-    fileURLToPath(new URL('../../ui/modules/LfoCard.svelte', import.meta.url)),
-    'utf8',
-  );
-  /** Comments are PROSE, not markup — and the card's own comment quotes the
-   *  literals it is documenting the removal of, so an un-stripped grep flags
-   *  the explanation as the offence (it did, first run).
-   *
-   *  ⚠ THIS USED TO BE THREE INLINE `.replace()` CALLS, and two of them were
-   *  wrong in ways this card happened not to exercise: `^\s*\/\/.*$` only
-   *  strips a comment that OWNS its line, so `foo(); // xMin={-1}` survived,
-   *  and neither the block nor the line form knew about string or regex
-   *  literals, so `'https://x'` and `/[//]/` were fair game. It is now the
-   *  SHARED quote-aware scanner, whose hostile-form legs live with it. Same
-   *  reason `card-range-source.test.ts` calls it: three separate gates in this
-   *  tree each grew their own stripper, each subtly different, and a re-typed
-   *  copy of a predicate is how the previous generation went blind. */
-  const cardCode = stripSourceComments(cardSrc);
+describe('the shape LANDMARKS are the one roster, and the def reads them', () => {
+  // ⚠ A CARD-SOURCE GUARD STOOD HERE AND IT WAS FOUR LEGS LONG. Its subject was
+  // `LfoCard.svelte`, and the rule was the CLAUDE.md backdraft one at the only
+  // altitude that could see it: every runtime gate reads the DEF, so a CARD
+  // passing its own literals to a control is invisible to all of them —
+  // BackdraftCard shipped ±1 XyPads into a ±0.2 contract with every def-reading
+  // assertion green. LfoCard used to hand-type all three ranges AND its own
+  // three-entry shape-glyph roster.
+  //
+  // Three of the four legs are unspellable once the fleet goes:
+  //
+  //   * "passes NO hand-typed range / mapping literal" — the shell resolves a
+  //     cell's range and curve from the `ParamDef` itself, so there is no second
+  //     source of truth to catch. NAMED COVERAGE LOSS, the same disposition
+  //     `card-range-source` and `card-control-ranges` get.
+  //   * "no silent `GLYPH_FOR[…] ?? 'sine'` fallback" — the wrong-picture-by-
+  //     default class. The lookup lived in the card; the surviving renderer is
+  //     the shell's fader track, which takes its landmarks from the def.
+  //   * "no longer carries its own SHAPE_GLYPHS roster" — same subject.
+  //
+  // What survives is the half that made all three checkable in the first place:
+  // the roster is DEF-DECLARED and gate-visible, and every landmark it declares
+  // is a real, reachable position. Asserted here so that moving the anchors
+  // back into a surface would have to delete this, rather than quietly pass.
 
-  /**
-   * The prop names a control range can arrive under. ⚠ THE PREFIXED FORMS ARE
-   * THE POINT. The first cut of this guard was `/\b(min|max|defaultValue)=\{/`,
-   * and `\b` finds no word boundary inside `xMin` — so it did not match
-   * `xMin={-1} xMax={1}`, i.e. THE ACTUAL BACKDRAFT LITERALS the docstring
-   * cites. It also missed `step=` and `curve=`, and `curve` is the field that
-   * changes a control's MAPPING (a `linear` card against a `log` def puts the
-   * midpoint at ~5.0 s where the def puts ~0.1 s — "most of the travel does
-   * nothing", the same shape as backdraft). Any `<word>Min`/`<word>Max` counts.
-   */
-  const LITERAL_RANGE = /(?:^|[^A-Za-z0-9_])([A-Za-z]*(?:[Mm]in|[Mm]ax)|defaultValue|step)=\{\s*-?\d/g;
-  const LITERAL_CURVE = /(?:^|[^A-Za-z0-9_])(curve|units)=(["'])/g;
-
-  it('the GUARD ITSELF matches the shapes it claims to (instrument negative control)', () => {
-    // Perturb the thing the metric claims to measure. A range guard that is
-    // blind to the literal form of the bug it cites returns a clean number
-    // forever — CLAUDE.md's "validate the instrument" rule, applied to a regex.
-    const MUST_CATCH = [
-      'min={0} max={0.2}', // the plain form
-      'xMin={-1} xMax={1}', // BackdraftCard's XyPad — MISSED by `\b(min|max)`
-      'yMin={-0.2} yMax={0.2}',
-      'valueMin={0} valueMax={1}',
-      'defaultValue={0.005}',
-      'step={0.01}',
-    ];
-    for (const s of MUST_CATCH) {
-      expect([...s.matchAll(LITERAL_RANGE)].length, `range guard must catch: ${s}`).toBeGreaterThan(0);
-    }
-    for (const s of ['curve="log"', "curve='linear'", 'units="s"']) {
-      expect([...s.matchAll(LITERAL_CURVE)].length, `mapping guard must catch: ${s}`).toBeGreaterThan(0);
-    }
-    // …and must NOT fire on the def-bound forms the card actually uses, or the
-    // guard is unusable and gets deleted at the first false positive.
-    for (const s of ['min={rateP.min}', 'max={shapeP.max}', 'curve={shapeP.curve}', 'defaultValue={depthP.defaultValue}']) {
-      expect([...s.matchAll(LITERAL_RANGE)].length, `must not fire on: ${s}`).toBe(0);
-      expect([...s.matchAll(LITERAL_CURVE)].length, `must not fire on: ${s}`).toBe(0);
-    }
-  });
-
-  it('LfoCard passes NO hand-typed range / mapping literal to any control', () => {
-    expect(
-      [...cardCode.matchAll(LITERAL_RANGE)].map((m) => m[0].trim()),
-      'a numeric range literal in the card is a second source of truth for a number ' +
-        'the def already declares — read it from lfoDef.params instead',
-    ).toEqual([]);
-    expect(
-      [...cardCode.matchAll(LITERAL_CURVE)].map((m) => m[0].trim()),
-      'a hand-typed curve/units on a control is a MAPPING the def already declares — ' +
-        'a card that says `linear` against a `log` def makes most of the travel do nothing',
-    ).toEqual([]);
-  });
-
-  it('every landmark label has a track glyph, and the card has no silent fallback', () => {
-    // `GLYPH_FOR[l.label] ?? 'sine'` reintroduced the wrong-picture-by-default
-    // class the roster move existed to kill: rename `square`→`pulse` (or add a
-    // fourth anchor) and the Fader paints a SINE at that position with the
-    // landmark test, contract-lock and both VRT scenes green. The card now
-    // throws; this asserts it never has to.
-    const kinds = [...cardCode.matchAll(/'(sine|tri|saw|square)'/g)].map((m) => m[1]);
+  it('every shape landmark is a reachable value of the shape param', () => {
+    const shape = lfoDef.params.find((p) => p.id === 'shape')!;
+    expect(LFO_SHAPE_LANDMARKS.length, 'the roster is non-empty').toBeGreaterThan(0);
     for (const l of LFO_SHAPE_LANDMARKS) {
-      expect(kinds, `no track glyph for shape landmark '${l.label}'`).toContain(l.label);
+      expect(l.value, `${l.label} >= min`).toBeGreaterThanOrEqual(shape.min);
+      expect(l.value, `${l.label} <= max`).toBeLessThanOrEqual(shape.max);
+      expect(l.label.length, 'a landmark must be named').toBeGreaterThan(0);
     }
-    expect(
-      /GLYPH_FOR\[[^\]]*\]\s*\?\?/.test(cardCode),
-      'a `?? fallback` on the anchor→glyph lookup draws the wrong wave silently',
-    ).toBe(false);
-  });
-
-  it('LfoCard no longer carries its own shape-anchor roster', () => {
-    expect(
-      /SHAPE_GLYPHS/.test(cardCode),
-      'the shape anchors live in LFO_SHAPE_LANDMARKS (def-declared, gate-visible)',
-    ).toBe(false);
+    // …and the names are distinct, so a renamed anchor cannot collide with an
+    // existing one and silently take its glyph.
+    const labels = LFO_SHAPE_LANDMARKS.map((l) => l.label);
+    expect(new Set(labels).size, 'no two landmarks share a name').toBe(labels.length);
   });
 
   it('the def imports the depth law rather than restating it', () => {

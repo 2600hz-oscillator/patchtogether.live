@@ -483,13 +483,13 @@ tasks:
     # made the unit lane mutate the tree and hid generation from the task
     # graph. Generation now lives in `src/lib/dev/registry-manifest.ts`
     # (`emitRegistryManifest`) and the spec only calls it under MANIFEST_EMIT=1
-    # — the same accept-loop shape as DOCS_UPDATE / FACE_INVENTORY_UPDATE.
+    # — the same accept-loop shape as DOCS_UPDATE / DOCS_UPDATE.
     #
     # It still runs THROUGH vitest, and that is not laziness: the def barrels
     # resolve worklet `?url` / `.wasm` imports that exist only inside Vite, so
-    # a plain `node --import tsx` cannot read the registry at all (see
-    # scripts/propose-face.ts's header, which parses def SOURCE for exactly
-    # this reason). vitest's fork pool is the only Node context that can. The
+    # a plain `node --import tsx` cannot read the registry at all (the retired
+    # face-proposer parsed def SOURCE for exactly this reason). vitest's fork
+    # pool is the only Node context that can. The
     # `docs:ensure` seam is the same trade.
     #
     # Runs from packages/web so vitest's include glob (`src/**/*.test.ts`
@@ -499,29 +499,6 @@ tasks:
       MANIFEST_EMIT: '1'
     cmds:
       - npx vitest run src/lib/dev/registry-manifest.test.ts
-
-  face:inventory:
-    desc: |
-      Face-migration inventory (LEG-01) — run the RATCHET: every registered
-      module carries exactly one disposition, the done-set IS STRICT_FACES,
-      blockers resolve both ways, and the generated progress artifact
-      (docs/design/face-migration.generated.md) is fresh. Read-only; the same
-      gate CI runs in the `unit` lane.
-    dir: '{{.WEB}}'
-    cmds:
-      - npx vitest run src/lib/ui/workflow/face-migration-inventory.test.ts
-
-  face:inventory:accept:
-    desc: |
-      [accept-loop] Re-pin the GENERATED face-migration progress artifact
-      (docs/design/face-migration.generated.md) from the inventory record + the
-      live registry — run after an INTENTIONAL disposition change or a new
-      module, then review the git diff (a diff = the migration moved: accept it,
-      or recognize a bug). The test-ledger analog for LEG-01.
-    dir: '{{.WEB}}'
-    cmds:
-      - FACE_INVENTORY_UPDATE=1 npx vitest run src/lib/ui/workflow/face-migration-inventory.test.ts
-      - 'echo "[face:inventory:accept] re-pinned docs/design/face-migration.generated.md — review the git diff before committing"'
 
   # ---------------- Audio Regression Tests ----------------
   art:
@@ -1132,17 +1109,6 @@ tasks:
     cmds:
       - npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts module-docs-ensure
 
-  face:propose:
-    desc: |
-      Auto-propose a DRAFT workflow `face` (the UI-curation ranking) for a module,
-      from its card render-order + def params — for HUMAN review. Prints a
-      `face: { … }` snippet to paste + edit into the def; NEVER mutates a def and
-      NEVER auto-accepts. `--out <dir>` writes drafts to files instead.
-        flox activate -- task face:propose -- kickdrum
-        flox activate -- task face:propose -- --all --out .myrobots/face-drafts
-    cmds:
-      - node --import tsx scripts/propose-face.ts {{.CLI_ARGS}}
-
   face:check:
     desc: Run the module-face curation drift gate (module-face-lint) read-only — the same check CI runs.
     cmds:
@@ -1207,6 +1173,12 @@ tasks:
       [read-only] Recompute the WebGL content-hash and report whether a matching
       attestation already exists (so you know if a re-attest is needed after a
       pull/rebase). Runs nothing. `-- --list` prints the full hash basis.
+
+      ⚠ RUN THIS RATHER THAN PREDICTING. The normalizer strips `docs`,
+      `controlFamilies`, `face` and `noUserControl` and NOTHING ELSE, so "it is
+      only a doc change" is a claim about the FIELD, not the FILE — removing any
+      other def field from a basis file moves the hash. See the header of
+      scripts/webgl-attest-hash.sh for the two times this was predicted wrong.
     cmds:
       - |
         if [ "{{.CLI_ARGS}}" = "--list" ]; then

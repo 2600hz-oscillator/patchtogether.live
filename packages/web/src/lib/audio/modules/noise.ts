@@ -144,12 +144,12 @@ export const noiseDef: AudioModuleDef = {
   // `0.50` while all of them change. So the face is built around the READOUTS
   // and the PICTURE, exactly as the spec's own contingency §3 proposed — and
   // without the `noise-taps` control FAMILY that contingency declared, because
-  // a family needs matching card testids and would have moved the legacy card
-  // (a REQUIRED `vrt-strict` baseline) for a picture that belongs in the dock.
+  // a family needs matching surface testids and would have moved a REQUIRED
+  // `vrt-strict` baseline for a picture that belongs in the dock.
   //
   // OWNER CONSTRAINT, 2026-08-10: "preserve today's look". Honoured as written
-  // — the legacy card is byte-identical in the pixel lane (its only change is
-  // reading its range off the def instead of re-typing it), the module keeps
+  // — the pixel lane was byte-identical (the only change was reading the range
+  // off the def instead of re-typing it), the module keeps
   // its one prominent LEVEL control and its three audio jacks, and nothing is
   // renamed, recoloured or reorganised.
   //

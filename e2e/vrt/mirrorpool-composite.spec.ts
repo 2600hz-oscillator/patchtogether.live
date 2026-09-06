@@ -99,7 +99,7 @@ test.describe('VRT: MIRRORPOOL composite scenes', () => {
       // this the captured text metrics differ run-to-run and platform-to-platform.
       // Full root cause: e2e/vrt/_fonts.ts.
       await pinVrtFonts(page);
-      await page.goto('/rack?shell=legacy&seed=none');
+      await page.goto('/rack?seed=none');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await page.addStyleTag({
@@ -109,9 +109,21 @@ test.describe('VRT: MIRRORPOOL composite scenes', () => {
 
       await spawnPatch(page, s.nodes, s.edges);
 
-      const card = page.locator('.svelte-flow__node-mirrorpool').first();
+      // ⚠ THE PICTURE IS IN THE DOCK BODY, NOT IN THE LANE. This scene used to
+      // photograph the lane node and assert `mirrorpool-preview` inside it — a canvas the
+      // module's pre-promotion surface painted. The faceplate paints the same
+      // picture in its `fullViewBody`, so the scene opens the pane and captures
+      // THAT: same module, same params, same subject, at full size.
+      await page.evaluate(
+        (id) => (globalThis as unknown as { __openDockFullView: (i: string) => void })
+          .__openDockFullView(id),
+        'mp',
+      );
+      const card = page
+        .locator(`[data-testid="dock-full-view"][data-fullview-node="mp"]`)
+        .getByTestId('mirrorpool-output-body');
       await card.waitFor({ state: 'visible', timeout: 15_000 });
-      await expect(page.locator('canvas[data-testid="mirrorpool-preview"]')).toHaveCount(1);
+      await expect(card.locator('canvas[data-testid="mirrorpool-face-canvas"]')).toHaveCount(1);
 
       await page.waitForTimeout(700);
       await page.evaluate(async () => {

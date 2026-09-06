@@ -7,11 +7,11 @@
 //
 // Both existing push2 specs — `push2-clip-launch.spec.ts` and
 // `clipplayer-transport-no-controller.spec.ts` — take the `rack` fixture, which
-// is `page.goto('/rack?shell=legacy&seed=none')`. That fixture's own comment
-// says why it exists: *"the bare default `/rack` renders each module as a
-// FACEPLATE tile… so a module's own card testids do not exist in the lane."*
+// at the time booted the PRE-INVERSION renderer. That fixture existed precisely
+// because `/rack` renders each module as a FACEPLATE tile, so a module's own
+// pre-promotion testids do not exist in the lane.
 //
-// So the shipped coverage runs in THE ONE SHELL WHERE THE FACE CANNOT EXIST.
+// So the shipped coverage ran in THE ONE PLACE THE FACE CANNOT EXIST.
 // That stays correct as coverage of the CARD — the card still ships and still
 // renders there — and it becomes GREEN AND BLIND about the face: every gesture
 // the promotion moves would have had zero coverage while those specs went on
@@ -106,14 +106,6 @@ test.describe('PUSH 2 CONTROL faceplate', () => {
 
     const lane = laneShell(page, NODE);
     await expect(lane, 'the lane renders ModuleShell, not Push2ControlCard').toBeVisible();
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] .push2-control-card`),
-      'and the legacy card is NOT mounted beside it',
-    ).toHaveCount(0);
-    await expect(
-      page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell-placeholder"]`),
-      'and it is no longer the empty placeholder',
-    ).toHaveCount(0);
 
     // An `action` cell is not dock-restricted (only `panel` is), which is the
     // whole reason CONNECT is a cell rather than a body control.

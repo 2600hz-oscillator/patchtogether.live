@@ -131,7 +131,7 @@ test.describe('SYNESTHESIA RASTER video-out — deterministic render smoke', () 
       (globalThis as unknown as { __synesthesiaVrtFreeze?: boolean }).__synesthesiaVrtFreeze = true;
     });
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     // Deterministic AUDIO source → SYNESTHESIA copy A (AUDIO mode, default). A
@@ -151,7 +151,7 @@ test.describe('SYNESTHESIA RASTER video-out — deterministic render smoke', () 
     ];
     await spawnPatch(page, nodes, edges);
 
-    const synCard = page.locator('.svelte-flow__node-synesthesia').first();
+    const synCard = page.locator('.svelte-flow__node:has([data-shell-type="synesthesia"])').first();
     await synCard.waitFor({ state: 'visible', timeout: 10_000 });
 
     // The raster source is registered when the node materializes; await it (no
@@ -196,7 +196,7 @@ test.describe('SYNESTHESIA VIDEO mode — cross-domain colour analysis', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const nodes: SpawnNode[] = [
@@ -216,7 +216,7 @@ test.describe('SYNESTHESIA VIDEO mode — cross-domain colour analysis', () => {
 
     // The card's rAF must run + read frames. Card visibility ensures the rAF
     // loop is active.
-    const synCard = page.locator('.svelte-flow__node-synesthesia').first();
+    const synCard = page.locator('.svelte-flow__node:has([data-shell-type="synesthesia"])').first();
     await synCard.waitFor({ state: 'visible', timeout: 10_000 });
 
     // Copy A (VIDEO): await all four channel meters lighting off the plasma's
@@ -254,7 +254,7 @@ test.describe('SYNESTHESIA VIDEO mode — cross-domain colour analysis', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
     const nodes: SpawnNode[] = [
@@ -272,7 +272,7 @@ test.describe('SYNESTHESIA VIDEO mode — cross-domain colour analysis', () => {
     ];
     await spawnPatch(page, nodes, edges);
 
-    const synCard = page.locator('.svelte-flow__node-synesthesia').first();
+    const synCard = page.locator('.svelte-flow__node:has([data-shell-type="synesthesia"])').first();
     await synCard.waitFor({ state: 'visible', timeout: 10_000 });
 
     // Await copy B's band 2 (index 1) lighting AND copy A (VIDEO) lighting — both

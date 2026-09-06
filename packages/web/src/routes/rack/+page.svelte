@@ -33,9 +33,7 @@
   // sandbox (Option A): signing in / joining a real rack does NOT migrate the
   // scratch patch — it simply persists locally.
   //
-  // `?mode=` is GONE: there is one rack shell, so there is one
-  // scratch doc. (`?shell=legacy` selects legacy CARDS inside that same shell —
-  // Canvas reads it directly from the URL; it does not fork the doc.)
+  // `?mode=` is GONE: there is one rack shell, so there is one scratch doc.
   let scratchId = $derived(getOrCreateLocalScratchId());
 
   // E2E REPLICA OPT-OUT (default OFF only under an ACTUAL automated run). The

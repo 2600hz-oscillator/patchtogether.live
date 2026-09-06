@@ -75,9 +75,9 @@ Optional deeper dump if a Linux box is handy: `v4l2-ctl -d /dev/videoN --list-ct
 ## Module spec sketch — `ptzcam`
 
 A **new video source module** (`type: 'ptzcam'`), not an extension of `cameraInput`:
-`cameraInput` is rack-locked (`3u/2hp [LOCKED]` in `packages/web/src/lib/ui/rack-sizes.ts:170`), is a
-`NON_SHELL_LANE_TYPES` carve-out with a bespoke legacy card, and adding CV ports to it would move its
-attested def hash. `ptzcam` composes the same seams instead.
+`cameraInput` is rack-locked (`3u/2hp [LOCKED]` in `packages/web/src/lib/ui/rack-sizes.ts:170`), owns a
+bespoke device surface, and adding CV ports to it would move its attested def hash. `ptzcam` composes
+the same seams instead.
 
 ### Ports and params
 

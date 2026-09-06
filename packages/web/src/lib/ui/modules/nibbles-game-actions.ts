@@ -1,8 +1,8 @@
 // packages/web/src/lib/ui/modules/nibbles-game-actions.ts
 //
 // THE NIBBLES GESTURE SEAM — one implementation of RESET, of arrow-key
-// steering, and of the two per-view screen preferences, called by BOTH the
-// legacy card and the v2 faceplate body.
+// steering, and of the two per-view screen preferences, called by every
+// surface that offers them.
 //
 // ── WHY IT IS A PLAIN .ts MODULE ───────────────────────────────────────────
 //
@@ -109,10 +109,9 @@ export function resolveNibblesReset(
 }
 
 /**
- * Restart the game at the live node — the action BOTH surfaces call (the shell
- * `action` cell and the legacy card's RESET button). Returns whether a reset
- * actually fired, so a caller can drive a press flash off the truth instead of
- * off the click.
+ * Restart the game at the live node — the action every surface calls through
+ * (the shell `action` cell). Returns whether a reset actually fired, so a
+ * caller can drive a press flash off the truth instead of off the click.
  */
 export function fireNibblesReset(nodeId: string): boolean {
   const node = patch.nodes[nodeId] as ModuleNode | undefined;
@@ -230,9 +229,8 @@ export function cycleNibblesScale(nodeId: string): void {
  *
  *  ⚠ THE READER LIVES HERE AND THE WRITER DOES NOT, which is the opposite of
  *  every other gesture in this file. SCREEN has exactly ONE writer — the
- *  faceplate body — because the legacy card never had a screen switch (the
- *  ruling requiring one post-dates it and is about the surface promotion
- *  destroys), so there is no second caller to keep in step; and
+ *  faceplate body — because the ruling that requires a screen switch arrived
+ *  with the faceplate, so there is no second caller to keep in step; and
  *  `video-face-screen-source.test.ts` reads the BODY's source for a literal
  *  `.data.previewCollapsed =` write, which is the leg separating a body that
  *  can toggle the screen from one that only displays its state. Keeping that

@@ -77,8 +77,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 // ---------- surface → module frame-drawer registry (video_out) ----------
 //
 // The 3D CUBE WebGL render lives in CubeVizSurface.svelte (the surface owns the
-// GL context + offscreen canvas), which the legacy card and the faceplate hero
-// both mount. The cross-domain video_out bridge needs a drawFrame(canvas)
+// GL context + offscreen canvas), which the node host mounts ONCE and a view
+// only CLAIMS. The cross-domain video_out bridge needs a drawFrame(canvas)
 // callback; the surface installs one here keyed by node id (the SAME pattern
 // WAVESCULPT uses for its video_out). When nothing is installed (nothing
 // mounted / GL unavailable) the module's drawFrame paints black so the bridge
@@ -339,13 +339,14 @@ export const cubeDef: AudioModuleDef = {
   controlFamilies: [
     // THE PICTURE. Promoted into the faceplate's hero slot — the volume render,
     // the 2-D slice cross-section and the output wave, i.e. the SAME three
-    // surfaces the legacy card paints, from the same component. It is the only
+    // surfaces the module has always painted, from the same component. It is
+    // the only
     // surface anywhere that shows the CUT inside the SOLID, which is the whole
     // instrument.
     { id: 'cube-view', label: 'Cube view', kind: 'cell', testidPrefix: 'cube-view' },
-    // THE THREE WAVETABLE SLOTS as one panel. Nine DOM-only controls on the
-    // legacy card (three selects, three preset selects, three loaders) for
-    // THREE decisions; the second dropdown per slot is a Svelte-binding
+    // THE THREE WAVETABLE SLOTS as one panel. Nine DOM-only controls before the
+    // face (three selects, three preset selects, three loaders) for THREE
+    // decisions; the second dropdown per slot is a Svelte-binding
     // workaround, not a second choice. Folded here so the shell face can reach
     // them at all — the DX7 shipped with its voice unreachable under `?shell=1`
     // for exactly this reason.
@@ -362,8 +363,9 @@ export const cubeDef: AudioModuleDef = {
   // read it with — and the measurement says the SLICE owns the timbre by 5×
   // (`slice_ry` 0.885 rmsΔ over its travel against `morph_fc`'s 0.178), so the
   // slice comes first. That is the exact INVERSE of the def's own param order
-  // and of the legacy card, both of which lead with TUNE / FINE / MORPH /
-  // CONNECT and bury the three rotations 12th–14th of 15. Everything after the
+  // and of the pre-promotion panel, both of which lead with TUNE / FINE /
+  // MORPH / CONNECT and bury the three rotations 12th–14th of 15. Everything
+  // after the
   // two nouns is post-processing, playback and the camera.
   //
   // Numbers cited here are re-measured on the SHIPPED default tables
@@ -483,7 +485,7 @@ export const cubeDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo SPREAD that reads the L and R planes up to ±18% of the march depth apart (the shared CUBE_SPREAD_DEPTH constant — the offset is real but the resulting image is narrow, about -36 dB of side against mid at the stop) and an internal per-voice A/D/S/R envelope that shapes amplitude once a note arrives on the poly bus or the TRIG gate, riding on top of a BASE volume floor: at the default BASE of 0 the envelope has full control of each note, and turning BASE up floors the voice so the envelope only swells it the rest of the way. With nothing patched into POLY or TRIG there is no note to shape and CUBE free-runs as a continuous full-level drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
+      "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo SPREAD that reads the L and R planes up to ±18% of the march depth apart (the shared CUBE_SPREAD_DEPTH constant — the offset is real but the resulting image is narrow, about -36 dB of side against mid at the stop) and an internal per-voice A/D/S/R envelope that shapes amplitude once a note arrives on the poly bus or the TRIG gate, riding on top of a BASE volume floor: at the default BASE of 0 the envelope has full control of each note, and turning BASE up floors the voice so the envelope only swells it the rest of the way. With nothing patched into POLY or TRIG there is no note to shape and CUBE free-runs as a continuous full-level drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the faceplate and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
     inputs: {
       pitch:
         "Mono V/oct pitch control voltage — the standard 1V-per-octave oscillator pitch input, read directly by the worklet, and the ONLY audio-rate input on the module: every other CV jack here is summed into an AudioParam the worklet samples once per block (~375 Hz), quantised to 1/512 of the param range and smoothed at an 80 Hz corner, so an audio-rate source into one of them aliases rather than modulates. This is the fallback voice when nothing is patched into POLY; summed with the TUNE and FINE offsets to set the playback fundamental.",
@@ -522,7 +524,7 @@ export const cubeDef: AudioModuleDef = {
       sync:
         "A pure SINE at the playback fundamental, phase-locked to the L/R slice read-out (it reads off the same phase accumulator). Use it to hard-sync another oscillator to CUBE, or as a clean reference / sub-oscillator tone. ⚠ It is NOT scaled by LEVEL and it is HOTTER than the audio: SYNC leaves at -3.01 dBFS against the L/R pair's -9.14 dBFS at the default knobs, so mixing SYNC alongside L and R is a +6.1 dB step, and turning LEVEL down does not touch it.",
       video_out:
-        "A mono-video output carrying a live render of the 3D cube view — the translucent field volume, the cut plane positioned by Y + the rotation knobs, and the output waveform. Patch it into VIDEOOUT or any video module; it keeps emitting frames even when the on-card SCREEN is switched off.",
+        "A mono-video output carrying a live render of the 3D cube view — the translucent field volume, the cut plane positioned by Y + the rotation knobs, and the output waveform. Patch it into VIDEOOUT or any video module; it keeps emitting frames even when the faceplate's SCREEN is switched off.",
     },
     controls: {
       tune: "Coarse pitch in semitones (−36..+36), summed with the FINE offset and the PITCH/TUNE CV to set the oscillator fundamental.",
@@ -538,7 +540,7 @@ export const cubeDef: AudioModuleDef = {
       slice_y: "Height of the slicing plane through the cube (0..1) — scans the cut from the floor up to the ceiling. CV via the Y input. ⚠ ITS AUTHORITY DEPENDS ENTIRELY ON THE PLANE'S ORIENTATION, and it is at its WEAKEST in the state CUBE spawns in. The ray march integrates over a fixed ±√3/2 window CENTRED ON THE RAY ORIGIN, so sliding the plane along its own normal moves the window and its contents together — very nearly a no-op — and at spawn the normal IS the z axis, which is the direction this knob translates along. Measured max rmsΔ across the whole of Y: 0.115 flat, 0.317 at ROT X 0.4, 0.759 at ROT X 0.8. Tilt the plane first and Y becomes one of the strongest controls on the module; the faceplate prints 'asleep' or 'live' beside it for this reason.",
       slice_rx: "Rotation of the slicing plane about the X axis (±π radians), tilting which surface contour it reads. CV via the ROT X input. ⚠ HALF THIS TRAVEL IS A DUPLICATE: at SPREAD 0 the waveform is bit-exactly π-periodic in this knob (rmsΔ between a and a−π is 0.000e+0 at every angle measured), because the scan offset is built from a vector with y = z = 0 and the X rotation is applied first, so ROT X only ever flips the plane normal — and the ray march window is symmetric about the origin. It is not EVEN, though: f(a) ≠ f(−a). Above SPREAD 0 the ±depth offset rides the normal, so a and a+π swap L and R instead of being identical.",
       slice_ry: "Rotation of the slicing plane about the Y axis (±π radians). CV via the ROT Y input.",
-      slice_rz: "Rotation of the slicing plane about the Z axis (±π radians). CV via the ROT Z input. ⚠ IT DOES NOT TILT THE PLANE — it spins the SCAN LINE inside it. A Z rotation cannot move a vector lying on the Z axis, and the plane's normal at rest IS the Z axis, so this knob re-aims which line across the cut is read out while leaving the cut itself exactly where it was. That is why it is the module's second strongest control (0.877 rmsΔ over its travel) and yet leaves Y asleep: Y is still sliding along the plane's own normal. ROT X or ROT Y first, then Y.",
+      slice_rz: "Rotation of the slicing plane about the Z axis (±π radians). CV via the ROT Z input. ⚠ IT DOES NOT TILT THE PLANE — it spins the SCAN LINE inside it. A Z rotation cannot move a vector lying on the Z axis, and the plane's normal at rest IS the Z axis, so this knob re-aims which line across the cut is read out while leaving the cut itself exactly where it was. That is why it is the module\'s second strongest control (0.877 rmsΔ over its travel) and yet leaves Y asleep: Y is still sliding along the plane's own normal. ROT X or ROT Y first, then Y.",
       level: "Output gain on the sliced audio (0..2, applied after FOLD); 1 = unity, above 1 boosts.",
       attack: "Per-voice amplitude envelope ATTACK time (0.001..5 s, log) — how long each note takes to rise to full from note-on. Drives both the poly lane envelopes and the mono TRIG voice.",
       decay: "Per-voice envelope DECAY time (0.001..5 s, log) — how long the level falls from the attack peak down to the SUSTAIN level.",
@@ -550,13 +552,13 @@ export const cubeDef: AudioModuleDef = {
       view_zoom: "Visualization-only camera zoom for the 3D cube view (does not affect the sound or the selected slice).",
       view_rot_x: "Visualization-only camera rotation about X — orbits the 3D view (no effect on audio).",
       view_rot_y: "Visualization-only camera rotation about Y — orbits the 3D view (no effect on audio).",
-      screen_on: "Turns the on-card 3D viz screen on/off. When OFF and the VIDEO output is unpatched, the card skips all visual computation (the render loop and the field/slice/wave draws) to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.",
+      screen_on: "Turns the faceplate's 3D viz screen on/off. When OFF and the VIDEO output is unpatched, the module skips all visual computation (the render loop and the field/slice/wave draws) to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.",
       // The two controls with NO backing ParamDef — declared as one-member
       // control families above and keyed here as `<familyId>-{n}`.
       "cube-view-{n}":
-        "The faceplate's hero picture, and the SAME renderer the card uses rather than a reduction of it. Three surfaces: the rotatable WebGL2 VOLUME (the density field as a stack of alpha-blended Z-slices, the cube wireframe, and the live slicing plane sitting exactly where Y and ROT X/Y/Z put it), the 2-D SLICE cross-section (the field the plane actually cuts, as a heatmap across all three tables), and the OUTPUT waveform (the 256 samples the scan read, which ARE one cycle of the sound). Drag the volume to orbit the camera — it writes the same VIEW X / VIEW Y params the knobs in the VIEW band write, and the printed angle beside it is how you can tell a live drag from a dead one. Two caption numbers exist because no knob on the module shows them: how much SOLID the plane cut through, and the wave's DC against its audio — CUBE's L and R carry more DC than signal at the defaults (|DC| is 1.06x the AC RMS), and WRAP is the only control that re-centres it. The third, the count of distinct sample values, is there because RMS is the wrong instrument for MATERIAL: SMOOTH to HARD moves RMS by 0.040, last of thirteen, while the distinct-value count falls 180 to 28.",
+        "The faceplate's hero picture, and the SAME renderer the faceplate uses rather than a reduction of it. Three surfaces: the rotatable WebGL2 VOLUME (the density field as a stack of alpha-blended Z-slices, the cube wireframe, and the live slicing plane sitting exactly where Y and ROT X/Y/Z put it), the 2-D SLICE cross-section (the field the plane actually cuts, as a heatmap across all three tables), and the OUTPUT waveform (the 256 samples the scan read, which ARE one cycle of the sound). Drag the volume to orbit the camera — it writes the same VIEW X / VIEW Y params the knobs in the VIEW band write, and the printed angle beside it is how you can tell a live drag from a dead one. Two caption numbers exist because no knob on the module shows them: how much SOLID the plane cut through, and the wave's DC against its audio — CUBE's L and R carry more DC than signal at the defaults (|DC| is 1.06x the AC RMS), and WRAP is the only control that re-centres it. The third, the count of distinct sample values, is there because RMS is the wrong instrument for MATERIAL: SMOOTH to HARD moves RMS by 0.040, last of thirteen, while the distinct-value count falls 180 to 28.",
       "cube-table-stack-{n}":
-        "All three wavetable slots in one panel: FLOOR, WALL and CEILING drawn as heightfield strips in stack order, each with its roster of factory tables, the baked-preset list and a .WAV loader. It replaces nine controls on the legacy card that expressed three decisions — the per-slot preset dropdown there is a workaround for a Svelte binding that will not re-fire on an unchanged value, not a second choice. The panel also names the casualty of a slot COINCIDENCE, which is the one way this module can still be silenced by arithmetic rather than by a knob: the field is a morph between the floor-to-wall and ceiling-to-wall occupancies, so FLOOR = CEILING makes MORPH inert, and either connector slot matching WALL sends the occupancy function into its degenerate hard-step branch and kills CONNECT and CONNECT STRENGTH outright. The shipped defaults are three distinct tables and nothing is dead; you are one pick away from that not being true, so the panel says so while it is happening rather than afterwards.",
+        "All three wavetable slots in one panel: FLOOR, WALL and CEILING drawn as heightfield strips in stack order, each with its roster of factory tables, the baked-preset list and a .WAV loader. It expresses three decisions in one panel rather than nine controls. The panel also names the casualty of a slot COINCIDENCE, which is the one way this module can still be silenced by arithmetic rather than by a knob: the field is a morph between the floor-to-wall and ceiling-to-wall occupancies, so FLOOR = CEILING makes MORPH inert, and either connector slot matching WALL sends the occupancy function into its degenerate hard-step branch and kills CONNECT and CONNECT STRENGTH outright. The shipped defaults are three distinct tables and nothing is dead; you are one pick away from that not being true, so the panel says so while it is happening rather than afterwards.",
     },
   },
 

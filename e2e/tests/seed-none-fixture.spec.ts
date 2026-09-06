@@ -56,7 +56,7 @@ async function edgeIds(page: import('@playwright/test').Page): Promise<string[]>
 test('?seed=none: the rack is GENUINELY empty — no pins, no video zone, no auto-clock', async ({
   page,
 }) => {
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await canvasPane(page).waitFor({ state: 'visible' });
 
@@ -80,7 +80,7 @@ test('NEGATIVE CONTROL: WITHOUT ?seed=none the same rack DOES seed', async ({ pa
   // Without this leg the test above passes just as happily against a
   // `seedShellDefaults` that is stuck false for everyone — i.e. against a
   // product with no pinned singletons at all.
-  await page.goto('/rack?shell=legacy');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await expect
@@ -99,7 +99,7 @@ test('NEGATIVE CONTROL: WITHOUT ?seed=none the same rack DOES seed', async ({ pa
 test('?seed=none suppresses SEEDING ONLY — the shell chrome is untouched', async ({ page }) => {
   // The fixture must not become a second UI mode by the back door: it exists to
   // remove starter CONTENT, not to change what the app looks like.
-  await page.goto('/rack?shell=legacy&seed=none');
+  await page.goto('/rack?seed=none');
   await page.waitForLoadState('networkidle');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await expect(page.getByTestId('workflow-file-trigger')).toBeVisible();

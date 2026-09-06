@@ -5,7 +5,7 @@
 // that pins the audio-bridge contract (persistent GainNode identity)
 // without touching real WebGL/WASM/Web-Audio.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { doomDef } from './doom';
 import {
   CV_GATE_PORT_IDS,
@@ -102,7 +102,18 @@ interface FakeConstantWrapper {
   __tag: string;
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
-  offset: { setValueAtTime: ReturnType<typeof vi.fn> };
+  /** `pulseTriggerNow` (the render-robust NOW-pulse `pulseGate` delegates to)
+   *  RISES by a direct `offset.value = 1` write after clearing stale
+   *  automation via `cancelScheduledValues`; `setValueAtTime` remains for the
+   *  construction pin-to-0 and the HELD-gate `forceHold` path. */
+  offset: {
+    value: number;
+    setValueAtTime: ReturnType<typeof vi.fn>;
+    cancelScheduledValues: ReturnType<typeof vi.fn>;
+  };
+  /** `pulseTriggerNow` reads `cs.context.currentTime` to timestamp the rise
+   *  + drive the rendered-audio fall monitor. */
+  context: { currentTime: number };
   start: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
 }
@@ -113,9 +124,10 @@ function makeFakeAudioCtx(opts: { withDestination?: boolean } = {}): {
   createdGains: FakeNode[];
   createdConstants: FakeNode[];
   /** Same construction order as createdConstants — but exposes the WRAPPER
-   *  object the factory closed over (with the live `offset.setValueAtTime`
-   *  fake), so forcePulse() tests can assert pulses landed on the same CSN
-   *  identity the published audioSources entry references. */
+   *  object the factory closed over (with the live, settable `offset.value`
+   *  the render-robust rise writes), so forcePulse() tests can assert pulses
+   *  landed on the same CSN identity the published audioSources entry
+   *  references. */
   constantWrappers: FakeConstantWrapper[];
   workletNode: FakeNode | null;
   workletReady: Promise<void>;
@@ -135,8 +147,13 @@ function makeFakeAudioCtx(opts: { withDestination?: boolean } = {}): {
     ? { __tag: 'destination', connect: vi.fn(), disconnect: vi.fn() }
     : null;
 
+  // Shared fake clock — never advances, so a NOW-pulse's rendered-audio fall
+  // never happens inside a test (the rise is the observable under test; the
+  // fall is the primitive's own concern, see gate-trigger.test.ts).
+  const clock = { currentTime: 0 };
+
   const ctx = {
-    currentTime: 0,
+    get currentTime() { return clock.currentTime; },
     ...(destination ? { destination } : {}),
     audioWorklet: {
       addModule: vi.fn().mockResolvedValue(undefined),
@@ -159,7 +176,8 @@ function makeFakeAudioCtx(opts: { withDestination?: boolean } = {}): {
       createdConstants.push(n);
       const wrapper: FakeConstantWrapper = {
         ...n,
-        offset: { setValueAtTime: vi.fn() },
+        offset: { value: 0, setValueAtTime: vi.fn(), cancelScheduledValues: vi.fn() },
+        context: clock,
         start: vi.fn(),
         stop: vi.fn(),
       };
@@ -366,6 +384,12 @@ describe('doomDef.factory — audio bridge contract', () => {
 // "did the marine kill anything yet?". The CSN identity is the same one
 // exposed via audioSources, so the in-engine bridge captures the right ref.
 describe('doomDef.factory — extras.forcePulse() test hook', () => {
+  // pulseTriggerNow's fall monitor is a setInterval — fake timers keep those
+  // out of the real event loop (they are discarded on useRealTimers; the fall
+  // itself is asserted in gate-trigger.test.ts, not here).
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   function spawnWithFakeAudio() {
     const gl = makeFakeGl();
     const fake = makeFakeAudioCtx();
@@ -390,7 +414,7 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
     expect(typeof extras.forcePulse).toBe('function');
   });
 
-  it('forcePulse(evt_kill) drives setValueAtTime on the same CSN exposed via audioSources.evt_kill', () => {
+  it('forcePulse(evt_kill) RISES the same CSN exposed via audioSources.evt_kill (offset.value → 1, synchronously)', () => {
     const { handle, fake } = spawnWithFakeAudio();
     // 6 CSN wrappers in construction order: kill, door, gun_p1..p4. The
     // factory closes over THESE wrapper objects + publishes them in
@@ -399,35 +423,50 @@ describe('doomDef.factory — extras.forcePulse() test hook', () => {
     const killCsn = fake.constantWrappers[0]!;
     const audioSrc = handle.audioSources?.get('evt_kill');
     expect(audioSrc?.node).toBe(killCsn as unknown as AudioNode);
-    killCsn.offset.setValueAtTime.mockClear();
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
     extras.forcePulse('evt_kill');
-    // pulseGate fires offset=1 at t, offset=0 at t+10ms — 2 calls.
-    const calls = killCsn.offset.setValueAtTime.mock.calls;
-    expect(calls.length).toBe(2);
-    expect(calls[0]![0]).toBe(1);
-    expect(calls[1]![0]).toBe(0);
-    expect(calls[1]![1]).toBeCloseTo(calls[0]![1] + 0.01, 4);
+    // pulseGate delegates to pulseTriggerNow (render-robust NOW-pulse): the
+    // RISE is a direct `offset.value = 1` write applied synchronously, after
+    // clearing stale automation — a scheduled setValueAtTime pair renders
+    // NOTHING when the render frontier leads currentTime. The FALL is
+    // rendered-audio + timer driven; its shape is pinned by the primitive's
+    // own suite (gate-trigger.test.ts, "pulseTriggerNow — render-robust
+    // immediate pulse"). THIS suite asserts ROUTING only.
+    expect(killCsn.offset.value).toBe(1);
+    expect(killCsn.offset.cancelScheduledValues).toHaveBeenCalled();
+    // No cross-talk: every OTHER gate CSN stays at rest (0).
+    for (const w of fake.constantWrappers) {
+      if (w !== killCsn) expect(w.offset.value).toBe(0);
+    }
   });
 
-  it('forcePulse(evt_door) + (evt_gun_p1..p4) each drive their own CSN', () => {
+  it('forcePulse(evt_door) + (evt_gun_p1..p4) each RISE their own CSN — and ONLY it', () => {
     const { handle, fake } = spawnWithFakeAudio();
     const doorCsn = fake.constantWrappers[1]!;
     const gun1    = fake.constantWrappers[2]!;
     const gun4    = fake.constantWrappers[5]!;
-    for (const c of [doorCsn, gun1, gun4]) c.offset.setValueAtTime.mockClear();
-
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
+
+    // The fake clock never advances, so a risen line stays at 1 — reset all
+    // offsets between pulses (the moral equivalent of the old mockClear) so
+    // "exactly one CSN rose, and it is the right one" stays falsifiable.
+    const resetAll = () => { for (const w of fake.constantWrappers) w.offset.value = 0; };
+    const risen = () => fake.constantWrappers.filter((w) => w.offset.value === 1);
+
+    resetAll();
     extras.forcePulse('evt_door');
-    expect(doorCsn.offset.setValueAtTime).toHaveBeenCalledTimes(2);
-    expect(gun1.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+    expect(risen()).toHaveLength(1);
+    expect(risen()[0]).toBe(doorCsn);
 
+    resetAll();
     extras.forcePulse('evt_gun_p1');
-    expect(gun1.offset.setValueAtTime).toHaveBeenCalledTimes(2);
-    expect(gun4.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+    expect(risen()).toHaveLength(1);
+    expect(risen()[0]).toBe(gun1);
 
+    resetAll();
     extras.forcePulse('evt_gun_p4');
-    expect(gun4.offset.setValueAtTime).toHaveBeenCalledTimes(2);
+    expect(risen()).toHaveLength(1);
+    expect(risen()[0]).toBe(gun4);
 
     // Distinct CSNs — each port resolves to its own node, no double-pulse.
     expect(doorCsn).not.toBe(gun1);
@@ -547,6 +586,10 @@ describe('doomDef.factory — SP single-player CV fallback', () => {
 // sourceType='gate' edges and dispatches a setParam(target, 1) → (target, 0)
 // pair on every callback.
 describe('doomDef.factory — subscribePulse (frame-independent gate dispatch)', () => {
+  // Keep pulseTriggerNow's fall-monitor intervals out of the real event loop.
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   function spawnWithFakeAudio(): { handle: ReturnType<typeof doomDef.factory>; fake: ReturnType<typeof makeFakeAudioCtx> } {
     const gl = makeFakeGl();
     const fake = makeFakeAudioCtx();
@@ -662,6 +705,10 @@ describe('doomDef.factory — subscribePulse (frame-independent gate dispatch)',
 // the legacy evt_kill gate.
 
 describe('doomDef.factory — per-monster + per-player gates', () => {
+  // Keep pulseTriggerNow's fall-monitor intervals out of the real event loop.
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   function spawnWithFakeAudio() {
     const gl = makeFakeGl();
     const fake = makeFakeAudioCtx();
@@ -692,12 +739,9 @@ describe('doomDef.factory — per-monster + per-player gates', () => {
     }
   });
 
-  it('forcePulse(evt_kill_imp) fires only the imp CSN (not Demon, not legacy KILL)', () => {
+  it('forcePulse(evt_kill_imp) rises only the imp CSN (not Demon, not legacy KILL)', () => {
     const { handle, fake } = spawnWithFakeAudio();
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    // Clear pre-construction setValueAtTime(0, t0) noise on every CSN
-    // (the factory pins each gate to 0 at creation).
-    for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
 
     extras.forcePulse('evt_kill_imp');
 
@@ -705,29 +749,40 @@ describe('doomDef.factory — per-monster + per-player gates', () => {
     const impNode = handle.audioSources!.get('evt_kill_imp')!.node;
     const impWrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === impNode);
     expect(impWrapper, 'imp CSN wrapper').toBeDefined();
-    // 2 calls = 10ms pulse pair.
-    expect(impWrapper!.offset.setValueAtTime).toHaveBeenCalledTimes(2);
+    // The render-robust rise: `offset.value = 1`, written synchronously
+    // (fall shape is gate-trigger.test.ts's job — routing is ours).
+    expect(impWrapper!.offset.value).toBe(1);
 
     const demonNode = handle.audioSources!.get('evt_kill_demon')!.node;
     const demonWrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === demonNode);
-    expect(demonWrapper!.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+    expect(demonWrapper!.offset.value).toBe(0);
 
     // Legacy any-monster KILL gate (constantWrappers[0]) must NOT be
     // pulsed by forcePulse on a typed port — the legacy gate is fired only
     // by the WASM ring's DGPT_EVT_KILL event, which forcePulse bypasses.
     const killWrapper = fake.constantWrappers[0]!;
-    expect(killWrapper.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+    expect(killWrapper.offset.value).toBe(0);
+
+    // And across the WHOLE bank: exactly one CSN rose.
+    expect(fake.constantWrappers.filter((w) => w.offset.value === 1)).toHaveLength(1);
   });
 
   it('forcePulse routes every per-monster port to its own distinct CSN', () => {
     const { handle, fake } = spawnWithFakeAudio();
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
     for (const port of MONSTER_KILL_PORTS) {
-      for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
+      // The fake clock never advances, so a risen line stays high — reset all
+      // offsets between ports (the moral equivalent of the old mockClear).
+      for (const w of fake.constantWrappers) w.offset.value = 0;
       extras.forcePulse(port.portId);
       const node = handle.audioSources!.get(port.portId)!.node;
       const wrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === node)!;
-      expect(wrapper.offset.setValueAtTime, `${port.portId} should pulse its own CSN`).toHaveBeenCalledTimes(2);
+      expect(wrapper.offset.value, `${port.portId} should rise its own CSN`).toBe(1);
+      // Exactly one riser bank-wide — a mis-route or double-pulse trips here.
+      expect(
+        fake.constantWrappers.filter((w) => w.offset.value === 1),
+        `${port.portId} must rise EXACTLY one CSN`,
+      ).toHaveLength(1);
     }
   });
 
@@ -735,22 +790,26 @@ describe('doomDef.factory — per-monster + per-player gates', () => {
     const { handle, fake } = spawnWithFakeAudio();
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
     for (const port of PLAYER_DEATH_PORTS) {
-      for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
+      for (const w of fake.constantWrappers) w.offset.value = 0;
       extras.forcePulse(port.portId);
       const node = handle.audioSources!.get(port.portId)!.node;
       const wrapper = fake.constantWrappers.find((w) => (w as unknown as AudioNode) === node)!;
-      expect(wrapper.offset.setValueAtTime, `${port.portId} should pulse its own CSN`).toHaveBeenCalledTimes(2);
+      expect(wrapper.offset.value, `${port.portId} should rise its own CSN`).toBe(1);
+      expect(
+        fake.constantWrappers.filter((w) => w.offset.value === 1),
+        `${port.portId} must rise EXACTLY one CSN`,
+      ).toHaveLength(1);
     }
   });
 
   it('forcePulse on an UNKNOWN evt_kill_xxx port is a safe no-op (silent)', () => {
     const { handle, fake } = spawnWithFakeAudio();
     const extras = handle.read?.('extras') as { forcePulse: (p: string) => void };
-    for (const w of fake.constantWrappers) w.offset.setValueAtTime.mockClear();
     expect(() => extras.forcePulse('evt_kill_does_not_exist')).not.toThrow();
-    // No CSN should be pulsed.
+    // No CSN rose (and no automation was touched on any of them).
     for (const w of fake.constantWrappers) {
-      expect(w.offset.setValueAtTime).toHaveBeenCalledTimes(0);
+      expect(w.offset.value).toBe(0);
+      expect(w.offset.cancelScheduledValues).toHaveBeenCalledTimes(0);
     }
   });
 
@@ -816,6 +875,10 @@ describe('doomDef.factory — per-monster + per-player gates', () => {
 import { DoomRuntime } from '$lib/doom/doom-runtime';
 
 describe('doomDef.factory — drain dispatch maps events to gates', () => {
+  // Keep pulseTriggerNow's fall-monitor intervals out of the real event loop.
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   function spawnWithStubRuntime(events: { type: number; slot: number; payload: number }[]) {
     const gl = makeFakeGl();
     const fake = makeFakeAudioCtx();

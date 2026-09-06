@@ -65,8 +65,8 @@ const NODE = 'fd1';
 const SURFACE = 'doom-face-surface';
 
 async function boot(page: Page): Promise<void> {
-  // Plain /rack — the DEFAULT shell. `?shell=legacy` is precisely the surface
-  // promotion does not change, and every OTHER doom spec boots that one.
+  // Plain /rack — the DEFAULT shell, which is now the only rack the DOOM suite
+  // knows: every doom spec drives the faceplate.
   await page.goto('/rack?seed=none');
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
@@ -142,11 +142,14 @@ test.describe('DOOM face — the promotion is what keeps it playable', () => {
       { id: NODE, type: 'doom', position: { x: 160, y: 140 }, domain: 'video' },
     ], [], { mountTimeout: BOOT_MS });
 
-    // ⚠ THE PRECONDITION EVERYTHING BELOW RESTS ON: on the default shell no DOOM
-    // card is mounted anywhere. If this ever finds one, nothing in this file
-    // proves anything about the face.
-    await expect(page.locator('[data-testid="doom-card"]')).toHaveCount(0);
-    await expect(page.locator('.mod-card.doom-card')).toHaveCount(0);
+    // ⚠ THE PRECONDITION THAT STOOD HERE IS NOW TRUE BY CONSTRUCTION, so it is
+    // deleted rather than left as an assertion that cannot fail. It read "no
+    // DOOM card is mounted anywhere", and `DoomSurface` had a `variant` prop
+    // whose `'card'` arm emitted `data-testid="doom-card"`. That arm is gone —
+    // there is one surface and one testid — so the check had exactly one
+    // possible answer. What it was really protecting (that this file measures
+    // the FACE) is carried by the assertions below, which name
+    // `doom-face-surface` and the dock pane directly.
 
     const dock = await openDock(page, NODE);
     const body = dock.locator('[data-testid="doom-body"]');

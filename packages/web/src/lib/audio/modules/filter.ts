@@ -90,8 +90,8 @@ export const filterDef: AudioModuleDef = {
     { id: 'res',    type: 'cv' },
   ],
   // `label: 'out'` — the rear card printed AUDIO on BOTH holes. `ModuleShell`
-  // calls `portsFromDef(def.outputs)` with no override map (the legacy card
-  // passes `{ audio: 'OUT' }`), so with no `PortDef.label` the stem falls to
+  // calls `portsFromDef(def.outputs)` with no override map (a bespoke surface
+  // could pass `{ audio: 'OUT' }`), so with no `PortDef.label` the stem falls to
   // `ABBREV_TO_VERBOSE.audio = 'AUDIO'` and the rear named the input and the
   // output identically, disambiguated only by rail side. CONTRACT-TRANSPARENT:
   // `portLine` (contract-signature.ts) has no label branch.
@@ -155,13 +155,13 @@ export const filterDef: AudioModuleDef = {
   //                    one modulation stage, and splitting the pair to push one
   //                    of them up the ranking would cost more than it buys.
   //
-  // vs. the legacy card: it showed cutoff + res as FADERS and mode as a
+  // vs. what it replaced: that showed cutoff + res as FADERS and mode as a
   // three-button footer strip, with NO way to trim CV depth at all — a 0..1
   // envelope patched into `cutoff` asks for +5 octaves and pins at the 20 kHz
   // ceiling. The rework re-ranks mode UP next to the two knobs it re-frames
   // and adds the two missing attenuverters (engine-side gains, no new DSP).
-  // Nothing from the legacy card was dropped: all three legacy controls are
-  // ranked, paged, and rendered in the dock (faces-parity pins that).
+  // Nothing was dropped: all three of the original controls are ranked, paged,
+  // and rendered in the dock (faces-parity pins that).
   face: {
     order: ['cutoff', 'resonance', 'mode', 'cutoff_cv_amt', 'res_cv_amt'],
     // TWO dock bands, not three, on GROUPING SEMANTICS: `response · type` is

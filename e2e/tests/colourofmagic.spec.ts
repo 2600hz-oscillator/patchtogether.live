@@ -161,17 +161,41 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('real chain: all 22 outputs (6 colour + 16 taps) emit a non-black frame', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
     // DOM structure — all five block columns present.
-    await expect(page.locator('.svelte-flow__node-colourofmagic'), 'card visible').toBeVisible();
-    await expect(page.locator('[data-testid="colourofmagic-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="colourofmagic-canvas"]')).toHaveCount(1);
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-    for (const blk of ['rgb', 'ydbdr', 'hsv', 'yiq', 'ycc']) {
-      await expect(page.locator(`[data-testid="colourofmagic-block-${blk}"]`), `${blk} block column`).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node:has([data-shell-type="colourofmagic"])'), 'card visible').toBeVisible();
+    // (card + preview chrome died with the card; pixel claims are engine reads)
+    await expect(page.locator('.svelte-flow__node[data-id="v-out"] [data-testid="module-shell"]')).toHaveCount(1);
+    // The card's five block COLUMNS died with the card; the face expresses
+    // the same structure as FIVE PAGES rendered in one dock column (the def's
+    // own note — the hero empties the sixth). Assert them in the dock pane.
+    await page.waitForFunction(
+      () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
+      undefined,
+      { timeout: 30_000 },
+    );
+    await page.evaluate(
+      (i) => (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(i),
+      'com',
+    );
+    const comPane = page.locator('[data-testid="dock-fullview-pane"][data-pane-node="com"]');
+    await expect(comPane.locator('[data-testid="face-pages"]')).toBeVisible({ timeout: 60_000 });
+    // The face FOCUSES one block's band per the PREVIEW selection (declared
+    // bandFocus); PASS (preview=0) is the deliberate show-all state. Drive it,
+    // then one representative control per block proves every band made the
+    // faceplate.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => { w.__patch.nodes['com'].params.preview = 0; });
+    });
+    for (const rep of ['bias_r', 'bias_db', 'bias_h', 'bias_yiq_i', 'bias_ycc_cb']) {
+      await expect(comPane.locator(`[data-testid="control-${rep}"]`), `${rep} block control`).toHaveCount(1);
     }
 
     // Six colour outs: non-black AND structured (a real colorized picture).
@@ -203,7 +227,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('YIQ I-bias warms the picture; YCbCr studio-swing responds + crushes', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -230,7 +254,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('palette REPLACE visibly recolours the rgb out at the default swatches (nudge)', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -248,7 +272,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('recolorization: bias_r reddens rgb; luma is grayscale; Db bias moves blue-yellow', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 
@@ -277,7 +301,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
     await installRenderSmokeHooks(page);
 
     // Baseline A: red-dominant source (green ≈ 0), NO override → g out is dark.
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes({}, RED_TINT), baseEdges());
     const a = await setStepRead(page, { nodeId: 'com', portId: 'g', steps: FIXED_STEPS });
@@ -285,7 +309,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
 
     // Baseline B: same source + a SECOND lines grating patched into rgb_g_in →
     // the green channel is CLOBBERED with the bright grating.
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     const nodesB = [
       ...baseNodes({}, RED_TINT),
@@ -310,7 +334,7 @@ test.describe('COLOUR OF MAGIC — multi-colorspace video processor', () => {
   test('OVER vs CLAMP differ at an out-of-range bias', async ({ page, errorWatch }) => {
 
     await installRenderSmokeHooks(page);
-    await page.goto('/rack?shell=legacy&seed=none');
+    await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, baseNodes(), baseEdges());
 

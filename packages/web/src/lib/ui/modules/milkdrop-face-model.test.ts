@@ -24,6 +24,7 @@ import {
 import { curatedFace, dockFacePlan } from '$lib/ui/workflow/curated-face';
 import { dockTabPlan } from '$lib/ui/workflow/dock-tabs-model';
 import { hasVideoSurface } from '$lib/ui/workflow/module-shell-model';
+import { shellCellFor } from '$lib/ui/workflow/shell-cells';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEF_SRC = resolve(HERE, '../../video/modules/milkdrop.ts');
@@ -117,14 +118,18 @@ describe('milkdrop face — the preset picker, and why it is not an options rost
     ).toBe(MILKDROP_CURATED_NAMES.length - 1);
   });
 
-  it('the family testidPrefixes are the ones the CARD actually emits', () => {
-    // `ControlFamily.testidPrefix` is documented as grep-verified against the
-    // card; this is that verification, so a renamed testid cannot leave the
-    // declaration pointing at nothing.
-    const card = readFileSync(resolve(HERE, 'MilkdropCard.svelte'), 'utf8');
+  it('every declared family resolves to a live shell cell', () => {
+    // ⚠ THIS ASKED WHETHER THE CARD EMITTED EACH `testidPrefix`, which is how
+    // `ControlFamily.testidPrefix` was documented as grep-verified. The shell
+    // stamps `shell-cell-<familyId>` from an interpolation, so no surviving
+    // surface carries a per-family literal; `module-docs-lint` resolves each
+    // family to a live cell instead, and so does this leg, at the module — a
+    // declaration pointing at nothing is still red, by a different route.
     for (const f of milkdropDef.controlFamilies ?? []) {
-      expect(card.includes(`data-testid="${f.testidPrefix}"`), `${f.id} prefix appears on the card`)
-        .toBe(true);
+      expect(
+        shellCellFor('milkdrop', { kind: 'family', key: `${f.id}-{n}` } as never),
+        `${f.id} has no shell cell`,
+      ).toBeTruthy();
     }
   });
 });
@@ -140,15 +145,15 @@ describe('milkdrop face — the picture, and where it comes from', () => {
     expect(milkdropDef.face?.extension).toBe('milkdrop');
   });
 
-  it('the monitor box is ONE constant, BOTH surfaces read it, and it is out of the basis', () => {
+  it('the monitor box is ONE constant, the surface reads it, and it is out of the basis', () => {
     expect(MILKDROP_MONITOR_BOX.defW).toBeGreaterThanOrEqual(MILKDROP_MONITOR_BOX.minW);
     expect(MILKDROP_MONITOR_BOX.defH).toBeGreaterThanOrEqual(MILKDROP_MONITOR_BOX.minH);
-    const card = readFileSync(resolve(HERE, 'MilkdropCard.svelte'), 'utf8');
+    // ⚠ THIS SAID 'BOTH surfaces', and the hazard it guarded was DIVERGENCE:
+    // two writers of the same persisted `resizedWidth`/`resizedHeight` keys,
+    // each self-consistent and invisible at runtime (the backdraft class). With
+    // one writer that hazard is unspellable; the half that can still go wrong
+    // is that the body READS the shared box rather than re-typing its floors.
     const body = readFileSync(resolve(HERE, 'milkdrop/MilkdropOutputBody.svelte'), 'utf8');
-    expect(
-      /import\s*\{\s*MILKDROP_MONITOR_BOX\s*\}\s*from\s*'\.\/milkdrop\/monitor-box'/.test(card),
-      'the legacy card READS the shared box',
-    ).toBe(true);
     expect(
       /import\s*\{\s*MILKDROP_MONITOR_BOX\s*\}\s*from\s*'\.\/monitor-box'/.test(body),
       'and so does the faced dock body',
@@ -201,10 +206,16 @@ describe('milkdrop face — two bands, and no VRT scene behind them', () => {
 
   it('NO hero, NO readout — the preset NAME is the picker\'s option label instead', () => {
     expect(milkdropDef.face?.hero).toBeUndefined();
-    // The card prints a live name/index line; the 2026-08-19 rulings deleted
-    // that shape. Assert the card still HAS it (so this is a real migration,
-    // not a claim about nothing) — the faceplate's home for it is the selector.
-    const card = readFileSync(resolve(HERE, 'MilkdropCard.svelte'), 'utf8');
-    expect(card.includes('data-testid="milkdrop-preset"'), 'the card readout still exists').toBe(true);
+    // ⚠ THE PREMISE HALF READ THE CARD. It printed a live name/index line
+    // (`data-testid="milkdrop-preset"`), and asserting the card still HAD it was
+    // what made this a real migration rather than a claim about nothing. The
+    // faceplate's home for that name is the SELECTOR's option label, which is
+    // what is asserted instead — a roster whose entries carry the preset names
+    // is the readout, in a place the ruling permits.
+    const select = shellCellFor(
+      'milkdrop',
+      { kind: 'family', key: 'milkdrop-preset-select-{n}' } as never,
+    ) as { kind?: string } | null;
+    expect(select?.kind, 'the preset picker is a selector cell').toBe('selector');
   });
 });
