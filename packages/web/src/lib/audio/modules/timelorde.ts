@@ -87,6 +87,58 @@ export function transportEventsToRunState(args: {
   return args.prevRunning;
 }
 
+// ---------------- Pure v1→v2 LEGACY TRANSPORT migration ----------------
+//
+// v1 patches saved `isPlaying` (1 = playing / 0 = stopped, and 0 halted the
+// internal clock entirely). v2 split that into `muteOutputs` (gates audible?)
+// + `running` (clock advancing?), keeping the clock alive for LIVECODE — so a
+// legacy patch's intent maps to muteOutputs = !isPlaying with running at its
+// default. See the muteOutputs param comment in the def below.
+//
+// ⚠ THE MIGRATION USED TO RUN ONLY AT SPAWN, and that asymmetry was a live
+// transport-staleness bug, not an untidiness (fleet audit 2026-09-06, finding
+// 7 — the samsloop one-branch-migration class, P1). The reconciler
+// re-materializes a node only on id-absence or type/domain change and diffs
+// only the param KEYS THE LOADED PATCH CARRIES — so a v1 patch loaded over a
+// live TIMELORDE at a reused id (loadEnvelopeIntoStore deletes + re-inserts
+// every node in ONE transaction; same id, same type → no factory) neither
+// re-ran the migration nor touched `muteOutputs`/`running`, and the PREVIOUS
+// session's mute/run state stayed in force over the loaded patch's. TIMELORDE
+// is the rack's transport: a stale mute keeps a whole rack silent, a stale
+// stop keeps it halted — with every readout looking right for the STALE
+// state, so nothing tells the player the load half-applied.
+//
+// Pure + sync (the transportEventsToRunState shape): given the PERSISTED
+// params of the node as loaded, return the transport state the patch
+// specifies, or null when this is not a legacy patch. The null contract is
+// the guard rail: `muteOutputs !== undefined` means the patch is already v2
+// and the RECONCILER owns every future change — a non-null answer there
+// would fight it. Callers apply the returned pair to the AudioParams AND
+// write it through to the live store (the pollTransportGates write-through
+// pattern), which makes the migration SELF-EXTINGUISHING: the store gains a
+// `muteOutputs` key, so the very next call answers null. One shot per legacy
+// load, no steady-state writes, nothing to fight.
+export interface LegacyTransportState {
+  muteOutputs: 0 | 1;
+  running: 0 | 1;
+}
+
+export function legacyIsPlayingToTransport(
+  params: Record<string, number | undefined> | undefined,
+): LegacyTransportState | null {
+  const isPlaying = params?.['isPlaying'];
+  if (typeof isPlaying !== 'number') return null; // not a v1 patch
+  if (params?.['muteOutputs'] !== undefined) return null; // already v2 — the reconciler owns it
+  const runningRaw = params?.['running'];
+  return {
+    muteOutputs: isPlaying >= 0.5 ? 0 : 1,
+    // v1 has no `running`; the loaded patch therefore specifies the DEFAULT
+    // (1 — clock advances), exactly what a fresh boot of the same patch gets
+    // from the def. A hand-carried explicit value is respected.
+    running: typeof runningRaw === 'number' ? (runningRaw >= 0.5 ? 1 : 0) : 1,
+  };
+}
+
 // ---------------- Pure EXTERNAL-CLOCK BPM LOCK helper ----------------
 //
 // ⚠ THE DEFECT THIS EXISTS TO CLOSE, and it is a DATA-LOSS one rather than an
@@ -531,21 +583,43 @@ export const timelordeDef: AudioModuleDef = {
     const runningParam = params.get('running');
     const hasExt = params.get('hasExternalClock');
 
-    // v1 → v2 inline migration: existing patches saved `isPlaying`
-    // (1=playing/0=stopped). v2 renamed to `muteOutputs` (inverted
-    // semantic). If the loaded params carry the legacy field, copy it
-    // forward at spawn time so the user's intent survives.
-    const legacyIsPlaying = (node.params ?? {})['isPlaying'];
-    if (
-      typeof legacyIsPlaying === 'number' &&
-      (node.params?.['muteOutputs'] === undefined) &&
-      muteOutputsParam
-    ) {
-      const muted = legacyIsPlaying >= 0.5 ? 0 : 1;
-      muteOutputsParam.setValueAtTime(muted, ctx.currentTime);
-    }
-
     const nodeId = node.id;
+
+    // v1 → v2 inline migration (`isPlaying` → muteOutputs/running — see
+    // legacyIsPlayingToTransport above for the semantics AND for why this must
+    // run on a POLL as well as at spawn: a v1 patch loaded over a live
+    // TIMELORDE at a reused id re-runs no factory and diffs no absent key, so
+    // a spawn-only migration left the PREVIOUS session's transport state in
+    // force). Reads the LIVE node (a load replaces livePatch.nodes[id]; the
+    // factory-captured `node` is detached after any same-session load), falls
+    // back to the spawn-time `node` so the spawn conversion also works before
+    // the store knows the node (tests, boot races).
+    //
+    // Applies to BOTH layers, pollTransportGates-style: the AudioParams so the
+    // worklet honors the loaded patch immediately, and the live store so the
+    // UI + remote rack-mates agree AND the migration self-extinguishes (the
+    // helper answers null once `muteOutputs` exists — one shot per legacy
+    // load, zero steady-state writes). The AudioParam writes are guarded on
+    // actual change: a same-state legacy load writes nothing, so it cannot
+    // nudge the transport, and `running` moves ONLY when the loaded patch's
+    // state differs — a resume picks up from the frozen phase (worklet
+    // semantics), never a phase reset.
+    function syncLegacyTransportMigration(): void {
+      const live = livePatch.nodes[nodeId];
+      const migrated = legacyIsPlayingToTransport(live?.params ?? node.params);
+      if (!migrated) return;
+      if (muteOutputsParam && muteOutputsParam.value !== migrated.muteOutputs) {
+        muteOutputsParam.setValueAtTime(migrated.muteOutputs, ctx.currentTime);
+      }
+      if (runningParam && runningParam.value !== migrated.running) {
+        runningParam.setValueAtTime(migrated.running, ctx.currentTime);
+      }
+      if (live?.params) {
+        live.params.muteOutputs = migrated.muteOutputs;
+        live.params.running = migrated.running;
+      }
+    }
+    syncLegacyTransportMigration();
 
     // The player's own tempo, held for the duration of an external lock. See
     // BpmLockState above for the data-loss defect this closes.
@@ -825,6 +899,12 @@ export const timelordeDef: AudioModuleDef = {
     }
     const wizardGateUnsub = getSchedulerClock().subscribe(pollWizardGate);
 
+    // Legacy-migration watch (see syncLegacyTransportMigration above). Rides
+    // the same scheduler tick as the transport/wizard polls; in the
+    // overwhelmingly common non-legacy steady state it is one live lookup +
+    // one typeof per tick, and after a legacy load it fires exactly once.
+    const legacyMigrationUnsub = getSchedulerClock().subscribe(syncLegacyTransportMigration);
+
     return {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number }>([
@@ -936,6 +1016,7 @@ export const timelordeDef: AudioModuleDef = {
         if (timer !== null) clearInterval(timer);
         try { transportUnsub(); } catch { /* */ }
         try { wizardGateUnsub(); } catch { /* */ }
+        try { legacyMigrationUnsub(); } catch { /* */ }
         try { silence.stop(); } catch { /* */ }
         try { startSilence.stop(); } catch { /* */ }
         try { stopSilence.stop(); } catch { /* */ }
