@@ -36,7 +36,7 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
-import { TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
+import { TRIGGER_PULSE_S, pulseTriggerNow } from '$lib/audio/gate-trigger';
 
 // Shader: passthrough of the source texture with a mute-time idle pattern so an
 // empty card reads as "alive but empty" (mirrors VIDEOBOX / CAMERA idle look).
@@ -325,13 +325,14 @@ export const tvLibrarianDef: VideoModuleDef = {
 
     function pulseChannelChanged(): void {
       if (!ctx.audioCtx || !chChangedGate) return;
-      const ac = ctx.audioCtx;
-      const t = ac.currentTime;
       // Short rising-edge pulse (canonical trigger width); a downstream
       // edge-detector counts exactly one edge.
-      chChangedGate.offset.cancelScheduledValues(t);
-      chChangedGate.offset.setValueAtTime(1, t);
-      chChangedGate.offset.setValueAtTime(0, t + TRIGGER_PULSE_S);
+      //
+      // ⚠ NOT a hand-rolled setValueAtTime pair — a rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING, per boot, for every pulse. The shared primitive carries
+      // the mechanism + measurements ($lib/audio/gate-trigger).
+      pulseTriggerNow(chChangedGate, TRIGGER_PULSE_S);
     }
 
     function setStreamOnline(on: boolean): void {

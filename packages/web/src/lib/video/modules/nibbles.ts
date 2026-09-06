@@ -45,6 +45,7 @@ import {
   type NibblesState,
 } from './nibbles-game';
 import { chooseDirection } from './nibbles-bot';
+import { pulseTriggerNow } from '$lib/audio/gate-trigger';
 
 // ---- Calibration: 95th-percentile bot-game death length -------------------
 //
@@ -440,9 +441,11 @@ export const nibblesDef: VideoModuleDef = {
     function pulseGate(src: ConstantSourceNode): void {
       const ac = ctx.audioCtx;
       if (!ac) return;
-      const t = ac.currentTime;
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + GATE_PULSE_S);
+      // ⚠ NOT a hand-rolled setValueAtTime pair — a rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING, per boot, for every pulse. The shared primitive carries
+      // the mechanism + measurements ($lib/audio/gate-trigger).
+      pulseTriggerNow(src, GATE_PULSE_S);
     }
 
     /** Trigger the GATED envelope: 15 ms linear attack to peak, 100 ms

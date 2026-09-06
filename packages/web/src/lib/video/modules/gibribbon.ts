@@ -101,6 +101,7 @@ import {
   type GibOnsetState,
 } from './gibribbon-spectral';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
+import { pulseTriggerNow } from '$lib/audio/gate-trigger';
 import {
   GIB_TUNING,
   EVENT_BUTTON,
@@ -573,9 +574,14 @@ export const gibribbonDef: VideoModuleDef = {
     function pulseGate(src: ConstantSourceNode | null, port: string): void {
       const ac = ctx.audioCtx;
       if (!ac || !src) return;
-      const t = ac.currentTime;
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + GATE_PULSE_S);
+      // ⚠ NOT a hand-rolled setValueAtTime pair. A rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING — on an affected boot, for EVERY pulse (run 34004453604
+      // shard 8: 134 pulses / 30 s / analyser peak 0.0000 with the bridge
+      // verified wired; reproduced on demand under CDP CPU throttle ×20).
+      // `pulseTriggerNow` is the shared render-robust primitive — the full
+      // mechanism and its measurements live on it in $lib/audio/gate-trigger.
+      pulseTriggerNow(src, GATE_PULSE_S);
       notifyPulse(port);
     }
     function gateFor(port: GibGatePort): ConstantSourceNode | null {

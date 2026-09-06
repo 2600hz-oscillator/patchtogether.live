@@ -51,7 +51,7 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
-import { TRIGGER_PULSE_S } from '$lib/audio/gate-trigger';
+import { TRIGGER_PULSE_S, pulseTriggerNow } from '$lib/audio/gate-trigger';
 
 // Passthrough shader with an idle pattern for an empty card — mirrors
 // VIDEOBOX / TV-LIBRARIAN / ARCHIVIST so the source modules read consistently.
@@ -303,10 +303,11 @@ export const peertubeDef: VideoModuleDef = {
      *  width); a downstream edge-detector counts exactly one edge. */
     function pulse(src: ConstantSourceNode | null): void {
       if (!src || !ctx.audioCtx) return;
-      const t = ctx.audioCtx.currentTime;
-      src.offset.cancelScheduledValues(t);
-      src.offset.setValueAtTime(1, t);
-      src.offset.setValueAtTime(0, t + TRIGGER_PULSE_S);
+      // ⚠ NOT a hand-rolled setValueAtTime pair — a rise+fall scheduled at
+      // `currentTime` can land wholly behind the render frontier and collapse
+      // to NOTHING, per boot, for every pulse. The shared primitive carries
+      // the mechanism + measurements ($lib/audio/gate-trigger).
+      pulseTriggerNow(src, TRIGGER_PULSE_S);
     }
 
     function wireAudio(): void {

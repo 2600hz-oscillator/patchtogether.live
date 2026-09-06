@@ -68,6 +68,95 @@ export function fireTrigger(
   }
 }
 
+// ── pulseTriggerNow: the "fire a trigger RIGHT NOW" primitive ───────────────
+//
+// ⚠ A SCHEDULED PAIR AT `currentTime` CAN RENDER AS NOTHING, and on an
+// affected boot it does so for EVERY pulse. Measured (2026-09-05, CDP CPU
+// throttle ×20 reproducing CI shard load; the gibribbon evt_kill recovered
+// flake on run 34004453604): with the context RUNNING and its clock advancing
+// 1:1 with wall time,
+//
+//   setValueAtTime(1, ct); setValueAtTime(0, ct + 0.01)   → peak 0.0000
+//     — on the module's gate AND on a freshly created ConstantSource, for
+//       134 pulses / 30 s straight;
+//   setValueAtTime(1, ct) alone (a lone step)              → peak 1.0000
+//   offset.value = 1 (direct write)                        → peak 1.0000
+//
+// The render frontier (the frames the audio thread has already produced) can
+// LEAD the main-thread-visible `currentTime` by more than the pulse width,
+// persistently for a whole boot — events behind the frontier collapse to
+// their FINAL value, which for a rise+fall pair is 0, so the pulse never
+// exists. A lone step survives the same collapse because its final value IS
+// the payload. No amount of re-reading the clock between the two inserts
+// fixes it (verified — the lag is not caller jitter).
+//
+// So the NOW-pulse never schedules: it writes the RISE as a direct value (the
+// form measured to always render), then writes the FALL only after the
+// context has RENDERED at least the requested width of audio since the rise —
+// rendered progress, not wall clock, so the frontier lead cancels out of the
+// difference and a starved main thread WIDENS the pulse instead of losing
+// it. A wider gate is still exactly one rising edge to every detector, and
+// merging retriggers while high is what hardware gates do.
+//
+// Scheduled callers (sequencers with lookahead, `fireTrigger(cs, futureT)`)
+// are NOT affected — their event times sit safely ahead of the frontier.
+
+/** Live fall-monitors, one per node — a retrigger extends, never stacks. */
+const livePulses = new WeakMap<
+  ConstantSourceNode,
+  { riseCt: number; riseWall: number; timer: ReturnType<typeof setInterval> }
+>();
+
+/** One render quantum of slack past the requested width, so the fall can
+ *  never land inside the same quantum that carries the rise. */
+const PULSE_RENDER_SLACK_S = 0.003;
+
+/** Wall-clock BACKSTOP for the fall monitor — it BOUNDS THE FAILURE, it is
+ *  not the gate: a context whose clock stopped advancing (device teardown,
+ *  suspend) must not leave the line latched high forever. */
+const PULSE_FALL_BACKSTOP_MS = 2000;
+
+/** Fall-monitor cadence. The timer lives only while a pulse is high
+ *  (~widthSec + slack on a healthy context). */
+const PULSE_MONITOR_MS = 5;
+
+/** Emit a trigger pulse on a ConstantSource's offset STARTING IMMEDIATELY —
+ *  the render-robust replacement for `fireTrigger(cs, ac.currentTime)` /
+ *  a hand-rolled `setValueAtTime(1, now); setValueAtTime(0, now + w)` pair.
+ *  See the mechanism note above. Retriggering while high extends the pulse
+ *  (the first call's `widthSec` keeps governing an extended pulse). */
+export function pulseTriggerNow(
+  cs: ConstantSourceNode,
+  widthSec: number = TRIGGER_PULSE_S,
+): void {
+  const ac = cs.context;
+  // The level is DRIVEN BY VALUE WRITES, never by timeline events — clear any
+  // stale automation so a leftover scheduled step cannot fight the writes.
+  try { cs.offset.cancelScheduledValues(0); } catch { /* param torn down */ }
+  cs.offset.value = 1;
+  const live = livePulses.get(cs);
+  if (live) {
+    // Retrigger while high: stay high, extend from the fresh rise. The line
+    // is already 1 so no downstream edge existed to lose.
+    live.riseCt = ac.currentTime;
+    live.riseWall = Date.now();
+    return;
+  }
+  const state = {
+    riseCt: ac.currentTime,
+    riseWall: Date.now(),
+    timer: setInterval(() => {
+      const renderedS = ac.currentTime - state.riseCt;
+      const stalled = Date.now() - state.riseWall >= PULSE_FALL_BACKSTOP_MS;
+      if (renderedS < widthSec + PULSE_RENDER_SLACK_S && !stalled) return;
+      cs.offset.value = 0;
+      clearInterval(state.timer);
+      livePulses.delete(cs);
+    }, PULSE_MONITOR_MS),
+  };
+  livePulses.set(cs, state);
+}
+
 /** Open a GATE (held square) on a ConstantSource's offset at `atSec`. */
 export function openGate(cs: ConstantSourceNode, atSec: number): void {
   cs.offset.setValueAtTime(1, atSec);
