@@ -213,6 +213,9 @@ async function recordTake(page: Page): Promise<void> {
   const rec = pane.getByTestId('shell-cell-samsloop-rec');
   await rec.click();
   await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
+  // pacing: the TAKE'S OWN LENGTH — real wall-clock capture the tap worklet
+  // records into the buffer (samsloop-record.ts); a shorter wait is a shorter
+  // sample, not a flakier test. Not a readiness wait.
   await page.waitForTimeout(500);
   await rec.click();
   await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
