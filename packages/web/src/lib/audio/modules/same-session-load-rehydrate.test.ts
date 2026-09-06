@@ -23,6 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { watchLiveNodeData, LIVE_DATA_POLL_MS } from '$lib/audio/live-node-data';
+// (`ModuleNode` is the projection's input; the store is the real Y.Doc.)
 import {
   midiCvBuddyDef,
   midiCvBuddyHydrateOf,
@@ -193,44 +194,93 @@ afterEach(() => {
 describe('watchLiveNodeData — the one re-hydrate seam', () => {
   const ID = 'live-watch-seam';
   afterEach(() => despawn(ID));
+  type P = { id: string | null };
+  const projectId = (n: ModuleNode): P => ({
+    id: ((n.data ?? {}) as { lastDeviceId?: string }).lastDeviceId ?? null,
+  });
 
-  it('fires ONCE per real change with next and prev, and is quiet while equal', () => {
+  it('fires when the DOC differs from the ENGINE, once per real change, and is quiet while equal', () => {
     spawn(node(ID, 'midiclock', { lastDeviceId: 'a' }));
+    let engine: string | null = 'a';
     const seen: Array<[string | null, string | null]> = [];
-    const stop = watchLiveNodeData<{ id: string | null }>({
+    const stop = watchLiveNodeData<P>({
       nodeId: ID,
-      initial: { id: 'a' },
-      project: (n) => ({ id: ((n.data ?? {}) as { lastDeviceId?: string }).lastDeviceId ?? null }),
-      onChange: (next, prev) => seen.push([next.id, prev.id]),
+      project: projectId,
+      current: () => ({ id: engine }),
+      onChange: (next, cur) => { seen.push([next.id, cur.id]); engine = next.id; },
     });
     poll(); poll();
-    expect(seen, 'unchanged data never fires').toEqual([]);
+    expect(seen, 'doc == engine never fires').toEqual([]);
     // The reused-id load shape, SAME data: a new proxy, an equal value.
     sameSessionLoad(node(ID, 'midiclock', { lastDeviceId: 'a' }));
     poll();
     expect(seen, 'a re-insert with equal data is not a change').toEqual([]);
     sameSessionLoad(node(ID, 'midiclock', { lastDeviceId: 'b' }));
     poll(); poll();
-    expect(seen).toEqual([['b', 'a']]);
+    expect(seen, 'once, with the doc value and the engine value').toEqual([['b', 'a']]);
     stop();
     sameSessionLoad(node(ID, 'midiclock', { lastDeviceId: 'c' }));
     poll();
     expect(seen, 'stopped: nothing after dispose').toEqual([['b', 'a']]);
   });
 
-  it('a node ABSENT from the graph is skipped, not treated as a change', () => {
-    const seen: unknown[] = [];
-    const stop = watchLiveNodeData<{ id: string | null }>({
+  it('⚠ THE WRITE RACE: the engine moved through its own api and the doc round-tripped inside ONE poll', () => {
+    // The audio-out e2e caught this on its first run against a "last seen"
+    // baseline: picker write → engine B, persist → doc B, load v1 → doc A,
+    // all between two ticks. Last-seen was A, the doc read A, nothing looked
+    // changed, and the engine sat on B. Doc-vs-ENGINE has no such window.
+    spawn(node(ID, 'midiclock', { lastDeviceId: 'a' }));
+    let engine: string | null = 'a';
+    const seen: Array<string | null> = [];
+    const stop = watchLiveNodeData<P>({
       nodeId: ID,
-      initial: { id: 'a' },
-      project: (n) => ({ id: ((n.data ?? {}) as { lastDeviceId?: string }).lastDeviceId ?? null }),
-      onChange: (next) => seen.push(next.id),
+      project: projectId,
+      current: () => ({ id: engine }),
+      onChange: (next) => { seen.push(next.id); engine = next.id; },
+    });
+    poll();
+    expect(seen).toEqual([]);
+    engine = 'b'; // the surface's api call…
+    sameSessionLoad(node(ID, 'midiclock', { lastDeviceId: 'b' })); // …and its persist
+    sameSessionLoad(node(ID, 'midiclock', { lastDeviceId: 'a' })); // a load of v1, before any tick
+    poll();
+    expect(seen, 'the doc says a, the engine holds b: re-applied').toEqual(['a']);
+    expect(engine).toBe('a');
+    stop();
+  });
+
+  it('a node ABSENT from the graph is skipped, not treated as a change', () => {
+    let engine: string | null = 'a';
+    const seen: unknown[] = [];
+    const stop = watchLiveNodeData<P>({
+      nodeId: ID,
+      project: projectId,
+      current: () => ({ id: engine }),
+      onChange: (next) => { seen.push(next.id); engine = next.id; },
     });
     poll();
     expect(seen).toEqual([]);
     spawn(node(ID, 'midiclock', { lastDeviceId: 'z' }));
     poll();
     expect(seen, 'once present with different data, it fires').toEqual(['z']);
+    stop();
+  });
+
+  it('a custom `equal` can declare a key "no opinion" without the engine ever agreeing', () => {
+    spawn(node(ID, 'midiclock', {}));
+    const seen: unknown[] = [];
+    const stop = watchLiveNodeData<{ legacy: number | null }>({
+      nodeId: ID,
+      project: (n) => ({ legacy: ((n.data ?? {}) as { divisor?: number }).divisor ?? null }),
+      current: () => ({ legacy: 24 }),
+      equal: (next, cur) => next.legacy === null || next.legacy === cur.legacy,
+      onChange: (next) => seen.push(next.legacy),
+    });
+    poll(); poll();
+    expect(seen, 'null vs 24 is not a change').toEqual([]);
+    sameSessionLoad(node(ID, 'midiclock', { divisor: 6 }));
+    poll();
+    expect(seen).toEqual([6]);
     stop();
   });
 });
@@ -294,6 +344,29 @@ describe('midi-cv-buddy: a same-session load at a reused id re-hydrates', () => 
     expect(gateHighs(gate), 'the decoy port is released').toBe(1);
     portB.fire({ data: NOTE_ON(0), timeStamp: 3 });
     expect(gateHighs(gate), 'the loaded port drives the gate').toBe(2);
+    handle.dispose();
+  });
+
+  it('⚠ THE WRITE RACE: the face set channel 5 and persisted it, then v1 loaded — inside ONE poll', async () => {
+    const port = makeMidiInput('port-a', 'Keys A');
+    installFakeMidi(makeMidiAccess([port]));
+    const v1 = node(ID, 'midiCvBuddy', { midiInChannel: 0, lastDeviceId: 'port-a', lastDeviceName: 'Keys A' });
+    spawn(v1);
+    const { ctx } = makeCtx();
+    const handle = await midiCvBuddyDef.factory(ctx as unknown as AudioContext, v1);
+    const api = handle.read?.('card-api') as MidiCvBuddyApi;
+    expect(await api.connect()).toBe(true);
+    const gate = handle.outputs.get('gate')!.node as unknown as FakeConstantSource;
+    poll();
+    // The face: api + doc → channel 5. Then the load of v1 lands before a tick.
+    api.setChannel(4);
+    ydoc.transact(() => { (patch.nodes[ID]!.data as Record<string, unknown>).midiInChannel = 4; }, LOCAL_ORIGIN);
+    sameSessionLoad(node(ID, 'midiCvBuddy', { midiInChannel: 0, lastDeviceId: 'port-a', lastDeviceName: 'Keys A' }));
+    poll();
+    port.fire({ data: NOTE_ON(4), timeStamp: 0 });
+    expect(gateHighs(gate), 'channel 5 (the un-persisted engine state) is gone').toBe(0);
+    port.fire({ data: NOTE_ON(0), timeStamp: 1 });
+    expect(gateHighs(gate), 'channel 1 (the doc) drives the gate').toBe(1);
     handle.dispose();
   });
 
@@ -507,6 +580,26 @@ describe('audio-out: a same-session load at a reused id re-applies the sink', ()
     poll();
     await flush();
     expect(applied.at(-1), 'no pick ⇒ the default sink').toBe('');
+    handle.dispose();
+  });
+
+  it('⚠ THE WRITE RACE (the e2e catch): picker → B and persisted, then v1 loaded — inside ONE poll', async () => {
+    const applied: string[] = [];
+    const { ctx } = makeCtx();
+    const sinkCtx = Object.assign(ctx, { setSinkId: vi.fn(async (id: string) => { applied.push(id); }) });
+    const v1 = node(ID, 'audioOut', { outputDeviceId: 'dev-a' }, { master: 0.7 });
+    spawn(v1);
+    const handle = await audioOutDef.factory(sinkCtx as unknown as AudioContext, v1);
+    await flush();
+    poll();
+    expect(applied).toEqual(['dev-a']);
+    handle.write?.('outputDeviceId', 'dev-b');
+    ydoc.transact(() => { (patch.nodes[ID]!.data as Record<string, unknown>).outputDeviceId = 'dev-b'; }, LOCAL_ORIGIN);
+    sameSessionLoad(node(ID, 'audioOut', { outputDeviceId: 'dev-a' }, { master: 0.7 }));
+    poll();
+    await flush();
+    expect(applied, 'the engine was on B, the doc says A: A is re-applied').toEqual(['dev-a', 'dev-b', 'dev-a']);
+    expect((handle.read?.('outputSink') as { deviceId: string | null }).deviceId).toBe('dev-a');
     handle.dispose();
   });
 

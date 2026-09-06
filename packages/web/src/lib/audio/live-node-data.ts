@@ -19,12 +19,20 @@
 // ── THE SHAPE ───────────────────────────────────────────────────────────────
 // A module keeps reading its settings the way it always has, and additionally
 // watches a PROJECTION of the live node — the handful of keys it hydrated —
-// for a change, re-applying through the SAME setters its surface uses. The
-// projection is compared by value, so the watcher is quiet for the whole life
-// of an unchanged node and fires once per real change. Reads go through
+// against the SAME projection of what the ENGINE currently holds, re-applying
+// any difference through the setters its surface uses. Reads go through
 // `livePatch.nodes[id]`, never a captured proxy: after a same-session load the
 // factory's `node` is a DETACHED object and reading it would report the
 // previous patch forever (the samsloop/warrensspectrum finding).
+//
+// ⚠ DOC AGAINST ENGINE, NEVER AGAINST A REMEMBERED SNAPSHOT. The first cut of
+// this seam compared the doc to the projection it last saw, and the audio-out
+// e2e caught the hole on its first run: the picker's `write()` moved the
+// ENGINE to sink B and persisted B, then a load moved the doc back to A —
+// both inside one 250 ms poll. "Last seen" was A, the doc read A, nothing
+// looked changed, and the engine sat on B. Comparing against what the engine
+// actually holds has no such window: any route that moves the engine or the
+// doc leaves the two visibly different until they agree.
 //
 // ⚠ A POLL, DELIBERATELY. The doc has no per-node "replaced" event that
 // survives delete+re-insert (an observer on the old Y.Map dies with it), and a
@@ -51,15 +59,21 @@ export function readLiveNode(nodeId: string): ModuleNode | undefined {
 
 export interface LiveNodeWatchOptions<T> {
   nodeId: string;
-  /** What the factory hydrated from — the baseline the first diff runs
-   *  against. Pass the projection of the factory's own `node`. */
-  initial: T;
-  /** Pure projection of the keys this module hydrates. Must tolerate a
-   *  missing `data` (a fresh node has none). */
+  /** Pure projection of the keys this module hydrates, read off the DOC.
+   *  Must tolerate a missing `data` (a fresh node has none). */
   project: (node: ModuleNode) => T;
-  /** Called once per change with the NEW and PREVIOUS projection. Apply
-   *  per-key: a load that moves one setting must not re-fire the others. */
-  onChange: (next: T, prev: T) => void;
+  /** The same projection of what the ENGINE currently holds — the module's
+   *  own live variables, not a copy of the last thing this seam saw. */
+  current: () => T;
+  /** Called when the two differ, with the doc's value and the engine's.
+   *  Apply per-key: a load that moves one setting must not re-fire the
+   *  others. Must leave `current()` equal to `next` for every key it owns,
+   *  or the seam will (correctly) call again on the next tick. */
+  onChange: (next: T, current: T) => void;
+  /** Equality override for projections where some keys carry "no opinion"
+   *  (a legacy value that only applies when the param path is absent).
+   *  Defaults to value equality of the whole projection. */
+  equal?: (next: T, current: T) => boolean;
   intervalMs?: number;
   /** Injectable for tests; defaults to the globals. */
   schedule?: {
@@ -75,7 +89,8 @@ export function projectionsEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Watch the LIVE node for a change in `project(node)` and re-apply it.
+ * Watch the LIVE node and re-apply whenever the doc's projection differs from
+ * the engine's.
  *
  * Returns the stop function; call it from the handle's `dispose`. A missing
  * live node (the id left the graph, or a unit test that never inserted it) is
@@ -87,23 +102,23 @@ export function watchLiveNodeData<T>(opts: LiveNodeWatchOptions<T>): () => void 
     setInterval: (fn: () => void, ms: number) => setInterval(fn, ms),
     clearInterval: (h: unknown) => clearInterval(h as ReturnType<typeof setInterval>),
   };
-  let prev = opts.initial;
+  const equal = opts.equal ?? projectionsEqual;
   let stopped = false;
   const tick = (): void => {
     if (stopped) return;
     const live = readLiveNode(opts.nodeId);
     if (!live) return;
     let next: T;
+    let cur: T;
     try {
       next = opts.project(live);
+      cur = opts.current();
     } catch {
       return; // a half-written node mid-transaction; the next tick re-reads
     }
-    if (projectionsEqual(next, prev)) return;
-    const before = prev;
-    prev = next;
+    if (equal(next, cur)) return;
     try {
-      opts.onChange(next, before);
+      opts.onChange(next, cur);
     } catch (err) {
       console.warn(`[live-node-data] re-apply failed for ${opts.nodeId}`, err);
     }

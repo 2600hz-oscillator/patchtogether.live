@@ -415,8 +415,9 @@ export const midiclockDef: AudioModuleDef = {
 
     // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
     // same-session load at a reused id (`midiclockHydrateOf` documents both
-    // halves). `savedDeviceName` is a `let` so `pickDefaultDevice` resolves
-    // the LOADED patch's name, not the spawn's.
+    // halves). `hydratedDevice*` is the doc-level pick this handle has ADOPTED
+    // (`selectedDeviceId` is the resolved port); `pickDefaultDevice` reads the
+    // name from here so the LOADED patch's name is what resolves.
     const hydrated = midiclockHydrateOf(node);
     // ── THE DIVISION'S MIGRATION — params FIRST, then the legacy data key ────
     //
@@ -442,7 +443,8 @@ export const midiclockDef: AudioModuleDef = {
         ? snapDivisor(fromParams)
         : (hydrated.legacyDivisor ?? DEFAULT_DIVISOR);
     let selectedDeviceId: string | null = hydrated.deviceId;
-    let savedDeviceName: string | null = hydrated.deviceName;
+    let hydratedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceName: string | null = hydrated.deviceName;
 
     let access: MidiAccessLike | null = null;
     /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
@@ -588,7 +590,7 @@ export const midiclockDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedDeviceName },
+        { id: selectedDeviceId, name: hydratedDeviceName },
         connected,
       ).id;
     }
@@ -643,6 +645,10 @@ export const midiclockDef: AudioModuleDef = {
 
     function selectDevice(d: string | null): void {
       selectedDeviceId = d;
+      // A surface pick IS the adopted doc-level pick (the surface persists the
+      // same id + name), so the watcher sees doc and engine agree.
+      hydratedDeviceId = d;
+      hydratedDeviceName = d === null ? null : (access?.inputs.get(d)?.name ?? hydratedDeviceName);
       attachToDevice(d);
       // Reset the divider counter so the new device starts on a fresh
       // edge. Avoids a half-counted carryover when switching mid-song.
@@ -684,14 +690,25 @@ export const midiclockDef: AudioModuleDef = {
     // exactly as `selectDevice` does, divider re-zeroed included.
     const stopHydrateWatch = watchLiveNodeData<MidiclockHydrate>({
       nodeId: node.id,
-      initial: hydrated,
       project: midiclockHydrateOf,
-      onChange(next, prev) {
-        if (next.legacyDivisor !== null && next.legacyDivisor !== prev.legacyDivisor) {
+      current: () => ({
+        deviceId: hydratedDeviceId,
+        deviceName: hydratedDeviceName,
+        legacyDivisor: divisor,
+      }),
+      // A null legacy division is "no opinion" (the param path owns it), not
+      // a difference from whatever the engine is dividing by.
+      equal: (next, cur) =>
+        next.deviceId === cur.deviceId &&
+        next.deviceName === cur.deviceName &&
+        (next.legacyDivisor === null || next.legacyDivisor === cur.legacyDivisor),
+      onChange(next, cur) {
+        if (next.legacyDivisor !== null && next.legacyDivisor !== cur.legacyDivisor) {
           setDivisor(next.legacyDivisor);
         }
-        if (next.deviceId !== prev.deviceId || next.deviceName !== prev.deviceName) {
-          savedDeviceName = next.deviceName;
+        if (next.deviceId !== cur.deviceId || next.deviceName !== cur.deviceName) {
+          hydratedDeviceId = next.deviceId;
+          hydratedDeviceName = next.deviceName;
           selectedDeviceId = next.deviceId;
           if (access) {
             selectedDeviceId = pickDefaultDevice();

@@ -346,11 +346,27 @@ export interface MidiLaneHydrate {
   deviceName: string | null;
 }
 
+/** The channel set in ONE canonical spelling — valid members only, unique,
+ *  ascending — so the doc's array (any order, duplicates, a SyncedStore proxy)
+ *  and the engine's `Set` compare equal when they mean the same thing. A
+ *  spelling difference must never read as a change: `setChannels` PANICS
+ *  (drops every held note), so a false change every poll would be a lane
+ *  that can never hold a note. */
+export function canonicalLaneChannels(
+  channels: Iterable<number> | null | undefined,
+): number[] | null {
+  if (channels == null) return null;
+  // `Array.from`, not a spread behind `Array.isArray`: a SyncedStore array
+  // proxy is iterable, and this must never resolve a real channel set to
+  // "all channels" because the proxy failed a type test.
+  const set = expandLaneChannels(Array.from(channels));
+  return set ? [...set].sort((a, b) => a - b) : null;
+}
+
 export function midiLaneHydrateOf(node: ModuleNode): MidiLaneHydrate {
   const d = (node.data ?? {}) as Partial<MidiLaneData>;
-  const channels = d.channels ?? DEFAULT_DATA.channels;
   return {
-    channels: Array.isArray(channels) ? [...channels] : null,
+    channels: canonicalLaneChannels(d.channels ?? DEFAULT_DATA.channels),
     priority: d.priority ?? DEFAULT_DATA.priority,
     retrig: d.retrig ?? DEFAULT_DATA.retrig,
     mode: d.mode ?? DEFAULT_DATA.mode,
@@ -701,8 +717,10 @@ export const midiLaneDef: AudioModuleDef = {
 
     // ---------------- Saved data (with defaults) ----------------
     // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
-    // same-session load at a reused id. `savedDeviceName` is a `let` so
-    // `pickDefaultDevice` resolves the LOADED patch's name, not the spawn's.
+    // same-session load at a reused id. `hydratedDevice*` is the doc-level
+    // pick this handle has ADOPTED (`selectedDeviceId` is the resolved port);
+    // `pickDefaultDevice` reads the name from here so the LOADED patch's name
+    // is what resolves.
     const hydrated = midiLaneHydrateOf(node);
     let channelSet: Set<number> | null = expandLaneChannels(hydrated.channels);
     let priority: VoicePriority = hydrated.priority;
@@ -712,7 +730,8 @@ export const midiLaneDef: AudioModuleDef = {
     let ccB: number | null = hydrated.ccB;
     let noteGateNote: number = hydrated.noteGateNote;
     let selectedDeviceId: string | null = hydrated.deviceId;
-    let savedDeviceName: string | null = hydrated.deviceName;
+    let hydratedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceName: string | null = hydrated.deviceName;
 
     // ---------------- Internal mutable state ----------------
     let heldStack: number[] = [];
@@ -942,7 +961,7 @@ export const midiLaneDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedDeviceName },
+        { id: selectedDeviceId, name: hydratedDeviceName },
         connected,
       ).id;
     }
@@ -978,6 +997,11 @@ export const midiLaneDef: AudioModuleDef = {
 
     function selectDevice(deviceId: string | null): void {
       selectedDeviceId = deviceId;
+      // A surface pick IS the adopted doc-level pick (the surface persists the
+      // same id + name), so the watcher sees doc and engine agree.
+      hydratedDeviceId = deviceId;
+      hydratedDeviceName =
+        deviceId === null ? null : (access?.inputs.get(deviceId)?.name ?? hydratedDeviceName);
       attachToDevice(deviceId);
       notify();
     }
@@ -1083,18 +1107,29 @@ export const midiLaneDef: AudioModuleDef = {
     // flush voices for the others.
     const stopHydrateWatch = watchLiveNodeData<MidiLaneHydrate>({
       nodeId: node.id,
-      initial: hydrated,
       project: midiLaneHydrateOf,
-      onChange(next, prev) {
-        if (!projectionsEqual(next.channels, prev.channels)) setChannels(next.channels);
-        if (next.priority !== prev.priority) setPriority(next.priority);
-        if (next.retrig !== prev.retrig) setRetrig(next.retrig);
-        if (next.mode !== prev.mode) setMode(next.mode);
-        if (next.ccA !== prev.ccA) setCcA(next.ccA);
-        if (next.ccB !== prev.ccB) setCcB(next.ccB);
-        if (next.noteGateNote !== prev.noteGateNote) setNoteGateNote(next.noteGateNote);
-        if (next.deviceId !== prev.deviceId || next.deviceName !== prev.deviceName) {
-          savedDeviceName = next.deviceName;
+      current: () => ({
+        channels: channelSet ? [...channelSet].sort((a, b) => a - b) : null,
+        priority,
+        retrig,
+        mode,
+        ccA,
+        ccB,
+        noteGateNote,
+        deviceId: hydratedDeviceId,
+        deviceName: hydratedDeviceName,
+      }),
+      onChange(next, cur) {
+        if (!projectionsEqual(next.channels, cur.channels)) setChannels(next.channels);
+        if (next.priority !== cur.priority) setPriority(next.priority);
+        if (next.retrig !== cur.retrig) setRetrig(next.retrig);
+        if (next.mode !== cur.mode) setMode(next.mode);
+        if (next.ccA !== cur.ccA) setCcA(next.ccA);
+        if (next.ccB !== cur.ccB) setCcB(next.ccB);
+        if (next.noteGateNote !== cur.noteGateNote) setNoteGateNote(next.noteGateNote);
+        if (next.deviceId !== cur.deviceId || next.deviceName !== cur.deviceName) {
+          hydratedDeviceId = next.deviceId;
+          hydratedDeviceName = next.deviceName;
           selectedDeviceId = next.deviceId;
           if (access) {
             selectedDeviceId = pickDefaultDevice();

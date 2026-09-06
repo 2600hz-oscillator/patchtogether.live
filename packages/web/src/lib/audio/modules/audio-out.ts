@@ -492,10 +492,10 @@ export const audioOutDef: AudioModuleDef = {
     // default sink, and it is what a fresh-page load of that patch would give.
     const stopSinkWatch = watchLiveNodeData<string>({
       nodeId: node.id,
-      initial: audioOutSinkPickOf(node),
       project: audioOutSinkPickOf,
+      current: () => requestedSinkId,
       onChange(next) {
-        if (next !== requestedSinkId) void applySink(next);
+        void applySink(next);
       },
     });
 

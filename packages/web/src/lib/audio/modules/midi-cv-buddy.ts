@@ -639,14 +639,17 @@ export const midiCvBuddyDef: AudioModuleDef = {
     // fallback to write.
     //
     // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
-    // same-session load at a reused id; `savedDeviceName` is a `let` for the
-    // same reason — `pickDefaultDevice` must resolve the LOADED patch's name.
+    // same-session load at a reused id. `hydratedDevice*` is the doc-level
+    // pick this handle has ADOPTED (the id may then resolve to another port by
+    // name — `selectedDeviceId` is the resolved one); `pickDefaultDevice`
+    // reads the name from here so the LOADED patch's name is what resolves.
     const hydrated = midiCvBuddyHydrateOf(node);
     let channel: number | null = hydrated.channel;
     let priority: VoicePriority = hydrated.priority;
     let retrig: boolean = hydrated.retrig;
     let selectedDeviceId: string | null = hydrated.deviceId;
-    let savedDeviceName: string | null = hydrated.deviceName;
+    let hydratedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceName: string | null = hydrated.deviceName;
 
     // ---------------- Internal mutable state ----------------
     let heldStack: number[] = [];
@@ -810,7 +813,7 @@ export const midiCvBuddyDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedDeviceName },
+        { id: selectedDeviceId, name: hydratedDeviceName },
         connected,
       ).id;
     }
@@ -853,6 +856,11 @@ export const midiCvBuddyDef: AudioModuleDef = {
 
     function selectDevice(deviceId: string | null): void {
       selectedDeviceId = deviceId;
+      // A surface pick IS the adopted doc-level pick (the surface persists the
+      // same id + name), so the watcher sees doc and engine agree.
+      hydratedDeviceId = deviceId;
+      hydratedDeviceName =
+        deviceId === null ? null : (access?.inputs.get(deviceId)?.name ?? hydratedDeviceName);
       attachToDevice(deviceId);
       notify();
     }
@@ -915,14 +923,21 @@ export const midiCvBuddyDef: AudioModuleDef = {
     // only the channel must not flush the device or re-pick the port.
     const stopHydrateWatch = watchLiveNodeData<MidiCvBuddyHydrate>({
       nodeId: node.id,
-      initial: hydrated,
       project: midiCvBuddyHydrateOf,
-      onChange(next, prev) {
-        if (next.channel !== prev.channel) setChannel(next.channel);
-        if (next.priority !== prev.priority) setPriority(next.priority);
-        if (next.retrig !== prev.retrig) setRetrig(next.retrig);
-        if (next.deviceId !== prev.deviceId || next.deviceName !== prev.deviceName) {
-          savedDeviceName = next.deviceName;
+      current: () => ({
+        channel,
+        priority,
+        retrig,
+        deviceId: hydratedDeviceId,
+        deviceName: hydratedDeviceName,
+      }),
+      onChange(next, cur) {
+        if (next.channel !== cur.channel) setChannel(next.channel);
+        if (next.priority !== cur.priority) setPriority(next.priority);
+        if (next.retrig !== cur.retrig) setRetrig(next.retrig);
+        if (next.deviceId !== cur.deviceId || next.deviceName !== cur.deviceName) {
+          hydratedDeviceId = next.deviceId;
+          hydratedDeviceName = next.deviceName;
           selectedDeviceId = next.deviceId;
           // Connected: resolve the loaded pick against the live roster exactly
           // as connect() does (exact id, else the durable NAME) and listen on

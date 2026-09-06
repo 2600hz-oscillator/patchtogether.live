@@ -553,12 +553,15 @@ export const midiOutBuddyDef: AudioModuleDef = {
     // must stay separate.
     //
     // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
-    // same-session load at a reused id; `savedDeviceName` is a `let` so
-    // `pickDefaultDevice` resolves the LOADED patch's name.
+    // same-session load at a reused id. `hydratedDevice*` is the doc-level
+    // pick this handle has ADOPTED (`selectedDeviceId` is the resolved port);
+    // `pickDefaultDevice` reads the name from here so the LOADED patch's name
+    // is what resolves.
     const hydrated = midiOutBuddyHydrateOf(node);
     let channel: number = hydrated.channel;
     let selectedDeviceId: string | null = hydrated.deviceId;
-    let savedDeviceName: string | null = hydrated.deviceName;
+    let hydratedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceName: string | null = hydrated.deviceName;
 
     // ---------------- Mutable runtime state ----------------
     let access: MidiOutAccessLike | null = null;
@@ -752,7 +755,7 @@ export const midiOutBuddyDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, o] of access.outputs) connected.push({ id, name: o.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedDeviceName },
+        { id: selectedDeviceId, name: hydratedDeviceName },
         connected,
       ).id;
     }
@@ -813,6 +816,11 @@ export const midiOutBuddyDef: AudioModuleDef = {
     }
 
     function selectDevice(deviceId: string | null): void {
+      // A surface pick IS the adopted doc-level pick (the surface persists the
+      // same id + name), so the watcher sees doc and engine agree.
+      hydratedDeviceId = deviceId;
+      hydratedDeviceName =
+        deviceId === null ? null : (access?.outputs.get(deviceId)?.name ?? hydratedDeviceName);
       if (deviceId === selectedDeviceId) return;
       // Flush the note on the OLD device before switching, so we don't strand
       // a held note on gear we're about to stop addressing.
@@ -851,12 +859,12 @@ export const midiOutBuddyDef: AudioModuleDef = {
     // before the switch — the same stuck-note defence the surface gets.
     const stopHydrateWatch = watchLiveNodeData<MidiOutBuddyHydrate>({
       nodeId: node.id,
-      initial: hydrated,
       project: midiOutBuddyHydrateOf,
-      onChange(next, prev) {
-        if (next.channel !== prev.channel) setChannel(next.channel);
-        if (next.deviceId !== prev.deviceId || next.deviceName !== prev.deviceName) {
-          savedDeviceName = next.deviceName;
+      current: () => ({ channel, deviceId: hydratedDeviceId, deviceName: hydratedDeviceName }),
+      onChange(next, cur) {
+        if (next.channel !== cur.channel) setChannel(next.channel);
+        if (next.deviceId !== cur.deviceId || next.deviceName !== cur.deviceName) {
+          hydratedDeviceName = next.deviceName;
           if (access) {
             // Resolve the LOADED pick against the live roster (exact id, else
             // the durable name) with the resolver seeded by the loaded id, then
@@ -870,6 +878,9 @@ export const midiOutBuddyDef: AudioModuleDef = {
             selectedDeviceId = next.deviceId;
             notify();
           }
+          // The ADOPTED pick is the doc's, whatever port it resolved to.
+          hydratedDeviceId = next.deviceId;
+          hydratedDeviceName = next.deviceName;
         }
       },
     });
