@@ -21,6 +21,7 @@ import {
   getDefaultSnapshotBus,
   type PatchSnapshot,
 } from '$lib/graph/snapshot';
+import { planInertSlots } from '$lib/graph/device-slots';
 
 interface ReconcilerHandle {
   /** Run a reconcile pass immediately against the current snapshot. */
@@ -98,9 +99,25 @@ export function attachReconciler(
     // per-node try/catch around addNode below. See
     // $lib/graph/legacy-group-sticky-load.test.ts.
     const isMeta = (n: ModuleNode): boolean => n.domain === 'meta';
+    // INERT DEVICE SLOTS — the same "present as a card, absent from the engine"
+    // treatment, for the same reason, on a different axis (graph/device-slots.ts).
+    //
+    // A reserved slot node exists in every rack so the id is reserved and the
+    // operator has something to bind; but a slot with nothing bound and nothing
+    // patched has nothing to RUN, and eight idle video engines per rack is a
+    // measured main-thread cost. Filtering it here means it mounts on first use
+    // — bind a camera or cable something in and the very next snapshot carries
+    // it through this filter as an ordinary new node, so the existing add path
+    // brings it up with no special casing anywhere else.
+    //
+    // ⚠ AND THE REVERSE IS DELIBERATE TOO: unbinding makes a slot inert again,
+    // which reaches the engine as a `removeNode` — i.e. the device is released.
+    // That is exactly what unbind means, and it is why this filter is recomputed
+    // per pass rather than latched.
+    const inertSlots = planInertSlots(snap.nodes, snap.edges);
     const currentNodes = new Map<string, ModuleNode>();
     for (const n of snap.nodes) {
-      if (isMeta(n)) continue;
+      if (isMeta(n) || inertSlots.has(n.id)) continue;
       currentNodes.set(n.id, n);
     }
     const currentEdges = new Map<string, Edge>();
@@ -193,10 +210,17 @@ export function attachReconciler(
     }
 
     // 3. Added nodes (await — async factories). Snapshot is sorted; we
-    // iterate it directly, skipping ids we already have AND any meta-
-    // domain nodes (which carry no engine binding).
+    // iterate it directly, skipping ids we already have, any meta-domain
+    // nodes (which carry no engine binding) AND any INERT device slot.
+    //
+    // ⚠ THIS LOOP READS `snap.nodes`, NOT `currentNodes`, so every exclusion
+    // the map above applies has to be repeated here or it only half-works:
+    // the node would be absent from the map (and so removed the moment it
+    // was ever applied) while still being added by this pass — a node that
+    // is added and removed on alternating passes. That is exactly what a
+    // filter applied in only one of the two places produces.
     for (const node of snap.nodes) {
-      if (isMeta(node)) continue;
+      if (isMeta(node) || inertSlots.has(node.id)) continue;
       if (appliedNodes.has(node.id)) continue;
       // already known bad AT THIS TYPE — do not retry or re-warn
       if (failedNodes.get(node.id) === node.type) continue;

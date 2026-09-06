@@ -347,6 +347,39 @@ describe('the bootstrap guards — every one of them cost a bug', () => {
     expect(r.view('a').state).toBe('streaming');
   });
 
+  it('⚠ AN UNBOUND DEVICE SLOT IS DARK: a reserved id with nothing saved never reaches getUserMedia', async () => {
+    // The complement of the FRESH-camera fall-through above, carried over from
+    // the card's acquire path when it moved here (graph/device-slots.ts:
+    // "unbound slot = dark module"). A reserved slot exists in every rack
+    // whether or not anyone asked, so the unconstrained default-camera request
+    // that is RIGHT for a just-added camera would be a camera light at every
+    // rack boot here. Same world as the fresh-camera case — labels visible,
+    // enabled, a stream on offer — so a regression cannot hide behind a guard
+    // earlier in bootstrap.
+    const h = makeHarness();
+    h.setDevices([CAM_A]);
+    const s = makeStream('dev-a');
+    h.setResult({ stream: s.stream, error: null });
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    expect(h.acquireCalls()).toBe(0);
+    expect(r.view('slot:cam1').state).toBe('idle');
+  });
+
+  it('a BOUND device slot acquires like any camera — the guard keys on "nothing saved", never the id alone', async () => {
+    const h = makeHarness();
+    h.setDevices([CAM_A]);
+    h.savedId.set('slot:cam1', 'dev-a');
+    const s = makeStream('dev-a');
+    h.setResult({ stream: s.stream, error: null });
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    expect(h.acquireTargets()).toEqual(['dev-a']);
+    expect(r.view('slot:cam1').state).toBe('streaming');
+  });
+
   it('a saved id that RESOLVES acquires against it and mints no rebind notice', async () => {
     const h = makeHarness();
     h.setDevices([CAM_A, CAM_B]);

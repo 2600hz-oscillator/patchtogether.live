@@ -576,15 +576,29 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
      * still fails — which is the real defect it is there to catch. What it
      * stops reporting is "not yet", which was never the question.
      */
+    // ⚠ SCOPED TO THIS NODE'S ELEMENT, NOT "the first camera-preview in the
+    // document" — and the change is the device-slot layer, not a refactor.
+    // Every rack now holds four reserved camera slots (`cam1..cam4`,
+    // graph/device-slots.ts) whose node-owned elements park at boot, BEFORE
+    // `v-cam` ever spawns — and an unbound slot is deliberately DARK (its
+    // acquire path never reaches getUserMedia), so `querySelectorAll(...)[0]`
+    // is a slot's streamless element and this test reads
+    // `{count: 5, tracks: []}` off a perfectly healthy capture. The registry
+    // reflects its node key into `data-node-id` for exactly this reason (see
+    // node-camera-source.svelte.ts), so the query names its subject. `count`
+    // keeps the same invariant it always asserted — one element per NODE —
+    // now stated per-node instead of riding on "only one camera exists".
+    const CAM_PREVIEW_SEL = 'video[data-testid="camera-preview"][data-node-id="v-cam"]';
+
     const waitForLiveCapture = async () => {
       await page
         .waitForFunction(
-          () => {
-            const v = document.querySelector('[data-testid="camera-preview"]') as HTMLVideoElement | null;
+          (sel) => {
+            const v = document.querySelector(sel) as HTMLVideoElement | null;
             const s = v?.srcObject as MediaStream | null;
             return !!s && s.getVideoTracks().some((t) => t.readyState === 'live');
           },
-          undefined,
+          CAM_PREVIEW_SEL,
           { timeout: 15_000 },
         )
         // Swallow the timeout so the ASSERTION below reports the real state
@@ -595,15 +609,19 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
     };
 
     const captureState = async () =>
-      page.evaluate(() => {
-        const all = [...document.querySelectorAll('[data-testid="camera-preview"]')];
+      page.evaluate((sel) => {
+        const all = [...document.querySelectorAll(sel)];
         const v = all[0] as HTMLVideoElement | undefined;
         if (!v) return { present: false, count: 0, tracks: [] as string[], where: 'absent' };
         const s = v.srcObject as MediaStream | null;
         return {
           present: true,
           // ONE element per node is a registry invariant, not an accident —
-          // assert it here where a real double-mount actually happens.
+          // assert it here where a real double-mount actually happens. The
+          // count is of THIS node's elements (the selector is node-scoped);
+          // the four reserved slots' parked elements are other nodes' property
+          // and no more this test's subject than another spawned camera would
+          // be.
           count: all.length,
           tracks: s ? s.getVideoTracks().map((t) => t.readyState) : [],
           // ⚠ THE `host` BRANCH IS NEW AND IS NOT COSMETIC. Before the
@@ -620,7 +638,7 @@ test.describe('CAMERA node-owned media lifetime @camera-integration', () => {
                 ? 'parking'
                 : 'lane',
         };
-      });
+      }, CAM_PREVIEW_SEL);
 
     const before = await waitForLiveCapture();
     expect(before.present, 'the camera element exists before the move').toBe(true);
