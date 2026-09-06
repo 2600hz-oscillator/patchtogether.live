@@ -509,6 +509,26 @@ export function createNodeVideoSourceRegistry<E>(
     await deps.el.awaitMetadata(c.el);
     if (c.disposed) return;
 
+    // ⚠ A RESTORE WHOSE HANDLE THE DOC NO LONGER NAMES IS STALE — ABANDON IT.
+    // MEASURED on CI (SwiftShader decode): a same-session load landed while
+    // this restore was still awaiting metadata. Writing here would stamp the
+    // stale handle over the LOADED patch's fileMeta, and the adapter's
+    // "drop the previous handle" rule would then DELETE the loaded patch's
+    // handle from IDB — the loaded clip becomes unrestorable. Only a handle
+    // RESTORE is guarded: a user pick (no `reuseHandleId`) is itself the
+    // intent. Record what the element holds (unless a newer restore has
+    // already claimed it) and re-check the doc so the right clip follows.
+    if (opts?.reuseHandleId) {
+      const docId = deps.doc.read(c.node.id)?.fileMeta?.handleId ?? null;
+      if (docId !== opts.reuseHandleId) {
+        if (c.reloadHandleId === opts.reuseHandleId) {
+          c.attachedHandleId = opts.reuseHandleId;
+          reattachIfHandleChanged(c);
+        }
+        return;
+      }
+    }
+
     // Persist the handle BEFORE writing fileMeta, so the id stamped into the
     // synced meta is the one the handle is stored under.
     let handleId: string | undefined = opts?.reuseHandleId;

@@ -641,3 +641,74 @@ describe('⚠ SAME-SESSION LOAD AT A REUSED ID — re-attach on a CHANGE of hand
     expect(h.els.get('vb::main')!.src).toBe('blob:v2.webm');
   });
 });
+
+describe('⚠ A RESTORE THAT OUTLIVES THE DOC IT WAS STARTED FOR — the CI catch', () => {
+  // MEASURED on CI (SwiftShader decode): patch v2's restore of clip B was still
+  // awaiting metadata when patch v1 was loaded over the rack. Completing, it
+  // wrote B's fileMeta over the LOADED doc, and the adapter's "drop the
+  // previous handle" rule deleted v1's handle from IDB. Locally the decode
+  // finished first, 4/4 green.
+  type StoredHandle = { perm: 'granted' | 'prompt' | 'denied'; file: File };
+  function makeHooks() {
+    const handles = new Map<string, StoredHandle>();
+    const hooks: VideoSourceHandleHooks = {
+      canPersist: () => true,
+      newId: () => `id-${handles.size + 1}`,
+      put: async (id, handle) => { handles.set(id, handle as StoredHandle); },
+      get: async (id) => handles.get(id) ?? null,
+      queryPermission: async (h) => (h as StoredHandle).perm,
+      requestPermission: async () => 'granted',
+      getFile: async (h) => (h as StoredHandle).file,
+    };
+    return { hooks, handles };
+  }
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+  }
+
+  it('a stale restore writes NOTHING and hands off to the clip the doc names', async () => {
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    hk.handles.set('h-v1', { perm: 'granted', file: fakeFile('v1.webm', 'video/webm') });
+    hk.handles.set('h-v2', { perm: 'granted', file: fakeFile('v2.webm', 'video/webm') });
+    h.state.set('vb', {
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+      isPlaying: true, lastSyncTime: 1_000, lastSyncPosition: 0,
+    });
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    const el = h.els.get('vb::main')!;
+    expect(el.src).toBe('blob:v1.webm');
+
+    // From here, metadata resolves only when the test says so — the slow decode.
+    const pending: Array<() => void> = [];
+    h.deps.el.awaitMetadata = () => new Promise<void>((resolve) => { pending.push(resolve); });
+
+    // v2 arrives: the restore of clip B starts and parks on metadata.
+    h.state.get('vb')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    expect(el.src, 'B is on the element, decoding').toBe('blob:v2.webm');
+    expect(pending.length).toBe(1);
+    const metasBefore = h.metas.length;
+
+    // THE LOAD OF v1 lands while B decodes. Same id, same controller.
+    h.state.get('vb')!.fileMeta = { name: 'v1.webm', duration: 10, handleId: 'h-v1' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+
+    // B's decode completes LATE.
+    pending.shift()!();
+    await settle();
+    expect(h.metas.length, 'the stale restore wrote no meta over the loaded doc').toBe(metasBefore);
+    expect(h.state.get('vb')!.fileMeta?.handleId, 'the doc still names v1').toBe('h-v1');
+
+    // ...and the hand-off restored what the doc names.
+    expect(pending.length, 'a restore of v1 is in flight').toBe(1);
+    pending.shift()!();
+    await settle();
+    expect(el.src, 'v1 is back on the element').toBe('blob:v1.webm');
+    expect(h.metas.at(-1)?.name).toBe('v1.webm');
+  });
+});

@@ -201,14 +201,17 @@ async function readEl(page: Page, testid: string): Promise<ElState | null> {
   }, testid);
 }
 
-/** Wait until the node element holds SOME object URL other than `notSrc`,
- *  has metadata, and is playing. */
-async function waitForSource(page: Page, testid: string, notSrc: string, message: string): Promise<ElState> {
+/** Wait until the node element holds an object URL, is DECODING the expected
+ *  clip (its duration matches that clip decoded on its own), and is playing.
+ *  Keyed on the clip's identity rather than "some new URL": a re-attach of
+ *  the OTHER clip also mints a fresh URL, and on a slow decoder the two
+ *  restores overlap (see the registry's stale-restore guard). */
+async function waitForClip(page: Page, testid: string, expectedDur: number, message: string): Promise<ElState> {
   await expect
     .poll(
       async () => {
         const s = await readEl(page, testid);
-        return !!s && s.src.startsWith('blob:') && s.src !== notSrc && Number.isFinite(s.duration) && s.duration > 0 && !s.paused;
+        return !!s && s.src.startsWith('blob:') && Math.abs(s.duration - expectedDur) < 0.05 && !s.paused;
       },
       { timeout: 30_000, message },
     )
@@ -266,13 +269,13 @@ async function readDocMeta(page: Page, id: string): Promise<{ name?: string; dur
 
 async function runLeg(page: Page, type: 'videobox' | 'videovarispeed', testid: string): Promise<void> {
   const errors = await boot(page);
-  const { durB } = await seedHandles(page);
+  const { durA, durB } = await seedHandles(page);
   const id = `${type}-reused`;
 
   // v1 LIVE (positive control, any build): clip A restores from its handle
   // with no surface mounted, and MOVES.
   await seedVideoNode(page, id, type, H_A, 'clip-a.webm');
-  const v1 = await waitForSource(page, testid, '', 'v1: clip A restores from the saved handle and plays');
+  const v1 = await waitForClip(page, testid, durA, 'v1: clip A restores from the saved handle and plays');
   expect(await measureProgress(page, testid, OBSERVE_MS), 'v1: clip A is moving').toBeGreaterThan(MIN_PROGRESS_S);
   const envV1 = await saveEnvelope(page);
 
@@ -281,21 +284,26 @@ async function runLeg(page: Page, type: 'videobox' | 'videovarispeed', testid: s
   await writeMeta(page, id, H_B, 'clip-b.webm');
   const envV2 = await saveEnvelope(page);
 
-  // TWO SAME-SESSION LOADS at the reused id: back to v1, then to v2.
+  // TWO SAME-SESSION LOADS at the reused id: back to v1, then to v2. Each is
+  // followed by an ELEMENT wait, not only a doc read: on CI the first load
+  // landed while clip B was still decoding, and the registry's stale-restore
+  // guard is what keeps that late completion from stamping B over the loaded
+  // doc (and deleting A's handle). The doc read pins that guard; the element
+  // wait pins the hand-off to the clip the doc names.
   await loadSameSession(page, envV1, id);
   await expect
-    .poll(async () => (await readDocMeta(page, id))?.handleId, { message: 'the doc shows v1 after the first load' })
+    .poll(async () => (await readDocMeta(page, id))?.handleId, { timeout: 15_000, message: 'the doc shows v1 after the first load — a late v2 restore did not stamp over it' })
     .toBe(H_A);
+  await waitForClip(page, testid, durA, 'after the first load: clip A (v1) is back on the element and plays');
   await loadSameSession(page, envV2, id);
   await expect
-    .poll(async () => (await readDocMeta(page, id))?.handleId, { message: 'the doc shows v2 after the second load' })
+    .poll(async () => (await readDocMeta(page, id))?.handleId, { timeout: 15_000, message: 'the doc shows v2 after the second load' })
     .toBe(H_B);
 
   // THE CLAIM: the element holds clip B — a different object URL than clip
   // A's, decoding B (duration matches B decoded on its own) and MOVING.
-  const v2 = await waitForSource(page, testid, v1.src, 'AFTER THE LOAD: the element re-attached to a NEW source and plays');
+  const v2 = await waitForClip(page, testid, durB, 'AFTER THE LOAD: the element re-attached to clip B and plays');
   expect(v2.src, 'a different object URL than clip A').not.toBe(v1.src);
-  expect(Math.abs(v2.duration - durB), `decoding clip B (duration ${v2.duration} vs B ${durB})`).toBeLessThan(0.05);
   expect(await measureProgress(page, testid, OBSERVE_MS), 'clip B is moving after the load').toBeGreaterThan(MIN_PROGRESS_S);
   expect(await engineHasElement(page, id), 'the engine still holds the element').toBe(true);
   // ...and the load path wrote B's real metadata back, so surfaces agree.

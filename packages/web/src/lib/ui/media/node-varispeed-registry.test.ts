@@ -1037,3 +1037,49 @@ describe('⚠ SAME-SESSION LOAD AT A REUSED ID — a slot re-attaches on a CHANG
     expect(h.els.get(`v1::${varispeedSlotKey(0)}`)!.src).toBe('blob:v2.webm');
   });
 });
+
+describe('⚠ A RESTORE THAT OUTLIVES THE DOC IT WAS STARTED FOR — the CI catch', () => {
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+  }
+
+  it('a stale slot restore writes NOTHING and the pump restores what the doc names', async () => {
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-v1', { perm: 'granted', file: fakeVideo('v1.webm') });
+    h.handles.set('h-v2', { perm: 'granted', file: fakeVideo('v2.webm') });
+    h.state.set('v1', {
+      isPlaying: false, loop: true, crop: null,
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    await settle();
+    const el0 = h.els.get(`v1::${varispeedSlotKey(0)}`)!;
+    expect(el0.src).toBe('blob:v1.webm');
+
+    const pending: Array<() => void> = [];
+    h.deps.el.awaitMetadata = () => new Promise<void>((resolve) => { pending.push(resolve); });
+
+    h.state.get('v1')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(el0.src, 'B is on the slot, decoding').toBe('blob:v2.webm');
+    expect(pending.length).toBe(1);
+    const writesBefore = h.metaWrites.length;
+
+    // The load of v1 lands while B decodes.
+    h.state.get('v1')!.fileMeta = { name: 'v1.webm', duration: 10, handleId: 'h-v1' };
+    pending.shift()!(); // B's decode completes LATE
+    await settle();
+    expect(h.metaWrites.length, 'no meta stamped over the loaded doc').toBe(writesBefore);
+    expect(h.state.get('v1')!.fileMeta?.handleId).toBe('h-v1');
+
+    // The hand-off: v1 restores.
+    expect(pending.length, 'a restore of v1 is in flight').toBe(1);
+    pending.shift()!();
+    await settle();
+    expect(el0.src).toBe('blob:v1.webm');
+    expect(h.metaWrites.at(-1)?.meta).toMatchObject({ name: 'v1.webm', handleId: 'h-v1' });
+  });
+});

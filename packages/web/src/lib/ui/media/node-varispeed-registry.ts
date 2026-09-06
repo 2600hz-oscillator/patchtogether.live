@@ -672,6 +672,22 @@ export function createNodeVarispeedRegistry<E>(
       await deps.el.awaitMetadata(el);
       if (c.disposed) return;
 
+      // ⚠ A RESTORE WHOSE HANDLE THE DOC NO LONGER NAMES IS STALE — ABANDON IT.
+      // Same hazard the videobox registry documents: a same-session load that
+      // lands while this restore awaits metadata must not have its slot meta
+      // stamped over (and its handle deleted) by the restore completing late.
+      // Only a handle RESTORE is guarded; a user pick is itself the intent.
+      if (opts?.reuseHandleId) {
+        const docId = slotMetaOf(deps.doc.readMeta(c.node.id), slot)?.handleId ?? null;
+        if (docId !== opts.reuseHandleId) {
+          if (c.reloadHandleIds[slot] === opts.reuseHandleId) {
+            c.attachedHandleIds[slot] = opts.reuseHandleId;
+            pumpReloads(c);
+          }
+          return;
+        }
+      }
+
       const duration = deps.el.duration(el);
       c.slotDuration[slot] = duration;
       // Keep this (and every other loaded) slot's decode alive even while it is
