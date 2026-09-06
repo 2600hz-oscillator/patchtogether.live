@@ -109,7 +109,12 @@ async function waitForPin(page: Page, id: string): Promise<void> {
 
 /** Open the pinned MIXMSTRS drawer via the M keymap; return the card host. */
 async function openTray(page: Page) {
-  await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
+  // Focus ritual only — but (500,380) stopped being empty pane when the
+  // reserved output slots repacked the purple zone: it became SYNESTHESIA's
+  // patch-trigger, and the click silently opened a PatchPanel that then sat
+  // over the drawer's own controls (#1767 timed out on exactly that). (500,560)
+  // is BELOW the video-zone tile row in both worlds.
+  await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 560 } });
   await page.keyboard.press('m');
   const drawer = page.getByTestId('dock-zone-bottom');
   await expect(drawer).toBeVisible();
@@ -899,7 +904,9 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
 
   /** Open the pinned ELECTRA drawer via the E keymap; return the card host. */
   async function openElectraTray(page: Page) {
-    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
+    // (500,560): see openTray — the old (500,380) lands on slot-repacked
+    // zone chrome and opens a PatchPanel as a side effect.
+    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 560 } });
     await page.keyboard.press('e');
     const drawer = page.getByTestId('dock-zone-bottom');
     await expect(drawer).toBeVisible();

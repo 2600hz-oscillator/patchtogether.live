@@ -461,7 +461,11 @@ test.describe('dock drawer patch menu + rear-view patching (owner fixes 2026-07-
    *  — the DockRail/DockCardHost host the rear-view CSS regression below is
    *  about (M/E kept the drawer semantics when `c` became EXPAND). */
   async function openMixmstrsDrawer(page: Page) {
-    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 380 } });
+    // (500,560): the old (500,380) is no longer empty pane — the reserved
+    // output slots repacked the purple zone and put SYNESTHESIA's
+    // patch-trigger there, so the focus click opened a PatchPanel over the
+    // drawer (workflow-drawer-face #1767). Below the tile row instead.
+    await page.locator('.svelte-flow__pane:visible').first().click({ position: { x: 500, y: 560 } });
     await page.keyboard.press('m');
     const drawer = page.getByTestId('dock-zone-bottom');
     await expect(drawer).toBeVisible();
