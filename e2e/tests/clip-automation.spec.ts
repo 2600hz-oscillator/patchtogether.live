@@ -478,15 +478,45 @@ async function midiLearn(page: Page, vcaId: string, cc: number): Promise<void> {
 
 /** Sweep a bound CC (0..127) for `ms`. Each inject DRIVES the param AND fires
  *  notifyAutomationTouch — the exact seam a screen drag uses — so while its
- *  module's lane is armed the touched param records (record-while-touched). */
+ *  module's lane is armed the touched param records (record-while-touched).
+ *
+ *  ⚠ #1569, THIRD OCCURRENCE — the beat lives IN THE PAGE. The runner-side
+ *  version (one `page.evaluate` round trip per message + `waitForTimeout(60)`)
+ *  raced the IN-PAGE `CC_SETTLE_MS = 200` idle-release: on a loaded shard the
+ *  measured per-inject gap was 231.6–616.8 ms (every gap, all four failing CI
+ *  attempts of runs 34001881396 / 34000971132), so EVERY message was an
+ *  isolated sub-settle grab whose store value never moved — each pass entry
+ *  froze at maxDev = 0 and died at the recorder's `MOVE_EPS` no-op-touch gate.
+ *  Zero events, while the lane stayed armed/playing/assigned and the ENGINE
+ *  (fed by the per-message transient leg) showed full spread — four passing
+ *  controls around a silent recorder. `holdCcUntilReleased` above and
+ *  `sampleSpread` were both moved in-page for the same disease; this helper
+ *  had been missed. In-page, a 60 ms beat structurally outpaces the 200 ms
+ *  settle: if the page's main thread stalls, both clocks stall together and
+ *  the race cannot re-open. */
 async function sweepCc(page: Page, cc: number, ms: number): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    const t = (Date.now() - start) / ms;
-    const v = Math.round(64 + 58 * Math.sin(t * Math.PI * 2 * 2));
-    await injectCc(page, 1, cc, Math.max(0, Math.min(127, v)));
-    await page.waitForTimeout(60);
-  }
+  await page.evaluate(
+    ({ cc, ms }) =>
+      new Promise<void>((resolve) => {
+        const inject = (globalThis as unknown as {
+          __midiTestInject: (c: number, cc: number, v: number) => boolean;
+        }).__midiTestInject;
+        const start = performance.now();
+        const beat = () => {
+          const elapsed = performance.now() - start;
+          if (elapsed >= ms) {
+            resolve();
+            return;
+          }
+          const t = elapsed / ms;
+          const v = Math.round(64 + 58 * Math.sin(t * Math.PI * 2 * 2));
+          inject(1, cc, Math.max(0, Math.min(127, v)));
+          setTimeout(beat, 60);
+        };
+        beat();
+      }),
+    { cc, ms },
+  );
 }
 
 /** Keep a bound CC HOT at a CONSTANT value (re-inject every ~50 ms) UNTIL the
