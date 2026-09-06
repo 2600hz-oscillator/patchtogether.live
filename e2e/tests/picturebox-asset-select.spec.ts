@@ -19,6 +19,7 @@
 // no OS H.264 encoder dependency.
 
 import { test, expect, type Page } from '@playwright/test';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { spawnPatch } from './_helpers';
 import { midiToVOct } from '../../packages/web/src/lib/audio/note-entry';
 import { ASSET_SLOT_NOTES } from '../../packages/web/src/lib/video/asset-select';
@@ -178,6 +179,14 @@ const DARK = 60;
 
 test.describe('PICTUREBOX — 7-slot asset selector (image)', () => {
   test('a gate at note D shows slot 1; a gate at note C shows slot 0', async ({ page }) => {
+    // ⚠ BARE 30 s DEFAULT — the family this branch has now repaired a dozen
+    // times. Failed on CI (run 34000971132) with a plain `Test timeout` and NO
+    // call log: nothing stuck, the test simply ran out. Re-pointing a spec off
+    // the deleted surface adds a dock open, and a dock mount no longer overlaps
+    // page load, so the boot moved in front of the first assertion. A BOUND,
+    // not a claim: this test asserts a slot selection / a resize, never a
+    // latency, and a bound costs wall-clock only when it is exceeded.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const errors = await setup(page);
 
     await spawnPatch(

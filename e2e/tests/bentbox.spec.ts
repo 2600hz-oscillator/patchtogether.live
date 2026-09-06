@@ -23,6 +23,7 @@
 // observable state), NOT a render assertion. Goal: 0 waitForTimeout in the file.
 
 import { test, expect } from './_fixtures';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { spawnPatch } from './_helpers';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
@@ -145,6 +146,14 @@ test.describe('BENTBOX — CRT-emulation output', () => {
   });
 
   test('resize handle is present + drag grows the preview (and persists the size)', async ({ page, rack }) => {
+    // ⚠ BARE 30 s DEFAULT — the family this branch has now repaired a dozen
+    // times. Failed on CI (run 34000971132) with a plain `Test timeout` and NO
+    // call log: nothing stuck, the test simply ran out. Re-pointing a spec off
+    // the deleted surface adds a dock open, and a dock mount no longer overlaps
+    // page load, so the boot moved in front of the first assertion. A BOUND,
+    // not a claim: this test asserts a slot selection / a resize, never a
+    // latency, and a bound costs wall-clock only when it is exceeded.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await spawnPatch(page, [
       { id: 'bb', type: 'bentbox', position: { x: 200, y: 100 }, domain: 'video' },
     ]);
