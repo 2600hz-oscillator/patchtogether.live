@@ -11,6 +11,7 @@ import {
   CLIP_SCHEMA_VERSION,
   migrateLegacyClipKey,
   migrateClipPlayerData,
+  clipPlayerDataNeedsLoadSeam,
   DEFAULT_CLIP_STEPS,
   clipIndex,
   laneOf,
@@ -251,6 +252,45 @@ describe('clip-key schema migration (v1 stride-8 → v2 stride-64)', () => {
     expect((readClip(d, clipIndex(1, 0)) as NoteClipRecord).name).toBe('p'); // lane 0 slot 1
     expect((readClip(d, clipIndex(3, 2)) as NoteClipRecord).name).toBe('q'); // lane 2 slot 3
     expect(d.clips![String(2 * 8 + 3)]).toBeUndefined(); // legacy key gone
+  });
+});
+
+describe('clipPlayerDataNeedsLoadSeam (fleet-audit #5 — the tick re-arm)', () => {
+  /** Data the way the load seam leaves it: current schema + every container. */
+  const seamed = () => ({
+    sv: CLIP_SCHEMA_VERSION,
+    auto: {},
+    autoAssign: {},
+    automation: { lanes: {} },
+    sceneRepeats: {},
+    song: { v: 1, notes: {}, auto: {}, arrangerAuto: { tracks: {} }, arrangerAssign: {} },
+  });
+
+  it('fires on a pre-`sv` (legacy stride-8) data object — the audited case', () => {
+    expect(clipPlayerDataNeedsLoadSeam({ clips: { '9': defaultNoteClip() } })).toBe(true);
+  });
+
+  it('fires when an LWW-hardening container is missing on stamped v2 data', () => {
+    for (const missing of ['auto', 'autoAssign', 'automation', 'sceneRepeats', 'song'] as const) {
+      const d = seamed() as Record<string, unknown>;
+      delete d[missing];
+      expect(clipPlayerDataNeedsLoadSeam(d), `missing ${missing}`).toBe(true);
+    }
+  });
+
+  it('is QUIET on data the seam has run against — the storm-safety clause', () => {
+    // ⚠ Every write the seam performs must satisfy this predicate, or the tick
+    // would re-run the seam forever (a per-tick Y.Doc write storm). Mirror the
+    // seam: migrate + create the containers, then assert quiet.
+    const d = { clips: { '9': defaultNoteClip() } } as Record<string, unknown>;
+    migrateClipPlayerData(d as never);
+    Object.assign(d, { auto: {}, autoAssign: {}, automation: {}, sceneRepeats: {}, song: {} });
+    expect(clipPlayerDataNeedsLoadSeam(d)).toBe(false);
+  });
+
+  it('is quiet on nullish data — an absent node is not a migration candidate', () => {
+    expect(clipPlayerDataNeedsLoadSeam(undefined)).toBe(false);
+    expect(clipPlayerDataNeedsLoadSeam(null)).toBe(false);
   });
 });
 
@@ -2466,16 +2506,40 @@ describe('the ARM subset is DERIVED from the transient list, not restated beside
     }
   });
 
-  it('names EXACTLY the five record-arm latches — nothing else may ride along', () => {
+  it('names EXACTLY the six record-arm latches — nothing else may ride along', () => {
     // ⚠ EXACT, not `toContain`. A save/load scrub is a DELETE: a `live` field
     // that drifted into this set would start being erased from every saved
     // patch, which is the same class of silent damage in the other direction.
     // `autoAssign` is the near miss — it carries recorderId-shaped claims and is
     // NOT an arm: a player expects their module→lane assignments back after a
     // reload.
+    //
+    // ⚠ `recArm` (the per-lane AUDIO record toggle) joined on 2026-09-04 and
+    // belongs here: a duplicate born toggled-on would start recording the
+    // instant the transport rolled, and a patch saved mid-arm must not reload
+    // armed. Its sibling `recMode` is deliberately NOT an arm — it is a SETTING
+    // (CLIP vs ENDLESS), it survives save and duplicate on purpose, and a mode
+    // cannot start a recording on its own.
     expect([...CLIP_PLAYER_ARM_DATA_FIELDS].sort()).toEqual(
-      ['audioRec', 'automation', 'noteRec', 'recording', 'songRec'].sort(),
+      ['audioRec', 'automation', 'noteRec', 'recArm', 'recording', 'songRec'].sort(),
     );
+  });
+
+  it('⚠ recMode is CONTENT, not an arm — a CLIP/ENDLESS setting survives save and duplicate', () => {
+    // The other half of the classification, pinned from the outside: if
+    // `recMode` ever drifts into the arm set it starts being deleted from every
+    // saved patch, and a player loses a per-lane setting on every reload.
+    expect(CLIP_PLAYER_ARM_DATA_FIELDS as readonly string[]).not.toContain('recMode');
+    expect(CLIP_PLAYER_TRANSIENT_DATA_FIELDS as readonly string[]).not.toContain('recMode');
+    const d: Record<string, unknown> = {
+      recMode: ['endless', 'single', 'single', 'single', 'single', 'single', 'single', 'single'],
+      recArm: { '0': true },
+    };
+    scrubClipPlayerTransientData(d);
+    expect(d.recArm, 'the toggle is scrubbed from a duplicate').toBeUndefined();
+    expect(d.recMode, 'the mode survives — it is a setting, not an arm').toEqual([
+      'endless', 'single', 'single', 'single', 'single', 'single', 'single', 'single',
+    ]);
   });
 
   it('the LIVE fields are absent from it — the save path still carries them', () => {

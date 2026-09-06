@@ -151,6 +151,51 @@ export function migrateClipPlayerData(
   return true;
 }
 
+/** True when a clip-player's persisted `data` still needs the engine's
+ *  per-node LOAD SEAM (the stride-8→64 `migrateClipPlayerData` re-key + the
+ *  LWW-container init) run against it.
+ *
+ *  ⚠ WHY THIS EXISTS (fleet-audit 2026-09-06 #5): the seam originally ran in
+ *  the engine FACTORY only, on the stated-but-false premise that the factory
+ *  always runs. The reconciler re-materializes a node only on id-absence or a
+ *  type/domain change and NEVER diffs `node.data` — so a pre-`sv` patch loaded
+ *  at a REUSED id (same-session envelope load / perf-zip load over a live
+ *  rack) kept its stride-8 clip keys while every runtime read used stride-64:
+ *  pads silently never fired. The engine tick calls this predicate per tick
+ *  (a handful of proxy property reads) and re-runs the seam when it fires;
+ *  the seam's own writes satisfy every clause, so it converges after one run
+ *  and can never storm.
+ *
+ *  The container clauses keep the LWW-hardening guarantee on the same seam:
+ *  containers are created ONLY here (guarded — once present, no writer ever
+ *  replaces one), never lazily inside the racy commit/assign/arm paths. Two
+ *  peers racing this seam both write an EMPTY container — harmless either
+ *  way, exactly the documented factory-time race. PURE. */
+export function clipPlayerDataNeedsLoadSeam(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as {
+    sv?: unknown;
+    auto?: unknown;
+    autoAssign?: unknown;
+    automation?: unknown;
+    sceneRepeats?: unknown;
+    song?: unknown;
+  };
+  if (d.sv !== CLIP_SCHEMA_VERSION) return true;
+  return (
+    !d.auto ||
+    typeof d.auto !== 'object' ||
+    !d.autoAssign ||
+    typeof d.autoAssign !== 'object' ||
+    !d.automation ||
+    typeof d.automation !== 'object' ||
+    !d.sceneRepeats ||
+    typeof d.sceneRepeats !== 'object' ||
+    !d.song ||
+    typeof d.song !== 'object'
+  );
+}
+
 /** True iff the clips map holds ANY key ≥ SCENE_STRIDE — the tell-tale of
  *  already-stride-64 data (a legacy stride-8 key is always ≤ 63). PURE. */
 function hasStride64Key(clips: Record<string, unknown>): boolean {
@@ -270,6 +315,16 @@ export interface AudioClipRecord extends ClipBase {
    *  second `mediaId` into the same store, so the clip's audio and video takes
    *  share one lifecycle and one GC. */
   videoMediaId?: string;
+  /** CLAUSE 6 — play LIVE or the RECORDED audio. `true` = this clip is a
+   *  PASS-THROUGH: launching it does not start the recorded source, so the
+   *  lane's live input is what you hear. Absent/false = play the take.
+   *
+   *  ⚠ PER CLIP, NOT PER LANE, and that is the owner's word. It replaces the
+   *  mixmstrs channel-level MON duck (`live`/`both`/`clip-auto`), which gated a
+   *  whole channel; this gates one clip at the playback side, so two clips in
+   *  the same lane can differ. CONTENT — it is a property of the take and is
+   *  copied with it. */
+  live?: boolean;
 }
 
 /** LATER — node-state snapshot clip (param/graph scene). */
@@ -517,6 +572,34 @@ export interface ClipPlayerData {
    *  LIVE/TRANSIENT — never duplicated (`CLIP_PLAYER_TRANSIENT_DATA_FIELDS`).
    *  Absent/empty = nothing armed. Written from slice 5 onward. */
   audioRec?: Record<string, AudioRecState | null>;
+  /** CLAUSE 3 — the per-lane RECORD TOGGLE, the player's intent. A sparse
+   *  RECORD keyed by the lane digit ('0'..'7') for the SAME reason `audioRec`
+   *  is one: a whole-array write is LAST-WRITER-WINS, so two peers toggling
+   *  DIFFERENT lanes concurrently would clobber each other — the exact thing
+   *  per-lane recording exists to allow.
+   *
+   *  ⚠ THIS IS THE INTENT; `audioRec` IS THE IN-FLIGHT TAKE. The player writes
+   *  this one; the recorder registry READS it and writes `audioRec`. Keeping
+   *  them apart is what lets clause 4 work — the toggle can be on while the
+   *  transport is stopped and no take exists yet.
+   *
+   *  LIVE/TRANSIENT ('arm'): a duplicate born toggled-on would start recording
+   *  the moment the transport rolled, and a saved patch must never reload armed.
+   *  Absent/empty = nothing armed. */
+  recArm?: Record<string, boolean>;
+  /** CLAUSE 5 — the per-lane CLIP-vs-ENDLESS switch. Length CLIP_LANES.
+   *
+   *  ⚠ THE UNION IS THE MACHINE'S, THE LABEL IS THE OWNER'S. `'single'` is what
+   *  the owner calls **CLIP** (record exactly one loop, then stop);
+   *  `'endless'` keeps recording until the transport stops or the lane's record
+   *  button is tapped again, ending at the end of the current loop. The vocabulary
+   *  is kept identical to `AudioRecState.mode` and the pure machine on purpose —
+   *  one word per concept in code, and the CLIP wording lives on the faceplate.
+   *
+   *  CONTENT, not transient: it is a SETTING (like `mono` / `rate`), not an arm.
+   *  A duplicated or reloaded lane keeps the mode it was configured with, which
+   *  cannot start a recording on its own. Absent/short ⇒ 'single'. */
+  recMode?: ('single' | 'endless')[];
   /** AUTOMATION record-arm state — PER LANE (the owner's Deluge-like model:
    *  "we arm this per channel, not as a global"). `lanes` is a sparse RECORD
    *  keyed by the lane digit ('0'..'7') — a PER-KEY map (like `autoAssign` and
@@ -837,6 +920,12 @@ const CLIP_PLAYER_TRANSIENT_DATA_FIELD_KINDS = {
   // born recording: it would double-record the lane and its copied recorderId
   // would double-claim the single-writer lease)
   audioRec: 'arm',
+  // the per-lane audio RECORD TOGGLE (clause 3). 'arm' for the same reason
+  // `audioRec` is: a duplicate born toggled-on double-records the lane the
+  // instant the transport rolls, and a patch saved mid-arm must not reload
+  // armed. ⚠ `recMode` is deliberately NOT here — it is a SETTING, and a mode
+  // cannot start a recording on its own.
+  recArm: 'arm',
   automation: 'arm', // per-lane automation arm + recorderIds
   autoAssign: 'live', // module→lane claims (globally exclusive — never copied)
   resetNonce: 'live', // reset intent counter
@@ -970,6 +1059,50 @@ export function laneMono(data: ClipPlayerData | undefined, lane: number): boolea
  *  live — a missing/short array reads as not-muted (back-compat on load). */
 export function laneMuted(data: ClipPlayerData | undefined, lane: number): boolean {
   return data?.muted?.[lane] === true;
+}
+/** CLAUSE 3 — whether a lane's RECORD TOGGLE is on. Default off; a missing or
+ *  malformed entry reads as off, so a corrupt map can never arm a lane. */
+export function laneRecArm(data: ClipPlayerData | undefined, lane: number): boolean {
+  return data?.recArm?.[String(lane)] === true;
+}
+/** CLAUSE 5 — a lane's CLIP-vs-ENDLESS switch. `'single'` is the owner's CLIP.
+ *  Anything absent, short or unrecognised reads as `'single'`: the bounded mode
+ *  is the safe default, because an unrecognised value must never leave a take
+ *  running until the transport happens to stop. */
+export function laneRecMode(
+  data: ClipPlayerData | undefined,
+  lane: number,
+): 'single' | 'endless' {
+  return data?.recMode?.[lane] === 'endless' ? 'endless' : 'single';
+}
+/** CLAUSE 6 — whether a clip plays LIVE (pass-through) instead of its take.
+ *  Only an AUDIO clip can; every other kind reads false, so the toggle can
+ *  never silence a note clip. */
+export function clipPlaysLive(clip: ClipRecord | null | undefined): boolean {
+  return clip?.kind === 'audio' && clip.live === true;
+}
+/** Whether a note clip holds AUTHORED CONTENT — at least one note.
+ *
+ *  ⚠ THE DISTINCTION EXISTS BECAUSE CLICKING AN EMPTY PAD CREATES A CLIP.
+ *  Selecting a slot on the launcher materialises an empty `note` record as a
+ *  placeholder, so "is there a note clip here" cannot be the test for "would
+ *  recording destroy someone's work" — it would refuse to record into every
+ *  slot the player had merely touched, which is exactly the slot they just
+ *  aimed the record button at.
+ *
+ *  An EMPTY note clip is a placeholder and may be recorded over. One with notes
+ *  in it is authored content, and silently replacing that is the worst outcome
+ *  available — the recorder refuses instead. */
+export function noteClipHasContent(clip: ClipRecord | null | undefined): boolean {
+  return clip?.kind === 'note' && Array.isArray(clip.steps) && clip.steps.length > 0;
+}
+/** CLAUSE 7 — whether a slot holds RECORDED AUDIO, which is what earns the pad
+ *  its purple border. Deliberately NOT a `clipPadState` rung: `playing` and
+ *  `queued` outrank `loaded`, so a recorded clip that is playing would lose the
+ *  border the moment it sounded. It is an ORTHOGONAL property of the stored
+ *  clip and is painted as an overlay on top of whatever state the pad is in. */
+export function clipHasAudio(clip: ClipRecord | null | undefined): boolean {
+  return clip?.kind === 'audio' && typeof clip.mediaId === 'string' && clip.mediaId.length > 0;
 }
 /** Record mode, defaulting to legacy 'replace'. */
 export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'overdub' {
@@ -1294,6 +1427,13 @@ function coerceAudioClipRecord(r: Record<string, unknown>, loop: boolean): Audio
   }
   if (typeof r.peak === 'number' && Number.isFinite(r.peak)) out.peak = Math.abs(r.peak);
   if (typeof r.videoMediaId === 'string' && r.videoMediaId) out.videoMediaId = r.videoMediaId;
+  // ⚠ CLAUSE 6 — AND THIS LINE IS LOAD-BEARING. Every consumer downstream reads
+  // `readClip`, never the raw map, so a field this whitelist does not copy does
+  // not exist as far as the engine is concerned: the flag was written, stored,
+  // and silently discarded on the way back out, and the clip kept playing.
+  // Strictly `=== true`, per the drop-do-not-repair rule — anything else is a
+  // clip that plays its take, which is the safe default.
+  if (r.live === true) out.live = true;
   if (typeof r.color === 'number') out.color = r.color;
   if (typeof r.name === 'string') out.name = r.name;
   if (typeof r.gain === 'number') out.gain = r.gain;
