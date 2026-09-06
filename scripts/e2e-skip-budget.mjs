@@ -872,8 +872,18 @@ export const SKIP_BUDGET = [
       + 'thresholds. "It passes now" is NOT an un-park reason — it passed on run 33999805785\'s '
       + 'predecessor and failed on 33990942421 with identical code, which is what marginal means. '
       + '⚠ LOST WHILE PARKED: the only e2e proof that clip B\'s motion reaches the composited picture. '
-      + 'Still covered: the file\'s other macroblock legs (reference-settle, mvect=0 static control), '
-      + 'vfpga-p3-composite, and the vfpga ART scenarios pin the DSP side.',
+      + '⚠ AND THE FIRST DRAFT OF THIS LINE OVERSTATED WHAT SURVIVES — corrected against the tree, '
+      + 'because a park is judged on its coverage note. It claimed "the file\'s other macroblock legs '
+      + '(reference-settle, mvect=0 static control)" and "the vfpga ART scenarios pin the DSP side". '
+      + 'NEITHER IS TRUE: this file has exactly ONE other macroblock leg (:474, "sustained feedback '
+      + 'does not leak (FBOs swapped in place)") and there are NO vfpga ART scenarios at all — '
+      + '`art/scenarios` has no vfpga entry, and could not: vfpga is a VIDEO module and ART is the '
+      + 'audio harness. WHAT ACTUALLY STILL COVERS vfpga, checked: the per-program loop at :227 '
+      + '(each bent program bends the smpte source into distinct non-black output, ONE source), the '
+      + 'leak leg at :474, vfpga-p3-composite (a DIFFERENT era and program — chroma-rot is a Y/C '
+      + 'transplant, not motion transfer), and the vfpga unit tests, which cover the floorplan and '
+      + 'the face model rather than pixels. So while this is parked the program compiles, renders and '
+      + 'does not leak — and the TWO-INPUT motion-transfer behaviour has no coverage anywhere.',
   },
   {
     specs: [
