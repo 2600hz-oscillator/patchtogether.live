@@ -8056,6 +8056,16 @@
     const t2 = threshold * threshold;
     const edges = [...snapshot.edges].sort((a, b) => a.id.localeCompare(b.id));
     for (const e of edges) {
+      // ⚠ NEVER SILENTLY SPLICE INTO WHAT AN OUTPUT IS PRESENTING. Proximity
+      // splice deletes src→dst and inserts src→new→dst; if `dst` is an output
+      // lit on an external display, a module dropped merely NEAR its feed cable
+      // would reroute the projector with no deliberate drop-on-cable gesture —
+      // "add a module, it appears on display2." (The buffer-bleed sibling of
+      // this — an UNPATCHED presenting output mirroring the shared drawing
+      // buffer — is fixed in node-present-registry's source guard; this closes
+      // the patched-chain half.) A drop on any ORDINARY cable keeps the feature;
+      // the user can still hand-wire an effect ahead of a live output.
+      if (nodePresent.isPresenting(e.target.nodeId)) continue;
       const mid = edgeMidpoint(e);
       if (!mid) continue;
       const dx = mid.x - pos.x;

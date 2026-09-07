@@ -39,13 +39,21 @@ function fakeSession(): PresentSession & { stop: ReturnType<typeof vi.fn> } {
 }
 
 /** A fake VideoEngine that records lease refcounts and per-node blits — the two
- *  engine-side effects the registry is responsible for. */
-function fakeEngine() {
+ *  engine-side effects the registry is responsible for.
+ *
+ *  `hasTexture` decides what `outputTexture(nodeId)` returns: a truthy sentinel
+ *  when true (the node has real output pixels), null when false (a texture-less
+ *  sink, or a slot whose video node is not in the engine). Defaults to always
+ *  textured so the existing lease/blit/source coverage is unaffected. */
+function fakeEngine(opts: { hasTexture?: (nodeId: string) => boolean } = {}) {
+  const hasTexture = opts.hasTexture ?? (() => true);
+  const tex = {} as WebGLTexture; // opaque sentinel — identity is all that matters
   const leases = new Map<string, number>();
   const blits: string[] = [];
   const engine: PresentEngine = {
     canvas: { width: 1280, height: 720 } as unknown as PresentEngine['canvas'],
     blitOutputToDrawingBuffer: (nodeId: string) => { blits.push(nodeId); },
+    outputTexture: (nodeId: string) => (hasTexture(nodeId) ? tex : null),
     acquireRenderLease: (nodeId: string) => {
       leases.set(nodeId, (leases.get(nodeId) ?? 0) + 1);
       let released = false;
@@ -220,6 +228,78 @@ describe('node-present registry — the BLIT SOURCE is the engine, not a card', 
     // Re-present with the throwing engine so the entry holds it.
     h.reg.present('bd', 's1', { engine: boom, rect: RECT });
     expect(() => h.started.at(-1)!.prepare!()).not.toThrow();
+  });
+});
+
+describe('node-present registry — a TEXTURE-LESS output shows its OWN idle, never the shared buffer', () => {
+  // ⚠ THE BUG (owner, dev): a newly-added video module appeared on a MAPPED
+  // external display that was presenting an output the user never patched — the
+  // owner added "acidwarp" and it showed on display2 with no cable to it.
+  //
+  // `engine.canvas` is ONE drawing buffer the whole engine shares.
+  // `blitOutputToDrawingBuffer(nodeId)` is a NO-OP for a texture-less node (a
+  // slot whose videoOut is not in the engine, or a sink whose surface is
+  // `{texture:null}`), so a `prepare` that blits nothing leaves the buffer
+  // holding "whichever node most recently blitted" — the just-added module's
+  // preview frame. The projector's `source` used to return that buffer
+  // unconditionally. `VideoTileThumb.svelte` already guards the identical read
+  // with `outputTexture(nodeId) !== null`; the projector path was the
+  // un-repaired sibling surface. present-window black-fills on a null source
+  // (present-window.test.ts: "THE BLACK PROJECTOR"), so returning null here is
+  // what makes an unpatched output show its OWN dark idle.
+  function sourceHarness() {
+    const started: StartPresentArgs[] = [];
+    const reg = createNodePresentRegistry({
+      start: (a) => { started.push(a); return fakeSession(); },
+      setInterval: () => null,
+      clearInterval: () => {},
+    });
+    return { started, reg };
+  }
+
+  it('THE BUG: a node with NO output texture yields a null source, not the shared buffer', () => {
+    const { started, reg } = sourceHarness();
+    const eng = fakeEngine({ hasTexture: () => false });
+    expect(reg.present('slot:output2', 's1', { engine: eng.engine, rect: RECT })).toBe(true);
+    expect(
+      started[0]!.source(),
+      'a texture-less output must NOT expose the shared drawing buffer — that is ' +
+        'how another node\'s frame reaches an unpatched projector',
+    ).toBeNull();
+  });
+
+  it('POSITIVE CONTROL: a node WITH an output texture still presents the shared buffer', () => {
+    // Otherwise "returns null for everything" trivially passes the guard above
+    // and every real projector goes black — its own outage.
+    const { started, reg } = sourceHarness();
+    const eng = fakeEngine({ hasTexture: () => true });
+    reg.present('videoOut', 's1', { engine: eng.engine, rect: RECT });
+    expect(started[0]!.source()).toBe(eng.engine.canvas);
+  });
+
+  it('the guard keys on THIS node — a lit output is unaffected by a texture-less sibling', () => {
+    // The buffer is shared, so the decision must be per PRESENTED node, never
+    // "some node has a texture". A textured `videoOut` and a texture-less
+    // `slot:output2` presenting at once each answer for themselves.
+    const { started, reg } = sourceHarness();
+    const eng = fakeEngine({ hasTexture: (id) => id === 'videoOut' });
+    reg.present('videoOut', 's1', { engine: eng.engine, rect: RECT });
+    reg.present('slot:output2', 's1', { engine: eng.engine, rect: RECT });
+    expect(started[0]!.source(), 'textured output presents its picture').toBe(eng.engine.canvas);
+    expect(started[1]!.source(), 'texture-less output shows its own idle').toBeNull();
+  });
+
+  it('is re-evaluated per frame, so a slot that gains a texture starts presenting', () => {
+    // `source` is a getter (present-window reads it every frame). A slot whose
+    // videoOut is added AFTER the projector opened must begin showing once it
+    // has pixels — the guard is a live read, not a snapshot at open time.
+    const { started, reg } = sourceHarness();
+    let textured = false;
+    const eng = fakeEngine({ hasTexture: () => textured });
+    reg.present('slot:output2', 's1', { engine: eng.engine, rect: RECT });
+    expect(started[0]!.source(), 'no pixels yet → own idle').toBeNull();
+    textured = true;
+    expect(started[0]!.source(), 'gained pixels → presents them').toBe(eng.engine.canvas);
   });
 });
 
