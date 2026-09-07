@@ -94,7 +94,14 @@ export function resolveVideoEngine(host: PresentEngineHost | null | undefined): 
   } catch {
     return null;
   }
-  if (!ve || typeof ve.blitOutputToDrawingBuffer !== 'function' || typeof ve.acquireRenderLease !== 'function') {
+  if (
+    !ve ||
+    typeof ve.blitOutputToDrawingBuffer !== 'function' ||
+    typeof ve.acquireRenderLease !== 'function' ||
+    // The projector's source guard queries this every frame; a build without it
+    // would throw in the blit loop rather than fall back cleanly here.
+    typeof ve.outputTexture !== 'function'
+  ) {
     return null;
   }
   return ve as unknown as PresentEngine;
