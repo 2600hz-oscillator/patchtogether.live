@@ -22,6 +22,9 @@ import type { PatchEngine } from '$lib/audio/engine';
 import type { VideoEngine } from '$lib/video/engine';
 import { patch } from '$lib/graph/store';
 import { mutateNode } from '$lib/graph/mutate';
+import { deviceSlotForId } from '$lib/graph/device-slots';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
+import type { CameraSlotName } from '$lib/graph/device-slots';
 import { cameraInputDef } from '$lib/video/modules/camera-input';
 import { acquireCameraStream } from '$lib/ui/camera-acquire';
 import { addLocalCameraNodeId, removeLocalCameraNodeId } from '$lib/multiplayer/camera-presence';
@@ -182,17 +185,51 @@ const registry = createNodeCameraSourceRegistry<HTMLElement>({
     },
   },
   doc: {
+    // ── RESERVED CAMERA SLOTS READ/WRITE THE PER-MACHINE RIG STORE ─────────────
+    //
+    // A `slot:camN` binding is a RIG property, not patch content (device ids are
+    // machine-local and must never ride the shared Y.Doc — the #2045 class). So
+    // for a reserved camera slot every read/write below goes to `rigBindings()`
+    // instead of `node.data`, which is what makes File→New / reload keep the
+    // camera bound: the store survives the doc swap and `runDeviceRestore`
+    // re-acquires. A DYNAMIC camera (`wfcam-*`, no slot) is ordinary patch
+    // content and keeps its `node.data` keys unchanged.
     savedDeviceId: (nodeId) => {
+      const spec = deviceSlotForId(nodeId);
+      if (spec && spec.kind === 'camera') {
+        return rigBindings().getCamera(spec.slot as CameraSlotName)?.deviceId ?? null;
+      }
       const d = patch.nodes[nodeId]?.data;
       return d && typeof d['deviceId'] === 'string' ? (d['deviceId'] as string) : null;
     },
     savedDeviceLabel: (nodeId) => {
+      const spec = deviceSlotForId(nodeId);
+      if (spec && spec.kind === 'camera') {
+        const lbl = rigBindings().getCamera(spec.slot as CameraSlotName)?.deviceLabel;
+        return typeof lbl === 'string' && lbl !== '' ? lbl : null;
+      }
       const d = patch.nodes[nodeId]?.data;
       return d && typeof d['deviceLabel'] === 'string' && d['deviceLabel'] !== ''
         ? (d['deviceLabel'] as string)
         : null;
     },
     writeSavedDevice: (nodeId, deviceId, label) => {
+      const spec = deviceSlotForId(nodeId);
+      if (spec && spec.kind === 'camera') {
+        const slot = spec.slot as CameraSlotName;
+        if (deviceId === null) {
+          rigBindings().setCamera(slot, null);
+          return;
+        }
+        // Never clear a good label with a redacted one — see the core. When the
+        // caller has no fresh label, keep whatever the store already holds.
+        const existing = rigBindings().getCamera(slot);
+        rigBindings().setCamera(slot, {
+          deviceId,
+          deviceLabel: label ?? existing?.deviceLabel,
+        });
+        return;
+      }
       mutateNode(nodeId, (live) => {
         if (!live.data) live.data = {};
         if (deviceId === null) {

@@ -71,6 +71,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 // package name as usual.)
 import { MASTER_CEILING_DB } from '../../../../../dsp/src/lib/master-limiter-dsp';
 import { clearSinkReport, reportSink } from '$lib/audio/output-sink-report';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
 // The degraded tail + the runtime latch recovery live in a DIST-FREE module so
 // they are covered by a pure unit test (audio-out-failover.test.ts) — this file
 // cannot be imported outside Vite because of the `?url` worklet import below.
@@ -454,14 +455,20 @@ export const audioOutDef: AudioModuleDef = {
       publishSink();
     }
 
-    // Restore the saved pick at BOOT. Floated deliberately: the factory must not
-    // block the audio graph on a device negotiation, and a failure lands in
-    // `sinkError` rather than rejecting the whole terminal sink (which would
-    // silence the entire patch — see the limiter catch above for the same
-    // priority).
+    // Restore the saved pick at BOOT from the PER-MACHINE RIG STORE, not
+    // `node.data`. The master sink is a rig property (which speakers this
+    // machine talks to), machine-local and meaningless in a shared/saved patch —
+    // so it lives in `rigBindings()` (localStorage in the browser, the shell's
+    // config store under Electron) and NOT in the synced Y.Doc. That is what
+    // keeps the sink bound across File→New / reload: the store survives the doc
+    // swap and `runDeviceRestore` re-applies on a later store change. Floated
+    // deliberately: the factory must not block the audio graph on a device
+    // negotiation, and a failure lands in `sinkError` rather than rejecting the
+    // whole terminal sink (which would silence the entire patch — see the
+    // limiter catch above for the same priority).
     {
       publishSink(); // support/idle state is known now, before any pick
-      const saved = (node.data ?? {})['outputDeviceId'];
+      const saved = rigBindings().getAudioOut()?.outputDeviceId;
       if (typeof saved === 'string' && saved.length > 0) void applySink(saved);
     }
 
