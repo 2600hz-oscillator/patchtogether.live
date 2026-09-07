@@ -66,11 +66,17 @@ async function launchShell(): Promise<{
   const es9Port = 19210 + 2 * (portSlot % 40);
   const vstPort = 19310 + 2 * (portSlot % 40);
   portSlot += 1;
+  // Two-stage launch (native-shell pre-flight): a fresh machine opens /preflight
+  // for first-run setup. This supervision spec waits for /rack, so seed a
+  // present-but-empty rig record → isFirstRun() is false → boot /rack. The
+  // first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-sup-'));
+  fs.writeFileSync(path.join(userDataDir, 'rig-bindings.json'), '{}');
   const app = await _electron.launch({
     // Fresh userData per launch, for the same reason the ports are fresh: the
     // shell now holds a single-instance lock keyed on this directory, and a
     // lingering sibling would make the next launch exit instead of boot.
-    args: [`--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-sup-'))}`, APP_DIR],
+    args: [`--user-data-dir=${userDataDir}`, APP_DIR],
     env: {
       ...process.env,
       PT_DESKTOP_WEB_ROOT: WEB_ROOT,

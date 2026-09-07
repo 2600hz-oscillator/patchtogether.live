@@ -52,7 +52,13 @@ function requireBundle(): void {
 }
 
 function freshUserDataDir(tag: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `pt-shell-${tag}-`));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `pt-shell-${tag}-`));
+  // Two-stage launch (native-shell pre-flight): a fresh machine opens /preflight
+  // for first-run setup. These specs assert on the RACK (ownership / lock), so
+  // seed a present-but-empty rig record → isFirstRun() is false → boot /rack.
+  // The first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  fs.writeFileSync(path.join(dir, 'rig-bindings.json'), '{}');
+  return dir;
 }
 
 async function status(app: ElectronApplication, id: string): Promise<HelperStatusLike | null> {
