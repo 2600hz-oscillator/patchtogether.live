@@ -12,6 +12,7 @@ import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import {
   PT_BRIDGE_CHANNELS,
   PT_BRIDGE_VERSION,
+  PtHandlerError,
   ptErr,
   ptOk,
   validateCommand,
@@ -116,6 +117,9 @@ export class PtBridge {
       return ptOk(cmd.id, result);
     } catch (err) {
       if (controller.signal.aborted) return ptErr(cmd.id, 'cancelled', 'cancelled by caller');
+      // A handler that named a specific error code (bad-request, …) keeps it;
+      // everything else is an unexpected internal fault and stays retryable.
+      if (err instanceof PtHandlerError) return ptErr(cmd.id, err.code, err.message, err.retryable);
       return ptErr(cmd.id, 'internal', err instanceof Error ? err.message : String(err), true);
     } finally {
       this.inflight.delete(cmd.id);
