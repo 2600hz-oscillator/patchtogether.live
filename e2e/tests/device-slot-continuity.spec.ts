@@ -341,6 +341,19 @@ async function nodeIds(page: Page): Promise<string[]> {
   return (await readNodes(page)).map((n) => n.id).sort();
 }
 
+/** The camera device id bound to a slot in the PER-MACHINE RIG STORE (`cam1`…),
+ *  read through the `__rigBindings` test hook. `null` when unbound or the hook
+ *  is absent (a non-hooks build — asserted against by the callers). */
+async function readSlotCameraBinding(page: Page, slot: string): Promise<string | null> {
+  return page.evaluate((s) => {
+    const w = globalThis as unknown as {
+      __rigBindings?: () => { cameras?: Record<string, { deviceId?: string } | undefined> };
+    };
+    const snap = w.__rigBindings?.();
+    return snap?.cameras?.[s]?.deviceId ?? null;
+  }, slot);
+}
+
 /** `read(nodeId, key)` on the video domain. Returns `undefined` when the ENGINE
  *  node does not exist — which is exactly what a torn-down node looks like. */
 async function engineRead(page: Page, nodeId: string, key: string): Promise<unknown> {
@@ -698,7 +711,10 @@ test.describe('NATIVE-SHELL P1 — a bound device slot survives a patch load', (
       `the output slot's pre-load picture is LEVEL A; measured mean ${outMeanPre}`,
     ).toBeLessThan(BAND_A_MAX);
 
-    // The RIG BINDING as the card actually persisted it.
+    // The RIG BINDING as the card actually persisted it — now in the PER-MACHINE
+    // RIG STORE (`rigBindings()`), NOT `node.data`. A slot's camera pick is a rig
+    // property that must never ride the shared Y.Doc, so the source registry
+    // writes it to the store; `__rigBindings()` reads that record back.
     //
     // ⚠ NOT the id this test picked. `requestStream` reads the granted track's
     // OWN `getSettings().deviceId` and writes THAT back, so the persisted value
@@ -706,14 +722,20 @@ test.describe('NATIVE-SHELL P1 — a bound device slot survives a patch load', (
     // Asserting the picked id here read as a tidy check and was simply wrong
     // about the product; what the load must preserve is whatever this machine
     // wrote, so that is what gets captured and compared.
-    const deviceIdPre = (
-      (await readNodes(page)).find((n) => n.id === CAM_SLOT)?.data as
-        | Record<string, unknown>
-        | undefined
-    )?.deviceId;
-    expect(deviceIdPre, 'the card persisted a device binding for the slot').toEqual(
+    const deviceIdPre = await readSlotCameraBinding(page, 'cam1');
+    expect(deviceIdPre, 'the slot camera pick landed in the rig store').toEqual(
       expect.any(String),
     );
+    // And it is NOT on the synced node.data — that is the #2045-class leak the
+    // store move closes.
+    expect(
+      (
+        (await readNodes(page)).find((n) => n.id === CAM_SLOT)?.data as
+          | Record<string, unknown>
+          | undefined
+      )?.deviceId,
+      'the machine-local device id never rides the shared node.data',
+    ).toBeUndefined();
 
     // Delete the ordinary content, so the load has something to RESTORE. Without
     // this the "a different patch arrived" evidence would be one-directional.
@@ -851,16 +873,21 @@ test.describe('NATIVE-SHELL P1 — a bound device slot survives a patch load', (
       .toBeGreaterThan(BAND_B_MIN);
 
     // ── 10. THE RIG BINDING IS THIS MACHINE'S, AND IT STAYED ───────────────
-    // `deviceId` is a RIG property: stripped from the envelope on the way out,
-    // carried across from the live node on the way in. The envelope saved at
-    // step 1 predates the binding entirely, so finding it here means the load
-    // preserved it rather than restored it.
+    // `deviceId` is a RIG property that lives in the PER-MACHINE STORE, entirely
+    // off the Y.Doc — so it was never in the envelope to begin with, and the load
+    // (which only ever touches the doc) cannot disturb it. The envelope saved at
+    // step 1 predates the binding entirely; the store binding is unchanged
+    // because the store simply is not part of what a load swaps.
     const camNode = (await readNodes(page)).find((n) => n.id === CAM_SLOT);
     expect(camNode?.type, 'the slot kept its canonical type').toBe('cameraInput');
     expect(
-      (camNode?.data as Record<string, unknown> | undefined)?.deviceId,
-      "this machine's camera binding survived the load",
+      await readSlotCameraBinding(page, 'cam1'),
+      "this machine's camera binding survived the load, in the rig store",
     ).toBe(deviceIdPre);
+    expect(
+      (camNode?.data as Record<string, unknown> | undefined)?.deviceId,
+      'and it never leaked back onto the synced node.data',
+    ).toBeUndefined();
 
     errorWatch.assertClean();
   });

@@ -712,6 +712,11 @@
       (globalThis as any).__ydoc = ydoc;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__engine = () => engine;
+      // The PER-MACHINE RIG STORE snapshot, for device-continuity specs: the
+      // camera / audio-out / output-slot bindings that now live OFF the Y.Doc.
+      // A getter (mount-only-hooks invariant) returning the plain record.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__rigBindings = () => rigBindings().snapshot();
       // #1811 — THE MAIN-THREAD COST PROBE. Three in-page accumulators read in
       // ONE round trip, deliberately:
       //   tick  — scheduler ARRIVAL lateness + DISPATCH cost, ms (tick-latency)
