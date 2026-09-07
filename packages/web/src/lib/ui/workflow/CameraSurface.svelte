@@ -64,6 +64,7 @@
     WORKFLOW_CAMERA_OUT_PORT,
     type DeviceLabelLike,
   } from './workflow-cameras';
+  import { rigBindings } from '$lib/graph/device-slot-bindings';
 
   interface Props {
     /** The mapped (hiddenCard) camera nodes, snapshot-derived by Canvas. */
@@ -93,6 +94,19 @@
 
   /** Which camera's host is on-screen right now. */
   let shownId = $derived(open ? (hoveredId ?? expandedId) : null);
+
+  // ⚠ REACTIVE BRIDGE TO THE PER-MACHINE RIG STORE. A reserved slot's camera
+  // binding now lives in `rigBindings()`, which `readCameraDeviceId` reads for a
+  // slot — but the store is not a Svelte rune, so a `$derived` over it would
+  // never recompute when a pick/unbind mutates it (the row would show the stale
+  // assigned state). Bumping this counter on every store change is the reactive
+  // dependency the row's `data-assigned` and the host-mount filter take.
+  let rigVersion = $state(0);
+  $effect(() =>
+    rigBindings().subscribe(() => {
+      rigVersion += 1;
+    }),
+  );
 
   /**
    * Which cameras actually get a mounted card host.
@@ -130,11 +144,20 @@
    * it. Reserved slots are the only population where absence of a session is
    * knowable up front, because an unbound one has never acquired anything.
    */
-  let hostedCameras = $derived(
-    cameras.filter(
+  let hostedCameras = $derived.by(() => {
+    void rigVersion; // recompute when a slot's store binding changes
+    return cameras.filter(
       (c) => !isCameraSlotNode(c) || readCameraDeviceId(c) !== null || c.id === shownId,
-    ),
-  );
+    );
+  });
+
+  /** Bound-or-not per camera id, store-reactive (see `rigVersion`). */
+  let assignedById = $derived.by(() => {
+    void rigVersion;
+    const m = new Map<string, boolean>();
+    for (const c of cameras) m.set(c.id, readCameraDeviceId(c) !== null);
+    return m;
+  });
 
   // Drop stale expand/hover state when its camera is unmapped (any path —
   // our ✕, a collaborator's, Clear).
@@ -314,7 +337,7 @@
       class:expanded={expandedId === cam.id}
       data-testid="workflow-camera-row"
       data-node-id={cam.id}
-      data-assigned={readCameraDeviceId(cam) ? 'true' : 'false'}
+      data-assigned={assignedById.get(cam.id) ? 'true' : 'false'}
       data-camera-kind={isCameraSlotNode(cam) ? 'slot' : 'dynamic'}
       role="menuitem"
       tabindex="0"

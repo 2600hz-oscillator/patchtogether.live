@@ -28,7 +28,9 @@ import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import { removePatchNode } from '$lib/graph/mutate';
 import { wouldExceedCap } from '$lib/graph/cap';
 import { isHiddenCardNode } from '$lib/graph/hidden-card';
-import { DEVICE_SLOT_RIG_KEYS, deviceSlotForId, isDeviceSlotId } from '$lib/graph/device-slots';
+import { deviceSlotForId, isDeviceSlotId } from '$lib/graph/device-slots';
+import type { CameraSlotName } from '$lib/graph/device-slots';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
 import { nextDefaultName } from '$lib/multiplayer/module-naming';
 // The def itself (READ-ONLY import — its maxInstances is the cap truth).
 // Imported directly rather than via getVideoModuleDef so the cap guard
@@ -104,9 +106,18 @@ export function listWorkflowCameras<T extends CameraNodeLike>(
   });
 }
 
-/** The camera's saved device id (`node.data.deviceId` — the SAME key the
- *  CameraInputCard persists its dropdown pick to), or null. */
+/** The camera's saved device id, or null.
+ *
+ * A RESERVED CAMERA SLOT (`slot:camN`) reads the per-machine RIG STORE
+ * (`rigBindings().getCamera`) — its binding is a rig property that must never
+ * ride the shared Y.Doc, and the store is what survives a File→New / reload. A
+ * DYNAMIC camera (`wfcam-*`) is ordinary patch content and keeps reading
+ * `node.data.deviceId` (the SAME key its CameraInputCard picker persists to). */
 export function readCameraDeviceId(node: CameraNodeLike): string | null {
+  const spec = deviceSlotForId(node.id);
+  if (spec && spec.kind === 'camera') {
+    return rigBindings().getCamera(spec.slot as CameraSlotName)?.deviceId ?? null;
+  }
   const d = node.data;
   return d && typeof d['deviceId'] === 'string' ? (d['deviceId'] as string) : null;
 }
@@ -225,28 +236,22 @@ export function addWorkflowCamera(opts: CameraAddOptions = {}): string | null {
  *
  * The asymmetry is the layer's point rather than an inconsistency: a slot is
  * rig infrastructure, and the operator's next patch expects to find it. Note
- * this clears `data.deviceId` ONLY, which is what the camera source registry
- * reads back — so the module's own acquire path sees an unbound camera and
- * releases through its normal route. Nothing here reaches into the media
- * registry.
+ * this clears the slot's RIG-STORE camera binding (`rigBindings().setCamera(…,
+ * null)`), which is what the camera source registry reads back — so the
+ * module's own acquire path sees an unbound camera and releases through its
+ * normal route. Nothing here reaches into the media registry.
  *
  * @returns true when something changed.
  */
 export function unmapWorkflowCamera(nodeId: string): boolean {
-  if (isDeviceSlotId(nodeId)) {
-    let changed = false;
-    ydoc.transact(() => {
-      const data = patch.nodes[nodeId]?.data as Record<string, unknown> | undefined;
-      if (!data) return;
-      for (const key of DEVICE_SLOT_RIG_KEYS) {
-        if (key in data) {
-          delete data[key];
-          changed = true;
-        }
-      }
-    }, LOCAL_ORIGIN);
-    return changed;
+  const spec = deviceSlotForId(nodeId);
+  if (spec && spec.kind === 'camera') {
+    const slot = spec.slot as CameraSlotName;
+    if (!rigBindings().getCamera(slot)) return false;
+    rigBindings().setCamera(slot, null);
+    return true;
   }
+  if (isDeviceSlotId(nodeId)) return false;
   return removePatchNode(nodeId);
 }
 

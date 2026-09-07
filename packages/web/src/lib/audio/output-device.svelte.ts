@@ -31,36 +31,36 @@
 //     the card's retry loop was polling for — so the loop is deleted, not
 //     moved, and D5 (an interval `onDestroy` never cleared) stops existing.
 //
-// ── ⚠ THE PICK IS DELIBERATELY NOT UNDOABLE, AND THAT IS A DECISION ────────
+// ── ⚠ THE PICK LIVES IN THE PER-MACHINE RIG STORE, NOT THE Y.DOC ───────────
 //
-// `AUDIO_OUT_SINK_ORIGIN` is a NON-TRACKED origin, so Cmd-Z walks past a device
-// pick. That is the `KRIA_VIEW_ORIGIN` precedent applied to a different fact,
-// and the argument is the same shape: undo walks the PATCH, and which speakers
-// the browser is talking to is not part of the patch. `setSinkId` is a
-// per-AudioContext, per-MACHINE routing fact — undoing a filter tweak must not
-// silently re-route your audio to a device that may not even exist here.
+// Which speakers the browser is talking to (`setSinkId`) is a per-AudioContext,
+// per-MACHINE routing fact — machine-local, and meaningless in a shared or saved
+// patch. So the saved id lives in `rigBindings()` (native-shell Part-3:
+// localStorage in the browser, the shell's config store under Electron) and
+// NEVER rides the synced Y.Doc. Two consequences fall out of that one move, and
+// both were previously listed here as unsolved:
 //
-// ⚠ This is NOT the status quo relabelled. The old write was
-// `target.data['outputDeviceId'] = deviceId` — a bare SyncedStore proxy write,
-// which transacts with NO origin and is therefore *accidentally* non-undoable,
-// untransacted, and (with the `if (!target.data) target.data = {}` above it) a
-// reassignment of an integrated Y type. This is one atomic, origin-TAGGED,
-// in-place transaction that is non-undoable ON PURPOSE. The model test asserts
-// BOTH directions — the key changes, and the undo stack does not see it — so a
-// future change to either half is red rather than silent.
+//   * NOT UNDOABLE, now BY CONSTRUCTION rather than by a tagged origin. Undo
+//     walks the PATCH (the Y.Doc's UndoManager); the store is not in the Y.Doc
+//     at all, so Cmd-Z cannot see a device pick — a stronger guarantee than the
+//     old "one origin-tagged, non-tracked transaction", which had to be asserted
+//     to stay non-undoable. (`AUDIO_OUT_SINK_ORIGIN` below is retained as the
+//     shared precedent — `input-device.svelte.ts` still names it — but the
+//     output pick no longer needs it.)
+//   * A COLLABORATOR CAN NO LONGER NUDGE YOUR SINK. The old write mirrored into
+//     the Y.Doc, so a rack-mate's pick re-targeted the LOCAL `setSinkId` — the
+//     card's own comment conceded it. The store is per-machine and unsynced, so
+//     that cross-talk is gone; this is exactly the `clipplayer` precedent (grid
+//     LED + serial I/O stay per-user local while the session syncs).
 //
-// ⚠ WHAT IS STILL OPEN, AND IS NOT THIS FILE'S CALL: the key mirrors into the
-// Y.Doc, so a COLLABORATOR's pick re-targets the local `setSinkId`. The card's
-// own comment already conceded it ("at the cost of a remote user being able to
-// nudge your sink choice"). An output device is a per-machine fact and the
-// `clipplayer` precedent (grid LED + serial I/O stay per-user local while the
-// session syncs) cuts toward making it local — but changing that changes what
-// a saved rack restores, so it is an owner decision, not a face PR's.
+// It is also what makes a pick survive File→New / reload: the store outlives the
+// doc swap, the audio-out handle re-reads it at boot, and Canvas's
+// `runDeviceRestore` re-applies it on a later store change.
 
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { onSinkReport, readSinkReport } from '$lib/audio/output-sink-report';
-import { mutateNode } from '$lib/graph/mutate';
 import { patch } from '$lib/graph/store';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
 import type { ModuleNode } from '$lib/graph/types';
 import type { MinimalDevice } from '$lib/audio/devices';
 import {
@@ -78,12 +78,12 @@ export type { OutputPickerBlock };
 export const OUTPUT_DEVICE_KEY = 'outputDeviceId';
 
 /**
- * The transaction origin for an output-device pick — DELIBERATELY NOT TRACKED
- * by the UndoManager (`store.ts` tracks only `LOCAL_ORIGIN`).
+ * A NON-TRACKED transaction origin (`store.ts` tracks only `LOCAL_ORIGIN`).
  *
- * See the file header for the argument. Named rather than inlined so the
- * decision has somewhere to be asserted, and so a reader who wants it undoable
- * has one symbol to delete instead of a boolean to guess at.
+ * ⚠ NO LONGER ON THE OUTPUT-DEVICE PICK PATH — that now writes the per-machine
+ * `rigBindings()` store, which is outside the Y.Doc/UndoManager entirely (see
+ * the header). Retained as the shared precedent `input-device.svelte.ts` names
+ * for a per-machine routing fact that must stay off the patch undo stack.
  */
 export const AUDIO_OUT_SINK_ORIGIN = Symbol('audio-out-sink');
 
@@ -168,12 +168,18 @@ export function outputPickerValueText(
 
 // ── VALUE + OPTIONS ────────────────────────────────────────────────────────
 
-/** The saved id, or the browser's default pseudo-id when nothing is saved. */
+/** The saved id, or the browser's default pseudo-id when nothing is saved.
+ *
+ * The master sink is a PER-MACHINE rig property held in `rigBindings()`, not on
+ * `node.data`, so the saved id is read from the store — one binding for the
+ * rack's master output. `node` is kept in the signature for the picker surfaces
+ * that already thread it, but no longer read. */
 export function outputDeviceValue(
   node: ModuleNode | undefined,
   devices: readonly MinimalDevice[] = roster,
 ): string {
-  return outputDeviceValueFrom(node?.data?.[OUTPUT_DEVICE_KEY], devices);
+  void node;
+  return outputDeviceValueFrom(rigBindings().getAudioOut()?.outputDeviceId, devices);
 }
 
 /** The rendered name for one device id. */
@@ -204,15 +210,19 @@ export function outputDeviceOptions(
  * apply-then-also-retry pair could only approximate.
  */
 export function setOutputDevice(nodeId: string, deviceId: string): void {
-  mutateNode(
-    nodeId,
-    (live) => {
-      if (!live.data) live.data = {};
-      if (deviceId === '') delete live.data[OUTPUT_DEVICE_KEY];
-      else live.data[OUTPUT_DEVICE_KEY] = deviceId;
-    },
-    { origin: AUDIO_OUT_SINK_ORIGIN },
-  );
+  // ⚠ THE PICK NOW LANDS IN THE PER-MACHINE RIG STORE, NOT `node.data`.
+  //
+  // Which speakers the browser talks to is a per-AudioContext, per-MACHINE
+  // routing fact — machine-local and meaningless in a shared or saved patch (the
+  // #2045 class). So the saved id lives in `rigBindings()` (localStorage in the
+  // browser, the shell's config store under Electron) and NEVER rides the synced
+  // Y.Doc. That is what makes a pick survive File→New / reload: the store
+  // outlives the doc swap and the audio-out handle re-reads it at boot (and
+  // `runDeviceRestore` re-applies on a later store change). The store is also
+  // outside the UndoManager entirely, which preserves — by construction rather
+  // than by a tagged origin — the old decision that Cmd-Z walks past a device
+  // pick (see this file's header).
+  rigBindings().setAudioOut(deviceId === '' ? null : { outputDeviceId: deviceId });
   const live = patch.nodes[nodeId] as ModuleNode | undefined;
   if (live) getActiveEngine()?.write(live, OUTPUT_DEVICE_KEY, deviceId);
 }
