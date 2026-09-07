@@ -472,9 +472,15 @@
       <span
         class="lamp"
         data-testid="preflight-push2-presence"
-        data-state={push2Present() ? 'ok' : rig.push ? 'down' : 'idle'}
+        data-state={rig.push && !push2Present() ? 'down' : push2Ports.length > 0 ? 'ok' : 'idle'}
       >
-        {push2Present() ? 'connected' : rig.push ? 'not connected' : push2Scanned ? 'not found' : 'not scanned'}
+        {rig.push && !push2Present()
+          ? 'not connected'
+          : push2Ports.length > 0
+            ? 'connected'
+            : push2Scanned
+              ? 'not found'
+              : 'not scanned'}
       </span>
       <select
         class="control"
@@ -504,12 +510,12 @@
       <span
         class="lamp"
         data-testid="preflight-launchpad-presence"
-        data-state={launchpadPresent() ? 'ok' : rig.launchpad ? 'down' : 'idle'}
+        data-state={rig.launchpad && !launchpadPresent() ? 'down' : lpPorts.length > 0 ? 'ok' : 'idle'}
       >
-        {launchpadPresent()
-          ? 'connected'
-          : rig.launchpad
-            ? 'not connected'
+        {rig.launchpad && !launchpadPresent()
+          ? 'not connected'
+          : lpPorts.length > 0
+            ? 'connected'
             : lpScanned
               ? 'not found'
               : 'not scanned'}
@@ -569,9 +575,15 @@
       <span
         class="lamp"
         data-testid="preflight-ptz-presence"
-        data-state={ptzPresent() ? 'ok' : rig.ptz ? 'down' : 'idle'}
+        data-state={rig.ptz && !ptzPresent() ? 'down' : ptzNames.length > 0 ? 'ok' : 'idle'}
       >
-        {ptzPresent() ? 'connected' : rig.ptz ? 'not connected' : ptzScanned ? 'no PT-PTZ port' : 'not scanned'}
+        {rig.ptz && !ptzPresent()
+          ? 'not connected'
+          : ptzNames.length > 0
+            ? 'connected'
+            : ptzScanned
+              ? 'no PT-PTZ port'
+              : 'not scanned'}
       </span>
       <select
         class="control"
@@ -596,15 +608,13 @@
       <span
         class="lamp"
         data-testid="preflight-gamepad-presence"
-        data-state={gamepadPresent() ? 'ok' : gamepadMissing() ? 'down' : 'idle'}
+        data-state={gamepadMissing() ? 'down' : gamepads.length > 0 ? 'ok' : 'idle'}
       >
-        {gamepadPresent()
-          ? 'connected'
-          : gamepadMissing()
-            ? 'not connected'
-            : gamepads.length > 0
-              ? 'unbound'
-              : 'press a button'}
+        {gamepadMissing()
+          ? 'not connected'
+          : gamepads.length > 0
+            ? 'connected'
+            : 'press a button'}
       </span>
       <select
         class="control"
