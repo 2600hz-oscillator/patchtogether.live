@@ -83,6 +83,17 @@ export interface PtzBinding {
   deviceId: string;
 }
 
+/** A gamepad pick. Keyed on the browser `Gamepad.id` string (the only stable
+ *  handle the Gamepad API exposes — its numeric `index` is a per-connection slot
+ *  that rotates as pads are plugged/unplugged, so it is a HINT, not identity).
+ *  Mirrors the `ptz` singleton shape: one optional record, `id` required. */
+export interface GamepadBinding {
+  id: string;
+  /** Last-seen `navigator.getGamepads()` slot. Optional — a rebind matches on
+   *  `id` first and only falls back to the index when several pads share an id. */
+  index?: number;
+}
+
 /** The full per-machine record. Every field optional — an unbound rig is the
  *  empty object, and the failure mode of a missing field is "device unbound",
  *  never a crash. */
@@ -94,6 +105,7 @@ export interface RigBindings {
   push?: Push2Binding;
   launchpad?: LaunchpadBinding;
   ptz?: PtzBinding;
+  gamepad?: GamepadBinding;
 }
 
 /** A fresh, fully-unbound rig. */
@@ -139,6 +151,10 @@ export function normalizeRigBindings(raw: unknown): RigBindings {
   }
   if (r.ptz && typeof (r.ptz as PtzBinding).deviceId === 'string') {
     out.ptz = { deviceId: (r.ptz as PtzBinding).deviceId };
+  }
+  if (r.gamepad && typeof (r.gamepad as GamepadBinding).id === 'string') {
+    const gp = r.gamepad as GamepadBinding;
+    out.gamepad = typeof gp.index === 'number' ? { id: gp.id, index: gp.index } : { id: gp.id };
   }
   if (r.es9 && typeof r.es9 === 'object') {
     const pushPolicy = (r.es9 as Es9Binding).pushPolicy;
@@ -314,6 +330,9 @@ export class RigBindingStore {
   getPtz(): PtzBinding | null {
     return this.cache.ptz ?? null;
   }
+  getGamepad(): GamepadBinding | null {
+    return this.cache.gamepad ?? null;
+  }
 
   setCamera(slot: CameraSlotName, binding: CameraBinding | null): void {
     this.mutate((c) => {
@@ -357,6 +376,12 @@ export class RigBindingStore {
       else delete c.ptz;
     });
   }
+  setGamepad(binding: GamepadBinding | null): void {
+    this.mutate((c) => {
+      if (binding) c.gamepad = binding;
+      else delete c.gamepad;
+    });
+  }
 
   /** Fire `cb` on any change — local mutation or external. Returns unsubscribe.
    *  Not called for the initial state; call a getter first if you need it. */
@@ -393,6 +418,7 @@ function cloneRig(b: RigBindings): RigBindings {
     push: b.push ? { ...b.push } : undefined,
     launchpad: b.launchpad ? { ...b.launchpad } : undefined,
     ptz: b.ptz ? { ...b.ptz } : undefined,
+    gamepad: b.gamepad ? { ...b.gamepad } : undefined,
   };
 }
 

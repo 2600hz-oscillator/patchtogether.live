@@ -51,6 +51,7 @@ describe('normalizeRigBindings', () => {
       launchpad: { deviceId: 'lp', mode: 'out-to-launch' },
       push: { deviceId: 'push2' },
       ptz: { deviceId: 'ptz1' },
+      gamepad: { id: 'Xbox Wireless Controller', index: 0 },
       es9: { pushPolicy: 'always' },
       bogus: 42,
     });
@@ -62,7 +63,19 @@ describe('normalizeRigBindings', () => {
     expect(out.launchpad).toEqual({ deviceId: 'lp', mode: 'out-to-launch' });
     expect(out.push?.deviceId).toBe('push2');
     expect(out.ptz?.deviceId).toBe('ptz1');
+    expect(out.gamepad).toEqual({ id: 'Xbox Wireless Controller', index: 0 });
     expect(out.es9?.pushPolicy).toBe('always');
+  });
+
+  it('keeps a gamepad id without an index and drops one with no id', () => {
+    expect(normalizeRigBindings({ gamepad: { id: 'Pro Controller' } }).gamepad).toEqual({
+      id: 'Pro Controller',
+    });
+    // A non-string index is dropped (mirrors ptz's string-guard discipline).
+    expect(normalizeRigBindings({ gamepad: { id: 'pad', index: 'nope' } }).gamepad).toEqual({
+      id: 'pad',
+    });
+    expect(normalizeRigBindings({ gamepad: { index: 2 } }).gamepad).toBeUndefined();
   });
 
   it('defaults a bad launchpad mode to tetris and returns empty for garbage', () => {
@@ -92,6 +105,14 @@ describe('RigBindingStore', () => {
 
     store.setCamera('cam1', null);
     expect(store.getCamera('cam1')).toBeNull();
+
+    // Gamepad singleton — same get/set/clear + persist path as ptz.
+    expect(store.getGamepad()).toBeNull();
+    store.setGamepad({ id: 'Xbox Wireless Controller', index: 1 });
+    expect(store.getGamepad()).toEqual({ id: 'Xbox Wireless Controller', index: 1 });
+    expect(backend.saved.at(-1)?.gamepad?.id).toBe('Xbox Wireless Controller');
+    store.setGamepad(null);
+    expect(store.getGamepad()).toBeNull();
     store.dispose();
   });
 
