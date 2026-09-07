@@ -1532,19 +1532,28 @@
     // use-present). Gating it on the arm would mean a present made before the
     // patch-persistence arm never reaches the store, and File→New would still
     // wipe the display. Skipped only until a live screen resolves the pair's id
-    // (the effect re-runs when `presentScreens` loads). Shell defers: it owns
-    // display placement and writes the store itself.
-    if (!nativeAvailable()) {
-      for (const p of pairs) {
-        const spec = deviceSlotForId(p.nodeId);
-        if (spec?.kind !== 'output') continue;
-        const desc = byScreenId.get(p.screenId);
-        if (!desc) continue;
-        const slot = spec.slot as OutputSlotName;
-        const current = rigBindings().getOutput(slot);
-        if (!current || !sameScreenBinding(current.screen, desc)) {
-          rigBindings().setOutput(slot, { screen: desc });
-        }
+    // (the effect re-runs when `presentScreens` loads).
+    //
+    // Fires in BOTH the browser and the shell. Under the shell `rigBindings()`
+    // IS the shell's electron-store (the bridge backend), so the renderer — the
+    // only party that knows which monitor the operator picked — writing it here
+    // IS the shell owning placement, not a competing authority. The pre-flight
+    // UI writes the SAME store, so a rack-side present and a pre-flight
+    // assignment agree (last write wins; the echo back through `bindings.changed`
+    // is idempotent against `runDeviceRestore`). Deferring under the shell would
+    // leave a display mapped from the rack unpersisted — the exact
+    // File→New-wipes-the-display bug, unfixed in the native app. (The NON-slot
+    // Y.Doc write below still returns under the shell — that key is patch-owned
+    // and `decideRestore` migrated it out.)
+    for (const p of pairs) {
+      const spec = deviceSlotForId(p.nodeId);
+      if (spec?.kind !== 'output') continue;
+      const desc = byScreenId.get(p.screenId);
+      if (!desc) continue;
+      const slot = spec.slot as OutputSlotName;
+      const current = rigBindings().getOutput(slot);
+      if (!current || !sameScreenBinding(current.screen, desc)) {
+        rigBindings().setOutput(slot, { screen: desc });
       }
     }
 

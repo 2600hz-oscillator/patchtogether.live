@@ -131,7 +131,7 @@ describe('RigBindingStore', () => {
 });
 
 describe('localStorageBackend', () => {
-  it('round-trips through a stubbed localStorage', () => {
+  it('round-trips through a stubbed localStorage', async () => {
     const mem = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => mem.get(k) ?? null,
@@ -139,11 +139,11 @@ describe('localStorageBackend', () => {
     });
     const be = localStorageBackend();
     be.save({ cameras: { cam1: { deviceId: 'z' } }, outputs: {} });
-    expect(be.load().cameras.cam1?.deviceId).toBe('z');
+    expect((await be.load()).cameras.cam1?.deviceId).toBe('z');
     vi.unstubAllGlobals();
   });
 
-  it('never throws when localStorage throws (private mode)', () => {
+  it('never throws when localStorage throws (private mode)', async () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
         throw new Error('denied');
@@ -154,7 +154,7 @@ describe('localStorageBackend', () => {
     });
     const be = localStorageBackend();
     expect(() => be.save(emptyRigBindings())).not.toThrow();
-    expect(be.load()).toEqual(emptyRigBindings());
+    expect(await be.load()).toEqual(emptyRigBindings());
     vi.unstubAllGlobals();
   });
 });
