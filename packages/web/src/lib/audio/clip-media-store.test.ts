@@ -25,6 +25,7 @@ import {
   gcClipMedia,
   getClipMediaManifest,
   hasClipMediaStore,
+  importClipMediaTake,
   listClipMediaManifests,
   listRecoverableClipMedia,
   newClipMediaId,
@@ -483,6 +484,71 @@ describe('the garbage collector', () => {
     expect(run, 'a different live set must not be memo-suppressed').not.toBeNull();
     await run;
     expect(await readClipMedia('collide')).toBeNull();
+  });
+
+  it('⚠ REFUSES an EMPTY live set — never GC to zero (fleet-audit #1)', async () => {
+    // Every route that ever handed the sweep an empty set was a snapshot that
+    // was not the truth: the pre-provider-sync empty graph on /r/[id], and a
+    // just-switched rack whose doc has not loaded. gcClipMedia([]) frees every
+    // non-recording take in the ORIGIN-GLOBAL store — unrecoverable.
+    await seedTake('survivor', 'done');
+    expect(sweepClipMedia([]), 'an empty set is refused, not swept').toBeNull();
+    expect(await readClipMedia('survivor'), 'the take survives the refusal').not.toBeNull();
+    expect(await getClipMediaManifest('survivor')).not.toBeNull();
+  });
+
+  it('the empty-set refusal does not poison the memo — the next real set sweeps', async () => {
+    await seedTake('later-freed', 'done');
+    expect(sweepClipMedia([])).toBeNull();
+    const run = sweepClipMedia(['keep']);
+    expect(run, 'the first NON-empty set after a refusal must run').not.toBeNull();
+    await run;
+    expect(await readClipMedia('later-freed'), 'a real live set still frees').toBeNull();
+    // ...and going back to empty afterwards is still a refusal, not a wipe.
+    await seedTake('again', 'done');
+    expect(sweepClipMedia([])).toBeNull();
+    expect(await readClipMedia('again')).not.toBeNull();
+  });
+});
+
+describe('importClipMediaTake (perf-zip restore)', () => {
+  const takeBytes = () => chunkBytes(6, 8, 7); // 6 stereo-f32 frames
+
+  it('stores the bytes through the take lifecycle and completes the manifest', async () => {
+    const bytes = takeBytes();
+    const ok = await importClipMediaTake(manifest({ mediaId: 'imp-1', frames: 6, unitFrames: 6 }), bytes);
+    expect(ok).toBe(true);
+    const file = await readClipMedia('imp-1');
+    expect(file, 'the bytes are in the store').not.toBeNull();
+    expect(new Uint8Array(await file!.arrayBuffer())).toEqual(bytes);
+    const m = await getClipMediaManifest('imp-1');
+    expect(m?.status, 'a restored take is DONE — never a recover candidate').toBe('done');
+    expect(m?.frames).toBe(6);
+  });
+
+  it('a freshly imported take is protected by MEMBERSHIP against the GC', async () => {
+    await importClipMediaTake(manifest({ mediaId: 'imp-2', frames: 6, unitFrames: 6 }), takeBytes());
+    const res = await gcClipMedia(['imp-2']);
+    expect(res.ids).not.toContain('imp-2');
+    expect(await readClipMedia('imp-2')).not.toBeNull();
+    // ...and an import the graph does NOT reference is collectable, like any
+    // other done take — the import does not mint immortal bytes.
+    expect((await gcClipMedia([])).ids).toContain('imp-2');
+  });
+
+  it('is idempotent on content: a same-size file at the id skips the rewrite', async () => {
+    const bytes = takeBytes();
+    await importClipMediaTake(manifest({ mediaId: 'imp-3', frames: 6, unitFrames: 6 }), bytes);
+    const writesAfterFirst = writeLog.length;
+    const ok = await importClipMediaTake(manifest({ mediaId: 'imp-3', frames: 6, unitFrames: 6 }), bytes);
+    expect(ok).toBe(true);
+    expect(writeLog.length, 'the second import writes nothing').toBe(writesAfterFirst);
+    expect(new Uint8Array(await (await readClipMedia('imp-3'))!.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('refuses empty bytes rather than storing a zero-length take', async () => {
+    expect(await importClipMediaTake(manifest({ mediaId: 'imp-4' }), new Uint8Array(0))).toBe(false);
+    expect(await readClipMedia('imp-4')).toBeNull();
   });
 });
 

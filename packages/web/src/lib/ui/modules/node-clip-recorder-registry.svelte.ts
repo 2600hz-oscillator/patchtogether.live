@@ -83,6 +83,7 @@ import {
   clipRecTransition,
   type ClipRecEffect,
   type ClipRecEvent,
+  type ClipRecMode,
   type ClipRecState,
 } from '$lib/audio/clip-audio-rec-machine';
 import type { RecordingWindow } from '$lib/audio/clip-media';
@@ -108,6 +109,11 @@ import {
   type ClipRecorderWiring,
 } from '$lib/audio/modules/clip-recorder-node';
 import type { MixmstrsRecTaps } from '$lib/audio/modules/mixmstrs';
+// CLAUSE 2 — the record target is the lane's SELECTED clip. The selection is a
+// per-viewer authoring lens (never synced), which is also the right scope for
+// recording: the take belongs in the clip the person who armed it was looking
+// at, and the single-writer lease already means one peer records a given lane.
+import { clipplayerSelectedSlotForLane } from '$lib/ui/modules/clipplayer/clipplayer-face-selection.svelte';
 import {
   CLIP_LANES,
   DEFAULT_CLIP_STEPS,
@@ -116,6 +122,9 @@ import {
   coerceClipRecord,
   readClip,
   audioRecState,
+  laneRecArm,
+  laneRecMode,
+  noteClipHasContent,
   type AudioClipRecord,
   type ClipPlayerData,
   type ClipRecordTap,
@@ -141,6 +150,17 @@ export const CLIP_REC_MIN_BOUNDARY_LEAD_S = 0.05;
 export const CLIP_REC_DONE_TIMEOUT_MS = 3000;
 
 const TAP_NAMES: readonly ClipRecordTap[] = ['board-in', 'post-fader', 'master'];
+
+/** CLAUSE 8's capture point: `recTap` index 0 — BOARD IN, the RAW patched
+ *  channel input, before EQ, the compressor and the fader. Lane N captures
+ *  mixmstrs channel N (the normalled-return mapping, by array index inside
+ *  `mixmstrsRecTapPair`).
+ *
+ *  ⚠ THE NAMED POSTMIX SEAM. The owner asked for pre-mix now and "a toggle
+ *  later for postmix". This constant is the single place that decision is
+ *  taken, so the later toggle replaces one value rather than threading a new
+ *  parameter through the arm path. Do not inline it. */
+const CLIP_REC_BOARD_IN_TAP = 0;
 
 /** What the mixer's `read('recState')` hands back (slice 3's shape). */
 interface MixRecState {
@@ -281,9 +301,10 @@ function freshLane(): LaneRec {
 interface Entry {
   nodeId: string;
   lanes: LaneRec[];
-  /** Effective arm values last seen — null until the first read ADOPTS the
-   *  loaded state without firing (a loaded patch never replays a gesture). */
-  prevArm: number[] | null;
+  /** The transport's last observed running state, so the STOPPED→PLAYING edge
+   *  is visible. `null` until the first pump adopts it without firing. Clause 4
+   *  (arm while stopped, record when it plays) is the reason it exists. */
+  prevRunning: boolean | null;
   wiring: ClipRecorderWiring | null;
   wiringTap: number;
   /** Identity of the taps roster the wiring was built from — a rebuilt mixer
@@ -345,15 +366,21 @@ export class NodeClipRecorderRegistry {
    *  sibling registries; a reconciler pass with an unchanged mixer set is a
    *  Map lookup per node. */
   sync(liveNodes: readonly { id: string; type?: string }[]): void {
+    // ⚠ ENTRIES ARE KEYED ON THE CLIPPLAYER, NOT THE MIXER (2026-09-04). The
+    // arm used to be a mixmstrs param, so an entry per mixer was the natural
+    // shape. Recording is now a per-clip CLIPPLAYER feature: the toggle, the
+    // mode, the target slot and the single-writer lease all live on the
+    // launcher's own node, so that is what an entry tracks. The mixer is still
+    // the capture SOURCE (clause 8) and is resolved per pump.
     const mixIds = new Set<string>();
-    for (const n of liveNodes) if (n?.type === 'mixmstrs') mixIds.add(n.id);
+    for (const n of liveNodes) if (n?.type === 'clipplayer') mixIds.add(n.id);
     let changed = false;
     for (const id of mixIds) {
       if (this.#entries.has(id)) continue;
       this.#entries.set(id, {
         nodeId: id,
         lanes: Array.from({ length: CLIP_LANES }, freshLane),
-        prevArm: null,
+        prevRunning: null,
         wiring: null,
         wiringTap: 0,
         tapsRef: null,
@@ -389,74 +416,130 @@ export class NodeClipRecorderRegistry {
   }
 
   #pumpEntry(entry: Entry, engine: ClipRecEngineLike, ctx: BaseAudioContext): void {
-    const mixNode = patch.nodes[entry.nodeId] as ModuleNode | undefined;
-    if (!mixNode) return;
-    const rec = engine.read(mixNode, 'recState') as MixRecState | undefined;
-    if (!rec || !Array.isArray(rec.arm)) return;
+    // THE ENTRY IS THE LAUNCHER. The toggle, the mode, the target slot and the
+    // lease are all on this node.
+    const clipNode = patch.nodes[entry.nodeId] as ModuleNode | undefined;
+    if (!clipNode) return;
+    const data = clipNode.data as ClipPlayerData | undefined;
 
-    // Keep the worklet wiring fresh against the LIVE taps roster (a rebuilt
-    // mixer factory publishes a new one and the old nodes are dead).
-    this.#ensureWiring(entry, engine, ctx, mixNode, entry.wiringTap);
+    // THE MIXER IS THE CAPTURE SOURCE (clause 8) and is resolved per pump, not
+    // keyed on. Without one there is nothing to record FROM, so the lane simply
+    // cannot arm — but the entry still exists and still idles.
+    const mixNode = firstOfType(patch.nodes, 'mixmstrs');
 
-    const clipNode = firstOfType(patch.nodes, 'clipplayer');
-    const clock = clipNode
-      ? (engine.read(clipNode, 'recClock') as RecClock | undefined)
-      : undefined;
+    // ⚠ THE RECORDER IS WIRED LAZILY — ON FIRST ARM, NEVER AT GRAPH SYNC — and
+    // that is a deliberate change from the pre-redesign behaviour.
+    //
+    // This used to run unconditionally on every pump, so ANY rack holding a
+    // launcher and a mixer built an 8-input AudioWorkletNode plus 8
+    // ChannelMergers wired to the mixer's board taps at boot, forever, whether
+    // or not a note was ever recorded. That was invisible before only because
+    // the mixer published `recState` unconditionally, so the cost had always
+    // been there; #2362 then removed `recState` and the pump started returning
+    // BEFORE this line, which silently switched the wiring off altogether.
+    // Restoring the arm here restored the boot cost with it — measured on CI as
+    // `workflow-lane-uniform-binding` REACH-UP losing a 5 s automation-binding
+    // poll on a SwiftShader runner already at ~8 fps.
+    //
+    // Recording is now an explicit per-lane gesture rather than a param that is
+    // always readable, so holding a recorder for a rack that never records buys
+    // nothing. Building it at the arm is safe BY CONSTRUCTION: `#openTake`
+    // already awaits `entry.wiringBuild` (an arm racing the very first build
+    // waits for it), and the worklet's own late-arm SLIDE (#2348) absorbs the
+    // punch-in latency that wait costs.
+    //
+    // A lane that is already live still refreshes against the LIVE taps roster
+    // each pump — a rebuilt mixer factory publishes a new one and the old nodes
+    // are dead, which is the reason this call is in the pump at all.
+    const wantsRecorder =
+      !!mixNode &&
+      entry.lanes.some(
+        (l, i) =>
+          l.preparing || l.prepared || l.machine.phase !== 'idle' || laneRecArm(data, i),
+      );
+    if (wantsRecorder) this.#ensureWiring(entry, engine, ctx, mixNode!, entry.wiringTap);
+
+    const clock = engine.read(clipNode, 'recClock') as RecClock | undefined;
     const frame = Math.floor(ctx.currentTime * ctx.sampleRate);
 
-    const adopt = entry.prevArm === null;
-    const prev = entry.prevArm ?? rec.arm.slice();
-    entry.prevArm = rec.arm.slice();
-
-    // The transport gate for THIS tick. An arm that auto-starts the transport
-    // flips it here too, or the very same pass would read the pre-start clock
-    // and discard the take it just armed.
-    let running = clock ? clock.running : true;
+    const running = clock ? clock.running : true;
+    // ⚠ CLAUSE 4 LIVES ON THIS EDGE. The toggle may be set while the transport
+    // is paused or stopped; recording starts when it PLAYS. `prevRunning` is
+    // adopted without firing on the first pump so a page that loads with the
+    // transport already rolling does not read as a fresh start.
+    const startedPlaying = entry.prevRunning === false && running;
+    entry.prevRunning = running;
+    void startedPlaying; // the arm below is level-triggered on (toggle AND running)
 
     for (let lane = 0; lane < CLIP_LANES; lane++) {
-      const armNow = rec.arm[lane] ?? 0;
-      const armPrev = prev[lane] ?? 0;
       const st = entry.lanes[lane]!;
+      const armed = laneRecArm(data, lane);
 
-      if (!adopt) {
-        // ARM edge: 0→1 while idle = PREPARE a single take. (2 = endless,
-        // slice 6 — an edge onto 2 is deliberately un-actioned here.)
-        if (
-          armNow === 1 &&
-          armPrev !== 1 &&
-          st.machine.phase === 'idle' &&
-          !st.preparing &&
-          !st.prepared
+      // ⚠ THE ARM IS LEVEL-TRIGGERED ON (TOGGLE AND RUNNING), NOT ON A TOGGLE
+      // EDGE, and that IS clause 4. "Set the toggle while stopped, record when
+      // it plays" is precisely a condition that becomes true later without the
+      // toggle moving — an edge-triggered arm cannot express it, because the
+      // edge already happened while the transport was stopped.
+      //
+      // The machine-gun this would otherwise cause is closed at the other end:
+      // a take that ends SNAPS THE TOGGLE OFF (`#snapArmOff`), so the level
+      // falls on its own and re-arming requires the player to press it again.
+      // That is also the owner's CLIP semantics — one loop, then stop.
+      if (
+        armed &&
+        running &&
+        st.machine.phase === 'idle' &&
+        !st.preparing &&
+        !st.prepared
+      ) {
+        if (mixNode) {
+          this.#beginPrepare(entry, lane, engine, ctx, mixNode, clipNode, clock, laneRecMode(data, lane));
+        } else {
+          this.#refuse(entry, 'no mixmstrs in the rack to record from');
+          this.#writeRecArm(entry, lane, false);
+        }
+      } else if (!armed) {
+        // THE TOGGLE WENT OFF. For an ENDLESS take this is the owner's "tap the
+        // record button again": stop at the end of the CURRENT loop, keeping
+        // every whole loop captured so far. For anything else it is the escape
+        // — nothing commits.
+        if (st.preparing || st.prepared) {
+          this.#cancelPrep(entry, lane);
+        } else if (st.machine.phase === 'recording' && st.machine.mode === 'endless') {
+          this.#dispatch(entry, lane, { type: 'stop', frame });
+        } else if (
+          st.machine.phase !== 'idle' &&
+          st.machine.phase !== 'committing' &&
+          // ⚠ AND NOT `stopping`. The toggle stays OFF for every pump after the
+          // tap, so without this an endless take was told to stop and then
+          // CANCELLED on the very next tick — one gesture, two contradictory
+          // dispatches, and the take died on its way to the boundary it had
+          // just been asked to finish at. `stopping` is the state that gesture
+          // produces; re-reading the same OFF level must not undo it.
+          st.machine.phase !== 'stopping'
         ) {
-          if (this.#beginPrepare(entry, lane, engine, ctx, mixNode, clipNode, clock, rec.tap)) {
-            running = true;
-          }
-        } else if (armNow === 0 && armPrev !== 0) {
-          // The arm dropped to OFF — CANCEL, the escape. Nothing commits.
-          if (st.preparing || st.prepared) {
-            this.#cancelPrep(entry, lane);
-          } else if (st.machine.phase !== 'idle' && st.machine.phase !== 'committing') {
-            this.#dispatch(entry, lane, { type: 'cancel' });
-          }
+          this.#dispatch(entry, lane, { type: 'cancel' });
         }
       }
 
-      // The transport stopping mid-take discards a single take (its contract
-      // is exactly one loop; a partial is not a shorter version of it). A
-      // take still preparing is discarded the same way — armed + transport
-      // stop → idle, per the §4.4 table.
-      if (clock && !running) {
-        if (st.preparing || st.prepared) this.#cancelPrep(entry, lane);
-        if (st.machine.phase !== 'idle') {
-          this.#dispatch(entry, lane, { type: 'transportStop', frame });
-        }
+      // THE TRANSPORT STOPPING ends a live take: an endless one truncates to
+      // its whole loops, a single one discards (its contract is exactly one
+      // loop, and a partial is not a shorter version of it).
+      //
+      // ⚠ A LANE THAT IS ONLY *PREPARED* SURVIVES A STOPPED TRANSPORT — this
+      // is the other half of clause 4. It used to be cancelled here, which is
+      // exactly what made "arm while stopped" impossible: the arm was torn down
+      // on the very next pump, before play could ever start it.
+      if (clock && !running && st.machine.phase !== 'idle') {
+        this.#dispatch(entry, lane, { type: 'transportStop', frame });
       }
 
       // CONFIRM: the media opened — resolve the window from the clock AS OF
       // NOW (never the clock that existed before the slow open) and arm the
-      // machine + worklet in one dispatch.
+      // machine + worklet in one dispatch. While the transport is stopped this
+      // simply does not fire, and the lane waits in `prepared` until it plays.
       if (st.prepared && st.machine.phase === 'idle' && running) {
-        this.#confirmArm(entry, lane, ctx, clock);
+        this.#confirmArm(entry, lane, ctx, clock, laneRecMode(data, lane));
       }
 
       this.#dispatch(entry, lane, { type: 'frame', frame });
@@ -492,7 +575,7 @@ export class NodeClipRecorderRegistry {
     mixNode: ModuleNode,
     clipNode: ModuleNode | undefined,
     clock: RecClock | undefined,
-    tap: number,
+    mode: ClipRecMode,
   ): boolean {
     if (!clipNode || !clock) {
       this.#refuse(entry, 'no clip launcher in the rack to record into');
@@ -509,14 +592,36 @@ export class NodeClipRecorderRegistry {
       this.#refuse(entry, `lane ${lane + 1} is being recorded by another collaborator`);
       return false;
     }
-    const slot = firstEmptySlot(data, lane);
-    if (slot === null) {
-      this.#refuse(entry, `lane ${lane + 1} has no empty slot (all ${SCENE_STRIDE} are full)`);
+    // ⚠ CLAUSE 2 — THE SELECTED CLIP, NOT THE FIRST EMPTY ONE. This used to be
+    // `firstEmptySlot(data, lane)`, the Live/Push "New" model: arming dropped
+    // the take into whatever slot happened to be free. The owner's rule is
+    // "audio is recorded INTO THE SELECTED CLIP of a lane", so the target is
+    // the slot the player last selected in this lane and nothing else — a
+    // record button whose destination you cannot see is a record button that
+    // loses takes.
+    const slot = clipplayerSelectedSlotForLane(clipNode.id, lane);
+    // A note clip in the target is a REFUSAL, not a silent relocation: a slot
+    // holds exactly one kind, and quietly recording somewhere else would be the
+    // same defect the selected-slot rule exists to remove. (The commit re-checks
+    // this at the end — a peer can author notes into the slot mid-take.)
+    // ⚠ ONLY AUTHORED NOTES BLOCK A TAKE. Clicking an empty pad to aim the
+    // record button materialises an EMPTY note clip as a placeholder, so
+    // refusing on `kind === 'note'` would refuse the very slot the player just
+    // selected. An empty placeholder is recorded over; a clip with notes in it
+    // is someone's work and is refused instead of silently replaced.
+    if (noteClipHasContent(readClip(data, clipIndex(slot, lane)))) {
+      this.#refuse(
+        entry,
+        `lane ${lane + 1} slot ${slot + 1} holds a note clip with notes in it — clear it or pick another slot`,
+      );
       return false;
     }
-    // Auto-start the transport (Bitwig/Deluge, and what keysQueueRec already
-    // does): arming with the rack stopped means "start it".
-    if (!clock.running) startTransport();
+    // ⚠ ARMING NO LONGER STARTS THE TRANSPORT (clause 4). It used to
+    // (`if (!clock.running) startTransport()`), the Bitwig/Deluge "arm means
+    // go" model. The owner ruled the opposite: the toggle can be set while
+    // paused or stopped and recording begins WHEN IT PLAYS. Starting the
+    // transport here would make that impossible to express — every arm would
+    // also be a play.
 
     const rateIdx = laneRateIndex(data, lane);
     const laneDur = laneStepDur(clock.baseStepDur, rateIdx);
@@ -529,13 +634,25 @@ export class NodeClipRecorderRegistry {
     }
     const unitFrames = clipRecUnitFrames(lengthSteps, clock.baseStepDur, rateIdx, ctx.sampleRate);
 
-    // Latch the tap for this take. A different tap re-wires only while no
-    // other lane records (mid-take re-wire is a splice on THEIR take).
-    const anyLive = entry.lanes.some((l) => l.machine.phase !== 'idle' || l.preparing || l.prepared);
-    const wantTap = Math.max(0, Math.min(2, Math.round(tap)));
-    if (!anyLive && wantTap !== entry.wiringTap) {
+    // ⚠ CLAUSE 8 — THE TAP IS FIXED AT BOARD IN, AND THE POSTMIX SEAM IS NAMED
+    // BUT NOT BUILT. "Capture source, for now: the pre-mixmstrs input that
+    // corresponds to the lane… we will add a toggle later for postmix." The
+    // owner asked for the seam to be left named, not implemented, so there is
+    // deliberately no control that moves this.
+    //
+    // The SELECTION MACHINERY IS INTACT and costs nothing to keep: `recTaps`
+    // still publishes all three rosters, `mixmstrsRecTapPair` still picks one,
+    // and `#ensureWiring` still takes a tap index. The postmix toggle is
+    // therefore a value change here plus a control, not a re-wire — which is
+    // the whole point of leaving a seam rather than hard-coding the node.
+    //
+    // The re-wire guard the old tap latch carried (a mid-take re-wire is a
+    // splice on ANOTHER lane's take) is not needed while the tap cannot move,
+    // and must come back with the toggle. `CLIP_REC_BOARD_IN_TAP` is what that
+    // toggle will replace.
+    if (entry.wiringTap !== CLIP_REC_BOARD_IN_TAP) {
       this.#teardownWiring(entry);
-      this.#ensureWiring(entry, engine, ctx, mixNode, wantTap);
+      this.#ensureWiring(entry, engine, ctx, mixNode, CLIP_REC_BOARD_IN_TAP);
     }
 
     const st = entry.lanes[lane]!;
@@ -620,7 +737,13 @@ export class NodeClipRecorderRegistry {
    *  never be dropped for want of either. A reference-bar boundary too close
    *  to make reliably SLIPS one bar to the next wrap — a take that starts one
    *  bar later is a take; one that misses its own first samples is not. */
-  #confirmArm(entry: Entry, lane: number, ctx: BaseAudioContext, clock: RecClock | undefined): void {
+  #confirmArm(
+    entry: Entry,
+    lane: number,
+    ctx: BaseAudioContext,
+    clock: RecClock | undefined,
+    mode: ClipRecMode,
+  ): void {
     const st = entry.lanes[lane]!;
     st.prepared = false;
     const now = ctx.currentTime;
@@ -639,7 +762,11 @@ export class NodeClipRecorderRegistry {
     }
     const startFrame = clipRecStartFrame(boundaryTime, ctx.sampleRate);
     const window: RecordingWindow = { startFrame, stopFrame: null, unitFrames: st.unitFrames };
-    this.#dispatch(entry, lane, { type: 'arm', mode: 'single', window });
+    // ⚠ THE MODE IS THE LANE'S SWITCH (clause 5), NOT A HARDCODED 'single'.
+    // The machine normalizes the window for it: CLIP ('single') resolves a
+    // stopFrame of anchor + one unit, ENDLESS leaves it open until the toggle
+    // is tapped again or the transport stops.
+    this.#dispatch(entry, lane, { type: 'arm', mode, window });
   }
 
   /** Cancel a take that is still PREPARING/PREPARED (the machine never armed):
@@ -753,7 +880,19 @@ export class NodeClipRecorderRegistry {
           `[clip-rec] lane ${lane + 1} punched in ${slip} frames late (arm reached the audio thread after its own start)`,
         );
       }
-      if (st.doneFrames !== frames) {
+      // ⚠ SHORT IS A DEFECT; LONG IS BY DESIGN. This was a strict equality check
+      // and it made the endless transport-stop path impossible: that path
+      // resolves its stop at the LAST COMPLETED LOOP, which is in the PAST, so
+      // the worklet has necessarily already captured past it and reports MORE
+      // than the commit wants. Demanding equality turned every such take into a
+      // failure. Truncating the surplus is exactly what `beginCommit` has
+      // always documented ("truncating any surplus the worklet captured past a
+      // transport-stop / cap boundary") — the promise simply was not kept.
+      //
+      // A SHORT take is still a hard failure, and that half must not be relaxed:
+      // it is how a dead input, a dropped chunk and the worklet's own arm
+      // REFUSAL (`frames: 0`) surface at all.
+      if (st.doneFrames < frames) {
         // `frames: 0` is the worklet REFUSING an arm that drained further past
         // its punch-in than the slide may absorb — say which it was, because
         // "captured 0 frames" alone reads like a dead input.
@@ -762,6 +901,16 @@ export class NodeClipRecorderRegistry {
             ? ` — arm drained ${slip} frames past its punch-in, beyond the slide bound`
             : '';
         throw new Error(`captured ${st.doneFrames} frames, window demanded ${frames}${why}`);
+      }
+      if (st.doneFrames > frames) {
+        // The endless truncate. The scratch keeps the surplus bytes; the
+        // manifest and the clip record both declare `frames`, so playback reads
+        // a whole number of loops and the tail is never addressed. Named in the
+        // log because a surplus on a SINGLE take would mean the window maths
+        // moved, and that is worth seeing.
+        console.info(
+          `[clip-rec] lane ${lane + 1} truncating ${st.doneFrames - frames} surplus frames to a whole ${frames}-frame take`,
+        );
       }
       await drain.flush();
       if (drain.error) throw drain.error instanceof Error ? drain.error : new Error(String(drain.error));
@@ -774,11 +923,13 @@ export class NodeClipRecorderRegistry {
       const existing = coerceClipRecord(
         ((node.data as ClipPlayerData | undefined)?.clips ?? {})[String(index)],
       );
-      if (existing && existing.kind === 'note') {
-        // The slot was empty at arm; a peer authored notes into it since. A
-        // slot holds one kind, and silently destroying authored notes is the
-        // worst outcome available — keep the take as a recover candidate.
-        throw new Error(`slot ${st.slot + 1} now holds a note clip`);
+      if (noteClipHasContent(existing)) {
+        // The slot held nothing authored at arm; a peer wrote notes into it
+        // since. A slot holds one kind, and silently destroying authored notes
+        // is the worst outcome available — keep the take as a recover candidate.
+        // (An EMPTY note placeholder is not content and is replaced, matching
+        // the arm-time check.)
+        throw new Error(`slot ${st.slot + 1} now holds a note clip with notes in it`);
       }
       const record: AudioClipRecord = {
         kind: 'audio',
@@ -830,31 +981,47 @@ export class NodeClipRecorderRegistry {
     }
   }
 
-  /** End the arm sequence after a take, so a HELD arm cannot start another one
-   *  and a fresh 0→1 edge is required to re-arm.
+  /** Drop a lane's RECORD TOGGLE after a take ends, so the control reads
+   *  disarmed and the player must press it again for the next take. */
+  #snapArmOff(entry: Entry, lane: number): void {
+    this.#writeRecArm(entry, lane, false);
+  }
+
+  /** Write a lane's RECORD TOGGLE through the Y.Doc with a NON-TRACKED origin.
    *
-   *  ⚠ THIS USED TO WRITE THE KNOB, AND THE REWRITE IS A BUG FIX, NOT A PORT.
-   *  It wrote `ch{N}_rec = 0` on the mixer through the mutation seam with a
-   *  NON-TRACKED origin (a programmatic snap must never join anyone's undo
-   *  stack) and then set `prevArm[lane] = 0` to match. That pairing was
-   *  load-bearing in a way the second line alone is NOT: clearing `prevArm`
-   *  was only safe BECAUSE the same call forced the observed value to 0 in the
-   *  same tick.
+   *  ⚠ THIS IS WHAT MAKES THE LEVEL-TRIGGERED ARM SAFE. `#pumpEntry` arms
+   *  whenever (toggle AND running) and the lane is idle, which is what lets a
+   *  toggle set while stopped record when the transport plays. The same level
+   *  would re-arm forever the instant a take committed — so a take that ends
+   *  drops the toggle itself, and the player has to press it again. That is
+   *  also exactly the owner's CLIP semantics: one loop, then stop.
    *
-   *  The owner removed the mixmstrs record band on 2026-09-04, so there is no
-   *  param to write. Keeping `prevArm[lane] = 0` on its own would invert the
-   *  contract — a source still reading 1 would look like a fresh 0→1 edge on the
-   *  very next pump and machine-gun takes for as long as the arm was held, which
-   *  is precisely the failure the edge-triggered design exists to prevent.
-   *
-   *  So the correct behaviour with no write-back is to leave `prevArm` AT THE
-   *  LAST OBSERVED VALUE: a held-high arm is "still high", not a new edge, and
-   *  re-arming requires the source to dip to 0 first and rise again. The
-   *  clipplayer's per-lane record toggle can then snap ITS own surface if it
-   *  wants the control to read disarmed, without this seam assuming it did. */
-  #snapArmOff(_entry: Entry, _lane: number): void {
-    // Intentionally empty — see the contract above. The edge is closed by the
-    // observed value, never by a value this registry invents on its behalf.
+   *  It replaced a `setNodeParam` write to the mixer's `ch{N}_rec` knob, which
+   *  went away with the record band (2026-09-04). A programmatic snap must
+   *  never join anyone's undo stack, hence the non-tracked origin — the same
+   *  rule the automation arm and the transport start already follow. */
+  #writeRecArm(entry: Entry, lane: number, on: boolean): void {
+    const node = patch.nodes[entry.nodeId] as ModuleNode | undefined;
+    if (!node) return;
+    // ⚠ MUTATE IN PLACE — NEVER REBUILD A LIVE Y MAP. `node.data` is a Y.Doc
+    // proxy: spreading it into a fresh object and reassigning re-inserts every
+    // nested value that is ALREADY in the tree, which Yjs rejects outright
+    // ("reassigning object that already occurs in the tree"). Writing the one
+    // key that changed is both correct and what makes the write mergeable with
+    // a peer toggling a DIFFERENT lane — the reason `recArm` is a per-key
+    // record rather than an array in the first place.
+    ydoc.transact(() => {
+      if (!node.data) node.data = {};
+      const d = node.data as ClipPlayerData;
+      if (!d.recArm) d.recArm = {};
+      // ⚠ WRITE `false`, NEVER `delete`. `node.data` is a Y.Doc proxy whose
+      // deleteProperty trap refuses a nested key ("trap returned falsish"), and
+      // the throw landed inside the COMMIT — so a take that had recorded
+      // perfectly died while snapping its own toggle off. `laneRecArm` tests
+      // `=== true`, so a stored `false` is exactly as disarmed as an absent key.
+      d.recArm[String(lane)] = on;
+    }, CLIP_REC_PARAM_ORIGIN);
+    this.#version++;
   }
 
   // -------------------------------------------------------------------------
@@ -934,13 +1101,22 @@ export class NodeClipRecorderRegistry {
       .ensureWorklet(ctx)
       .then(() => {
         entry.wiringBuild = null;
-        // Re-read: the roster may have changed while the module registered.
-        const liveNode = patch.nodes[entry.nodeId] as ModuleNode | undefined;
-        if (!liveNode) return;
-        const liveTaps = engine.read(liveNode, 'recTaps') as MixmstrsRecTaps | undefined;
+        // ⚠ RE-RESOLVE THE MIXER, NOT `entry.nodeId`. The entry is keyed on the
+        // CLIPPLAYER now (2026-09-04); the taps come from the MIXER. This used
+        // to read `patch.nodes[entry.nodeId]` because those were the same node,
+        // and left that way it asks a launcher for a tap roster it does not
+        // publish — the wiring then never builds and every arm refuses with
+        // "the recorder worklet is unavailable".
+        //
+        // Re-read rather than reuse the `mixNode` above: the roster may have
+        // changed while the module registered, which is the whole reason this
+        // re-read exists.
+        const liveMix = firstOfType(patch.nodes, 'mixmstrs');
+        if (!liveMix) return;
+        const liveTaps = engine.read(liveMix, 'recTaps') as MixmstrsRecTaps | undefined;
         if (!liveTaps) return;
         entry.wiring = this.#deps.wire(ctx, liveTaps, tap, {
-          id: entry.nodeId,
+          id: liveMix.id,
           type: 'mixmstrs',
         });
         entry.wiringTap = tap;

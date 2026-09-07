@@ -54,6 +54,7 @@ import { drainAudition, clearAudition } from './clip-audition';
 import { applyPitchProbability } from '$lib/audio/pitch-probability';
 import {
   readClip,
+  clipPlaysLive,
   clipLengthSteps,
   notesFiringAt,
   lanesFromFiring,
@@ -75,6 +76,7 @@ import {
   laneAutomationArmed,
   migrateAutomationLanesShape,
   migrateClipPlayerData,
+  clipPlayerDataNeedsLoadSeam,
   coerceClipRecord,
   coerceAutoClipRecord,
   autoTrackViews,
@@ -814,6 +816,24 @@ export const clipplayerDef: AudioModuleDef = {
      *  Decode is lazy (byte-capped cache); the duck edge is published at the
      *  SCHEDULED time immediately, not when the decode resolves — the boundary
      *  is the boundary whether or not the bytes are warm. */
+    /** Cache keys already reported as media-absent, so a re-launch of the same
+     *  missing take warns once instead of once per loop/launch. */
+    const reportedAbsentTakes = new Set<string>();
+    /** ⚠ SAY SO when a decode resolves NULL (fleet-audit #2). A null buffer —
+     *  media absent from this origin's OPFS store, or a format with no decode
+     *  path — used to be indistinguishable from a clip that is not playing:
+     *  the pad paints `playing`, the lane reports its slot, the output is
+     *  silent, and NOTHING anywhere names a cause. The load paths surface the
+     *  user-facing notice; this names the lane and take for the console. */
+    function reportAbsentTake(L: number, st: LaneAudioPlay): void {
+      if (reportedAbsentTakes.has(st.key)) return;
+      reportedAbsentTakes.add(st.key);
+      console.warn(
+        `[clipplayer] lane ${L + 1}: recorded take ${st.clip.mediaId} has no audio in this ` +
+          `browser's media store — the clip will play silence (was this patch saved without ` +
+          `its media, or loaded on another machine?)`,
+      );
+    }
     function startLaneAudio(L: number, clip: AudioClipRecord, at: number): void {
       haltLaneAudio(L, at, true);
       const st: LaneAudioPlay = {
@@ -828,11 +848,19 @@ export const clipplayerDef: AudioModuleDef = {
       if (!canPlayAudioClips) return;
       void getClipAudioBuffer(ctx, clip)
         .then((buf) => {
-          if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
+          if (!buf) return reportAbsentTake(L, st);
+          if (!alive || laneAudio[L] !== st || !st.audible || st.source) return;
           spawnLaneSource(L, st, buf);
         })
-        .catch(() => {
-          /* media absent — the pad's named state; nothing sounds */
+        .catch((err) => {
+          // ⚠ SAY SO. This was a bare swallow, and a decode that fails looks
+          // EXACTLY like a clip that is not playing: the pad paints `playing`,
+          // the lane reports its slot, and the output is silent with nothing
+          // anywhere naming a cause. A missing media file is a legitimate state
+          // (the pad already says so), but it is not a reason to discard the
+          // error text on the path that also covers a corrupt take or a decode
+          // the browser refused.
+          console.warn(`[clipplayer] lane ${L + 1} could not decode its take`, err);
         });
     }
 
@@ -845,12 +873,31 @@ export const clipplayerDef: AudioModuleDef = {
       if (!canPlayAudioClips) return;
       void getClipAudioBuffer(ctx, st.clip)
         .then((buf) => {
-          if (!alive || laneAudio[L] !== st || !st.audible || st.source || !buf) return;
+          if (!buf) return reportAbsentTake(L, st);
+          if (!alive || laneAudio[L] !== st || !st.audible || st.source) return;
           spawnLaneSource(L, st, buf);
         })
         .catch(() => {
-          /* media absent */
+          /* decode failure — startLaneAudio's catch already names this class */
         });
+    }
+
+    /** ⚠ THE ONE PLACE THAT DECIDES WHETHER A CLIP'S RECORDED AUDIO SOUNDS.
+     *  Three call sites start lane audio (launch/switch, transport re-anchor,
+     *  and the cache-key sweep) and all three ask here, because a rule spelled
+     *  out three times is a rule two of them will eventually disagree with.
+     *
+     *  CLAUSE 6 is the new clause in it: a clip set to LIVE is a PASS-THROUGH.
+     *  Launching it deliberately starts NO source, so the lane's live input —
+     *  which reaches the mixer channel through the normalled return either way
+     *  — is what you hear. That is what replaced the mixmstrs channel-level MON
+     *  duck: the old control muted a whole channel from the mixer, this one is
+     *  a property of a single clip and is decided at the playback side. */
+    function clipShouldSound(d: ClipPlayerData | undefined, L: number, clip: ClipRecord | null): boolean {
+      if (clip?.kind !== 'audio') return false;
+      if (laneMuted(d, L)) return false;
+      if (clipPlaysLive(clip)) return false; // clause 6 — pass the live input instead
+      return true;
     }
 
     /** The launch/stop/switch hook: lane L's active slot became `slot`,
@@ -859,8 +906,8 @@ export const clipplayerDef: AudioModuleDef = {
     function updateLaneAudio(L: number, slot: number | null, at: number): void {
       const d = liveData();
       const clip = slot !== null ? readClip(d, clipIndex(slot, L)) : null;
-      if (clip?.kind === 'audio' && transportRunning() && !laneMuted(d, L)) {
-        startLaneAudio(L, clip, at);
+      if (clipShouldSound(d, L, clip) && transportRunning()) {
+        startLaneAudio(L, clip as AudioClipRecord, at);
       } else {
         haltLaneAudio(L, at, true);
       }
@@ -874,7 +921,7 @@ export const clipplayerDef: AudioModuleDef = {
         const slot = lanes[L].active;
         if (slot === null) continue;
         const clip = readClip(d, clipIndex(slot, L));
-        if (clip?.kind === 'audio' && !laneMuted(d, L)) startLaneAudio(L, clip, at);
+        if (clipShouldSound(d, L, clip)) startLaneAudio(L, clip as AudioClipRecord, at);
         else haltLaneAudio(L, at, true);
       }
     }
@@ -1123,22 +1170,28 @@ export const clipplayerDef: AudioModuleDef = {
       mut(live.data as ClipPlayerData);
     }
 
-    // ── ONE-TIME clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) ──
+    // ── clip-key SCHEMA MIGRATION (v1 stride-8 → v2 stride-64) + containers ──
     // The migration does not hook the persistence loader (graph/persistence.ts)
     // — originally because that file was in the collab-attest basis (deleted
     // 2026-08-17), and still because the loader is not the seam that always
-    // runs. Instead it runs ONCE here — the
-    // engine factory is the single per-node seam that always runs, for every
-    // load path (envelope load AND live-doc / rackspace restore). It re-keys the
+    // runs. Instead it runs here as `runLoadSeam` — called ONCE from the
+    // factory, AND re-armed from the tick via `clipPlayerDataNeedsLoadSeam`
+    // (fleet-audit 2026-09-06 #5): the factory is NOT the seam that always
+    // runs, because the reconciler re-materializes a node only on id-absence
+    // or a type/domain change and never diffs `node.data`, so a pre-`sv` patch
+    // loaded at a REUSED id arrived with stride-8 keys nothing re-keyed and
+    // pads that silently never fired. It re-keys the
     // `clips` map so every clip stays at its original (lane, slot), then stamps
-    // `data.sv = 2`. Guarded by `sv` → runs at most once per node per client and
-    // NEVER re-migrates (storm-safe: one small write, not per-tick — see
+    // `data.sv = 2`. Guarded by `sv` → runs at most once per LOADED data object
+    // per client and NEVER re-migrates (storm-safe: one small write per load,
+    // not per-tick — the tick predicate is reads only, and every write below
+    // satisfies it, so it converges after one run — see
     // `cv-modulation-live-store-write-storm`). `coerceClipRecord` clones each
     // moved clip to a PLAIN object so a live syncedStore Y child is never
     // re-parented (`yjs-save-load-real-ydoc`). Stamping `sv` here for an EMPTY
     // new player (before any clip exists) is what makes "clips-present-but-no-sv"
     // unambiguously mean LEGACY for every later reader.
-    writeData((d) => {
+    const runLoadSeam = (): void => writeData((d) => {
       migrateClipPlayerData(d, coerceClipRecord);
       // CONTAINER INIT (LWW-race hardening): create the `auto` + `autoAssign`
       // + `automation`/`automation.lanes` containers HERE — the deterministic
@@ -1193,6 +1246,7 @@ export const clipplayerDef: AudioModuleDef = {
         }
       }
     });
+    runLoadSeam();
 
     // ─────────────────────── PER-CLIP AUTOMATION ────────────────────────────
     // One AutomationController per clip-player node. It composes the pure
@@ -2137,6 +2191,17 @@ export const clipplayerDef: AudioModuleDef = {
       try {
         const running = transportRunning();
         const d0 = liveData();
+        // ⚠ RE-ARM THE LOAD SEAM FOR A SAME-SESSION LOAD AT A REUSED ID
+        // (fleet-audit #5). `loadEnvelopeIntoStore` deletes + re-inserts every
+        // node in one transaction and the reconciler never diffs `node.data`,
+        // so the factory seam above has NOT run against freshly loaded data.
+        // A pre-`sv` patch would read stride-64 against stride-8 keys — pads
+        // that silently never fire — and the LWW-hardening containers would
+        // fall back to their racy lazy creation. The predicate is reads-only
+        // and every seam write satisfies it, so this fires at most once per
+        // load (no write storm). The seam mutates the SAME live object `d0`
+        // proxies, so the rest of this tick reads migrated data.
+        if (clipPlayerDataNeedsLoadSeam(d0)) runLoadSeam();
         const mode: ClipPlayMode =
           d0?.clipMode === 'arrangement' || d0?.clipMode === 'song' ? d0.clipMode : 'session';
         const recording = d0?.recording === true;
@@ -2809,14 +2874,52 @@ export const clipplayerDef: AudioModuleDef = {
         // replaces/removes the record (keyed by mediaId+takeAt), and a source
         // still looping the old bytes would be audio without a clip — cut it.
         // A REPLACED take (same slot, new key) restarts from its own top.
+        // ⚠ IT ALSO STARTS A LANE THAT HAS NO SOURCE YET, and that half was
+        // missing. The loop used to open with `if (!st) continue`, so it could
+        // only ever CUT or REPLACE an already-sounding take — a lane whose slot
+        // BECAME an audio clip while the lane had no audio state was skipped on
+        // every tick and stayed silent forever.
+        //
+        // That is exactly what a freshly recorded take does. The commit writes
+        // `clips[k]` and queues its own take-over launch in ONE transaction, and
+        // the launch can be applied on a pass where the slot still reads as the
+        // empty note placeholder the player clicked to aim the record button —
+        // `updateLaneAudio` then correctly declines to sound a note clip, and
+        // nothing ever revisited the decision. The result was a clip that
+        // reported `playing`, painted `playing`, held 96000 frames of non-silent
+        // audio in OPFS, and emitted nothing.
+        //
+        // Starting here is idempotent: once the source exists its cache key
+        // matches and the next tick takes the `continue` above.
         for (let L = 0; L < LANES; L++) {
           const st = laneAudio[L];
-          if (!st) continue;
           const clip = laneClips[L];
-          if (clip?.kind === 'audio' && clipAudioCacheKey(clip) === st.key) continue;
-          haltLaneAudio(L, ctx.currentTime, true);
-          if (clip?.kind === 'audio' && running && !laneMuted(d0, L)) {
-            startLaneAudio(L, clip, ctx.currentTime + 0.01);
+          // ⚠ CLAUSE 6, AND IT MUST COME BEFORE THE CACHE-KEY TEST. Flipping a
+          // clip to LIVE changes neither its `mediaId` nor its `takeAt`, so its
+          // cache key is IDENTICAL and the `continue` below would skip a lane
+          // that is still sounding a take the player just asked to stop hearing.
+          //
+          // Deliberately narrow: it tests `clipPlaysLive` alone rather than the
+          // whole `clipShouldSound`, because a MUTED lane must keep its
+          // suspend/resume path (`st.audible`) and halting it here would lose
+          // the phase that path exists to preserve.
+          // ⚠ RE-READ THE RECORD, do not trust `laneClips[L]`. That cache is
+          // refreshed only when a LAUNCH swaps `ln.active`, so it still holds
+          // the record as it was at launch — and flipping LIVE is an EDIT, not
+          // a launch. Reading the live slot is what makes the toggle take
+          // effect on a clip that is already sounding, which is the only moment
+          // the control is interesting.
+          const activeSlot = lanes[L]?.active ?? null;
+          const liveRecord =
+            activeSlot !== null ? readClip(d0, clipIndex(activeSlot, L)) : null;
+          if (st && clipPlaysLive(liveRecord)) {
+            haltLaneAudio(L, ctx.currentTime, true);
+            continue;
+          }
+          if (st && clip?.kind === 'audio' && clipAudioCacheKey(clip) === st.key) continue;
+          if (st) haltLaneAudio(L, ctx.currentTime, true);
+          if (clipShouldSound(d0, L, clip) && running) {
+            startLaneAudio(L, clip as AudioClipRecord, ctx.currentTime + 0.01);
           }
         }
 

@@ -31,6 +31,8 @@ import {
   armedAutomationLanes,
   autoAssignCounts,
   autoClipHasTracks,
+  audioRecState,
+  clipHasAudio,
   clipIndex,
   clipPadState,
   coerceClipRecord,
@@ -40,9 +42,12 @@ import {
   laneOf,
   lanePlaying,
   laneQueued,
+  laneRecArm,
+  laneRecMode,
   slotOf,
   type ClipPadState,
   type ClipPlayerData,
+  type ClipRecord,
 } from '$lib/audio/modules/clip-types';
 import { RATE_LABELS, laneRateIndex } from '$lib/audio/modules/clip-clock';
 import { sceneRepeatCount, sceneRepeatFlair } from '$lib/audio/modules/clip-scene-repeats';
@@ -85,6 +90,17 @@ export interface ClipplayerPadView {
    *  its right-click menu must share, so the tooltip can never promise a menu
    *  that will not open. */
   hasClip: boolean;
+  /** CLAUSE 7 — this slot holds RECORDED AUDIO, which earns the pad its PURPLE
+   *  BORDER.
+   *
+   *  ⚠ A FLAG, NOT A `ClipplayerPadState` RUNG, and the distinction is
+   *  load-bearing. The state ladder is a PRIORITY chain: `playing` and `queued`
+   *  outrank `loaded`, so a recorded clip would lose its border the instant it
+   *  sounded — exactly when a player most needs to see which clips hold takes.
+   *  "Holds audio" is orthogonal to "what is this pad doing right now", so it
+   *  is painted as an overlay on top of whatever state the pad is in. It also
+   *  keeps `clipPadState` — and its cross-surface agreement pin — untouched. */
+  hasAudio: boolean;
 }
 
 /** One instrument lane (a COLUMN of the launch grid). */
@@ -102,6 +118,17 @@ export interface ClipplayerLaneView {
   rateLabel: string;
   /** This lane's automation record arm (per-lane, continuous overdub). */
   armed: boolean;
+  /** CLAUSE 3 — this lane's AUDIO record toggle. ⚠ Distinct from `armed`
+   *  above, which is the AUTOMATION arm: two recorders that look alike and are
+   *  not, each keeping its own field (the same separation `noteRec` /
+   *  `automation` / `audioRec` already settled on). */
+  recArmed: boolean;
+  /** CLAUSE 5 — this lane's CLIP-vs-ENDLESS switch. `'single'` is the owner's
+   *  CLIP: record exactly one loop, then stop. */
+  recMode: 'single' | 'endless';
+  /** Whether this lane is mid-take, so the surface can show the toggle as
+   *  actively recording rather than merely armed. */
+  recPhase: 'idle' | 'armed' | 'recording' | 'stopping';
   muted: boolean;
   /** How many MODULES are assigned to this lane's automation. */
   assigned: number;
@@ -175,6 +202,7 @@ export function clipplayerPadViews(data: ClipPlayerData | undefined): Clipplayer
         state: clipplayerPadState(data, index),
         hasAuto: autoClipHasTracks(auto[String(index)]),
         hasClip: clipRecordAt(data, index) !== null,
+        hasAudio: clipHasAudio(clipRecordAt(data, index) as ClipRecord | null),
       });
     }
   }
@@ -203,6 +231,9 @@ export function clipplayerLaneViews(
       rate,
       rateLabel: RATE_LABELS[rate] ?? RATE_LABELS[3]!,
       armed: !!arms[lane],
+      recArmed: laneRecArm(data, lane),
+      recMode: laneRecMode(data, lane),
+      recPhase: audioRecState(data, lane)?.phase ?? 'idle',
       muted: laneMuted(data, lane),
       assigned: assigned[lane] ?? 0,
       playing: lanePlaying(data, lane),

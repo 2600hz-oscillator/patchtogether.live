@@ -266,7 +266,15 @@
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
   import { nodeSamsloop } from '$lib/ui/modules/node-samsloop-registry.svelte';
   import { nodeClipRecorder } from '$lib/ui/modules/node-clip-recorder-registry.svelte';
-  import { referencedClipMediaIds, sweepClipMedia } from '$lib/audio/clip-media-store';
+  import {
+    referencedClipMediaIds,
+    sweepClipMedia,
+    resetClipMediaSweepMemo,
+    readClipMedia,
+    importClipMediaTake,
+    type ClipMediaManifest,
+  } from '$lib/audio/clip-media-store';
+  import { isClipAudioFormat, type ClipAudioFormat } from '$lib/audio/clip-media';
   import { nodeAudioInput } from '$lib/ui/modules/node-audio-input-registry.svelte';
   import { nodeDoomSession } from '$lib/ui/modules/node-doom-session-registry.svelte';
   import { nodeLaunchpadMonitor } from '$lib/ui/modules/node-launchpad-monitor-registry.svelte';
@@ -2590,7 +2598,32 @@
     // ⚠ `void` ON PURPOSE. The sweep hands its in-flight promise back so a TEST
     // can await real completion instead of guessing a tick; this pass must
     // never block on storage, so the discard is spelled rather than implied.
-    void sweepClipMedia(referencedClipMediaIds(snapshot.nodes));
+    //
+    // ⚠ AND IT IS GATED ON THE LOAD-SETTLED SIGNAL (fleet-audit 2026-09-06 #1),
+    // unlike every Map-delete row above — which are per-NODE and harmlessly
+    // idempotent against an empty pre-load snapshot. This row frees bytes in
+    // an ORIGIN-GLOBAL store: before the collab provider's first sync (or
+    // while the scratch replica is still seeding) `snapshot.nodes` is the
+    // empty pre-load state, not the truth, and deriving a live set from it
+    // hands the GC a zero-ref universe that frees every committed take —
+    // unrecoverable. Same settle predicate as the workflow ensures/push-up
+    // passes above; `sweepClipMedia` additionally refuses an empty live set
+    // outright (defence in depth for routes with neither signal, e.g. the
+    // pre-attach `/` collab-test canvas).
+    if (!((provider && !providerHasSynced) || scratchSeeded === false)) {
+      void sweepClipMedia(referencedClipMediaIds(snapshot.nodes));
+    }
+  });
+
+  // ⚠ RACK SWITCH → FORGET THE SWEEP MEMO (fleet-audit #1b). The clip-media
+  // store is ORIGIN-global while the sweep's memo is module-global, and `/r/A`
+  // → `/r/B` remounts Canvas ({#key data.rackspace.id} in the route) without
+  // reloading the page — so rack B's first sweep could be suppressed by rack
+  // A's equal-looking key. A different rack's live set is a different question:
+  // `resetClipMediaSweepMemo` exists exactly for this seam and previously had
+  // no production caller.
+  onMount(() => {
+    resetClipMediaSweepMemo();
   });
 
   /** THE EXTRAS-CHANNEL PRODUCER SEAM (#1720). The sixth instance of the #1583
@@ -3426,6 +3459,35 @@
   // deleted browser-localStorage "Save/Load Local Performance" feature is NOT
   // reintroduced — this is file export/import only.)
 
+  /** Name the recorded audio the current rack holds that `.imp.json` CANNOT
+   *  carry (fleet-audit #9): TWOTRACKS tape is worklet-owned PCM and clip takes
+   *  are OPFS media — both are zip-only by design, and that design was stated
+   *  only in a code comment while the user found out via a silent rack. Empty
+   *  string when nothing would be lost, so callers can test it directly. */
+  function describeJsonMediaLoss(): string {
+    const lost: string[] = [];
+    if (patchHasTwotracksTape()) lost.push('TWOTRACKS tape');
+    if (referencedClipMediaIds(Object.values(patch.nodes) as never).size > 0) {
+      lost.push('recorded clip takes');
+    }
+    return lost.join(' and ');
+  }
+
+  /** True when any twotracks node's persisted data claims recorded tape
+   *  (`bufLen` is posted to node.data by the worklet, so on a LOADED patch it
+   *  names what the saved rack had — even though the tape itself never rides
+   *  the envelope). */
+  function patchHasTwotracksTape(): boolean {
+    return Object.values(patch.nodes).some((n) => {
+      if (!n || n.type !== 'twotracks') return false;
+      const d = n.data as { bufLenA?: unknown; bufLenB?: unknown } | undefined;
+      return (
+        (typeof d?.bufLenA === 'number' && d.bufLenA > 0) ||
+        (typeof d?.bufLenB === 'number' && d.bufLenB > 0)
+      );
+    });
+  }
+
   /** "Export JSON (only)" — download the current patch as the JSON envelope
    *  ONLY (no media, no zip). Same envelope the old "Save" button produced. */
   function exportPatchJson() {
@@ -3439,6 +3501,16 @@
       trace(
         `exported patch JSON (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`,
       );
+      // ⚠ SAY WHAT THE FORMAT LEAVES BEHIND (fleet-audit #9). The header above
+      // states "NO out-of-band media" — correct behaviour, but it lived only in
+      // this comment: a rack with a recorded reel or clip takes exported
+      // cleanly and came back silent, with nothing anywhere naming why. A
+      // NOTICE beside a successful export, never a failure.
+      const lost = describeJsonMediaLoss();
+      if (lost) {
+        error = `Exported, but ${lost} cannot ride .imp.json — use Export performance (.zip) to carry recorded audio`;
+        trace(`export JSON: ${lost} not carried (envelope-only format)`);
+      }
     } catch (e) {
       error = `Export JSON failed: ${e instanceof Error ? e.message : String(e)}`;
       trace(`export JSON failed: ${String(e)}`);
@@ -3482,6 +3554,20 @@
       const result = persistenceLoad(env, ydoc, patch);
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      // ⚠ SAY WHAT THE FORMAT DID NOT CARRY (fleet-audit #9 + #2). The loaded
+      // envelope's own data names what the saved rack HAD: a twotracks
+      // `bufLen` > 0 means there WAS tape at save time (the worklet posts it
+      // to node.data) and the tape itself never rides the envelope — a real
+      // loss on EVERY json import. Clip takes are subtler: a same-origin
+      // re-import still finds its OPFS bytes, so only takes whose audio is
+      // genuinely absent from this browser's store are reported (the shared
+      // missing-media check below). Both were silent-by-design with the
+      // design stated only in a comment.
+      if (patchHasTwotracksTape()) {
+        error = `Loaded, but TWOTRACKS tape does not ride .imp.json — reel audio comes back only from a performance .zip`;
+        trace('import JSON: twotracks tape not carried (envelope-only format)');
+      }
+      await noticeMissingClipMedia();
       await runPresentRestore(readPresentBindingsFromUpdate(env.update));
       // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
       // not per mount, for the same reason as runPresentRestore above. A no-op
@@ -3595,6 +3681,46 @@
     return out;
   }
 
+  /** The perf-zip `handleId` prefix that marks an 'audio' media entry as a
+   *  RECORDED CLIP TAKE (clip-media-store OPFS bytes), distinguishing it from a
+   *  TWOTRACKS reel tape (`<nodeId>:<reel>`). The suffix is the raw mediaId. */
+  const CLIP_MEDIA_HANDLE_PREFIX = 'clipmedia:';
+
+  /** Dump every RECORDED CLIP TAKE the graph references to out-of-band 'audio'
+   *  media for the .zip (fleet-audit 2026-09-06 #2: clip bytes live ONLY in
+   *  origin-local OPFS, and no save format carried them — a .ptperf.zip loaded
+   *  on another machine came back with every recorded clip silent). Mirrors
+   *  `collectTwotracksTapes`: keyed `clipmedia:<mediaId>` so the loader routes
+   *  it back into the media store, deduped so a take referenced twice ships
+   *  once. A referenced take whose bytes are NOT in this origin's store (the
+   *  patch itself was loaded from elsewhere) cannot be invented — it is
+   *  counted, and the caller surfaces the count instead of swallowing it. */
+  async function collectClipMediaTakes(): Promise<{ media: PerformanceMedia[]; missing: string[] }> {
+    const media: PerformanceMedia[] = [];
+    const missing: string[] = [];
+    const seen = new Set<string>();
+    for (const [nid, n] of Object.entries(patch.nodes)) {
+      if (!n || n.type !== 'clipplayer') continue;
+      for (const mediaId of referencedClipMediaIds([{ type: n.type, data: n.data }])) {
+        if (seen.has(mediaId)) continue;
+        seen.add(mediaId);
+        const file = await readClipMedia(mediaId);
+        if (!file || file.size === 0) {
+          missing.push(mediaId);
+          continue;
+        }
+        media.push({
+          nodeId: nid,
+          handleId: `${CLIP_MEDIA_HANDLE_PREFIX}${mediaId}`,
+          role: 'audio',
+          name: `clip-${mediaId}.pcm`,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        });
+      }
+    }
+    return { media, missing };
+  }
+
   /** Collect everything a portable performance .zip needs — the manifest plus
    *  the resolved out-of-band media — WITHOUT building the archive. Split out
    *  of buildPerformanceZipBytes so the FILE save path can stream this straight
@@ -3703,6 +3829,16 @@
     // TWOTRACKS reel tapes: worklet-owned PCM that can't ride the envelope.
     // Dump each reel out-of-band as 'audio' media keyed `<nodeId>:<reel>`.
     media.push(...(await collectTwotracksTapes()));
+    // RECORDED CLIP TAKES: OPFS bytes the envelope only names (`mediaId`) —
+    // keyed `clipmedia:<mediaId>` (fleet-audit #2). A take whose bytes are not
+    // on this machine is SAID OUT LOUD, not silently thinned out of the save.
+    const clipTakes = await collectClipMediaTakes();
+    media.push(...clipTakes.media);
+    if (clipTakes.missing.length > 0) {
+      const n = clipTakes.missing.length;
+      error = `Saved, but ${n} recorded clip take${n === 1 ? "'s audio is" : "s' audio is"} not in this browser's media store and could not ride the bundle`;
+      trace(`export performance: ${n} clip take(s) had no local media: ${clipTakes.missing.join(', ')}`);
+    }
     return { bundle, media, savedAt: Date.now() };
   }
 
@@ -3809,6 +3945,13 @@
     // idle on load (load-tape never auto-rolls).
     await restoreTwotracksTapes(parsed.media);
 
+    // Restore RECORDED CLIP TAKES into the OPFS media store (fleet-audit #2),
+    // then say out loud what is STILL missing — a zip saved before takes rode
+    // the bundle, or on a machine that lacked the bytes, loads with those clips
+    // silent, and silence with no notice is how this class ships.
+    await restoreClipMediaTakes(parsed.media);
+    await noticeMissingClipMedia();
+
     // FIX 1: auto-bind MIDI on zip load. After the rack is materialized, each
     // MIDI LANE / MIDICLOCK / MIDI-CV-BUDDY card mounts with its saved
     // `lastDeviceId` already on node.data — but Web MIDI access is strictly
@@ -3856,6 +3999,99 @@
         await new Promise((r) => setTimeout(r, 100));
       }
     }
+  }
+
+  /** Restore RECORDED CLIP TAKES (`clipmedia:<mediaId>` 'audio' media) into the
+   *  origin-local OPFS clip-media store, so the launcher's lazy decode finds
+   *  them (fleet-audit #2 — the load half). Runs AFTER the envelope applies:
+   *  membership in the loaded graph's live set is what protects the fresh bytes
+   *  from the graph-pass GC (imported before the envelope, the ids would be
+   *  unreferenced and sweepable in the window between the two). The manifest's
+   *  audio metadata comes from the loaded clip RECORD that names the id —
+   *  playback decodes from the record too, so the two cannot disagree. */
+  async function restoreClipMediaTakes(media: PerformanceMedia[]): Promise<void> {
+    const takes = media.filter(
+      (m) => m.role === 'audio' && m.handleId.startsWith(CLIP_MEDIA_HANDLE_PREFIX),
+    );
+    if (takes.length === 0) return;
+    for (const m of takes) {
+      const mediaId = m.handleId.slice(CLIP_MEDIA_HANDLE_PREFIX.length);
+      if (!mediaId) continue;
+      const rec = findAudioClipRecord(mediaId);
+      const frames =
+        typeof rec?.frames === 'number' && Number.isFinite(rec.frames) && rec.frames > 0
+          ? Math.trunc(rec.frames)
+          : 0;
+      const manifest: ClipMediaManifest = {
+        mediaId,
+        nodeId: m.nodeId,
+        lane: 0,
+        slot: 0,
+        startedAt: typeof rec?.takeAt === 'number' ? rec.takeAt : 0,
+        status: 'recording', // importClipMediaTake completes it to 'done'
+        format: isClipAudioFormat(rec?.format) ? (rec!.format as ClipAudioFormat) : 'pcm-f32',
+        sampleRate:
+          typeof rec?.sampleRate === 'number' && rec.sampleRate > 0 ? rec.sampleRate : 48000,
+        channels: rec?.channels === 1 ? 1 : 2,
+        frames,
+        // A restored take is complete — recovery truncation never applies, so
+        // the whole take is its own unit.
+        unitFrames: frames,
+        lengthSteps:
+          typeof rec?.lengthSteps === 'number' && rec.lengthSteps > 0
+            ? Math.trunc(rec.lengthSteps)
+            : 1,
+      };
+      const ok = await importClipMediaTake(manifest, m.bytes);
+      if (!ok) trace(`load performance: clip take ${mediaId} could not be stored`);
+    }
+  }
+
+  /** The loaded AUDIO clip record naming `mediaId`, from any clipplayer in the
+   *  live graph (raw read — same forgiving discipline as the GC's ref scan). */
+  type LoadedClipTakeRecord = {
+    frames?: number;
+    sampleRate?: number;
+    channels?: number;
+    format?: unknown;
+    lengthSteps?: number;
+    takeAt?: number;
+  };
+  function findAudioClipRecord(mediaId: string): LoadedClipTakeRecord | null {
+    for (const n of Object.values(patch.nodes)) {
+      if (!n || n.type !== 'clipplayer') continue;
+      const clips = (n.data as { clips?: Record<string, unknown> } | undefined)?.clips;
+      if (!clips || typeof clips !== 'object') continue;
+      for (const raw of Object.values(clips)) {
+        const rec = raw as { mediaId?: unknown } | null | undefined;
+        if (rec && typeof rec === 'object' && rec.mediaId === mediaId) {
+          return rec as LoadedClipTakeRecord;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** ⚠ A RECORDED CLIP WHOSE AUDIO IS NOT ON THIS MACHINE PLAYS SILENCE, and
+   *  before fleet-audit #2 nothing anywhere said so — the pad paints `loaded`,
+   *  the launch applies, the lane reports its slot, and the output is silent.
+   *  After ANY load, check every referenced take against the media store and
+   *  put the count on the same non-blocking notice line the skipped-media
+   *  report uses (a NOTICE beside a successful load, never a failure). Covers
+   *  zips saved before takes rode the bundle, zips saved on machines that
+   *  lacked the bytes, and `.imp.json` (which never carries media). */
+  async function noticeMissingClipMedia(): Promise<void> {
+    const ids = [...referencedClipMediaIds(Object.values(patch.nodes) as never)];
+    if (ids.length === 0) return;
+    let missing = 0;
+    for (const id of ids) {
+      const f = await readClipMedia(id);
+      if (!f || f.size === 0) missing++;
+    }
+    if (missing === 0) return;
+    const msg = `${missing} recorded clip take${missing === 1 ? ' has' : 's have'} no audio in this browser's media store and will play silence`;
+    error = error ? `${error}; ${msg}` : `Loaded, but ${msg}`;
+    trace(`load: ${msg}`);
   }
 
   /** Re-bind each saved MIDI module to its device after a performance load.
