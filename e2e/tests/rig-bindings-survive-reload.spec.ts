@@ -39,9 +39,11 @@
 
 import { test, expect, type Page } from './_fixtures';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { awaitReceiver, describeReceiver, requirePresentFrame } from '../_helpers/present';
 
 const CAM_SLOT = 'slot:cam1'; // the reserved node id
 const CAM_SLOT_NAME = 'cam1'; // its slot name (how the rig store keys it)
+const OUT_SLOT = 'workflow-videoOut'; // output1, the historical default video sink id
 // ⚠ TWO of each device, and the test picks the SECOND. A single-option `<select>`
 // already renders its one option as the current value, so selecting it fires no
 // `change` and the pick is a legitimate no-op (device-slot-continuity.spec.ts
@@ -293,6 +295,74 @@ async function audioOutBinding(page: Page): Promise<string | null> {
   });
 }
 
+/** The saved display label for an output slot in the store, via the hook. */
+async function outputSlotScreenLabel(page: Page, slot: string): Promise<string | null> {
+  return page.evaluate((s) => {
+    const w = globalThis as unknown as {
+      __rigBindings?: () => {
+        outputs?: Record<string, { screen?: { label?: string } } | undefined>;
+      };
+    };
+    return w.__rigBindings?.()?.outputs?.[s]?.screen?.label ?? null;
+  }, slot);
+}
+
+/** Inject a fake Window Management API (2 screens) so the present menu
+ *  capability-gates on and getScreenRect() resolves popup placement. The REAL
+ *  window.open is left alone so the actual /present popup opens. (Mirrors
+ *  present-second-display.spec.ts.) */
+async function injectScreens(
+  page: Page,
+  screens: Array<{ label: string; isPrimary: boolean }>,
+): Promise<void> {
+  await page.addInitScript((screensArg) => {
+    const fakeScreens = screensArg.map((s) => ({
+      label: s.label,
+      isPrimary: s.isPrimary,
+      availLeft: 0,
+      availTop: 0,
+      availWidth: 1920,
+      availHeight: 1080,
+    }));
+    const details: EventTarget & { screens: unknown[]; currentScreen: unknown } = Object.assign(
+      new EventTarget(),
+      { screens: fakeScreens, currentScreen: fakeScreens[0] },
+    );
+    (window as unknown as { getScreenDetails: () => Promise<unknown> }).getScreenDetails = () =>
+      Promise.resolve(details);
+  }, screens);
+}
+
+/** Feed a pure-GLSL `shapes` source into the output slot through a direct Y.Doc
+ *  write (no spawnPatch — that CLEARS the graph and would drop the presented
+ *  slot). The reopened projector, which holds a live render lease on the slot,
+ *  must then paint the source. */
+async function addSourceIntoOutput(page: Page): Promise<void> {
+  await page.evaluate((out) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      w.__patch.nodes['rig-src'] = {
+        id: 'rig-src',
+        type: 'shapes',
+        domain: 'video',
+        position: { x: 40, y: 40 },
+        params: { shape: 2, tile: 0, rotate: 1, zoom: 2.2 },
+        data: {},
+      };
+      w.__patch.edges['rig-e1'] = {
+        id: 'rig-e1',
+        source: { nodeId: 'rig-src', portId: 'out' },
+        target: { nodeId: out, portId: 'in' },
+        sourceType: 'mono-video',
+        targetType: 'video',
+      };
+    });
+  }, OUT_SLOT);
+}
+
 async function appliedSink(page: Page): Promise<string | null> {
   return page.evaluate(
     () => (globalThis as unknown as { __appliedSink?: string | null }).__appliedSink ?? null,
@@ -528,6 +598,120 @@ test.describe('NATIVE-SHELL PART-3 — rig bindings survive a reload / File→Ne
         timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
       })
       .toBe(SINK_DEVICE_B);
+
+    errorWatch.assertClean();
+  });
+
+  test('an OUTPUT-SLOT projector re-opens on its saved display after a reload', async ({
+    page,
+    context,
+    errorWatch,
+  }) => {
+    // Wall-clock BOUNDS the failure; the receiver-pixel checks are the gate.
+    test.setTimeout(180_000);
+    await installFakeDevices(page, LEVEL_A); // for the once-per-test rig-store clear
+    await injectScreens(page, [
+      { label: 'Built-in Retina', isPrimary: true },
+      { label: 'DELL U2720Q', isPrimary: false },
+    ]);
+    await bootWorkflowRack(page);
+    await bootEngine(page);
+
+    // Open the output slot's face and PRESENT it on the secondary display. No
+    // source is needed to present — the slot's face renders its own idle picture,
+    // and presenting it is exactly what records the display in the per-machine
+    // store (the migration under test).
+    await page.waitForFunction(
+      () =>
+        typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView ===
+        'function',
+      undefined,
+      { timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
+    );
+    await page.evaluate(
+      (id) =>
+        (globalThis as unknown as { __openDockFullView: (x: string) => void }).__openDockFullView(id),
+      OUT_SLOT,
+    );
+    const face = page
+      .locator('[data-testid="dock-fullview-pane"][data-pane-node="workflow-videoOut"]')
+      .getByTestId('videoout-face-canvas');
+    await expect(face).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await face.click({ button: 'right' });
+    const presentSec = page.locator('[data-testid="ctx-present-display-1"]');
+    await expect(presentSec).toBeVisible();
+
+    const popup1Promise = context.waitForEvent('page');
+    await presentSec.click();
+    const popup1 = await popup1Promise;
+    await popup1.waitForLoadState('domcontentloaded');
+    expect(popup1.url(), 'the sink URL carries the (node, display) slot').toContain('slot=');
+
+    // THE PRESENT LANDED IN THE PER-MACHINE STORE, off the Y.Doc.
+    await expect
+      .poll(() => outputSlotScreenLabel(page, 'output1'), {
+        message: 'the output-slot present binding landed in the rig store',
+        timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+      })
+      .toBe('DELL U2720Q');
+
+    // ── THE RELOAD — arm the popup listener FIRST: runDeviceRestore reopens the
+    // projector on MOUNT, which happens during the reload before any later step.
+    const popup2Promise = context.waitForEvent('page', { timeout: 120_000 });
+    await page.reload();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
+    await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
+    await bootEngine(page); // the render loop + the display re-apply need the engine
+
+    // THE STORE SURVIVED — the display binding is per-machine, not in the wiped doc.
+    await expect
+      .poll(() => outputSlotScreenLabel(page, 'output1'), {
+        message: 'the output-slot display binding survived the reload in the rig store',
+        timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+      })
+      .toBe('DELL U2720Q');
+
+    // runDeviceRestore RE-OPENED the projector on the saved display — a NEW popup,
+    // carrying the SAME slot identity (the reserved output-slot node id).
+    const popup2 = await popup2Promise;
+    await popup2.waitForLoadState('domcontentloaded');
+    expect(popup2.url(), 'the re-opened sink carries the output slot id').toContain(
+      'workflow-videoOut',
+    );
+
+    // ── PROVE IT IS THE RIGHT NODE, AND LIVE ───────────────────────────────────
+    // The reopened projector holds a live render lease on the OUTPUT SLOT. The
+    // ephemeral scratch doc dropped the pre-reload graph, so feed the slot a
+    // source AFTER the reload and require the projector's PIXELS to follow: a
+    // projector wired to the wrong node — or frozen, or black — cannot. This is
+    // "the presented output shows the RIGHT node's frames advancing".
+    // Wait for the reopened projector to produce a SAMPLEABLE frame (its canvas
+    // is 0-sized until the render lease's first blit lands), then baseline it.
+    const first = await awaitReceiver(page, popup2, (s) => s.sampled > 0, 180);
+    expect(
+      first.ok,
+      `the reopened projector must produce a sampleable frame. ${describeReceiver(first)}`,
+    ).toBe(true);
+    const idle = first.last ?? (await requirePresentFrame(popup2, 'reopened projector baseline'));
+    await addSourceIntoOutput(page);
+    const followed = await awaitReceiver(
+      page,
+      popup2,
+      (s) => s.nonBlack && s.hash !== idle.hash,
+      180,
+    );
+    expect(
+      followed.reads,
+      `the probe never got a usable read of the re-opened projector — ZERO SAMPLES is an ` +
+        `instrument failure, never a pass. ${describeReceiver(followed)}`,
+    ).toBeGreaterThan(0);
+    expect(
+      followed.ok,
+      `feeding the output slot a source must reach the RE-OPENED projector's pixels — proving it ` +
+        `reopened on the right node and is live. ${describeReceiver(followed)}`,
+    ).toBe(true);
 
     errorWatch.assertClean();
   });

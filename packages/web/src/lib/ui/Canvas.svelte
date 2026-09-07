@@ -1463,6 +1463,25 @@
   // own write settling. Mount-only subscription; disposed with the component.
   onMount(() => rigBindings().subscribe(scheduleDeviceRestore));
 
+  // ── RE-OPEN OUTPUT-SLOT PROJECTORS ONCE THE VIDEO ENGINE IS READY ──────────
+  //
+  // The display leg of `runDeviceRestore` needs BOTH a resolvable video engine
+  // and the output-slot node present. On a reload neither is guaranteed at the
+  // mount edge above — the engine boots asynchronously and the reserved slots
+  // re-assert a beat later — and that pass does not retry, so the store's saved
+  // projector would never reopen. This latch fires exactly once, when the video
+  // engine first resolves with an output slot in the graph, and re-runs the
+  // restore (idempotent: `presentAll` skips an already-lit screen). Browser
+  // only; the shell owns its own windows.
+  let displayReopenDone = false;
+  $effect(() => {
+    if (displayReopenDone || nativeAvailable()) return;
+    const slotPresent = snapshot.nodes.some((n) => deviceSlotForId(n.id)?.kind === 'output');
+    if (!slotPresent || resolveVideoEngine(engine) == null) return;
+    displayReopenDone = true;
+    void runDeviceRestore();
+  });
+
   // ELECTRA AUTO-RECONNECT (#2248) — the same "state that is really the
   // PATCH's, held only in page-lifetime memory" class as the present restore
   // above: `ElectraAutoconfig.run()` was only ever invoked by the manual "Send
@@ -1495,28 +1514,30 @@
 
   $effect(() => {
     const pairs = nodePresent.presentingPairs();
-    if (!presentWriteArmed) return;
-    // ⚠ THE SHELL BRANCH NEVER ARMS — this is belt-and-braces for a rig that
-    // becomes native mid-session. Writing here under the shell would rebuild
-    // the very key `decideRestore` just migrated out, one projector at a time.
-    if (nativeAvailable()) return;
     const live = liveScreens();
-    if (!canDescribeBindings(pairs, live)) return;
-    // ── OUTPUT SLOTS → the PER-MACHINE RIG STORE; everything else → the Y.Doc ──
-    //
-    // A presenting reserved output slot (`output1..4`) records its monitor in
-    // `rigBindings()` so it survives a File→New / reload. This is ADD/UPDATE
-    // ONLY — it never CLEARS a slot binding, because "this slot is not in the
-    // live pairs" is indistinguishable here from "its monitor is unplugged
-    // right now", and clearing the second case would lose the binding across the
-    // very unplug the store exists to ride. The explicit unbind lives on the
-    // STOP gesture (use-present) instead. Only NON-slot `videoOut` present state
-    // rides the shared doc, unchanged.
-    const patchPairs: { nodeId: string; screenId: string }[] = [];
     const byScreenId = new Map(live.map((s) => [s.id, s.descriptor] as const));
-    for (const p of pairs) {
-      const spec = deviceSlotForId(p.nodeId);
-      if (spec?.kind === 'output') {
+
+    // ── OUTPUT SLOTS → the PER-MACHINE RIG STORE ───────────────────────────────
+    //
+    // A presenting reserved output slot (`output1..4`, output1 = the historical
+    // `workflow-videoOut`) records its monitor in `rigBindings()` so the display
+    // survives a File→New / reload — the whole point of the migration.
+    //
+    // ⚠ THIS FIRES INDEPENDENTLY OF THE Y.DOC ARMING BELOW, and that is
+    // load-bearing: `presentWriteArmed` gates the SHARED-DOC write (disarmed
+    // during a load so a half-built registry cannot clobber the saved set), but
+    // the store write has no such hazard — it is ADD/UPDATE ONLY and never
+    // CLEARS (a slot absent from `pairs` is indistinguishable from its monitor
+    // being unplugged; the explicit unbind lives on the STOP gesture in
+    // use-present). Gating it on the arm would mean a present made before the
+    // patch-persistence arm never reaches the store, and File→New would still
+    // wipe the display. Skipped only until a live screen resolves the pair's id
+    // (the effect re-runs when `presentScreens` loads). Shell defers: it owns
+    // display placement and writes the store itself.
+    if (!nativeAvailable()) {
+      for (const p of pairs) {
+        const spec = deviceSlotForId(p.nodeId);
+        if (spec?.kind !== 'output') continue;
         const desc = byScreenId.get(p.screenId);
         if (!desc) continue;
         const slot = spec.slot as OutputSlotName;
@@ -1524,10 +1545,18 @@
         if (!current || !sameScreenBinding(current.screen, desc)) {
           rigBindings().setOutput(slot, { screen: desc });
         }
-      } else {
-        patchPairs.push(p);
       }
     }
+
+    // ── NON-slot `videoOut` present state → the shared Y.Doc, unchanged ─────────
+    // Patch-owned placement keeps the existing arming discipline.
+    if (!presentWriteArmed) return;
+    // ⚠ THE SHELL BRANCH NEVER ARMS — belt-and-braces for a rig that becomes
+    // native mid-session. Writing here under the shell would rebuild the very key
+    // `decideRestore` just migrated out, one projector at a time.
+    if (nativeAvailable()) return;
+    if (!canDescribeBindings(pairs, live)) return;
+    const patchPairs = pairs.filter((p) => deviceSlotForId(p.nodeId)?.kind !== 'output');
     const next = bindingsFromPairs(patchPairs, live);
     const serialized = JSON.stringify(next);
     if (serialized === lastWrittenBindings) return;
