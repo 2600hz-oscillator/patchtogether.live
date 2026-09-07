@@ -1029,18 +1029,54 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'RECORDERBOX: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
   },
 
-  // ───── MOOG 904A VCF — self-oscillate so the audio out is driven ─────
+  // ───── MOOG 904A VCF — drive SIGNAL, exactly like the 904B below ─────
   //
-  // The 904A is an effect (audio in → low-pass out), but at REGENERATION=1
-  // the transistor ladder self-oscillates into a sustained VC sine at the
-  // cutoff frequency — no upstream source needed. Seed regeneration=1 +
-  // range=2 (mid band, audible) so the `audio` output rings on its own and
-  // the per-port outputs-emit check sees a real signal (slice-1-style
-  // driven-signal check). Without this it would be silent at the default
-  // regeneration=0 and need an upstream source like any other filter.
+  // The 904A is an effect (audio in → low-pass out). This driver used to lean
+  // on REGENERATION=1 alone: the transistor ladder self-oscillates into a
+  // sustained sine, so "no upstream source needed".
+  //
+  // ⚠ THAT IS TRUE OF THE DSP AND FALSE OF THE MODULE, and the gap is
+  // `dual-mono.ts`: `moog904a` is classified `dual-mono`, so the ENGINE builds
+  // the ladder TWICE — one instance per channel behind an up-mix + splitter,
+  // recombined by a merger. Each instance bootstraps its self-oscillation from
+  // its OWN `Math.random()` thermal-noise floor (`dither`, moog904a.ts), so the
+  // two rings are the SAME frequency (deterministic in fc/sr) with an
+  // INDEPENDENT, arbitrary phase. The sweep's sink is a SCOPE, and an
+  // AnalyserNode down-mixes its input to mono — so what the assertion measures
+  // is `A·|cos(Δφ/2)|`, a fresh coin flip on every spawn.
+  //
+  // MEASURED, this exact patch, ten repeats on ONE idle machine (the DSP alone,
+  // rendered offline, is bit-stable at peak 1.0622 @ 2684 Hz every time):
+  //   1.061  0.536  1.062  0.0498  0.973  0.190  0.577  0.160  1.021  0.557
+  // The floor is 0.005 — 0.47 % of the maximum — so the test fails whenever the
+  // two instances land near antiphase (~0.3 % of spawns). CI has drawn 0.0037
+  // and 0.0014 (run 33854188281, shard 8/12), both reported with
+  // `regeneration=1 range=2 cutoff=800` live on the engine and the edge
+  // present: the params were never the problem.
+  //
+  // THE FIX IS THE 904B's OWN SHAPE — drive the SIGNAL input. NOISE is a single
+  // mono source, so the dual-mono up-mix hands BOTH instances a bit-identical
+  // input; their forced response is common-mode and survives the down-mix at
+  // full amplitude, and the free-running rings can no longer take the sum to
+  // zero. REGENERATION stays at 1 so the sweep still exercises the resonant
+  // ladder. MEASURED, same ten repeats with the noise upstream: 1.298…1.378
+  // (a 6 % spread, 260× the floor) — the assertion stops being a lottery.
   moog904a: {
     params: { regeneration: 1, range: 2, cutoff: 800 },
-    note: 'MOOG 904A: regeneration=1 → ladder self-oscillates; audio out is a driven sine',
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-noise', type: 'noise', position: { x: 60, y: 60 }, domain: 'audio', params: { level: 0.6 } },
+      ],
+      edges: [
+        {
+          id: 'e-drv-noise',
+          from: { nodeId: 'drv-noise', portId: 'white' },
+          to:   { nodeId: 'sut',       portId: 'audio' },
+          sourceType: 'audio', targetType: 'audio',
+        },
+      ],
+    }),
+    note: 'MOOG 904A: drive SIGNAL with NOISE.white (common-mode across the dual-mono pair) + regeneration=1; audio out is a driven, resonant signal that cannot cancel in the scope down-mix',
   },
   // ───── LUSH GARDEN — a GENERATOR despite its optional video input ─────
   //
