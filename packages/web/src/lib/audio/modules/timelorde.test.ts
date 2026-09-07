@@ -22,6 +22,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   timelordeDef,
   transportEventsToRunState,
+  legacyIsPlayingToTransport,
   externalBpmLockOnMeasure,
   externalBpmLockOnUserWrite,
   externalBpmLockOnUnpatch,
@@ -412,8 +413,9 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
       node,
     );
     // Sanity: the scheduler subscribers were registered — the transport-gate
-    // poll AND the wizard-gate (gate→wizardOn level) poll = 2.
-    expect(fakeSchedulerSubs.length).toBe(2);
+    // poll, the wizard-gate (gate→wizardOn level) poll AND the legacy v1→v2
+    // transport-migration watch = 3.
+    expect(fakeSchedulerSubs.length).toBe(3);
 
     // First poll has elapsed=0 → no edges to scan. Advance time so the
     // next poll covers a real window.
@@ -545,15 +547,16 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
     expect(handle.read?.('running')).toBe(1);
   });
 
-  it('handle.dispose() unsubscribes BOTH scheduler subscriptions (transport + wizard-gate)', async () => {
+  it('handle.dispose() unsubscribes ALL scheduler subscriptions (transport + wizard-gate + legacy-migration)', async () => {
     const ctx = makeMockCtx();
     const node = makeNode({ running: 0 });
     const handle = await timelordeDef.factory(
       ctx as unknown as AudioContext,
       node,
     );
-    // Two subscriptions: the transport-gate poll + the wizard-gate poll.
-    expect(fakeSchedulerSubs.length).toBe(2);
+    // Three subscriptions: the transport-gate poll + the wizard-gate poll +
+    // the legacy v1→v2 transport-migration watch.
+    expect(fakeSchedulerSubs.length).toBe(3);
     handle.dispose();
     expect(fakeSchedulerSubs.length).toBe(0);
   });
@@ -1014,3 +1017,201 @@ function makeFakeCanvas(calls: string[]): HTMLCanvasElement {
     getContext: (_type: string) => ctx2d,
   } as unknown as HTMLCanvasElement;
 }
+
+// ---------------- v1→v2 legacy transport migration (spawn AND load) ----------------
+//
+// Fleet audit 2026-09-06 finding 7: the `isPlaying` → muteOutputs migration ran
+// only at SPAWN. A v1 patch loaded over a live TIMELORDE at a reused id re-runs
+// no factory (same id + type → the reconciler only diffs param keys the loaded
+// patch carries), so the PREVIOUS session's mute/run state stayed in force over
+// the loaded patch's — on the module that is the whole rack's transport.
+//
+// These tests drive the pure helper, the spawn conversion, and the LOAD path
+// (simulated exactly as loadEnvelopeIntoStore produces it: the node at the id
+// is REPLACED wholesale, legacy-shaped params, factory-captured proxy
+// detached). The transport-continuity half is pinned here too: a load whose
+// migrated state matches the live engine writes NOTHING to either AudioParam,
+// so the migration cannot nudge a clock that is already doing what the loaded
+// patch asks.
+
+describe('legacyIsPlayingToTransport (pure v1→v2 conversion)', () => {
+  it('not a v1 patch (no isPlaying) → null', () => {
+    expect(legacyIsPlayingToTransport({})).toBeNull();
+    expect(legacyIsPlayingToTransport(undefined)).toBeNull();
+    expect(legacyIsPlayingToTransport({ muteOutputs: 1, running: 0 })).toBeNull();
+  });
+
+  it('already v2 (muteOutputs present) → null, EVEN with a stray isPlaying: the reconciler owns v2', () => {
+    expect(legacyIsPlayingToTransport({ isPlaying: 0, muteOutputs: 0 })).toBeNull();
+    expect(legacyIsPlayingToTransport({ isPlaying: 1, muteOutputs: 1 })).toBeNull();
+  });
+
+  it('v1 playing (isPlaying=1) → gates live, clock running (the v2 defaults)', () => {
+    expect(legacyIsPlayingToTransport({ isPlaying: 1 })).toEqual({ muteOutputs: 0, running: 1 });
+  });
+
+  it('v1 stopped (isPlaying=0) → MUTED, clock still running (v2 splits stop from mute; LIVECODE keeps its ticks)', () => {
+    expect(legacyIsPlayingToTransport({ isPlaying: 0 })).toEqual({ muteOutputs: 1, running: 1 });
+  });
+
+  it('thresholds at 0.5 like every discrete param read', () => {
+    expect(legacyIsPlayingToTransport({ isPlaying: 0.7 })!.muteOutputs).toBe(0);
+    expect(legacyIsPlayingToTransport({ isPlaying: 0.3 })!.muteOutputs).toBe(1);
+  });
+
+  it('an explicit running is respected (hand-carried hybrid patch)', () => {
+    expect(legacyIsPlayingToTransport({ isPlaying: 1, running: 0 })).toEqual({ muteOutputs: 0, running: 0 });
+  });
+});
+
+describe('timelordeDef.factory: legacy transport migration runs on LOAD, not only spawn', () => {
+  const ID = 'timelorde-test';
+
+  beforeEach(() => {
+    fakeSchedulerSubs.length = 0;
+    constructedWorklets.length = 0;
+    for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+    (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+      FakeAudioWorkletNode;
+  });
+
+  function seedLive(params: Record<string, number>): void {
+    livePatch.nodes[ID] = {
+      id: ID,
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params,
+      data: {},
+    } as ModuleNode;
+  }
+
+  /** Exactly what loadEnvelopeIntoStore does at a REUSED id: the node object is
+   *  deleted + re-inserted wholesale (one transaction), so the id survives, the
+   *  factory does NOT re-run, and the factory-captured node reference is
+   *  DETACHED from what the store now holds. */
+  function simulateLoadAtReusedId(params: Record<string, number>): void {
+    delete livePatch.nodes[ID];
+    seedLive(params);
+  }
+
+  function engineParams() {
+    const w = constructedWorklets[constructedWorklets.length - 1]!;
+    return {
+      mute: w._paramMap.get('muteOutputs')!,
+      running: w._paramMap.get('running')!,
+    };
+  }
+
+  it('SPAWN of a v1-stopped patch still starts MUTED (the original conversion, preserved)', async () => {
+    seedLive({ isPlaying: 0 });
+    await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({ isPlaying: 0 }));
+    const { mute, running } = engineParams();
+    expect(mute.value).toBe(1);
+    expect(running.value).toBe(1);
+    // NEW: the conversion is durable — the store now carries the v2 pair, so
+    // the next save is a v2 patch and the UI reads the state the engine is in.
+    expect(livePatch.nodes[ID]!.params.muteOutputs).toBe(1);
+    expect(livePatch.nodes[ID]!.params.running).toBe(1);
+  });
+
+  it('THE FIX (unmute direction): a v1-playing patch loaded over a live MUTED clock un-mutes it', async () => {
+    seedLive({ muteOutputs: 1, running: 1 });
+    await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({ muteOutputs: 1 }));
+    const { mute, running } = engineParams();
+    expect(mute.value).toBe(1); // live state: muted
+
+    simulateLoadAtReusedId({ isPlaying: 1 }); // v1 patch: playing, no v2 keys
+    tickAll();
+
+    expect(mute.value).toBe(0); // the LOADED patch's state wins
+    expect(running.value).toBe(1);
+    expect(livePatch.nodes[ID]!.params.muteOutputs).toBe(0); // write-through
+  });
+
+  it('THE FIX (mute direction): a v1-stopped patch loaded over a live PLAYING clock mutes it — and keeps the clock turning', async () => {
+    seedLive({ muteOutputs: 0, running: 1 });
+    await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({ muteOutputs: 0 }));
+    const { mute, running } = engineParams();
+
+    simulateLoadAtReusedId({ isPlaying: 0 });
+    tickAll();
+
+    expect(mute.value).toBe(1); // legacy stop = v2 MUTED…
+    expect(running.value).toBe(1); // …NOT halted: LIVECODE's ticks stay alive
+    expect(livePatch.nodes[ID]!.params.muteOutputs).toBe(1);
+  });
+
+  it('THE FIX (run direction): a v1-playing patch loaded over a live STOPPED clock resumes it (fresh-boot equivalence)', async () => {
+    seedLive({ running: 0, muteOutputs: 0 });
+    await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({ running: 0 }));
+    const { mute, running } = engineParams();
+    expect(running.value).toBe(0); // live state: transport halted
+
+    simulateLoadAtReusedId({ isPlaying: 1 }); // a fresh boot of this patch runs
+    tickAll();
+
+    expect(running.value).toBe(1);
+    expect(mute.value).toBe(0);
+  });
+
+  it('TRANSPORT CONTINUITY: a same-state legacy load writes NEITHER AudioParam (no nudge, no phase event)', async () => {
+    seedLive({ muteOutputs: 0, running: 1 });
+    await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({}));
+    const { mute, running } = engineParams();
+    const muteSpy = vi.spyOn(mute, 'setValueAtTime');
+    const runSpy = vi.spyOn(running, 'setValueAtTime');
+
+    simulateLoadAtReusedId({ isPlaying: 1 }); // migrates to exactly the live state
+    tickAll();
+
+    expect(muteSpy).not.toHaveBeenCalled();
+    expect(runSpy).not.toHaveBeenCalled();
+    // …but the store still gains the v2 pair (the self-extinguishing write).
+    expect(livePatch.nodes[ID]!.params.muteOutputs).toBe(0);
+  });
+
+  it('SELF-EXTINGUISHING: one shot per legacy load — later ticks write nothing and cannot undo the player', async () => {
+    seedLive({ muteOutputs: 1, running: 1 });
+    const handle = await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({ muteOutputs: 1 }));
+    const { mute, running } = engineParams();
+
+    simulateLoadAtReusedId({ isPlaying: 1 });
+    tickAll();
+    expect(mute.value).toBe(0);
+
+    const muteSpy = vi.spyOn(mute, 'setValueAtTime');
+    const runSpy = vi.spyOn(running, 'setValueAtTime');
+    tickAll();
+    tickAll();
+    expect(muteSpy).not.toHaveBeenCalled();
+    expect(runSpy).not.toHaveBeenCalled();
+
+    // The player mutes again (store + engine, the reconciler's two-layer shape;
+    // the store keeps its stray isPlaying because nothing scrubs v1 fields).
+    livePatch.nodes[ID]!.params.muteOutputs = 1;
+    handle.setParam?.('muteOutputs', 1);
+    tickAll();
+    tickAll();
+    expect(mute.value).toBe(1); // the migration does NOT fight the player
+  });
+
+  it('NEGATIVE CONTROL: a v2 load (muteOutputs present) is left entirely to the reconciler', async () => {
+    seedLive({ muteOutputs: 0, running: 1 });
+    await timelordeDef.factory(makeMockCtx() as unknown as AudioContext, makeNode({}));
+    const { mute, running } = engineParams();
+    const muteSpy = vi.spyOn(mute, 'setValueAtTime');
+    const runSpy = vi.spyOn(running, 'setValueAtTime');
+
+    simulateLoadAtReusedId({ muteOutputs: 1, running: 0, isPlaying: 1 });
+    tickAll();
+    tickAll();
+
+    // The migration writes nothing (the reconciler pushes v2 key diffs itself,
+    // through engine.setParam — not under test here).
+    expect(muteSpy).not.toHaveBeenCalled();
+    expect(runSpy).not.toHaveBeenCalled();
+    expect(livePatch.nodes[ID]!.params.muteOutputs).toBe(1); // untouched
+    expect(livePatch.nodes[ID]!.params.running).toBe(0);
+  });
+});

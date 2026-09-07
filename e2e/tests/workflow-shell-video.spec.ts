@@ -124,6 +124,18 @@ const SETTLE_WINDOW_MS = 400;
 const COST_RATE_SLACK = 1.25;
 
 const VIDEO_OUT = 'workflow-videoOut';
+
+/** Nodes currently holding a HARD render lease (engine `pullStats().leased`).
+ *  One round trip, read where the DOM has already proven the state it mirrors —
+ *  see the dock full-view case for why this is a read and not a poll. */
+async function leasedNodes(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
+    };
+    return w.__engine().getDomain('video').pullStats().leased;
+  });
+}
 const RECORDERBOX = 'workflow-recorderbox';
 const SYNESTHESIA = 'workflow-synesthesia';
 
@@ -1251,29 +1263,30 @@ test.describe('?shell=1 video visibility', () => {
     await expect(faceplate.locator(dockOutSel), 'videoOut video surface mounts in the dock').toBeVisible();
     // The full-view holds a HARD render lease on the video node (the lane copy
     // may be off-screen; pull-eval must not decay the dock's live picture).
-    await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const w = globalThis as unknown as {
-            __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
-          };
-          return w.__engine().getDomain('video').pullStats().leased;
-        }),
-      { message: 'videoOut holds a render lease while its full-view is open' })
+    //
+    // ⚠ READ ONCE, NOT POLLED. The lease is taken by Canvas's `$effect` over
+    // `fullViewCards` — the SAME `$derived` whose `{#if}` mounts the faceplate —
+    // so it is held in the flush that produced the canvas the line above just
+    // waited for; there is no later moment for it to arrive. This used to be an
+    // `expect.poll` on Playwright's flat 5 000 ms default, and on run
+    // 34030547898 (shard 2) its FIRST sample — one `page.evaluate` round trip —
+    // took 5.40 s on a main thread this case itself starves (LINES → FEEDBACK
+    // and LINES → VIDEOOUT live under SwiftShader; the footer read `tick 782ms`
+    // with 3 405 dropped buffers), so the poll expired with zero completed
+    // samples and the lease unread. The #1993 class again: a Playwright-side
+    // poll of a page-side value is a round trip per sample on the subject's own
+    // main thread. A single read has no budget of its own to lose; the case
+    // envelope (`videoCaseTimeout`) bounds it like every other read here, and
+    // the assertion is exactly as strict — a missing lease still reds.
+    expect(await leasedNodes(page), 'videoOut holds a render lease while its full-view is open')
       .toContain(VIDEO_OUT);
     await expectCanvasChanges(page, dockOutSel, 'docked videoOut (lines patched in)');
     await page.keyboard.press('Escape');
     await expect(faceplate).toHaveCount(0);
-    // Lease released with the view.
-    await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const w = globalThis as unknown as {
-            __engine: () => { getDomain: (d: string) => { pullStats: () => { leased: string[] } } };
-          };
-          return w.__engine().getDomain('video').pullStats().leased;
-        }),
-      { message: 'lease released when the full-view closes' })
+    // Lease released with the view — the effect's cleanup runs in the flush
+    // that unmounted the faceplate (same derived, see above), so the count-0
+    // wait above is this read's readiness signal too.
+    expect(await leasedNodes(page), 'lease released when the full-view closes')
       .not.toContain(VIDEO_OUT);
 
     expect(providerErrors, `no useStore/provider throws: ${providerErrors.join(' | ')}`).toEqual([]);
