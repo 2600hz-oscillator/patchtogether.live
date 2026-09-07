@@ -121,7 +121,6 @@
     makePerformanceBundle,
     validateBundle,
     BundleParseError,
-    mergeMidiBindings,
     resolveMidiDeviceId,
     MIDI_DEVICE_NODE_TYPES,
     MIDI_OUTPUT_DEVICE_NODE_TYPES,
@@ -156,6 +155,7 @@
   import {
     exportBindings as exportMidiBindings,
     importBindings as importMidiBindings,
+    replaceBindings as replaceMidiBindings,
     connect as connectMidiLearn,
   } from '$lib/midi/midi-learn.svelte';
   import { getMidiClockSource } from '$lib/midi/midi-clock-source';
@@ -3705,6 +3705,12 @@
     if (newRackBusy) return;
     newRackBusy = true;
     try {
+      // A new rack starts with NO MIDI mappings and a blank Electra (owner
+      // ruling 2026-09-07). Bindings live in a module singleton that a same-tab
+      // `goto` to a fresh doc would otherwise leave stale; clear them here so the
+      // new rack — reloaded OR navigated — comes up unmapped, and the fresh
+      // mount's `notifyPatchLoaded` regenerates the Electra preset from empty.
+      replaceMidiBindings([]);
       if (headerSignedIn) {
         try {
           const res = await fetch('/api/rackspaces', {
@@ -4121,12 +4127,12 @@
       await putVideoFileBlob(m.handleId, blob, m.name);
     }
 
-    // Restore MIDI Learn CC maps (merge so other patches' bindings survive),
-    // before the envelope so cards re-register their setters on mount.
-    if (bundle.midiBindings.length > 0) {
-      const merged = mergeMidiBindings(exportMidiBindings(), bundle.midiBindings);
-      importMidiBindings(merged);
-    }
+    // Restore MIDI Learn CC maps: the incoming patch's bindings REPLACE the
+    // current set wholesale (owner ruling 2026-09-07 — a load adopts the
+    // loaded patch's mappings; a patch that carries none clears them, so a MIDI
+    // map is patch content, never a sticky rig property). Before the envelope
+    // so cards re-register their setters on mount.
+    replaceMidiBindings(bundle.midiBindings ?? []);
 
     const result = persistenceLoad(bundle.patch, ydoc, patch);
     await reconciler?.reconcile();
@@ -4471,10 +4477,9 @@
         slotOccupied[i] = false;
       }
     }
-    // Restore the MIDI Learn map (merge so other patches' bindings survive).
-    if (set.midiBindings.length > 0) {
-      importMidiBindings(mergeMidiBindings(exportMidiBindings(), set.midiBindings));
-    }
+    // Restore the MIDI Learn map: the incoming set REPLACES the current
+    // bindings wholesale (owner ruling 2026-09-07); an empty set clears them.
+    replaceMidiBindings(set.midiBindings ?? []);
     trace(`loaded .set (${set.slots.length} slot${set.slots.length === 1 ? '' : 's'})`);
   }
 
