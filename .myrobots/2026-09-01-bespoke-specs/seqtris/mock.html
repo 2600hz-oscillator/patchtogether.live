@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>seqtris — bespoke surface mock (both tiers)</title>
+<style>
+  /* ── The rack's own tokens, transcribed so this file is self-contained. ──
+     Nothing here is authoritative: the real surface inherits them from the app. */
+  :root {
+    --bg: #0a0b0e;
+    --plate: #14161c;
+    --plate-2: #171a21;
+    --border: #2a2f3a;
+    --text: #d6dae3;
+    --text-dim: #858c9c;
+    --accent: #4caf7d;
+    --accent-dim: #2f6e51;
+    --warn: #d98a3a;
+    --cable-polyPitchGate: #b06ad9;
+    --cable-gate: #6ad9a0;
+
+    /* The verified palette — SEQTRIS_PIECE_RGB scaled 0..127 → 0..255 by
+       seqtrisCssColor(). ⚠ The real surface IMPORTS that function; these
+       literals exist only so this file opens standalone. */
+    --p-i: rgb(0, 221, 237);
+    --p-o: rgb(237, 221, 0);
+    --p-t: rgb(173, 0, 237);
+    --p-s: rgb(0, 225, 48);
+    --p-z: rgb(237, 24, 24);
+    --p-j: rgb(32, 48, 245);
+    --p-l: rgb(245, 104, 0);
+    --p-empty: rgb(18, 20, 26);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 'Inter', system-ui, sans-serif;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: .01em; }
+  .sub { color: var(--text-dim); font-size: 11px; margin: 0 0 24px; max-width: 78ch; }
+  .tiers { display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; }
+  .tier { }
+  .tier > h2 {
+    font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-dim); margin: 0 0 8px;
+  }
+  .tier > .note {
+    font-size: 10px; color: var(--text-dim); margin: 8px 0 0; max-width: 30ch; line-height: 1.45;
+  }
+
+  /* ── The shell plate (generic chrome — NOT part of this spec, drawn so the
+        bodies are seen in their real context). ─────────────────────────────── */
+  .faceplate {
+    background: var(--plate);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .faceplate.audio { border-top: 2px solid var(--cable-polyPitchGate); }
+  .titlebar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 8px;
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+  .expand {
+    font-size: 9px; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 2px;
+    padding: 0 4px; background: transparent;
+  }
+  .band {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .band-head {
+    font-size: 8px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 5px;
+  }
+  .cells { display: flex; gap: 10px; justify-content: center; }
+  .cell-knob { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 46px; }
+  .knob {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: radial-gradient(circle at 34% 30%, #313743, #1a1d25 68%);
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  /* ⚠ NO DECIMAL READOUT. Owner ruling: decimals GONE, not hidden. The value
+     lives in the pointer angle and the label, nowhere else. */
+  .knob::after {
+    content: ''; position: absolute; left: 50%; top: 4px;
+    width: 1px; height: 11px; background: var(--text);
+    transform-origin: 50% 13px;
+  }
+  .k-grav::after { transform: translateX(-50%) rotate(-42deg); }
+  .k-quant::after { transform: translateX(-50%) rotate(48deg); }
+  .cell-label {
+    font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim);
+  }
+  .jackrail {
+    display: flex; gap: 5px; align-items: center; flex-wrap: wrap;
+    padding: 5px 8px;
+  }
+  .jack { display: flex; align-items: center; gap: 3px; }
+  .jack i {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 1px solid var(--border); background: #0c0e13; display: block;
+  }
+  .jack.in i { border-color: var(--cable-gate); }
+  .jack.out i { border-color: var(--cable-polyPitchGate); }
+  .jack.out.gate i { border-color: var(--cable-gate); }
+  .jack span { font-size: 7.5px; letter-spacing: .05em; color: var(--text-dim); }
+  .railgap { flex: 1 1 6px; }
+
+  /* ── THE WELL — a CSS GRID of 64 spans. ⚠ NOT A CANVAS. See spec.md §9:
+        the modtris/skifree DPR blit rules do not apply, and the DOM rules that
+        replace them are exactly the four properties below. ──────────────────── */
+  .well {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);   /* 1fr — the grid divides the box exactly */
+    grid-template-rows: repeat(8, 1fr);
+    gap: 1px;                                 /* browser-snapped; a canvas would round by hand */
+    aspect-ratio: 1 / 1;                      /* 8×8 stays square at every tier */
+    padding: 2px;
+    border-radius: 3px;
+    background: #0b0c10;
+    width: var(--well-px);                    /* the ONLY px dimension, on the CONTAINER */
+  }
+  .well .c {
+    border-radius: 1px;
+    background: var(--p-empty);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+  }
+  .well .c.filled { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+  .well .c.l { background: var(--p-l); }
+
+  /* ── The bind lamp. ──────────────────────────────────────────────────────── */
+  .led { width: 8px; height: 8px; border-radius: 50%; background: #555; flex: none; }
+  .led.bound { background: #4caf7d; }
+
+  /* ── TILE body. ──────────────────────────────────────────────────────────── */
+  .tilebody {
+    padding: 0 6px 4px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .tile-lamprow {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 7.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim);
+  }
+
+  /* ── DOCK body. ──────────────────────────────────────────────────────────── */
+  .dockbody { padding: 8px 10px 4px; }
+  .play { display: flex; gap: 8px; align-items: flex-start; }
+  .preview-wrap { position: relative; display: flex; min-height: 18px; }
+  .scenecol {
+    display: grid; grid-template-rows: repeat(8, 1fr); gap: 2px;
+    width: 58px; flex: none;
+    height: var(--well-px);
+  }
+  .scene {
+    font: 8px/1 'Inter', system-ui, sans-serif;
+    padding: 0; border-radius: 2px;
+    border: 1px solid var(--border);
+    background: var(--plate-2); color: var(--text);
+    white-space: nowrap; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Tinted to the RGB the binder writes to the pads, so the screen and the
+     hardware read as one instrument. */
+  .scene.reset { border-color: #7a3a1a; }
+  .scene.drop  { border-color: #8a8a8a; }
+  .scene.dead {
+    opacity: .15; background: #14161c; border-color: transparent;
+  }
+  .sceneidx {
+    position: absolute; /* unused in the flow — kept for the annotated variant */
+  }
+  .screen-btn {
+    position: absolute; right: 4px; bottom: 4px;
+    font-size: .55rem; letter-spacing: .06em;
+    padding: 2px 8px;
+    border: 1px solid var(--accent-dim); border-radius: 2px;
+    background: rgba(5,6,8,.72); color: var(--text);
+  }
+  .bind-row {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 8px;
+  }
+  .mini {
+    font-size: 10px; padding: 2px 7px;
+    border: 1px solid var(--border); border-radius: 2px;
+    background: var(--plate-2); color: var(--text);
+  }
+  .picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .status {
+    margin: 4px 0 0; font-size: 9px; line-height: 1.3; color: var(--text-dim);
+  }
+  .status.problem { color: var(--warn); }
+
+  /* ── Annotation callouts (mock-only; never in the product). ──────────────── */
+  .legend {
+    margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim); max-width: 92ch;
+  }
+  .legend h3 { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text); margin: 0 0 8px; }
+  .legend ul { margin: 0 0 14px; padding-left: 18px; }
+  .legend li { margin-bottom: 5px; line-height: 1.5; }
+  .legend code { font-family: ui-monospace, monospace; font-size: 10px; color: var(--text); }
+  .warn { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>seqtris — bespoke surface, both tiers</h1>
+<p class="sub">
+  Static mock. 1:1 with <code>SeqtrisCard.svelte</code> on <code>origin/main</code>, translated
+  into <code>tileBody</code> (lane) and <code>fullViewBody</code> (dock). Compact density, no
+  decimals, no resting prose outside a control, no padding to fill space. The well is a CSS grid
+  of 64 spans — <span class="warn">not a canvas</span>; see spec.md §9.
+  Resting state is the real seeded one: <code>shuffledBag(0x5e9721) = [l,t,o,i,s,j,z]</code>, so
+  the opening piece is <strong>l</strong> at column 3.
+</p>
+
+<div class="tiers">
+
+  <!-- ══════════════════════ LANE TILE ══════════════════════ -->
+  <div class="tier">
+    <h2>lane tile — <code>tileBody</code></h2>
+    <div class="faceplate audio" style="width: 192px;">
+      <div class="titlebar"><span>seqtris</span><button class="expand">⤢</button></div>
+
+      <!-- The generic face's ONE band, both params. glyph: 'none' — forced. -->
+      <div class="band">
+        <div class="band-head">fall</div>
+        <div class="cells">
+          <div class="cell-knob"><div class="knob k-grav"></div><div class="cell-label">grav</div></div>
+          <div class="cell-knob"><div class="knob k-quant"></div><div class="cell-label">quant</div></div>
+        </div>
+      </div>
+
+      <!-- THE MODULE'S OWN TILE BODY. Read-only: the well + the bind lamp.
+           Sits BELOW the param bands and ABOVE the jack rail, which is where
+           ModuleShell renders the slot. -->
+      <div class="tilebody" style="--well-px: 104px;">
+        <div class="well" role="img" aria-label="Seqtris well, 8 by 8, current piece l">
+          <!-- row 0 -->
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c filled l"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <!-- row 1 -->
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c filled l"></span><span class="c filled l"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <!-- rows 2-7 -->
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+          <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+        </div>
+        <div class="tile-lamprow"><span class="led"></span><span>launchpad</span></div>
+      </div>
+
+      <div class="jackrail">
+        <div class="jack in"><i></i><span>clock</span></div>
+        <div class="railgap"></div>
+        <div class="jack out"><i></i><span>piece</span></div>
+        <div class="jack out"><i></i><span>board</span></div>
+        <div class="jack out gate"><i></i><span>line</span></div>
+        <div class="jack out gate"><i></i><span>spawn</span></div>
+      </div>
+    </div>
+    <p class="note">
+      Read-only. The lamp is dark = unbound. Honours <code>previewCollapsed</code> but does not
+      offer the switch.
+    </p>
+  </div>
+
+  <!-- ══════════════════════ DOCK FULL VIEW ══════════════════════ -->
+  <div class="tier">
+    <h2>dock full view — <code>fullViewBody</code></h2>
+    <div class="faceplate audio" style="width: 292px;">
+      <div class="titlebar"><span>seqtris</span></div>
+
+      <!-- The extension body takes the HEAD of the dock full view, in place of
+           the generic hero glyph. The param bands BELOW are untouched. -->
+      <div class="dockbody" style="--well-px: 176px;">
+        <div class="play">
+          <div class="preview-wrap">
+            <!-- ⚠ role="img" is on the FRAME, OUTSIDE the collapse guard, so the
+                 accessible name survives SCREEN OFF. -->
+            <div role="img" aria-label="Seqtris well, 8 by 8, current piece l">
+              <div class="well">
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c filled l"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c filled l"></span><span class="c filled l"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+                <span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span>
+              </div>
+            </div>
+            <!-- Overlays the corner: costs ZERO layout height (the spirographs
+                 io-spec-consistency lesson). -->
+            <button class="screen-btn" aria-pressed="true">SCREEN ON</button>
+          </div>
+
+          <!-- ⚠ THE SCENE COLUMN, IN HARDWARE ORDER, DEAD BUTTONS INCLUDED.
+               This is SEQTRIS_SCENE_ACTIONS top-to-bottom, imported — never
+               re-typed, never re-sorted, never tidied. Reordering it is the one
+               thing the inventory says this surface must not do. -->
+          <div class="scenecol">
+            <button class="scene reset" title="Scene button 1 — reset">reset</button>
+            <span    class="scene dead" aria-hidden="true"></span>
+            <span    class="scene dead" aria-hidden="true"></span>
+            <button  class="scene drop" title="Scene button 4 — drop">drop</button>
+            <button  class="scene" title="Scene button 5 — rot ←">rot ←</button>
+            <button  class="scene" title="Scene button 6 — rot →">rot →</button>
+            <button  class="scene" title="Scene button 7 — move ←">move ←</button>
+            <button  class="scene" title="Scene button 8 — move →">move →</button>
+          </div>
+        </div>
+
+        <div class="bind-row">
+          <span class="led"></span>
+          <button class="mini">Connect Launchpad</button>
+        </div>
+        <!-- The picker appears only between CONNECT and bind. Keyed by INDEX,
+             never by name: Windows reports identical port names (WinMM dup). -->
+        <div class="picker" hidden>
+          <button class="mini">Launchpad X LPX MIDI</button>
+          <button class="mini">MIDIIN2 (LPX)</button>
+        </div>
+        <p class="status">
+          Not connected. CONNECT grants Web MIDI and lists the Launchpads on this machine.
+        </p>
+      </div>
+
+      <div class="band">
+        <div class="band-head">fall</div>
+        <div class="cells">
+          <div class="cell-knob"><div class="knob k-grav"></div><div class="cell-label">grav</div></div>
+          <div class="cell-knob"><div class="knob k-quant"></div><div class="cell-label">quant</div></div>
+        </div>
+      </div>
+
+      <div class="jackrail">
+        <div class="jack in"><i></i><span>clock</span></div>
+        <div class="railgap"></div>
+        <div class="jack out"><i></i><span>piece</span></div>
+        <div class="jack out"><i></i><span>board</span></div>
+        <div class="jack out gate"><i></i><span>line</span></div>
+        <div class="jack out gate"><i></i><span>spawn</span></div>
+      </div>
+    </div>
+    <p class="note">
+      Resting state: unbound, <code>idle</code> status, picker hidden. This is what a VRT scene
+      captures.
+    </p>
+  </div>
+
+  <!-- ══════════════════════ DOCK — BOUND + SCREEN OFF ══════════════════════ -->
+  <div class="tier">
+    <h2>dock — bound, and SCREEN OFF</h2>
+    <div class="faceplate audio" style="width: 292px;">
+      <div class="titlebar"><span>seqtris</span></div>
+      <div class="dockbody" style="--well-px: 176px;">
+        <div class="play">
+          <div class="preview-wrap" style="width: 176px;">
+            <!-- ⚠ The frame and its label REMAIN; only the grid is inside the
+                 collapse guard. The game keeps running, the pads stay lit, and
+                 PIECE / LINE / SPAWN keep firing — the switch stops one DOM
+                 render and nothing else. -->
+            <div role="img" aria-label="Seqtris well, 8 by 8, current piece l"></div>
+            <button class="screen-btn" aria-pressed="false" style="border-color: var(--border); color: var(--text-dim);">SCREEN OFF</button>
+          </div>
+          <div class="scenecol">
+            <button class="scene reset" title="Scene button 1 — reset">reset</button>
+            <span    class="scene dead" aria-hidden="true"></span>
+            <span    class="scene dead" aria-hidden="true"></span>
+            <button  class="scene drop" title="Scene button 4 — drop">drop</button>
+            <button  class="scene" title="Scene button 5 — rot ←">rot ←</button>
+            <button  class="scene" title="Scene button 6 — rot →">rot →</button>
+            <button  class="scene" title="Scene button 7 — move ←">move ←</button>
+            <button  class="scene" title="Scene button 8 — move →">move →</button>
+          </div>
+        </div>
+
+        <div class="bind-row">
+          <span class="led bound"></span>
+          <button class="mini">Unbind</button>
+        </div>
+        <p class="status">
+          Playing on Launchpad X LPX MIDI. The right-hand scene buttons are the game controls.
+        </p>
+      </div>
+
+      <div class="band">
+        <div class="band-head">fall</div>
+        <div class="cells">
+          <div class="cell-knob"><div class="knob k-grav"></div><div class="cell-label">grav</div></div>
+          <div class="cell-knob"><div class="knob k-quant"></div><div class="cell-label">quant</div></div>
+        </div>
+      </div>
+
+      <div class="jackrail">
+        <div class="jack in"><i></i><span>clock</span></div>
+        <div class="railgap"></div>
+        <div class="jack out"><i></i><span>piece</span></div>
+        <div class="jack out"><i></i><span>board</span></div>
+        <div class="jack out gate"><i></i><span>line</span></div>
+        <div class="jack out gate"><i></i><span>spawn</span></div>
+      </div>
+    </div>
+    <p class="note">
+      The <code>claimed</code> / <code>no-device</code> / <code>unsupported</code> states reuse
+      this layout with <code>role="alert"</code> on the status line.
+    </p>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h3>What this mock is asserting</h3>
+  <ul>
+    <li><strong>The well is DOM, at both tiers.</strong> 64 <code>&lt;span&gt;</code>s in a CSS
+      grid, <code>1fr</code> columns, <code>aspect-ratio: 1 / 1</code>, a <code>1px</code> gap,
+      and the <em>only</em> px dimension on the container (<code>--well-px</code>: 104 tile / 176
+      dock). <span class="warn">There is no canvas, so the modtris/skifree DPR blit rules have no
+      subject here</span> — the four properties above are the DOM equivalents. Converting to a
+      canvas would delete 64 <code>data-testid</code>s plus <code>data-piece</code> and would
+      import a bug class this module is currently immune to.</li>
+    <li><strong>The scene column is hardware order, verbatim.</strong> Indices 0–7 top to bottom;
+      1 and 2 are dead spacers that still occupy their rows. The captions are the card's own
+      (<code>reset / drop / rot ← / rot → / move ← / move →</code>) and each live button carries
+      its <code>Scene button N — …</code> title, which is how the mapping stays learnable with no
+      hardware attached.</li>
+    <li><strong>Compact always, decimals gone.</strong> No knob shows a number; the value is the
+      pointer angle. No counters (<code>lines</code>, <code>spawns</code>,
+      <code>notesFired</code> are all in the snapshot and all deliberately unrendered — the card
+      does not show them either). No hero readout strip.</li>
+    <li><strong>The only prose is device state.</strong> Six strings from
+      <code>seqtrisStatusMessage()</code>, a pure unit-tested function. Kept 1:1; the
+      <code>idle</code> sentence is the one borderline case and is logged as an owner question
+      rather than trimmed.</li>
+    <li><strong>SCREEN is dock-only and the tile honours it.</strong> One
+      <code>node.data.previewCollapsed</code> boolean, written once per click. The switch
+      overlays the well's corner so it costs zero layout height.</li>
+    <li><strong>No keyboard-nav affordance is added.</strong> Standing owner ruling.</li>
+  </ul>
+
+  <h3>What is deliberately NOT here</h3>
+  <ul>
+    <li><span class="warn">No NEXT-piece preview.</span> The card has none and
+      <code>SeqtrisSnapshot</code> exposes no <code>next</code> field. That is modtris' strip, not
+      seqtris'.</li>
+    <li><span class="warn">No CONNECT or scene column in the lane tile.</span> The ~192 px tile
+      cannot carry them under the <code>io-spec-consistency</code> bounds gate. Recommended
+      default, and the one genuine geometry loss against <code>?shell=legacy</code> — it is one
+      click deep. Owner question 1.</li>
+    <li><span class="warn">No <code>seqtris-card-${id}</code> root.</span> The shell owns the
+      plate. Measured consumer count: zero.</li>
+  </ul>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,14 @@
+you are a fable agent. you will orchestrate 1-2 Opus agents at a time, keeping an eye on session limits and going 
+down to 1 or 0 agents as needed to avoid limits. 2026-08-18-face-plan.md is our faces that need to be updated. you
+will make sure we always have at least 4 authored specs to work from, when we drop below this number we do
+carefully authored specs for 4 more un-specc'd modules. we do adversarial review on specs and also identify and
+fix problems with the modules that we find as we go. we should take on 1-2 video modules and 2-3 audio modules per 
+batch.
+
+as you add specs and create faces you will follow repository standards and make issues in GH and close them as we go for all work. we should never have more than 4 prs open. we monitor PRs and make sure they are moving. if we see flakey testests we fix or disable them. as we build faces we need to be aware of 2026-08-18-flake-park-coverage-lost.md with an eye towards stuff we're touching, if there's a significant coverage gap we should try to fix fixme tests to have more confidence about the faces we are building, but stay focused on faces and don't get lost in test diagnosis more than necessary to safely support that.
+
+completed faces merge on green. if you need to GPU attest you can, owner is quiet, but you will need to be sure agents are quiet too.
+
+if some tasks can be delegated to sonnet agents instead, you may do this, but the goal is to move through faces as efficiently as possible. it is expected to find issues during authoring and investigation, and it is desirable to fix modules as we are adding faces for them. that can all happen in one PR per module.
+
+as you do specs and add faces you will update 2026-08-18-face-plan.md

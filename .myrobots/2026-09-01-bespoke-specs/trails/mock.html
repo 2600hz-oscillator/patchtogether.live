@@ -1,0 +1,494 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TRAILS bespoke surface — dock full view + lane tile</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   TRAILS — BESPOKE SURFACE MOCKUP. SPEC AND MOCKUP ONLY; nothing here is
+   implemented. See spec.md.
+
+   House tokens: the same set the wave-1..7 mocks use.
+
+   THE PAD MIRROR is a CSS stand-in for the body's <canvas>, which is painted
+   by the module's own `paint()` from the hardware's MILLIMETRE constants:
+     TRAILS_PAD_MM 85 · TRAILS_BAR_GAP_MM 3 · TRAILS_BAR_MM 10
+     TRAILS_BAR_EDGE 'bottom'   (owner-confirmed against the panel, trails.ts:295)
+   so the whole mirror is 85 : 98 (w : h) and the pad half is SQUARE. Every box
+   below is sized from those numbers, never from a pixel that looked right.
+
+   THE HATCH on the bar is a finding, not a style: the device transmits no Bar
+   value and has no Bar output jack, so a blank-but-normal strip would read as a
+   live control that had broken (TRAILS_BAR_TRANSMITS_MIDI = false).
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#0e1013; --dock:#12161c; --plate:#262a31; --pbody:#1c1f24; --well:#0a0c0f;
+  --line:#2c3037; --tile:#33383f; --ink:#eef1f5; --dim:#9aa2ad; --faint:#646c77;
+  --cv:#7dd3fc; --gate:#8fe6b0; --poly:#c084fc; --accent:#6cf;
+  --warn:#d98a3a; --good:#4caf7d;
+  --ch1:#4ecdc4; --ch2:#f2c14e; --ch3:#e06c9f; --ch4:#7aa2f7;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:.01em}
+h2{font-size:12px;font-family:var(--mono);letter-spacing:.11em;text-transform:uppercase;
+  color:var(--faint);margin:30px 0 12px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px;max-width:108ch}
+.sub b{color:var(--ink)}
+code{font-family:var(--mono);font-size:11.5px;color:var(--ch2)}
+.ctl{display:flex;gap:8px;margin:0 0 20px;font-size:11px;flex-wrap:wrap;align-items:center}
+.ctl button{color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 12px;
+  background:#12161c;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.ctl button.on{border-color:var(--cv);color:var(--cv)}
+.ctl .lb{color:var(--faint);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;font-size:9.5px}
+.warn{border:1px solid #6a5330;background:#1c1811;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#e8cf9a;max-width:118ch}
+.warn b{color:#f2c14e}
+.ok{border:1px solid #3b5a48;background:#111a15;border-radius:8px;padding:11px 14px;
+  margin:12px 0;font-size:12.5px;color:#a9d8bd;max-width:118ch}
+.ok b{color:var(--good)}
+.cols{display:grid;grid-template-columns:minmax(0,540px) minmax(0,1fr);gap:26px;align-items:start}
+@media (max-width:1100px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ── THE PAD MIRROR ─────────────────────────────────────────────────────── */
+.mirror{display:flex;flex-direction:column;position:relative}
+.mirror .pad{aspect-ratio:1/1;background:#101318;border:1px solid rgba(255,255,255,.14);
+  border-radius:3px;position:relative;overflow:hidden}
+/* the centre cross, drawn every frame so there is no "cleared to nothing" state */
+.mirror .pad::before,.mirror .pad::after{content:"";position:absolute;background:rgba(255,255,255,.08)}
+.mirror .pad::before{left:50%;top:0;bottom:0;width:1px}
+.mirror .pad::after{top:50%;left:0;right:0;height:1px}
+.mirror .gap{flex:0 0 auto}
+.mirror .bar{background:#0c0e12;border:1px solid rgba(255,255,255,.14);border-radius:2px;
+  background-image:repeating-linear-gradient(45deg,transparent 0 5px,rgba(255,255,255,.07) 5px 6px)}
+/* one touch point + its fading trail. Y is flipped in the real painter; here the
+   dots are placed in screen space already. */
+.dot{position:absolute;border-radius:50%;transform:translate(-50%,-50%)}
+.tr{position:absolute;height:2px;transform-origin:0 50%;border-radius:1px}
+
+/* dock mirror: 140px wide → 140px pad + ~5px gap + ~16px bar (85:3:10 of 98) */
+.m-dock{width:140px}
+.m-dock .gap{height:4.9px} .m-dock .bar{height:16.5px}
+.m-dock .dot{width:8px;height:8px}
+/* lane mirror: 40px wide → 40 + 1.4 + 4.7 */
+.m-tile{width:40px}
+.m-tile .gap{height:1.4px} .m-tile .bar{height:4.7px}
+.m-tile .dot{width:4px;height:4px}
+
+/* ── DOCK FULL VIEW ─────────────────────────────────────────────────────── */
+.dock{background:var(--dock);border:1px solid var(--line);border-radius:11px;padding:11px}
+.chromebar{display:flex;align-items:baseline;gap:9px;padding:0 2px 8px}
+.chromebar .nm{font-size:13px;font-weight:800;letter-spacing:.03em}
+.chromebar .rl{font-size:9.4px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.chromebar .x{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:12px}
+.plate{background:var(--pbody);border:1px solid var(--tile);border-left:4px solid var(--cv);
+  border-radius:10px;padding:0 0 12px;width:max-content;max-width:100%}
+.extbody{padding:12px 14px 10px;width:340px;max-width:100%}
+.padwrap{display:flex;justify-content:center}
+.barnote{margin:4px 0 0;font-size:8px;line-height:1.3;opacity:.45;text-align:center;font-family:var(--sans)}
+
+.row{display:flex;align-items:center;gap:8px;margin:10px 0 0;flex-wrap:wrap}
+.btn{display:inline-block;padding:3px 10px;border-radius:2px;font-size:9.2px;
+  font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  border:1px solid #404652;background:#1a1f2a;color:var(--dim);cursor:pointer}
+.btn.on{border-color:#6f9bd6;color:#9cc0f0;background:rgba(80,120,200,.18)}
+/* StatusLed: a caption + a dot, and NEVER a value. The sentence is on
+   aria-label / title, which is where the resting-text ruling puts it. */
+.led{display:inline-flex;align-items:center;gap:5px}
+.led .dot2{width:7px;height:7px;border-radius:50%;background:#2b3038;border:1px solid #3a4049}
+.led.lit .dot2{background:var(--good);border-color:var(--good);box-shadow:0 0 6px rgba(76,175,125,.55)}
+.led.warn .dot2{background:var(--warn);border-color:var(--warn);box-shadow:0 0 6px rgba(217,138,58,.5)}
+.led .cap{font-family:var(--mono);font-size:8.2px;letter-spacing:.09em;color:var(--faint)}
+.hint{margin:9px 0 0;font-size:9.4px;color:var(--dim);max-width:46ch;line-height:1.45}
+.alert{margin:9px 0 0;font-size:9.4px;color:var(--warn);max-width:46ch;line-height:1.45}
+
+.counters{margin:9px 0 0;font-size:9px;opacity:.8;font-family:var(--mono);
+  font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.monlog{margin:5px 0 0;padding:6px;max-height:150px;overflow:auto;background:#0c0e12;
+  border:1px solid rgba(255,255,255,.12);border-radius:3px;font-family:var(--mono);
+  font-size:8px;line-height:1.35;white-space:pre-wrap;word-break:break-word;
+  user-select:text;color:#c6ccd4}
+.monlog i{color:var(--warn);font-style:normal}
+
+/* faceplate bands — the generic half, untouched by the body */
+.bands{padding:11px 14px 0;border-top:1px solid var(--line);margin:10px 14px 0}
+.band{margin:0 0 10px}
+.band .lbl{font-size:8.6px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 6px}
+.cells{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.cell{width:52px;text-align:center}
+.knob{width:34px;height:34px;border-radius:50%;margin:0 auto;
+  background:radial-gradient(circle at 50% 38%,#333a44,#1b2027 68%);border:1px solid #454c57;position:relative}
+.knob::after{content:"";position:absolute;left:50%;top:5px;width:2px;height:11px;background:var(--cv);
+  transform-origin:50% 12px;transform:translateX(-50%) rotate(-38deg);border-radius:1px}
+.cell .cap{font-size:8.2px;font-family:var(--mono);letter-spacing:.06em;color:var(--faint);
+  text-transform:uppercase;margin-top:5px}
+/* an OPTION / LANDMARK name — permitted. A decimal here is a different offence. */
+.cell .opt{font-size:8.4px;font-family:var(--mono);color:var(--ink);margin-top:2px;letter-spacing:.06em}
+.acell{border:1px solid var(--cv);border-radius:3px;padding:6px 14px;font-family:var(--mono);
+  font-size:9.4px;letter-spacing:.07em;text-transform:uppercase;color:var(--cv);font-weight:700;
+  align-self:center;cursor:pointer}
+
+/* jack rail */
+.rail{margin:11px 14px 0;border-top:1px solid #23272e;padding-top:8px}
+.rgroup{display:flex;align-items:center;gap:6px;margin:0 0 5px;flex-wrap:wrap}
+.rgroup .gl{font-family:var(--mono);font-size:7.6px;letter-spacing:.1em;color:var(--faint);
+  text-transform:uppercase;width:34px;flex:none}
+.jack{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:7.4px;
+  color:#8c949f;letter-spacing:.04em}
+.jack i{width:7px;height:7px;border-radius:50%;background:#0c0e12;border:1.5px solid var(--cv);display:inline-block}
+.jack.g i{border-color:var(--gate)} .jack.p i{border-color:var(--poly)}
+
+/* ── LANE TILES ─────────────────────────────────────────────────────────── */
+.lanes{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.lane{width:192px;height:180px;background:var(--pbody);border:1px solid var(--tile);
+  border-left:3px solid var(--cv);border-radius:7px;padding:5px 9px 6px 8px;
+  display:flex;flex-direction:column;overflow:hidden}
+.lane .t{font-size:8.6px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--dim);font-family:var(--mono);margin:0 0 4px;display:flex;gap:5px;align-items:baseline}
+.lane .t span{color:var(--faint);font-weight:400;font-size:7.4px}
+.lane .lbody{height:112px;display:flex;flex-direction:column;gap:4px}
+.lane .lrow{display:flex;gap:9px;align-items:flex-start;height:57px}
+.lane .cell{width:46px}
+.lane .knob{width:28px;height:28px}
+.lane .knob::after{height:9px;top:4px;transform-origin:50% 10px}
+.lane .tilebody{display:flex;gap:10px;align-items:center;height:46px}
+.lane .lrail{margin-top:auto;border-top:1px solid #23272e;padding-top:4px;
+  font-family:var(--mono);font-size:7px;color:#4c535c;letter-spacing:.07em;
+  display:flex;gap:5px;flex-wrap:wrap}
+.lane .lrail b{color:var(--cv);font-weight:400}
+.lane .lrail u{color:var(--gate);text-decoration:none}
+.lane .lrail s{color:var(--poly);text-decoration:none}
+.cap{font-size:9.5px;color:var(--faint);font-family:var(--mono);margin:8px 0 0;letter-spacing:.05em}
+.mini{width:192px;height:96px}
+.mini .lbody{height:auto}
+
+/* ── the legacy card, for the 1:1 comparison ────────────────────────────── */
+.card{width:260px;background:var(--pbody);border:1px solid var(--tile);border-radius:8px;
+  padding:0 0 10px;position:relative;overflow:hidden}
+.card .stripe{height:2px;background:var(--cv)}
+.card .ttl{font-size:11px;font-weight:700;padding:7px 14px 0;letter-spacing:.02em}
+.card .bindrow{display:flex;align-items:center;gap:8px;padding:8px 14px 0}
+.card .status{margin:0;padding:4px 14px 0;font-size:9px;line-height:1.3;opacity:.75}
+.card .status.problem{color:var(--warn);opacity:1}
+.card .padwrap{padding:8px 14px 0}
+.card .monrow{display:flex;gap:6px;padding:6px 14px 0}
+.card .knobrow{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:8px 14px 10px}
+.card .counters,.card .monlog{margin-left:14px;margin-right:14px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:9px;color:var(--faint);margin:10px 0 0}
+.legend b{font-weight:400}
+.sw{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:-1px;margin-right:4px}
+</style>
+
+<div class="wrap">
+<h1>TRAILS — the bespoke surface, both tiers</h1>
+<p class="sub">
+  A <b>look reference only</b>. Left: the <b>dock full view</b> — the
+  <code>fullViewBody</code> extension slot above the shell's own faceplate bands
+  and jack rail. Right: the <b>192&times;180 lane tile</b> — three ranked cells
+  plus the <code>tileBody</code> strip, and the legacy card beside it so the 1:1
+  claim can be checked by eye. Every dimension is derived from the module's
+  millimetre constants and from <code>module-shell-model.ts</code>
+  (<code>LANE_BODY_H&nbsp;112</code>, <code>LANE_KNOB_READOUT_H&nbsp;57</code>),
+  never chosen.
+</p>
+
+<div class="ctl">
+  <span class="lb">state</span>
+  <button id="b-rest" class="on" onclick="setState('rest')">fresh spawn</button>
+  <button id="b-bound" onclick="setState('bound')">bound + streaming</button>
+  <button id="b-noport" onclick="setState('noport')">granted, no Trails</button>
+  <span class="lb" style="margin-left:14px">dock only</span>
+  <button id="b-mon" onclick="toggleMon()">MON</button>
+</div>
+
+<div class="ok">
+  <b>What is 1:1.</b> Every one of the card's ten testids and all 22 of its
+  non-testid affordances has a home here — see <code>spec.md</code> §3. The one
+  <i>mechanism</i> change is the status sentence: at rest it is the same
+  pre-connect instruction, when bound it moves to the LINK lamp's
+  <code>title</code>/<code>aria-label</code>, and every failure keeps its own
+  words as a transient <code>role="alert"</code> line.
+</div>
+
+<div class="cols">
+
+<!-- ══════════════════ DOCK FULL VIEW ══════════════════ -->
+<div>
+<h2>Dock full view — <code>fullViewBody</code> + the faceplate</h2>
+<div class="dock">
+  <div class="chromebar">
+    <span class="nm">trails</span>
+    <span class="rl">midi · sources</span>
+    <span class="x">&#10005;</span>
+  </div>
+
+  <div class="plate">
+    <!-- ── THE EXTENSION BODY ─────────────────────────────────────────── -->
+    <div class="extbody">
+      <div class="padwrap">
+        <div class="mirror m-dock" id="dockMirror">
+          <div class="pad" id="dockPad"></div>
+          <div class="gap"></div>
+          <!-- HATCHED: the device transmits no Bar value and has no Bar jack -->
+          <div class="bar"></div>
+        </div>
+      </div>
+      <p class="barnote">bar — not sent over USB-MIDI</p>
+
+      <div class="row">
+        <span class="led" id="dockLed" title="Not connected. CONNECT asks the browser for MIDI and looks for a Trails.">
+          <i class="dot2"></i><span class="cap">link</span>
+        </span>
+        <span style="flex:1"></span>
+        <button class="btn" id="monBtn" onclick="toggleMon()">mon</button>
+        <button class="btn" id="monReset" onclick="void 0" style="display:none">reset</button>
+      </div>
+
+      <p class="hint" id="dockHint">
+        CONNECT grants Web MIDI once per origin, then binds any Trails on USB.
+      </p>
+      <p class="alert" id="dockAlert" style="display:none">
+        MIDI is granted but no port named &ldquo;Trails&rdquo; is present. Connect the
+        module&rsquo;s USB-C port to this computer — it appears as a class-compliant
+        MIDI device and binds automatically.
+      </p>
+
+      <div id="monPanel" style="display:none">
+        <p class="counters">loops 12 · edges 12/0/0/0</p>
+<pre class="monlog">TRAILS MIDI MONITOR — 431 messages, 5 not decoded
+      ch1[1X] CC15          x212    last=64
+      ch2[1Y] CC15          x208    last=71
+<i>    ! ch1[1X] CC47          x5      last=64</i>
+      CLOCK (0xF8)          x96
+      ch3[2X] NOTE 81       x106    vel=97
+      START (0xFA)          x12
+  vel= is the last NOTE-ON velocity, ignoring the velocity-0 releases. If it
+      never changes however hard you press, this pad does not send touch force.
+  ! = NOT decoded by this module. If an axis row is marked !, the CC pair or
+      the channel map in trails-decode.ts is wrong for this firmware.</pre>
+      </div>
+    </div>
+
+    <!-- ── THE SHELL'S OWN BANDS — every param still gets its cell ────── -->
+    <div class="bands">
+      <div class="band">
+        <div class="lbl">device</div>
+        <div class="cells"><div class="acell">connect trails</div></div>
+      </div>
+      <div class="band">
+        <div class="lbl">signal</div>
+        <div class="cells">
+          <div class="cell"><div class="knob"></div><div class="cap">range</div><div class="opt">UNI</div></div>
+          <div class="cell"><div class="knob"></div><div class="cap">smooth</div></div>
+          <div class="cell"><div class="knob"></div><div class="cap">clock div</div><div class="opt">1/4</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── THE JACK RAIL — 21 outputs, grouped by cable type ─────────── -->
+    <div class="rail">
+      <div class="rgroup"><span class="gl">cv</span>
+        <span class="jack"><i></i>x1</span><span class="jack"><i></i>y1</span>
+        <span class="jack"><i></i>x2</span><span class="jack"><i></i>y2</span>
+        <span class="jack"><i></i>x3</span><span class="jack"><i></i>y3</span>
+        <span class="jack"><i></i>x4</span><span class="jack"><i></i>y4</span>
+      </div>
+      <div class="rgroup"><span class="gl">gate</span>
+        <span class="jack g"><i></i>g1</span><span class="jack g"><i></i>g2</span>
+        <span class="jack g"><i></i>g3</span><span class="jack g"><i></i>g4</span>
+        <span class="jack g"><i></i>trig1</span><span class="jack g"><i></i>trig2</span>
+        <span class="jack g"><i></i>trig3</span><span class="jack g"><i></i>trig4</span>
+        <span class="jack g"><i></i>clock</span>
+      </div>
+      <div class="rgroup"><span class="gl">poly</span>
+        <span class="jack p"><i></i>poly1</span><span class="jack p"><i></i>poly2</span>
+        <span class="jack p"><i></i>poly3</span><span class="jack p"><i></i>poly4</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">the body is 140px wide — the card's own <code>max-width</code>, kept</p>
+<div class="legend">
+  <span><b><i class="sw" style="background:var(--ch1)"></i>ch 1</b></span>
+  <span><b><i class="sw" style="background:var(--ch2)"></i>ch 2</b></span>
+  <span><b><i class="sw" style="background:var(--ch3)"></i>ch 3</b></span>
+  <span><b><i class="sw" style="background:var(--ch4)"></i>ch 4</b></span>
+</div>
+</div>
+
+<!-- ══════════════════ LANE + LEGACY ══════════════════ -->
+<div>
+<h2>Lane tile — <code>tileBody</code>, 192&times;180</h2>
+<div class="lanes">
+
+  <div>
+    <div class="lane">
+      <div class="t">trails <span>midi</span></div>
+      <div class="lbody">
+        <!-- ONE row of three cells. `range` and `divisor` declare `options`, so
+             their cells EARN a readout: 57px, not the 42px design row. -->
+        <div class="lrow">
+          <div class="cell" style="width:56px">
+            <div class="acell" style="padding:5px 4px;font-size:8px">connect</div>
+          </div>
+          <div class="cell"><div class="knob"></div><div class="cap">range</div><div class="opt">UNI</div></div>
+          <div class="cell"><div class="knob"></div><div class="cap">smooth</div></div>
+        </div>
+        <!-- the tileBody strip: 112 − 57 − 4 ≈ 51px of budget, one 46px row -->
+        <div class="tilebody">
+          <div class="mirror m-tile" id="tileMirror">
+            <div class="pad" id="tilePad"></div>
+            <div class="gap"></div>
+            <div class="bar"></div>
+          </div>
+          <span class="led" id="tileLed" title="Not connected. CONNECT asks the browser for MIDI and looks for a Trails.">
+            <i class="dot2"></i><span class="cap">link</span>
+          </span>
+        </div>
+      </div>
+      <div class="lrail">
+        <b>cv&times;8</b> <u>gate&times;9</u> <s>poly&times;4</s>
+      </div>
+    </div>
+    <p class="cap">compact — CONNECT ranks first</p>
+  </div>
+
+  <div>
+    <div class="lane mini">
+      <div class="t">trails <span>midi</span></div>
+      <div class="lbody">
+        <div class="lrow" style="height:auto">
+          <div class="cell" style="width:76px">
+            <div class="acell" style="padding:5px 6px;font-size:8px">connect</div>
+          </div>
+        </div>
+      </div>
+      <div class="lrail"><b>cv&times;8</b> <u>gate&times;9</u> <s>poly&times;4</s></div>
+    </div>
+    <p class="cap">mini — the gesture survives every tier</p>
+  </div>
+</div>
+
+<div class="warn" style="margin-top:18px">
+  <b>Why MON is not on the tile.</b> The <code>&lt;pre&gt;</code> is a
+  22-character padded label plus a count and a value per row; at the tile's
+  172px inner width it is unreadable, and the panel alone is taller than the
+  whole 51px the body has left after the ranked row. Excluded by
+  <b>measurement</b>, not by taste — and unlike CONNECT, diagnosing the wire is
+  a sit-down activity.
+</div>
+
+<h2>The legacy card, for comparison</h2>
+<div class="card">
+  <div class="stripe"></div>
+  <div class="ttl">TRAILS</div>
+  <div class="bindrow">
+    <span class="led" id="cardLed"><i class="dot2"></i></span>
+    <button class="btn" style="font-size:9px">connect</button>
+  </div>
+  <p class="status" id="cardStatus">Not connected. CONNECT asks the browser for MIDI and looks for a Trails.</p>
+  <div class="padwrap" style="display:flex;justify-content:center">
+    <div class="mirror m-dock" id="cardMirror">
+      <div class="pad" id="cardPad"></div>
+      <div class="gap"></div>
+      <div class="bar"></div>
+    </div>
+  </div>
+  <p class="barnote">bar — not sent over USB-MIDI</p>
+  <div class="monrow">
+    <button class="btn" style="font-size:9px">mon</button>
+  </div>
+  <div class="knobrow">
+    <div class="cell" style="width:auto"><div class="knob"></div><div class="cap">range</div></div>
+    <div class="cell" style="width:auto"><div class="knob"></div><div class="cap">smooth</div></div>
+    <div class="cell" style="width:auto"><div class="knob"></div><div class="cap">divisor</div></div>
+  </div>
+</div>
+<p class="cap">260px wide, 3u &times; 2hp — the surface this replaces</p>
+</div>
+</div>
+</div>
+
+<script>
+/* Trivial state toggles only — no behaviour is being prototyped here.
+   The four touch points are the same fixed coordinates in every mirror, so the
+   dock, the tile and the card can be compared at a glance. */
+const TOUCHES = [
+  { x: .28, y: .68, c: 'var(--ch1)', a: 214 },
+  { x: .62, y: .41, c: 'var(--ch2)', a: 156 },
+  { x: .78, y: .77, c: 'var(--ch3)', a:  35 },
+  { x: .44, y: .22, c: 'var(--ch4)', a: 290 },
+];
+
+function paint(padEl, dotPx, trailLen) {
+  padEl.innerHTML = '';
+  if (state !== 'bound') return;                 // resting grid only
+  for (const t of TOUCHES) {
+    // the fading trail: 6 segments, oldest faintest (the real painter keeps 48)
+    for (let i = 0; i < 6; i++) {
+      const seg = document.createElement('span');
+      seg.className = 'tr';
+      const back = (i + 1) * (trailLen / 6);
+      const rad = t.a * Math.PI / 180;
+      seg.style.left = (t.x * 100) + '%';
+      seg.style.top  = ((1 - t.y) * 100) + '%';  // the pad's Y points UP
+      seg.style.width = (trailLen / 6 + 1) + 'px';
+      seg.style.background = t.c;
+      seg.style.opacity = String(0.62 * (1 - i / 6));
+      seg.style.transform = 'translate(' + (-Math.cos(rad) * back) + 'px,'
+        + (Math.sin(rad) * back) + 'px) rotate(' + (-t.a) + 'deg)';
+      padEl.appendChild(seg);
+    }
+    const d = document.createElement('span');
+    d.className = 'dot';
+    d.style.left = (t.x * 100) + '%';
+    d.style.top  = ((1 - t.y) * 100) + '%';
+    d.style.width = d.style.height = dotPx + 'px';
+    d.style.background = t.c;
+    padEl.appendChild(d);
+  }
+}
+
+let state = 'rest', monOpen = false;
+
+function setState(s) {
+  state = s;
+  for (const [id, key] of [['b-rest','rest'],['b-bound','bound'],['b-noport','noport']])
+    document.getElementById(id).classList.toggle('on', key === s);
+
+  const bound = s === 'bound', problem = s === 'noport';
+  const detail = bound
+    ? 'Bound to Bela Trails — streaming X / Y / gate.'
+    : problem
+      ? 'MIDI is granted but no port named "Trails" is present.'
+      : 'Not connected. CONNECT asks the browser for MIDI and looks for a Trails.';
+
+  for (const id of ['dockLed','tileLed','cardLed']) {
+    const el = document.getElementById(id);
+    el.classList.toggle('lit', bound);
+    el.classList.toggle('warn', problem);
+    el.title = detail;                    // the sentence lives HERE, unpainted
+  }
+  document.getElementById('dockHint').style.display  = s === 'rest' ? '' : 'none';
+  document.getElementById('dockAlert').style.display = problem ? '' : 'none';
+  document.getElementById('cardStatus').textContent  = detail;
+  document.getElementById('cardStatus').classList.toggle('problem', problem);
+
+  paint(document.getElementById('dockPad'), 8, 26);
+  paint(document.getElementById('cardPad'), 8, 26);
+  paint(document.getElementById('tilePad'), 4,  8);
+}
+
+function toggleMon() {
+  monOpen = !monOpen;
+  document.getElementById('monPanel').style.display = monOpen ? '' : 'none';
+  document.getElementById('monReset').style.display = monOpen ? '' : 'none';
+  document.getElementById('monBtn').classList.toggle('on', monOpen);
+  document.getElementById('b-mon').classList.toggle('on', monOpen);
+}
+
+setState('rest');
+</script>
