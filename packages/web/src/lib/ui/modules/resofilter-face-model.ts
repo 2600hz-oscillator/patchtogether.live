@@ -29,7 +29,7 @@
 // 48 kHz before it was written (the batch-4 resofilter face spec; four of its
 // figures did not reproduce). That spec was deleted by the #1488 janitorial
 // sweep and is in neither preservation tag — it survives only in git history
-// (added at f1c2295571, deleted at f263e52bb8), so the corrections below are
+// (added at 2ec5eb1dc8 / #1433, deleted at f263e52bb8), so the corrections below are
 // the record. Two of its errors were the SAME error — a resonant filter that
 // has not settled:
 //

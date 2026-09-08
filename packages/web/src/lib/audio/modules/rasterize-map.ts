@@ -4,7 +4,8 @@
 // (slice 1 of "crossing the streams" — the audio-video crossing plan it cited
 // was never committed and is in no preservation tag, so the model below is
 // the record; the stereo disposition of this module is
-// docs/adr/008-stereo-as-dual-mono.md, group E).
+// docs/adr/008-stereo-as-dual-mono.md — `deferred`, and the HYBRID case the ADR
+// names apart from groups D/E; see DUAL_MONO_LEDGER['rasterize']).
 //
 // The model — the FAITHFUL audio-into-video-raster mapping, NOT an
 // oscilloscope trace:

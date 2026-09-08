@@ -9,9 +9,10 @@
 // ── These values are MEASURED, not estimated ──
 // The inline `HxWpx` comment on each line is the card's NATURAL rendered size
 // (offsetHeight×offsetWidth, the SvelteFlow zoom-independent layout box) captured
-// by the measurement probe (the why, and how to re-run it:
+// by the measurement probe (the why and the tier rule:
 // docs/adr/012-rack-units-not-pixels.md; the probe script itself was never
-// committed).
+// committed, so there is no procedure to re-run — a disagreement is settled by
+// re-measuring).
 //   size = '1u' if natural height ≤ 180px (the --rack-unit tile), else '3u'
 //   hp   = round(natural width / 180), min 1
 // [LOCKED] = a user-decided tier override applied verbatim regardless of the

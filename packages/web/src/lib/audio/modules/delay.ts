@@ -221,9 +221,11 @@ export const delayDef: AudioModuleDef = {
   // the in-lane glyph dies at `full`, permanently, for any 4th control.
   //
   // WHICH IS THE FIRST OF FOUR REASONS THE PLANNED `time_cv_amt` IS NOT HERE.
-  // The face program (provenance: the DX7-and-faces design program §4.B, at
-  // evidence/archive/2026/plans/dx7-and-faces-design-program-2026-07-27.md, and
-  // the round-2 spec) proposes a ±1 attenuverter on the TIME CV jack as rank 4.
+  // The face program (provenance: the DX7-and-faces design program, at
+  // evidence/archive/2026/plans/dx7-and-faces-design-program-2026-07-27.md — the
+  // §4 batch-B spec that proposed it was deleted from that record by #1489 and
+  // survives at b9d5e2473b; and the round-2 spec) proposes a ±1 attenuverter on
+  // the TIME CV jack as rank 4.
   // Deliberately NOT taken, and the reasons are ordered worst-first:
   //
   //  1. IT DOES NOT EXIST YET AT THE PLATFORM LEVEL. The seam it needs (PF-12:

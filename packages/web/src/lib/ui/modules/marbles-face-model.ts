@@ -13,7 +13,7 @@
 // things when this face was built, every one of them an artifact of probing a
 // random process at one seed on a coarse grid. The corrections are recorded
 // on the def, and the lesson is
-// .claude/skills/module-surfaces/references/bespoke-surface-lessons.md
+// .claude/skills/audio-runtime/references/measuring-audio.md
 // (validate the instrument before indicting the module).
 //
 // So NOTHING here is a fitted curve. Each law is read out of

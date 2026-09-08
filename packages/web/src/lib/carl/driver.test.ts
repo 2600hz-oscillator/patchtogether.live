@@ -7,8 +7,10 @@
 //
 // ⚠ It is also the writer the plan MIS-CITED: the stereo plan (provenance:
 // `evidence/active/stereo-audio-plan/plan.md`; the decision:
-// docs/adr/008-stereo-as-dual-mono.md) points at `mike/driver.ts:79-105`,
-// which is `organizeAll`'s LAYOUT
+// docs/adr/008-stereo-as-dual-mono.md) pointed at `mike/driver.ts:79-105` — that
+// line-range citation was re-pinned by symbol and then swept out of the record
+// by #1490, so it survives at f263e52bb8, not in the live plan. The range it
+// named is `organizeAll`'s LAYOUT
 // transact and has never touched `patch.edges`. Mike delegates here. This file
 // exists so the seam has a test of its own and cannot be lost again.
 //

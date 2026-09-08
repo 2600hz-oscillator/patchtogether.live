@@ -13,8 +13,10 @@
 //
 // ⚠ THE EDGE WRITE IS NOT HERE. The stereo plan (provenance:
 // `evidence/active/stereo-audio-plan/plan.md`; the decision it carries is
-// docs/adr/008-stereo-as-dual-mono.md) cites "mike/driver.ts:79-105" as the
-// AI path that writes audio edges; that range is
+// docs/adr/008-stereo-as-dual-mono.md) cited "mike/driver.ts:79-105" as the
+// AI path that writes audio edges — a line-range citation later re-pinned by
+// symbol and swept out of the record by #1490, so it survives at f263e52bb8 and
+// not in the live plan. The range it named is
 // `organizeAll`'s LAYOUT transact and has never touched `patch.edges`. The only
 // AI edge write is `carl/driver.ts`'s `applyIntent` → `case 'addEdge'`, which
 // `applyIntent` below delegates to — and which now routes through the shared
