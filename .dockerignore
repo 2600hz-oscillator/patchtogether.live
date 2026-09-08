@@ -15,7 +15,7 @@ node_modules
 .github
 .flox
 .claude
-.myrobots
+evidence
 e2e/chaos
 art/baselines
 *.log

@@ -88,6 +88,10 @@ don't have access to the codebase's tribal-knowledge memory files.
 - Design docs: [`docs/design/`](../design/)
 - Skills: [`.claude/skills/`](../../.claude/skills/) — reusable judgement for
   work in flight (an ADR carries the *why*; a skill carries what to do about it).
-- Planning records are being retired; where an ADR's decision came from one, its
-  References section names the preservation tag that holds it. ADRs are the
-  snapshot of what shipped — when an ADR and the tree disagree, the tree wins.
+- Plan docs (work-in-flight): [`evidence/active/`](../../evidence/active/) — live
+  specs and unresolved owner decisions. Retired ones:
+  [`evidence/archive/<year>/`](../../evidence/archive/), frozen, with
+  `evidence/MANIFEST.tsv` as the ledger. Both are evidence, not instruction.
+  Where an ADR's decision came from a record that was not kept, its References
+  section names the preservation tag that holds it. ADRs are the snapshot of
+  what shipped — when an ADR and the tree disagree, the tree wins.

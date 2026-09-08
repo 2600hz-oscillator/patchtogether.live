@@ -133,13 +133,6 @@ packages/web/native/nblood/.upstream/
 # Phase-1 link object cache (build-blood-wasm.sh BLOOD_LINK=1).
 packages/web/native/nblood/.objcache/
 
-# .myrobots is COMMITTED in this repo (owner decision 2026-07-26): agent plans /
-# roundups / owner-decision docs are part of the project record. The user-level
-# ~/.gitignore_global still ignores .myrobots/ in OTHER repos; these negations
-# override it here (repo .gitignore outranks core.excludesFile).
-!.myrobots/
-!.myrobots/**
-
 # Agent scratch / generated report trees. These must NEVER be tracked: they
 # carry local usernames, absolute paths, session UUIDs and agent identities.
 # `private/` was committed once (5 files, on public main) — see the CI denylist

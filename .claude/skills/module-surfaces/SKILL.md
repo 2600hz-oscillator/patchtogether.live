@@ -11,7 +11,7 @@ description: Build or review module faces, ModuleShell extensions, bespoke surfa
    its tests. (The generated face-migration inventory is gone: it tracked the
    card→face migration, which is finished — every module has a face and there is
    no card to migrate FROM. `STRICT_FACES` is the promoted set.)
-2. If an active `.myrobots/` spec/mock package exists, read it as design
+2. If an `evidence/active/` spec/mock package exists, read it as design
    evidence and re-verify every claim against the current tree. Do not delete or
    mark it consumed before the surface ships.
 3. Inventory everything the module lets a player do or see, on every surface it

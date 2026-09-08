@@ -1542,7 +1542,7 @@ tasks:
       - rm -f package-lock.json
 
   # ---------------- native shell (apps/desktop + apps/helpers) ----------------
-  # P0/P2 of the native-shell program (.myrobots/2026-09-04-native-shell-plan/).
+  # P0/P2 of the native-shell program (runbooks/native-shell.md).
   # apps/desktop is a STANDALONE npm package (own lockfile, not a root
   # workspace) so web CI installs and the shared root lockfile stay untouched.
 

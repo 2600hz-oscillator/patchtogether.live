@@ -11,12 +11,14 @@ When sources disagree, use this order:
 2. This file.
 3. The relevant repository skill.
 4. Durable decisions in `docs/` and procedures in `runbooks/`.
-5. `.myrobots/` as evidence, not instruction.
+
+`evidence/` sits below all four — it is evidence, not instruction, and never
+settles a question by itself. `evidence/active/` carries live specs and
+unresolved owner decisions; `evidence/archive/<year>/` carries frozen historical
+proof. Do not delete, move, or rename a package under `evidence/active/` until
+its module has shipped and the package has been explicitly consumed.
 
 Say when prose disagrees with the tree. Do not force code to match stale prose.
-`.myrobots/` also contains the active face-program work queue: do not delete,
-move, or rename a spec/mock package until its module has shipped and the package
-has been explicitly consumed.
 
 Attribute every decision to its real source: an owner ruling, a recommendation and
 an inference are different strengths of claim, and only the first settles a

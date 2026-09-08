@@ -1,11 +1,17 @@
 // art/scenarios/grand-integration/combined-master.test.ts
 //
 // THE offline, deterministic, byte-stable "combined-master" ART for the
-// GRAND-INTEGRATION scenario (.myrobots/plans/grand-integration-e2e-art-2026-07-
-// 19.md §7). This is the DETERMINISTIC AUDIO PIN (owner-confirmed) — NOT
-// recorderbox: an H.264/AAC (or even raw-PCM real-time) capture is
-// encoder-/jitter-dependent and cannot be a `.sha` baseline, whereas this
-// fixed-SR / 128-block / no-event-loop offline render is bit-reproducible.
+// GRAND-INTEGRATION scenario. This is the DETERMINISTIC AUDIO PIN
+// (owner-confirmed) — NOT recorderbox: an H.264/AAC (or even raw-PCM
+// real-time) capture is encoder-/jitter-dependent and cannot be a `.sha`
+// baseline, whereas this fixed-SR / 128-block / no-event-loop offline render
+// is bit-reproducible.
+//
+// PROVENANCE: this cited a design record, `grand-integration-e2e-art-2026-07-19.md`
+// §7, that was NEVER a tracked file — it is absent from the 2026-09 evidence
+// manifest, absent from the `myrobots-preserved-2026-09` tag, and `git log --all`
+// on its path is empty. There is nothing to repoint at, so the pointer is gone
+// and the decision it carried is stated above instead.
 //
 // It replays the ONE shared clip fixture (e2e/fixtures/grand-integration/clips.ts
 // — the SAME file the browser attest spec seeds) through the pure clip driver
