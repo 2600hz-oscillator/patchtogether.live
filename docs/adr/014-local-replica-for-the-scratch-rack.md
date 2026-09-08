@@ -80,5 +80,6 @@ decision function rather than a Svelte-side condition.**
   destructive import multi-user.
 - `runbooks/secrets-and-accounts.md`, `runbooks/integrations/fly.md` — the
   server-side memory-store and persist-mode settings the same review hardened.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/plans/rack-persistence-hardening-2026-07-19.md`).
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `plans/rack-persistence-hardening-2026-07-19.md` (paths relative to the
+  retired agent-evidence tree in that snapshot, not to the worktree).

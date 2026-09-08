@@ -132,8 +132,10 @@ index, written per key — and bytes never enter the Y.Doc.**
 - [docs/design/clip-launcher.md](../design/clip-launcher.md) — the surface
   design these decisions sit under.
 - ADR-001 / ADR-005 — the CRDT and persistence envelope this stays inside.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/2026-09-02-mixmstrs-multitrack-clip-recording/`,
-  `.myrobots/plans/automation-redesign-2026-07-16.md`,
-  `.myrobots/plans/arranger-song-mode-2026-07-18.md`,
-  `.myrobots/plans/clipplayer-live-record-overdub-redesign-2026-07-19.md`).
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `2026-09-02-mixmstrs-multitrack-clip-recording/`,
+  `plans/automation-redesign-2026-07-16.md`,
+  `plans/arranger-song-mode-2026-07-18.md` and
+  `plans/clipplayer-live-record-overdub-redesign-2026-07-19.md` (paths
+  relative to the retired agent-evidence tree in that snapshot, not to the
+  worktree).

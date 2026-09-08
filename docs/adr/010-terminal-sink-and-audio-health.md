@@ -128,7 +128,8 @@ ceiling.
   per-module gain/CV rulings.
 - `.claude/skills/audio-runtime/references/measuring-audio.md` — which lane can
   observe which layer.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/2026-08-08-buffer_exporation.md`,
-  `.myrobots/plans/dsp-stack-bass-freq-audit-2026-07-01.md`,
-  `.myrobots/plans/shell-ui-refactor-resume-2026-07-26.md`).
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `2026-08-08-buffer_exporation.md`,
+  `plans/dsp-stack-bass-freq-audit-2026-07-01.md` and
+  `plans/shell-ui-refactor-resume-2026-07-26.md` (paths relative to the
+  retired agent-evidence tree in that snapshot, not to the worktree).

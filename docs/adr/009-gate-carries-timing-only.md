@@ -101,5 +101,6 @@ position.**
   the release-after-steal case.
 - `.claude/skills/audio-runtime` — trigger/gate judgement for a change in
   flight; AGENTS.md boundaries 7 and 8 — the rules this ADR explains.
-- Provenance: the model is preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/plans/gate-heldnote-model-2026-07-01.md`).
+- Provenance: the model is preserved in the `myrobots-preserved-2026-09` tag
+  snapshot, as `plans/gate-heldnote-model-2026-07-01.md` (paths relative to
+  the retired agent-evidence tree in that snapshot, not to the worktree).

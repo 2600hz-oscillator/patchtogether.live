@@ -116,8 +116,9 @@ deleted artefact would be regenerated.
   committed.
 - ADR-006 — capacity and auth gate ordering. ADR-015 — the same "measure before
   you re-architect" posture applied to performance.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/plans/standards-refactor-roadmap.md`,
-  `.myrobots/plans/adversarial-review-REMAINING-2026-06-09.md`,
-  `.myrobots/loc-reduction-report-2026-07-07.md`). Those records' *open* rows
-  are stale against the tree and must be re-derived, never quoted.
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `plans/standards-refactor-roadmap.md`,
+  `plans/adversarial-review-REMAINING-2026-06-09.md` and
+  `loc-reduction-report-2026-07-07.md` (paths relative to the retired
+  agent-evidence tree in that snapshot, not to the worktree). Those records'
+  *open* rows are stale against the tree and must be re-derived, never quoted.

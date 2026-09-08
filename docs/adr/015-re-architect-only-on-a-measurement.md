@@ -118,6 +118,7 @@ counter that never resets.
   `packages/web/src/lib/multiplayer/local-replica.ts` — two adopted items whose
   headers cite the study by name.
 - ADR-010 — the audio-health taxonomy the same instrument discipline produced.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/stack-study-executive-report.md`,
-  `.myrobots/plans/fixe-video-offload-shoes1-2026-07-01.md`).
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `stack-study-executive-report.md` and
+  `plans/fixe-video-offload-shoes1-2026-07-01.md` (paths relative to the
+  retired agent-evidence tree in that snapshot, not to the worktree).

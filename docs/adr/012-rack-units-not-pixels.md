@@ -88,5 +88,6 @@ tiles, and the canvas snaps to that grid. There is no resize gesture.**
   pinned width/height derivation.
 - `packages/web/src/lib/graph/mutate.ts` — `rackLocked`.
 - `.claude/skills/module-surfaces` — how a surface is built inside its tier.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/plans/module-sizing-DECISIONS-2026-06-13.md`).
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `plans/module-sizing-DECISIONS-2026-06-13.md` (paths relative to the retired
+  agent-evidence tree in that snapshot, not to the worktree).

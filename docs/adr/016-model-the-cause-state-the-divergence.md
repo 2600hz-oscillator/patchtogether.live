@@ -142,10 +142,11 @@ nothing patched into its input is silent.
 - ADR-007 — game-asset distribution. ADR-015 — where a module renders.
 - `.claude/skills/renderer-tests` — VRT and baseline discipline for a change
   that moves pixels.
-- Provenance: preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/plans/backdraft-flicker-research-2026-07-26.md`,
-  `.myrobots/plans/backdraft-pure-tv-2026-07-27.md`,
-  `.myrobots/plans/videocube-redesign-2026-07-20.md`,
-  `.myrobots/plans/vfpga-hardware-accuracy-analysis-2026-06-27.md`,
-  `.myrobots/plans/warrens-spectrum-2026-08-02.md`,
-  `.myrobots/face-specs/gibribbon.html`).
+- Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `plans/backdraft-flicker-research-2026-07-26.md`,
+  `plans/backdraft-pure-tv-2026-07-27.md`,
+  `plans/videocube-redesign-2026-07-20.md`,
+  `plans/vfpga-hardware-accuracy-analysis-2026-06-27.md`,
+  `plans/warrens-spectrum-2026-08-02.md` and `face-specs/gibribbon.html`
+  (paths relative to the retired agent-evidence tree in that snapshot, not to
+  the worktree).
