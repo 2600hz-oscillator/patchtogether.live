@@ -596,9 +596,9 @@ export const SKIP_BUDGET = [
   // and a title is not a stable key (they get edited); the spec is.
   //
   // The grouping is by SUBSYSTEM so each `why` says what goes dark, per the
-  // coverage report committed with the campaign (provenance:
-  // `2026-08-18-flake-park-coverage-lost.md` in the `myrobots-preserved-2026-09`
-  // tag snapshot; archived under evidence/archive/2026/). The durable
+  // coverage report committed with the campaign (provenance: preserved in the
+  // `myrobots-preserved-2026-09` tag snapshot, archived at
+  // evidence/archive/2026/2026-08-18-flake-park-coverage-lost.md). The durable
   // rule it produced — a red test is FIXED or PARKED with its coverage loss
   // written down at the parking site, and a guard over a SELECTION is blind to
   // EXECUTION (this audit only sees lanes that emit a per-shard report) — is

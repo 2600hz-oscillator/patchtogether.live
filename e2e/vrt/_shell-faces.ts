@@ -5583,9 +5583,9 @@ export const FACES = [
   // invisible to a pass/fail loop. Both halves of that method are durable in
   // `.claude/skills/renderer-tests/references/silent-failures.md`,
   // "Boot-vs-boot and boot-vs-baseline are different questions". The raw
-  // measurement is provenance only: it is in the `myrobots-preserved-2026-09`
-  // tag snapshot as `2026-08-23-nibbles-composite-vrt-nondeterminism.md`, and
-  // lands at evidence/archive/2026/ under that name when the tree is retired.
+  // measurement is provenance only: preserved in the `myrobots-preserved-2026-09`
+  // tag snapshot, and archived at
+  // evidence/archive/2026/2026-08-23-nibbles-composite-vrt-nondeterminism.md.
   //
   // ⚠ NO `freeze` ParamDef, and the refusal is priced rather than stylistic:
   // `nibbles.ts` is IN the WebGL attest basis, so a `params` edit costs an
@@ -5642,10 +5642,11 @@ export const FACES = [
           + 'manages. ⚠ AND IT IS THE SAME SEED `vrt-composite-scenes.ts` ALREADY PINS, '
           + 'deliberately: one seed for both deterministic capture paths means a surface a human '
           + 'has already reviewed. The pair (clock + seed) is proven byte-identical in both '
-          + 'directions by the measurement kept as provenance (2026-08-23-nibbles-composite-'
-          + 'vrt-nondeterminism.md in the `myrobots-preserved-2026-09` tag snapshot; archived '
-          + 'under evidence/archive/2026/) — differing pre-fix, identical post-fix, compared '
-          + 'BYTE-FOR-BYTE rather than through the diff tolerance.',
+          + 'directions by a measurement kept as provenance — preserved in the '
+          + '`myrobots-preserved-2026-09` tag snapshot, archived at '
+          + 'evidence/archive/2026/2026-08-23-nibbles-composite-vrt-nondeterminism.md — '
+          + 'differing pre-fix, identical post-fix, compared BYTE-FOR-BYTE rather than through '
+          + 'the diff tolerance.',
       },
     ],
   },
