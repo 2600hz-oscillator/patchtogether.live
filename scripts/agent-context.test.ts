@@ -227,11 +227,19 @@ describe('agent context files describe the real tree', () => {
       'the doc surface reader found no CLAUDE.md — it read the wrong tree',
     ).toContain('CLAUDE.md');
 
-    const dangling = docs.flatMap((d) =>
-      citedMyrobotsPaths(d.text)
-        .filter((p) => !existsSync(join(REPO_ROOT, p)))
-        .map((p) => `${d.path} → ${p}`),
-    );
+    // Migration plans under `docs/migrations/` CATALOG dead `.myrobots` records
+    // by name — that is their entire job — so they are exempt from THIS
+    // dead-pointer check (they stay in every other surface check, incl. the
+    // secret scan). They are one-time execution records, not live-context docs
+    // an agent follows for a pointer; the `.myrobots` retirement itself (that
+    // very plan) is what finally retires this gate.
+    const dangling = docs
+      .filter((d) => !d.path.startsWith('docs/migrations/'))
+      .flatMap((d) =>
+        citedMyrobotsPaths(d.text)
+          .filter((p) => !existsSync(join(REPO_ROOT, p)))
+          .map((p) => `${d.path} → ${p}`),
+      );
 
     expect(
       dangling,
