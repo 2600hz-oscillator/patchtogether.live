@@ -354,10 +354,24 @@ describe('timelorde body — it BLITS the producer, it does not re-render it', (
       /setNodeParam/.test(bodySrc),
       'the body writes a PARAM — its only write is previewCollapsed on node.data',
     ).toBe(false);
+    // ⚠ NARROWED 2026-09-08 TO THIS LEG'S OWN STATED INTENT ("the leg is aimed
+    // at the write paths"). It previously matched `wizardOn` followed by `:` OR
+    // `=`, which also caught the param being READ and handed to a pure decision
+    // function as a named argument — `wizardDisplayMode({ hasVideoIn, wizardOn })`
+    // — the very case the comment above calls fine. Forbidding that is what left
+    // the body unable to consult the flag at all: after #2349 deleted the card
+    // that owned the hide, the WIZARD control drove a param no surface read, so
+    // it hid nothing while the accessible name announced that it had. Assignment
+    // is still caught in every form this body could write the param with
+    // (`wizardOn =`, `let wizardOn =`, `live.params.wizardOn =` inside
+    // `mutateNode`), and `setNodeParam` stays independently forbidden above.
     expect(
-      /wizardOn\s*[:=]\s*(?!\s*$)/.test(bodySrc.replace(/params\.wizardOn/g, '')),
+      /wizardOn\s*=[^=]/.test(bodySrc.replace(/params\.wizardOn/g, '')),
       'the body assigns wizardOn — the display switch and the wizard param must stay separate',
     ).toBe(false);
+    // …and the OTHER half of "not merged": separate does not mean ignored. The
+    // body must still READ the flag and act on it (see the WIZARD-actually-hides
+    // leg below), or the switch is decorative.
     expect(
       /control-wizardOn|data-control-params/.test(bodySrc),
       'the body claims a control cell — it would be an EXTRA control against the def’s param multiset',
@@ -371,6 +385,40 @@ describe('timelorde body — it BLITS the producer, it does not re-render it', (
       (timelordeDef.face?.pages ?? []).flatMap((p) => p.controls),
       'wizardOn is ranked but sits in no band',
     ).toContain('wizardOn');
+  });
+
+  it('the WIZARD switch actually HIDES the picture — not just the accessible name', () => {
+    // ⚠ THE DEFECT THIS PINS (found 2026-09-08 by the face-package consumption
+    // audit). `frame-producers` composites the owl into `video_out`
+    // unconditionally and delegates the hide to "the surfaces". The legacy
+    // `TimelordeCard` was that surface; #2349 deleted 196 cards and the hide went
+    // with it, so `wizardOn` — driven by the on-face button AND the `gate` input,
+    // both documented as hiding the graphic — moved nothing. Worse, the aria-label
+    // still said "the owl is hidden" over a painted owl: a dead control and a
+    // screen-reader lie in one.
+    //
+    // The leg is aimed at the MECHANISM, not at a pixel: the body must consult
+    // the shared decision and both branches must exist. A liveness assertion over
+    // real frames lives in the e2e (face-timelorde).
+    expect(
+      /wizardDisplayMode/.test(bodySrc),
+      'the body no longer consults wizardDisplayMode — the hide is the SURFACE’s half of the ' +
+        'contract, and frame-producers explicitly does not do it',
+    ).toBe(true);
+    expect(
+      /displayMode\s*===\s*'off'/.test(bodySrc),
+      'nothing branches on the off mode — the switch would move nothing again',
+    ).toBe(true);
+    expect(
+      /timelorde-face-wizard-off/.test(bodySrc),
+      'no "wizard off" placeholder — hiding the owl must leave something in its place, as the card did',
+    ).toBe(true);
+    // The canvas is HIDDEN, never unmounted: it is a blit target whose producer
+    // is elsewhere, and re-creating it per toggle would be a teardown for nothing.
+    expect(
+      /class:hidden=\{displayMode === 'off'\}/.test(bodySrc),
+      'the canvas is unmounted rather than hidden on WIZARD off',
+    ).toBe(true);
   });
 
   it('stays a 2D context — a WebGL body would put this module in the GPU attest basis', () => {
