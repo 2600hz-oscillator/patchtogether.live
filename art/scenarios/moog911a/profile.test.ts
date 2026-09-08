@@ -1,7 +1,8 @@
 // art/scenarios/moog911a/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 911A (dual trigger delay) (backfill batch 3 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: MODULATION / trigger utility — driven by the canonical TRIGGER

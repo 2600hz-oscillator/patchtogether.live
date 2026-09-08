@@ -1,7 +1,8 @@
 // art/scenarios/noise/profile.test.ts
 //
 // AUDIO PROFILE for NOISE (basic noise source) (backfill batch 5 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: self-driving SOURCE with a seedable PRNG (the batch-4 verified

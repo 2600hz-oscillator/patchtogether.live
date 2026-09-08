@@ -1,7 +1,7 @@
 // art/setup/capture.ts
 //
 // Reusable AUDIO-PROFILE capture harness (ART backfill Phase 0 — spec:
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md §4.3).
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md §4.3).
 //
 // A profile scenario = (driver) → (pure-TS module core) → capture every
 // SIGNATURE output → pin each as art/baselines/<group>/<name>.f32 + .sha.
@@ -22,7 +22,9 @@
 //
 // Discipline reminders (memory `art-sha-pin-regenerate-last` + CLAUDE.md):
 // re-pin `.sha` files as the LAST edit step of a change and confirm only
-// `.sha` (not `.f32`) changed on a pure re-pin.
+// `.sha` (not `.f32`) changed on a pure re-pin. The step-by-step procedure —
+// render-path fidelity order, capture-and-pin, `task art:update` — lives in
+// runbooks/testing.md, "ART audio profiles — the gate, and the backfill".
 
 import { expect } from 'vitest';
 import { createHash } from 'node:crypto';

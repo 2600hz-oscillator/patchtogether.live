@@ -1,7 +1,7 @@
 // art/scenarios/gatemaiden/profile.test.ts
 //
 // AUDIO PROFILE for GATEMAIDEN (backfill batch 1 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: gate UTILITY — the user-facing gate↔trigger converter. The

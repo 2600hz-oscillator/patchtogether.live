@@ -1,7 +1,8 @@
 // art/scenarios/moog907a/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 907A (fixed filter bank) (backfill batch 2 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FILTER (fixed — no CV, the band centres never move). Driver:

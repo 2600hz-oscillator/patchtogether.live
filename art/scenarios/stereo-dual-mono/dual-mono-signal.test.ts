@@ -420,8 +420,11 @@ describe("'native-stereo' — the claim is MEASURED, not read off the source", (
 // above has stopped proving anything.
 //
 // This is also the end-to-end assertion the `moog904a.audio` emit park gave up
-// (.myrobots/2026-08-18-flake-park-coverage-lost.md): shipping factory → real
-// AudioWorkletNode → the engine's wrapper → a real render → a mono down-mix.
+// (provenance: the #1847 park census, archived at
+// evidence/archive/2026/2026-08-18-flake-park-coverage-lost.md; the reusable
+// lesson is in .claude/skills/renderer-tests/references/silent-failures.md):
+// shipping factory → real AudioWorkletNode → the engine's wrapper → a real
+// render → a mono down-mix.
 describe("'mono-fanout' — the phase lottery is GONE (25 spawns)", () => {
   const SPAWNS = 25;
   const FANOUT_SR = 48000;

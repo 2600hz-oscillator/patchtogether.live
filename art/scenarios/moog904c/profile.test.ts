@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for MOOG 904C (voltage controlled filter coupler)
 // (backfill batch 2 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FILTER — the coupler tracks a 904A-style LP and a 904B-style

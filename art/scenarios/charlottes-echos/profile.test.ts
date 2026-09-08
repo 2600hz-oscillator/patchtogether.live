@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for CHARLOTTE'S ECHOS (4-stage cascaded tape echo)
 // (backfill batch 4 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: FX with an ECHO TAIL — so per spec §4.1 the render is 2.0 s and

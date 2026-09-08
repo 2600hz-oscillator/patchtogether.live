@@ -1,8 +1,9 @@
 // art/setup/offline.ts
 //
 // Shared REAL-DEF-FACTORY capture path for ART audio profiles (backfill
-// batch 5 — spec §4.3 `captureOffline`, .myrobots/plans/
-// art-backfill-audio-profiles-2026-07-01.md §1.3 rendering path #3).
+// batch 5 — spec §4.3 `captureOffline`,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md
+// §1.3 rendering path #3).
 //
 // Some audio modules have NO worklet at all — they are PURE Web Audio node
 // graphs (GainNode / DelayNode / WaveShaperNode / ConstantSourceNode) built

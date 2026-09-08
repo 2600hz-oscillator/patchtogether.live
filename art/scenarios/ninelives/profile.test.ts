@@ -1,7 +1,8 @@
 // art/scenarios/ninelives/profile.test.ts
 //
 // AUDIO PROFILE for NINE LIVES (9-output ⅓-ladder LFO) (backfill batch 3 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + worklet.ts).
 //
 // Category: self-driving MODULATION source — params only (spec §4.2), phase

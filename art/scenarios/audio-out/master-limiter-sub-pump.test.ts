@@ -1,9 +1,12 @@
 // art/scenarios/audio-out/master-limiter-sub-pump.test.ts
 //
 // P0-A1 REGRESSION GATE — "the master bus must not gain-duck the sub when a
-// transient hits" (.myrobots/plans/dsp-stack-bass-freq-audit-2026-07-01.md,
-// item P0-A1: "assert the sub band (30-80 Hz) gain-reduction ripple at the kick
-// rate drops below a threshold … this is the load-bearing proof").
+// transient hits". The decision this pins (own-code look-ahead brickwall at
+// −1 dBFS, 1.5 s release, no makeup gain, 5 Hz DC block) is ADR-010,
+// docs/adr/010-terminal-sink-and-audio-health.md; provenance:
+// evidence/active/plans/dsp-stack-bass-freq-audit-2026-07-01.md, item P0-A1 —
+// "assert the sub band (30-80 Hz) gain-reduction ripple at the kick rate
+// drops below a threshold … this is the load-bearing proof".
 //
 // THE DEFECT this file pins shut. The terminal stage used to be a full-band,
 // stereo-linked `DynamicsCompressorNode` (threshold −6 dB, ratio 4, knee 6,

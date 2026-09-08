@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for ILLOGIC (4-ch attenuverter + sum/diff mixer + digital
 // logic) (backfill batch 5 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + offline.ts).
 //
 // Category: CV UTILITY — a three-in-one module, so the profile drives all

@@ -1,7 +1,8 @@
 // art/scenarios/fourplexer/profile.test.ts
 //
 // AUDIO PROFILE for 4PLEXER (4-in/4-out discrete router) (backfill batch 4 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: clocked ROUTER utility — out1's gate is driven by the canonical

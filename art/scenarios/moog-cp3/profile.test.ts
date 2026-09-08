@@ -1,7 +1,8 @@
 // art/scenarios/moog-cp3/profile.test.ts
 //
 // AUDIO PROFILE for MOOG CP3 (console panel mixer) (backfill batch 4 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: MIXER — the CP3's signature is (a) per-channel gain UP TO ×2

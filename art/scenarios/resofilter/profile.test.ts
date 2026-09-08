@@ -1,7 +1,7 @@
 // art/scenarios/resofilter/profile.test.ts
 //
 // AUDIO PROFILE for RESOFILTER (backfill batch 1 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FX / PROCESSOR — driven by the canonical VCO test signal

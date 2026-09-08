@@ -1,7 +1,8 @@
 // art/scenarios/moog960/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 960 (sequential controller) (backfill batch 4 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: clocked STEP SOURCE — driven by the canonical 240 BPM CLOCK

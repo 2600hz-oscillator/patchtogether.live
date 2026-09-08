@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for MOOG 911 (envelope / contour generator) (backfill
 // batch 3 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts + worklet.ts).
 //
 // Category: ENVELOPE / MODULATOR — driven by the canonical HELD-SQUARE GATE

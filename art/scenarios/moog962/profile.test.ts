@@ -1,7 +1,8 @@
 // art/scenarios/moog962/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 962 (sequential switch) (backfill batch 3 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §4.1/§4.3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: clocked SWITCH utility — SHIFT is driven by the canonical

@@ -1,7 +1,7 @@
 // art/setup/worklet.ts
 //
 // Shared REAL-WORKLET capture path for ART audio profiles (backfill batch 3 —
-// spec §4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md).
+// spec §4.3, evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 //
 // Batches 1–2 proved the pattern per-scenario (bluebox / cofefve): when a
 // worklet entry is SELF-CONTAINED PURE MATH (no WASM, no RNG or a fixed-seed

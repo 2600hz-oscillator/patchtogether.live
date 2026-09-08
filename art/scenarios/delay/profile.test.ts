@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for DELAY (single-tap delay line + feedback + mix) (backfill
 // batch 5 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + offline.ts).
 //
 // Category: TIME-BASED FX with a decaying tail — the canonical TRANSIENT

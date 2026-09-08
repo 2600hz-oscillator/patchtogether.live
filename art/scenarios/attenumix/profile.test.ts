@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for ATTENUMIX (4-channel attenuating mixer) (backfill
 // batch 4 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: MIXER / PROCESSOR — driven by three spectrally distinct

@@ -1,7 +1,7 @@
 // art/setup/profile-coverage.ts
 //
 // Coverage lists for THE AUDIO-PROFILE GATE (owner decision §6b.1 —
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md): every
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md): every
 // audio-domain module def must have ≥1 committed ART audio-profile baseline
 // (`art/baselines/<group>/*.f32`) UNLESS it is
 //   (a) structurally excluded (ART_EXCLUDED — cannot be deterministically
@@ -12,6 +12,10 @@
 //
 // NEW modules are therefore gated IMMEDIATELY: adding an audio def without a
 // profile (and without an explicit, reasoned exclusion) fails the ART lane.
+//
+// The PROCEDURE — which render path a new profile takes, capture-and-pin, and
+// when an exclusion is legitimate — is runbooks/testing.md, "ART audio
+// profiles — the gate, and the backfill". The spec path above is provenance.
 
 /**
  * Structural exclusions (spec §4.4) — modules that CANNOT be deterministically

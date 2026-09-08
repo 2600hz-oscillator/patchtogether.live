@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for DEPOLARIZER (bipolar → unipolar, out = 0.5 + depth·(in/2))
 // (backfill batch 5 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + offline.ts).
 //
 // Category: CV UTILITY / PROCESSOR — the exact inverse of POLARIZER. Its

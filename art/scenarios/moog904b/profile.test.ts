@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for MOOG 904B (voltage controlled high pass filter)
 // (backfill batch 2 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FILTER — driven by the canonical VCO test signal (C4 saw,

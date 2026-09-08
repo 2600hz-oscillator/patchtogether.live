@@ -2,7 +2,7 @@
 //
 // AUDIO PROFILE for VCA (voltage-controlled amplifier, mono) — backfill
 // batch 6, the FAUST-IN-NODE harness's first pinned module (spec §5,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md).
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 //
 // VCA is Faust (packages/dsp/src/vca.dsp): out = audio * (base + cvAmount*cv),
 // gain one-pole-smoothed (si.smoo). No pure-TS core, no self-contained TS
