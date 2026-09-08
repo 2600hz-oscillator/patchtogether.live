@@ -32,6 +32,7 @@
   import { mutateNode } from '$lib/graph/mutate';
   import { edgesVersion, nodesStructuralVersion, nodeVersion } from '$lib/graph/node-versions.svelte';
   import { useEngine } from '$lib/audio/engine-context';
+  import { wizardDisplayMode } from '$lib/audio/modules/timelorde-wizard';
 
   interface Props {
     /** The graph node this faceplate is showing — the ONLY prop the slot gets
@@ -83,6 +84,31 @@
     }
     return false;
   });
+  // ── WHAT THE DISPLAY SHOWS ────────────────────────────────────────────────
+  //
+  // ⚠ THE SURFACE OWNS THE HIDE, AND FOR A WHILE NOBODY DID. `frame-producers`
+  // composites the owl into `video_out` UNCONDITIONALLY and says so at its own
+  // call site: "that switch hides the on-card picture, it does not stop the
+  // module emitting one … `wizardDisplayMode` is the surfaces' business, not
+  // this one's." That contract is right — a downstream module must keep getting
+  // a coherent frame — but it only holds if a surface actually implements the
+  // hide. The legacy `TimelordeCard` did (canvas hidden + a "wizard off"
+  // placeholder); when #2349 deleted 196 cards, the hide went with it and this
+  // body never had it. The result was a control that moved nothing: `wizardOn`
+  // and the `gate` input drove a param the picture ignored, while the accessible
+  // name below confidently announced "the owl is hidden" over a painted owl.
+  //
+  // So the mode comes from the SAME pure decision the card used
+  // (`wizardDisplayMode`, unit-tested in timelorde-wizard.test.ts) rather than a
+  // second copy of the rule here — the "two places to be wrong" this file's
+  // header warns about.
+  let displayMode = $derived.by(() => {
+    void cardVersion;
+    const params = patch.nodes[nodeId]?.params ?? {};
+    const owlOn = (typeof params.wizardOn === 'number' ? params.wizardOn : 1) >= 0.5;
+    return wizardDisplayMode({ hasVideoIn, wizardOn: owlOn });
+  });
+
   let displayLabel = $derived.by(() => {
     void cardVersion;
     const params = patch.nodes[nodeId]?.params ?? {};
@@ -100,7 +126,11 @@
    *  mono-video path TimelordeCard already uses to read an upstream source. */
   function draw(): void {
     rafId = null;
-    if (canvasEl && !previewCollapsed) {
+    // `off` skips the blit for the same reason SCREEN OFF does, and with the
+    // same cost: the producer is `frame-producers`, not this canvas, so
+    // `video_out` is untouched either way. The canvas STAYS MOUNTED (hidden) so
+    // the toggle is a class flip rather than a teardown.
+    if (canvasEl && !previewCollapsed && displayMode !== 'off') {
       const e = engineCtx.get();
       if (e) {
         let ae:
@@ -153,12 +183,18 @@
            accessible name; the SCREEN button stays OUTSIDE it so the image role
            has no focusable descendant. -->
       <div class="display-frame" role="img" aria-label={displayLabel}>
+        <!-- Hidden, never unmounted: see `draw`. The placeholder is what the
+             legacy card showed, so WIZARD off looks the way it always did. -->
         <canvas
           bind:this={canvasEl}
           width={DISPLAY_W}
           height={DISPLAY_H}
+          class:hidden={displayMode === 'off'}
           data-testid="timelorde-face-canvas"
         ></canvas>
+        {#if displayMode === 'off'}
+          <div class="wizard-off" data-testid="timelorde-face-wizard-off">wizard off</div>
+        {/if}
       </div>
     {/if}
     <button
@@ -196,6 +232,31 @@
   .display-frame {
     display: block;
     line-height: 0;
+    /* The placeholder anchors to the PICTURE, not to `.preview-wrap` — the wrap
+       also hosts the absolutely-positioned SCREEN button, and covering that was
+       not the intent. */
+    position: relative;
+  }
+  /* WIZARD off: the canvas keeps its box in the layout so the body does not
+     resize when the owl is hidden — the placeholder sits in the same 220px
+     square the picture occupies. */
+  .preview-wrap canvas.hidden {
+    visibility: hidden;
+  }
+  .wizard-off {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border: 1px solid #1a1f2a;
+    border-radius: 4px;
+    background: #07090d;
+    pointer-events: none;
   }
   .preview-wrap canvas {
     display: block;
