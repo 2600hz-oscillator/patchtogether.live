@@ -19,6 +19,7 @@
 //
 // Edges out of scope. Cable copying is intentionally NOT done here.
 
+import { stripSlotIdentityForDuplicate } from './device-slots';
 import type { ModuleNode } from './types';
 
 /** Default position offset (in flow-space pixels) applied to a duplicate. */
@@ -63,6 +64,21 @@ export function buildDuplicate(
   const id = mintId(source.type, taken, options.idSuffix);
 
   const dataCopy = source.data ? deepCloneData(source.data) : undefined;
+  // SLOT/PIN IDENTITY NEVER SURVIVES A DUPLICATE (native-shell P1).
+  //
+  // The clone gets a fresh id but inherits `data` wholesale — so without this a
+  // duplicate of any node carrying `data.pinned` would be UNDELETABLE
+  // (removePatchNode and Clear both refuse the flag) at an id nothing reserves,
+  // canvas-HIDDEN (`isCanvasHiddenNode` = `pinned || hiddenCard`), and exempt
+  // from its type's `maxInstances`: an unremovable ghost with no card to
+  // right-click. Today's pinned singletons are unreachable from this gesture
+  // only because they are already canvas-hidden; a device OUTPUT slot is a
+  // visible card, so the path opens the moment slots exist.
+  //
+  // Stripping is the whole fix, and it is also the right semantics: duplicating
+  // a slot means "give me another one of these", and another one of these is an
+  // ORDINARY module of the same type.
+  stripSlotIdentityForDuplicate(dataCopy);
 
   const position = options.positionOverride ?? {
     x: source.position.x + DUPLICATE_OFFSET,

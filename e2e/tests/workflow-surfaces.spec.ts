@@ -64,7 +64,31 @@ async function waitForPins(page: Page): Promise<void> {
     //
     // A BOUND, not a claim: nothing here asserts boot latency, and the wait
     // returns the instant the pins land.
-    { timeout: BOOT_MS },
+    //
+    // ⚠ AND THE BOUND WAS NEVER WHAT EXPIRED. Raising it 10 s → 30 s and idling
+    // the video engine (`installRenderSmokeHooks` in gotoWorkflow) did not stop
+    // this site going red-then-green: 4 of 16 #2349 runs on 2026-09-05 and
+    // #2368's run 34030547898 (shard 3) failed HERE, always on the first
+    // rAF-dependent step of a fresh page, never later. That last run's trace
+    // is the diagnosis: `networkidle` fired at 2.66 s, this wait began at
+    // 2.63 s, the app logged `workflow: ensured pinned modules (…all seven…)`
+    // at 3.10 s — and the wait expired at 30 s with the pins IN THE DOC the
+    // whole time. The retry, in a fresh worker, took 5.8 s end to end.
+    //
+    // `page.waitForFunction` re-evaluates its predicate on the page's
+    // `requestAnimationFrame` by default (Playwright: "polling: 'raf'"). This
+    // predicate reads STORE state — a Y.Doc write by a Svelte effect — which
+    // needs no frame to become true, and this spec deliberately gives the page
+    // nothing to paint. So the readiness signal was being sampled by the one
+    // clock the fixture had idled, and a page whose compositor delivered no
+    // frame (the failed attempt's screencast holds a single frame in 37 s) kept
+    // a true predicate unread. Reproduced locally by stubbing the main-world
+    // rAF to never call back: the rAF-polled wait times out with the pins
+    // present; a timer-polled one sees them in ~0.7 s; `click()` is unaffected
+    // either way (actionability polls in Playwright's utility world). Timer
+    // polling is the established shape for store-state waits in this suite
+    // (`_scheduler-control`, `_clip-reset-trace`, `automation-cv-record`, …).
+    { timeout: BOOT_MS, polling: 100 },
   );
 }
 

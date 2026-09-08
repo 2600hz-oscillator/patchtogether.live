@@ -174,6 +174,7 @@ export { WS_ENGINE_MASSPASS, WS_ENGINE_SPECTRAL, WS_MASSPASS_BAND_COUNTS };
 export type { WsBandSettings };
 import workletUrl from '@patchtogether.live/dsp/dist/warrensspectrum.js?url';
 
+import { patch as livePatch } from '$lib/graph/store';
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -261,6 +262,31 @@ export function warrensspectrumBands(node: { data?: Record<string, unknown> } | 
     ? (raw as { toJSON(): unknown }).toJSON()
     : raw;
   return wsNormalizeBands(arr);
+}
+
+/**
+ * CONTENT signature of a node's normalized band table — what the factory's
+ * poll compares to decide whether to re-push the bank into the worklet.
+ *
+ * ⚠ A CONTENT SIGNATURE, NOT `wsBandsRev`, and the difference is the samsloop
+ * load-silence class: the rev counter is PERSISTED per patch, so two different
+ * patches can both hold rev 3 with different tables — loading one over the
+ * other moved the table while the rev stood still, and the worklet kept
+ * playing the previous patch's bank. Content cannot alias: identical strings
+ * mean identical (normalized) banks, and re-pushing an identical bank is a
+ * no-op anyway. Eight bands, five numbers each — built in microseconds, so it
+ * is safe on the 120 ms poll.
+ *
+ * Pure + exported so a unit test can pin both properties (distinct tables
+ * differ; a Yjs-proxy table signs identically to its plain form) without an
+ * AudioContext.
+ */
+export function warrensspectrumBandsSignature(
+  node: { data?: Record<string, unknown> } | undefined,
+): string {
+  return warrensspectrumBands(node)
+    .map((b) => `${b.cutoffHz}:${b.q}:${b.type}:${b.pan}:${b.send}`)
+    .join('|');
 }
 
 export const warrensspectrumDef: AudioModuleDef = {
@@ -580,13 +606,33 @@ export const warrensspectrumDef: AudioModuleDef = {
     // ---- the 8-band table (NOT AudioParams — see the worklet header) ----
     //
     // Sent once at boot so a saved rack starts on ITS bands rather than the
-    // defaults, then re-sent whenever the revision counter moves. The poll
-    // mirrors DX7's `voiceRev`: a band edited by a REMOTE collaborator lands
-    // in the Y.Doc with no local callback, so a change-event subscription
-    // would deliver local edits and silently drop everyone else's.
-    let lastBandsRev = -1;
+    // defaults, then re-sent whenever the TABLE CONTENT moves. The poll
+    // mirrors DX7's `voiceRev` rationale: a band edited by a REMOTE
+    // collaborator lands in the Y.Doc with no local callback, so a
+    // change-event subscription would deliver local edits and silently drop
+    // everyone else's.
+    //
+    // ⚠ TWO REPAIRS vs the first ship, both the samsloop load-silence class
+    // (a repair that lands on one surface while a sibling consumes the same
+    // persisted shape):
+    //   * every read goes through `livePatch.nodes[node.id]`, never the
+    //     CAPTURED `node` — `loadEnvelopeIntoStore` deletes + re-inserts every
+    //     node inside one transaction, so after a same-session patch load the
+    //     captured proxy is DETACHED: a captured-node poll compares revs on a
+    //     dead object and pushes the defaults (or nothing) while the loaded
+    //     patch's bank never reaches the worklet. Fresh-page loads re-run the
+    //     factory and were never exposed; the same-session route was.
+    //   * the change test is `warrensspectrumBandsSignature` (content), not
+    //     `wsBandsRev` — the rev is persisted per patch, so two patches can
+    //     hold the same rev with different tables and alias each other. The
+    //     rev key stays (the card still bumps it; other surfaces may read it)
+    //     but nothing here depends on it any more.
+    function liveNode(): { data?: Record<string, unknown> } | undefined {
+      return livePatch.nodes[node.id] ?? node;
+    }
+    let lastBandsSig = '';
     function pushBands(): void {
-      const bands = warrensspectrumBands(node);
+      const bands = warrensspectrumBands(liveNode());
       // Hand-built plain objects: `postMessage` structured-clones, and a Yjs
       // proxy throws "could not be cloned" — the exact failure that left DX7
       // playing a stale patch while the UI showed the new one.
@@ -605,14 +651,14 @@ export const warrensspectrumDef: AudioModuleDef = {
     const BANDS_POLL_MS = 120;
     let bandsTimer: ReturnType<typeof setTimeout> | undefined;
     function pollBands(): void {
-      const rev = Number(node.data?.[WARRENSSPECTRUM_BANDS_REV_KEY] ?? 0);
-      if (rev !== lastBandsRev) {
-        lastBandsRev = rev;
+      const sig = warrensspectrumBandsSignature(liveNode());
+      if (sig !== lastBandsSig) {
+        lastBandsSig = sig;
         pushBands();
       }
       bandsTimer = setTimeout(pollBands, BANDS_POLL_MS);
     }
-    lastBandsRev = Number(node.data?.[WARRENSSPECTRUM_BANDS_REV_KEY] ?? 0);
+    lastBandsSig = warrensspectrumBandsSignature(liveNode());
     bandsTimer = setTimeout(pollBands, BANDS_POLL_MS);
 
     return {

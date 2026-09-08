@@ -89,10 +89,18 @@ export function displayUnresolvedAdvisory(nodeId: string, screenId: string): str
 }
 
 /** The slice of VideoEngine a projector needs: render one node into the shared
- *  drawing buffer, read that buffer, and pin the node as a pull root. */
+ *  drawing buffer, read that buffer, PIN the node as a pull root — and ask
+ *  whether the node even HAS output pixels, which is what stops the projector
+ *  from mirroring the shared buffer's last tenant (see `openOne`'s source guard). */
 export interface PresentEngine {
   readonly canvas: (CanvasImageSource & { readonly width: number; readonly height: number }) | null;
   blitOutputToDrawingBuffer(nodeId: string): void;
+  /** This node's primary output texture, or null when it has NONE — a
+   *  texture-less sink (surface `{texture:null}`), or a slot id whose video
+   *  node is not in the engine. The SAME field `blitOutputToDrawingBuffer`
+   *  tests before it decides to blit, exposed as a query so the source getter
+   *  cannot drift from the condition the blit obeys. */
+  outputTexture(nodeId: string): WebGLTexture | null;
   acquireRenderLease(nodeId: string): () => void;
 }
 
@@ -257,7 +265,25 @@ export function createNodePresentRegistry(
           /* an engine hiccup must never kill the blit loop */
         }
       },
-      source: () => entry.engine.canvas,
+      // ⚠ A NODE WITH NO OUTPUT TEXTURE MUST NOT EXPOSE THE SHARED BUFFER.
+      //
+      // `engine.canvas` is ONE drawing buffer the whole engine shares, and the
+      // `prepare` above is a NO-OP for a texture-less node — `blitOutputTo-
+      // DrawingBuffer` does nothing exactly when the node's `surface.texture` is
+      // null (a sink like outToLaunch, or a slot whose videoOut is not in the
+      // engine). Handing `startPresent` the raw buffer then mirrors "whichever
+      // node most recently blitted" onto the projector: an UNPATCHED output on a
+      // mapped display showed the last-added module (owner, dev — "acidwarp
+      // showed on display2 unpatched"). present-window black-fills on a null
+      // source, so gating here makes such an output show its OWN dark idle.
+      //
+      // This is the exact guard `VideoTileThumb.svelte` already applies to the
+      // identical blit-then-read on the in-rack tile; the projector path was the
+      // un-repaired sibling surface. `outputTexture(nodeId)` is the public query
+      // for the same `surface.texture` field the blit obeys, and it is read here
+      // as a GETTER (per frame) so a slot that gains its node later starts
+      // presenting with no re-open.
+      source: () => (entry.engine.outputTexture(nodeId) != null ? entry.engine.canvas : null),
       rect,
     });
     if (!session) {

@@ -30,6 +30,8 @@ import { startStaticServer } from './server';
 import { HelperSupervisor, type HelperSpec, type HelperStatus } from './supervisor';
 import { HARDENED_WEB_PREFERENCES, installSecurity, installWindowGuards } from './security';
 import { PtBridge } from './bridge';
+import { PtHandlerError } from './bridge-protocol';
+import { RigStore } from './rig-store';
 
 const DEFAULT_PORT = 9409;
 
@@ -226,6 +228,11 @@ async function boot(): Promise<void> {
   installMenu(win);
   installWindowGuards(win.webContents, shellOrigin);
 
+  // Per-machine device bindings live OFF the Y.Doc, in a plain JSON file under
+  // userData that survives relaunch (rig-store.ts). Loaded here, synchronously,
+  // so the boot route below can ask whether a rig is already configured.
+  const store = new RigStore(path.join(app.getPath('userData'), 'rig-bindings.json'));
+
   // ONE ipc entry point for every renderer command (bridge.ts): sender
   // validation is written once instead of once per verb — the shape that let
   // `pt:quit` and `pt:helper-status` both ship with no senderFrame check.
@@ -236,6 +243,28 @@ async function boot(): Promise<void> {
     current: supervisors.map((s) => s.status()),
     history: supervisors.flatMap((s) => s.history),
   }));
+
+  // ---- rig-binding ops (device-slot-bindings.ts `bridgeBackend`) ----------
+  // The web store round-trips its RigBindings record through these three ops.
+  // The record is OPAQUE JSON here: get/return it verbatim, and validate only
+  // that a set payload is a plain object.
+  bridge.register('bindings.get', () => store.get());
+  bridge.register('bindings.set', (payload) => {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+      throw new PtHandlerError('bad-request', 'bindings.set payload must be a plain object');
+    }
+    store.set(payload as Record<string, unknown>);
+    // Tell the window(s) the rig changed so a re-apply pass runs — the web
+    // bridgeBackend subscribes to exactly this topic and re-normalizes it.
+    if (!win.isDestroyed()) bridge.emit(win.webContents, 'bindings.changed', payload);
+    return {};
+  });
+  // Pre-flight completion swaps the SAME window from /preflight to /rack.
+  bridge.register('preflight.done', async () => {
+    if (!win.isDestroyed()) await win.loadURL(`${shellOrigin}/rack`);
+    return {};
+  });
+
   bridge.install();
 
   startSupervisors(win, bridge);
@@ -253,7 +282,13 @@ async function boot(): Promise<void> {
   // real dual-monitor hardware), and every other http(s) url is handed to the
   // user's browser instead of a preload-carrying Electron window.
 
-  await win.loadURL(`${shellOrigin}/rack`);
+  // Two-stage launch: a machine with no configured rig (the store file is
+  // absent/empty) opens the pre-flight device picker; an already-configured
+  // machine boots straight to the rack. `preflight.done` (above) performs the
+  // swap. A bound-but-missing device bouncing back to /preflight is the web
+  // side's job — the shell only gates first-run vs configured.
+  const initialRoute = store.isFirstRun() ? '/preflight' : '/rack';
+  await win.loadURL(`${shellOrigin}${initialRoute}`);
 
   app.on('window-all-closed', () => {
     void server.close();

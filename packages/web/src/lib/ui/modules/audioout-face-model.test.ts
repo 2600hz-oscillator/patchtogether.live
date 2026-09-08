@@ -57,7 +57,20 @@ import {
 } from '$lib/audio/output-sink-report';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
 import { setNodeParam } from '$lib/graph/mutate';
+import {
+  RigBindingStore,
+  emptyRigBindings,
+  rigBindings,
+  setRigBindingsForTests,
+  type RigBindings,
+  type RigStoreBackend,
+} from '$lib/graph/device-slot-bindings';
 import type { ModuleNode } from '$lib/graph/types';
+
+/** In-memory rig backend for the store-move assertions below. */
+function memRigBackend(initial: RigBindings = emptyRigBindings()): RigStoreBackend {
+  return { load: () => initial, save: () => {}, subscribe: () => () => {} };
+}
 import type { MinimalDevice } from '$lib/audio/devices';
 
 const SR = 48000;
@@ -356,7 +369,7 @@ describe('audioOut sink report — a REJECTION has to REACH a surface', () => {
   });
 });
 
-describe('audioOut picker — the pick is DELIBERATELY NOT UNDOABLE (both directions)', () => {
+describe('audioOut picker — the pick lands in the PER-MACHINE store, off the Y.Doc', () => {
   const NID = 'audioout-face-model-node';
 
   function makeNode(): void {
@@ -378,17 +391,28 @@ describe('audioOut picker — the pick is DELIBERATELY NOT UNDOABLE (both direct
     for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
     undoManager.clear();
     undoManager.stopCapturing();
+    // A fresh, isolated rig store per test (the real singleton must not leak
+    // between cases, and the browser/localStorage backend is not present here).
+    setRigBindingsForTests(new RigBindingStore(memRigBackend()));
   });
   afterEach(() => {
     for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
     undoManager.clear();
+    setRigBindingsForTests(null);
   });
 
-  it('writes the key, and Cmd-Z does NOT see it', () => {
+  it('lands the pick in the RIG STORE, never on node.data, and Cmd-Z cannot see it', () => {
     makeNode();
     setOutputDevice(NID, 'usb-es9');
-    // The write LANDED — this is not "non-undoable because nothing happened".
-    expect(patch.nodes[NID]!.data!['outputDeviceId']).toBe('usb-es9');
+    // The pick LANDED — in the per-machine store, which is where the master sink
+    // lives (machine-local; it must never ride the shared/saved patch).
+    expect(rigBindings().getAudioOut()?.outputDeviceId).toBe('usb-es9');
+    // And NOT on the synced node.data — that is the #2045-class leak this move
+    // closes, and what lets File→New / reload keep the sink bound.
+    expect(patch.nodes[NID]!.data!['outputDeviceId']).toBeUndefined();
+    // The store is outside the Y.Doc/UndoManager entirely, so a device pick can
+    // never reach the patch undo stack — now by construction, not by a tagged
+    // origin.
     expect(
       undoManager.undoStack.length,
       'a device pick must not land on the patch undo stack: undo walks the PATCH, and which ' +
@@ -399,8 +423,7 @@ describe('audioOut picker — the pick is DELIBERATELY NOT UNDOABLE (both direct
   it('POSITIVE CONTROL: a param edit on the SAME node in the SAME suite IS undoable', () => {
     // Without this leg, "0 undo entries" is satisfied by an UndoManager that is
     // simply not recording anything in this test file — the exact shape that
-    // makes a deliberate non-tracked origin indistinguishable from a broken
-    // harness.
+    // makes a deliberate off-doc write indistinguishable from a broken harness.
     makeNode();
     setNodeParam(NID, 'master', 0.25);
     expect(patch.nodes[NID]!.params.master).toBe(0.25);
@@ -409,18 +432,18 @@ describe('audioOut picker — the pick is DELIBERATELY NOT UNDOABLE (both direct
     expect(patch.nodes[NID]!.params.master).toBe(0.7);
   });
 
-  it('the origin is a NAMED symbol, not LOCAL_ORIGIN by accident', () => {
-    // The old card write was a bare proxy assignment — untransacted, origin-less
-    // and therefore ACCIDENTALLY non-undoable. This asserts the decision is a
-    // decision: a distinct, named, non-tracked origin.
+  it('AUDIO_OUT_SINK_ORIGIN is still a distinct NAMED non-tracked origin (retained precedent)', () => {
+    // No longer on the output pick path (that is the store now), but retained as
+    // the shared precedent input-device.svelte.ts names.
     expect(typeof AUDIO_OUT_SINK_ORIGIN).toBe('symbol');
     expect(AUDIO_OUT_SINK_ORIGIN).not.toBe(LOCAL_ORIGIN);
   });
 
-  it('clearing the pick DELETES the key rather than storing an empty string', () => {
+  it('clearing the pick REMOVES the store binding (and never touches node.data)', () => {
     makeNode();
     setOutputDevice(NID, 'usb-es9');
     setOutputDevice(NID, '');
+    expect(rigBindings().getAudioOut()).toBeNull();
     expect(patch.nodes[NID]!.data!['outputDeviceId']).toBeUndefined();
   });
 });

@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import {
   warrensspectrumDef,
   warrensspectrumBands,
+  warrensspectrumBandsSignature,
   wsDefaultBands,
   WARRENSSPECTRUM_ALIASED_PORT_IDS,
   WARRENSSPECTRUM_BAND_SPEC,
@@ -229,5 +230,32 @@ describe("warren's spectrum — the FILTERBANK contract (phase 2)", () => {
     const saved = wsDefaultBands().map((b, i) => ({ ...b, pan: i % 2 ? 1 : -1, send: 0.25 }));
     const roundTripped = warrensspectrumBands({ data: { wsBands: saved } });
     expect(roundTripped).toEqual(saved);
+  });
+
+  it('the bands CONTENT signature separates tables the rev counter aliases', () => {
+    // The factory's re-push test is `warrensspectrumBandsSignature`, not
+    // `wsBandsRev` — the rev is persisted per patch, so loading patch B over
+    // patch A can move the TABLE while the rev stands still (both saved at
+    // rev 3). Content cannot alias: two different tables must sign differently
+    // WHATEVER the rev keys say, and the same table must sign identically
+    // THROUGH a Yjs proxy (the read the live factory makes).
+    const a = wsDefaultBands();
+    const b = wsDefaultBands().map((band, i) => (i === 3 ? { ...band, cutoffHz: 1234 } : band));
+    const sigA = warrensspectrumBandsSignature({ data: { wsBands: a, wsBandsRev: 3 } });
+    const sigB = warrensspectrumBandsSignature({ data: { wsBands: b, wsBandsRev: 3 } });
+    expect(sigB, 'different tables at the SAME rev must not alias').not.toBe(sigA);
+    const proxied = { toJSON: () => b };
+    expect(
+      warrensspectrumBandsSignature({ data: { wsBands: proxied, wsBandsRev: 99 } }),
+      'a Yjs-proxied table signs like its plain form, whatever the rev',
+    ).toBe(sigB);
+    // And an absent table signs like the defaults — a fresh node never
+    // re-pushes just because the key materialises.
+    expect(warrensspectrumBandsSignature({ data: {} })).toBe(
+      warrensspectrumBandsSignature({ data: { wsBands: a } }),
+    );
+    expect(warrensspectrumBandsSignature(undefined)).toBe(
+      warrensspectrumBandsSignature({ data: { wsBands: a } }),
+    );
   });
 });

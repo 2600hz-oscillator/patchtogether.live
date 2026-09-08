@@ -55,10 +55,32 @@ async function readEdges(page: Page): Promise<PatchEdge[]> {
     return Object.values(w.__patch.edges).filter(Boolean) as PatchEdge[];
   });
 }
+/**
+ * The DYNAMIC (＋-added) cameras — the population this whole spec is about.
+ *
+ * ⚠ RESERVED SLOTS ARE EXCLUDED, and that is a scope statement rather than a
+ * loosening. The device-slot layer (graph/device-slots.ts) bakes `cam1..cam4`
+ * into every rack as hidden `cameraInput` instances, so they match the old
+ * predicate exactly — every count here would be off by four, for a reason none
+ * of these assertions is about. This spec tests the ＋ / ✕ lifecycle: mapping a
+ * camera, the def cap, stable ordinals, the round-trip. Slots have a different
+ * lifecycle (they cannot be added or deleted, and ✕ unbinds instead), and they
+ * are covered by `device-slot-continuity.spec.ts` and the graph unit tests.
+ */
 async function mappedCameras(page: Page): Promise<PatchNode[]> {
   return (await readNodes(page)).filter(
-    (n) => n.type === 'cameraInput' && n.data?.hiddenCard === true,
+    (n) =>
+      n.type === 'cameraInput' &&
+      n.data?.hiddenCard === true &&
+      !n.id.startsWith('slot:'),
   );
+}
+
+/** Rows for the dynamic cameras only — the DOM counterpart of `mappedCameras`.
+ *  `data-camera-kind` is the manager's own discriminator, so this cannot drift
+ *  from the id convention the way a second id check would. */
+function dynamicRows(page: Page) {
+  return page.locator('[data-testid="workflow-camera-row"][data-camera-kind="dynamic"]');
 }
 
 async function gotoWorkflow(page: Page): Promise<void> {
@@ -115,7 +137,9 @@ test.describe('workflow camera manager (P4)', () => {
 
     // ＋ maps a camera…
     await openCamerasMenu(page);
-    await expect(page.getByTestId('workflow-cameras-empty')).toBeVisible();
+    // No DYNAMIC cameras yet. (The reserved cam1..cam4 slot rows are present and
+    // are not this spec's subject — see mappedCameras.)
+    await expect(dynamicRows(page)).toHaveCount(0);
     await page.getByTestId('workflow-cameras-add').click();
 
     // …a FULL cameraInput module lands in the graph, hiddenCard-flagged…
@@ -150,7 +174,7 @@ test.describe('workflow camera manager (P4)', () => {
 
     // The menu lists it ("camera 1" — no locally-resolvable device label
     // in this headless run).
-    const row = page.getByTestId('workflow-camera-row');
+    const row = dynamicRows(page);
     await expect(row).toHaveCount(1);
     await expect(row.getByTestId('workflow-camera-label')).toHaveText(/camera 1/);
 
@@ -202,15 +226,15 @@ test.describe('workflow camera manager (P4)', () => {
     // ✕ unmaps: module + its edges gone via the standard remove path
     // (hidden cameras are NOT pinned); the row disappears.
     await openCamerasMenu(page);
-    await page.getByTestId('workflow-camera-unmap').click();
+    await dynamicRows(page).getByTestId('workflow-camera-unmap').click();
     await expect.poll(async () => (await mappedCameras(page)).length).toBe(0);
     expect(
       (await readEdges(page)).filter(
         (e) => e.source.nodeId === cam.id || e.target.nodeId === cam.id,
       ),
     ).toHaveLength(0);
-    await expect(page.getByTestId('workflow-camera-row')).toHaveCount(0);
-    await expect(page.getByTestId('workflow-cameras-empty')).toBeVisible();
+    // ✕ deleted the dynamic camera; the reserved slot rows are untouched.
+    await expect(dynamicRows(page)).toHaveCount(0);
   });
 
   test('cap + persistence: ＋ stops at cameraInput.maxInstances, ✕ frees a slot with stable ordinals, and mapped cameras round-trip quicksave→reload→quickload still cardless', async ({
@@ -229,8 +253,8 @@ test.describe('workflow camera manager (P4)', () => {
       await addBtn.click();
       await expect.poll(async () => (await mappedCameras(page)).length).toBe(i);
     }
-    await expect(page.getByTestId('workflow-camera-row')).toHaveCount(4);
-    const labels = page.getByTestId('workflow-camera-label');
+    await expect(dynamicRows(page)).toHaveCount(4);
+    const labels = dynamicRows(page).locator('[data-testid="workflow-camera-label"]');
     await expect(labels.nth(0)).toHaveText(/camera 1/);
     await expect(labels.nth(3)).toHaveText(/camera 4/);
     // The 5th is refused — the ＋ row reads disabled at cap.
@@ -238,7 +262,7 @@ test.describe('workflow camera manager (P4)', () => {
 
     // ✕ the SECOND row: ordinals stay stable (1, 3, 4 — "camera 3" does
     // not renumber), and the freed slot re-enables ＋.
-    await page.getByTestId('workflow-camera-unmap').nth(1).click();
+    await dynamicRows(page).getByTestId('workflow-camera-unmap').nth(1).click();
     await expect.poll(async () => (await mappedCameras(page)).length).toBe(3);
     await expect(labels.nth(0)).toHaveText(/camera 1/);
     await expect(labels.nth(1)).toHaveText(/camera 3/);
@@ -280,8 +304,10 @@ test.describe('workflow camera manager (P4)', () => {
       .toBe(3);
     // The menu lists the restored set (same stable ordinals)…
     await openCamerasMenu(page);
-    await expect(page.getByTestId('workflow-camera-row')).toHaveCount(3);
-    await expect(page.getByTestId('workflow-camera-label').nth(1)).toHaveText(/camera 3/);
+    await expect(dynamicRows(page)).toHaveCount(3);
+    await expect(
+      dynamicRows(page).locator('[data-testid="workflow-camera-label"]').nth(1),
+    ).toHaveText(/camera 3/);
     // …and they are still headless — zero camera cards on the canvas.
     expect(
       await page.locator('.flow .svelte-flow__node:has([data-shell-type="cameraInput"])').count(),

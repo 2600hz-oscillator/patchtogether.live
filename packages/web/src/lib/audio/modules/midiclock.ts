@@ -49,7 +49,8 @@ import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
 import { bindMidiPort, type ConnectedDevice } from '$lib/graph/device-rebind';
 import { requestMidiAccess, midiOutcomeMessage } from '$lib/audio/midi-access';
-import type { ModuleFace, ParamDef } from '$lib/graph/types';
+import type { ModuleFace, ModuleNode, ParamDef } from '$lib/graph/types';
+import { watchLiveNodeData } from '$lib/audio/live-node-data';
 // Re-exported for callers/tests that historically imported these from midiclock.
 export {
   MIDI_PPQN,
@@ -235,6 +236,35 @@ export const DEFAULT_DATA: MidiclockData = {
   lastDeviceId: null,
 };
 
+/** What the factory HYDRATES from the node, as one comparable value. Re-read
+ *  by the live-data watcher after a same-session load at a reused id
+ *  (`$lib/audio/live-node-data`) — the reconciler never re-materializes such
+ *  a node and never diffs `data`, so without this the clock keeps the
+ *  PREVIOUS patch's port.
+ *
+ *  `legacyDivisor` is the P1 half of the same finding: a rack saved before
+ *  `divisor` was a param carries `data.divisor` and NO `params.divisor`, so the
+ *  reconciler's param diff has no key to see and a same-session load of such a
+ *  rack over a live clock left it dividing at the previous patch's rate. It is
+ *  null whenever the param exists (the param is then the only truth, exactly
+ *  as the factory's read order says), and the legacy value only otherwise. */
+export interface MidiclockHydrate {
+  deviceId: string | null;
+  deviceName: string | null;
+  legacyDivisor: ClockDivisor | null;
+}
+
+export function midiclockHydrateOf(node: ModuleNode): MidiclockHydrate {
+  const d = (node.data ?? {}) as Partial<MidiclockData>;
+  const p = (node.params ?? {}) as Record<string, number | undefined>;
+  return {
+    deviceId: d.lastDeviceId ?? DEFAULT_DATA.lastDeviceId,
+    deviceName: d.lastDeviceName ?? null,
+    legacyDivisor:
+      typeof p.divisor === 'number' ? null : isValidDivisor(d.divisor) ? d.divisor : null,
+  };
+}
+
 export interface MidiclockApi {
   connect(): Promise<boolean>;
   selectDevice(deviceId: string | null): void;
@@ -383,7 +413,12 @@ export const midiclockDef: AudioModuleDef = {
     const startSrc = ctx.createConstantSource(); startSrc.offset.value = 0; startSrc.start();
     const stopSrc  = ctx.createConstantSource(); stopSrc.offset.value  = 0; stopSrc.start();
 
-    const savedData = (node.data ?? {}) as Partial<MidiclockData>;
+    // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
+    // same-session load at a reused id (`midiclockHydrateOf` documents both
+    // halves). `hydratedDevice*` is the doc-level pick this handle has ADOPTED
+    // (`selectedDeviceId` is the resolved port); `pickDefaultDevice` reads the
+    // name from here so the LOADED patch's name is what resolves.
+    const hydrated = midiclockHydrateOf(node);
     // ── THE DIVISION'S MIGRATION — params FIRST, then the legacy data key ────
     //
     // ⚠ THE ONE WAY A SAVED PATCH COULD REGRESS, so the order is the whole
@@ -406,10 +441,10 @@ export const midiclockDef: AudioModuleDef = {
     let divisor: ClockDivisor =
       typeof fromParams === 'number'
         ? snapDivisor(fromParams)
-        : isValidDivisor(savedData.divisor)
-          ? savedData.divisor
-          : DEFAULT_DIVISOR;
-    let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
+        : (hydrated.legacyDivisor ?? DEFAULT_DIVISOR);
+    let selectedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceName: string | null = hydrated.deviceName;
 
     let access: MidiAccessLike | null = null;
     /** Identity-scoped handler-slot claim — see $lib/midi/input-attach. */
@@ -555,7 +590,7 @@ export const midiclockDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedData.lastDeviceName ?? null },
+        { id: selectedDeviceId, name: hydratedDeviceName },
         connected,
       ).id;
     }
@@ -610,6 +645,10 @@ export const midiclockDef: AudioModuleDef = {
 
     function selectDevice(d: string | null): void {
       selectedDeviceId = d;
+      // A surface pick IS the adopted doc-level pick (the surface persists the
+      // same id + name), so the watcher sees doc and engine agree.
+      hydratedDeviceId = d;
+      hydratedDeviceName = d === null ? null : (access?.inputs.get(d)?.name ?? hydratedDeviceName);
       attachToDevice(d);
       // Reset the divider counter so the new device starts on a fresh
       // edge. Avoids a half-counted carryover when switching mid-song.
@@ -643,6 +682,44 @@ export const midiclockDef: AudioModuleDef = {
       },
     };
 
+    // ── RE-HYDRATE ON A SAME-SESSION LOAD AT A REUSED ID ──────────────────
+    // The reconciler never re-runs this factory for a node whose id and type
+    // survive a load, and never diffs `data`. The legacy division is applied
+    // only when it is the sole truth (no `params.divisor` — the param path is
+    // the reconciler's own diff); the device is re-resolved and re-attached
+    // exactly as `selectDevice` does, divider re-zeroed included.
+    const stopHydrateWatch = watchLiveNodeData<MidiclockHydrate>({
+      nodeId: node.id,
+      project: midiclockHydrateOf,
+      current: () => ({
+        deviceId: hydratedDeviceId,
+        deviceName: hydratedDeviceName,
+        legacyDivisor: divisor,
+      }),
+      // A null legacy division is "no opinion" (the param path owns it), not
+      // a difference from whatever the engine is dividing by.
+      equal: (next, cur) =>
+        next.deviceId === cur.deviceId &&
+        next.deviceName === cur.deviceName &&
+        (next.legacyDivisor === null || next.legacyDivisor === cur.legacyDivisor),
+      onChange(next, cur) {
+        if (next.legacyDivisor !== null && next.legacyDivisor !== cur.legacyDivisor) {
+          setDivisor(next.legacyDivisor);
+        }
+        if (next.deviceId !== cur.deviceId || next.deviceName !== cur.deviceName) {
+          hydratedDeviceId = next.deviceId;
+          hydratedDeviceName = next.deviceName;
+          selectedDeviceId = next.deviceId;
+          if (access) {
+            selectedDeviceId = pickDefaultDevice();
+            attachToDevice(selectedDeviceId);
+            tickCounter = 0;
+          }
+          notify();
+        }
+      },
+    });
+
     return {
       domain: 'audio',
       inputs: new Map(),
@@ -668,6 +745,7 @@ export const midiclockDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        stopHydrateWatch();
         // Release ONLY the port this clock installed a handler on.
         claim.detach();
         if (access) {

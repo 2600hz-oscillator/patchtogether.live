@@ -308,3 +308,120 @@ test('vstInstrument: kria-clocked cartesian → card → audible RMS; c3/c4/a4 a
   // Session identity: hello.clientId is the graph node id (the park/adopt key).
   expect(session.clientId).toBe('inst');
 });
+
+test('same-session LOAD over a live vst instance: swap-mount + loaded state applied + doc keeps the loaded record; an empty record unmounts', async ({ page }) => {
+  // THE LOAD-STALENESS FIX (vst-persistence.ts syncExternalRecord), driven
+  // through the REAL product path: `__persistence.save()` → user swaps the
+  // plugin → same-session `__persistence.load()`. loadEnvelopeIntoStore
+  // deletes + re-inserts every node in ONE transaction at reused ids, the
+  // reconciler re-materializes nothing, and the driver + socket + mounted
+  // plugin all SURVIVE the load. Pre-fix the driver never re-read `data.vst`:
+  // the mute plugin kept playing (SILENT lane — this test's discriminator)
+  // and the next state capture persisted mock:mute back over the loaded
+  // record, silently reverting the load in the doc.
+  test.setTimeout(180_000);
+  await spawnPatch(
+    page,
+    [
+      { id: 'vco', type: 'analogVco', position: { x: 40, y: 60 } },
+      { id: 'fx', type: 'vstFx', position: { x: 420, y: 60 } },
+      { id: 'sc', type: 'scope', position: { x: 820, y: 60 }, params: { timeMs: 50 } },
+    ],
+    [
+      { id: 'e_vco_fx', from: { nodeId: 'vco', portId: 'saw' }, to: { nodeId: 'fx', portId: 'in_l' } },
+      { id: 'e_fx_sc', from: { nodeId: 'fx', portId: 'out_l' }, to: { nodeId: 'sc', portId: 'ch1' } },
+    ],
+  );
+  const fxPane = await openVstPane(page, 'fx');
+  await expect(fxPane.getByTestId('vst-led-bridge-fx')).toHaveAttribute('aria-label', /mock-vst-bridge/, { timeout: 15_000 });
+
+  const saveEnvelope = () =>
+    page.evaluate(() => {
+      const w = window as unknown as { __persistence?: { save?: () => unknown } };
+      return w.__persistence?.save?.();
+    });
+  const loadEnvelope = (env: unknown) =>
+    page.evaluate((e) => {
+      const w = window as unknown as { __persistence?: { load?: (env: unknown) => unknown } };
+      w.__persistence!.load!(e);
+    }, env);
+  const persisted = () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { vst?: { pluginId: string; stateB64?: string } } } | undefined> };
+      };
+      return w.__patch.nodes['fx']?.data?.vst ?? null;
+    });
+
+  // Envelope A: NO plugin on the fx node.
+  const envEmpty = await saveEnvelope();
+  expect(envEmpty, '__persistence.save() unavailable — DEV build expected').toBeTruthy();
+
+  // Envelope B: mock:gain mounted (echo-through render path), state captured.
+  await fxPane.getByTestId('vst-face-picker-fx').selectOption('mock:gain');
+  await fxPane.getByTestId('vst-face-mount-fx').click();
+  await expect
+    .poll(async () => (await persisted())?.pluginId ?? null, { timeout: 10_000, message: 'gain mount must persist' })
+    .toBe('mock:gain');
+  await expect
+    .poll(async () => typeof (await persisted())?.stateB64, { timeout: 10_000, message: 'gain state must be captured before the save' })
+    .toBe('string');
+  const envGain = await saveEnvelope();
+
+  // The user swaps to the MUTE plugin: the lane goes silent, the doc says mute.
+  await fxPane.getByTestId('vst-face-picker-fx').selectOption('mock:mute');
+  await fxPane.getByTestId('vst-face-mount-fx').click();
+  await expect(fxPane.getByTestId('vst-led-plugin-fx')).toHaveAttribute('aria-label', /mock mute fx/, { timeout: 10_000 });
+  await expect
+    .poll(
+      async () => (await readScopePeakOverWindow(page, 'sc', SILENCE_WINDOW_MS)).peak,
+      { timeout: 15_000, message: 'mounted mute plugin must silence the path before the load' },
+    )
+    .toBeLessThan(AUDIBLE_FLOOR);
+
+  // SAME-SESSION LOAD of the gain patch over the live mute instance.
+  const statesBefore = mock.sessionFor('fx')!.setStates.length;
+  await loadEnvelope(envGain);
+  // 1. The swap reaches the HELPER (pre-fix: mountedId stays mock:mute).
+  await expect
+    .poll(() => mock.sessionFor('fx')?.mountedId ?? null, {
+      timeout: 15_000,
+      message: 'the loaded plugin must be mounted on the helper without a reconnect',
+    })
+    .toBe('mock:gain');
+  // 2. The loaded patch's stored state is applied to OUR mount.
+  await expect
+    .poll(() => mock.sessionFor('fx')!.setStates.length, {
+      timeout: 10_000,
+      message: 'the loaded stateB64 must reach the plugin via setState',
+    })
+    .toBeGreaterThan(statesBefore);
+  // 3. AUDIBLE again — mock:gain renders the echo path, mute rendered silence.
+  const back = await readScopePeakOverWindow(page, 'sc', AUDIBLE_CAP_MS, { untilPeak: AUDIBLE_FLOOR });
+  expect(
+    back.peak,
+    `the loaded gain plugin must carry lane audio — ${describeScopeWindow(back)}`,
+  ).toBeGreaterThan(AUDIBLE_FLOOR);
+  // 4. The DOC keeps the LOADED record — no silent revert to mock:mute.
+  await expect
+    .poll(async () => (await persisted())?.pluginId ?? null, {
+      timeout: 10_000,
+      message: 'data.vst must keep the loaded pluginId (no persist-over revert)',
+    })
+    .toBe('mock:gain');
+
+  // LOAD of the EMPTY patch: the plugin unmounts, the record stays empty.
+  await loadEnvelope(envEmpty);
+  await expect
+    .poll(() => mock.sessionFor('fx')?.mountedId ?? null, {
+      timeout: 15_000,
+      message: 'an empty loaded record must unmount the live plugin',
+    })
+    .toBeNull();
+  await expect
+    .poll(async () => await persisted(), {
+      timeout: 10_000,
+      message: 'data.vst must stay empty after the empty load (no resurrection)',
+    })
+    .toBeNull();
+});

@@ -118,11 +118,41 @@ test.describe('workflow video zone defaults (recorderbox + synesthesia auto-wire
     await waitForPatch(page);
     await waitForVideoZoneTrio(page);
 
-    // Exactly ONE of each type in the rack (the deterministic ids converge).
-    const { types, edges } = await readGraph(page);
-    for (const t of ['videoOut', 'recorderbox', 'synesthesia']) {
-      expect(types.filter((x) => x === t).length, `exactly one ${t}`).toBe(1);
+    // Exactly ONE SEEDED node of each type — the deterministic ids converge, so
+    // two clients racing the ensure never leave a duplicate behind.
+    //
+    // ⚠ COUNTED BY SEEDED ID, NOT BY TYPE, and that is the point of the
+    // assertion rather than a loosening of it. The property under test is "the
+    // one-shot seed does not spawn a second DEFAULT"; it was expressed as a
+    // type count only because, when it was written, a seeded videoOut was the
+    // only videoOut a fresh rack could contain. The device-slot layer
+    // (graph/device-slots.ts) makes that incidental fact false: `output2..4`
+    // are RESERVED sinks in the purple zone, present in every rack by design,
+    // and counting them here would fail this test for a reason it was never
+    // about.
+    //
+    // Counting the seeded id is STRICTER than the type count, not weaker: a
+    // second node at one deterministic id is impossible by construction (one
+    // Y.Map key), so the real risk is the seed landing at the WRONG id or not
+    // at all — which is exactly what this now catches. The "never a second
+    // default" half is re-asserted by the one-shot latch test below, which
+    // deletes recorderbox and proves it stays deleted across a reload.
+    const { types, nodeIds, edges } = await readGraph(page);
+    for (const [t, seededId] of [
+      ['videoOut', 'workflow-videoOut'],
+      ['recorderbox', 'workflow-recorderbox'],
+      ['synesthesia', 'workflow-synesthesia'],
+    ] as const) {
+      expect(nodeIds, `the seeded ${t} exists at its deterministic id`).toContain(seededId);
+      expect(types, `and it really is a ${t}`).toContain(t);
     }
+    // The reserved output slots are additional videoOut sinks and are expected:
+    // one seeded default plus `output2..4`. Pinned so that if the slot roster
+    // ever changes size, this says so out loud instead of drifting silently.
+    expect(
+      types.filter((x) => x === 'videoOut').length,
+      'one seeded videoOut + the three reserved output slots',
+    ).toBe(4);
 
     // Every default edge MATERIALIZES with the right endpoints.
     for (const e of EXPECTED_EDGES) {

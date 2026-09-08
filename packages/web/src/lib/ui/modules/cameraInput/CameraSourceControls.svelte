@@ -17,9 +17,12 @@
   // INVOKES a registered command through `$lib/ui/media/camera-status-registry`
   // — a remote control, not a second machine. Two callers would be two owners,
   // and whichever tore down last would strand the survivor. It ENUMERATES
-  // devices (which needs no permission and no stream) and it WRITES the shared
-  // `node.data.deviceId` the card already re-acquires from; it never calls
-  // `getUserMedia` itself.
+  // devices (which needs no permission and no stream) and it WRITES the device
+  // pick the source registry re-acquires from; it never calls `getUserMedia`
+  // itself. Where the pick is WRITTEN depends on the node: a RESERVED slot's
+  // binding is a per-machine rig property in `rigBindings()` (off the Y.Doc, so
+  // it survives File→New / reload), while a dynamic camera keeps the shared
+  // `node.data.deviceId` key.
   //
   // ⚠ `testidPrefix` IS NOT COSMETIC. A faced module's lane tile and its dock
   // full view can be on screen AT THE SAME TIME, so a single hardcoded testid
@@ -29,6 +32,8 @@
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
   import { cameraStatus, type CameraStatus } from '$lib/ui/media/camera-status-registry';
+  import { deviceSlotForId, type CameraSlotName } from '$lib/graph/device-slots';
+  import { rigBindings } from '$lib/graph/device-slot-bindings';
 
   interface Props {
     nodeId: string;
@@ -49,8 +54,28 @@
   let devices = $state<{ deviceId: string; label: string }[]>([]);
   let enumerateFailed = $state(false);
 
+  // A RESERVED CAMERA SLOT's device binding is a PER-MACHINE rig property in
+  // `rigBindings()`, not `node.data` (it must never ride the shared Y.Doc). Mirror
+  // the store reactively so the picker's selected value follows a bind/unbind
+  // done anywhere — the store's own `subscribe` is the reactive dependency, since
+  // it is not a Svelte rune. A DYNAMIC camera (`wfcam-*`) is patch content and
+  // keeps reading `node.data.deviceId`.
+  let storeCameraDeviceId = $state<string | null>(null);
+  $effect(() => {
+    const spec = deviceSlotForId(nodeId);
+    if (!spec || spec.kind !== 'camera') return;
+    const s = spec.slot as CameraSlotName;
+    const read = (): void => {
+      storeCameraDeviceId = rigBindings().getCamera(s)?.deviceId ?? null;
+    };
+    read();
+    return rigBindings().subscribe(read);
+  });
+
   let savedDeviceId = $derived<string | null>(
-    (patch.nodes[nodeId]?.data?.deviceId as string | undefined) ?? null,
+    deviceSlotForId(nodeId)?.kind === 'camera'
+      ? storeCameraDeviceId
+      : ((patch.nodes[nodeId]?.data?.deviceId as string | undefined) ?? null),
   );
 
   async function refreshDevices(): Promise<void> {
@@ -79,8 +104,19 @@
 
   function pickDevice(deviceId: string): void {
     if (!deviceId) return;
-    // ⚠ WRITES THE SHARED KEY THE CARD ALREADY READS. The card re-acquires from
-    // it, so the pick reaches the stream without this touching `getUserMedia`.
+    const spec = deviceSlotForId(nodeId);
+    if (spec && spec.kind === 'camera') {
+      // A RESERVED SLOT's pick lands in the PER-MACHINE store. The camera source
+      // registry reads the store (its bootstrap + external-pick seam) and
+      // re-acquires; the pick reaches the stream without this touching
+      // `getUserMedia`, exactly as the node.data write used to.
+      const label = devices.find((d) => d.deviceId === deviceId)?.label || undefined;
+      rigBindings().setCamera(spec.slot as CameraSlotName, { deviceId, deviceLabel: label });
+      return;
+    }
+    // ⚠ A DYNAMIC camera keeps writing the SHARED KEY THE CARD ALREADY READS. The
+    // card re-acquires from it, so the pick reaches the stream without this
+    // touching `getUserMedia`.
     mutateNode(nodeId, (live) => {
       if (!live.data) live.data = {};
       live.data.deviceId = deviceId;

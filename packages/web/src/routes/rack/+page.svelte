@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
+  import { goto } from '$app/navigation';
   import Canvas from '$lib/ui/Canvas.svelte';
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { attachLocalReplica } from '$lib/multiplayer/local-replica';
   import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
+  import { rigBindings } from '$lib/graph/device-slot-bindings';
+  import { evaluateRigRelaunch } from '$lib/graph/rig-relaunch-guard';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -192,6 +195,36 @@
     // Release the scratch doc + UndoManager so a later mount starts clean; the
     // stored IndexedDB replica is untouched, so re-entering re-seeds from it.
     unbindRackspace();
+  });
+
+  // ── RELAUNCH GUARD (native-shell pre-flight) ───────────────────────────────
+  //
+  // Owner rule: force setup only on FIRST RUN (the shell main-process decides
+  // that) or a MISSING BOUND DEVICE. This is the missing-device half — when the
+  // rack mounts, if a device the operator already bound is now gone (a camera
+  // absent from enumerateDevices, a display fingerprint unresolvable, an es9/ptz
+  // helper down), bounce to /preflight so they can re-bind. Lives in the ROUTE,
+  // not Canvas (another agent owns Canvas's auto-route work).
+  //
+  // ⚠ SOUND BY CONSTRUCTION: `evaluateRigRelaunch` short-circuits an UNBOUND rig
+  // (touching no device API, never prompting) and bounces only on a POSITIVE
+  // absence — so the ~hundreds of ordinary /rack e2e specs, whose rig is empty,
+  // are unaffected. Fire-and-forget after the store's first load; a bounce
+  // simply navigates away and this component tears down.
+  onMount(() => {
+    let cancelled = false;
+    void rigBindings()
+      .whenReady()
+      .then(() => evaluateRigRelaunch(rigBindings().snapshot()))
+      .then((decision) => {
+        if (!cancelled && decision.bounce) void goto('/preflight');
+      })
+      .catch(() => {
+        /* an evidence-gathering failure is indeterminate — keep the rack */
+      });
+    return () => {
+      cancelled = true;
+    };
   });
 </script>
 

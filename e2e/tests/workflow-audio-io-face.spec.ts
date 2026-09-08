@@ -231,7 +231,10 @@ test.describe('workflow · the 🎧 audio-I/O panel honours the migration rule (
     // Close the 🎧 menu, then open the pinned drawer with its keymap.
     await page.getByTestId('workflow-topbar-slot-audio-io').click();
     await expect(panel).toHaveAttribute('data-open', 'false');
-    await canvasPane(page).click({ position: { x: 500, y: 380 } });
+    // (500,560): the old (500,380) lands on slot-repacked zone chrome
+    // (SYNESTHESIA's patch-trigger) and opens a PatchPanel as a side effect —
+    // see workflow-drawer-face `openTray`.
+    await canvasPane(page).click({ position: { x: 500, y: 560 } });
     await page.keyboard.press('m');
     const drawer = page.getByTestId('dock-zone-bottom');
     await expect(drawer).toBeVisible();

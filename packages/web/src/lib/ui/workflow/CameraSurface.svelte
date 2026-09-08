@@ -59,10 +59,12 @@
     addWorkflowCamera,
     unmapWorkflowCamera,
     cameraRowLabel,
+    isCameraSlotNode,
     readCameraDeviceId,
     WORKFLOW_CAMERA_OUT_PORT,
     type DeviceLabelLike,
   } from './workflow-cameras';
+  import { rigBindings } from '$lib/graph/device-slot-bindings';
 
   interface Props {
     /** The mapped (hiddenCard) camera nodes, snapshot-derived by Canvas. */
@@ -92,6 +94,70 @@
 
   /** Which camera's host is on-screen right now. */
   let shownId = $derived(open ? (hoveredId ?? expandedId) : null);
+
+  // ⚠ REACTIVE BRIDGE TO THE PER-MACHINE RIG STORE. A reserved slot's camera
+  // binding now lives in `rigBindings()`, which `readCameraDeviceId` reads for a
+  // slot — but the store is not a Svelte rune, so a `$derived` over it would
+  // never recompute when a pick/unbind mutates it (the row would show the stale
+  // assigned state). Bumping this counter on every store change is the reactive
+  // dependency the row's `data-assigned` and the host-mount filter take.
+  let rigVersion = $state(0);
+  $effect(() =>
+    rigBindings().subscribe(() => {
+      rigVersion += 1;
+    }),
+  );
+
+  /**
+   * Which cameras actually get a mounted card host.
+   *
+   * ⚠ NOT SIMPLY `cameras`, AND THE DIFFERENCE IS NOT COSMETIC. Every host is
+   * a full `SvelteFlow` instance mounted in the document for the lifetime of
+   * the shell. That was a fine price when the list was 0..N cameras the user
+   * had explicitly added; it is not once the device-slot layer bakes FOUR
+   * reserved camera slots into every rack (graph/device-slots.ts), because
+   * four permanently-mounted flow instances are then present in every rack
+   * whether or not a camera exists — and they are not inert: they put extra
+   * `.svelte-flow__pane` / `.svelte-flow__node` subtrees on the page, which any
+   * unscoped query over the canvas will find. That regressed three lane specs
+   * (drop-target and stack geometry) before this predicate existed.
+   *
+   * The host exists to keep a LIVE stream alive across a menu close, so the ONLY
+   * camera that safely goes without one is a RESERVED SLOT THAT IS UNBOUND —
+   * the new thing, and the only thing this withholds a host from. A slot gets
+   * one as soon as it is bound (`data.deviceId`: there is a session to protect)
+   * or while its row is the one being worked (`shownId`: the source picker needs
+   * a real card to drive).
+   *
+   * ⚠ DYNAMIC `wfcam-*` CAMERAS ARE HOSTED UNCONDITIONALLY, EXACTLY AS BEFORE,
+   * and the first version of this predicate got that wrong. It keyed on
+   * `deviceId` alone, which reads as "is it bound" but is not: a camera that
+   * auto-acquired the browser's DEFAULT device never writes a deviceId, so a
+   * freshly-＋-added camera was hosted only while its picker was open and lost
+   * its card — and its stream — the moment the menu closed. That is the
+   * regression this layer exists to prevent, introduced by the fix for it.
+   * `workflow-camera.spec.ts` caught it: the REAL CHAIN leg patches a mapped
+   * camera into CHROMA and asserts the downstream renders live frames.
+   *
+   * The honest predicate is about SESSION, not binding, and for a dynamic camera
+   * "might hold a session" is always true — it exists because a user asked for
+   * it. Reserved slots are the only population where absence of a session is
+   * knowable up front, because an unbound one has never acquired anything.
+   */
+  let hostedCameras = $derived.by(() => {
+    void rigVersion; // recompute when a slot's store binding changes
+    return cameras.filter(
+      (c) => !isCameraSlotNode(c) || readCameraDeviceId(c) !== null || c.id === shownId,
+    );
+  });
+
+  /** Bound-or-not per camera id, store-reactive (see `rigVersion`). */
+  let assignedById = $derived.by(() => {
+    void rigVersion;
+    const m = new Map<string, boolean>();
+    for (const c of cameras) m.set(c.id, readCameraDeviceId(c) !== null);
+    return m;
+  });
 
   // Drop stale expand/hover state when its camera is unmapped (any path —
   // our ✕, a collaborator's, Clear).
@@ -251,18 +317,28 @@
   >＋ add camera</button>
 
   {#if cameras.length === 0}
+    <!-- Reachable only where the reserved camera slots are absent — `?seed=none`
+         and any rack that predates the device-slot ensure. A slotted rack is
+         never empty: its four unbound `cam1..cam4` rows ARE the empty state,
+         and they say more than this line did. -->
     <div class="empty" data-testid="workflow-cameras-empty">
       no cameras mapped — ＋ adds one
     </div>
   {/if}
 
+  <!-- `data-camera-kind` — two populations share this list and behave
+       differently: a SLOT is reserved, always present, and its ✕ UNBINDS; a
+       DYNAMIC camera is user-added and its ✕ DELETES. The distinction was only
+       inferable by parsing the id shape, which is not something a consumer
+       should have to do. -->
   {#each cameras as cam (cam.id)}
     <div
       class="cam-row"
       class:expanded={expandedId === cam.id}
       data-testid="workflow-camera-row"
       data-node-id={cam.id}
-      data-assigned={readCameraDeviceId(cam) ? 'true' : 'false'}
+      data-assigned={assignedById.get(cam.id) ? 'true' : 'false'}
+      data-camera-kind={isCameraSlotNode(cam) ? 'slot' : 'dynamic'}
       role="menuitem"
       tabindex="0"
       onmouseenter={() => (hoveredId = cam.id)}
@@ -287,19 +363,25 @@
       <button
         class="unmap"
         data-testid="workflow-camera-unmap"
-        aria-label={`unmap ${cameraRowLabel(cam, devices)}`}
-        title="Unmap — removes this camera and its cables"
+        aria-label={`${isCameraSlotNode(cam) ? 'unbind' : 'unmap'} ${cameraRowLabel(cam, devices)}`}
+        title={isCameraSlotNode(cam)
+          ? 'Unbind — releases the device; the slot stays'
+          : 'Unmap — removes this camera and its cables'}
         onclick={(e) => onRowUnmap(cam, e)}
       >✕</button>
     </div>
   {/each}
 </div>
 
-<!-- The ALWAYS-MOUNTED card-host farm. One host per mapped camera; the
+<!-- The ALWAYS-MOUNTED card-host farm. One host per LIVE camera; the
      shown one sits right of the menu, the rest park off-screen (still
      rendered — see the header comment). data-wf-camera-host exempts
-     clicks inside from the topbar's outside-pointerdown close. -->
-{#each cameras as cam (cam.id)}
+     clicks inside from the topbar's outside-pointerdown close.
+
+     ⚠ "LIVE", NOT "LISTED" — see `hostedCameras`. An UNBOUND reserved slot
+     gets no host, because it has no stream to keep alive and a host is very
+     far from free: each one is a whole SvelteFlow instance in the document. -->
+{#each hostedCameras as cam (cam.id)}
   {@const pos = shownId === cam.id ? hostPos : null}
   <div
     class="cam-host"

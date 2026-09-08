@@ -31,6 +31,9 @@ function fakeVideoEngine(): PresentEngine & { releases: number } {
   const e = {
     canvas: { width: 1920, height: 1080 } as unknown as PresentEngine['canvas'],
     blitOutputToDrawingBuffer: vi.fn(),
+    // The projector's source guard queries this; resolveVideoEngine now requires
+    // it as a capability. A textured node so the controller resolves the engine.
+    outputTexture: vi.fn(() => ({} as WebGLTexture)),
     releases: 0,
     acquireRenderLease: vi.fn(() => () => { e.releases++; }),
   };

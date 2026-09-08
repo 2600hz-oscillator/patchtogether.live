@@ -337,8 +337,17 @@ interface Controller<E> {
   status: VideoSourceStatus;
   /** Handles for the two long-running loops + the two retry loops. */
   timers: unknown[];
-  /** Latched so the handle-reload runs once per node, not once per graph tick. */
-  handleReloadAttempted: boolean;
+  /** The persisted handle id whose bytes the element currently HOLDS (null
+   *  for a file loaded without a persistable handle). Compared against the
+   *  doc's `fileMeta.handleId` on every graph tick — the archivist's
+   *  `attachedIdentifier`, ported: a same-session load at a REUSED id writes a
+   *  new handle id into the doc and nothing else changes, so this is the only
+   *  signal that the source must be re-attached. */
+  attachedHandleId: string | null;
+  /** The handle id the last reload ATTEMPT targeted, latched synchronously so
+   *  an in-flight (or failed — a peer's id this browser's IDB never held)
+   *  attempt is not re-fired on every graph tick. */
+  reloadHandleId: string | null;
   /** Previous `cv_play_trigger` sample, for rising-edge detection. */
   lastGateValue: number;
   /** Set by dispose so an in-flight async load cannot resurrect a dead node. */
@@ -500,6 +509,26 @@ export function createNodeVideoSourceRegistry<E>(
     await deps.el.awaitMetadata(c.el);
     if (c.disposed) return;
 
+    // ⚠ A RESTORE WHOSE HANDLE THE DOC NO LONGER NAMES IS STALE — ABANDON IT.
+    // MEASURED on CI (SwiftShader decode): a same-session load landed while
+    // this restore was still awaiting metadata. Writing here would stamp the
+    // stale handle over the LOADED patch's fileMeta, and the adapter's
+    // "drop the previous handle" rule would then DELETE the loaded patch's
+    // handle from IDB — the loaded clip becomes unrestorable. Only a handle
+    // RESTORE is guarded: a user pick (no `reuseHandleId`) is itself the
+    // intent. Record what the element holds (unless a newer restore has
+    // already claimed it) and re-check the doc so the right clip follows.
+    if (opts?.reuseHandleId) {
+      const docId = deps.doc.read(c.node.id)?.fileMeta?.handleId ?? null;
+      if (docId !== opts.reuseHandleId) {
+        if (c.reloadHandleId === opts.reuseHandleId) {
+          c.attachedHandleId = opts.reuseHandleId;
+          reattachIfHandleChanged(c);
+        }
+        return;
+      }
+    }
+
     // Persist the handle BEFORE writing fileMeta, so the id stamped into the
     // synced meta is the one the handle is stored under.
     let handleId: string | undefined = opts?.reuseHandleId;
@@ -518,6 +547,11 @@ export function createNodeVideoSourceRegistry<E>(
     // it was playing.
     const isSameFile =
       prevMeta?.handleId !== undefined && handleId !== undefined && prevMeta.handleId === handleId;
+    // Record what the element now holds BEFORE the doc write, so the graph
+    // tick that write provokes compares equal and does not restart the load
+    // (the archivist's re-entrancy case, same shape).
+    c.attachedHandleId = handleId ?? null;
+    c.reloadHandleId = handleId ?? null;
     deps.doc.writeFileMeta(
       c.node.id,
       {
@@ -535,13 +569,19 @@ export function createNodeVideoSourceRegistry<E>(
   /** Patch-load restore from a remembered handle. The `granted` branch needs NO
    *  gesture, which is what makes "rack save/reload restores the source without
    *  a card ever mounting" true. The `prompt` branch cannot be done here at all
-   *  — it is published for a surface to offer as a click. */
-  async function tryReloadFromHandle(c: Controller<E>): Promise<void> {
+   *  — it is published for a surface to offer as a click.
+   *
+   *  `replace`: reload even though the element already holds bytes. That is
+   *  the same-session case — the doc names a DIFFERENT handle than the one
+   *  attached (a load of patch v2 over v1 at the same node id), and the old
+   *  short-circuit on "has bytes" was exactly what kept v1's clip playing
+   *  while every surface reported v2's file. */
+  async function tryReloadFromHandle(c: Controller<E>, opts?: { replace?: boolean }): Promise<void> {
     if (!hooks || c.disposed) return;
     const meta = deps.doc.read(c.node.id)?.fileMeta ?? null;
     const handleId = meta?.handleId;
     if (!handleId) return;
-    if (deps.media.mediaName(c.node.id, VIDEO_SOURCE_SLOT) !== null) return;
+    if (!opts?.replace && deps.media.mediaName(c.node.id, VIDEO_SOURCE_SLOT) !== null) return;
     let handle: unknown | null = null;
     try { handle = await hooks.get(handleId); } catch { return; }
     if (!handle || c.disposed) return;
@@ -574,7 +614,8 @@ export function createNodeVideoSourceRegistry<E>(
         fileName: deps.media.mediaName(node.id, VIDEO_SOURCE_SLOT),
       },
       timers: [],
-      handleReloadAttempted: false,
+      attachedHandleId: null,
+      reloadHandleId: null,
       lastGateValue: 0,
       disposed: false,
       dispose(): void {
@@ -609,12 +650,29 @@ export function createNodeVideoSourceRegistry<E>(
     // A node restored from a saved rack already has fileMeta; a freshly spawned
     // one does not. Both go through the same call — it no-ops without a
     // handleId — so there is no "was this a load or a spawn" branch to get wrong.
-    c.handleReloadAttempted = true;
-    void tryReloadFromHandle(c);
-    // Re-wire audio for a node whose bytes are ALREADY live (a controller
-    // re-created after a graph churn while the url survived in nodeMedia).
-    if (deps.media.mediaName(node.id, VIDEO_SOURCE_SLOT) !== null) ensureAudioWired(c);
+    const savedHandleId = deps.doc.read(node.id)?.fileMeta?.handleId ?? null;
+    c.reloadHandleId = savedHandleId;
+    if (deps.media.mediaName(node.id, VIDEO_SOURCE_SLOT) !== null) {
+      // Bytes ALREADY live (a controller re-created after a graph churn while
+      // the url survived in nodeMedia): they are the saved handle's, so record
+      // that and re-wire audio rather than re-loading.
+      c.attachedHandleId = savedHandleId;
+      ensureAudioWired(c);
+    } else {
+      void tryReloadFromHandle(c);
+    }
     return c;
+  }
+
+  /** The same-session re-attach: the doc names a handle the element does not
+   *  hold. Latched per target id, so a peer's id (never in this IDB) or an
+   *  in-flight attempt is tried once, not once per graph tick. */
+  function reattachIfHandleChanged(c: Controller<E>): void {
+    const wantId = deps.doc.read(c.node.id)?.fileMeta?.handleId ?? null;
+    if (wantId === null) return;
+    if (wantId === c.attachedHandleId || wantId === c.reloadHandleId) return;
+    c.reloadHandleId = wantId;
+    void tryReloadFromHandle(c, { replace: true });
   }
 
   return {
@@ -644,6 +702,17 @@ export function createNodeVideoSourceRegistry<E>(
           // the same reactivity, taken from the place that still has it, and the
           // drift loop returns to being what its name says: a periodic
           // CORRECTION, not the delivery mechanism for user intent.
+          //
+          // ⚠ AND A SAME-SESSION LOAD LANDS HERE TOO. `loadEnvelopeIntoStore`
+          // deletes and re-inserts every node at its SAME id in one
+          // transaction, the reconciler keeps the engine node, and this
+          // controller keeps its element — so patch v2's `fileMeta.handleId`
+          // arrives as a doc change on a controller still holding v1's bytes.
+          // The handle-reload ran once at creation and short-circuited on
+          // "has bytes", so v1 kept PLAYING while every surface reported v2's
+          // file. Re-attach on a CHANGE of handle id, exactly as the archivist
+          // does on a change of item identifier.
+          reattachIfHandleChanged(existing);
           applySync(existing);
           continue;
         }

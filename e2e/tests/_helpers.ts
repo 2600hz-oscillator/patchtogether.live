@@ -224,8 +224,35 @@ export async function setFlowViewport(page: Page, vp: FlowViewport): Promise<voi
  */
 export async function revealInPane(page: Page, target: Locator, margin = 24): Promise<void> {
   const geometry = (el: Element, m: number) => {
+    // ⚠ SCOPED TO THE MAIN CANVAS — see MAIN_CANVAS below, and the identical
+    // scoping already applied in `fitAllCards`. This was the LAST bare
+    // `querySelector('.svelte-flow__pane')` in this file, and a bare one
+    // returns whichever pane comes FIRST in the DOM.
+    //
+    // That used to resolve to the canvas by luck of markup order. It stopped:
+    // the workflow TOPBAR's camera manager hosts each live camera's real card
+    // in its own single-node SvelteFlow, parked at `left:-9999px`, and the
+    // topbar precedes `.flow` in the document. So on any rack with a bound
+    // camera — which the device-slot layer makes ordinary rather than rare —
+    // this measured an on-canvas card against an off-screen host's pane,
+    // concluded "already inside", and returned as a SILENT NO-OP. It is on
+    // `spawnPatch`'s path, so the failure surfaced far from here as a click
+    // that missed. (Measured directly: an on-canvas card at x=-9907 judged
+    // "inside" against a parked host's pane.)
+    //
+    // ⚠ THIS IS A LATENT-HAZARD FIX AND IS NOT CREDITED WITH FIXING ANY TEST.
+    // It was written while chasing CI timeouts; reverting ONLY this line left
+    // those specs passing, so the timeouts were something else. Kept because
+    // the unsoundness is real and independently demonstrable, not because a
+    // gate went green after it.
+    //
+    // The child combinator is what distinguishes them: the canvas's SvelteFlow
+    // is a direct child of `.flow`; every host's is nested one wrapper deeper
+    // or lives outside `.flow` entirely. `.first()` is NOT a substitute — see
+    // MAIN_CANVAS's header for why.
     const pane =
-      document.querySelector('.svelte-flow__pane') ?? document.querySelector('.svelte-flow');
+      document.querySelector('.flow > .svelte-flow .svelte-flow__pane') ??
+      document.querySelector('.flow > .svelte-flow');
     if (!pane) return null;
     const r = el.getBoundingClientRect();
     const p = pane.getBoundingClientRect();

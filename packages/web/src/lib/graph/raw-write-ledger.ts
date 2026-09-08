@@ -77,9 +77,9 @@ export const RAW_WRITE_LEDGER: Readonly<Record<string, RawWriteEntry>> = {
     why: 'transport → store reflect; an undoable play/stop tick would storm ydoc + pollute undo',
   },
   'audio/modules/timelorde.ts': {
-    keys: ['bpm', 'running', 'wizardOn'],
+    keys: ['bpm', 'running', 'wizardOn', 'muteOutputs'],
     kind: 'sanctioned',
-    why: 'master-clock state → store reflect; tempo/run state is engine truth, not an edit',
+    why: 'master-clock state → store reflect; tempo/run state is engine truth, not an edit. muteOutputs: the one-shot v1→v2 legacy migration write-through (isPlaying → muteOutputs/running) — a schema conversion, not a user edit, and it must not enter the undo stack',
   },
   'audio/modules/numpad-plus.ts': {
     keys: ['octave', 'recArm'],
