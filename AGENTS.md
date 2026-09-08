@@ -114,6 +114,8 @@ run `task pr:conflict-sweep`.
 
 ## Skills
 
+- `audio-runtime`: stereo/dual-mono ownership, trigger/gate/edge semantics,
+  factory-vs-DSP test blindness, and poly/MIDI audible-output proof.
 - `module-surfaces`: module faces, bespoke surfaces, legacy parity, and cleanup.
 - `renderer-tests`: Playwright/WebGL waits, VRT, renderer flakes, and baselines.
 - `deploy`: releases, environments, workflows, incidents, and secrets.

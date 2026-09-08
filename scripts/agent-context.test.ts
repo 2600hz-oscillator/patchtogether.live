@@ -163,7 +163,7 @@ describe('agent context files describe the real tree', () => {
     expect(
       claude,
       'the old skill fleet must not survive the minimal cutover',
-    ).toEqual(['brief-replies', 'deploy', 'module-surfaces', 'renderer-tests']);
+    ).toEqual(['audio-runtime', 'brief-replies', 'deploy', 'module-surfaces', 'renderer-tests']);
 
     const codexEntries = readdirSync(CODEX_SKILLS_DIR, { withFileTypes: true });
     const codex = codexEntries.map((entry) => entry.name).sort();
