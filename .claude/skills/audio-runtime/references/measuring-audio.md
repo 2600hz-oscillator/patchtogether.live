@@ -10,9 +10,13 @@ normals with one regex matching one spelling on one line: it found 7 of 13 and
 reported "0 violations" — true about the 54 % it could see. Its negative
 controls only ever fed it the shape it already matched.
 `packages/web/src/lib/audio/mono-normal-scan.ts` is the fix, and the load-bearing
-half is `auditCoverage`: every fallback expression in the tree that COULD be a
-normal must be classified, so an unanticipated spelling reddens instead of
-silently shrinking the population. Same failure as an opt-in filename list or an
+half is the RESIDUAL AUDIT it performs alongside resolution: every `??` / `||` /
+ternary in the tree that COULD be a normal is emitted as a `Candidate`, and each
+must be classified. Anything the resolver cannot account for lands as
+`verdict: 'unclassified'` and reddens the gate
+(`mono-normal-not-defeated.test.ts` asserts that set is empty), so an
+unanticipated spelling fails loudly instead of silently shrinking the
+population. Same failure as an opt-in filename list or an
 `if (!p.edge) continue`. Ask what fraction of the population your matcher can
 see, and prove it rather than asserting it.
 
@@ -30,6 +34,13 @@ see, and prove it rather than asserting it.
   non-zero sample when the claim is about timing.
 - A rising-edge counter cannot see a signal that starts HIGH, and a trigger line
   pinned high by `max(inTrig, strike)` can never present an edge at all.
+- A module with a random start phase makes `max|Δ|` pure phase noise: one run
+  differed from the next by 8.45e-1 on IDENTICAL params while RMS held to eight
+  significant figures, and every sibling in that batch read 0.000e+0. Run a
+  determinism control (`max|run1 − run2|` at fixed params) before believing any
+  sample-domain delta, and on a non-reproducible or timbral subject reach for a
+  phase-invariant, spectrum-sensitive instrument — Hann-windowed spectral
+  centroid plus log-band energies — not RMS and not `max|Δ|`.
 
 ## Drive the layer the user hears
 
@@ -43,9 +54,11 @@ see, and prove it rather than asserting it.
 - Main-thread `setTimeout` schedulers do not advance under `OfflineAudioContext`,
   so an offline render of a sequenced module measures silence, not the module.
 - Headless Chromium's null audio sink cannot exhibit an output-buffer underrun.
-  Read `packages/web/src/lib/audio/playback-stats.ts` and `worklet-guard.ts`
-  (underrun counter, processorerror latch, tick-latency histogram) instead of
-  inferring contention from elapsed time.
+  Read `packages/web/src/lib/audio/playback-stats.ts` (underrun counter),
+  `worklet-guard.ts` (processorerror latch) and `tick-latency.ts` (main-thread
+  starvation histogram, recorded by `scheduler-clock.ts` and surfaced through
+  `audio-health.svelte.ts`) instead of inferring contention from elapsed time.
+  The why for all three is `docs/adr/010-terminal-sink-and-audio-health.md`.
 - On a symmetric multi-channel module, a probe that feeds one channel measures
   the patch, not the module.
 
