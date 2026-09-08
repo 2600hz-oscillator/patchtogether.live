@@ -68,8 +68,10 @@ cite a previous run as the record.
    a global gitignore protects only that one machine.
 4. Any hit → rewrite history (`git filter-repo` or fresh-init) and **re-run from
    step 1**.
-5. Record the run: command, date, paraphrased hit list, verdict. Paraphrase — no
-   verbatim quotes or profanity in anything that can reach GitHub.
+5. Record the run **in the PR body that lands the push** — command, date,
+   paraphrased hit list, verdict (AGENTS.md: the PR body is the searchable
+   record), written at execution time. Paraphrase — no verbatim quotes or
+   profanity in anything that can reach GitHub.
 
 ## Tests
 

@@ -1,34 +1,23 @@
 # Native shell — design as built
 
-Status: **partly shipped**. This doc records the architecture that is in the tree
-(`apps/desktop/`, `apps/helpers/`, the device-slot layer in `packages/web/src/lib/graph/`)
-and names, explicitly, the phases that are **not built**. Operating procedures —
-how to install, build, run and smoke the shell — live in
-[runbooks/native-shell.md](../../runbooks/native-shell.md).
+The decision, its owner rulings and the per-interruption guarantees are
+[ADR-011](../adr/011-rig-lifetime-versus-patch-lifetime.md) — the rig/patch
+lifetime split, why rig configuration never rides the Y.Doc, the interruption
+matrix as architectural source of truth, and the still-unchosen crossfade
+mechanism. **This doc records the as-built consequence**: what is in the tree
+(`apps/desktop/`, `apps/helpers/`, the device-slot layer in
+`packages/web/src/lib/graph/`) and, explicitly, the phases that are **not
+built**. Operating procedures — how to install, build, run and smoke the shell —
+live in [runbooks/native-shell.md](../../runbooks/native-shell.md).
 
-The shell exists for one product reason: a live rig must come up with **zero
-prompts and zero gestures** — ES-9, PTZ, four cameras, four displays — and must
-never be interrupted by an ordinary workflow.
-
-## The two-layer lifetime model
-
-This is the whole design, and everything below is a consequence of it.
-
-| layer | lifetime | what is in it |
-| --- | --- | --- |
-| **persistent-device** | app session | hardware sessions keyed on **reserved slot ids** — camera streams, audio-in tracks, bridge sockets, MIDI/USB/serial claims |
-| **swappable-patch** | graph | everything else in the Y.Doc; a load clears and replaces it wholesale |
-
-The insight the layer is built on: a hardware session in this repo is keyed on a
-**node id**, and a patch load clears `patch.nodes` unconditionally — so a load
-destroys the id, which destroys the session, which *is* the interruption. The fix
-is not "protect the module", it is **protect the id**
-(`packages/web/src/lib/graph/device-slots.ts`).
+Status: **partly shipped**.
 
 ## Device slots, as built
 
-Eight reserved node ids — `cam1..cam4`, `output1..output4` — with one canonical
-type forever. Three details differ from the original plan and are the design:
+Eight reserved slots — `cam1..cam4`, `output1..output4` — minted at ids
+`slot:<name>` (`DEVICE_SLOT_ID_PREFIX`), with one canonical type forever and one
+deliberate id exception below. Three details differ from the original plan and
+are the design:
 
 - **No new module defs.** Slots reuse the shipped types: cameras are hidden
   `cameraInput` instances whose surface is the workflow topbar camera manager;
@@ -38,8 +27,14 @@ type forever. Three details differ from the original plan and are the design:
   remove/add teardown the layer exists to prevent, inflicted on every rack in the
   fleet at once, on the slot most likely to be presenting.
 - **Undeletability is reached by two different routes, because `pinned` is also
-  the canvas-hide bit** (`isCanvasHiddenNode = pinned || hiddenCard`). Cameras are
-  `pinned` (right: their face is the header manager); outputs are **not** — they
+  the canvas-hide bit** (`isCanvasHiddenNode = pinned || hiddenCard`). Cameras
+  carry **both** `pinned` and `hiddenCard`, and the second is not
+  belt-and-braces: the workflow camera manager lists on `hiddenCard`
+  (`isWorkflowCameraNode` = type match AND `isHiddenCardNode`), and that manager
+  row is the camera's only surface — the device picker and the REQUEST ACCESS
+  gesture live in its hosted face controls. A pinned-only camera would be hidden
+  from the canvas **and** missing from the manager: a slot with no surface
+  anywhere, and so no way to bind a device to it. Outputs are **neither** — they
   are protected by the reserved-id guard `isDeviceSlotId()` alone, because a
   pinned output would vanish from the zone the operator presents from. Both
   directions are repaired: `planDeviceSlotIdentityRepairs()` also strips a
@@ -58,9 +53,8 @@ fifth competitor for the same hardware.
 
 ## Bindings never ride the Y.Doc
 
-Which camera, which monitor, which ES-9 policy is a property of the **rig**, not the
-patch: device ids are machine-local, so a saved patch opened elsewhere would carry a
-stranger's hardware and collab peers would fight over each other's cameras.
+Why is ADR-011 Decision 2 (rig configuration is a property of the machine, so it
+never enters the shared patch). How, as built:
 
 `packages/web/src/lib/graph/device-slot-bindings.ts` is one per-machine record with
 two backends behind one interface — the shell round-trips through the `bindings.get`
@@ -72,10 +66,8 @@ binding; `whenReady()` and `subscribe()` cover hydration and late shell loads.
 in and out.
 
 The shell treats the record as **opaque JSON** and validates only "is this a plain
-object". That asymmetry is deliberate: the binding shape evolves with the pre-flight
-UI, and the shell must not need a rebuild to store a field it has never heard of. A
-corrupt blob degrades to the empty rig, which lands the operator on `/preflight` —
-the same outcome as a genuine first run.
+object" — deliberately, so the binding shape can evolve with the pre-flight UI
+without a shell rebuild (ADR-011 Decision 2).
 
 ## The shell process
 
@@ -102,9 +94,11 @@ is pinned exact.
   link opened a remote origin in a window carrying the preload under session-wide
   camera/mic/USB/HID/screen grants; and nothing guarded `will-navigate`. Every
   predicate is pure and exported so the harness can call the **refusals** directly.
-- `bridge.ts` / `preload.ts` — one `ipcMain.handle` per command behind a single
-  versioned envelope, so sender validation is written once and a later phase adds
-  *ops*, not channels. `command()` resolves with `{ok:false,error}` rather than
+- `bridge.ts` / `preload.ts` — one `ipcMain.handle` for **every** command, a
+  single channel behind one versioned envelope, so sender validation is written
+  once and a later phase adds *ops*, not channels. The shape it replaced was a
+  fresh `ipcMain.handle` per verb, none of them checking `event.senderFrame` —
+  which made "forgot to validate" the default outcome. `command()` resolves with `{ok:false,error}` rather than
   rejecting, because contextBridge drops custom Error properties and the consumer
   is a pre-flight status row — an outcome to render, not an exception. The
   sandboxed preload cannot `require` a relative module, so it re-declares the
@@ -164,16 +158,19 @@ Stated so a reader does not infer them from the sections above:
 
 ## Open owner decisions
 
-Crossfade semantics (true overlap vs fade-out/build/fade-in — roughly an order of
-magnitude apart in cost); the renderer-crash guarantee for output windows (narrow
-the words, or give outputs a main-owned transport); signing sign-off, which blocks
-distribution; the ES-9 push-policy caller (hardware verification outstanding); and
-whether collab is in v1 — if it is, the relay re-auth path must stop navigating the
-renderer away first.
+Crossfade semantics and the renderer-crash guarantee for output windows are
+stated with their costs in [ADR-011](../adr/011-rig-lifetime-versus-patch-lifetime.md)
+(Decision 4 and Consequences) — do not restate or weaken them here. Open on this
+doc's own ground: signing sign-off, which blocks distribution; the ES-9
+push-policy caller (hardware verification outstanding); and whether collab is in
+v1 — if it is, the relay re-auth path must stop navigating the renderer away
+first.
 
 DOOM is excluded by name from every phase of this program and nothing proceeds
 without explicit owner approval.
 
-> Provenance: the planning package behind this design is preserved at the
-> `myrobots-preserved-2026-09` tag (`.myrobots/2026-09-04-native-shell-plan/`).
-> Where that prose and the tree disagree, the tree is right.
+> Provenance: the planning package behind this design is preserved in the
+> `myrobots-preserved-2026-09` tag snapshot, as the
+> `2026-09-04-native-shell-plan/` package (a path relative to the retired
+> agent-evidence tree inside that snapshot, not to the worktree). Where that
+> prose and the tree disagree, the tree is right.

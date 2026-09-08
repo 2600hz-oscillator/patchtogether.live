@@ -325,5 +325,6 @@ fixed; which tube shapes ship and whether levels cycle them; and whether scoring
 and lives are an on-card overlay or CV/gate OUTs so the game can drive the rack.
 The video-surface phase is look-affecting and needs an owner preview before merge.
 
-> Provenance: the build plan is preserved at the `myrobots-preserved-2026-09` tag
-> (`.myrobots/plans/tempest-module-plan-2026-06-27`).
+> Provenance: the build plan is preserved in the `myrobots-preserved-2026-09` tag
+> snapshot, as `plans/tempest-module-plan-2026-06-27.md` (a path relative to the
+> retired agent-evidence tree inside that snapshot, not to the worktree).

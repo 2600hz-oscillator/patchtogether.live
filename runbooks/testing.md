@@ -100,15 +100,36 @@ exclusion and the ART lane goes red.
 
 To profile one module:
 
-1. Answer the question that decides all the effort: **does a deterministic offline
-   render path exist?** `node-web-audio-api` cannot instantiate our custom
-   `AudioWorkletProcessor`s or the Faust worklets, so a real baseline renders
-   through one of four paths — a pure-TS DSP core the worklet wraps; a faithful TS
-   mirror of the per-sample recurrences written in the scenario; native Web Audio
-   primitives under `OfflineAudioContext` (oscillators and biquads do work); or
-   `art/setup/faust-offline.ts`, which renders real Faust wasm headlessly. There is
-   no "drive the real module graph and snapshot every port" offline harness — that
-   only exists in E2E.
+1. Answer the question that decides all the effort: **which deterministic offline
+   render path fits?** Take the highest-fidelity one that applies — the list is in
+   the tree's own fidelity order, and the shared helpers already exist:
+   1. **The shipping `AudioWorkletProcessor`**, via `art/setup/worklet.ts` — a
+      `registerProcessor` shim plus a 128-sample `process()` pump, so the scenario
+      declares only driver buffers, params and output names. Applies when the
+      worklet entry is self-contained pure math (no WASM, no unseeded RNG, no
+      async loads). 19 scenarios use it.
+   2. **The shipping def `factory()`**, via `art/setup/offline.ts` — for modules
+      that are pure Web Audio node graphs, rendered against an
+      `OfflineAudioContext` with a driver per input port and multi-output capture
+      through a `ChannelMergerNode`. `art/setup/node-audio-globals.ts` installs
+      the `AudioWorkletNode` global so a factory renders its **real** topology
+      instead of quietly taking its degraded fallback. 7 scenarios use it.
+   3. **Real Faust wasm**, via `art/setup/faust-offline.ts` — the committed dist
+      artifacts loaded from disk, built in-process. 18 scenarios use it.
+   4. A pure-TS `-dsp.ts` core that the worklet wraps.
+   5. Last resort: a hand-written TS mirror of the per-sample recurrences.
+
+   ⚠ **The mirror is last for a reason.** The `.sha` pin invalidates a baseline
+   when the *source* changes, but it cannot see a mirror that was wrong on day
+   one. If a module seems to need a mirror, extract a real `-dsp.ts` core (or use
+   the worklet / Faust path) in the same PR instead.
+
+   ⚠ Several older scenario headers say `node-web-audio-api` cannot host
+   `AudioWorkletNode`s. That was true of the version they were written against
+   and is **not** true of the pinned one — `art/setup/node-audio-globals.ts` says
+   so in its own header. Do not re-propagate it. The real limit is narrower:
+   there is no harness that spawns the full patch graph, so a scenario declares
+   its own driver buffers, params and output ids per `art/setup/capture.ts`.
 2. Write the scenario using the capture-and-pin helper in `art/setup/capture.ts`:
    it writes `.f32` + `.sha` on first run or under `UPDATE_BASELINES=1`, and
    otherwise asserts the stored source hash still matches **before** comparing

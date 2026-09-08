@@ -99,12 +99,15 @@ Each one killed an approach that read as obviously correct.
 Whether ES-9 RECORDERBOX re-homes inside the Electron shell
 ([native-shell.md](native-shell.md), which now owns the device-slot and helper
 lifetime story) or stays an enhancement of the Swift helper; and whether the
-browser-side multitrack record band that has since shipped on mixmstrs/cliprec
-changes the requirement at all. Two premises of the original spec are already
-stale: recorderbox and es9 both carry faces now, and the "new shell" gate it
-waited on is the native-shell track.
+browser-side multitrack record band that has since shipped on MIXMSTRS + CLIP
+PLAYER (`clipplayer`, `packages/dsp/src/clip-recorder.ts` — one worklet, eight
+stereo inputs, sliced against one `currentFrame`) changes the requirement at all.
+Two premises of the original spec are already stale: recorderbox and es9 both
+carry faces now, and the "new shell" gate it waited on is the native-shell track.
 
 > Provenance: the full spec (wire format, byte layout, phasing, per-file
-> references) is preserved at the `myrobots-preserved-2026-09` tag
-> (`.myrobots/plans/es9-recorderbox-2026-08-01`). Its line numbers had already
-> drifted when it was written — re-grep, never trust an offset.
+> references) is preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+> `plans/es9-recorderbox-2026-08-01.md` (a path relative to the retired
+> agent-evidence tree inside that snapshot, not to the worktree). Its line
+> numbers had already drifted when it was written — re-grep, never trust an
+> offset.

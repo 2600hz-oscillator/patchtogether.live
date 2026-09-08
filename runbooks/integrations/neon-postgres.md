@@ -41,8 +41,11 @@ Migrations are **append-only** during beta (no down-migrations). New changes bum
 the file number (`004_*.sql`) and are applied to each branch in order. Ops guide:
 `db/README.md`.
 
-⚠ **Landing a migration file does not apply it anywhere.** No workflow runs
-`db/schema` — `deploy.yml` and the nightly prod deploy ship code only — so
+⚠ **Landing a migration file does not apply it anywhere.** No *deploy* workflow
+applies a migration to a Neon tier. CI does run `scripts/apply-db-schema.sh`, but
+only against its own ephemeral Postgres (`patchtogether_test`, in `ci.yml`,
+`collab-nightly.yml` and the flake-purge workflows) — never a Neon branch;
+`deploy.yml` and the nightly prod deploy ship code only. So
 applying a migration to a tier is a **manual, operator-run step** per Neon branch
 (`scripts/apply-db-schema.sh "<NEON_BRANCH_URL>"`, which reads the directory in
 filename order). Nothing in the tree records which tiers a given migration has
