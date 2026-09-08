@@ -16,8 +16,9 @@ sweep could include it, exclude DOOM by name and record the reason.
 - Use repository Taskfile entry points, not ad-hoc Playwright commands.
 - Outside DOOM, wait for observable state or drive/count rendered frames. A
   wall-clock timeout may bound failure but must not define readiness.
-- Use the shared frame helper or engine stepping seam; do not hand-roll another
-  polling loop.
+- Use the shared frame helper or engine stepping seam — `e2e/tests/_render-smoke.ts`
+  (`installRenderSmokeHooks` before `page.goto`, then `stepAndReadStats`) is the
+  deterministic-render harness; do not hand-roll another polling loop.
 - Never sample a page-side quantity with a Playwright-side poll loop. Each sample
   is a round trip that runs on the same main thread as the subject, so a loaded
   runner starves both — and a frozen subject and a test that never looked print

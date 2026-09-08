@@ -6,7 +6,8 @@ records preserved at git tag `myrobots-preserved-2026-09`.
 
 ## DOOM timing is game state
 
-`video/modules/doom.ts` advances one game tic from `surface.draw`. A rendered
+`packages/web/src/lib/video/modules/doom.ts` advances one game tic from
+`surface.draw`. A rendered
 frame is therefore a game tic. Replacing a DOOM millisecond wait with a frame
 wait changes how far the marine moves; do not touch it without owner approval.
 
@@ -62,8 +63,10 @@ than promised by a comment. `scripts/attest-preflight.ts` — `SAMPLE_OFFSETS_MS
 `SUSTAINED_FRACTION`, `EGREGIOUS_MULTIPLE`, `judgeProfile` (pure, so it is
 testable against a recorded series with no `ps` and no clock);
 `scripts/attest-preflight.test.ts` asserts the gaps. A pre-flight refusal naming
-a sustained co-tenant is a TRUE refusal — do not fold it in with the attest
-playbook's false-refusal sources.
+a sustained co-tenant is a TRUE refusal about machine STATE, and different in
+kind from a refusal the TOOLING caused — a stale or HEAD-vs-main hash pin, a
+missing dist, a dirty tree. Attest procedure is this skill's `SKILL.md`
+§ Real-GPU attestation plus `ci-webgl-attest/README.md`.
 
 Two relatives of the same fault:
 
@@ -77,6 +80,31 @@ Two relatives of the same fault:
   (measured: 298 ms). Poll from the Node side with `expect.poll` over
   `page.evaluate`, which awaits by contract. Sync predicates are fine. Anchor:
   `apps/desktop/e2e/supervision.spec.ts` `waitForState`.
+
+## A render check can read the wrong surface, or an unpinned clock
+
+The shared deterministic-render harness is `e2e/tests/_render-smoke.ts`:
+`installRenderSmokeHooks(page)` BEFORE `page.goto` (it pauses the engine rAF
+loop so the test owns the exact frame count, and pins the engine clock), then
+`stepAndReadStats()` inside ONE `page.evaluate` so rAF, decode and blit cannot
+interleave, then `assertRenderStats()` — floors and counts only, so SwiftShader
+and a real GPU both clear them while a black/flat/GL-error regression still
+fails. Do not hand-roll a second one.
+
+Two mechanics decide whether it measures anything:
+
+- Read the ENGINE output texture for the node, not a downstream 2D copy. The
+  lane tile thumb is a throttled repaint of the picture, not the picture.
+- Pin the module's OWN clock too where it keeps a private `performance.now()`
+  baseline: `__videoEngineFreezeTime` only reaches modules that read
+  `frame.time` (the module-side early-return is asserted in
+  `packages/web/src/lib/ui/modules/gibribbon-face-model.test.ts`).
+
+"A param visibly changes output" is TWO FROZEN READS — freeze, step, read with
+A; step, read with B; assert they differ — never an animation diff, which is the
+un-pinned version of the same question. Keep step counts small (the live specs
+sit at 6-8; `FIXED_STEPS` in `e2e/tests/4plexvid.spec.ts` and its neighbours)
+and never add a wall-clock timing probe to a deterministic render spec.
 
 ## A filter or a selector before the check redefines the subject
 
@@ -93,8 +121,12 @@ The gate then reports honestly about a population nobody cares about.
   header also states what the channel still cannot see (a `requestfailed` with
   no console line, a `fetch()` rejection).
 - **A selector that cannot match.** xyflow stamps a node's wrapper class from
-  the EMITTED node type, and every lane node emits `moduleShell`, so
-  `.svelte-flow__node-<moduleType>` matches nothing. A `waitFor` on it fails
+  the EMITTED node type, and `emittedTypeFor`
+  (`packages/web/src/lib/ui/workflow/legacy-fallback.ts`) emits `moduleShell`
+  for a faceplate tile and `dockStub` for a docked node; only
+  `NON_SHELL_LANE_TYPES` (one member, `cadillac`, filtered out of `flowNodes`
+  upstream) keeps its own type — so `.svelte-flow__node-<moduleType>` matches
+  nothing for any real module. A `waitFor` on it fails
   loudly; a `toHaveCount(0)` on it is satisfied by a page that rendered NOTHING,
   and four such gates sat in the required lane. Address by node id
   (`.svelte-flow__node[data-id="…"]`) and keep a POSITIVE statement that can
@@ -103,9 +135,18 @@ The gate then reports honestly about a population nobody cares about.
   (both retired absence checks, with the replacement).
 - **An assertion satisfied by nothing at all.** `expect(b).toEqual(a)` on two
   black frames passes; a flatness check passes on black; a symmetry check scores
-  0 on black. Pair each with an anti-vacuity floor (the frame is LIT), and force
-  the dead-render control — make every read return black and confirm the test
-  FAILS.
+  0 on black. Pair each with an anti-vacuity floor, and force the dead-render
+  control — make every read return black and confirm the test FAILS. ⚠ But the
+  floor cannot just be "the frame is LIT": an unpatched `videoOut` paints its
+  OWN dark-blue idle gradient, which clears `nonBlackFrac > 0.001` and
+  `variance > 0.5` with nothing connected at all. Measure a DIFFERENTIAL against
+  the sink's idle picture — `e2e/tests/per-module-per-port-outputs.spec.ts`
+  (`sinkIdleCells` / `differsFrom` / `SINK_CELL_DELTA` / `SINK_DIFF_MIN_CELLS`):
+  a 16×12 luma grid captured once per worker from a rack holding only the sink,
+  and required to differ in N cells. The control itself needs a settle rule —
+  the tile canvas has not painted on its first readable frame — so cache the
+  idle grid only after TWO CONSECUTIVE AGREEING READS, or an idle that has not
+  arrived yet becomes a control that differs from itself forever after.
 - **A driver that cannot reach what the sweep observes.** Ask what is being
   OBSERVED, not just what is being driven: a CV that provably cannot perturb a
   fixed-stroke output makes a vacuous row whose greens ride incidental
@@ -116,6 +157,31 @@ The gate then reports honestly about a population nobody cares about.
   replacement with different params, ports or seeding hooks leaves a subject
   that silently vanishes and a spec that passes vacuously. The replaced module's
   own code is the conversion truth, not its consumers' prose.
+- **An assertion with no viewport requirement.** Playwright's `toBeVisible()` is
+  `display`/`visibility`/`opacity` plus a non-empty box — NO viewport check and
+  NO scroll-position check — and `.click()` auto-scrolls before acting, so both
+  walk past an element painted below the fold of its own scroll container. A
+  face whose controls sat ~300 px past the bottom of the dock faceplate's
+  scroller at the 1280×720 default was asserted `toBeVisible` and ran green for
+  months against an owner-reported P0. Assert the ON-SCREEN predicate the player
+  means: in the viewport, inside the visible box of every scrolling ancestor,
+  and hit-testing to itself via `elementFromPoint` — `onScreenReport` in
+  `e2e/tests/camera-input.spec.ts`, whose case carries an in-test POSITIVE
+  control that re-appends the control to the pre-fix position and asserts the
+  same predicate reports it off-screen.
+- **An enrolment predicate derived from the DOM.** A registry sweep that decides
+  membership by counting elements in the surface under test un-enrols itself the
+  moment that surface changes shape: the predicate goes false, `test.skip` fires
+  with a loud message, and the sweep silently stops covering the module it was
+  written for. Skips are not passes — read the skip count. Worse, a skip fires
+  BEFORE the assertions behind it, so a spec that would now fail red reports
+  green with a skip and nobody reaches the real failure. Derive enrolment from
+  SOURCE, cross-check the source-derived answer against the runtime one per
+  subject in both directions, make a zero-enrolled run throw, and keep a
+  permanent NEGATIVE leg. Anchor: `e2e/tests/collapse-keeps-playing.spec.ts` —
+  `realPlayerTypes()`, the source-vs-runtime disagreement assertion before its
+  `test.skip`, the `.not.toEqual([])` population floor, and
+  `assertCreditRuleIsSound`.
 
 ## A floor is not one number
 
@@ -126,11 +192,17 @@ because a drum voice re-struck by a free-running sequencer scatters its own
 spectral centroid by thousands of Hz against a 30 Hz `centMean` floor.
 
 Every row therefore measures its own null scatter in the same run it is judged
-in, and the effective bar is `max(universal floor, 3σ of that row's own
-sampling error)`. Because it is a MAX it can only tighten: no row that fails
-today starts passing because of it. Anchor: the "A FLOOR IS NOT ONE NUMBER"
-header and the DERIVED FLOORS block near `computeDelta` in
-`e2e/tests/per-module-per-port-behavioral.spec.ts`.
+in, and the effective bar is
+`max(universal floor, NULL_NOISE_SIGMAS × that row's own sampling error)` —
+currently 5σ, and the number is MEASURED, not chosen: 3σ let `snaredrum`
+false-pass under negative control, because the pass predicate is an OR over
+thirteen terms and that is a multiple-comparisons problem (~234 chances per
+module, ~0.6 expected false passes per run; the multiplier pays the Bonferroni
+shape). Because it is a MAX it can only tighten: no row that fails today starts
+passing because of it. Anchor: `NULL_NOISE_SIGMAS`, the "A FLOOR IS NOT ONE
+NUMBER" header and the "WHY 5σ AND NOT 3σ" block above it in
+`e2e/tests/per-module-per-port-behavioral.spec.ts` (two older in-file comments
+still say 3σ; the constant is the authority).
 
 - Prove it rather than trusting it: `task behavioral:negative-control` re-runs
   the whole sweep with every perturbation edge omitted and asserts NO ROW
@@ -168,6 +240,30 @@ is worse than a duplicated run. The sibling trap outside VRT is
 not move it. Where a list like this needs a vacuity tripwire, anchor it on NAMES
 checkable against the tree, never on a count.
 
+Two more ways a lane reports on the wrong half of its own contract:
+
+- **A guard over a SELECTION is blind to EXECUTION.** A subset gate that
+  reconstructs titles from the live registry and asserts which ones the pattern
+  SELECTS still counts a row that is skipped, disabled or parked — one side of a
+  two-sided contract. Measured: the required `behavioral-smoke` grep resolves to
+  six modules, two of them were parked, the lane ran four, and the guard written
+  to stop that subset drifting stayed green. Assert what RAN, and where the gate
+  deliberately
+  will not (`packages/web/src/lib/dev/behavioral-smoke-subset.test.ts` states
+  the constraint at the parking site instead of reddening the unit lane on a
+  park). The same asymmetry hides skips: `scripts/e2e-skip-budget.mjs` is wired
+  to the `e2e` lane's per-shard reports, so a skip in a lane that produces no
+  such report surfaces nowhere — name the lanes an audit actually covers, and
+  the ones it does not.
+- **A lane nobody has to act on finds nothing.** `ci.yml` deleted nine
+  informational jobs for exactly that reason (its umbrella `if` block, "THE
+  INFORMATIONAL TIER NO LONGER EXISTS"), and records that two of them had grown
+  into their caps and were reporting `cancelled` on `main`, which disqualifies
+  the run from the nightly prod deploy. "Land it informational-first, arm it
+  later" is not a supported shape: the second half never happened. A red test is
+  FIXED, or PARKED with the coverage loss written down at the parking site (the
+  `FLAKE_PARK_1847` maps) — never left producing a signal nobody reads.
+
 ## Boot-vs-boot and boot-vs-baseline are different questions
 
 A determinism probe boots the same scene twice with the baseline out of the
@@ -183,6 +279,15 @@ reported bit-exact by the probe and then rewrote at 8 px, maxChannel 1.
   and therefore costs an attest re-pin and a contract re-pin while buying only
   intra-boot stillness at whichever frame the harness caught. A video sim needs
   BOTH halves, clock and seed, and the seed must land before spawn.
+- Pin every non-deterministic INPUT, not just the animation — a different
+  mechanism from clock+seed. Where a face's pixels are partly a runtime `fetch`,
+  the DATA needs its own pin: with no network the request REJECTS and the body
+  paints the ENVIRONMENT's error string, so the baseline becomes a function of
+  which browser build refused it. Anchor: `__tvLibrarianTestCountries` in
+  `e2e/vrt/_shell-faces.ts`. ⚠ And derive which halves need pinning from the
+  SOURCE rather than copying a prescription: that same entry records a second
+  pin dropped after reading the shader, because the idle branch is a pure
+  function of position and the pin would have frozen something already still.
 - Predict which baselines should move, then ATTRIBUTE every file the bot
   committed: bucket 1 is the repair, bucket 2 is the fix's own render change.
   Predicted 19, committed 115; on another run predicted 1, committed 2, and the
@@ -203,8 +308,11 @@ reported bit-exact by the probe and then rewrote at 8 px, maxChannel 1.
   (`COMPACT_MAX_DIFF` / `DOCK_MAX_DIFF`, both 0) in `e2e/vrt/_shell-faces.ts`.
   The comparator band is pinned by
   `packages/web/src/lib/ui/vrt-comparator-band.test.ts`, which drives the same
-  comparator function in both directions and reddens if the threshold moves.
-  Read all of it before touching either number.
+  comparator function in both directions and FOLLOWS a threshold change rather
+  than pinning the old number (it parses the gate's own settings out of
+  `vrt.config.ts` and imports the per-scene budgets) — what reddens is WIDENING
+  the band past ±3 LSB, which is the FAIL side's smallest case. Read all of it
+  before touching either number.
 
 ## Unsound, not merely flaky
 
