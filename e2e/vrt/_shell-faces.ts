@@ -5572,15 +5572,20 @@ export const FACES = [
   // wrong.
   //
   // ⚠ AND THE PIN IS TWO HALVES, NEITHER SUFFICIENT ALONE. That is not a guess:
-  // `.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md` diagnosed the
-  // same scene class on this module and MEASURED it byte-for-byte — two runs
-  // differing pre-fix (2ed942ac…/62fc8ce5…), byte-identical post-fix
-  // (14256032…/14256032…). Its method is worth repeating as well as its result:
-  // it classified the DIFF PNG first, which refuted the file's own leading
-  // hypothesis in one look (the difference was LEN 4 → LEN 5 with the pellet
-  // moved — game state, not an analyser offset), and it compared captured PNGs
-  // BYTE-FOR-BYTE rather than repeating the tolerance-gated check, because a
-  // flake hiding inside a tolerance is invisible to a pass/fail loop.
+  // the same scene class was diagnosed on this module and MEASURED byte-for-byte
+  // — two runs differing pre-fix (2ed942ac…/62fc8ce5…), byte-identical post-fix
+  // (14256032…/14256032…), fix shipped in #2159. Its method is worth repeating
+  // as well as its result: it classified the DIFF PNG first, which refuted the
+  // investigation's own leading hypothesis in one look (the difference was
+  // LEN 4 → LEN 5 with the pellet moved — game state, not an analyser offset),
+  // and it compared captured PNGs BYTE-FOR-BYTE rather than repeating the
+  // tolerance-gated check, because a flake hiding inside a tolerance is
+  // invisible to a pass/fail loop. Both halves of that method are durable in
+  // `.claude/skills/renderer-tests/references/silent-failures.md`,
+  // "Boot-vs-boot and boot-vs-baseline are different questions". The raw
+  // measurement is provenance only: it is in the `myrobots-preserved-2026-09`
+  // tag snapshot as `2026-08-23-nibbles-composite-vrt-nondeterminism.md`, and
+  // lands at evidence/archive/2026/ under that name when the tree is retired.
   //
   // ⚠ NO `freeze` ParamDef, and the refusal is priced rather than stylistic:
   // `nibbles.ts` is IN the WebGL attest basis, so a `params` edit costs an
@@ -5637,9 +5642,10 @@ export const FACES = [
           + 'manages. ⚠ AND IT IS THE SAME SEED `vrt-composite-scenes.ts` ALREADY PINS, '
           + 'deliberately: one seed for both deterministic capture paths means a surface a human '
           + 'has already reviewed. The pair (clock + seed) is proven byte-identical in both '
-          + 'directions by the measurement in '
-          + '.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md — differing pre-fix, '
-          + 'identical post-fix, compared BYTE-FOR-BYTE rather than through the diff tolerance.',
+          + 'directions by the measurement kept as provenance (2026-08-23-nibbles-composite-'
+          + 'vrt-nondeterminism.md in the `myrobots-preserved-2026-09` tag snapshot; archived '
+          + 'under evidence/archive/2026/) — differing pre-fix, identical post-fix, compared '
+          + 'BYTE-FOR-BYTE rather than through the diff tolerance.',
       },
     ],
   },
