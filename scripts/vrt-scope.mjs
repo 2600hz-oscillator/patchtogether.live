@@ -130,7 +130,7 @@ export function runIndices(hay, needle) {
 // `e2e/` is NOT — a spec change can change what is captured.
 export const IGNORABLE = [
   { why: 'markdown prose — no VRT scene renders a repo document', test: (p) => p.endsWith('.md') },
-  { why: 'agent notes and skills — not shipped to the browser', test: (p) => p.startsWith('.myrobots/') || p.startsWith('.claude/') },
+  { why: 'agent evidence and skills — not shipped to the browser', test: (p) => p.startsWith('evidence/') || p.startsWith('.claude/') },
   {
     why: 'repo prose (the SvelteKit docs ROUTES live under packages/web/src/routes/docs and are not in this list)',
     test: (p) => p.startsWith('docs/') || p.startsWith('runbooks/'),

@@ -221,10 +221,17 @@ describe('the ignorable list is a NAMED exemption set, not a wildcard', () => {
   it('ignores only things that cannot move a pixel, each with a stated reason', () => {
     for (const p of [
       'README.md',
-      // ⚠ NOT a `.myrobots/<name>.md` literal: scripts/agent-context.test.ts
-      // reddens on any tracked file citing a `.myrobots` record that does not
-      // exist, and a fixture path never will. The prefix rule is exercised
-      // through its `.claude/` half instead.
+      // BOTH halves of the prefix rule, and non-`.md` on purpose: a `.md`
+      // fixture would be caught by the markdown rule first and leave the
+      // prefix half unproven. `evidence/` really does carry 83 `.html` mocks
+      // and 4 `.png`, so this is the shape that rule exists for.
+      //
+      // (This used to avoid an evidence-tree literal because a since-deleted
+      // tree-wide gate reddened on any tracked file citing a record that does
+      // not exist. Its surviving standing-docs leg reads CLAUDE/AGENTS/README/
+      // skills/docs/runbooks only — never `scripts/` — so a fixture path is
+      // free again.)
+      'evidence/archive/2026/mocks/panel.html',
       '.claude/agents/example.json',
       'art/baselines/adsr/sum.sha',
       'db/schema.sql',
