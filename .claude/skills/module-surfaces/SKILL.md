@@ -70,5 +70,19 @@ producer merely because the screen is hidden.
 - Derive any module count from `STRICT_FACES` or the registry; never type one.
 - Obtain owner visual review for a new or materially changed surface.
 
+## References
+
+- [`references/consumption-checklist.md`](references/consumption-checklist.md) —
+  the operational checklist a face PR satisfies: the gates and what each one can
+  and cannot see, the `noUserControl` / `optionsExhaustive` / resting-text /
+  glyph declarations they read, the attest and baseline costs to predict rather
+  than discover, and the traps a testid or affordance census structurally misses.
+- [`references/bespoke-surface-lessons.md`](references/bespoke-surface-lessons.md)
+  — distilled judgment from seven waves of bespoke-surface specs: testing a
+  commissioning premise, searching for a platform capability before asserting or
+  refuting one, taxes that are not gates, the green-and-blind migration hazard,
+  picking an extension slot by mechanism, and where ownership must live to
+  survive a surface change.
+
 Do not create an issue unless the owner explicitly approves it. A PR does not
 need an issue.
