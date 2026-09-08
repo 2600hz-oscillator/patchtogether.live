@@ -1,22 +1,22 @@
 // art/scenarios/resofilter/profile.test.ts
 //
-// AUDIO PROFILE for RESOFILTER (backfill batch 1 — spec §4.1/§4.3,
+// AUDIO PROFILE for RESOFILTER (backfill batch 1 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FX / PROCESSOR — driven by the canonical VCO test signal
-// (spec §4.2: C4 saw, phase pinned to 0). Patch: the worklet's SHIPPING
+// (spec §2.2: C4 saw, phase pinned to 0). Patch: the worklet's SHIPPING
 // DEFAULTS (mode LP, resonance 0.3, mix 1) with a deterministic exponential
 // cutoff sweep 120 Hz → 8 kHz across the render standing in for the CV a
 // real patch would send — a static cutoff on a static saw would profile a
 // fixed EQ, not the filter's signature (the sweep is what the spectrogram
 // shows; it also exercises the in-worklet RfSmoother path).
 //
-// SIGNATURE output (owner decision §6b.2): ONE baseline `out`. The module's
+// SIGNATURE output (owner decision §4 item 2): ONE baseline `out`. The module's
 // out_l/out_r are processed by two ResofilterChannel instances with
 // identical state given identical input — for this mono driver the two
 // ports are provably the same signal, so one profile covers both (bus-
-// duplicate rule, spec §4.1).
+// duplicate rule, spec §2.1).
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/resofilter-dsp.ts
 // ResofilterChannel.step) — the EXACT per-sample code the worklet inner

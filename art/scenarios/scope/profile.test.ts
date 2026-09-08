@@ -17,7 +17,7 @@
 // Category: PASSTHROUGH PROBE. ch1 = C4 saw, ch2 = G4 sine — two DIFFERENT
 // signals so the two pinned baselines are distinct.
 //
-// SIGNATURE outputs (owner §6b.2 — distinct): ch1_out (saw) and ch2_out (sine).
+// SIGNATURE outputs (owner §4 item 2 — distinct): ch1_out (saw) and ch2_out (sine).
 
 import { describe, expect, it } from 'vitest';
 import { pinAll, repoSourceSha, SAMPLE_RATE } from '../../setup/capture';

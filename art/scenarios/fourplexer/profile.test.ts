@@ -1,12 +1,12 @@
 // art/scenarios/fourplexer/profile.test.ts
 //
 // AUDIO PROFILE for 4PLEXER (4-in/4-out discrete router) (backfill batch 4 —
-// spec §4.1/§4.3,
+// spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: clocked ROUTER utility — out1's gate is driven by the canonical
-// 240 BPM CLOCK (spec §4.2: clockTrain, epoch pinned to sample 0), and the
+// 240 BPM CLOCK (spec §2.2: clockTrain, epoch pinned to sample 0), and the
 // four signal inputs carry four spectrally DISTINCT sources so every
 // selector hop is visible in the profile's spectrogram:
 //   in1 = C4 sine   in2 = C4 saw   in3 = 1 kHz sine   in4 = seeded noise

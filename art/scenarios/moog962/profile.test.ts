@@ -1,12 +1,12 @@
 // art/scenarios/moog962/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 962 (sequential switch) (backfill batch 3 —
-// spec §4.1/§4.3,
+// spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: clocked SWITCH utility — SHIFT is driven by the canonical
-// 240 BPM CLOCK (spec §4.2: clockTrain, epoch pinned to sample 0), and the
+// 240 BPM CLOCK (spec §2.2: clockTrain, epoch pinned to sample 0), and the
 // three signal inputs carry three spectrally DISTINCT test tones so every
 // selector hop is visible in the profile's spectrogram:
 //   in1 = C4 sine (261.626 Hz)   in2 = C4 saw (harmonic comb)
@@ -27,7 +27,7 @@
 // crossfade, pure math, no RNG. Capturing the class (not the bare core)
 // keeps the declick in the profile — it IS part of the shipping sound.
 //
-// SIGNATURE output (owner decision §6b.2): the single `out`.
+// SIGNATURE output (owner decision §4 item 2): the single `out`.
 //
 // The .sha pins BOTH the worklet entry and the selector core.
 

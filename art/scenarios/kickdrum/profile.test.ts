@@ -6,12 +6,12 @@
 // lands with ≥1 committed baseline.
 //
 // Category: trigger-fired SOURCE. Driver: canonical trigger train — two
-// strikes at 120 BPM over 1.0 s (spec §4.1 wants ≥1.0 s for decay-tail
+// strikes at 120 BPM over 1.0 s (spec §2.1 wants ≥1.0 s for decay-tail
 // modules so the full sub tail is visible in the gallery). Signature output
 // captured: `audio_l` ONLY — L and R differ only by the ±width·side term
 // (>120 Hz decorrelated click content; the sub is mono by design), so the
 // right lane is a near-identical mirror and pinning it would be redundant
-// (owner decision §6b.2).
+// (owner decision §4 item 2).
 //
 // Rendered from the PURE core (packages/dsp/src/lib/kickdrum-dsp.ts
 // kickdrumStepStereo — the full Phases-1–5 chain: sub+body+click →

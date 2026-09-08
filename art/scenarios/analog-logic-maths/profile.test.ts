@@ -1,7 +1,7 @@
 // art/scenarios/analog-logic-maths/profile.test.ts
 //
 // AUDIO PROFILE for ANALOGLOGICMATHS (analog logic mixer) (backfill
-// batch 4 — spec §4.1/§4.3,
+// batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
@@ -22,7 +22,7 @@
 // loader — analog-logic-maths.ts is fully self-contained stateless pure
 // math (min/max/diff + tanh soft-clips), no RNG.
 //
-// SIGNATURE outputs (owner decision §6b.2): ALL FIVE — min / max / diff /
+// SIGNATURE outputs (owner decision §4 item 2): ALL FIVE — min / max / diff /
 // sum / product are genuinely different algebraic taps of the same pair.
 //
 // The .sha pins the (self-contained) worklet entry.

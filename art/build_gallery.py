@@ -13,7 +13,7 @@ scenario specs) it renders a single combined PNG:
 then emits an `index.html` grouping the cards by scenario, styled to mirror the
 VRT gallery (dark theme, banner header/footer, card grid), with a small stats
 line per baseline (peak, RMS, crest factor, spectral centroid, spectral
-flatness, duration — the audio-profile fingerprint stats, owner decision §6b.5
+flatness, duration — the audio-profile fingerprint stats, owner decision §4 item 5
 of evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 
 DETERMINISM: fixed figure size + DPI, a fixed STFT (Hann window, 3/4 overlap,

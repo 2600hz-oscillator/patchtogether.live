@@ -1,12 +1,12 @@
 // art/scenarios/moog911a/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 911A (dual trigger delay) (backfill batch 3 —
-// spec §4.1/§4.3,
+// spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: MODULATION / trigger utility — driven by the canonical TRIGGER
-// TRAIN (spec §4.2: triggerTrain, TRIGGER_PULSE_S-wide pulses) at 120 BPM
+// TRAIN (spec §2.2: triggerTrain, TRIGGER_PULSE_S-wide pulses) at 120 BPM
 // (two rising edges in the 1.0 s window, at t=0 and t=0.5).
 //
 // Patch: SERIES coupling (mode 2) with delay1 0.15 s / delay2 0.25 s —

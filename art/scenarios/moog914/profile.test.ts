@@ -1,7 +1,7 @@
 // art/scenarios/moog914/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 914 (extended fixed filter bank) (backfill
-// batch 2 — spec §4.1/§4.3,
+// batch 2 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
@@ -17,7 +17,7 @@
 // primitives run under node-web-audio-api's OfflineAudioContext, plan §1.3
 // path #3; determinism probed bit-identical in- and across processes).
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `audio` out.
+// SIGNATURE output (owner decision §4 item 2): the single mono `audio` out.
 //
 // The .sha pins the shared band-table lib + the shared factory wiring
 // (repoSourceSha), NOT the def file — same rationale as moog907a (docs

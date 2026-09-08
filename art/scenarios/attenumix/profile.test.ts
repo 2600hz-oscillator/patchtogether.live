@@ -1,7 +1,7 @@
 // art/scenarios/attenumix/profile.test.ts
 //
 // AUDIO PROFILE for ATTENUMIX (4-channel attenuating mixer) (backfill
-// batch 4 — spec §4.1/§4.3,
+// batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
@@ -21,7 +21,7 @@
 // loader — attenumix.ts is fully self-contained pure math (clamp + multiply
 // + tanh), no RNG, no smoothing state.
 //
-// SIGNATURE outputs (owner decision §6b.2): `mix` (the tanh-saturated
+// SIGNATURE outputs (owner decision §4 item 2): `mix` (the tanh-saturated
 // master bus) and `out2` (the CV-swept channel — a genuinely different
 // signal: the tremolo documents the knob+CV clamp law). out1/out3 are plain
 // static-gain copies of their drivers (proven exactly below, not pinned);

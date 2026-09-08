@@ -1,6 +1,6 @@
 // art/scenarios/gatemaiden/profile.test.ts
 //
-// AUDIO PROFILE for GATEMAIDEN (backfill batch 1 — spec §4.1/§4.3,
+// AUDIO PROFILE for GATEMAIDEN (backfill batch 1 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
@@ -10,7 +10,7 @@
 //     minimum gate (trigger→gate), each also re-emitting a shaped trig;
 //   • one 350 ms HELD GATE (t = 0.6..0.95 s)       → passed through
 //     duration-matched on GATE, one trig on its rising edge (gate→trigger).
-// Both outputs carry independent information (owner decision §6b.2) and
+// Both outputs carry independent information (owner decision §4 item 2) and
 // both are captured: `gate` (held-square) + `trig` (5 ms triangles).
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/gatemaiden-dsp.ts

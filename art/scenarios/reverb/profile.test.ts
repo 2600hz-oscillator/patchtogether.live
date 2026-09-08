@@ -1,7 +1,7 @@
 // art/scenarios/reverb/profile.test.ts
 //
 // AUDIO PROFILE for REVERB (algorithmic mono freeverb) — backfill batch 6,
-// Faust-in-Node harness (spec §5). REVERB is Faust
+// Faust-in-Node harness (spec §3). REVERB is Faust
 // (packages/dsp/src/reverb.dsp): re.mono_freeverb with size/damp macros and a
 // dry/wet mix. Single audio input; output 0 = `audio`.
 //
@@ -11,7 +11,7 @@
 // up; after the input goes silent the reverb TAIL is the whole story — decaying
 // energy while the input is zero, the defining property of a reverb.
 //
-// SIGNATURE output (owner §6b.2): the single `audio` output (its decay tail).
+// SIGNATURE output (owner §4 item 2): the single `audio` output (its decay tail).
 
 import { describe, expect, it } from 'vitest';
 import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';

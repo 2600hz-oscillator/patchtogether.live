@@ -1,7 +1,7 @@
 // art/scenarios/mixmstrs/profile.test.ts
 //
 // AUDIO PROFILE for MIXMSTRS (8-channel stereo mixer + EQ/comp + 2 stereo aux
-// sends) — backfill batch 6, Faust-in-Node harness (spec §5). MIXMSTRS is the
+// sends) — backfill batch 6, Faust-in-Node harness (spec §3). MIXMSTRS is the
 // batch's harness STRESS TEST: a 20-input / 22-output Faust module
 // (packages/dsp/src/mixmstrs.dsp) rendered headless in one pass. Faust I/O
 // order is the process() signature: inputs 0,1=ch1 L/R, 2,3=ch2 L/R, … 14,15=ch8
@@ -17,7 +17,7 @@
 // So MASTER carries BOTH tones; SEND 1 carries ONLY ch1's saw; SEND 2 carries
 // ONLY ch2's sine — three genuinely different signals.
 //
-// SIGNATURE outputs (owner §6b.2 — distinct only): masterL, send1L, send2L.
+// SIGNATURE outputs (owner §4 item 2 — distinct only): masterL, send1L, send2L.
 // L/R are byte-identical here (symmetric input, identical per-side chains), so
 // the R twins are asserted structurally, not pinned (no near-duplicate lanes).
 

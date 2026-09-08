@@ -1,6 +1,6 @@
 // art/setup/profile-coverage.ts
 //
-// Coverage lists for THE AUDIO-PROFILE GATE (owner decision §6b.1 —
+// Coverage lists for THE AUDIO-PROFILE GATE (owner decision §4 item 1 —
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md): every
 // audio-domain module def must have ≥1 committed ART audio-profile baseline
 // (`art/baselines/<group>/*.f32`) UNLESS it is
@@ -18,7 +18,7 @@
 // profiles — the gate, and the backfill". The spec path above is provenance.
 
 /**
- * Structural exclusions (spec §4.4) — modules that CANNOT be deterministically
+ * Structural exclusions (spec §2.3) — modules that CANNOT be deterministically
  * profiled offline. Every entry carries its reason. Adding to this list is a
  * design decision, not an escape hatch: prefer a profile wherever a
  * deterministic pure-TS render exists.

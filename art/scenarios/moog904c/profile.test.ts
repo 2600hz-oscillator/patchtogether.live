@@ -1,7 +1,7 @@
 // art/scenarios/moog904c/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 904C (voltage controlled filter coupler)
-// (backfill batch 2 — spec §4.1/§4.3,
+// (backfill batch 2 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
@@ -25,7 +25,7 @@
 // 128-sample blocks, riding the sweep on the a-rate `cutoff` AudioParam
 // with full-length arrays (sample-exact values). Zero mirror, zero drift.
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `audio` out.
+// SIGNATURE output (owner decision §4 item 2): the single mono `audio` out.
 //
 // The .sha pins BOTH the worklet entry and the ladder lib (combinedSourceSha
 // discipline) so a change in either forces an intentional `task art:update`.

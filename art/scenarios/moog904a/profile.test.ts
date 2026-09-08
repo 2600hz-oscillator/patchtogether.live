@@ -1,11 +1,11 @@
 // art/scenarios/moog904a/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 904A (voltage controlled low pass filter)
-// (backfill batch 2 — spec §4.1/§4.3,
+// (backfill batch 2 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
-// Category: FILTER — driven by the canonical VCO test signal (spec §4.2:
+// Category: FILTER — driven by the canonical VCO test signal (spec §2.2:
 // C4 saw, phase pinned to 0) with a deterministic exponential cutoff sweep
 // 120 Hz → 8 kHz standing in for the CV a real patch would send (batch-1
 // resofilter precedent — a static cutoff on a static saw would profile a
@@ -19,7 +19,7 @@
 // k = regenToK(0.5) (the exported lib fn the worklet calls) and
 // drive = 0.5 + regen·0.8 (moog904a.ts process(), the regen→drive line).
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `audio` out
+// SIGNATURE output (owner decision §4 item 2): the single mono `audio` out
 // (the ladder's 24 dB/oct lp4 tap).
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/moog-ladder-dsp.ts

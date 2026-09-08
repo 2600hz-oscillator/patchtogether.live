@@ -1,21 +1,21 @@
 // art/scenarios/ringback/profile.test.ts
 //
-// AUDIO PROFILE for RINGBACK (backfill batch 1 — spec §4.1/§4.3,
+// AUDIO PROFILE for RINGBACK (backfill batch 1 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FX / PROCESSOR — the twotracks record-time crush packaged as a
 // deliberate effect (integer-cell varispeed write vs fractional interp
 // read-back over a tiny feedback ring). Driver: the canonical VCO test
-// signal (spec §4.2: C4 saw, phase pinned to 0). Patch: the worklet's
+// signal (spec §2.2: C4 saw, phase pinned to 0). Patch: the worklet's
 // SHIPPING DEFAULTS (rate 0.5 — the hardest stair-step decimation, size 64,
 // feedback 0.3, mix 1) so the profile is the module's out-of-the-box
 // metallic ring.
 //
-// SIGNATURE output (owner decision §6b.2): ONE baseline `out`. The worklet
+// SIGNATURE output (owner decision §4 item 2): ONE baseline `out`. The worklet
 // runs one RingChannel per side with identical params; a mono driver feeds
 // both the same signal (inputs[1] ?? inL), so out_l/out_r are provably
-// identical — one profile covers both (bus-duplicate rule, spec §4.1).
+// identical — one profile covers both (bus-duplicate rule, spec §2.1).
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/ringback-core.ts
 // RingChannel.step) — the EXACT per-sample code the worklet runs

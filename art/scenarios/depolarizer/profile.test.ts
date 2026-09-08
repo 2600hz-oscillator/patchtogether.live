@@ -1,7 +1,7 @@
 // art/scenarios/depolarizer/profile.test.ts
 //
 // AUDIO PROFILE for DEPOLARIZER (bipolar → unipolar, out = 0.5 + depth·(in/2))
-// (backfill batch 5 — spec §4.1/§4.3,
+// (backfill batch 5 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + offline.ts).
 //
@@ -17,7 +17,7 @@
 // graph — no worklet) under node-web-audio-api's OfflineAudioContext via the
 // shared renderOfflineDef helper (plan §1.3 path #3).
 //
-// SIGNATURE output (owner decision §6b.2): the single `out`.
+// SIGNATURE output (owner decision §4 item 2): the single `out`.
 //
 // The .sha pins the def file reduced to its CODE — comments plus the co-located
 // docs/face blocks are stripped by the shared attest normalizer, because

@@ -1,12 +1,12 @@
 // art/scenarios/moog907a/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 907A (fixed filter bank) (backfill batch 2 —
-// spec §4.1/§4.3,
+// spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FILTER (fixed — no CV, the band centres never move). Driver:
-// the canonical SEEDED WHITE NOISE (spec §4.2 FX/processor driver,
+// the canonical SEEDED WHITE NOISE (spec §2.2 FX/processor driver,
 // PROFILE_NOISE_SEED xorshift32) — broadband noise is what reveals a FIXED
 // bank's signature: the spectrogram shows the comb of eight Q=4 bandpass
 // stripes (250 Hz … 2.8 kHz) plus the 175 Hz low-pass and 6.6 kHz
@@ -22,7 +22,7 @@
 // EXACT shipping node graph — zero mirror, zero drift. Determinism was
 // probed bit-identical in-process AND across processes before pinning.
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `audio` out.
+// SIGNATURE output (owner decision §4 item 2): the single mono `audio` out.
 //
 // The .sha pins the shared band-table lib + the shared factory wiring
 // (repoSourceSha — the render path lives partly in packages/web). The def

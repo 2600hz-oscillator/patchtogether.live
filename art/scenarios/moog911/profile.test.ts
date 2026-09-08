@@ -1,12 +1,12 @@
 // art/scenarios/moog911/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 911 (envelope / contour generator) (backfill
-// batch 3 — spec §4.1/§4.3,
+// batch 3 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts + worklet.ts).
 //
 // Category: ENVELOPE / MODULATOR — driven by the canonical HELD-SQUARE GATE
-// (spec §4.2: heldGate from $lib/audio/gate-trigger semantics), ≥1.0 s so
+// (spec §2.2: heldGate from $lib/audio/gate-trigger semantics), ≥1.0 s so
 // the full contour is visible: gate high for 0.6 s of a 1.5 s render.
 //
 // Patch: the SHIPPING DEFAULTS (t1 0.01 s attack, t2 0.2 s initial decay,
@@ -21,10 +21,10 @@
 // Moog911Eg core (lib/moog911-eg-dsp.ts), no RNG — so this render IS the
 // shipping DSP, gate thresholding and all.
 //
-// SIGNATURE output (owner decision §6b.2): `env` only. The worklet's second
+// SIGNATURE output (owner decision §4 item 2): `env` only. The worklet's second
 // port env_inv is EXACTLY 1 − env (asserted bit-exact below) — an affine
 // duplicate with no independent information, so it shares the one profile
-// (the bus-duplicate rule, spec §4.1).
+// (the bus-duplicate rule, spec §2.1).
 //
 // The .sha pins BOTH the worklet entry and the contour core
 // (combinedSourceSha discipline) so a change in either forces an

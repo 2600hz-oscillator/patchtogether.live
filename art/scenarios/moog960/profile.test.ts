@@ -1,12 +1,12 @@
 // art/scenarios/moog960/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 960 (sequential controller) (backfill batch 4 —
-// spec §4.1/§4.3,
+// spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: clocked STEP SOURCE — driven by the canonical 240 BPM CLOCK
-// (spec §4.2: clockTrain, epoch pinned to sample 0), 2.0 s so a full lap of
+// (spec §2.2: clockTrain, epoch pinned to sample 0), 2.0 s so a full lap of
 // the 8 columns (including the 7→0 wrap) is visible. Following the module's
 // external-clock contract (and the moog962 epoch-0 precedent): the transport
 // auto-runs presenting column 0, and the clock's FIRST rising edge at sample
@@ -29,7 +29,7 @@
 // NOT pinned: that file co-locates the module docs, and docs edits must
 // never invalidate audio pins (the moog907a def-file precedent).
 //
-// SIGNATURE outputs (owner decision §6b.2): row1 / row2 / row3 — three
+// SIGNATURE outputs (owner decision §4 item 2): row1 / row2 / row3 — three
 // distinct staircases. clock_out is a fixed-shape 10 ms pulse per advance
 // (no independent information beyond the step edges already visible on the
 // rows) — asserted sample-exact below, not pinned.

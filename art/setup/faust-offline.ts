@@ -1,7 +1,7 @@
 // art/setup/faust-offline.ts
 //
 // Shared FAUST-IN-NODE offline capture path for ART audio profiles (backfill
-// batch 6 — spec §5 "Faust-only modules" / §7 Q3,
+// batch 6 — spec §3 "Faust-only modules",
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 //
 // THE PROBLEM this solves. Most of the remaining audio backlog is Faust: the

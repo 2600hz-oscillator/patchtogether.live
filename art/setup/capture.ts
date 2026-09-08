@@ -1,7 +1,7 @@
 // art/setup/capture.ts
 //
 // Reusable AUDIO-PROFILE capture harness (ART backfill Phase 0 — spec:
-// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md §4.3).
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md §1.2).
 //
 // A profile scenario = (driver) → (pure-TS module core) → capture every
 // SIGNATURE output → pin each as art/baselines/<group>/<name>.f32 + .sha.
@@ -9,7 +9,7 @@
 // This lifts the proven per-scenario patterns into ONE shared helper set:
 //   - `captureOutputs` — the render loop: a per-sample `tick` fed by a driver
 //     (see ./drivers) fills one Float32Array per declared output at 48 kHz
-//     mono (the pure-TS-core rendering path — owner decision §6b.3).
+//     mono (the pure-TS-core rendering path — owner decision §4 item 3).
 //   - `dspSourceSha`  — the multi-file source pin (the `combinedSourceSha`
 //     pattern from treeohvox/voice-character.test.ts, generalized): hash the
 //     worklet entry + every `-dsp.ts` lib the render depends on, so a
@@ -134,10 +134,10 @@ export async function docsStrippedRepoSourceSha(...relPaths: string[]): Promise<
 // ---------------------------------------------------------------------------
 
 export interface CaptureOptions {
-  /** Render length in seconds. Spec §4.1: ~0.5 s steady sources/FX, ≥1.0 s
+  /** Render length in seconds. Spec §2.1: ~0.5 s steady sources/FX, ≥1.0 s
    *  for envelope/sequence/decay-tail modules. */
   durationS: number;
-  /** The SIGNATURE outputs to capture (owner decision §6b.2 — distinct taps
+  /** The SIGNATURE outputs to capture (owner decision §4 item 2 — distinct taps
    *  only, not every near-identical lane). */
   outputs: readonly string[];
   sampleRate?: number;

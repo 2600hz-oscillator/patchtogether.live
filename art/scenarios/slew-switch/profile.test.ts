@@ -1,7 +1,7 @@
 // art/scenarios/slew-switch/profile.test.ts
 //
 // AUDIO PROFILE for SLEWSWITCH (quad slew limiter + 4→1 sequential switch)
-// (backfill batch 4 — spec §4.1/§4.3,
+// (backfill batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
@@ -40,7 +40,7 @@
 // loader — slewswitch.ts is self-contained pure math with the seeded PRNG
 // above.
 //
-// SIGNATURE outputs (owner decision §6b.2): `out2` (the slew law drawn
+// SIGNATURE outputs (owner decision §4 item 2): `out2` (the slew law drawn
 // large) and `switched` (the selector walk — the module's headline).
 // out1/out3/out4 demonstrate the SAME one-pole law on other
 // inputs (asserted structurally below, not pinned); step_idx is a derived

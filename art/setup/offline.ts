@@ -1,9 +1,9 @@
 // art/setup/offline.ts
 //
 // Shared REAL-DEF-FACTORY capture path for ART audio profiles (backfill
-// batch 5 — spec §4.3 `captureOffline`,
-// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md
-// §1.3 rendering path #3).
+// batch 5 — the render → capture → pin flow is spec §1.2, and this is
+// rendering path #3 of §1.3:
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 //
 // Some audio modules have NO worklet at all — they are PURE Web Audio node
 // graphs (GainNode / DelayNode / WaveShaperNode / ConstantSourceNode) built
@@ -31,7 +31,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { SAMPLE_RATE } from './render';
 
 export interface OfflineDefRenderOptions {
-  /** Render length in seconds (spec §4.1: ~0.5 s steady FX, ≥1 s for
+  /** Render length in seconds (spec §2.1: ~0.5 s steady FX, ≥1 s for
    *  tails/slow modulation). */
   durationS: number;
   /** node.params handed to the factory — the profile's explicit patch.

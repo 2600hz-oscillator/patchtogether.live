@@ -1,7 +1,7 @@
 // art/scenarios/sidecar/profile.test.ts
 //
 // AUDIO PROFILE for SIDECAR (stereo sidechain ducker) (backfill batch 3 —
-// spec §4.1/§4.3,
+// spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
@@ -11,7 +11,7 @@
 //   MAIN/trigger  = a deterministic "kick": 60 Hz sine × per-beat
 //                   exponential decay (exp(-12·t_beat)) at 120 BPM — four
 //                   kicks across the 2 s render, pure math, no RNG.
-//   SIDECHAIN     = the canonical C4 saw pad (vcoTestSignal, spec §4.2),
+//   SIDECHAIN     = the canonical C4 saw pad (vcoTestSignal, spec §2.2),
 //                   steady, so the pump carved into it is unmistakable.
 //
 // Patch: the SHIPPING DEFAULTS (threshold −18 dB, ratio 4, attack 10 ms,
@@ -24,7 +24,7 @@
 // loader — sidecar.ts is a thin self-contained wrapper around the
 // GMR-2012 pipeline in lib/compressor-dsp.ts, pure math, no RNG.
 //
-// SIGNATURE outputs (owner decision §6b.2): `audio_l_out` + `env_out`.
+// SIGNATURE outputs (owner decision §4 item 2): `audio_l_out` + `env_out`.
 //   - audio_r_out ≡ audio_l_out with mono drivers (the worklet's R→L input
 //     fallback; asserted bit-exact below) — bus-duplicate rule.
 //   - env_inv_out is EXACTLY 1 − env_out (asserted below) — an affine

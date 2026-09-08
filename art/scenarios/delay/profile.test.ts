@@ -1,7 +1,7 @@
 // art/scenarios/delay/profile.test.ts
 //
 // AUDIO PROFILE for DELAY (single-tap delay line + feedback + mix) (backfill
-// batch 5 — spec §4.1/§4.3,
+// batch 5 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + offline.ts).
 //
@@ -29,7 +29,7 @@
 // identical tap timing (onsets every 7200 samples), identical 0.6× decay,
 // identical waveform shape (residual after rescale = 0), only ~+3 dB of level.
 //
-// SIGNATURE output (owner decision §6b.2): the single `audio` out (dry + the
+// SIGNATURE output (owner decision §4 item 2): the single `audio` out (dry + the
 // feedback echo tail).
 //
 // The .sha pins the def file reduced to its CODE — comments plus the co-located
@@ -43,7 +43,7 @@ import { toneBurst } from '../../setup/drivers';
 import { renderOfflineDef } from '../../setup/offline';
 
 const SR = SAMPLE_RATE;
-const DURATION_S = 1.0; // ≥1 s to capture several echoes of the tail (spec §4.1)
+const DURATION_S = 1.0; // ≥1 s to capture several echoes of the tail (spec §2.1)
 const TIME_S = 0.15; // 150 ms between echoes
 const FEEDBACK = 0.6; // ~0.6× decay per repeat
 const MIX = 0.5; // dry = 0.5, wet = 0.5 at construction
