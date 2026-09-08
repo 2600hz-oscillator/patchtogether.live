@@ -35,7 +35,14 @@ import {
 import { midiLaneDef, midiLaneHydrateOf, type MidiLaneApi } from './midi-lane';
 import { midiOutBuddyDef, midiOutBuddyHydrateOf, type MidiOutBuddyApi } from './midi-out-buddy';
 import { midiclockDef, midiclockHydrateOf, type MidiclockApi } from './midiclock';
-import { audioOutDef, audioOutSinkPickOf } from './audio-out';
+// NOTE (merge feat/native-preflight ← origin/main): the audio-out sink pick moved
+// OFF `node.data` into the per-machine rig store (`$lib/graph/device-slot-bindings`),
+// so audio-out no longer uses the `watchLiveNodeData` node.data seam that #2370
+// added. The audio-out re-apply describe block that lived here tested that removed
+// seam (and `audioOutSinkPickOf`, now gone); its rig-store replacement is covered
+// by device-slot-bindings.test.ts, audioout-face-model.test.ts, and the e2e specs
+// rig-bindings-survive-reload / preflight-rig-setup / device-slot-continuity. The
+// midi/clock re-hydrate sections below keep #2370's seam and are unchanged.
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
 // ---------------------------------------------------------------------------
@@ -548,84 +555,13 @@ describe('midiclock: a same-session load at a reused id re-hydrates', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. audio-out — the loaded sink is APPLIED through setSinkId
+// 6. audio-out — REMOVED in the feat/native-preflight ← origin/main merge.
+//
+// The audio-out sink pick moved OFF `node.data` into the per-machine rig store
+// (`$lib/graph/device-slot-bindings`), so audio-out no longer uses the
+// `watchLiveNodeData` node.data re-apply seam that #2370 added and this block
+// exercised (`audioOutSinkPickOf` is gone too). The rig-store replacement is
+// covered by device-slot-bindings.test.ts, audioout-face-model.test.ts, and the
+// e2e specs rig-bindings-survive-reload / preflight-rig-setup /
+// device-slot-continuity. The midi/clock sections above keep #2370's seam.
 // ---------------------------------------------------------------------------
-
-describe('audio-out: a same-session load at a reused id re-applies the sink', () => {
-  const ID = 'pinned-audioOut-reused';
-  afterEach(() => despawn(ID));
-
-  async function flush(): Promise<void> {
-    for (let i = 0; i < 8; i++) await Promise.resolve();
-  }
-
-  it('setSinkId is called with the LOADED device, and the applied id reports it', async () => {
-    const applied: string[] = [];
-    const { ctx } = makeCtx();
-    const sinkCtx = Object.assign(ctx, { setSinkId: vi.fn(async (id: string) => { applied.push(id); }) });
-    const v1 = node(ID, 'audioOut', { outputDeviceId: 'dev-a' }, { master: 0.7 });
-    spawn(v1);
-    const handle = await audioOutDef.factory(sinkCtx as unknown as AudioContext, v1);
-    await flush();
-    expect(applied, 'boot applies the saved pick').toEqual(['dev-a']);
-
-    sameSessionLoad(node(ID, 'audioOut', { outputDeviceId: 'dev-b' }, { master: 0.7 }));
-    poll();
-    await flush();
-    expect(applied, 'the loaded pick reaches setSinkId').toEqual(['dev-a', 'dev-b']);
-    expect((handle.read?.('outputSink') as { deviceId: string | null }).deviceId).toBe('dev-b');
-
-    // A patch with NO pick is the browser default — what a fresh page would give.
-    sameSessionLoad(node(ID, 'audioOut', {}, { master: 0.7 }));
-    poll();
-    await flush();
-    expect(applied.at(-1), 'no pick ⇒ the default sink').toBe('');
-    handle.dispose();
-  });
-
-  it('⚠ THE WRITE RACE (the e2e catch): picker → B and persisted, then v1 loaded — inside ONE poll', async () => {
-    const applied: string[] = [];
-    const { ctx } = makeCtx();
-    const sinkCtx = Object.assign(ctx, { setSinkId: vi.fn(async (id: string) => { applied.push(id); }) });
-    const v1 = node(ID, 'audioOut', { outputDeviceId: 'dev-a' }, { master: 0.7 });
-    spawn(v1);
-    const handle = await audioOutDef.factory(sinkCtx as unknown as AudioContext, v1);
-    await flush();
-    poll();
-    expect(applied).toEqual(['dev-a']);
-    handle.write?.('outputDeviceId', 'dev-b');
-    ydoc.transact(() => { (patch.nodes[ID]!.data as Record<string, unknown>).outputDeviceId = 'dev-b'; }, LOCAL_ORIGIN);
-    sameSessionLoad(node(ID, 'audioOut', { outputDeviceId: 'dev-a' }, { master: 0.7 }));
-    poll();
-    await flush();
-    expect(applied, 'the engine was on B, the doc says A: A is re-applied').toEqual(['dev-a', 'dev-b', 'dev-a']);
-    expect((handle.read?.('outputSink') as { deviceId: string | null }).deviceId).toBe('dev-a');
-    handle.dispose();
-  });
-
-  it("the picker's own write is not applied a second time by the watcher", async () => {
-    const applied: string[] = [];
-    const { ctx } = makeCtx();
-    const sinkCtx = Object.assign(ctx, { setSinkId: vi.fn(async (id: string) => { applied.push(id); }) });
-    const v1 = node(ID, 'audioOut', {}, { master: 0.7 });
-    spawn(v1);
-    const handle = await audioOutDef.factory(sinkCtx as unknown as AudioContext, v1);
-    await flush();
-    expect(applied).toEqual([]);
-    // The face: apply through the handle AND persist into the doc.
-    handle.write?.('outputDeviceId', 'dev-c');
-    ydoc.transact(() => {
-      (patch.nodes[ID]!.data as Record<string, unknown>).outputDeviceId = 'dev-c';
-    }, LOCAL_ORIGIN);
-    poll(); poll();
-    await flush();
-    expect(applied, 'one apply, not two').toEqual(['dev-c']);
-    handle.dispose();
-  });
-
-  it('the projection reads the pick or the default', () => {
-    expect(audioOutSinkPickOf(node(ID, 'audioOut', { outputDeviceId: 'x' }))).toBe('x');
-    expect(audioOutSinkPickOf(node(ID, 'audioOut', {}))).toBe('');
-    expect(audioOutSinkPickOf(node(ID, 'audioOut', { outputDeviceId: 42 }))).toBe('');
-  });
-});

@@ -483,93 +483,16 @@ test('midiclock: a same-session load rebinds the LOADED port by name and re-read
   expect(errors, errors.join(' | ')).toEqual([]);
 });
 
-// ── #8 audio-out — the output sink ──────────────────────────────────────────
-
-/** Record every `setSinkId` on the live AudioContext and grant the e2e ids.
- *  A CI runner has no second audio device, so the ids are synthetic; what is
- *  real is the CALL on the live context — the one owner of the sink. */
-const SINK_SHIM = `
-(() => {
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return;
-  window.__sinkCalls = [];
-  const orig = AC.prototype.setSinkId;
-  AC.prototype.setSinkId = function (id) {
-    window.__sinkCalls.push(id);
-    if (typeof id === 'string' && id.startsWith('e2e-sink-')) return Promise.resolve();
-    return typeof orig === 'function' ? orig.call(this, id) : Promise.resolve();
-  };
-})();
-`;
-
-test('audio-out: a same-session load re-applies the LOADED output device through setSinkId, and stays audible', async ({ page }) => {
-  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 3);
-  await page.addInitScript({ content: SINK_SHIM });
-  const errors = await boot(page);
-  await seedPatch(
-    page,
-    [
-      { id: 'noi', type: 'noise', params: { level: 0.5 } },
-      { id: 'ao', type: 'audioOut', data: { outputDeviceId: 'e2e-sink-a' } },
-    ],
-    [{ id: 'e-out', from: { nodeId: 'noi', portId: 'white' }, to: { nodeId: 'ao', portId: 'L' }, sourceType: 'audio', targetType: 'audio' }],
-  );
-  await waitForHandle(page, 'ao', 'outputSink');
-
-  const readSink = () =>
-    page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine: () => { read: (n: unknown, k: string) => unknown };
-        __patch: { nodes: Record<string, unknown> };
-        __sinkCalls: string[];
-      };
-      const sink = w.__engine().read(w.__patch.nodes['ao'], 'outputSink') as {
-        supported: boolean; deviceId: string | null; error: string | null;
-      };
-      return { ...sink, calls: [...w.__sinkCalls] };
-    });
-  const readRms = () =>
-    page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine: () => { read: (n: unknown, k: string) => unknown };
-        __patch: { nodes: Record<string, unknown> };
-      };
-      const snap = w.__engine().read(w.__patch.nodes['ao'], 'outputSnapshot') as { samples: Float32Array };
-      let acc = 0;
-      for (let i = 0; i < snap.samples.length; i++) acc += snap.samples[i]! * snap.samples[i]!;
-      return Math.sqrt(acc / Math.max(1, snap.samples.length));
-    });
-
-  // v1 LIVE: the boot-time apply reaches the context.
-  await expect.poll(async () => (await readSink()).deviceId, { message: 'v1: the saved sink is APPLIED at boot' }).toBe('e2e-sink-a');
-  const v1 = await readSink();
-  expect(v1.supported, 'setSinkId is present on the live context (shimmed on runners without it)').toBe(true);
-  expect(v1.calls).toContain('e2e-sink-a');
-  await expect.poll(readRms, { message: 'v1: the terminal is audible' }).toBeGreaterThan(0.01);
-  const envV1 = await saveEnvelope(page);
-
-  // The picker's edit path to v2: the handle write AND the doc.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine: () => { write: (n: unknown, k: string, v: unknown) => void };
-      __patch: { nodes: Record<string, { data: Record<string, unknown> }> };
-      __ydoc: { transact: (fn: () => void) => void };
-    };
-    w.__engine().write(w.__patch.nodes['ao'], 'outputDeviceId', 'e2e-sink-b');
-    w.__ydoc.transact(() => { w.__patch.nodes['ao']!.data.outputDeviceId = 'e2e-sink-b'; });
-  });
-  await expect.poll(async () => (await readSink()).deviceId, { message: 'v2: the picker applied its device' }).toBe('e2e-sink-b');
-  const callsBeforeLoad = (await readSink()).calls.length;
-
-  // THE SAME-SESSION LOAD of v1 over the running v2 rack.
-  await loadSameSession(page, envV1, ['noi', 'ao']);
-  expect(await readData(page, 'ao', 'outputDeviceId'), 'the doc shows v1 after the load').toBe('e2e-sink-a');
-  await expect
-    .poll(async () => (await readSink()).deviceId, { timeout: 10_000, message: 'AFTER THE LOAD: the loaded device (v1) is APPLIED, not merely persisted' })
-    .toBe('e2e-sink-a');
-  const after = await readSink();
-  expect(after.error).toBeNull();
-  expect(after.calls.slice(callsBeforeLoad), 'exactly one new setSinkId call, for the loaded device').toEqual(['e2e-sink-a']);
-  await expect.poll(readRms, { message: 'after the load: the terminal is still audible through the reused node' }).toBeGreaterThan(0.01);
-  expect(errors, errors.join(' | ')).toEqual([]);
-});
+// ── #8 audio-out — REMOVED in the feat/native-preflight ← origin/main merge ──
+//
+// #2370's audio-out leg asserted that a same-session load re-applies the LOADED
+// `node.data.outputDeviceId` through `setSinkId`. feat/native-preflight moves the
+// master sink OFF `node.data` into the per-machine rig store
+// (`$lib/graph/device-slot-bindings`): the pick is machine-local and no longer
+// rides the Y.Doc, so it is DELIBERATELY not carried by a saved/loaded patch and
+// the boot-time apply reads the rig store, not `node.data`. The assertions here
+// (boot applies `e2e-sink-a` from node.data; a load re-applies it) test a seam
+// the product no longer has. The rig-store behaviour is covered by the e2e specs
+// rig-bindings-survive-reload / preflight-rig-setup / device-slot-continuity and
+// by device-slot-bindings.test.ts / audioout-face-model.test.ts. The MIDI/clock
+// legs above are unchanged — their `watchLiveNodeData` seam survives.

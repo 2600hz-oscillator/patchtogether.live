@@ -94,6 +94,27 @@ export function ptErr(
   return { v: PT_BRIDGE_VERSION, id, ok: false, error: { code, message, retryable } };
 }
 
+/** The one way a handler names a specific error CODE from inside the dispatcher.
+ *
+ * A registered handler otherwise has two outcomes: return a value (→ `ptOk`) or
+ * throw (→ `internal`, retryable). That is right for the read-only ops shipped
+ * so far, but the write ops (P1 assign/unbind, P5 pre-flight — and this phase's
+ * `bindings.set`) must be able to reject a bad payload as `bad-request`, not
+ * `internal`. Throwing this carries the code + retryability through the same
+ * catch, so the error vocabulary stays owned by THIS file rather than being
+ * re-invented per handler. `dispatch` maps it; anything else thrown is still
+ * `internal`. */
+export class PtHandlerError extends Error {
+  readonly code: PtErrorCode;
+  readonly retryable: boolean;
+  constructor(code: PtErrorCode, message: string, retryable = false) {
+    super(message);
+    this.name = 'PtHandlerError';
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
 /** Structurally validate an incoming command. Returns null when it is fine,
  *  or the error to send back. Runs in MAIN on renderer-supplied data. */
 export function validateCommand(raw: unknown): PtError | null {

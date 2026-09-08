@@ -36,6 +36,8 @@
 import type { FullscreenController } from './use-fullscreen.svelte';
 import type { DomainEngine } from '$lib/audio/engine';
 import type { VideoEngine } from '$lib/video/engine';
+import { deviceSlotForId, type OutputSlotName } from '$lib/graph/device-slots';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
 import {
   nodePresent,
   type NodePresentRegistry,
@@ -92,7 +94,14 @@ export function resolveVideoEngine(host: PresentEngineHost | null | undefined): 
   } catch {
     return null;
   }
-  if (!ve || typeof ve.blitOutputToDrawingBuffer !== 'function' || typeof ve.acquireRenderLease !== 'function') {
+  if (
+    !ve ||
+    typeof ve.blitOutputToDrawingBuffer !== 'function' ||
+    typeof ve.acquireRenderLease !== 'function' ||
+    // The projector's source guard queries this every frame; a build without it
+    // would throw in the blit loop rather than fall back cleanly here.
+    typeof ve.outputTexture !== 'function'
+  ) {
     return null;
   }
   return ve as unknown as PresentEngine;
@@ -125,7 +134,19 @@ export function createPresent(args: CreatePresentArgs): PresentController {
       });
     },
     stop(screenId?: string): void {
-      registry.stop(args.nodeId(), screenId);
+      const id = args.nodeId();
+      registry.stop(id, screenId);
+      // A reserved OUTPUT SLOT's monitor is a PER-MACHINE rig binding held in
+      // `rigBindings()`. Stopping its projector entirely is the explicit unbind:
+      // clear the store binding so a later reload does not reopen a display the
+      // operator deliberately closed. Only when no session remains for the slot
+      // (a per-screen stop that leaves others lit keeps the binding). A NON-slot
+      // `videoOut`'s placement rides the patch and is swept by the present
+      // write-back, so it is untouched here.
+      const spec = deviceSlotForId(id);
+      if (spec?.kind === 'output' && !registry.isPresenting(id)) {
+        rigBindings().setOutput(spec.slot as OutputSlotName, null);
+      }
     },
   };
 }

@@ -18,7 +18,20 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import {
+  RigBindingStore,
+  emptyRigBindings,
+  rigBindings,
+  setRigBindingsForTests,
+  type RigStoreBackend,
+} from '$lib/graph/device-slot-bindings';
+import { deviceSlotForName } from '$lib/graph/device-slots';
 import type { ModuleNode } from '$lib/graph/types';
+
+/** Isolated in-memory rig store for the reserved-slot cases. */
+function memRigBackend(): RigStoreBackend {
+  return { load: () => emptyRigBindings(), save: () => {}, subscribe: () => () => {} };
+}
 import {
   addWorkflowCamera,
   unmapWorkflowCamera,
@@ -182,5 +195,63 @@ describe('listWorkflowCameras / labels (pure)', () => {
     expect(cams.map((c) => c.id)).toEqual(['a', 'b']);
     expect(cameraNumberOf(cams[1]!)).toBeNull();
     expect(cameraRowLabel(cams[1]!, [])).toBe('camera');
+  });
+});
+
+describe('reserved CAMERA SLOTS read/write the PER-MACHINE rig store, not node.data', () => {
+  const SLOT_ID = deviceSlotForName('cam1')!.id; // 'slot:cam1'
+
+  beforeEach(() => {
+    reset();
+    setRigBindingsForTests(new RigBindingStore(memRigBackend()));
+  });
+  afterEach(() => {
+    reset();
+    setRigBindingsForTests(null);
+  });
+
+  function seedSlot(): void {
+    // A reserved camera slot node: type cameraInput, hidden, at its reserved id.
+    seedNode(SLOT_ID, WORKFLOW_CAMERA_TYPE, { hiddenCard: true, name: 'cam1' });
+  }
+
+  it('readCameraDeviceId reads the STORE for a slot, ignoring any stray node.data', () => {
+    seedSlot();
+    // Unbound slot: the store is empty, so null even though the slot node exists.
+    expect(readCameraDeviceId(patch.nodes[SLOT_ID]!)).toBeNull();
+
+    // A machine-local device id written onto the synced node.data must NOT be
+    // read for a slot — the store is the single source of truth (the #2045
+    // class the migration closes).
+    ydoc.transact(() => {
+      patch.nodes[SLOT_ID]!.data!['deviceId'] = 'stray-doc-id';
+    }, LOCAL_ORIGIN);
+    expect(readCameraDeviceId(patch.nodes[SLOT_ID]!)).toBeNull();
+
+    // Bind via the store → that is what readCameraDeviceId returns.
+    rigBindings().setCamera('cam1', { deviceId: 'dev-store', deviceLabel: 'Studio Cam' });
+    expect(readCameraDeviceId(patch.nodes[SLOT_ID]!)).toBe('dev-store');
+  });
+
+  it('cameraRowLabel resolves the store-bound device label, else the slot name', () => {
+    seedSlot();
+    const devices = [{ deviceId: 'dev-store', label: 'Studio Cam' }];
+    // Unbound → the rig's own vocabulary (the slot name), not "camera N".
+    expect(cameraRowLabel(patch.nodes[SLOT_ID]!, devices)).toBe('cam1');
+    rigBindings().setCamera('cam1', { deviceId: 'dev-store', deviceLabel: 'Studio Cam' });
+    expect(cameraRowLabel(patch.nodes[SLOT_ID]!, devices)).toBe('Studio Cam');
+  });
+
+  it('unmapWorkflowCamera clears the STORE binding and leaves the reserved node standing', () => {
+    seedSlot();
+    rigBindings().setCamera('cam1', { deviceId: 'dev-store' });
+    expect(unmapWorkflowCamera(SLOT_ID)).toBe(true);
+    // The binding is gone…
+    expect(rigBindings().getCamera('cam1')).toBeNull();
+    // …but the reserved slot node itself is NOT deleted (device access must not
+    // break — the id keeps the camera session's home).
+    expect(patch.nodes[SLOT_ID]).toBeDefined();
+    // Idempotent: a second unmap of an already-unbound slot is a no-op false.
+    expect(unmapWorkflowCamera(SLOT_ID)).toBe(false);
   });
 });

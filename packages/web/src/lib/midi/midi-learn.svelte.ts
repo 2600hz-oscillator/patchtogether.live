@@ -676,6 +676,22 @@ export function importBindings(incoming: unknown[]): void {
   saveToStorage();
 }
 
+/**
+ * REPLACE the entire dispatched binding set with `incoming` (clearing the
+ * current bindings first) and persist. A MIDI map is PATCH content, not a
+ * sticky rig property (owner ruling 2026-09-07): a patch/performance LOAD adopts
+ * the incoming map wholesale, and New rack passes `[]` to start blank — the
+ * localStorage cache is rewritten so a subsequent reload does not resurrect the
+ * old map. Distinct from `importBindings`, which ADDS/supersedes per key for the
+ * Electra re-connect allocation table and must keep doing so. Setters,
+ * note-setters and the Electra display map are untouched — cards stay mounted,
+ * and the Electra reconnect regenerates its allocation (blank, for an empty set).
+ */
+export function replaceBindings(incoming: unknown[]): void {
+  bindings.clear();
+  importBindings(incoming);
+}
+
 // ---------------- Test-only hooks ----------------
 
 /** Replace the singleton's MIDIAccess with a fake. Bindings + learn state

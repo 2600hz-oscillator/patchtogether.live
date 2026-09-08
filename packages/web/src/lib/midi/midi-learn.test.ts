@@ -25,6 +25,7 @@ import {
   ccValueToParamValue,
   parseCcMessage,
   importBindings,
+  replaceBindings,
   exportBindings,
   setElectraDisplayBindings,
   clearElectraDisplayBindings,
@@ -941,5 +942,34 @@ describe('legacy binding aliases — a promoted control adopts its old key', () 
     expect(getBinding('score-2', 'isPlaying')).toBeUndefined();
     expect(getBinding(NODE, 'play')).toBeDefined();
     clearBinding(NODE, 'play');
+  });
+});
+
+describe('replaceBindings — MIDI maps are PATCH content (owner ruling 2026-09-07)', () => {
+  beforeEach(() => __test_clearBindings());
+
+  it('replaces the whole set wholesale, dropping the current map', () => {
+    importBindings([{ key: bindingKey('modA', 'p'), channel: 1, cc: 10, learnedAt: 1 }]);
+    // a LOAD adopts the incoming patch's mappings and drops the current ones —
+    // NOT a merge (which is `importBindings`, kept for the Electra allocation)
+    replaceBindings([{ key: bindingKey('modB', 'q'), channel: 2, cc: 20, learnedAt: 2 }]);
+    expect(exportBindings().map((b) => b.key)).toEqual([bindingKey('modB', 'q')]);
+  });
+
+  it('clears every binding on an empty replace (New rack starts blank)', () => {
+    importBindings([
+      { key: bindingKey('modA', 'p'), channel: 1, cc: 10, learnedAt: 1 },
+      { key: bindingKey('modB', 'q'), channel: 2, cc: 20, learnedAt: 2 },
+    ]);
+    replaceBindings([]);
+    expect(exportBindings()).toEqual([]);
+  });
+
+  it('importBindings still MERGES (the Electra re-connect path is unchanged)', () => {
+    importBindings([{ key: bindingKey('modA', 'p'), channel: 1, cc: 10, learnedAt: 1 }]);
+    importBindings([{ key: bindingKey('modB', 'q'), channel: 2, cc: 20, learnedAt: 2 }]);
+    expect(exportBindings().map((b) => b.key).sort()).toEqual(
+      [bindingKey('modA', 'p'), bindingKey('modB', 'q')].sort(),
+    );
   });
 });

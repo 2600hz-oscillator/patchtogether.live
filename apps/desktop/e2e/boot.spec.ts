@@ -41,12 +41,19 @@ test('shell boots, /rack paints, audio runs gesture-free, zero errors', async ()
     );
   }
 
+  // Two-stage launch (native-shell pre-flight): a FRESH machine opens /preflight
+  // for first-run setup; only a CONFIGURED rig boots straight to the rack. This
+  // boot proof is about the RACK path (paint + gesture-free audio), so seed a
+  // present-but-empty rig record on disk → isFirstRun() is false → /rack. The
+  // first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-boot-'));
+  fs.writeFileSync(path.join(userDataDir, 'rig-bindings.json'), '{}');
   const electronApp = await _electron.launch({
     // Own userData dir: the shell holds a SINGLE-INSTANCE LOCK keyed on this
     // path, so a lingering sibling launch would otherwise make this one exit
     // silently instead of booting. ownership.spec.ts is where a SHARED dir is
     // the subject.
-    args: [`--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-boot-'))}`, APP_DIR],
+    args: [`--user-data-dir=${userDataDir}`, APP_DIR],
     env: {
       ...process.env,
       PT_DESKTOP_WEB_ROOT: WEB_ROOT,

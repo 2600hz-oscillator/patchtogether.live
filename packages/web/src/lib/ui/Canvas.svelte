@@ -121,7 +121,6 @@
     makePerformanceBundle,
     validateBundle,
     BundleParseError,
-    mergeMidiBindings,
     resolveMidiDeviceId,
     MIDI_DEVICE_NODE_TYPES,
     MIDI_OUTPUT_DEVICE_NODE_TYPES,
@@ -156,6 +155,7 @@
   import {
     exportBindings as exportMidiBindings,
     importBindings as importMidiBindings,
+    replaceBindings as replaceMidiBindings,
     connect as connectMidiLearn,
   } from '$lib/midi/midi-learn.svelte';
   import { getMidiClockSource } from '$lib/midi/midi-clock-source';
@@ -372,6 +372,28 @@
     workflowCameraAtCap,
   } from '$lib/ui/workflow/workflow-cameras';
   import { isCanvasHiddenNode } from '$lib/graph/hidden-card';
+  // NATIVE-SHELL P1 — the device-slot layer: reserved node ids (`cam1..cam4`
+  // in the header's camera manager, `output1..output4` in the purple video
+  // zone) whose hardware sessions must outlive every patch load, save and
+  // swap. See graph/device-slots.ts for the model.
+  import {
+    OUTPUT_SLOT_LAYOUT,
+    OUTPUT_SLOTS,
+    deviceSlotForId,
+    isDeviceSlotId,
+    outputSlotPosition,
+    planDeviceSlotIdentityRepairs,
+    planDeviceSlotSpawns,
+    type OutputSlotName,
+  } from '$lib/graph/device-slots';
+  import { screenKey, type ScreenDescriptor } from '$lib/ui/modules/screen-identity';
+  // NATIVE-SHELL PART-3 — the PER-MACHINE RIG STORE. Camera / audio-out / display
+  // bindings live here (localStorage in the browser, the shell's config store
+  // under Electron), OFF the synced Y.Doc, so they survive a File→New / reload
+  // that swaps the doc wholesale. `runDeviceRestore` re-applies them to whatever
+  // rack is live now, and a store `subscribe` re-applies on an external change
+  // (e.g. a shell pre-flight `bindings.changed`). See device-slot-bindings.ts.
+  import { rigBindings } from '$lib/graph/device-slot-bindings';
   // DOCKING P2.5a — three dock zones (top rail / LEFT rail = the workflow
   // left toolbar / bottom drawer), plain-mount rail hosts (DockCardHost via
   // DockRail), the canvas-side DockStubCard swap, and the local tombstoned
@@ -690,6 +712,11 @@
       (globalThis as any).__ydoc = ydoc;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__engine = () => engine;
+      // The PER-MACHINE RIG STORE snapshot, for device-continuity specs: the
+      // camera / audio-out / output-slot bindings that now live OFF the Y.Doc.
+      // A getter (mount-only-hooks invariant) returning the plain record.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__rigBindings = () => rigBindings().snapshot();
       // #1811 — THE MAIN-THREAD COST PROBE. Three in-page accumulators read in
       // ONE round trip, deliberately:
       //   tick  — scheduler ARRIVAL lateness + DISPATCH cost, ms (tick-latency)
@@ -1257,7 +1284,33 @@
     // nothing saved leaves the list empty and makes the FIRST save of every rig
     // write []. That was the bug the owner's zip caught.
     await presentScreens.loadScreens();
-    const saved = fromEnvelope ?? readPresentBindings(ydoc);
+    const allSaved = fromEnvelope ?? readPresentBindings(ydoc);
+    // ── OUTPUT-SLOT display bindings are PER-MACHINE, not patch content ────────
+    //
+    // `output1..4` (output1 = the historical `workflow-videoOut`) are reserved
+    // device slots; which MONITOR each drives is a rig property that must live in
+    // `rigBindings()`, off the shared doc, so it survives a File→New / reload —
+    // `runDeviceRestore` reopens those from the store. A NON-slot `videoOut`
+    // (a user-added sink with an ordinary id) keeps riding the Y.Doc, decided by
+    // the patch/shell authority rule below. So split them here: everything the
+    // rule sees from now on is NON-slot only.
+    //
+    // A legacy patch that saved a slot's monitor INTO the doc is migrated into
+    // the store once (browser only — under the shell the shell owns the display
+    // map and writes the store itself), and per-machine authority means this
+    // rig's own binding is never overwritten by the loaded patch's copy. The
+    // stale doc copy is then swept out by the present write-back (it only ever
+    // writes NON-slot pairs, so the next armed write replaces the slot entry).
+    const slotSaved = allSaved.filter((b) => deviceSlotForId(b.nodeId)?.kind === 'output');
+    const saved = allSaved.filter((b) => deviceSlotForId(b.nodeId)?.kind !== 'output');
+    if (!nativeAvailable()) {
+      for (const b of slotSaved) {
+        const spec = deviceSlotForId(b.nodeId);
+        if (spec && !rigBindings().getOutput(spec.slot as OutputSlotName)) {
+          rigBindings().setOutput(spec.slot as OutputSlotName, { screen: b.screen });
+        }
+      }
+    }
     const live = liveScreens();
     // ONE RULE, ONE PLACE. Which authority owns display placement, whether this
     // load may open anything, and whether the write-back may arm are all the
@@ -1300,11 +1353,133 @@
     }
   }
 
+  /** Two display fingerprints name the same monitor in the same place. Used to
+   *  dedup the store write so a re-present of the same slot on the same screen
+   *  does not churn the rig store (and re-notify its subscribers). */
+  function sameScreenBinding(a: ScreenDescriptor, b: ScreenDescriptor): boolean {
+    return screenKey(a) === screenKey(b) && a.left === b.left && a.top === b.top;
+  }
+
+  /**
+   * RE-APPLY THE PER-MACHINE RIG STORE TO THE CURRENT RACK.
+   *
+   * The sibling of `runPresentRestore`, for the bindings that live OFF the Y.Doc
+   * (`rigBindings()`): the camera each `slot:camN` is bound to, the master audio
+   * sink, and each output slot's monitor. The store survives a doc swap, so this
+   * is what makes File→New / reload / refresh keep the camera + external display
+   * + audio sink bound — the doc is gone, but the store is not, and this re-binds
+   * whatever rack is live now.
+   *
+   * Triggered at every lifecycle edge that hands us a new (or freshly-loaded)
+   * doc — mount/boot, after a load, and after File→New (which navigates to a
+   * fresh doc and remounts, so the mount edge covers it) — and again from a
+   * store `subscribe` so a late/external change (a shell pre-flight
+   * `bindings.changed`, another tab) re-applies live. Idempotent by construction:
+   * every step below is a no-op when the live rack already matches the store.
+   */
+  let deviceRestoreScheduled = false;
+  async function runDeviceRestore(): Promise<void> {
+    // The store hydrates asynchronously (a shell load is a round-trip); wait for
+    // the first load so a boot-time call reads real bindings, not the empty cache.
+    await rigBindings().whenReady();
+
+    // 1. AUDIO-OUT — re-apply the master sink to the live audio-out handle(s).
+    //    The factory already reads the store at boot; this covers a LATER store
+    //    change (subscribe) and a rack that mounted before the store was ready.
+    const audioOut = rigBindings().getAudioOut();
+    if (audioOut) {
+      for (const n of snapshot.nodes) {
+        if (n.type === 'audioOut') engine?.write(n, 'outputDeviceId', audioOut.outputDeviceId);
+      }
+    }
+
+    // 2. CAMERAS — reconcile the camera controllers to the store. `sync` re-reads
+    //    each slot's saved device (now store-backed) and re-acquires a
+    //    bound-but-dark slot: the same reconcile the graph effect runs, poked
+    //    here because a store change does not move `snapshot.nodes`.
+    nodeCameraSource.sync(snapshot.nodes, engine, () => {
+      if (provider) return provider;
+      const g = globalThis as unknown as { __provider?: HocuspocusProvider | null };
+      return g.__provider ?? null;
+    });
+
+    // 3. DISPLAY — reopen each output slot's projector on its saved monitor.
+    //    BROWSER ONLY: under the shell the shell owns display placement and opens
+    //    its own windows from the same store, so opening here would be the second
+    //    opinion `decideRestore` forbids. Uses the SAME fingerprint match as the
+    //    patch path (`planRestore` → `resolveScreens`), just sourced from the
+    //    store and scoped to slot node ids.
+    if (!nativeAvailable()) {
+      await presentScreens.loadScreens();
+      const live = liveScreens();
+      const video = resolveVideoEngine(engine);
+      if (video && live.length > 0) {
+        const bindings: PresentBinding[] = [];
+        for (const spec of OUTPUT_SLOTS) {
+          const b = rigBindings().getOutput(spec.slot as OutputSlotName);
+          if (b) bindings.push({ nodeId: spec.id, screen: b.screen });
+        }
+        if (bindings.length > 0) {
+          const targets = planRestore(bindings, live, snapshot.nodes.map((n) => n.id));
+          let opened = 0;
+          for (const t of targets) {
+            opened += nodePresent.presentAll(t.nodeId, [t.screenId], {
+              engine: video,
+              rectFor: (id) => presentScreens.getScreenRect(id),
+            });
+          }
+          if (targets.length > 0) {
+            trace(`device restore: ${opened}/${targets.length} output-slot projector(s) reopened from the rig store`);
+          }
+        }
+      }
+    }
+  }
+
+  /** Coalesce a burst of store changes into one re-apply on the next microtask. */
+  function scheduleDeviceRestore(): void {
+    if (deviceRestoreScheduled) return;
+    deviceRestoreScheduled = true;
+    queueMicrotask(() => {
+      deviceRestoreScheduled = false;
+      void runDeviceRestore();
+    });
+  }
+
   $effect(() => {
     const loaded = scratchSeeded === true || (provider != null && providerHasSynced);
     if (presentMountRestoreRan || !loaded || engine == null || snapshot.nodes.length === 0) return;
     presentMountRestoreRan = true;
-    void runPresentRestore();
+    // Present restore (patch/shell, Y.Doc) FIRST — it migrates any legacy
+    // output-slot binding out of the doc and into the store — then device
+    // restore re-applies the per-machine store (camera + audio + display) to
+    // this freshly-mounted rack. This mount edge is also what covers File→New,
+    // which navigates to a new empty doc and remounts.
+    void runPresentRestore().then(() => runDeviceRestore());
+  });
+
+  // Re-apply the per-machine rig store whenever it changes out from under us —
+  // a shell pre-flight `bindings.changed`, another tab's pick, or this session's
+  // own write settling. Mount-only subscription; disposed with the component.
+  onMount(() => rigBindings().subscribe(scheduleDeviceRestore));
+
+  // ── RE-OPEN OUTPUT-SLOT PROJECTORS ONCE THE VIDEO ENGINE IS READY ──────────
+  //
+  // The display leg of `runDeviceRestore` needs BOTH a resolvable video engine
+  // and the output-slot node present. On a reload neither is guaranteed at the
+  // mount edge above — the engine boots asynchronously and the reserved slots
+  // re-assert a beat later — and that pass does not retry, so the store's saved
+  // projector would never reopen. This latch fires exactly once, when the video
+  // engine first resolves with an output slot in the graph, and re-runs the
+  // restore (idempotent: `presentAll` skips an already-lit screen). Browser
+  // only; the shell owns its own windows.
+  let displayReopenDone = false;
+  $effect(() => {
+    if (displayReopenDone || nativeAvailable()) return;
+    const slotPresent = snapshot.nodes.some((n) => deviceSlotForId(n.id)?.kind === 'output');
+    if (!slotPresent || resolveVideoEngine(engine) == null) return;
+    displayReopenDone = true;
+    void runDeviceRestore();
   });
 
   // ELECTRA AUTO-RECONNECT (#2248) — the same "state that is really the
@@ -1339,19 +1514,64 @@
 
   $effect(() => {
     const pairs = nodePresent.presentingPairs();
-    if (!presentWriteArmed) return;
-    // ⚠ THE SHELL BRANCH NEVER ARMS — this is belt-and-braces for a rig that
-    // becomes native mid-session. Writing here under the shell would rebuild
-    // the very key `decideRestore` just migrated out, one projector at a time.
-    if (nativeAvailable()) return;
     const live = liveScreens();
+    const byScreenId = new Map(live.map((s) => [s.id, s.descriptor] as const));
+
+    // ── OUTPUT SLOTS → the PER-MACHINE RIG STORE ───────────────────────────────
+    //
+    // A presenting reserved output slot (`output1..4`, output1 = the historical
+    // `workflow-videoOut`) records its monitor in `rigBindings()` so the display
+    // survives a File→New / reload — the whole point of the migration.
+    //
+    // ⚠ THIS FIRES INDEPENDENTLY OF THE Y.DOC ARMING BELOW, and that is
+    // load-bearing: `presentWriteArmed` gates the SHARED-DOC write (disarmed
+    // during a load so a half-built registry cannot clobber the saved set), but
+    // the store write has no such hazard — it is ADD/UPDATE ONLY and never
+    // CLEARS (a slot absent from `pairs` is indistinguishable from its monitor
+    // being unplugged; the explicit unbind lives on the STOP gesture in
+    // use-present). Gating it on the arm would mean a present made before the
+    // patch-persistence arm never reaches the store, and File→New would still
+    // wipe the display. Skipped only until a live screen resolves the pair's id
+    // (the effect re-runs when `presentScreens` loads).
+    //
+    // Fires in BOTH the browser and the shell. Under the shell `rigBindings()`
+    // IS the shell's electron-store (the bridge backend), so the renderer — the
+    // only party that knows which monitor the operator picked — writing it here
+    // IS the shell owning placement, not a competing authority. The pre-flight
+    // UI writes the SAME store, so a rack-side present and a pre-flight
+    // assignment agree (last write wins; the echo back through `bindings.changed`
+    // is idempotent against `runDeviceRestore`). Deferring under the shell would
+    // leave a display mapped from the rack unpersisted — the exact
+    // File→New-wipes-the-display bug, unfixed in the native app. (The NON-slot
+    // Y.Doc write below still returns under the shell — that key is patch-owned
+    // and `decideRestore` migrated it out.)
+    for (const p of pairs) {
+      const spec = deviceSlotForId(p.nodeId);
+      if (spec?.kind !== 'output') continue;
+      const desc = byScreenId.get(p.screenId);
+      if (!desc) continue;
+      const slot = spec.slot as OutputSlotName;
+      const current = rigBindings().getOutput(slot);
+      if (!current || !sameScreenBinding(current.screen, desc)) {
+        rigBindings().setOutput(slot, { screen: desc });
+      }
+    }
+
+    // ── NON-slot `videoOut` present state → the shared Y.Doc, unchanged ─────────
+    // Patch-owned placement keeps the existing arming discipline.
+    if (!presentWriteArmed) return;
+    // ⚠ THE SHELL BRANCH NEVER ARMS — belt-and-braces for a rig that becomes
+    // native mid-session. Writing here under the shell would rebuild the very key
+    // `decideRestore` just migrated out, one projector at a time.
+    if (nativeAvailable()) return;
     if (!canDescribeBindings(pairs, live)) return;
-    const next = bindingsFromPairs(pairs, live);
+    const patchPairs = pairs.filter((p) => deviceSlotForId(p.nodeId)?.kind !== 'output');
+    const next = bindingsFromPairs(patchPairs, live);
     const serialized = JSON.stringify(next);
     if (serialized === lastWrittenBindings) return;
     lastWrittenBindings = serialized;
     writePresentBindings(ydoc, next, LOCAL_ORIGIN);
-    trace(`present bindings: wrote ${next.length} from ${pairs.length} live session(s), ${live.length} display(s) known`);
+    trace(`present bindings: wrote ${next.length} from ${patchPairs.length} live session(s), ${live.length} display(s) known`);
   });
 
   // #2239 — place + lock the video-zone trio once the persisted graph is up.
@@ -1625,6 +1845,105 @@
       trace(
         `workflow: repaired pinned identity (${repairs
           .map((r) => `${r.id}:${r.fields.join('+')}`)
+          .join(', ')})`,
+      );
+    }
+  });
+
+  // ---------------- NATIVE-SHELL P1: the DEVICE-SLOT ensure ----------------
+  //
+  // Eight reserved node ids — `cam1..cam4` (hidden cameraInput instances whose
+  // face is the topbar 📷 manager) and `output1..output4` (videoOut sinks in
+  // the purple video zone) — that every rack always holds, so a hardware
+  // session can hang off an id that no workflow ever destroys.
+  //
+  // ⚠ THIS IS AN INVARIANT, NOT A SEED, and the distinction is the whole
+  // phase. The video-zone defaults below are ONE-SHOT latched spawns: delete
+  // one and it stays deleted, because it is patch CONTENT the user is entitled
+  // to reject. A slot is rig INFRASTRUCTURE: it re-asserts forever, exactly
+  // like the pinned singletons above, because the thing hanging off it is a
+  // camera the operator is presenting through.
+  //
+  // Runs on every snapshot (no latch), so the set SELF-HEALS after any
+  // wholesale node replacement — but note the load path no longer NEEDS the
+  // self-heal for the sessions to survive: `loadEnvelopeIntoStore` now skips
+  // reserved ids on its clear pass, so the id (and the MediaStream keyed on it)
+  // is never destroyed in the first place. The re-assert is the backstop for
+  // the paths that do not go through the loader: a peer's Clear arriving over
+  // sync, an undo/redo cycle, a raw doc edit.
+  //
+  // Same gate as the pinned ensure (first sync with a provider; the local
+  // replica seed without one; `?seed=none` skips it for the empty-rack
+  // fixture) and the same UNTRACKED origin, so Cmd-Z can never remove a slot.
+  //
+  // ⚠ THE GUARANTEE IS TRANSIENT-AND-SELF-REPAIRING, NOT IMPOSSIBILITY. Yjs
+  // has no conditional insert, so a hostile peer CAN land a foreign type at a
+  // reserved id; what the repair buys is that the state heals and the session
+  // returns at the SAME id, rather than the rack wedging. Anything stronger
+  // would have to live outside the mutable collaborative graph.
+  $effect(() => {
+    if ((provider && !providerHasSynced) || scratchSeeded === false) return;
+    if (!seedShellDefaults) return; // ?seed=none — the empty-rack test fixture
+    const missing = planDeviceSlotSpawns(snapshot.nodes);
+    const repairs = planDeviceSlotIdentityRepairs(snapshot.nodes);
+    if (missing.length === 0 && repairs.length === 0) return;
+    ydoc.transact(() => {
+      for (const r of repairs) {
+        const node = patch.nodes[r.id];
+        if (!node) continue; // raced a delete — the spawn pass re-creates it
+        // WRITE ONLY WHAT THE PLANNER NAMED (the workflow-pins applier's rule,
+        // learned there the hard way: canonicalising all fields on any repair
+        // silently re-pinned a node the planner had deliberately exempted).
+        // IN PLACE — never delete + re-add, which would be the very teardown
+        // being defended against.
+        if (r.fields.includes('type')) node.type = r.type;
+        if (r.fields.includes('domain')) node.domain = r.domain;
+        if (r.fields.includes('pinned') || r.fields.includes('hiddenCard')) {
+          if (!node.data) node.data = {} as Record<string, unknown>;
+          const d = node.data as Record<string, unknown>;
+          // Both directions. `pinned`/`hiddenCard` are also the canvas-HIDE
+          // bits, so a peer setting either on an OUTPUT slot makes the rack's
+          // video sink vanish from the purple zone with no delete and no error.
+          if (r.fields.includes('pinned')) d.pinned = r.pinned;
+          if (r.fields.includes('hiddenCard')) d.hiddenCard = r.hiddenCard;
+        }
+      }
+      for (const spec of missing) {
+        if (patch.nodes[spec.id]) continue; // in-transact re-check
+        // NAMED AFTER THE SLOT, NOT THROUGH `nextDefaultName` — and this is a
+        // behaviour fix, not a cosmetic choice. `nextDefaultName` hands out
+        // `CAMERAINPUT`, `CAMERAINPUT2`, … by scanning existing names of that
+        // shape, so four slots taking names from that sequence made a user's
+        // FIRST ＋-added camera "camera 5". `cam1` does not match the pattern,
+        // so the slots sit outside the sequence entirely and dynamic cameras
+        // number from 1 again. It also reads better: the slot's name is the
+        // rig's own vocabulary, the same string the row label and the shell's
+        // pre-flight UI use. Still ordinary `data.name`, so an operator can
+        // rename it to "STAGE LEFT" like any other module.
+        const data: Record<string, unknown> = { name: spec.slot };
+        if (spec.pinned) data.pinned = true;
+        if (spec.hiddenCard) data.hiddenCard = true;
+        patch.nodes[spec.id] = {
+          id: spec.id,
+          type: spec.type,
+          domain: spec.domain,
+          // Header slots render no card, so their position is inert; output
+          // slots get their purple-zone slot, then placeVideoZoneDefaults packs
+          // and locks them alongside the seeded defaults.
+          position:
+            spec.zone === 'video-zone' ? outputSlotPosition(spec) : { x: 24, y: 24 },
+          params: {},
+          data,
+        };
+      }
+    }, WORKFLOW_PIN_SPAWN_ORIGIN);
+    if (missing.length > 0) {
+      trace(`device slots: ensured (${missing.map((s) => s.slot).join(', ')})`);
+    }
+    if (repairs.length > 0) {
+      trace(
+        `device slots: repaired identity (${repairs
+          .map((r) => `${r.slot}:${r.fields.join('+')}`)
           .join(', ')})`,
       );
     }
@@ -3350,6 +3669,14 @@
         // a workflow rack (always-on M/E/C drawers). Their edges still go
         // (Clear = unpatch everything).
         if (isPinnedNode(patch.nodes[id])) continue;
+        // RESERVED DEVICE SLOTS survive it too, and by their ID rather than a
+        // data flag — an OUTPUT slot cannot carry `data.pinned` without losing
+        // the card it presents from (see graph/device-slots.ts). Deleting the
+        // id here would retire the node-keyed registries that own the camera
+        // MediaStream, which is the same "device access breaks" this layer
+        // exists to prevent — Clear just reaches it by a different route than
+        // load does.
+        if (isDeviceSlotId(id)) continue;
         delete patch.nodes[id];
       }
     }, LOCAL_ORIGIN);
@@ -3378,6 +3705,12 @@
     if (newRackBusy) return;
     newRackBusy = true;
     try {
+      // A new rack starts with NO MIDI mappings and a blank Electra (owner
+      // ruling 2026-09-07). Bindings live in a module singleton that a same-tab
+      // `goto` to a fresh doc would otherwise leave stale; clear them here so the
+      // new rack — reloaded OR navigated — comes up unmapped, and the fresh
+      // mount's `notifyPatchLoaded` regenerates the Electra preset from empty.
+      replaceMidiBindings([]);
       if (headerSignedIn) {
         try {
           const res = await fetch('/api/rackspaces', {
@@ -3483,6 +3816,11 @@
       await reconciler?.reconcile();
       trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
       await runPresentRestore(readPresentBindingsFromUpdate(env.update));
+      // Re-apply the per-machine rig store (camera + audio sink + output-slot
+      // displays) to the freshly-loaded rack — the load swapped the doc, but the
+      // store persists. After runPresentRestore, which migrated any legacy
+      // output-slot binding out of the envelope's doc copy into the store.
+      await runDeviceRestore();
       // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
       // not per mount, for the same reason as runPresentRestore above. A no-op
       // (fully dormant) when the imported patch has no electraControl.
@@ -3789,12 +4127,12 @@
       await putVideoFileBlob(m.handleId, blob, m.name);
     }
 
-    // Restore MIDI Learn CC maps (merge so other patches' bindings survive),
-    // before the envelope so cards re-register their setters on mount.
-    if (bundle.midiBindings.length > 0) {
-      const merged = mergeMidiBindings(exportMidiBindings(), bundle.midiBindings);
-      importMidiBindings(merged);
-    }
+    // Restore MIDI Learn CC maps: the incoming patch's bindings REPLACE the
+    // current set wholesale (owner ruling 2026-09-07 — a load adopts the
+    // loaded patch's mappings; a patch that carries none clears them, so a MIDI
+    // map is patch content, never a sticky rig property). Before the envelope
+    // so cards re-register their setters on mount.
+    replaceMidiBindings(bundle.midiBindings ?? []);
 
     const result = persistenceLoad(bundle.patch, ydoc, patch);
     await reconciler?.reconcile();
@@ -3822,6 +4160,9 @@
     // The loaded envelope brought its own presentBindings; the mount pass (if
     // it ran at all) resolved the PREVIOUS graph. #2230.
     await runPresentRestore(readPresentBindingsFromUpdate(bundle.patch.update));
+    // Re-apply the per-machine rig store (camera + audio sink + output-slot
+    // displays) to the freshly-loaded rack (mirrors runPresentRestore above).
+    await runDeviceRestore();
 
     // Re-arm the Electra auto-flash for the LOADED patch (#2248) — per load,
     // not per mount (mirrors runPresentRestore). Dormant when the zip's rack
@@ -4136,10 +4477,9 @@
         slotOccupied[i] = false;
       }
     }
-    // Restore the MIDI Learn map (merge so other patches' bindings survive).
-    if (set.midiBindings.length > 0) {
-      importMidiBindings(mergeMidiBindings(exportMidiBindings(), set.midiBindings));
-    }
+    // Restore the MIDI Learn map: the incoming set REPLACES the current
+    // bindings wholesale (owner ruling 2026-09-07); an empty set clears them.
+    replaceMidiBindings(set.midiBindings ?? []);
     trace(`loaded .set (${set.slots.length} slot${set.slots.length === 1 ? '' : 's'})`);
   }
 
@@ -5400,7 +5740,15 @@
    * reload does not re-place.
    */
   function placeVideoZoneDefaults(): void {
-    const present = VIDEO_ZONE_DEFAULTS.filter((spec) => !!patch.nodes[spec.id]);
+    // The packer's roster is the seeded defaults PLUS the reserved output slots
+    // (native-shell P1). `output1` is already the head of VIDEO_ZONE_DEFAULTS —
+    // it IS the historical `workflow-videoOut` id, kept rather than renamed
+    // because renaming it would be the delete+add teardown the slot layer
+    // exists to prevent — so only `output2..4` are appended, and they pack to
+    // the right of the seeded trio. Layout only: the slots' PRESENCE is the
+    // invariant ensure above, never this one-shot latch.
+    const roster = [...VIDEO_ZONE_DEFAULTS, ...OUTPUT_SLOT_LAYOUT];
+    const present = roster.filter((spec) => !!patch.nodes[spec.id]);
     if (present.length === 0) return;
     const pending = present.filter((spec) => {
       const d = patch.nodes[spec.id]?.data as { videoZonePlaced?: boolean } | undefined;
@@ -7708,6 +8056,16 @@
     const t2 = threshold * threshold;
     const edges = [...snapshot.edges].sort((a, b) => a.id.localeCompare(b.id));
     for (const e of edges) {
+      // ⚠ NEVER SILENTLY SPLICE INTO WHAT AN OUTPUT IS PRESENTING. Proximity
+      // splice deletes src→dst and inserts src→new→dst; if `dst` is an output
+      // lit on an external display, a module dropped merely NEAR its feed cable
+      // would reroute the projector with no deliberate drop-on-cable gesture —
+      // "add a module, it appears on display2." (The buffer-bleed sibling of
+      // this — an UNPATCHED presenting output mirroring the shared drawing
+      // buffer — is fixed in node-present-registry's source guard; this closes
+      // the patched-chain half.) A drop on any ORDINARY cable keeps the feature;
+      // the user can still hand-wire an effect ahead of a live output.
+      if (nodePresent.isPresenting(e.target.nodeId)) continue;
       const mid = edgeMidpoint(e);
       if (!mid) continue;
       const dx = mid.x - pos.x;
