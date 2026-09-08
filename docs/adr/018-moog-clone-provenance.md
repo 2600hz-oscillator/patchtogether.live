@@ -10,10 +10,16 @@
 ## Context
 
 The repository ships a family of modules modelled on the **Moog System 55 / 35**
-modular synthesizers — 27 module definitions under
-`packages/web/src/lib/audio/modules/moog*.ts`, of which 25 are promoted
-surfaces, backed by 13 worklet entries under `packages/dsp/src/moog*.ts` and
-their shared pure cores under `packages/dsp/src/lib/`. The first two slices
+modular synthesizers — 25 module definitions under
+`packages/web/src/lib/audio/modules/moog*.ts` — all 25 promoted in
+`STRICT_FACES` — plus two shared helpers (`moog-filterbank-factory.ts`,
+`moog-filterbank-labels.ts`), backed by 13 worklet entries under
+`packages/dsp/src/moog*.ts` and their shared pure cores under
+`packages/dsp/src/lib/`. The worklet count is **not** the family's extent: 907A
+and 914 ship as pure Web Audio (a fan of `BiquadFilterNode` plus bookend
+shelves) with no worklet entry at all, and are covered only by the shared data
+core below — so the enumeration in this ADR is complete against the 27 citing
+files, not against the 13 entries. The first two slices
 landed on 2026-06-02: the 921 VCO with the Moog/SYS55/SYS35 category and panel
 infrastructure (#535, `d826ef438e`), and the 904A transistor-ladder low-pass
 filter with the shared ladder core (#536, `88ca149e7e`).
@@ -55,13 +61,17 @@ sit (e.g. `packages/dsp/src/lib/moog-cp3-dsp.ts` "Own-code (permissive,)").
 **The Moog family is own code, written clean-room from unpatented published
 technique. It is not a port of any Moog schematic, and not derived from any
 copyleft source. The attestation lives in the source, and this ADR records where
-and what it says.**
+and what it says.** One member of the family diverges from that framing and is
+called out below rather than folded into it: the fixed-filter-bank data core is
+**own data transcribed from published third-party references**, not clean-room
+code.
 
 **Attested inline in the worklet entry** (8 of 13):
 `moog-cp3.ts`, `moog902.ts`, `moog904a.ts`, `moog904b.ts`, `moog904c.ts`,
 `moog921-vco.ts`, `moog921a.ts`, `moog921b.ts`.
 
-**Attested in the shared pure core** the remaining entries delegate to:
+**Attested in a shared pure core** — the one the remaining worklet entries
+delegate to, plus the data core the two worklet-less modules depend on:
 
 | core | attestation |
 | --- | --- |
@@ -69,6 +79,7 @@ and what it says.**
 | `lib/moog-vco-dsp.ts` | OWN CODE — a clean-room **polyBLEP / polyBLAMP** band-limited oscillator core written for this project; not a port of any Moog schematic or copyleft DSP source. Consumed by 921-VCO / 921B. |
 | `lib/moog911-eg-dsp.ts` | OWN CODE — clean-room **exponential-segment contour** (a three-time-constant contour generator with a single sustain level, not a literal ADSR); not a Moog schematic or copyleft source. |
 | `lib/moog-cp3-dsp.ts` | Own code — a forked, expanded version of this repo's own mixer. |
+| `lib/moog-filterbank-dsp.ts` | OWN DATA — a 1/3-octave (ISO R10-ish) centre-frequency table plus band Q; no DSP class and no Web Audio. The values are transcribed from published references (the modularsynthesis.com Moog archive and multiple 914/907A clone makers) and asserted as facts about a 1/3-octave grid rather than a copyrightable schematic. Consumed by 907A / 914 — neither of which has a worklet entry. |
 | `lib/spring-reverb-dsp.ts` | In-house, from scratch. |
 
 **Not carrying a provenance line, and not needing a third-party one:**

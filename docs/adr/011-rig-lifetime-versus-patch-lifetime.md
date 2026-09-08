@@ -155,6 +155,7 @@ allowed" to make a test pass.**
   boundary around. ADR-010 — the terminal sink whose patch-node status the
   crossfade work runs into.
 - Provenance: the planning package (interruption matrix, crossfade options,
-  build brief) is preserved at the `myrobots-preserved-2026-09` tag
-  (`.myrobots/2026-09-04-native-shell-plan/`). Where that prose and the tree
+  build brief) is preserved in the `myrobots-preserved-2026-09` tag snapshot, as
+  `2026-09-04-native-shell-plan/` (paths relative to the retired agent-evidence
+  tree in that snapshot, not to the worktree). Where that prose and the tree
   disagree, the tree is right.

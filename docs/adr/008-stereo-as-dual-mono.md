@@ -112,6 +112,7 @@ presence of the right behaviour.
 - ADR-004 — CV range convention (the `cv` cable is unaffected by this decision;
   `stereovca`'s `strength_l`/`strength_r` are cv inputs and deliberately not a
   pair).
-- Provenance: the planning package is preserved at the
-  `myrobots-preserved-2026-09` tag (`.myrobots/stereo-audio-plan/`). Where that
-  prose and the tree disagree, the tree is right.
+- Provenance: the planning package is preserved in the
+  `myrobots-preserved-2026-09` tag snapshot, as `stereo-audio-plan/` (paths
+  relative to the retired agent-evidence tree in that snapshot, not to the
+  worktree). Where that prose and the tree disagree, the tree is right.

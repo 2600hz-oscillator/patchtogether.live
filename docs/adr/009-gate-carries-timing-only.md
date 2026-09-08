@@ -36,7 +36,10 @@ position.**
   `'trigger' | 'gate'` (`packages/web/src/lib/graph/types.ts`). It does **not**
   restrict connections — the unified `gate` cable stays cross-patchable with
   `cv`/`pitch`, because it *is* just CV. It is documentation that is lintable
-  and that the face renders as a ▷ / ▭ glyph. **Interpretation, not routing.**
+  (`packages/web/src/lib/docs/module-docs-lint.test.ts` asserts each documented
+  port against its declared edge vocabulary) and that the flip-side jack field
+  renders as a ▲ / ▬ glyph (`packages/web/src/lib/ui/workflow/RearCard.svelte`).
+  **Interpretation, not routing.**
 - **One set of constants.** `packages/web/src/lib/audio/gate-trigger.ts` owns
   `GATE_HI` / `GATE_LO` (0.5), `TRIGGER_PULSE_S` (5 ms, inside the real-hardware
   1–5 ms band) and `DEFAULT_GATE_LEN_S` (50 ms for a trigger→gate widening). A
@@ -75,9 +78,11 @@ position.**
   poly.ts` still takes a single `gateOffSec`. Phase 3 (an explicit per-lane
   voice mode, with LEGATO as the default) is unbuilt — there is no `voiceMode`
   or `'legato'` symbol anywhere in `packages/web/src`. Phase 4 (one shared pulse
-  width) is unbuilt: `GATE_PULSE_S` is still re-declared per module
-  (`modules/frogger.ts`, `NOTE_GATE_PULSE_S` in `modules/midi-lane.ts`,
-  `modules/midiclock.ts`).
+  width) is unbuilt: `GATE_PULSE_S` is still re-declared per module — eight
+  sites across audio and video today
+  (`git grep 'GATE_PULSE_S = ' -- packages/web/src`), e.g. `modules/frogger.ts`,
+  `NOTE_GATE_PULSE_S` in `modules/midi-lane.ts`, `modules/midiclock.ts`, and
+  `video/modules/nibbles.ts`.
 - **Two of the model's later phases lost their subject.** Its front-card glyph
   work and its step-sequencer length/tie work named modules and card components
   that no longer exist. Re-scoping those phases is an owner call, not a

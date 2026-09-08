@@ -80,6 +80,25 @@ index, written per key — and bytes never enter the Y.Doc.**
    dropped a player's anticipation onto the previous step and skipped steps at
    fast tempo. Overdub is an additive layer with an explicit erase, and a
    schedule-time replace clears with voice cancellation.
+9. **Performance state is view-local, and a performance gesture is not
+   undoable.** Clip and lane selection, launch modifiers (sticky NOW) and column
+   reveals are per-viewer and never written to the Y.Doc
+   (`clipplayer-face-selection.svelte.ts`, `ClipplayerLaunchPanel.svelte`,
+   `ClipplayerNotePanel.svelte`) — a
+   personal authoring lens must not move a collaborator's screen. An arm/record
+   toggle likewise sits deliberately outside the undo stack
+   (`clipplayer-face-actions.ts`). Concretely, recorded automation and printed
+   song commits are written under their **own non-undo-tracked transaction
+   origins** (`AUTOMATION_COMMIT_ORIGIN`, `SONG_COMMIT_ORIGIN` in
+   `clipplayer.ts`), never the undo-tracked `LOCAL_ORIGIN`: continuous overdub
+   commits once per wrap and song print once per bar, so undo-tracking them
+   would make Cmd-Z regress one wrap at a time. A bad take is removed by the
+   explicit CLEAR affordances, which **are** undoable — as are note edits and
+   clip CLEAR. Folding record commits into the undo stack would make "undo" mean
+   two different things, the same reason ADR-017 refuses an undoable load. The
+   launcher's Deluge-style edit view and its per-lane STOP in the grid session
+   strip are the surface those rules serve
+   ([docs/design/clip-launcher.md](../design/clip-launcher.md) §4b, §5a).
 
 ## Consequences
 
@@ -129,13 +148,19 @@ index, written per key — and bytes never enter the Y.Doc.**
 - `packages/web/src/lib/audio/modules/clip-song.ts`,
   `clip-record-capture.ts`, `clip-record-machine.ts` — printed song layers and
   live capture.
+- `packages/web/src/lib/audio/modules/clipplayer.ts` —
+  `AUTOMATION_COMMIT_ORIGIN` / `SONG_COMMIT_ORIGIN` and the write-storm guard;
+  `packages/web/src/lib/ui/modules/clipplayer/clipplayer-face-selection.svelte.ts`,
+  `clipplayer-face-actions.ts` — the view-local performance state and the
+  non-undoable arm.
 - [docs/design/clip-launcher.md](../design/clip-launcher.md) — the surface
   design these decisions sit under.
 - ADR-001 / ADR-005 — the CRDT and persistence envelope this stays inside.
 - Provenance: preserved in the `myrobots-preserved-2026-09` tag snapshot, as
   `2026-09-02-mixmstrs-multitrack-clip-recording/`,
   `plans/automation-redesign-2026-07-16.md`,
-  `plans/arranger-song-mode-2026-07-18.md` and
-  `plans/clipplayer-live-record-overdub-redesign-2026-07-19.md` (paths
+  `plans/arranger-song-mode-2026-07-18.md`,
+  `plans/clipplayer-live-record-overdub-redesign-2026-07-19.md` and
+  `plans/face-specs-batch-7-clipplayer.md` (paths
   relative to the retired agent-evidence tree in that snapshot, not to the
   worktree).

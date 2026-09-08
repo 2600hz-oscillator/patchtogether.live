@@ -48,6 +48,14 @@ audio can die gets its own named detector rather than one "health" number.**
    report and have nothing else in common; a fifth instrument must say which of
    the four it is *not* (`continuity-probe.ts` does exactly that — it is a
    graph-continuity probe, not an underrun counter).
+   **Rejected for mode A: `ctx.currentTime` versus `performance.now()` drift.**
+   It is the cheapest and most obvious no-API underrun detector, and it is
+   invariant to the quantity it claims to measure — the device clock keeps
+   consuming samples at the sample rate whether the buffer held real audio or
+   silence, so `currentTime` advances at wall-clock rate straight *through* a
+   dropout and the drift reads a confident always-zero. Same shape as any blind
+   gate; the refusal is kept live in the `playback-stats.ts` header so it is not
+   re-proposed.
 3. **One worklet construction seam.** `worklet-guard.ts` `createWorkletNode`
    registers a `processorerror` handler on every worklet the app builds, so a
    latched processor is loud instead of silent, and is negative-controlled in
