@@ -148,6 +148,71 @@ export function toggleClipplayerLaneArm(nodeId: string, lane: number): void {
   });
 }
 
+/** CLAUSE 3 — toggle a lane's AUDIO RECORD button.
+ *
+ *  ⚠ NOT UNDOABLE, and deliberately so. An arm is a PERFORMANCE gesture, not
+ *  content: the same rule the automation arm above follows. Undo on this
+ *  launcher belongs to the take itself — the commit lands as one undo unit, and
+ *  undoing it removes the recorded clip.
+ *
+ *  Toggling ON does NOT start the transport (clause 4): the button can be set
+ *  while paused or stopped and the recorder punches in when it plays. Toggling
+ *  OFF while an ENDLESS take is running is the owner's "tap it again" — the
+ *  take stops at the end of the CURRENT loop, keeping every whole loop. */
+export function toggleClipplayerLaneRecArm(nodeId: string, lane: number): void {
+  writeClipplayerData(nodeId, (d) => {
+    // ⚠ MUTATE IN PLACE. `d` is a Y.Doc proxy; rebuilding the map and
+    // reassigning re-inserts values already in the tree, which Yjs rejects.
+    // Writing one key is also what lets two peers toggle different lanes
+    // without clobbering each other — the reason this is a record, not an array.
+    if (!d.recArm) d.recArm = {};
+    // ⚠ WRITE `false`, NEVER `delete` — the Y.Doc proxy's deleteProperty trap
+    // refuses a nested key and throws. `laneRecArm` tests `=== true`, so a
+    // stored `false` is exactly as disarmed as an absent key.
+    d.recArm[String(lane)] = d.recArm[String(lane)] !== true;
+  });
+}
+
+/** CLAUSE 5 — flip a lane between CLIP (one loop) and ENDLESS.
+ *
+ *  UNDOABLE: unlike the arm, this is a SETTING that survives the session and
+ *  travels with a duplicated player, so it belongs on the content stack. */
+export function toggleClipplayerLaneRecMode(nodeId: string, lane: number): void {
+  writeClipplayerDataUndoable(nodeId, (d) => {
+    // A fresh array of PRIMITIVES is safe to assign (nothing in it is already
+    // in the tree), and a whole-array write is right here: unlike the arm, the
+    // mode is a setting, and the per-lane concurrency the arm needs does not
+    // apply to a control two peers are not racing to flip mid-take.
+    const modes = Array.from(
+      { length: CLIP_LANES },
+      (_, i) => (d.recMode?.[i] === 'endless' ? 'endless' : 'single') as 'single' | 'endless',
+    );
+    modes[lane] = modes[lane] === 'endless' ? 'single' : 'endless';
+    d.recMode = modes;
+  });
+}
+
+/** CLAUSE 6 — flip ONE CLIP between playing its RECORDED take and passing the
+ *  LIVE input through.
+ *
+ *  UNDOABLE: it is a property of the clip, so it is content and a duplicate
+ *  carries it. A no-op on anything that is not an audio clip — a note clip has
+ *  no take to choose against, and silently stamping the flag on one would make
+ *  a field that reads as meaningful and is not. */
+export function toggleClipplayerClipLive(nodeId: string, index: number): void {
+  writeClipplayerDataUndoable(nodeId, (d) => {
+    // ⚠ WRITE THE ONE CLIP, NEVER THE WHOLE `clips` MAP. Spreading `d.clips`
+    // and reassigning it hands Yjs back every OTHER clip record — objects
+    // already in the tree — and the write is rejected outright. The replacement
+    // record below is a fresh plain object, which is exactly what may be
+    // assigned.
+    const cur = coerceClipRecord(d.clips?.[String(index)]);
+    if (!cur || cur.kind !== 'audio') return;
+    if (!d.clips) d.clips = {};
+    d.clips[String(index)] = { ...cur, live: !cur.live };
+  });
+}
+
 /** Cycle scene S's repeat count (∞ → 2 → 3 → 4 → 8 → ∞). UNDOABLE: a repeat
  *  count is content — a whole-scene copy carries it. */
 export function cycleClipplayerSceneRepeat(nodeId: string, slot: number): void {

@@ -1160,3 +1160,47 @@ describe('clipplayer: stable voice allocator (KEYS audition, Phase 2a)', () => {
 function ctx0(): FakeAudioContext {
   return new FakeAudioContext();
 }
+
+describe('clipplayer: same-session load at a REUSED id (fleet-audit #5)', () => {
+  // ⚠ THE FACTORY IS NOT THE SEAM THAT ALWAYS RUNS. `loadEnvelopeIntoStore`
+  // deletes + re-inserts every node in one transaction, and the reconciler
+  // re-materializes only on id-absence or a type/domain change — it NEVER
+  // diffs node.data. So a legacy (pre-`sv`, stride-8) patch loaded over a
+  // live player used to keep its stride-8 clip keys while every runtime read
+  // used stride-64: the pads silently never fired. The tick's
+  // `clipPlayerDataNeedsLoadSeam` re-arm is the fix; this drives the REAL
+  // factory + tick and asserts the pad FIRES (gate output), not that a key
+  // moved — presence is not liveness.
+  it('a legacy stride-8 patch loaded over a live player re-keys and its pads FIRE', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      { clips: {}, queued: lane8(0, null, null) },
+    );
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.1);
+    expect(handle.read!('activeLane:1'), 'nothing to fire before the load').toBe(-1);
+    // The factory seam ran against the ORIGINAL data object (stamped sv=2).
+    expect((livePatch.nodes[NODE_ID]!.data as { sv?: number }).sv).toBe(2);
+
+    // SAME-SESSION LOAD AT THE REUSED ID: replace node.data wholesale, the way
+    // the loader does. Legacy shape — stride-8 key 9 = (lane 1, slot 1), NO sv.
+    livePatch.nodes[NODE_ID]!.data = {
+      clips: { '9': noteClip(60) },
+      queued: [null, 1, null, null, null, null, null, null],
+    } as never;
+
+    run(ctx, 0.1, 0.5);
+    // THE PAD FIRES: lane 1 launched its clip and the gate went HIGH — the
+    // stride-64 read found the clip only because the tick re-ran the seam.
+    expect(handle.read!('activeLane:1'), 'lane 1 launches the loaded clip').toBe(1);
+    expect(hasHighEvent(gateOf(handle, 1)), 'lane 1 gate fires').toBe(true);
+    expect(handle.read!('pitchVOct:1')).toBeCloseTo(midiToVOct(60), 5);
+
+    // And the loaded data was re-keyed + stamped by the tick-side seam.
+    const d = livePatch.nodes[NODE_ID]!.data as { sv?: number; clips?: Record<string, unknown> };
+    expect(d.sv, 'the loaded data is stamped sv=2').toBe(2);
+    expect(d.clips?.['65'], 'the clip moved to its stride-64 key').toBeTruthy();
+    expect(d.clips?.['9'], 'the legacy key is gone').toBeUndefined();
+  });
+});

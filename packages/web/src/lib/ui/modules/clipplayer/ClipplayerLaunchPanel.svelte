@@ -31,7 +31,13 @@
   import { patch } from '$lib/graph/store';
   import { nodeVersion } from '$lib/graph/node-versions.svelte';
   import type { ModuleNode } from '$lib/graph/types';
-  import { CLIP_LANES, CLIP_SLOTS, type ClipPlayerData } from '$lib/audio/modules/clip-types';
+  import {
+    CLIP_LANES,
+    CLIP_SLOTS,
+    laneOf,
+    slotOf,
+    type ClipPlayerData,
+  } from '$lib/audio/modules/clip-types';
   import {
     clipplayerLaneViews,
     clipplayerPadViews,
@@ -42,10 +48,13 @@
     launchClipplayerPad,
     launchClipplayerScene,
     setClipplayerLaneColor,
+    toggleClipplayerLaneRecArm,
+    toggleClipplayerLaneRecMode,
   } from './clipplayer-face-actions';
   import {
     clipplayerNowSticky,
     clipplayerSelectClip,
+    clipplayerSelectLaneSlot,
     clipplayerSetNowSticky,
   } from './clipplayer-face-selection.svelte';
   import { requestFaceTab } from '$lib/ui/workflow/face-tab-request.svelte';
@@ -99,6 +108,11 @@
   let clickTimer: ReturnType<typeof setTimeout> | null = null;
   function onPadClick(index: number, ev: MouseEvent) {
     const now = ev.shiftKey || nowSticky;
+    // CLAUSE 2 — a plain click also aims this lane's RECORD button at this pad.
+    // Immediate (not inside the double-click timer) so the target moves the
+    // instant you touch a pad, and separate from the editor selection so it
+    // neither creates a clip nor navigates away from the grid.
+    clipplayerSelectLaneSlot(nodeId, laneOf(index), slotOf(index));
     if (clickTimer) clearTimeout(clickTimer);
     clickTimer = setTimeout(() => {
       clickTimer = null;
@@ -162,6 +176,44 @@
           data-testid={`clipplayer-color-${l.lane}`}
           oninput={(e) => setClipplayerLaneColor(nodeId, l.lane, e.currentTarget.value)}
         />
+        <!-- ⚠ THE RECORD CONTROLS SIT IN THE LANE'S OWN HEADER, DIRECTLY OVER
+             ITS COLUMN, and both halves of that are owner rulings. The control
+             must be "reachable from the launcher view, adjacent to the lane,
+             never buried in a tab" — so it is here rather than on the
+             `channels` band. And lane N's controls must read as ONE UNIT
+             ("lane 1 should always be for all things lane 1") — so the arm and
+             its mode stack vertically inside one lane cell, instead of forming
+             two eight-wide rows of like controls. That row-of-eight shape is
+             exactly what the owner rejected on the mixer. -->
+        <span class="rec-strip">
+          <button
+            class="rec-arm"
+            class:on={l.recArmed}
+            class:live={l.recPhase === 'recording' || l.recPhase === 'stopping'}
+            aria-pressed={l.recArmed}
+            title={`Record into channel ${l.lane + 1}'s SELECTED clip — ${
+              l.recMode === 'endless'
+                ? 'ENDLESS: keeps recording until you tap this again or the transport stops, always ending at the end of the current loop'
+                : 'CLIP: records exactly one loop, then stops'
+            }. Can be armed while stopped — recording starts when the transport plays.`}
+            aria-label={`channel ${l.lane + 1} audio record`}
+            data-lane={l.lane}
+            data-rec-phase={l.recPhase}
+            data-testid={`clipplayer-rec-arm-${l.lane}`}
+            onclick={() => toggleClipplayerLaneRecArm(nodeId, l.lane)}
+          ></button>
+          <button
+            class="rec-mode"
+            class:endless={l.recMode === 'endless'}
+            title={`Channel ${l.lane + 1} record length — CLIP records exactly one loop; ENDLESS records whole loops until you tap record again or the transport stops`}
+            aria-label={`channel ${l.lane + 1} record mode ${l.recMode === 'endless' ? 'endless' : 'clip'}`}
+            data-lane={l.lane}
+            data-rec-mode={l.recMode}
+            data-testid={`clipplayer-rec-mode-${l.lane}`}
+            onclick={() => toggleClipplayerLaneRecMode(nodeId, l.lane)}
+            >{l.recMode === 'endless' ? '\u221e' : '1'}</button
+          >
+        </span>
       </span>
     {/each}
   </div>
@@ -183,11 +235,12 @@
         {#each row as pad (pad.index)}
           <button
             class="pad {pad.state}"
+            class:has-audio={pad.hasAudio}
             role="gridcell"
             style={`--lane-color:${lanes[pad.lane]!.color}`}
             aria-label={`lane ${pad.lane + 1} slot ${pad.slot + 1} ${pad.state}${
               pad.hasAuto ? ' (has automation)' : ''
-            }`}
+            }${pad.hasAudio ? ' (holds recorded audio)' : ''}`}
             title={pad.hasClip
               ? 'Click: launch/stop · Double-click: edit · Right-click: note probability, pitch probability, skip every, copy / paste / clear'
               : 'Click: launch/stop · Double-click: edit · Right-click: paste a copied clip here'}
@@ -196,6 +249,7 @@
             data-slot={pad.slot}
             data-state={pad.state}
             data-auto={pad.hasAuto ? '1' : undefined}
+            data-audio={pad.hasAudio ? '1' : undefined}
             data-testid={`clipplayer-pad-${pad.index}`}
             onclick={(e) => onPadClick(pad.index, e)}
             ondblclick={() => onPadDblClick(pad.index)}
@@ -256,6 +310,50 @@
   .lane-color::-webkit-color-swatch-wrapper {
     padding: 0;
   }
+  /* THE PER-LANE RECORD STRIP — arm over mode, inside the lane's own header
+     cell, so one lane's controls are one visual unit sitting on its column. */
+  .rec-strip {
+    display: flex;
+    gap: 1px;
+    width: 28px;
+    margin-top: 2px;
+  }
+  .rec-arm,
+  .rec-mode {
+    padding: 0;
+    height: 10px;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 2px;
+    background: rgb(255 255 255 / 0.04);
+    color: rgb(255 255 255 / 0.55);
+    font-size: 7px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .rec-arm {
+    flex: 1 1 auto;
+  }
+  .rec-mode {
+    flex: 0 0 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* ARMED is a steady red; RECORDING pulses. ⚠ A DIFFERENT RED FROM THE
+     AUTOMATION ARM (`ClipplayerArmPanel` uses hsl(0 62% 38%)) on purpose — two
+     recorders that look identical and are not is the exact confusion the
+     separate fields exist to prevent. */
+  .rec-arm.on {
+    background: #c0304a;
+    border-color: #e2536c;
+  }
+  .rec-arm.live {
+    background: #ff3b30;
+    border-color: #fff;
+    animation: clipplayer-pad-blink 0.5s steps(2, end) infinite;
+  }
+  .rec-mode.endless {
+    color: #fff;
+    border-color: rgb(255 255 255 / 0.4);
+  }
   .lane-color::-webkit-color-swatch {
     border: none;
     border-radius: 1px;
@@ -310,6 +408,17 @@
     background: color-mix(in srgb, var(--lane-color) 38%, transparent);
     border-color: color-mix(in srgb, var(--lane-color) 60%, transparent);
   }
+  /* CLAUSE 7 — A PURPLE BORDER MARKS A CLIP HOLDING RECORDED AUDIO.
+     ⚠ AN OVERLAY, NOT A STATE. It is declared AFTER `.loaded` but BEFORE
+     `playing`/`queued`, and re-asserted below them with the same specificity
+     trick they use, because "holds a take" is orthogonal to "what is this pad
+     doing right now": a recorded clip must keep its border while it plays,
+     which is exactly when a player most needs to see it. Painting it as a
+     `clipPadState` rung instead would have lost it the moment the clip
+     sounded, since `playing` and `queued` outrank `loaded`. */
+  .pad.has-audio {
+    border-color: #a855f7;
+  }
   .pad.playing {
     background: var(--lane-color);
     border-color: #fff;
@@ -320,6 +429,14 @@
     background: color-mix(in srgb, var(--lane-color) 55%, transparent);
     border-color: #fff;
     animation: clipplayer-pad-blink 0.5s steps(2, end) infinite;
+  }
+  /* …and the purple survives PLAYING and QUEUED — see the note on
+     `.pad.has-audio`. It deliberately does NOT override the rec-* states: a pad
+     mid-take is showing something more urgent than what it already holds. */
+  .pad.has-audio.playing,
+  .pad.has-audio.queued,
+  .pad.has-audio.loaded {
+    border-color: #a855f7;
   }
   @keyframes clipplayer-pad-blink {
     0% {

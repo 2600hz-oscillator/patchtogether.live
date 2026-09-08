@@ -1,12 +1,23 @@
 // cliprec-registry-idles.spec.ts
 //
-// THE RECORDER REGISTRY IDLES WHEN THERE IS NO ARM SURFACE AT ALL.
+// AN UNARMED RACK RECORDS NOTHING, LOUDLY DOING SO.
 //
-// The owner removed the mixmstrs record band on 2026-09-04: recording is a
-// CLIPPLAYER feature, per clip, and the replacement per-lane toggle has not
-// landed yet. That leaves a deliberate window in which the recorder
-// infrastructure is fully wired — worklet, OPFS store, registry, tap rosters —
-// and NOTHING can arm it.
+// ⚠ THIS SPEC'S SUBJECT CHANGED UNDER IT, AND THE PROSE IS UPDATED RATHER THAN
+// LEFT TRUE-WHEN-WRITTEN. It was authored for the window between the mixmstrs
+// record band being removed (2026-09-04) and its clipplayer replacement
+// landing, when there was NO arm surface in the product at all. The clipplayer
+// per-lane record toggle has since shipped, so an arm source exists again —
+// it is simply not switched on here.
+//
+// Every assertion below still holds and is still worth having: a rack whose
+// record toggles are all OFF must record nothing, wedge nothing, and log
+// nothing. A registry that armed a lane nobody asked for would be a serious
+// defect, and this is the only test that would catch it.
+//
+// What it no longer proves is "the registry tolerates a missing seam" — the
+// seam is back. `read('recState')` staying absent (asserted below) is now a pin
+// that the arm never MOVES BACK to the mixer, which is the thing the owner
+// removed.
 //
 // ⚠ THIS SPEC EXISTS BECAUSE THE TWO FAILURE MODES LOOK IDENTICAL FROM OUTSIDE.
 // A registry that idles cleanly and a registry that throws on every tick both
@@ -22,6 +33,7 @@
 //
 //   1. THE SOURCE CHAIN IS REAL — channel 1's post-fader meter hears the
 //      oscillator. A dead rig would make every silence below meaningless.
+//      (`cliprec-clip-mode.spec.ts` proves the same rig, ARMED, does record.)
 //   2. THE READ SEAM IS LIVE — `read('recTaps')` on the SAME node, through the
 //      SAME engine seam, returns the 16 board-in legs. So `read('recState')`
 //      returning undefined is a genuine absence of that key, not a dead handle
@@ -141,7 +153,7 @@ async function readData(page: Page, nodeId: string): Promise<Record<string, unkn
   }, nodeId);
 }
 
-test('with the record band GONE the recorder registry idles: no errors, no takes, clean pads', async ({
+test('an UNARMED rack idles: no takes, clean pads, no errors — and the arm never moves back to the mixer', async ({
   page,
 }) => {
   test.setTimeout(TEST_BUDGET_MS);

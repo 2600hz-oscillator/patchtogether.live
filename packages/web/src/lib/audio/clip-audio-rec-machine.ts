@@ -171,7 +171,30 @@ function armWindow(mode: ClipRecMode, w: RecordingWindow): RecordingWindow {
 
 /** Truncate a live endless take at `frame`: whole loops commit, less than one
  *  whole loop discards. (A single take never commits a partial — its contract
- *  is exactly one loop or nothing.) */
+ *  is exactly one loop or nothing.)
+ *
+ *  ⚠ THIS USED TO EMIT `[cancelWorklet, beginCommit]` AND IT LOST THE TAKE.
+ *  The worklet's `cancel` discards a lane **silently** — no final chunk, no
+ *  `done` (clip-recorder.ts: "Discard silently"). But `beginCommit` waits for
+ *  `done` before it will encode, so the commit sat on a dead promise, timed out
+ *  after CLIP_REC_DONE_TIMEOUT_MS, threw, and every endless take truncated by
+ *  a transport stop landed in the RECOVERY pile instead of the clip. The pair
+ *  was self-contradicting: you cannot ask a lane to report and to vanish.
+ *
+ *  The fix is TRUNCATE-AND-REPORT, and it needed no new message type — the
+ *  graceful STOP path already does exactly this and works. Emit `stopWorklet`
+ *  at the whole-loop boundary and enter `stopping`; the worklet clamps its
+ *  capture at that frame and calls `finish()`, which flushes the partial chunk
+ *  and posts `done`. The `stopping` + `frame` transition below then commits
+ *  through the same path a graceful stop uses.
+ *
+ *  The one asymmetry, handled on the main thread: a graceful stop resolves a
+ *  stopFrame in the FUTURE, so the worklet reports exactly the frames asked
+ *  for. A transport stop resolves one in the PAST (the last completed loop),
+ *  and the worklet has already captured past it — so it reports MORE than the
+ *  commit wants. The commit truncates that surplus, which is what `beginCommit`
+ *  always promised ("truncating any surplus the worklet captured past a
+ *  transport-stop / cap boundary") and never did. */
 function truncateEndless(
   state: Extract<ClipRecState, { phase: 'recording' | 'stopping' }>,
   frame: number,
@@ -179,10 +202,14 @@ function truncateEndless(
   const { startFrame, unitFrames } = state.window;
   const whole = clipRecWholeUnits(startFrame, unitFrames, frame);
   if (state.mode === 'endless' && whole >= 1) {
-    const frames = whole * unitFrames;
+    const stopFrame = startFrame + whole * unitFrames;
     return {
-      state: { phase: 'committing', mode: state.mode, window: state.window, frames },
-      effects: [{ kind: 'cancelWorklet' }, { kind: 'beginCommit', frames }],
+      state: {
+        phase: 'stopping',
+        mode: 'endless',
+        window: { ...state.window, stopFrame },
+      },
+      effects: [{ kind: 'stopWorklet', stopFrame }],
     };
   }
   return {
