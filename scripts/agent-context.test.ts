@@ -8,10 +8,15 @@
 // both discovery paths and the CLAUDE.md import rather than maintaining a prose
 // index that can drift.
 //
-// The same file also holds the two `.myrobots/` gates (#1494), because
-// `.myrobots` is agent-consumed context under the same authority statement:
+// The same file also holds the two agent-record gates (#1494), because the
+// record tree is agent-consumed context under the same authority statement:
 //   1. it must not carry operational secret topology, and
 //   2. the standing docs must not point at records it no longer contains.
+//
+// That tree was `.myrobots/` until the 2026-09 retirement moved it to
+// `evidence/` (`docs/migrations/myrobots-retirement-plan.md` §6). The gates
+// MOVED with their corpus rather than being deleted, which is what the
+// non-vacuity guard below always said would have to happen.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
@@ -50,8 +55,8 @@ function claudeSkillsOnDisk(): string[] {
  * Tracked files under `pathspecs`, repo-relative.
  *
  * Anchored to what is actually COMMITTED, not to what happens to be on disk:
- * only tracked content can leak, and an agent's untracked local scratch under
- * `.myrobots/` is none of this gate's business.
+ * only tracked content can leak, and an agent's untracked local scratch is
+ * none of this gate's business.
  */
 function trackedFiles(...pathspecs: string[]): string[] {
   return execFileSync('git', ['ls-files', '-z', '--', ...pathspecs], {
@@ -68,8 +73,20 @@ type Doc = { path: string; text: string };
 const readDocs = (paths: string[]): Doc[] =>
   paths.map((path) => ({ path, text: readFileSync(join(REPO_ROOT, path), 'utf8') }));
 
-/** Every tracked record under `.myrobots/` (all of it is text — .md/.html/no-ext). */
-const myrobotsRecords = (): Doc[] => readDocs(trackedFiles('.myrobots'));
+/**
+ * Every tracked record under `evidence/active/` — the live specs and unresolved
+ * owner decisions (all of it is text — .md/.html/no-ext).
+ *
+ * ⚠ CORPUS NARROWED BY THE RETIREMENT, stated so the scan is not read as wider
+ * than it is: the old corpus was the WHOLE `.myrobots/` tree (303 records).
+ * `docs/migrations/myrobots-retirement-plan.md` §6.4 scopes the moved scan to
+ * `evidence/active/` (38 records), which leaves `evidence/archive/` (257) out.
+ * Those were checked against these same patterns at the move and were clean;
+ * they are frozen historical proof, so nothing new lands in them. If a record
+ * is ever un-archived back into `active/`, it re-enters this scan. Widening to
+ * the whole tree is a one-word change (`'evidence'`) if that stops being true.
+ */
+const activeEvidenceRecords = (): Doc[] => readDocs(trackedFiles('evidence/active'));
 
 /**
  * The STANDING docs — the ones an agent is told to trust (authority tiers 2-4
@@ -83,9 +100,18 @@ const surfaceDocs = (): Doc[] =>
     ),
   );
 
-/** `.myrobots/...` record paths cited in prose. */
-function citedMyrobotsPaths(text: string): string[] {
-  return [...text.matchAll(/\.myrobots\/[A-Za-z0-9._/-]+\.(?:md|html)/g)].map((m) => m[0]);
+/**
+ * Agent-record paths cited in prose — BOTH shapes on purpose.
+ *
+ * `evidence/…` is the live tree. `.myrobots/…` is the retired one: it can never
+ * resolve again, so any standing doc still naming it is dangling BY
+ * CONSTRUCTION, and dropping the alternative would quietly retire the
+ * protection this leg already provides.
+ */
+function citedRecordPaths(text: string): string[] {
+  return [...text.matchAll(/(?:evidence|\.myrobots)\/[A-Za-z0-9._/-]+\.(?:md|html)/g)].map(
+    (m) => m[0],
+  );
 }
 
 /**
@@ -102,11 +128,11 @@ function citedMyrobotsPaths(text: string): string[] {
  *
  * ⚠ WHAT THIS GATE CANNOT SEE, stated so a green run is not read as more than
  * it is:
- *   - Only `.myrobots/` is scanned. `runbooks/`, `docs/observability/`,
+ *   - Only `evidence/active/` is scanned. `runbooks/`, `docs/observability/`,
  *     `.claude/skills/deploy/SKILL.md`, `packages/`, `scripts/` and the
  *     workflows all name secret VARIABLES legitimately — that is their job.
- *   - `DATABASE_URL` is deliberately absent from the patterns. `.myrobots`
- *     records discuss it as a TEST PRECONDITION ("@collab is vacuous without
+ *   - `DATABASE_URL` is deliberately absent from the patterns. The records
+ *     discuss it as a TEST PRECONDITION ("@collab is vacuous without
  *     DATABASE_URL"), which is a behavioural fact about the suite, not a map to
  *     a credential. Adding it would produce noise, and noise gets exempted.
  *   - It reads bytes at HEAD. Git history is out of scope (issue #1494 records
@@ -217,7 +243,7 @@ describe('agent context files describe the real tree', () => {
     expect(extract('a bare mention of docs/design/game-modules.md is not a link')).toEqual([]);
   });
 
-  it('every `.myrobots` record the standing docs point at still exists', () => {
+  it('every evidence record the standing docs point at still exists', () => {
     const docs = surfaceDocs();
     // Non-vacuity, anchored to a NAME the surface must contain (never a count):
     // if the reader silently returned nothing, the assertion below would pass
@@ -227,33 +253,45 @@ describe('agent context files describe the real tree', () => {
       'the doc surface reader found no CLAUDE.md — it read the wrong tree',
     ).toContain('CLAUDE.md');
 
-    // Migration plans under `docs/migrations/` CATALOG dead `.myrobots` records
-    // by name — that is their entire job — so they are exempt from THIS
+    // Migration plans under `docs/migrations/` CATALOG retired record paths by
+    // name — that is their entire job — so they are exempt from THIS
     // dead-pointer check (they stay in every other surface check, incl. the
     // secret scan). They are one-time execution records, not live-context docs
-    // an agent follows for a pointer; the `.myrobots` retirement itself (that
-    // very plan) is what finally retires this gate.
+    // an agent follows for a pointer.
     const dangling = docs
       .filter((d) => !d.path.startsWith('docs/migrations/'))
       .flatMap((d) =>
-        citedMyrobotsPaths(d.text)
+        citedRecordPaths(d.text)
           .filter((p) => !existsSync(join(REPO_ROOT, p)))
           .map((p) => `${d.path} → ${p}`),
       );
 
     expect(
       dangling,
-      'a standing doc points at a `.myrobots` record that is not there — the ' +
-        'three 2026-08 janitorial sweeps deleted records the rest of the tree ' +
-        'still cited, and a dead pointer sends an agent looking for context ' +
-        'that no longer exists. Move the durable part into the ADR/skill and ' +
-        'drop the pointer.',
+      'a standing doc points at an agent record that is not there — the three ' +
+        '2026-08 janitorial sweeps deleted records the rest of the tree still ' +
+        'cited, and the 2026-09 retirement moved every survivor, so a dead ' +
+        'pointer sends an agent looking for context that no longer exists. ' +
+        'Move the durable part into the ADR/skill/runbook and drop the pointer.',
     ).toEqual([]);
+
+    // ⚠ THE EXTRACTOR NEEDS ITS OWN POSITIVE CONTROL, and the retirement is
+    // exactly why. No standing doc cites a record any more, so `dangling` is
+    // now empty because the corpus is empty — indistinguishable from an
+    // extractor that silently stopped matching. Proved against known answers
+    // instead, the same way the docs-link extractor above is.
+    expect(citedRecordPaths('see `evidence/active/some-package/spec.md` for the shape')).toEqual([
+      'evidence/active/some-package/spec.md',
+    ]);
+    expect(citedRecordPaths('the retired `.myrobots/plans/gone.md` can never resolve')).toEqual([
+      '.myrobots/plans/gone.md',
+    ]);
+    expect(citedRecordPaths('evidence/ and .myrobots are directories, not records')).toEqual([]);
   });
 
   // ── THE TREE-WIDE CITATION GATE IS DELETED (2026-08-23) ───────────────────
   //
-  // It scanned EVERY tracked file for a `.myrobots/…` path that no longer
+  // It scanned EVERY tracked file for an agent-record path that no longer
   // resolves, and it reddened CI when it found one. The subject was real (the
   // 2026-08 janitorial sweeps left 59 dead pointers in code comments) but the
   // SHAPE was wrong: a stale pointer in a comment costs a reader one failed
@@ -267,19 +305,21 @@ describe('agent context files describe the real tree', () => {
   // the files agents are told to trust as current, where a dead pointer is read
   // as a live instruction rather than a footnote.
 
-  it('`.myrobots` carries no secret topology', () => {
-    const records = myrobotsRecords();
+  it('the active evidence records carry no secret topology', () => {
+    const records = activeEvidenceRecords();
     // Non-vacuity WITHOUT a count: an empty read would make the scan silent.
     expect(
       records.map((r) => r.path),
-      'no tracked file under .myrobots/ was read — the scan below would pass ' +
-        'by looking at nothing. If `.myrobots/` is gone for good, DELETE this ' +
-        'gate rather than leave a scan of an empty set standing green.',
+      'no tracked file under evidence/active/ was read — the scan below would ' +
+        'pass by looking at nothing. If the active tree is gone for good, ' +
+        'MOVE this scan to whatever replaced it (as the 2026-09 retirement ' +
+        'moved it here from `.myrobots/`) or DELETE the gate — do not leave a ' +
+        'scan of an empty set standing green.',
     ).not.toEqual([]);
 
     expect(
       scanForSecretTopology(records),
-      'secret topology in `.myrobots` — an agent reading a session record must ' +
+      'secret topology in `evidence/active/` — an agent reading a record must ' +
         'not learn which variables hold secrets, which file the keys are in, or ' +
         'which account/endpoint we run on. `runbooks/secrets-and-accounts.md` ' +
         'is the ONE home for that; redact the passage and point at the runbook.',
@@ -300,23 +340,24 @@ describe('agent context files describe the real tree', () => {
     // Direction 2 — a leak planted in the REAL corpus surfaces, and surfaces
     // alone. This exercises the same plumbing the gate uses (so it proves the
     // reader reaches the corpus), and proves ordinary prose does not trip it.
-    const canary = { path: '.myrobots/CANARY.md', text: 'the key lives in `../neon.txt`' };
+    const canary = { path: 'evidence/active/CANARY.md', text: 'the key lives in `../neon.txt`' };
     const benign = {
-      path: '.myrobots/BENIGN.md',
+      path: 'evidence/active/BENIGN.md',
       // DATABASE_URL is deliberately NOT a pattern — see the note on
       // SECRET_TOPOLOGY. This asserts that decision instead of leaving it prose.
       text: '@collab is vacuous without DATABASE_URL; see runbooks/architecture.md.',
     };
-    expect(scanForSecretTopology([...myrobotsRecords(), benign, canary])).toEqual([
+    expect(scanForSecretTopology([...activeEvidenceRecords(), benign, canary])).toEqual([
       `${canary.path}\n      ↳ key-file path: names the file an operator keeps credentials in`,
     ]);
   });
 
   it('AGENTS.md states the authority order and owner-controlled issue rule', () => {
     const agents = readFileSync(AGENTS_MD, 'utf8');
-    // `.myrobots` being evidence rather than instruction is an owner ruling that
-    // agents get wrong by default — if the entry point stops saying it, that is a
-    // regression in the thing this file exists to do.
+    // The record tree being evidence rather than instruction is an owner ruling
+    // that agents get wrong by default — if the entry point stops saying it,
+    // that is a regression in the thing this file exists to do. The tree was
+    // renamed by the 2026-09 retirement; the ruling was not.
     expect(agents).toMatch(/evidence, not instruction/i);
     expect(agents).toMatch(/do not create or reopen GitHub issues without explicit owner approval/i);
     expect(agents).toMatch(/PRs do not require a matching issue/i);
