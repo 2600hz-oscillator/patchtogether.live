@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog903a.ts
 //
 // MOOG 903A RANDOM SIGNAL GENERATOR — a slice of the Moog System 55/35 clone
-// initiative (.myrobots/MOOG/). The 903A is a passive noise SOURCE: it puts
+// initiative (docs/adr/018-moog-clone-provenance.md). The 903A is a
+// passive noise SOURCE: it puts
 // out full-spectrum WHITE noise and -3 dB/oct PINK noise on two independent
 // outputs (the hardware spans ~25 Hz–20 kHz), both gain-scaled by a single
 // LEVEL knob.

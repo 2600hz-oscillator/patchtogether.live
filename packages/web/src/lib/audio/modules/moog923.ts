@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog923.ts
 //
 // MOOG 923 FILTERS / NOISE SOURCE — a slice of the Moog System 35 clone
-// (.myrobots/MOOG/). The 923 is a dual-purpose utility panel:
+// (docs/adr/018-moog-clone-provenance.md). The 923 is a dual-purpose
+// utility panel:
 //
 //   1. NOISE SOURCE — the same white + pink noise generators the 903A
 //      ships, on two independent outputs, gain-scaled by a single LEVEL

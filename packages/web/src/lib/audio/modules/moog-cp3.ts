@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog-cp3.ts
 //
 // MOOG CP3 / CP3A CONSOLE PANEL (mixer) — a slice of the Moog System 55 / 35
-// clone initiative (.myrobots/MOOG/). The CP3 is the console's multi-function
+// clone initiative (docs/adr/018-moog-clone-provenance.md). The CP3 is
+// the console's multi-function
 // mixer: a 4×1 summing mixer that also presents a (−) inverted output, an
 // attenuated 4th external input, a 1→3 MULTIPLE, and ±reference trunk jacks.
 // Shared by SYS55 + SYS35 (categorized under Ports → moogafakkin per the plan's

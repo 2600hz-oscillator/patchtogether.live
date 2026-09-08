@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog907a.ts
 //
 // MOOG 907A FIXED FILTER BANK — a slice of the Moog System 55/35 clone
-// initiative (.myrobots/MOOG/). The 907A is the Moog System 35's smaller
+// initiative (docs/adr/018-moog-clone-provenance.md). The 907A is the
+// Moog System 35's smaller
 // FIXED filter bank: a fan of fixed-frequency bandpass sections, each with
 // its own level knob, plus a fixed low-pass section and a fixed high-pass
 // section at the band-edges, all summed to one output. Unlike a voltage-

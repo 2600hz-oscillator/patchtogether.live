@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog984.ts
 //
 // MOOG 984 4-CHANNEL MATRIX MIXER — a slice of the Moog System 55 / 35 clone
-// initiative (.myrobots/MOOG/). The 984 is a passive routing/mixing module: a
+// initiative (docs/adr/018-moog-clone-provenance.md). The 984 is a
+// passive routing/mixing module: a
 // 4×4 cross-point matrix that lets any of the four inputs be mixed, at an
 // independent level, into any of the four outputs.
 //

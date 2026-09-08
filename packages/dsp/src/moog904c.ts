@@ -2,8 +2,9 @@
 //
 // MOOG 904C — Voltage Controlled Filter Coupler AudioWorkletProcessor.
 //
-// Slice of the Moog System 55 / 35 clone initiative (.myrobots/MOOG/). The
-// 904C is the "filter coupler": it pairs a 904A-style transistor-ladder
+// Slice of the Moog System 55 / 35 clone initiative
+// (docs/adr/018-moog-clone-provenance.md). The 904C is the "filter
+// coupler": it pairs a 904A-style transistor-ladder
 // LOW-pass with a 904B-style HIGH-pass and couples them around a single
 // shared CUTOFF so the pair tracks together as one voltage-controlled
 // BAND-PASS (the LP sits ABOVE the cutoff, the HP sits BELOW it — only the

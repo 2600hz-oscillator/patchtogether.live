@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog995.ts
 //
 // MOOG 995 ATTENUATORS — a slice of the Moog System 55 / 35 clone initiative
-// (.myrobots/MOOG/). The 995 is a PASSIVE utility panel: three INDEPENDENT
+// (docs/adr/018-moog-clone-provenance.md). The 995 is a PASSIVE utility
+// panel: three INDEPENDENT
 // variable attenuators. Each channel is just a level pot that scales its input
 // from full mute (0) up to unity (1) — never boosting. No mixing, no summing,
 // no CV: three parallel "turn it down" knobs. Shared by SYS55 + SYS35
