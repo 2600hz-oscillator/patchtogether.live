@@ -88,6 +88,45 @@ flox activate -- npx --workspace e2e playwright test per-module-per-port --grep 
 flox activate -- npx --workspace e2e playwright test vrt --grep <yourModuleId>
 ```
 
+## ART audio profiles — the gate, and the backfill
+
+Every audio-domain module def must have at least one committed `.f32` baseline
+under `art/baselines/` (that, and only that, is what gives it a *profile* — and a
+row in the gallery). `art/setup/profile-coverage.ts` holds the two escapes:
+`ART_EXCLUDED` (structurally unprofilable, each entry carrying its own reason) and
+`ART_BACKLOG` (a named list that only shrinks). A **new** module is on neither, so
+it is gated immediately — add an audio def with no profile and no reasoned
+exclusion and the ART lane goes red.
+
+To profile one module:
+
+1. Answer the question that decides all the effort: **does a deterministic offline
+   render path exist?** `node-web-audio-api` cannot instantiate our custom
+   `AudioWorkletProcessor`s or the Faust worklets, so a real baseline renders
+   through one of four paths — a pure-TS DSP core the worklet wraps; a faithful TS
+   mirror of the per-sample recurrences written in the scenario; native Web Audio
+   primitives under `OfflineAudioContext` (oscillators and biquads do work); or
+   `art/setup/faust-offline.ts`, which renders real Faust wasm headlessly. There is
+   no "drive the real module graph and snapshot every port" offline harness — that
+   only exists in E2E.
+2. Write the scenario using the capture-and-pin helper in `art/setup/capture.ts`:
+   it writes `.f32` + `.sha` on first run or under `UPDATE_BASELINES=1`, and
+   otherwise asserts the stored source hash still matches **before** comparing
+   buffers. The `.sha` is the pin — a coefficient change reddens the lane and
+   demands an intentional `task art:update`.
+3. `flox activate -- task art:one -- <module>`, then `REPEAT=3`.
+4. Delete the module's id from `ART_BACKLOG`. Nothing else — there is no count to
+   update anywhere (the old `ART_BACKLOG_MAX` literal was removed as a ratchet).
+5. If it genuinely cannot be profiled, add an `ART_EXCLUDED` entry whose reason
+   names the real obstacle *and* where the math is pinned instead. That list is a
+   design decision, not an escape hatch.
+
+`art/scenarios/_meta/baseline-uniqueness.test.ts` fails if two committed `.f32`
+files are byte-identical. It exists because a placeholder render once returned the
+same 440 Hz sine for every module and produced a dozen self-comparing baselines.
+⚠ That placeholder still lives in `art/setup/render.ts` — do not build a new
+scenario on it; the uniqueness guard only catches the symptom, after the fact.
+
 ## Per-layer config & determinism
 
 | Layer | Config | Key settings |

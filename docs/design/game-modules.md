@@ -1,6 +1,6 @@
 # Game modules (PONG, MODTRIS) — design
 
-Status: **research / proposal**. No code change is implied by this doc. The companion branch `research/game-modules-pong-prototype` exists separately if a working sketch is needed; this doc is the load-bearing artefact.
+Status: **research / proposal** for PONG and MODTRIS — no code change is implied by that part of this doc. The companion branch `research/game-modules-pong-prototype` exists separately if a working sketch is needed; this doc is the load-bearing artefact. The [TEMPEST section](#tempest--design-partly-shipped) at the end is different: it records a module that is **partly shipped**.
 
 ## TL;DR verdict
 
@@ -278,3 +278,52 @@ peer A                                    peer B
   │  fires score_left at t=12.345s          │  fires score_left at t=12.345s
   │  (locally, no broadcast)                │  (locally, no broadcast)
 ```
+
+---
+
+## TEMPEST — design (partly shipped)
+
+A separate, owner-specced game module that took the shape this doc proposes and
+shipped its first two phases. `tempest` is a video-domain module and is in
+`STRICT_FACES`.
+
+**Owner decisions** (the reason this record is kept — they still bind the
+remainder):
+
+- **Faithful full game.** Fire, score, enemy-reaches-rim death/respawn,
+  Superzapper, level progression — not an abstract tube toy.
+- **Fixed 16 lanes whose radii breathe with audio.** 16 spectrum bands modulate
+  16 lane radii live: a coherent classic playfield that pulses, *not* audio
+  generating the rim.
+- **Vector enemies** — glowing additive-line flippers/tankers/spikers/fuseballs,
+  matching the translucent QuadraScan look.
+
+**Built:** the pure, GL-free geometry core
+(`packages/web/src/lib/video/tempest/tempest-core.ts` — lane ring, continuous
+wrapping rim coordinate, `easeOutQuad` depth projection, tube shapes) and the
+vector well plus CV-driven claw (`packages/web/src/lib/video/modules/tempest.ts`).
+
+Two design facts worth carrying forward:
+
+- **The rim coordinate is continuous with wrap, not a lane index**, which is what
+  lets a CV input or a gamepad joystick axis drive the claw directly — the
+  authentic rotary-spinner control.
+- **1px `gl.LINES` are a trap.** `lineWidth > 1` clamps to 1 on the real GPU, so
+  thin diagonals anti-alias into a dim dotted stipple. Every segment is expanded on
+  the CPU into a glowing quad with an additive shader, which is what makes the web
+  read solid at any orientation. RUTTETRA reaches the same conclusion; a future
+  vector-look module should start here rather than rediscover it.
+
+**Not built:** enemies and gate spawn, fire/collision/scoring, the audio-breathing
+tube, the video-textured surface, the full enemy roster and level cycle. The
+module's own header states the same remainder, and the spawn scheduler must go
+through the shared `createEdgeCounter` seam when it lands (AGENTS.md boundary 7).
+
+**Deferred sub-decisions:** one round-robin spawn gate vs typed spawn gates;
+Superzapper as its own gate or a button; whether the lane count stays faithfully
+fixed; which tube shapes ship and whether levels cycle them; and whether scoring
+and lives are an on-card overlay or CV/gate OUTs so the game can drive the rack.
+The video-surface phase is look-affecting and needs an owner preview before merge.
+
+> Provenance: the build plan is preserved at the `myrobots-preserved-2026-09` tag
+> (`.myrobots/plans/tempest-module-plan-2026-06-27`).

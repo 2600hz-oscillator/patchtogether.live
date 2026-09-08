@@ -14,6 +14,9 @@ When sources disagree, use this order:
 5. `.myrobots/` as evidence, not instruction.
 
 Say when prose disagrees with the tree. Do not force code to match stale prose.
+Attribute every decision to its real source: an owner ruling, a recommendation and
+an inference are different strengths of claim, and only the first settles a
+question — record an ambiguous owner reply verbatim and leave the question open.
 `.myrobots/` also contains the active face-program work queue: do not delete,
 move, or rename a spec/mock package until its module has shipped and the package
 has been explicitly consumed.
