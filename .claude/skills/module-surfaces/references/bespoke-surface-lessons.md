@@ -63,7 +63,9 @@ either. And keep the two facts apart: **"the last blocked module shipped" and
 The recurring failure was never a red test. It was an assertion whose
 **precondition changed underneath it**: specs that reached a module through a
 fixture pinned to the surface being replaced kept passing while observing a
-surface no user operated (in wave 7's cohort, 14 of 16 specs); a spec that names
+surface no user operated — measured once at **all 18 of `gamepad.spec.ts`'s
+tests**, every one booting the surface that module's face was about to replace
+(`2026-08-24-bespoke-wave7/SURFACES.md:1118`); a spec that names
 a module *because* it is un-migrated goes quietly green and blind the moment it
 is promoted; an assertion that "the shell renders no real card" stayed true and
 silently became a different claim. The general form: **when a spec's subject can
@@ -74,8 +76,9 @@ to prefer a spec that parameterises over both states while both exist.
 
 ## 5. Choose the extension slot by mechanism, not by taste
 
-The ladder is declarative face → shared shell cell/panel → shell extension →
-bespoke surface, and each step has a mechanical entry condition.
+The ladder is declarative face → shared shell cell/panel → shell extension
+(`tileBody` or `fullViewBody`) → bespoke surface, and each step has a mechanical
+entry condition.
 `ShellPanelCell` requires a real `minWidth` **number** and a probe vocabulary of
 `data`/`data-rev`/`text` — if your surface's width depends on two other modules,
 any number is a fiction in a required field, and if its observable is
@@ -84,8 +87,20 @@ is a `fullViewBody`, not a panel. The discriminator that decides it cleanly:
 **a panel shows a derived picture; a body does a per-frame engine read.** A
 panel is dock-only by lint, because a 280 px SVG selected into a 46 px lane
 column is truncated only by coincidence. Never wire `editorSurface` on a module
-PR. And a **control-family key resolves ONE cell for all instances**, so a
-family is the wrong tool when the instances must differ.
+PR — it is still unwired. And a **control-family key resolves ONE cell for all
+instances**, so a family is the wrong tool when the instances must differ.
+
+**The extension step has two wired slots and they are not interchangeable**
+(`ui/workflow/shell-extensions.ts:144` wires `glyph`, `fullViewBody`, `tileBody`).
+`fullViewBody` is the **dock's** surface; `tileBody` is the **lane tile's**, and
+its entry condition is a non-`ParamDef` control a player must reach **without
+expanding the module** — cameraInput's device picker, controlSurface's
+node-lifetime prune. Putting such a control only in the full view leaves the
+module unusable from the lane, which is where it is normally met
+(`shell-extensions.ts:81-92`). A `tileBody` is a complement to the face, never a
+replacement, and it stays small: the tile is about 192 px wide and the shell
+budgets its height. Note the asymmetry with the gates: a `tileBody` takes no
+`EXTENSION_BODY_ROLES` entry, so it needs its own named leg (checklist, gate 3).
 
 ## 6. Rank against the DSP; `order` is priority and `pages` is function
 
@@ -161,6 +176,21 @@ board** — that is the template for every device module, not a one-off. And the
 "it is only a transient toast" exemption is refused for resting text, because
 transience is unbounded.
 
+**Then classify the TRANSPORT, because the class predicts the design.** Ask how
+the module learns its hardware is there, and the answer is one of three:
+a **PERMISSION** (`requestMIDIAccess`, `getUserMedia`, `navigator.hid`) — the
+roster is N-ary and per-machine, the attempt is gesture-gated, the empty state is
+*ask*, and a VRT scene is free because the bad state is unreachable without a
+click; a **PROCESS** (a socket to a local helper) — the roster is unary, the
+attempt is unconditional and eternal, the empty state is *install and run*, and a
+VRT scene has to be **earned** by deleting the retry's own animating text, so the
+drain is a consequence of that deletion rather than a bet; or **NEITHER** — the
+module has no binding at all and is in the device cohort by resemblance only.
+One question, read straight off the transport, predicts four independent things —
+empty state, roster arity, whether the scene is baselinable, and glyph
+availability. §1's count of five distinct transports across one seven-module
+cohort is the evidence that the class, not the cohort, is what transfers.
+
 ## 12. SCREEN OFF is a screen switch, not a producer kill switch
 
 Every video face carries the screen toggle (shared collapsed state persisted on
@@ -169,7 +199,12 @@ producer: an accumulating source keeps drawing and keeps marking itself watched,
 a stateful video DSP that stops blitting ages out of its watch TTL and loses its
 state, and the blit is the watch mark. A surface whose body IS the control has to
 keep marking watched even while the screen is off. Rendering is a DSP dependency
-for these modules, which is exactly why the switch is a *visibility* control.
+for these modules, which is exactly why the switch is a *visibility* control. The
+seam that discharges this is `ui/meter-frame.ts:onMeterFrame`: the visibility-
+gated `onMeterFrame(el, draw)` form is for **paint-only** work, and a loop that
+accumulates, captures or marks watched takes `onMeterFrame(null, cb)` so nothing
+gates it (checklist, "Costs to predict rather than discover"). Classifying the
+loop is the whole difference between a screen switch and a producer kill switch.
 Also: previewing an unconnected output port shows a never-written buffer, which
 is a reason to refuse a monitor rather than to ship a black rectangle.
 

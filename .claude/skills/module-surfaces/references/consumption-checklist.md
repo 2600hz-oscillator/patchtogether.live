@@ -41,7 +41,13 @@ set identity against `ROLE_PREDICATE`'s keys, so a fourth role moves an assertio
 deliberately and visibly. The roles are ordered by their predicates rather than
 exclusive; when two hold, **declare the role the module is OPERATED from**. The
 gate is candid that it cannot see what a canvas paints, so the `why` string is
-where the next author learns what the body draws.
+where the next author learns what the body draws. ⚠ **Its subject is
+`fullViewBody` ONLY.** A `tileBody` gets no role entry and no predicate, so
+nothing anchors what the lane-tier body paints or does — the gate says so itself
+inside controlSurface's own `why` (`face-rack-status-source.test.ts:233`: "a
+tileBody is outside this gate's subject"). Fourteen extensions ship one today, so
+pin a tileBody's behaviour with a named module-level leg, the way
+`controlsurface-face-model.test.ts` pins its dangling-pointer prune at the source.
 
 **4 — `module-docs-lint`'s controlFamily leg.**
 Every declared `controlFamilies.testidPrefix` must have a rendered home: painted
@@ -70,17 +76,27 @@ that looks alive and is not.
 **6 — The sixth gate is GONE, and its lesson is the durable part.**
 `face-migration-inventory.test.ts` and its `mountsTypedEntry` predicate no longer
 exist; the blocker was retired by **building the affordance** —
-`ui/controls/TextEntry.svelte` and `ui/controls/NoteEntry.svelte` are shell cell
-kinds now. Keep the trap: that gate used **two different subjects for one
+`ui/controls/TextEntry.svelte` is the shell's one `entry` cell kind
+(`ui/workflow/shell-cells.ts:643`, rendered at `ModuleShell.svelte:1361`).
+`NoteEntry.svelte` is **not** a cell kind and never became one: it stays the
+sequencer-step composite — a pitch input plus a gate button plus grid navigation
+— which is why the two are separate components rather than one parameterised
+field (`ui/controls/index.ts:22-25`, `TextEntry.svelte:9-11`). Keep the trap:
+that gate used **two different subjects for one
 concept** — its liveness probe read the shell (the one renderer every face cell
 is painted by) while its disposition leg read the module's card, and a
 `fullViewBody` was neither. Both legs were individually defensible; the gate was
 confidently green about the wrong file. When you find a probe and the verdict it
 feeds reading different artifacts, that is the bug, and re-dispositioning to dodge
-it is refused. (Two live consequences of the same shape: `shell-cells.ts`'s
-`shellCellKindsFor` still documents itself as feeding that deleted gate, and
-`module-faceplates.md` — the former home of the STOP-2 checklist — is cited from
-half a dozen source files and does not exist.)
+it is refused. The operational corollary outlives the gate: **before trusting a
+comment that names a gate or a design doc, grep for the named thing and for its
+other citers.** Two live instances — `shell-cells.ts`'s `shellCellKindsFor` still
+documents itself as feeding that deleted gate, and
+`.claude/skills/module-faceplates.md`, the former home of the STOP-2 checklist,
+deleted with the old skill fleet in #2222, is still named by 66 tracked files
+(`git grep -l module-faceplates`; re-run it rather than trusting that number, and
+expect mostly video `*OutputBody.svelte` overlay comments). The checklist content
+lives here now, so those comments have somewhere real to repoint.
 
 ## Declarations the gates read
 
@@ -92,7 +108,10 @@ by the type (`NO_USER_CONTROL_WHY_MIN`) and `writer` is checked against the def'
 `'internal'` means the module itself writes it — the wrong arm reddens lint. Its
 consumers are behaviour, not verdicts: the param is never auto-exposed on a
 group's instrument bar, never lands under a Push 2 encoder, satisfies
-completeness without a rank, and must render exactly zero cells. It is **not**
+completeness without a rank, and must render exactly zero cells — and
+`e2e/tests/faces-parity.spec.ts` is the **DOM-level twin** of that last leg, the
+one consumer of the five that runs in a real browser, so it is what actually
+falsifies the render claim. It is **not**
 "hide this control" — a param the player should be able to set, declared here to
 quiet a gate, passes every check in the file and is a lie the `why` has to carry.
 
@@ -167,6 +186,17 @@ move is what costs the re-attest. Bind ranges with `paramSpec(def, id)` rather
 than exporting a `*_RANGE` constant: the export moves the hash and the accessor
 does not.
 
+**A face-body loop is registered through `ui/meter-frame.ts:onMeterFrame`, never
+a raw `requestAnimationFrame`** — one coalesced ticker, and the argument you pass
+declares what kind of work it is. `onMeterFrame(el, draw)` is **paint-only** and
+visibility-gated: the element's `IntersectionObserver` skips the callback while it
+is off-screen, which is correct for a meter and wrong for anything that
+accumulates. `onMeterFrame(null, cb)` is **stateful, capture or game** work that
+must not be element-gated at all (it still coalesces on the shared rAF). Classify
+the loop before you copy one, and if you copy a pull-driven painter's raw-rAF
+exemption, copy its stated reason with it — an exemption without its reason is
+how the next body inherits an ungated loop nobody argued for.
+
 **Docs ride the module's own PR** — the co-located `docs` block, the
 `STRICT_DOCS` entry (`packages/web/src/lib/docs/strict-docs.ts`) and
 `task docs:accept`. Docs are hash-transparent by design, so this costs nothing
@@ -204,6 +234,21 @@ being open. Note the category: this is a defect the promoting PR **creates**, so
 it cannot be found on `main` first and is only visible if someone asks what the
 component was doing besides rendering.
 
+**Promotion can orphan saved MIDI bindings, silently, in the player's browser.**
+A binding persists under `bindingKey` = `${moduleId}:${paramId}`, so replacing a
+`MidiAssignButton` — which binds under a **synthetic action id** because a bare
+button has no backing param — with a real param control *changes the key*: the
+localStorage record survives under a key nothing reads, and the pad just stops
+working with no error, no gate and nothing to see. Node ids are stable across
+reloads, so this is not theoretical. The fix is a declared entry in
+`midi/midi-learn.svelte.ts:LEGACY_BINDING_ALIASES`, whose `adoptLegacyBinding()`
+**re-keys** the record on the control's own mount, deny-by-default (it acts only
+when the new key is unbound and a declared legacy key on the same node is bound,
+so it cannot steal a binding) and never dual-files it, because one physical pad
+with two owners has no discriminator in the read path. It is a declared table
+rather than a module-local `if` precisely because any control trading a synthetic
+action id for a real param id is the same shape.
+
 **A shrinking derived pool emits no signal until it empties.** A derived fixture
 pool fixes a hand-maintained list's staleness and inherits its exhaustion: a
 promotion can narrow one to zero, and the run stays green with a loud skip.
@@ -217,3 +262,39 @@ derived set — an empty parsed lane set once collected zero tests lane-wide.
 prose edit corrupts them silently. A bulk edit has three recurring failure modes
 — string-quote context, sentence-initial case, and escapes landing inside
 comments — each catchable with a one-line grep before you commit.
+
+## Driving the surface you just built
+
+The operational vocabulary for a spec that has to reach a face. Probe before you
+write locators — dump `[data-testid]` on the tile and in the dock from a scratch
+spec — because **the tile and the dock paint different primitives for the same
+param** (a knob in the lane, a segmented or slider in the dock), so a locator
+that works at one tier is not a locator at the other.
+
+**Three testid shapes.** A control emits `control-<paramId>`
+(`ui/controls/Knob.svelte:315` — and the other primitives follow it) whenever a
+MIDI-learn key is passed; a family cell emits `shell-cell-<family>-<key>`
+(`ModuleShell.svelte:856`); a tabbed dock emits `faceplate-tab-<group>`. ⚠ On a
+tabbed face the control you want may exist and be unreachable: **an inactive dock
+page is `display:none`**, so click its `faceplate-tab-<group>` first. Def
+vocabulary is not painted — it reaches `aria-valuetext`, segment titles and
+`aria-label`, which is where a readout claim survives the resting-text ruling.
+
+**Never send Escape inside a dock.** Closing a face popup or cancelling an armed
+gesture with Escape closes the **whole full view** out from under the test — the
+menus that needed to survive it claim the key in capture phase with
+`stopPropagation`, and everything else must close by re-selecting. An Escape that
+unmounts the surface also makes the assertion after it pass vacuously.
+
+**Node chrome.** The node-drag grip is `.tile-kind` (the tile centre is `nodrag`
+and the name row is a button); the right-click target for the module menu is
+`.tile-name` / `.tile-kind`, while the MIDI menu is right-clicked on the control
+itself (`ModuleShell.svelte:934-938`). Scroll first on any dock drag — the ladder
+exceeds the pane.
+
+**The lane thumb is visibility-gated by design.** `VideoTileThumb.svelte` releases
+its blit loop on its own `IntersectionObserver`, so a tile laid out beyond the
+viewport freezes and an off-viewport pixel probe reads a stale frame rather than
+failing. Probe the **engine seam** instead — `videoEngine.outputTexture(nodeId)`
+plus `readPixels`, against the PRODUCER — which is shell-agnostic and is what a
+migrated probe should have been reading in the first place.
