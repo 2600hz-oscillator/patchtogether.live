@@ -27,7 +27,8 @@
 //   speaker damage from a runaway patch", not "make everything sound
 //   compressed."
 //
-// P0-A1 (DSP audit, .myrobots/plans/dsp-stack-bass-freq-audit-2026-07-01.md).
+// P0-A1 (the decision: docs/adr/010-terminal-sink-and-audio-health.md; the
+// audit: evidence/active/plans/dsp-stack-bass-freq-audit-2026-07-01.md).
 // Stage 2 used to be a plain `DynamicsCompressorNode` at threshold -6 dB,
 // ratio 4, knee 6, attack 3 ms, release 50 ms. Measured on that node (see
 // art/scenarios/audio-out/master-limiter-sub-pump.test.ts for the harness):

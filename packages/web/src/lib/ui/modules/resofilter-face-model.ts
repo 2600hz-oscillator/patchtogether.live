@@ -26,9 +26,12 @@
 // ── WHAT WAS RE-MEASURED, AND WHERE THE SPEC WAS WRONG ──────────────────────
 //
 // Everything below was re-derived against the SHIPPING `resofilter-dsp.ts` at
-// 48 kHz before it was written (`.myrobots/plans/face-specs-batch-4-resofilter
-// .md` is the spec; four of its figures did not reproduce). Two of its errors
-// were the SAME error — a resonant filter that has not settled:
+// 48 kHz before it was written (the batch-4 resofilter face spec; four of its
+// figures did not reproduce). That spec was deleted by the #1488 janitorial
+// sweep and is in neither preservation tag — it survives only in git history
+// (added at f1c2295571, deleted at f263e52bb8), so the corrections below are
+// the record. Two of its errors were the SAME error — a resonant filter that
+// has not settled:
 //
 //   * the spec reports the plateau peak gain as 50.441 dB and back-derives an
 //     "implied k_min ≈ 0.003006" from it. `resToK` floors k at EXACTLY 0.003,

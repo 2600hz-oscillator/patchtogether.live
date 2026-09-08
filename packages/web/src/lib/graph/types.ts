@@ -701,7 +701,8 @@ export interface ModuleFacePage {
  * PER-MODULE UI CURATION — the priority ranking that drives the workflow-mode
  * ModuleShell's semantic-zoom (STRATA) tiers and its sectioned dock faceplate.
  * Co-located on the def like `docs` so a control change and its curation edit
- * land in the SAME PR diff (see .myrobots/plans workflow-mode UI refactor §3.6).
+ * land in the SAME PR diff (the ranking model:
+ * .claude/skills/module-surfaces/references/bespoke-surface-lessons.md).
  *
  * This is UI METADATA, not I/O, so MOST of `face` is deliberately kept out of
  * contract-signature.ts / contract-lock.txt — a re-ranking is not a contract

@@ -5,7 +5,8 @@
 // `poll(ctx.currentTime)` once per scheduler tick; the counter returns how many
 // rising edges arrived SINCE THE LAST POLL — windowed to the new samples only.
 //
-// WHY THIS EXISTS (see .myrobots/plans/io-trigger-gate-sanitization.md §3.2):
+// WHY THIS EXISTS (AGENTS.md boundary 7; the why:
+// docs/adr/009-gate-carries-timing-only.md):
 // the scheduler tick is ~25 ms but an AnalyserNode ring buffer is 2048 samples
 // (~42 ms @ 48 kHz). If a consumer re-scans the WHOLE buffer every tick, the
 // ~17 ms overlap re-presents the same rising edge on two consecutive ticks and

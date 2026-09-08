@@ -120,7 +120,8 @@
 // inversion or a level-dependent correction, and this one has neither.
 //
 // The model (derivation + sources:
-// .myrobots/plans/backdraft-flicker-research-2026-07-26.md):
+// docs/adr/016-model-the-cause-state-the-divergence.md; the research record is
+// evidence/archive/2026/plans/backdraft-flicker-research-2026-07-26.md):
 //
 //   emission     e(t) = 1 + m*cos(2*pi*f*t)      (mean-normalised to 1)
 //   exposure     integrate e over T_e  =>  depth *= sinc(f*T_e)
@@ -447,7 +448,8 @@ export const BACKDRAFT_FLICKER_KNEE = 0.55;
 // band. The nesting is forced by the geometry, not tuned. IN PURE TV YOUR INPUT
 // IS THE ROOM, NOT THE PICTURE — the picture is the feedback.
 //
-// Design + adversarial review: .myrobots/plans/backdraft-pure-tv-2026-07-27.md.
+// Design + adversarial review: docs/adr/016-model-the-cause-state-the-divergence.md
+// (provenance: evidence/archive/2026/plans/backdraft-pure-tv-2026-07-27.md).
 
 /**
  * THE TEXTURE-UNIT MAP, as data, because a collision here is SILENT.

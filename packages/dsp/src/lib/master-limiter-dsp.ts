@@ -2,7 +2,8 @@
 //
 // MASTER LIMITER — the terminal safety stage for `audioOut`, replacing the
 // full-band stereo-linked `DynamicsCompressorNode` that the DSP audit indicts
-// as P0-A1 (.myrobots/plans/dsp-stack-bass-freq-audit-2026-07-01.md):
+// as P0-A1 (the decision: docs/adr/010-terminal-sink-and-audio-health.md;
+// the audit itself: evidence/active/plans/dsp-stack-bass-freq-audit-2026-07-01.md):
 //
 //   "It is full-band and stereo-linked. Attack 3 ms + release 50 ms is on the
 //    order of the sub period (40 Hz = 25 ms), so on a −6 dBFS+ kick it

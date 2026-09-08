@@ -345,7 +345,7 @@ export interface SnapshotClipRecord extends ClipBase {
 // scopes, so a peer's note edit (`clips[k]`) and an automation record commit
 // (`auto[k]`) can never last-writer-wins each other, and `coerceClipRecord`
 // ('note') has no tracks field to silently drop (the note-clobber the redesign
-// exists to prevent — see .myrobots/plans/automation-redesign-2026-07-16.md).
+// exists to prevent — see docs/adr/013-clip-owned-state-per-clip.md).
 //
 // An AutoClipRecord's `tracks` is keyed by TARGET KEY (`nodeId::paramId`), so a
 // record commit writes ONLY the touched track keys (`auto[k].tracks[target] =

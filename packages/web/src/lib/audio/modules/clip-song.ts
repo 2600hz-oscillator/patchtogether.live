@@ -2,7 +2,7 @@
 //
 // SONG MODE — the SONG data model + PURE helpers for the `clipplayer` module.
 //
-// (design: .myrobots/plans/arranger-song-mode-2026-07-18.md — PHASE 1 core.)
+// (design: docs/adr/013-clip-owned-state-per-clip.md — PHASE 1 core.)
 //
 // The owner's model: the arranger view BECOMES a SONG view. Recording under a
 // SONG-REC arm captures — over song time — a CONCRETE, PRINTED performance:

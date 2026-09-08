@@ -231,8 +231,8 @@ describe('module-docs lint — numbered card KEY resolves (STRICT_DOCS set)', ()
 // answer — the debt was mechanically payable in one sweep on day one — and
 // the hand-typed ceiling that went with the list auto-merged WRONG in 3 of 3
 // parallel branches, once cleanly and silently. All 275 remaining pairs were
-// declared from the Phase-0 classification table
-// (`.myrobots/2026-08-09-edge-cleanup-table.md`) and both the ledger module
+// declared from the Phase-0 classification table (provenance:
+// `evidence/active/2026-08-09-edge-cleanup-table.md`) and both the ledger module
 // and its ceiling were DELETED.
 //
 // The demand below is now UNCONDITIONAL: a gate-cable port with no `edge` is

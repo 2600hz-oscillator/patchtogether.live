@@ -9,8 +9,11 @@
 //
 // Modeled on ElectraControl (a meta-domain control-surface node with no audio
 // cable I/O — all state on node.data + the per-machine local binding); see
-// $lib/control/launchpad/launchpad-control.svelte.ts for the behaviour and the
-// proposal at .myrobots/plans/clip-launcher-launchpad/.
+// $lib/control/launchpad/launchpad-control.svelte.ts for the behaviour, and
+// docs/adr/011-rig-lifetime-versus-patch-lifetime.md for why the binding is
+// per-machine and never synced. The Launchpad Mk3 proposal it was built from
+// left the evidence corpus before the retirement snapshot and is in neither
+// preservation tag; it survives only in git history, at d7b40c1589.
 //
 // The "Pair" button runs the press-a-pad L/R handshake; "Connect single
 // Launchpad" binds ONE device whose role flips between the CLIP (matrix) and

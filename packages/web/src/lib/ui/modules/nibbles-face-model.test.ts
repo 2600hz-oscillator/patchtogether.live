@@ -659,10 +659,12 @@ describe('nibbles — the AUTO raw write is PAID, not made unreachable', () => {
 });
 
 describe('nibbles — CLAIM 6: the VRT pin can actually pin, and BOTH halves are needed', () => {
-  // ⚠ THE PIN IS ALREADY PROVEN BYTE-IDENTICAL in the tree
-  // (.myrobots/2026-08-23-nibbles-composite-vrt-nondeterminism.md: two runs
-  // differing pre-fix, byte-identical post-fix). What this block holds is that
-  // the SEAMS the roster names still exist and still do what the roster claims.
+  // ⚠ THE PIN IS ALREADY PROVEN BYTE-IDENTICAL in the tree (provenance:
+  // evidence/archive/2026/2026-08-23-nibbles-composite-vrt-nondeterminism.md —
+  // two runs differing pre-fix, byte-identical post-fix; the reusable lesson is
+  // .claude/skills/renderer-tests/references/silent-failures.md). What this
+  // block holds is that the SEAMS the roster names still exist and still do
+  // what the roster claims.
   it('the SEED half exists and is read at CONSTRUCTION *and* in the draw', () => {
     // Construction is what the face harness needs (`simPin` installs via
     // addInitScript BEFORE goto); the per-draw re-check is what the CARD scene

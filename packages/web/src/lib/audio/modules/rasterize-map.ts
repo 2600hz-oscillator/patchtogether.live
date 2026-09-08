@@ -1,8 +1,10 @@
 // packages/web/src/lib/audio/modules/rasterize-map.ts
 //
 // Pure, table-testable raster-mapping math for the RASTERIZE module
-// (slice 1 of "crossing the streams"). See .myrobots/plans/
-// audio-video-crossing.md.
+// (slice 1 of "crossing the streams" — the audio-video crossing plan it cited
+// was never committed and is in no preservation tag, so the model below is
+// the record; the stereo disposition of this module is
+// docs/adr/008-stereo-as-dual-mono.md, group E).
 //
 // The model — the FAITHFUL audio-into-video-raster mapping, NOT an
 // oscilloscope trace:

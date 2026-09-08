@@ -5,8 +5,10 @@
 // Y.Doc, so before PR-3 an AI patch of a stereo module was permanently
 // half-connected while every Canvas gesture wrote both legs.
 //
-// ⚠ It is also the writer the plan MIS-CITED: `.myrobots/stereo-audio-plan/
-// plan.md` points at `mike/driver.ts:79-105`, which is `organizeAll`'s LAYOUT
+// ⚠ It is also the writer the plan MIS-CITED: the stereo plan (provenance:
+// `evidence/active/stereo-audio-plan/plan.md`; the decision:
+// docs/adr/008-stereo-as-dual-mono.md) points at `mike/driver.ts:79-105`,
+// which is `organizeAll`'s LAYOUT
 // transact and has never touched `patch.edges`. Mike delegates here. This file
 // exists so the seam has a test of its own and cannot be lost again.
 //

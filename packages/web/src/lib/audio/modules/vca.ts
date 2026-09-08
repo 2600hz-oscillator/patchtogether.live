@@ -135,8 +135,10 @@ export const vcaDef: AudioModuleDef = {
   ],
 
   // RACKLINE curation (gallery mock: fullcard-mocks/vca.html; batch B of the
-  // face program, .myrobots/plans/dx7-and-faces-design-program-2026-07-27.md
-  // §4). `order` is a PRIORITY ranking for the tiers that show a SUBSET;
+  // face program §4, archived at
+  // evidence/archive/2026/plans/dx7-and-faces-design-program-2026-07-27.md;
+  // the ranking model: .claude/skills/module-surfaces/references/bespoke-surface-lessons.md).
+  // `order` is a PRIORITY ranking for the tiers that show a SUBSET;
   // `pages` is FUNCTION order for the tier that shows everything. They are
   // allowed to disagree; on this module they happen to agree, for two
   // INDEPENDENT reasons (the ranking argument below, and the band reading in
