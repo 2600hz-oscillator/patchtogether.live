@@ -1721,11 +1721,13 @@ jobs:
 
   # -----------------------------------------------------------------------
   # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (both WebGL lanes and why they
-  # gate: runbooks/ci.md, "GATING through the umbrella"; the retired planning
-  # record `plans/webgl-attestation-semaphore.md §6` that first argued for this
-  # floor is one of the four that no ref, reflog or stash still holds — see
-  # docs/migrations/myrobots-retirement-plan.md §2, so the runbook is now the
-  # only home). CI's only WebGL renderer is SwiftShader and
+  # gate: runbooks/ci.md § "Required checks (branch protection)", whose
+  # GATING-through-the-umbrella list names both webgl-smoke and webgl-attest;
+  # the retired planning record `plans/webgl-attestation-semaphore.md §6` that
+  # first argued for this floor is one of the four that no ref, reflog or stash
+  # still holds — see docs/migrations/myrobots-retirement-plan.md §2, so the
+  # runbook holds the GATING STATUS and the argument for the floor is the
+  # paragraph below). CI's only WebGL renderer is SwiftShader and
   # there is no heavy WebGL e2e lane on PRs (the dead `e2e-video` lane was
   # deleted 2026-06-20), so without this CI would be fully BLIND to gross WebGL
   # breakage. This runs a tiny, fast,
