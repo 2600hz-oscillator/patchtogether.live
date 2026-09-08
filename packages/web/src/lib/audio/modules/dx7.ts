@@ -55,8 +55,12 @@
 //   node.data.voice       — the working EDIT BUFFER (plain JS, deep-unwrapped).
 //   node.data.opOn        — boolean[6] operator mutes (edit-buffer only:
 //                           SYX param 155 is not in a stored voice).
-//   node.data.voiceRev    — monotonic revision. THE FACTORY POLLS THIS, not
-//                           the 78 operator values.
+//   node.data.voiceRev    — monotonic revision, bumped by every panel edit.
+//                           Still written and reported (`read('voiceRev')`),
+//                           but NO LONGER the poll's change test: the rev is
+//                           persisted per patch, so two patches can alias on
+//                           (preset, voiceRev) with different buffers. The
+//                           poll compares `dx7VoiceSignature` (content).
 //
 // The write side of all of that is `selectDx7Preset` in
 // $lib/ui/modules/dx7-patch-actions.ts (ONE mutateNode transaction, so undo
@@ -66,13 +70,15 @@
 //   the preset NAME changed   → `{type:'patch'}`  — DESTRUCTIVE. Correct: the
 //        player deliberately swapped the whole sound, so stale voice state
 //        would sound wrong.
-//   only voiceRev changed     → `{type:'voice'}`  — NON-DESTRUCTIVE. This is
-//        an operator edit, LOCAL OR REMOTE. `{type:'patch'}` here would mean
-//        a rack-mate nudging one operator HARD-RETRIGGERS every note YOU are
-//        holding and chops every tail that is ringing out (measured — see the
-//        protocol block in packages/dsp/src/dx7.ts and dx7-messages.test.ts).
-// Re-selecting the CURRENTLY loaded name is a revert: the rev moves, the name
-// does not, so it re-applies the pristine voice without stopping your notes.
+//   only the CONTENT changed  → `{type:'voice'}`  — NON-DESTRUCTIVE. This is
+//        an operator edit (LOCAL OR REMOTE) or a same-name patch load.
+//        `{type:'patch'}` here would mean a rack-mate nudging one operator
+//        HARD-RETRIGGERS every note YOU are holding and chops every tail that
+//        is ringing out (measured — see the protocol block in
+//        packages/dsp/src/dx7.ts and dx7-messages.test.ts).
+// Re-selecting the CURRENTLY loaded name is a revert: the buffer returns to
+// the pristine voice while the name stands still, so it re-applies without
+// stopping your notes (and an already-pristine buffer is a genuine no-op).
 //
 // Inputs:
 //   poly (polyPitchGate): polyphonic pitch+gate (preferred — the cable carries
@@ -116,6 +122,78 @@ export const DX7_DEFAULT_PRESET = 'E.PIANO 1';
  * assert the write is genuinely non-undoable rather than trusting the string.
  */
 export const DX7_MIGRATION_ORIGIN = 'dx7-param-hydration';
+
+/**
+ * The exact per-operator payload `sendVoice` posts across the worklet
+ * boundary — ONE builder for both the outgoing message and the content
+ * signature below, so a field added to the wire format cannot silently
+ * escape the change detection (the drift a duplicated field list invites).
+ *
+ * Hand-built plain objects: `postMessage` structured-clones, and a Yjs proxy
+ * throws "could not be cloned" (see the sendVoice doc block); primitives are
+ * forced to plain numbers/booleans either way.
+ */
+function dx7WireOperators(voice: DX7Voice): Array<{
+  r: [number, number, number, number];
+  l: [number, number, number, number];
+  ratio: number;
+  detune: number;
+  detuneFactor: number;
+  level: number;
+  fixedMode: boolean;
+  velocitySens: number;
+  fixedHz: number | undefined;
+}> {
+  return voice.operators.map((o) => ({
+    r: [Number(o.r[0]), Number(o.r[1]), Number(o.r[2]), Number(o.r[3])] as [number, number, number, number],
+    l: [Number(o.l[0]), Number(o.l[1]), Number(o.l[2]), Number(o.l[3])] as [number, number, number, number],
+    ratio: Number(o.ratio),
+    detune: Number(o.detune),
+    detuneFactor: Number(o.detuneFactor),
+    level: Number(o.level),
+    fixedMode: Boolean(o.fixedMode),
+    velocitySens: Number(o.velocitySens),
+    // FIXED-mode frequency in Hz. Absent on patches saved before the
+    // fixed-frequency fix — the worklet falls back to deriving it from
+    // `ratio`, so send `undefined` rather than a bogus number.
+    fixedHz: typeof o.fixedHz === 'number' ? Number(o.fixedHz) : undefined,
+  }));
+}
+
+/**
+ * CONTENT signature of a resolved edit buffer — what the factory's poll
+ * compares to decide whether to re-send the voice to the worklet.
+ *
+ * ⚠ A CONTENT SIGNATURE, NOT `voiceRev`, and the difference is the samsloop
+ * load-silence class (the warrensspectrum `wsBandsRev` fix, ported): the rev
+ * counter is PERSISTED per patch, so two patches can both hold
+ * `preset: 'E.PIANO 1', voiceRev: 3` with DIFFERENT edit buffers — loading
+ * one over the other at a reused node id moved the voice while the
+ * (name, rev) pair stood still, and the worklet kept playing the previous
+ * patch's sound. Content cannot alias: identical strings mean identical wire
+ * payloads, and re-sending an identical payload is a no-op anyway.
+ *
+ * Signs exactly what `sendVoice` posts FROM THE VOICE (name, operators,
+ * transpose — via the shared `dx7WireOperators` builder). `algorithm` and
+ * `feedback` are deliberately absent: they are params (the authority split at
+ * the top of this file), the reconciler diffs params on every load, and
+ * `setParam` posts its own incremental messages.
+ *
+ * Six operators, ~a dozen numbers each — built in microseconds, safe on the
+ * 100 ms poll (the warrensspectrum precedent). `voiceRev` STAYS as a key (the
+ * panels still bump it; `read('voiceRev')` still reports it) but nothing here
+ * depends on it for change detection any more.
+ *
+ * Pure + exported so a unit test can pin the properties (distinct buffers
+ * differ; a structural clone signs identically) without an AudioContext.
+ */
+export function dx7VoiceSignature(voice: DX7Voice): string {
+  return JSON.stringify({
+    name: String(voice.name ?? ''),
+    transpose: Number(voice.transpose),
+    operators: dx7WireOperators(voice),
+  });
+}
 
 export const dx7Def: AudioModuleDef = {
   type: 'dx7',
@@ -466,27 +544,15 @@ export const dx7Def: AudioModuleDef = {
      * Array<number>.
      */
     function sendVoice(voice: DX7Voice, kind: 'patch' | 'voice'): void {
-      const ops = voice.operators.map((o) => ({
-        r: [Number(o.r[0]), Number(o.r[1]), Number(o.r[2]), Number(o.r[3])] as [number, number, number, number],
-        l: [Number(o.l[0]), Number(o.l[1]), Number(o.l[2]), Number(o.l[3])] as [number, number, number, number],
-        ratio: Number(o.ratio),
-        detune: Number(o.detune),
-        detuneFactor: Number(o.detuneFactor),
-        level: Number(o.level),
-        fixedMode: Boolean(o.fixedMode),
-        velocitySens: Number(o.velocitySens),
-        // FIXED-mode frequency in Hz. Absent on patches saved before the
-        // fixed-frequency fix — the worklet falls back to deriving it from
-        // `ratio`, so send `undefined` rather than a bogus number.
-        fixedHz: typeof o.fixedHz === 'number' ? Number(o.fixedHz) : undefined,
-      }));
       workletNode.port.postMessage({
         type: kind,
         voice: {
           name: String(voice.name ?? ''),
           algorithm: currentAlgo,
           feedback: currentFeedback,
-          operators: ops,
+          // The shared wire builder — also what dx7VoiceSignature signs, so
+          // the poll's change detection and this payload cannot drift apart.
+          operators: dx7WireOperators(voice),
           transpose: Number(voice.transpose),
         },
       });
@@ -495,7 +561,9 @@ export const dx7Def: AudioModuleDef = {
     // Initial send — the DESTRUCTIVE one, because a fresh node has no voices
     // to disturb. Uses the resolved edit buffer, so a rack saved with operator
     // edits boots into THOSE and not into the pristine preset.
-    sendVoice(readVoice(), 'patch');
+    const bootVoice = readVoice();
+    sendVoice(bootVoice, 'patch');
+    let currentVoiceSig = dx7VoiceSignature(bootVoice);
 
     /**
      * HYDRATE the two authoritative params from the loaded voice when the
@@ -534,22 +602,33 @@ export const dx7Def: AudioModuleDef = {
       );
     }
 
-    // Poll the EDIT-BUFFER REVISION (and the preset name). Yjs syncs node.data
+    // Poll the EDIT-BUFFER CONTENT (and the preset name). Yjs syncs node.data
     // from remote collaborators and from local Card/shell edits alike, so one
     // poll captures both — but WHICH message it sends is not the same for the
     // two cases, and the difference is audible. See the header block.
+    //
+    // ⚠ The change test is `dx7VoiceSignature` (content), NOT `voiceRev` —
+    // the rev is persisted per patch, so a same-session load of a patch that
+    // happens to hold the same (preset, voiceRev) pair with a DIFFERENT edit
+    // buffer used to alias to "no change" and the worklet kept playing the
+    // previous patch's voice (the warrensspectrum `wsBandsRev` fix, ported —
+    // see the dx7VoiceSignature doc block).
     let alive = true;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     function pollVoiceRev(): void {
       if (!alive) return;
       hydrateParamsOnce();
       const name = readPresetName();
-      const rev = readVoiceRev();
+      // The rev stays as the `read('voiceRev')` host shadow — tracked every
+      // tick so the readback stays honest, but no longer the change test.
+      currentVoiceRev = readVoiceRev();
+      const voice = readVoice();
+      const sig = dx7VoiceSignature(voice);
       const nameChanged = name !== currentPresetName;
-      const revChanged = rev !== currentVoiceRev;
-      if (nameChanged || revChanged) {
+      const sigChanged = sig !== currentVoiceSig;
+      if (nameChanged || sigChanged) {
         currentPresetName = name;
-        currentVoiceRev = rev;
+        currentVoiceSig = sig;
         // Adopt whatever the stamp wrote onto the params BEFORE sending, so
         // the outgoing payload carries the new voice's algorithm/feedback even
         // if the reconciler has not delivered its setParam calls yet. This is
@@ -561,9 +640,10 @@ export const dx7Def: AudioModuleDef = {
         const f = readLiveParam('feedback');
         if (f !== undefined) currentFeedback = clampFeedback(f);
         // A NAME change is a deliberate voice swap → destructive.
-        // A rev-only change is an operator edit (LOCAL OR REMOTE) → must not
-        // stop a rack-mate's — or your own — sounding notes.
-        sendVoice(readVoice(), nameChanged ? 'patch' : 'voice');
+        // A content-only change is an operator edit (LOCAL OR REMOTE) or a
+        // same-name patch load → must not stop a rack-mate's — or your own —
+        // sounding notes.
+        sendVoice(voice, nameChanged ? 'patch' : 'voice');
       }
       pollTimer = setTimeout(pollVoiceRev, POLL_MS);
     }

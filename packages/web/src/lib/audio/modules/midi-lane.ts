@@ -94,12 +94,13 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
-import type { ModuleFace } from '$lib/graph/types';
+import type { ModuleFace, ModuleNode } from '$lib/graph/types';
 import { midiToVOct, noteNameForMidi, parseNoteName } from '$lib/audio/note-entry';
 import { createPolySender, type PolySender } from '$lib/audio/poly';
 import { createMidiScheduler } from '$lib/audio/midi-timing';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
 import { bindMidiPort, type ConnectedDevice } from '$lib/graph/device-rebind';
+import { watchLiveNodeData, projectionsEqual } from '$lib/audio/live-node-data';
 import type {
   MidiAccessLike,
   MidiEventLike,
@@ -326,6 +327,56 @@ export const DEFAULT_DATA: MidiLaneData = {
   noteGateNote: 36, // GM kick
   lastDeviceId: null,
 };
+
+/** Everything the factory HYDRATES from `node.data`, as one comparable value.
+ *  Re-read by the live-data watcher after a same-session load at a reused id
+ *  (`$lib/audio/live-node-data`): the reconciler never re-materializes such a
+ *  node and never diffs `data`, so without this a lane keeps the PREVIOUS
+ *  patch's channel set / mode / CC numbers / device — a deaf lane with every
+ *  lamp green. `channels` is CLONED so a Yjs proxy never becomes the baseline. */
+export interface MidiLaneHydrate {
+  channels: number[] | null;
+  priority: VoicePriority;
+  retrig: boolean;
+  mode: LaneMode;
+  ccA: number | null;
+  ccB: number | null;
+  noteGateNote: number;
+  deviceId: string | null;
+  deviceName: string | null;
+}
+
+/** The channel set in ONE canonical spelling — valid members only, unique,
+ *  ascending — so the doc's array (any order, duplicates, a SyncedStore proxy)
+ *  and the engine's `Set` compare equal when they mean the same thing. A
+ *  spelling difference must never read as a change: `setChannels` PANICS
+ *  (drops every held note), so a false change every poll would be a lane
+ *  that can never hold a note. */
+export function canonicalLaneChannels(
+  channels: Iterable<number> | null | undefined,
+): number[] | null {
+  if (channels == null) return null;
+  // `Array.from`, not a spread behind `Array.isArray`: a SyncedStore array
+  // proxy is iterable, and this must never resolve a real channel set to
+  // "all channels" because the proxy failed a type test.
+  const set = expandLaneChannels(Array.from(channels));
+  return set ? [...set].sort((a, b) => a - b) : null;
+}
+
+export function midiLaneHydrateOf(node: ModuleNode): MidiLaneHydrate {
+  const d = (node.data ?? {}) as Partial<MidiLaneData>;
+  return {
+    channels: canonicalLaneChannels(d.channels ?? DEFAULT_DATA.channels),
+    priority: d.priority ?? DEFAULT_DATA.priority,
+    retrig: d.retrig ?? DEFAULT_DATA.retrig,
+    mode: d.mode ?? DEFAULT_DATA.mode,
+    ccA: d.ccA ?? DEFAULT_DATA.ccA,
+    ccB: d.ccB ?? DEFAULT_DATA.ccB,
+    noteGateNote: d.noteGateNote ?? DEFAULT_DATA.noteGateNote,
+    deviceId: d.lastDeviceId ?? DEFAULT_DATA.lastDeviceId,
+    deviceName: d.lastDeviceName ?? null,
+  };
+}
 
 // ---------------- The by-note GATE's note number, as one validator ----------
 //
@@ -665,17 +716,22 @@ export const midiLaneDef: AudioModuleDef = {
     const poly: PolySender = createPolySender(ctx);
 
     // ---------------- Saved data (with defaults) ----------------
-    const savedData = (node.data ?? {}) as Partial<MidiLaneData>;
-    let channelSet: Set<number> | null = expandLaneChannels(
-      savedData.channels ?? DEFAULT_DATA.channels,
-    );
-    let priority: VoicePriority = savedData.priority ?? DEFAULT_DATA.priority;
-    let retrig: boolean = savedData.retrig ?? DEFAULT_DATA.retrig;
-    let mode: LaneMode = savedData.mode ?? DEFAULT_DATA.mode;
-    let ccA: number | null = savedData.ccA ?? DEFAULT_DATA.ccA;
-    let ccB: number | null = savedData.ccB ?? DEFAULT_DATA.ccB;
-    let noteGateNote: number = savedData.noteGateNote ?? DEFAULT_DATA.noteGateNote;
-    let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
+    // Hydrated ONCE here and RE-HYDRATED by the live-data watcher below on a
+    // same-session load at a reused id. `hydratedDevice*` is the doc-level
+    // pick this handle has ADOPTED (`selectedDeviceId` is the resolved port);
+    // `pickDefaultDevice` reads the name from here so the LOADED patch's name
+    // is what resolves.
+    const hydrated = midiLaneHydrateOf(node);
+    let channelSet: Set<number> | null = expandLaneChannels(hydrated.channels);
+    let priority: VoicePriority = hydrated.priority;
+    let retrig: boolean = hydrated.retrig;
+    let mode: LaneMode = hydrated.mode;
+    let ccA: number | null = hydrated.ccA;
+    let ccB: number | null = hydrated.ccB;
+    let noteGateNote: number = hydrated.noteGateNote;
+    let selectedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceId: string | null = hydrated.deviceId;
+    let hydratedDeviceName: string | null = hydrated.deviceName;
 
     // ---------------- Internal mutable state ----------------
     let heldStack: number[] = [];
@@ -905,7 +961,7 @@ export const midiLaneDef: AudioModuleDef = {
       const connected: ConnectedDevice[] = [];
       for (const [id, inp] of access.inputs) connected.push({ id, name: inp.name ?? id });
       return bindMidiPort(
-        { id: selectedDeviceId, name: savedData.lastDeviceName ?? null },
+        { id: selectedDeviceId, name: hydratedDeviceName },
         connected,
       ).id;
     }
@@ -941,6 +997,11 @@ export const midiLaneDef: AudioModuleDef = {
 
     function selectDevice(deviceId: string | null): void {
       selectedDeviceId = deviceId;
+      // A surface pick IS the adopted doc-level pick (the surface persists the
+      // same id + name), so the watcher sees doc and engine agree.
+      hydratedDeviceId = deviceId;
+      hydratedDeviceName =
+        deviceId === null ? null : (access?.inputs.get(deviceId)?.name ?? hydratedDeviceName);
       attachToDevice(deviceId);
       notify();
     }
@@ -1039,6 +1100,46 @@ export const midiLaneDef: AudioModuleDef = {
       },
     };
 
+    // ── RE-HYDRATE ON A SAME-SESSION LOAD AT A REUSED ID ──────────────────
+    // The reconciler never re-runs this factory for a node whose id and type
+    // survive a load, and never diffs `data`. Per-key, through the same
+    // setters the surface uses, so a load that moves one setting does not
+    // flush voices for the others.
+    const stopHydrateWatch = watchLiveNodeData<MidiLaneHydrate>({
+      nodeId: node.id,
+      project: midiLaneHydrateOf,
+      current: () => ({
+        channels: channelSet ? [...channelSet].sort((a, b) => a - b) : null,
+        priority,
+        retrig,
+        mode,
+        ccA,
+        ccB,
+        noteGateNote,
+        deviceId: hydratedDeviceId,
+        deviceName: hydratedDeviceName,
+      }),
+      onChange(next, cur) {
+        if (!projectionsEqual(next.channels, cur.channels)) setChannels(next.channels);
+        if (next.priority !== cur.priority) setPriority(next.priority);
+        if (next.retrig !== cur.retrig) setRetrig(next.retrig);
+        if (next.mode !== cur.mode) setMode(next.mode);
+        if (next.ccA !== cur.ccA) setCcA(next.ccA);
+        if (next.ccB !== cur.ccB) setCcB(next.ccB);
+        if (next.noteGateNote !== cur.noteGateNote) setNoteGateNote(next.noteGateNote);
+        if (next.deviceId !== cur.deviceId || next.deviceName !== cur.deviceName) {
+          hydratedDeviceId = next.deviceId;
+          hydratedDeviceName = next.deviceName;
+          selectedDeviceId = next.deviceId;
+          if (access) {
+            selectedDeviceId = pickDefaultDevice();
+            attachToDevice(selectedDeviceId);
+          }
+          notify();
+        }
+      },
+    });
+
     return {
       domain: 'audio',
       inputs: new Map(),
@@ -1063,6 +1164,7 @@ export const midiLaneDef: AudioModuleDef = {
         return undefined;
       },
       dispose() {
+        stopHydrateWatch();
         // Release ONLY the port this lane installed a handler on. (Was: null
         // every input on the access — which evicts any other consumer of the
         // same MIDIAccess, and is the shape this seam exists to forbid.)

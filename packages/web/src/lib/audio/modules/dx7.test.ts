@@ -31,7 +31,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vites
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { dx7Def, DX7_DEFAULT_PRESET, DX7_MIGRATION_ORIGIN } from './dx7';
+import { dx7Def, DX7_DEFAULT_PRESET, DX7_MIGRATION_ORIGIN, dx7VoiceSignature } from './dx7';
 import { parseSyxBank } from '$lib/audio/dx7-syx';
 import { findBuiltinPatch } from '$lib/audio/dx7-banks';
 import { patch as graphPatch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
@@ -296,12 +296,13 @@ describe('dx7Def: voiceRev poll — preset LOAD vs operator EDIT', () => {
     handle.dispose();
   });
 
-  it('an OPERATOR EDIT (voiceRev only) sends the NON-DESTRUCTIVE voice message', async () => {
+  it('an OPERATOR EDIT (buffer + voiceRev moved) sends the NON-DESTRUCTIVE voice message', async () => {
     // THE rack-mate case. A remote collaborator nudging one operator arrives
-    // here as a bare voiceRev bump — and sending `{type:'patch'}` for it would
-    // hard-retrigger every note YOU are holding and chop every tail that is
-    // ringing out. There is no louder or quieter about it; the discriminator
-    // is the message type, which is why that is what we assert.
+    // here as a replaced edit buffer plus a voiceRev bump (what dx7SetOpField
+    // writes) — and sending `{type:'patch'}` for it would hard-retrigger every
+    // note YOU are holding and chop every tail that is ringing out. There is
+    // no louder or quieter about it; the discriminator is the message type,
+    // which is why that is what we assert.
     const { posted, ctx } = makeMockEnv();
     const node = spawn({ algorithm: 5, feedback: 4 }, { preset: 'E.PIANO 1' });
     const handle = await dx7Def.factory(ctx as unknown as AudioContext, node);
@@ -309,9 +310,13 @@ describe('dx7Def: voiceRev poll — preset LOAD vs operator EDIT', () => {
     await settle();
     const start = posted.length;
 
-    // A rack-mate's operator edit: the buffer and the rev move, the name does not.
+    // A rack-mate's operator edit: the buffer and the rev move, the name does
+    // not (a whole-buffer replacement, exactly like dx7SetOpField).
+    const edited = { ...findBuiltinPatch('E.PIANO 1')! };
+    edited.operators = edited.operators.map((o, i) => (i === 0 ? { ...o, level: 42 } : { ...o }));
     ydoc.transact(() => {
       const d = graphPatch.nodes[NID]!.data as Record<string, unknown>;
+      d.voice = edited;
       d.voiceRev = (d.voiceRev as number) + 1;
     }, LOCAL_ORIGIN);
     await settle();
@@ -322,6 +327,81 @@ describe('dx7Def: voiceRev poll — preset LOAD vs operator EDIT', () => {
       ofType(after, 'patch'),
       'a patch here would stop a rack-mate’s edit from being survivable',
     ).toHaveLength(0);
+    handle.dispose();
+  });
+
+  it('SAME-SESSION LOAD: a patch aliasing on (preset, voiceRev) with a DIFFERENT buffer still reaches the worklet', async () => {
+    // THE REV-ALIASING CLASS (the warrensspectrum `wsBandsRev` fix, ported).
+    // `voiceRev` is a per-node counter persisted INTO each patch, so two
+    // patches saved after the same number of edits from the same preset hold
+    // an IDENTICAL (preset, voiceRev) pair around different edit buffers. A
+    // same-session load replaces every node in one transaction at REUSED ids
+    // (loadEnvelopeIntoStore), the reconciler re-materializes nothing, and
+    // THIS factory instance keeps polling — under a rev-based change test the
+    // load aliased to "no change" and the worklet kept playing the previous
+    // patch's voice.
+    const { posted, ctx } = makeMockEnv();
+    const vA = { ...findBuiltinPatch('E.PIANO 1')! };
+    vA.operators = vA.operators.map((o, i) => (i === 0 ? { ...o, level: 10 } : { ...o }));
+    spawn({ algorithm: 5, feedback: 4 }, { preset: 'E.PIANO 1', voice: vA, voiceRev: 3 });
+    // ⚠ The factory gets a SNAPSHOT-shaped node (plain `id` string), exactly
+    // what the reconciler hands it (buildPatchSnapshot copies `id`). Handing
+    // it the live store proxy instead would detach `node.id` at the delete
+    // below and every livePatch lookup would silently miss — a failure mode
+    // the PRODUCT does not have.
+    const factoryNode: ModuleNode = {
+      id: NID, type: 'dx7', domain: 'audio', position: { x: 0, y: 0 },
+      params: { algorithm: 5, feedback: 4 }, data: {},
+    };
+    const handle = await dx7Def.factory(ctx as unknown as AudioContext, factoryNode);
+    await settle();
+    const start = posted.length;
+
+    // Patch B — saved elsewhere after the same NUMBER of edits: same preset
+    // name, same rev, different buffer. Loaded over patch A in one delete +
+    // re-insert transaction, exactly as loadEnvelopeIntoStore does.
+    const vB = { ...findBuiltinPatch('E.PIANO 1')! };
+    vB.operators = vB.operators.map((o, i) => (i === 1 ? { ...o, ratio: 7.77 } : { ...o }));
+    ydoc.transact(() => {
+      delete graphPatch.nodes[NID];
+      graphPatch.nodes[NID] = {
+        id: NID, type: 'dx7', domain: 'audio', position: { x: 0, y: 0 },
+        params: { algorithm: 5, feedback: 4 },
+        data: { preset: 'E.PIANO 1', voice: vB, voiceRev: 3 },
+      };
+    }, LOCAL_ORIGIN);
+    await settle();
+
+    const after = posted.slice(start);
+    const voices = ofType(after, 'voice');
+    expect(
+      voices,
+      'the loaded buffer must reach the worklet even though (preset, voiceRev) aliased',
+    ).toHaveLength(1);
+    const ops = (voices[0]!.voice as unknown as { operators: Array<{ ratio: number }> }).operators;
+    expect(ops[1]!.ratio, 'and it is the LOADED patch’s buffer, not the old one').toBe(7.77);
+    expect(ofType(after, 'patch'), 'a same-name load stays non-destructive').toHaveLength(0);
+    handle.dispose();
+  });
+
+  it('a voiceRev bump with an UNCHANGED buffer posts nothing (an identical payload is pure churn)', async () => {
+    // The opOn-toggle shape: dx7ToggleOp bumps the rev but changes nothing
+    // that crosses the worklet boundary. Under the content signature that is
+    // a genuine no-op rather than a redundant whole-voice re-send.
+    const { posted, ctx } = makeMockEnv();
+    const node = spawn({ algorithm: 5, feedback: 4 }, { preset: 'E.PIANO 1' });
+    const handle = await dx7Def.factory(ctx as unknown as AudioContext, node);
+    selectDx7Preset(NID, 'E.PIANO 1');
+    await settle();
+    const start = posted.length;
+
+    ydoc.transact(() => {
+      const d = graphPatch.nodes[NID]!.data as Record<string, unknown>;
+      d.voiceRev = (d.voiceRev as number) + 1;
+    }, LOCAL_ORIGIN);
+    await settle();
+
+    expect(posted.slice(start), 'nothing on the wire moved, so nothing is sent').toHaveLength(0);
     handle.dispose();
   });
 
@@ -343,8 +423,12 @@ describe('dx7Def: voiceRev poll — preset LOAD vs operator EDIT', () => {
     handle.setParam('feedback', ridden); // what the reconciler does
     const start = posted.length;
 
+    // The rack-mate's edit: buffer replaced + rev bumped (dx7SetOpField shape).
+    const nudged = { ...findBuiltinPatch('BASS 1')! };
+    nudged.operators = nudged.operators.map((o, i) => (i === 3 ? { ...o, level: 55 } : { ...o }));
     ydoc.transact(() => {
       const d = graphPatch.nodes[NID]!.data as Record<string, unknown>;
+      d.voice = nudged;
       d.voiceRev = (d.voiceRev as number) + 1;
     }, LOCAL_ORIGIN);
     await settle();
@@ -453,6 +537,29 @@ describe('dx7Def: voiceRev poll — preset LOAD vs operator EDIT', () => {
     expect(graphPatch.nodes[NID]!.params.algorithm, 'the user’s override survives').toBe(21);
     expect(graphPatch.nodes[NID]!.params.feedback).toBe(0);
     handle.dispose();
+  });
+});
+
+describe('dx7VoiceSignature — the poll’s content change test', () => {
+  it('distinct buffers sign differently; a structural clone signs identically', () => {
+    const base = { ...findBuiltinPatch('E.PIANO 1')! };
+    const clone = {
+      ...base,
+      operators: base.operators.map((o) => ({ ...o, r: [...o.r], l: [...o.l] })),
+    } as typeof base;
+    expect(dx7VoiceSignature(clone), 'a clone must NOT read as a change').toBe(
+      dx7VoiceSignature(base),
+    );
+
+    // One field, one operator — every wire field must move the signature.
+    const movedLevel = { ...base, operators: base.operators.map((o, i) => (i === 4 ? { ...o, level: (Number(o.level) + 1) % 100 } : o)) };
+    expect(dx7VoiceSignature(movedLevel)).not.toBe(dx7VoiceSignature(base));
+    const movedRate = { ...base, operators: base.operators.map((o, i) => (i === 2 ? { ...o, r: [o.r[0], o.r[1], o.r[2], (Number(o.r[3]) + 1) % 100] as typeof o.r } : o)) };
+    expect(dx7VoiceSignature(movedRate as typeof base)).not.toBe(dx7VoiceSignature(base));
+    const movedFixedHz = { ...base, operators: base.operators.map((o, i) => (i === 0 ? { ...o, fixedMode: true, fixedHz: 123.4 } : o)) };
+    expect(dx7VoiceSignature(movedFixedHz)).not.toBe(dx7VoiceSignature(base));
+    const movedTranspose = { ...base, transpose: Number(base.transpose) + 1 };
+    expect(dx7VoiceSignature(movedTranspose)).not.toBe(dx7VoiceSignature(base));
   });
 });
 
