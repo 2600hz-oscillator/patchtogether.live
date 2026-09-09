@@ -219,8 +219,10 @@ async function settle(times = 6) {
  *  `slipFrames` models a LATE arm: the worklet slid the window by that many
  *  frames and says so on `done`. The take is still exactly `frames` long — the
  *  length is the contract (clip-recorder.ts header) — so a slip must NOT
- *  change what commits, only what is reported. */
-async function recordOneTake(h: Harness, slipFrames = 0) {
+ *  change what commits, only what is reported. `gapFrames` models a render-
+ *  clock GAP the worklet padded with silence: same rule, same length, only
+ *  the report changes. */
+async function recordOneTake(h: Harness, slipFrames = 0, gapFrames = 0) {
   h.reg.sync(liveNodes());
   h.reg.pump(); // builds wiring; adopts the (all-zero) arm state
   await settle();
@@ -244,7 +246,7 @@ async function recordOneTake(h: Harness, slipFrames = 0) {
   data.fill(0.25);
   h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames, data } } as MessageEvent);
   h.port.onmessage?.({
-    data: { type: 'done', lane: 0, frames, startFrame: startFrame + slipFrames },
+    data: { type: 'done', lane: 0, frames, startFrame: startFrame + slipFrames, gapFrames },
   } as MessageEvent);
   // …and the stop frame passes.
   h.ctx.currentTime = stopFrame / SR + 0.05;
@@ -333,7 +335,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     const data = new Float32Array(frames * 2);
     h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames, data } } as MessageEvent);
     h.port.onmessage?.({
-      data: { type: 'done', lane: 0, frames, startFrame: arm.startFrame },
+      data: { type: 'done', lane: 0, frames, startFrame: arm.startFrame, gapFrames: 0 },
     } as MessageEvent);
     h.ctx.currentTime = arm.stopFrame / SR + 0.05;
     h.reg.pump();
@@ -502,7 +504,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     const data = new Float32Array(short * 2);
     h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames: short, data } } as MessageEvent);
     h.port.onmessage?.({
-      data: { type: 'done', lane: 0, frames: short, startFrame: arm.startFrame },
+      data: { type: 'done', lane: 0, frames: short, startFrame: arm.startFrame, gapFrames: 0 },
     } as MessageEvent);
     h.ctx.currentTime = arm.stopFrame / SR + 0.05;
     h.reg.pump();
@@ -548,7 +550,7 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     // The arm drained further past its punch-in than the slide may absorb: the
     // worklet captured NOTHING and reports the frame it had reached.
     h.port.onmessage?.({
-      data: { type: 'done', lane: 0, frames: 0, startFrame: arm.startFrame + 9600 },
+      data: { type: 'done', lane: 0, frames: 0, startFrame: arm.startFrame + 9600, gapFrames: 0 },
     } as MessageEvent);
     h.ctx.currentTime = arm.stopFrame / SR + 0.05;
     h.reg.pump();
@@ -558,6 +560,64 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.reg.lastRefusal(CLIP)).toMatch(/captured 0 frames/);
     expect(h.reg.lastRefusal(CLIP)).toMatch(/9600 frames past its punch-in/);
     expect(h.removed).toEqual([]); // scratch kept for recovery
+  });
+
+  it('⚠ a take the worklet PADDED through a render-clock gap commits at full length — and says how much of it is silence', async () => {
+    // The device underran mid-take and the audio thread filled the hole with
+    // zeros at the right frames (clip-recorder.ts header). The take is exactly
+    // `unitFrames` long, so it commits like any other — what must not happen
+    // is the hole being invisible. 480 frames = one Chromium/Linux output
+    // buffer, the shape the CI failure had.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const h = makeHarness();
+      const { frames } = await recordOneTake(h, 0, 480);
+      const rec = readClip(clipData(), clipIndex(0, 0));
+      expect(rec?.kind).toBe('audio'); // committed — the whole take is NOT lost to one glitch
+      expect(rec?.kind === 'audio' ? rec.frames : -1).toBe(frames);
+      expect(h.reg.lastRefusal(CLIP)).toBeNull();
+      const warned = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(warned).toMatch(/480 frames of device-glitch silence/);
+      expect(warned).not.toMatch(/punched in/); // a gap is not a slip
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('⚠ a worklet REFUSAL past the pad bound fails the commit and NAMES the gap, not a slip', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const h = makeHarness();
+      h.reg.sync(liveNodes());
+      h.reg.pump();
+      await settle();
+      h.setRecArm(0, true);
+      h.reg.pump(); // prepare
+      await settle();
+      h.reg.pump(); // confirm
+      const arm = h.posted.find((m) => m.type === 'arm') as { startFrame: number; stopFrame: number };
+      h.ctx.currentTime = arm.startFrame / SR + 0.05;
+      h.reg.pump();
+      // The render clock skipped further mid-take than the pad may absorb: the
+      // worklet retired the lane, reports the punch-in it REALLY got (on time)
+      // and the hole that broke the bound.
+      h.port.onmessage?.({
+        data: { type: 'done', lane: 0, frames: 0, startFrame: arm.startFrame, gapFrames: 4097 },
+      } as MessageEvent);
+      h.ctx.currentTime = arm.stopFrame / SR + 0.05;
+      h.reg.pump();
+      await settle(12);
+      expect(readClip(clipData(), clipIndex(0, 0))).toBeNull();
+      expect(h.reg.lastRefusal(CLIP)).toMatch(/captured 0 frames/);
+      expect(h.reg.lastRefusal(CLIP)).toMatch(/skipped 4097 frames mid-take, beyond the silence-pad bound/);
+      expect(h.reg.lastRefusal(CLIP)).not.toMatch(/past its punch-in/); // not misread as a slip
+      // Nothing was padded, so the padded-take line must not fire — the
+      // refusal's own message is the report here.
+      expect(warn.mock.calls.map((c) => String(c[0])).join('\n')).not.toMatch(/padded mid-take/);
+      expect(h.removed).toEqual([]); // scratch kept for recovery
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('the arm dropping to OFF cancels: worklet cancelled, scratch discarded', async () => {

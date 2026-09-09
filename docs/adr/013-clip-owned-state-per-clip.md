@@ -109,9 +109,13 @@ index, written per key — and bytes never enter the Y.Doc.**
 - Deleting a clip actually frees its bytes, and a partial PCM file is a valid
   shorter take — recovery truncates to the last whole loop rather than
   discarding.
-- A take is the requested number of samples or it is cancelled; there is no
-  third outcome, and the closed-form loop boundary is held to zero drift over
-  1000 loops with a positive control proving the accumulating spelling fails.
+- A take is the requested number of samples or it is refused — and since the
+  render clock is not gap-free (an output-device underrun skips
+  `currentFrame` past audio that was never rendered), a take whose device
+  dropped a buffer is still the requested length, with a bounded run of
+  silence at the frames the device dropped and the gap reported on `done`.
+  The closed-form loop boundary is held to zero drift over 1000 loops with a
+  positive control proving the accumulating spelling fails.
 - Moving the arm surface off the mixer removed a whole shadow control rig
   rather than relocating it.
 

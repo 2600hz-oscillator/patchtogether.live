@@ -40,6 +40,7 @@ import clipRecorderWorkletUrl from '@patchtogether.live/dsp/dist/clip-recorder.j
 // worktrees may not symlink the workspace package under node_modules.
 import {
   CLIP_RECORDER_LANES,
+  CLIP_RECORDER_MAX_GAP_FRAMES,
   CLIP_RECORDER_PROCESSOR,
   type ClipRecorderChunkMsg,
   type ClipRecorderDoneMsg,
@@ -52,6 +53,7 @@ import type { ClipMediaChunk, ClipMediaDrain } from '../clip-media-drain';
 
 export {
   CLIP_RECORDER_LANES,
+  CLIP_RECORDER_MAX_GAP_FRAMES,
   CLIP_RECORDER_PROCESSOR,
   type ClipRecorderChunkMsg,
   type ClipRecorderDoneMsg,
@@ -230,11 +232,17 @@ export function coerceClipRecorderMsg(raw: unknown): ClipRecorderOutMsg | null {
     // it is a worklet this build did not ship, and defaulting it would report
     // "punched in exactly on time" for a take nobody measured.
     if (typeof m.startFrame !== 'number' || !Number.isFinite(m.startFrame)) return null;
+    // `gapFrames` is REQUIRED for the same reason: defaulting it to 0 would
+    // report "no device-glitch silence" for a take nobody measured.
+    if (typeof m.gapFrames !== 'number' || !Number.isFinite(m.gapFrames) || m.gapFrames < 0) {
+      return null;
+    }
     return {
       type: 'done',
       lane,
       frames: Math.trunc(m.frames),
       startFrame: Math.trunc(m.startFrame),
+      gapFrames: Math.trunc(m.gapFrames),
     };
   }
   if (m.type === 'chunk') {
@@ -278,12 +286,15 @@ export interface ClipRecorderSink {
    *  the drain forbids). */
   drainFor(lane: number): ClipMediaDrain | null;
   /** The worklet finished a lane: exactly `frames` frames were captured,
-   *  starting at absolute `startFrame`. Fired AFTER the final chunk was handed
-   *  to the drain. `frames === 0` is the worklet REFUSING a take whose arm
-   *  drained too far past its punch-in, and `startFrame` is then where the
-   *  audio thread had already got to — either way, comparing it against the
-   *  start that was requested is how a slip becomes visible. */
-  onDone(lane: number, frames: number, startFrame: number): void;
+   *  starting at absolute `startFrame`, of which `gapFrames` are digital
+   *  silence padded where the render clock skipped mid-take. Fired AFTER the
+   *  final chunk was handed to the drain. `frames === 0` is the worklet
+   *  REFUSING a take — an arm that drained too far past its punch-in
+   *  (`startFrame` is then where the audio thread had already got to) or a
+   *  clock gap past the pad bound (`gapFrames` is then the hole that broke
+   *  it). Comparing `startFrame` against the start that was requested is how
+   *  a slip becomes visible; `gapFrames` is how a glitch does. */
+  onDone(lane: number, frames: number, startFrame: number, gapFrames: number): void;
 }
 
 /**
@@ -312,7 +323,7 @@ export function attachClipRecorderSink(
       });
       return;
     }
-    sink.onDone(msg.lane, msg.frames, msg.startFrame);
+    sink.onDone(msg.lane, msg.frames, msg.startFrame, msg.gapFrames);
   };
   node.port.onmessage = handler;
   return handler;
