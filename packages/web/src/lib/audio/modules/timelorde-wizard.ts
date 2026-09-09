@@ -176,6 +176,21 @@ export function colorBandMembership(
 }
 
 /**
+ * A pixel's membership in the beat boost — how much it belongs to the YELLOW
+ * EYES or the BLUE BORDER. A pixel can only belong to one of the two
+ * well-separated bands; the STRONGER membership is taken so a feather overlap
+ * cannot double-count. Pure; the one classifier BOTH boost forms share (the
+ * per-pixel `boostBeatColor` and the baked `buildBeatBoostOverlay`), so they
+ * cannot disagree about which pixels pulse.
+ */
+export function beatBoostMembership(r: number, g: number, b: number): number {
+  return Math.max(
+    colorBandMembership(r, g, b, YELLOW_BAND),
+    colorBandMembership(r, g, b, BLUE_BAND),
+  );
+}
+
+/**
  * Boost ONE pixel's colour for the beat pulse. Returns the new [r,g,b]
  * (0..255, rounded). A pixel near the eyes (YELLOW_BAND) or the border
  * (BLUE_BAND) is brightened toward white by `pulse · amount · membership`;
@@ -193,12 +208,7 @@ export function boostBeatColor(
 ): [number, number, number] {
   const p = clamp01(pulse);
   if (p <= 0 || amount <= 0) return [r, g, b];
-  // A pixel can only belong to one of the two well-separated bands; take the
-  // stronger membership so a feather overlap can't double-count.
-  const membership = Math.max(
-    colorBandMembership(r, g, b, YELLOW_BAND),
-    colorBandMembership(r, g, b, BLUE_BAND),
-  );
+  const membership = beatBoostMembership(r, g, b);
   if (membership <= 0) return [r, g, b];
   // Lerp toward white by k. k≤1, so a fully-lit beat at full membership lifts
   // the pixel `amount` of the way to white (a glow), never overshooting.
@@ -236,6 +246,93 @@ export function applyBeatBoost(
     data[i + 2] = nb;
   }
   return data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2b. The same boost as an OVERLAY — the per-frame form the producer draws
+// ─────────────────────────────────────────────────────────────────────────
+//
+// `boostBeatColor` is `out = c + (255 − c)·k` per channel with
+// `k = pulse·amount·membership`. That is a lerp toward WHITE — and a lerp
+// toward white is exactly what SOURCE-OVER compositing computes for an
+// opaque-white source pixel of alpha `k` over an opaque destination `c`:
+//
+//     out = 255·k + c·(1 − k)  =  c + (255 − c)·k
+//
+// So the whole-frame boost FACTORS into two pieces with different lifetimes:
+//
+//   (1) the per-PIXEL term, `membership(r,g,b)` — a function of the owl's own
+//       composited pixels at their fixed placement, so it never changes after
+//       the image decodes; and
+//   (2) the per-FRAME scalar, `pulse·amount`.
+//
+// Bake (1) ONCE into an RGBA overlay whose every pixel is white with
+// alpha = membership, and apply (2) as the context's `globalAlpha` when the
+// overlay is drawn over the bare owl. Alpha multiplies, so each composited
+// pixel's effective alpha is `globalAlpha · overlayAlpha = pulse·amount·membership
+// = k`, and the frame is the picture `applyBeatBoost` computed — without the
+// per-frame `getImageData` (a synchronous GPU→CPU readback), the 48,400-pixel
+// JS loop, and the `putImageData` upload that MEASURED as the largest single
+// main-thread cost on an idle rack. `applyBeatBoost` stays as the REFERENCE the
+// parity tests compare the overlay against, and as the classifier the overlay
+// is built from.
+//
+// ⚠ THE TWO FORMS ARE ALGEBRAICALLY IDENTICAL ONLY FOR `pulse·amount ≤ 1`.
+// `boostBeatColor` clamps `k` per pixel; the overlay clamps the SCALAR and lets
+// membership scale it. With `DEFAULT_BOOST_AMOUNT = 0.6` the scalar tops out at
+// 0.6 and neither clamp ever engages, so the shipped picture is the same
+// picture; the parity tests state that domain explicitly.
+
+/**
+ * Quantise a membership (0..1) to the overlay's 8-bit alpha. Round-to-nearest:
+ * the canvas holds the overlay as an 8-bit raster and cannot carry more, and
+ * white premultiplies losslessly (255·a/255 = a), so this rounding is the ONLY
+ * place the overlay form differs from the per-pixel maths — bounded at
+ * ±0.5/255 of membership, which the parity grid measures as ≤ 1 per channel.
+ */
+export function beatBoostOverlayCoverage(membership: number): number {
+  return Math.round(clamp01(membership) * 255);
+}
+
+/**
+ * Build the WHITE OVERLAY for a composited frame: for every pixel of `src`
+ * (RGBA, the bare owl at its placement) write (255, 255, 255, coverage) into
+ * `out`, where coverage is the pixel's quantised beat-boost membership. Pixels
+ * outside both bands — the brown body, the dark ground — get alpha 0 and are
+ * therefore left byte-identical when the overlay is composited, exactly as
+ * `boostBeatColor` returns them unchanged.
+ *
+ * Pure w.r.t. the DOM: the producer hands in `getImageData().data` ONCE per
+ * node and `createImageData().data` as `out`; the tests pass plain buffers.
+ * Returns `out` for chaining.
+ */
+export function buildBeatBoostOverlay(
+  src: Uint8ClampedArray,
+  out: Uint8ClampedArray = new Uint8ClampedArray(src.length),
+): Uint8ClampedArray {
+  for (let i = 0; i + 3 < src.length && i + 3 < out.length; i += 4) {
+    out[i] = 255;
+    out[i + 1] = 255;
+    out[i + 2] = 255;
+    out[i + 3] = beatBoostOverlayCoverage(
+      beatBoostMembership(src[i] ?? 0, src[i + 1] ?? 0, src[i + 2] ?? 0),
+    );
+  }
+  return out;
+}
+
+/**
+ * The per-FRAME scalar: the `globalAlpha` to draw the baked overlay at for
+ * this pulse. 0 means "do not draw it at all" — the idle frame is the bare
+ * owl, which is what the reduced-motion capture pins.
+ */
+export function beatBoostOverlayAlpha(
+  pulse: number,
+  amount: number = DEFAULT_BOOST_AMOUNT,
+): number {
+  const p = clamp01(pulse);
+  if (p <= 0 || amount <= 0) return 0;
+  return clamp01(p * amount);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -95,6 +95,13 @@ function adaptEngine(engine: PatchEngine | null): FrameProducerEngine | null {
  *  one, a detached `<canvas>` otherwise. Never attached to the document: this
  *  seam composites, it never paints anything a user looks at. */
 function createSurface(_nodeId: string, _type: string, w: number, h: number): FrameSurface | null {
+  return mintCanvas(w, h);
+}
+
+/** The ONE canvas mint, shared by the per-node surface and `env.createRaster`
+ *  so a producer's baked raster and its surface always come from the same
+ *  kind of canvas — and therefore the same rasteriser. */
+function mintCanvas(w: number, h: number): FrameSurface | null {
   if (typeof OffscreenCanvas !== 'undefined') {
     return new OffscreenCanvas(w, h) as unknown as FrameSurface;
   }
@@ -145,6 +152,7 @@ const registry = createNodeFrameProducerRegistry(
         typeof createImageBitmap === 'function'
           ? (src: unknown) => createImageBitmap(src as ImageBitmapSource)
           : null,
+      createRaster: mintCanvas,
       /**
        * ⚠ RESOLVES ON *DECODE*, NOT ON *LOAD*, and the difference is measured.
        * `TimelordeCard` used to flip its ready flag in `onload`, which fires

@@ -474,12 +474,19 @@ describe('timelorde face — the DISPLAY’s determinism is a DECODE, not a free
     // only while it has not — which also heals a replaced handle, where a
     // one-shot retry could not.
     expect(producerSrc).toContain("'hasDisplayFrame'");
+    // ⚠ TWO conditions, and the second was a MEASURED defect too: the node
+    // can hold a frame painted BEFORE the owl decoded — the bare `#07090d`
+    // ground, byte-identical to the idle field — and converging on that latched
+    // video_out dark under `reducedMotion: 'reduce'` on 1 boot in 4
+    // (timelorde-owl-overlay-parity.spec.ts). `heldFrameComplete` flips only
+    // when a frame painted with the finished picture has landed.
     expect(
-      /if \(reduced && ctx\.engine\.read\(ctx\.node, 'hasDisplayFrame'\) === 1\) return;/.test(
+      /if \(\s*reduced &&\s*state\.heldFrameComplete &&\s*ctx\.engine\.read\(ctx\.node, 'hasDisplayFrame'\) === 1\s*\)/.test(
         producerSrc,
       ),
-      'the reduced-motion arm no longer converges while the node holds no frame — a single lost ' +
-        'write makes video_out dark for the whole session',
+      'the reduced-motion arm no longer converges on BOTH conditions — a held frame that was ' +
+        'painted before the owl decoded, or a single lost write, makes video_out dark for the ' +
+        'whole session',
     ).toBe(true);
     // ...and the CARD must not have grown a second push on the way out: one
     // writer is the property, and two agreeing writers is how it stops being one.
