@@ -138,7 +138,9 @@ async function readLastCheat(page: Page, nodeId: string): Promise<string | null>
 }
 
 test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-char keypress sequence', () => {
-  test('rising edge on iddqd_in injects the IDDQD god-mode cheat', async ({ page }) => {
+  // ⚠ The title is verbatim-ledgered (waitfortimeout-ledger keys on it) — the
+  // "~500ms" is historical; the assertion below is a direct synchronous read.
+  test('rising edge on iddqd_in injects the IDDQD god-mode cheat within ~500ms', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
@@ -214,7 +216,9 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
     expect(stillLive, 'DOOM runtime crashed after IDDQD injection').toBe(true);
   });
 
-  test('rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat', async ({ page }) => {
+  // ⚠ The title is verbatim-ledgered (waitfortimeout-ledger keys on it) — the
+  // "~500ms" is historical; the assertion below is a direct synchronous read.
+  test('rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat within ~500ms', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
