@@ -49,7 +49,7 @@ import { backdraftDef } from './backdraft';
 import { detectEdge, makeEdgeState } from '$lib/doom/cv-gate-edge';
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { GATE_HI, TRIGGER_PULSE_S, DEFAULT_GATE_LEN_S } from '$lib/audio/gate-trigger';
-import type { VideoEngineContext, VideoNodeHandle } from '$lib/video/engine';
+import type { GateEdgeTiming, VideoEngineContext, VideoNodeHandle } from '$lib/video/engine';
 import type { ModuleNode, PortDef } from '$lib/graph/types';
 
 // ---------------------------------------------------------------------------
@@ -211,6 +211,12 @@ interface TimelineOpts {
   hold?: boolean;
   /** Deliver NOTHING — no setParam at all. The unpatched leg. */
   silent?: boolean;
+  /** Carry the bridge's `GateEdgeTiming` on every rise and settle write — the
+   *  shipped dispatch's contract (engine.ts installGateDispatch): the rise's
+   *  own audio-clock time on the HIGH half of a replayed pair, the tick's on
+   *  the settle. Off = the legacy writer (no third argument), whose period
+   *  can only be read off the tick the write landed on. */
+  stamped?: boolean;
 }
 
 interface TimelineResult {
@@ -268,13 +274,15 @@ function runGateTimeline(o: TimelineOpts): TimelineResult {
   const ctlEdge = makeEdgeState();
   let ctlCaptured = 0;
 
-  const write = (v: number): void => {
-    h.setParam?.(paramId, v);
+  const write = (v: number, timing?: GateEdgeTiming): void => {
+    h.setParam?.(paramId, v, timing);
     if (control === 'statelessThreshold') {
       if (v >= GATE_HI) ctlCaptured++;
     }
     if (control === 'none') sampleModule();
   };
+  const stamp = (ms: number, precision: GateEdgeTiming['precision']): GateEdgeTiming | undefined =>
+    (o.stamped ? { audioTimeSec: ms / 1000, precision } : undefined);
 
   let edgesSeen = 0;
   let delivered = 0;
@@ -283,22 +291,23 @@ function runGateTimeline(o: TimelineOpts): TimelineResult {
     nowMs = e.t;
     if (e.kind === 'tick') {
       if (o.silent) continue;
-      let edges = 0;
+      /** Rise times (ms) of the edges this tick replays, in order. */
+      const riseAt: number[] = [];
       let level = 0;
       if (o.hold) {
         // A gate opened once, before the first tick, and never closed.
         level = 1;
-        if (edgesSeen === 0) { edges = 1; edgesSeen = 1; }
+        if (edgesSeen === 0) { riseAt.push(0); edgesSeen = 1; }
       } else {
         for (let k = 0; k < o.pulses; k++) {
           const start = pulseAt(k);
-          if (start <= e.t && k >= edgesSeen) { edges++; edgesSeen = k + 1; }
+          if (start <= e.t && k >= edgesSeen) { riseAt.push(start); edgesSeen = k + 1; }
           if (e.t >= start && e.t < start + o.pulseMs) level = 1;
         }
       }
-      delivered += edges;
-      for (let i = 0; i < edges; i++) { write(0); write(1); }
-      write(level);
+      delivered += riseAt.length;
+      for (const rose of riseAt) { write(0); write(1, stamp(rose, 'sample')); }
+      write(level, stamp(e.t, 'tick'));
     } else {
       h.surface.draw({
         gl: makeFakeGl(),
@@ -562,13 +571,13 @@ describe('NEGATIVE CONTROLS: the timeline can fail in both directions', () => {
 // ===========================================================================
 
 describe('backdraft DELAY CLOCK: the measured period, in SECONDS', () => {
-  it('locks to the pulse period within one scheduler tick', () => {
-    // The residual error is the bridge's delivery granularity, not a detector
-    // bug: an edge counted in the audio thread is replayed on the next ~25 ms
-    // scheduler tick and carries NO timestamp of its own, so the period we can
-    // measure is quantized to SCHEDULER_TICK_MS. That is inherent to the wire
-    // protocol — measuring at draw time instead would quantize to the FRAME
-    // and, far worse, miss ~3 edges in 4 and report a MULTIPLE of the period.
+  it('a LEGACY writer (no edge time on the write) locks to the pulse period within one scheduler tick', () => {
+    // A write that carries no `GateEdgeTiming` — the per-frame bridge, a UI
+    // write — can only be stamped on the tick it landed on, so the period is
+    // quantized to SCHEDULER_TICK_MS. That is the floor for a writer that says
+    // nothing about WHEN; measuring at draw time instead would quantize to
+    // the FRAME and, far worse, miss ~3 edges in 4 and report a MULTIPLE of
+    // the period. The shipped dispatch says when (the next case).
     const bad: string[] = [];
     for (const rateHz of RATES_HZ) {
       for (const pulseOffsetMs of PULSE_OFFSETS_MS) {
@@ -613,6 +622,118 @@ describe('backdraft DELAY CLOCK: the measured period, in SECONDS', () => {
       measuredMs,
       `half the edges dropped must read as ~2x the true ${trueMs} ms period — measured ${measuredMs.toFixed(1)} ms`,
     ).toBeCloseTo(trueMs * 2, 5);
+  });
+});
+
+// ===========================================================================
+// DELAY CLOCK — the period is the EDGE's time, not the REPLAY's.
+// ===========================================================================
+//
+// CI run 34372134124 (shard 11): 39 rises of a 4 Hz LFO in 10.16 s — exactly
+// 4 Hz, the count was right — with measured periods of 5.1, 95, 402 and
+// 635 ms. The module stamped a rise with `performance.now()` inside setParam,
+// i.e. with the moment the bridge's REPLAY landed; on a starved main thread
+// the scheduler tick and the worklet's port messages drain in bursts, so two
+// real edges 250 ms apart were replayed 5 ms apart and the stall before them
+// read as 600 ms. The dispatch now carries the audio-clock rise time on the
+// write (`GateEdgeTiming`); the module stamps the rise with THAT.
+
+describe('backdraft DELAY CLOCK: the period is the edge\'s own time, not the replay\'s', () => {
+  const wall = (ms: number): void => { nowSpy.mockImplementation(() => ms); };
+  const at = (sec: number, precision: GateEdgeTiming['precision'] = 'sample'): GateEdgeTiming =>
+    ({ audioTimeSec: sec, precision });
+  const periodMs = (h: VideoNodeHandle): number => ((h.read?.('clockPeriodSec') as number) ?? 0) * 1000;
+
+  it('THE DEFECT: two real edges replayed on ONE late tick (a drained backlog) measure the edges\' 250 ms, not the replay\'s 0 ms', () => {
+    const h = spawnBackdraft();
+    // The main thread was away; the tick that finally runs replays both
+    // rises at the same wall instant. Their rise times, 250 ms apart, ride on
+    // the HIGH half of each pair.
+    wall(1400);
+    h.setParam?.('delayClock', 0);
+    h.setParam?.('delayClock', 1, at(1.000));
+    h.setParam?.('delayClock', 0);
+    h.setParam?.('delayClock', 1, at(1.250));
+    h.setParam?.('delayClock', 1, at(1.400, 'tick')); // the tick's settle
+    const measured = periodMs(h);
+    h.surface.dispose();
+    expect(h.read?.('clockRiseCount'), 'both edges acted on').toBe(2);
+    expect(measured, 'the period is the difference of the two rise stamps (ms)').toBeCloseTo(250, 9);
+  });
+
+  it('a burst then an on-time edge: every period is the clock\'s, whatever the replay cadence did', () => {
+    const h = spawnBackdraft();
+    wall(1400); // the stall: three edges drain together
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(0.750));
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(1.000));
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(1.250));
+    h.setParam?.('delayClock', 0, undefined);
+    expect(periodMs(h), 'inside the burst').toBeCloseTo(250, 9);
+    wall(1510); // then a quiet tick: the replay gap is 110 ms, the clock's is 250
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(1.500));
+    h.setParam?.('delayClock', 1, at(1.510, 'tick'));
+    const measured = periodMs(h);
+    h.surface.dispose();
+    expect(measured, 'after the burst, the wall clock\'s 110 ms gap is not the period').toBeCloseTo(250, 9);
+  });
+
+  it('CONTROL — the SAME edges without a stamp measure the replay gap: the pre-fix reading, still what a legacy writer gets', () => {
+    const h = spawnBackdraft();
+    wall(1400);
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1);
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1);
+    h.setParam?.('delayClock', 1);
+    const burst = periodMs(h);
+    wall(1510);
+    h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1);
+    const after = periodMs(h);
+    h.surface.dispose();
+    expect(burst, 'two rises at one wall instant: no positive interval to measure').toBe(0);
+    expect(after, 'the next rise measures the replay gap — 110 ms, the thing the fix stops reading as a period').toBeCloseTo(110, 9);
+  });
+
+  it('two clocks are never subtracted: a wall-stamped rise after an audio-stamped one measures nothing, and the next same-clock pair measures again', () => {
+    const h = spawnBackdraft();
+    wall(1000); h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(1.000));
+    wall(1250); h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(1.250));
+    expect(periodMs(h), 'two audio stamps pair').toBeCloseTo(250, 9);
+    // A legacy write (no stamp) — its wall time and the audio time share
+    // neither origin nor rate, so `wall − audio` is not a period.
+    wall(1700); h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1);
+    expect(periodMs(h), 'across clocks the last good period is kept, not a cross-clock difference').toBeCloseTo(250, 9);
+    wall(2200); h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1);
+    expect(periodMs(h), 'two wall stamps pair again').toBeCloseTo(500, 9);
+    wall(2300); h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(9.000));
+    expect(periodMs(h), 'audio after wall: re-stamped, no period').toBeCloseTo(500, 9);
+    wall(2600); h.setParam?.('delayClock', 0); h.setParam?.('delayClock', 1, at(9.125));
+    const measured = periodMs(h);
+    h.surface.dispose();
+    expect(measured, 'the next audio pair measures on the audio clock').toBeCloseTo(125, 9);
+  });
+
+  it('THE SHIPPED WRITER: with the edge time on the write the period is exact to the sample at every tick phase — never quantized to the tick', () => {
+    // The same timeline as the legacy case above, stamped the way the
+    // dispatch stamps it: every rise's true time on its HIGH write, the tick's
+    // time on the settle. The tick-phase sweep that quantized the legacy
+    // reading to 25 ms has no purchase on it.
+    const bad: string[] = [];
+    for (const rateHz of RATES_HZ) {
+      for (const pulseOffsetMs of PULSE_OFFSETS_MS) {
+        const r = runGateTimeline({
+          portId: 'delay_clock', rateHz, pulseMs: TRIGGER_PULSE_S * 1000,
+          fps: 60, pulseOffsetMs, pulses: PULSES, stamped: true,
+        });
+        const trueMs = 1000 / rateHz;
+        const errMs = Math.abs(r.measuredPeriodSec * 1000 - trueMs);
+        if (!r.clockDriving || errMs > 1e-6) {
+          bad.push(
+            `${rateHz}Hz off+${pulseOffsetMs}ms: measured ${(r.measuredPeriodSec * 1000).toFixed(4)} ms ` +
+            `vs true ${trueMs.toFixed(4)} ms (err ${errMs.toFixed(4)} ms), driving=${r.clockDriving}`,
+          );
+        }
+      }
+    }
+    expect(bad, `a stamped period is the clock's to the microsecond (UNITS: ms):\n${bad.join('\n')}`).toEqual([]);
   });
 });
 
