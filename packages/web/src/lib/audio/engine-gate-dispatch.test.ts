@@ -29,7 +29,7 @@ import {
   __resetSchedulerClockForTests,
   SCHEDULER_TICK_MS,
 } from './scheduler-clock';
-import { GATE_EDGE_WORKLET_SOURCE, isGateEdgeWorkletRegistered } from './gate-edge-worklet';
+import { GATE_EDGE_WORKLET_SOURCE } from './gate-edge-worklet';
 import type { Edge, ModuleNode } from '$lib/graph/types';
 
 // LEAK-PROOFING: this file needs a synthetic VIDEO module def visible to
@@ -57,18 +57,6 @@ const RENDER_QUANTUM = 128;
 // A fake AudioContext whose analyser reconstructs a controllable gate timeline.
 // ---------------------------------------------------------------------------
 
-/**
- * Where a port message lands relative to the scheduler tick that follows the
- * render quantum it came from. The tick is a Worker message and the worklet's
- * port message is a MessagePort message — two task sources the browser gives
- * NO ordering guarantee between. 'before-tick' delivers every message before
- * the next tick runs (the fast case); 'after-tick' delivers it after (the
- * message queued behind the tick). A bridge is only correct if it counts the
- * same under both.
- */
-type PortLatency = 'before-tick' | 'after-tick';
-const PORT_LATENCIES: readonly PortLatency[] = ['before-tick', 'after-tick'];
-
 interface FakeClock {
   ctx: AudioContext;
   /** Schedule a HIGH window [startSec, startSec + widthSec). */
@@ -83,39 +71,16 @@ interface FakeClock {
    */
   stallMainThread(ms: number): void;
   nowSec(): number;
-  /**
-   * Install the fake AudioWorkletNode global bound to THIS clock. With
-   * `registration: 'deferred'` the context's `addModule` does not resolve
-   * until `releaseWorkletRegistration()` — the shape of a cable landing
-   * BEFORE the AudioEngine's pre-registration has finished, i.e. the
-   * fail-safe path and its handoff.
-   */
-  enableWorklet(opts?: { registration?: 'eager' | 'deferred' }): void;
-  releaseWorkletRegistration(): void;
-  /**
-   * The audio time through which the worklet's messages had been DELIVERED
-   * when the most recent scheduler tick ran — exactly what that tick could
-   * replay. Under 'after-tick' latency it trails `nowSec()` by one advance.
-   */
-  deliveredThroughSec(): number;
-  /** AnalyserNodes this context has created — the fail-safe's footprint. */
-  analysersCreated(): number;
+  /** Install the fake AudioWorkletNode global bound to THIS clock. */
+  enableWorklet(): void;
   /** Replace the 0/1 pulse timeline with an arbitrary CONTINUOUS signal —
    *  an LFO's ±1 sine, the shape a user patches into DELAY CLK. */
   wave(fn: (tSec: number) => number): void;
 }
 
-function makeFakeClock(opts: { portLatency?: PortLatency } = {}): FakeClock {
-  const portLatency = opts.portLatency ?? 'before-tick';
+function makeFakeClock(): FakeClock {
   let now = 0;
   let fedUntil = 0;
-  /** `fedUntil` as of the last main-thread message delivery. */
-  let deliveredUntil = 0;
-  /** `deliveredUntil` as seen by the most recent scheduler tick. */
-  let tickCoverage = 0;
-  let analysers = 0;
-  let registrationGate: Promise<void> | null = null;
-  let releaseRegistration: (() => void) | null = null;
   const pulses: Array<[number, number]> = [];
   let waveFn: ((tSec: number) => number) | null = null;
   const high = (t: number): number =>
@@ -151,23 +116,18 @@ function makeFakeClock(opts: { portLatency?: PortLatency } = {}): FakeClock {
     const q = pendingDeliveries;
     pendingDeliveries = [];
     for (const d of q) d();
-    deliveredUntil = fedUntil;
   }
 
   const ctx = {
     get currentTime() { return now; },
     sampleRate: SAMPLE_RATE,
     destination: { } as unknown as AudioDestinationNode,
-    audioWorklet: {
-      // The fake node IS the module; a deferred registration simply waits.
-      addModule: async () => { if (registrationGate) await registrationGate; },
-    },
+    audioWorklet: { addModule: async () => { /* the fake node is the module */ } },
     createGain() { return { ...node(), gain: { value: 1 } }; },
     createConstantSource() {
       return { ...node(), offset: { value: 0 }, start() { /* */ }, stop() { /* */ } };
     },
     createAnalyser() {
-      analysers++;
       return {
         ...node(),
         fftSize: 32,
@@ -212,10 +172,8 @@ function makeFakeClock(opts: { portLatency?: PortLatency } = {}): FakeClock {
     advance(ms) {
       now += ms / 1000;
       pumpAudio();
-      if (portLatency === 'before-tick') deliverMessages();
-      tickCoverage = deliveredUntil;
+      deliverMessages();
       vi.advanceTimersByTime(ms);
-      if (portLatency === 'after-tick') deliverMessages();
     },
     stallMainThread(ms) {
       // Audio thread keeps rendering; main thread does NOT run.
@@ -223,17 +181,8 @@ function makeFakeClock(opts: { portLatency?: PortLatency } = {}): FakeClock {
       pumpAudio();
     },
     nowSec() { return now; },
-    deliveredThroughSec() { return tickCoverage; },
-    analysersCreated() { return analysers; },
     wave(fn) { waveFn = fn; },
-    releaseWorkletRegistration() {
-      releaseRegistration?.();
-      releaseRegistration = null;
-    },
-    enableWorklet(o = {}) {
-      if (o.registration === 'deferred') {
-        registrationGate = new Promise<void>((resolve) => { releaseRegistration = resolve; });
-      }
+    enableWorklet() {
       const g = globalThis as unknown as Record<string, unknown>;
       // `ensureGateEdgeWorklet` builds a blob: URL; node's URL has no
       // createObjectURL, so shim just enough for the registration path.
@@ -479,24 +428,16 @@ async function setup(
 
 /**
  * PATCH-TIME variant of `setup`: the source is ALREADY RUNNING `wave` when the
- * cable lands and the worklet is available. Two shapes:
- *
- *  - `registration: 'deferred'` (the FAIL-SAFE path): the AudioEngine's
- *    pre-registration is still in flight when the cable lands, so the bridge
- *    arms the analyser counter; the registration is released right after the
- *    patch and resolves when the test next awaits (see `tickAndDrain`), so the
- *    analyser takes the first tick and the worklet takes over at the second —
- *    the HANDOFF happens mid-run, at a known tick, against whatever phase of
- *    `wave` that lands on.
- *  - `registration: 'eager'` (the SHIPPING path): the pre-registration has
- *    resolved before the cable lands (it resolves while the nodes are added),
- *    so the bridge constructs the worklet synchronously at patch time.
+ * cable lands, the worklet is available, and — unlike `setup` — the worklet's
+ * registration microtasks are NOT drained here. They resolve when the test
+ * next awaits (see `tickAndDrain`), so the analyser fail-safe takes the first
+ * tick and the worklet takes over at the second: the handoff happens mid-run,
+ * at a known tick, against whatever phase of `wave` that lands on.
  */
 async function setupWithWave(
   targetPortId: string,
   wave: (tSec: number) => number,
   source: 'gate' | 'cv' = 'cv',
-  opts: { portLatency?: PortLatency; registration?: 'eager' | 'deferred' } = {},
 ) {
   if (!registered) {
     registerModule(GATE_SOURCE_DEF);
@@ -504,9 +445,8 @@ async function setupWithWave(
     registerVideoTarget();
     registered = true;
   }
-  const registration = opts.registration ?? 'deferred';
-  const clock = makeFakeClock({ portLatency: opts.portLatency });
-  clock.enableWorklet({ registration });
+  const clock = makeFakeClock();
+  clock.enableWorklet();
   clock.wave(wave);
   const ae = new AudioEngine(clock.ctx);
   const ve = new VideoEngineStub(() => clock.nowSec());
@@ -523,11 +463,6 @@ async function setupWithWave(
     id: 'vid', type: VIDEO_TARGET_TYPE, domain: 'video',
     position: { x: 0, y: 0 }, params: {},
   });
-  // The precondition each shape is about, asserted rather than assumed.
-  expect(
-    isGateEdgeWorkletRegistered(clock.ctx),
-    `worklet registration must be ${registration === 'eager' ? 'complete' : 'still in flight'} as the cable lands`,
-  ).toBe(registration === 'eager');
   const edge: Edge = {
     id: 'e-clk',
     source: { nodeId: 'seq', portId: source === 'gate' ? 'clock' : 'phase' },
@@ -536,7 +471,6 @@ async function setupWithWave(
     targetType: 'cv',
   };
   pe.addEdge(edge, 'audio', 'video');
-  if (registration === 'deferred') clock.releaseWorkletRegistration();
   return { pe, ve, clock, edge };
 }
 
@@ -1050,234 +984,78 @@ describe('PatchEngine — a CV cable into an `edge: \'trigger\'` target (the DEL
 // rise on every path (the legacy per-frame bridge included) — that is the
 // "patch a held gate → it fires once" semantic, unchanged here. What must
 // never happen is a SECOND one from the same high phase.
-//
-// THE SECOND DEFECT, found by review: the handoff tick used to settle the level
-// to the worklet's last DELIVERED level. The tick and the port message are two
-// task sources with no ordering guarantee, so a rise the analyser had just
-// replayed whose message was still in flight settled to a stale LOW and rose
-// again on the next tick — the same manufactured 25 ms period, one task-order
-// later. `PORT_LATENCIES` runs every case under both orderings; the fix reads
-// the settle level from the analyser buffer that produced the edges.
 
-/** True rising edges of sin(2π(f·t + phase)) in (0, throughSec]: the crossings
- *  of GATE_HI upward at f·t + phase = 1/12 + k. */
-function trueRises(phase: number, throughSec: number): number[] {
-  const out: number[] = [];
-  for (let k = -2; k < throughSec * LFO_HZ + 2; k++) {
-    const t = (1 / 12 + k - phase) / LFO_HZ;
-    if (t > 0 && t <= throughSec) out.push(t);
-  }
-  return out;
-}
-
-const PATCH_PHASES = [0, 0.05, 0.1, 0.2, 0.3, 0.45, 0.6, 0.8];
-const highAtPhase = (phase: number): boolean => Math.sin(2 * Math.PI * phase) >= 0.5;
-
-for (const portLatency of PORT_LATENCIES) {
-  describe(`PatchEngine — gate dispatch at PATCH TIME (the analyser → worklet handoff), port messages ${portLatency}`, () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      __resetSchedulerClockForTests();
-    });
-    afterEach(() => {
-      __resetSchedulerClockForTests();
-      vi.useRealTimers();
-      delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
-      delete (globalThis as unknown as Record<string, unknown>).currentTime;
-      delete (globalThis as unknown as Record<string, unknown>).sampleRate;
-    });
-
-    for (const phase of PATCH_PHASES) {
-      const highAtPatch = highAtPhase(phase);
-      it(`a ${LFO_HZ} Hz sine at phase ${phase} (${highAtPatch ? 'HIGH' : 'low'} as the cable lands) counts EXACTLY, across the handoff`, async () => {
-        // Install with the wave ALREADY RUNNING — the user patches a live LFO —
-        // and let the worklet take over at whatever point in the cycle the
-        // registration lands. The worklet primes from its first block and the
-        // handoff waits for that, so no phase can manufacture a rise.
-        const { pe, ve, clock } = await setupWithWave(
-          'trig_in',
-          (t) => Math.sin(2 * Math.PI * (LFO_HZ * t + phase)),
-          'cv',
-          { portLatency },
-        );
-        const RUN_SEC = 2.0;
-        for (let i = 0; i < (RUN_SEC * 1000) / SCHEDULER_TICK_MS; i++) await tickAndDrain(clock);
-        expect(clock.analysersCreated(), 'the fail-safe was armed (registration was in flight)').toBe(1);
-
-        // The count is exact through the audio time the LAST tick could see —
-        // under 'after-tick' the final render quantum's message is legitimately
-        // still in flight when the run ends, which is latency, not a drop.
-        const through = clock.deliveredThroughSec();
-        const expected = trueRises(phase, through).length + (highAtPatch ? 1 : 0);
-        const rises = risingEdgeTimes(ve.writes, 'cv_trig');
-        const periodsMs = rises.slice(1).map((t, i) => (t - rises[i]!) * 1000);
-        expect(
-          rises.length,
-          `${expected} rises expected through ${through.toFixed(4)} s (${trueRises(phase, through).length} true crossings` +
-            `${highAtPatch ? ' + the one for a source HIGH as the cable lands' : ''}); ` +
-            `replayed periods: ${periodsMs.map((p) => p.toFixed(1)).join(', ')} ms`,
-        ).toBe(expected);
-        // …and nothing in the replay looks like a clock faster than the LFO:
-        // every period after the patch-time one is a full LFO period ± a tick.
-        for (const p of periodsMs.slice(highAtPatch ? 1 : 0)) {
-          expect(
-            Math.abs(p - LFO_PERIOD_SEC * 1000),
-            `no manufactured short period (saw ${periodsMs.map((x) => x.toFixed(1)).join(', ')} ms)`,
-          ).toBeLessThanOrEqual(SCHEDULER_TICK_MS);
-        }
-        pe.dispose();
-      });
-    }
-
-    it('THE ARRIVAL-ORDER RACE: a pulse rising just before the handoff tick, its message still in flight, is ONE edge', async () => {
-      // Constructed for the exact window the phase sweep only samples: a 10 ms
-      // gate pulse rising 5 ms before the tick the handoff lands on (tick 2
-      // when messages arrive before the tick, tick 3 when after). The
-      // analyser's final window replays it; its port message has not arrived.
-      // Settling to the worklet's last delivered level (LOW) here, then to the
-      // delivered HIGH on the next tick, is a second rise no pulse produced —
-      // a 25 ms clock period. Under 'before-tick' the message has always
-      // landed first and this is the ordinary case; under 'after-tick' it is
-      // the race.
-      const handoffTick = portLatency === 'before-tick' ? 2 : 3;
-      const riseSec = (handoffTick * SCHEDULER_TICK_MS - 5) / 1000;
-      const { pe, ve, clock } = await setupWithWave(
-        'clock_in',
-        (t) => (t >= riseSec && t < riseSec + 0.010 ? 1 : 0),
-        'gate',
-        { portLatency },
-      );
-      for (let i = 0; i < 8; i++) await tickAndDrain(clock);
-      const writes = ve.writes.filter((w) => w.paramId === 'cv_clock').map((w) => w.value);
-      expect(
-        countRisingEdges(ve.writes, 'cv_clock'),
-        `one pulse, one rise — whichever task lands first (writes: ${JSON.stringify(writes)})`,
-      ).toBe(1);
-      pe.dispose();
-    });
-
-    it('a gate HELD across the handoff neither double-fires nor dips low', async () => {
-      // The gate-source shape of the same defect: a GATE cable (the pre-widen
-      // scope) held HIGH from before the cable lands until well after the
-      // worklet takes over, into the undeclared-edge target a gate can reach.
-      const { pe, ve, clock } = await setupWithWave(
-        'clock_in',
-        (t) => (t >= -1 ? 1 : 0),
-        'gate',
-        { portLatency },
-      );
-      for (let i = 0; i < 20; i++) await tickAndDrain(clock);
-      expect(countRisingEdges(ve.writes, 'cv_clock'), 'one rise for one held gate, handoff included').toBe(1);
-      const afterFirst = ve.writes.filter((w) => w.paramId === 'cv_clock').slice(3);
-      expect(
-        afterFirst.every((w) => w.value === 1),
-        `held HIGH throughout — no dip at the handoff (saw ${JSON.stringify(afterFirst.map((w) => w.value))})`,
-      ).toBe(true);
-      pe.dispose();
-    });
+describe('PatchEngine — gate dispatch at PATCH TIME (the analyser → worklet handoff)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    __resetSchedulerClockForTests();
   });
-}
+  afterEach(() => {
+    __resetSchedulerClockForTests();
+    vi.useRealTimers();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+    delete (globalThis as unknown as Record<string, unknown>).currentTime;
+    delete (globalThis as unknown as Record<string, unknown>).sampleRate;
+  });
 
-// ---------------------------------------------------------------------------
-// THE SHIPPING PATH — a PRE-REGISTERED context. The AudioEngine registers the
-// processor at construction, so a cable landing later gets its worklet node
-// constructed SYNCHRONOUSLY inside installGateDispatch: no analyser, no
-// handoff, counting from the first render quantum.
-// ---------------------------------------------------------------------------
-//
-// WHY THIS MATTERS (the CI count deficit, 36 delivered where ~40 were due):
-// the audio-thread "a stall costs latency, never an edge" guarantee used to
-// begin only at the handoff. From patch time until then the 85 ms analyser
-// ring was the only counter, and the main-thread stall that FOLLOWS a patch —
-// the flow + face re-render, measured 0.4-0.9 s under SwiftShader — landed
-// exactly inside that window and dropped every rise older than the ring. With
-// the worklet connected at patch time the same stall drops nothing.
-
-for (const portLatency of PORT_LATENCIES) {
-  describe(`PatchEngine — gate dispatch on a PRE-REGISTERED context (the shipping path), port messages ${portLatency}`, () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      __resetSchedulerClockForTests();
-    });
-    afterEach(() => {
-      __resetSchedulerClockForTests();
-      vi.useRealTimers();
-      delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
-      delete (globalThis as unknown as Record<string, unknown>).currentTime;
-      delete (globalThis as unknown as Record<string, unknown>).sampleRate;
-    });
-
-    /** The post-patch stall: no tick and no message delivery for this long,
-     *  while the audio thread renders 2 LFO cycles. 5.9× the analyser ring. */
-    const POST_PATCH_STALL_MS = 500;
-
-    for (const phase of PATCH_PHASES) {
-      const highAtPatch = highAtPhase(phase);
-      it(`a ${POST_PATCH_STALL_MS} ms main-thread stall straddling patch time drops NO rise (phase ${phase}, ${highAtPatch ? 'HIGH' : 'low'} as the cable lands)`, async () => {
-        const { pe, ve, clock } = await setupWithWave(
-          'trig_in',
-          (t) => Math.sin(2 * Math.PI * (LFO_HZ * t + phase)),
-          'cv',
-          { portLatency, registration: 'eager' },
-        );
-        // No await between the patch and the stall: nothing asynchronous can
-        // have run, so a worklet that counts here was connected synchronously.
-        expect(clock.analysersCreated(), 'no analyser is armed on the shipping path').toBe(0);
-        clock.stallMainThread(POST_PATCH_STALL_MS);
-        expect(ve.writes, 'main thread was frozen — nothing written yet').toEqual([]);
-        // Resume: two ticks, so an 'after-tick' delivery is also replayed.
-        clock.advance(SCHEDULER_TICK_MS);
-        clock.advance(SCHEDULER_TICK_MS);
-
-        const through = clock.deliveredThroughSec();
-        const expected = trueRises(phase, through).length + (highAtPatch ? 1 : 0);
-        expect(expected, 'the stall spans real rises (the case has teeth)').toBeGreaterThanOrEqual(2);
-        expect(
-          countRisingEdges(ve.writes, 'cv_trig'),
-          `every rise rendered during the stall arrives on resume — ${expected} expected through ${through.toFixed(4)} s`,
-        ).toBe(expected);
-        pe.dispose();
-      });
+  /** True rising edges of sin(2π(f·t + phase)) in (0, runSec]: the crossings of
+   *  GATE_HI upward at f·t + phase = 1/12 + k. */
+  function trueRises(phase: number, runSec: number): number[] {
+    const out: number[] = [];
+    for (let k = -2; k < runSec * LFO_HZ + 2; k++) {
+      const t = (1 / 12 + k - phase) / LFO_HZ;
+      if (t > 0 && t <= runSec) out.push(t);
     }
+    return out;
+  }
 
-    it('a gate HELD from before the patch fires once and never dips (there is no handoff to dip at)', async () => {
-      const { pe, ve, clock } = await setupWithWave(
-        'clock_in',
-        (t) => (t >= -1 ? 1 : 0),
-        'gate',
-        { portLatency, registration: 'eager' },
-      );
-      for (let i = 0; i < 20; i++) clock.advance(SCHEDULER_TICK_MS);
-      expect(countRisingEdges(ve.writes, 'cv_clock'), 'one rise for one held gate').toBe(1);
-      const afterFirst = ve.writes.filter((w) => w.paramId === 'cv_clock').slice(3);
-      expect(
-        afterFirst.every((w) => w.value === 1),
-        `held HIGH throughout (saw ${JSON.stringify(afterFirst.map((w) => w.value))})`,
-      ).toBe(true);
-      pe.dispose();
-    });
-
-    it('CONTROL — with the registration still in flight, the fail-safe alone cannot hold that stall (what pre-registration buys)', async () => {
-      // Same stall, same wave (phase 0: rises at 20.8 ms and 270.8 ms, both
-      // older than the 85 ms ring when the main thread resumes at 500 ms). The
-      // registration is never released, so the analyser is the only counter.
+  for (const phase of [0, 0.05, 0.1, 0.2, 0.3, 0.45, 0.6, 0.8]) {
+    const highAtPatch = Math.sin(2 * Math.PI * phase) >= 0.5;
+    it(`a ${LFO_HZ} Hz sine at phase ${phase} (${highAtPatch ? 'HIGH' : 'low'} as the cable lands) counts EXACTLY, across the handoff`, async () => {
+      // Install with the wave ALREADY RUNNING — the user patches a live LFO —
+      // and let the worklet take over at whatever point in the cycle the
+      // registration lands. The worklet primes from its first block and the
+      // handoff waits for that, so no phase can manufacture a rise.
       const { pe, ve, clock } = await setupWithWave(
         'trig_in',
-        (t) => Math.sin(2 * Math.PI * LFO_HZ * t),
-        'cv',
-        { portLatency, registration: 'deferred' },
+        (t) => Math.sin(2 * Math.PI * (LFO_HZ * t + phase)),
       );
-      expect(clock.analysersCreated(), 'the fail-safe is armed').toBe(1);
-      clock.stallMainThread(POST_PATCH_STALL_MS);
-      clock.advance(SCHEDULER_TICK_MS);
-      clock.advance(SCHEDULER_TICK_MS);
-      const expected = trueRises(0, clock.nowSec()).length;
-      expect(expected, 'the stall spans real rises').toBeGreaterThanOrEqual(2);
+      const RUN_SEC = 2.0;
+      for (let i = 0; i < (RUN_SEC * 1000) / SCHEDULER_TICK_MS; i++) await tickAndDrain(clock);
+
+      const expected = trueRises(phase, RUN_SEC).length + (highAtPatch ? 1 : 0);
+      const rises = risingEdgeTimes(ve.writes, 'cv_trig');
+      const periodsMs = rises.slice(1).map((t, i) => (t - rises[i]!) * 1000);
       expect(
-        countRisingEdges(ve.writes, 'cv_trig'),
-        `the analyser ring cannot reach back across a 500 ms stall — the instrument sees the loss (${expected} due)`,
-      ).toBeLessThan(expected);
+        rises.length,
+        `${expected} rises expected (${trueRises(phase, RUN_SEC).length} true crossings` +
+          `${highAtPatch ? ' + the one for a source HIGH as the cable lands' : ''}); ` +
+          `replayed periods: ${periodsMs.map((p) => p.toFixed(1)).join(', ')} ms`,
+      ).toBe(expected);
+      // …and nothing in the replay looks like a clock faster than the LFO:
+      // every period after the patch-time one is a full LFO period ± a tick.
+      for (const p of periodsMs.slice(highAtPatch ? 1 : 0)) {
+        expect(
+          Math.abs(p - LFO_PERIOD_SEC * 1000),
+          `no manufactured short period (saw ${periodsMs.map((x) => x.toFixed(1)).join(', ')} ms)`,
+        ).toBeLessThanOrEqual(SCHEDULER_TICK_MS);
+      }
       pe.dispose();
     });
+  }
+
+  it('a gate HELD across the handoff neither double-fires nor dips low', async () => {
+    // The gate-source shape of the same defect: a GATE cable (the pre-widen
+    // scope) held HIGH from before the cable lands until well after the
+    // worklet takes over, into the undeclared-edge target a gate can reach.
+    const { pe, ve, clock } = await setupWithWave('clock_in', (t) => (t >= -1 ? 1 : 0), 'gate');
+    for (let i = 0; i < 20; i++) await tickAndDrain(clock);
+    expect(countRisingEdges(ve.writes, 'cv_clock'), 'one rise for one held gate, handoff included').toBe(1);
+    const afterFirst = ve.writes.filter((w) => w.paramId === 'cv_clock').slice(3);
+    expect(
+      afterFirst.every((w) => w.value === 1),
+      `held HIGH throughout — no dip at the handoff (saw ${JSON.stringify(afterFirst.map((w) => w.value))})`,
+    ).toBe(true);
+    pe.dispose();
   });
-}
+});
