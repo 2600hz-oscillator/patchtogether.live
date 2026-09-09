@@ -6,10 +6,10 @@
 //
 // The chain is REAL end to end: an audio LFO's phase output — a CV cable, the
 // patch a user actually makes — crosses the cross-domain bridge into
-// backdraft's delay_clock, the module measures the pulse period on the
-// bridge's own write clock, and the faceplate's delay fader dims + badges
-// through the SAME shared predicate the legacy card's CLK badge uses
-// (backdraft-clocked-delay.ts). The engine-side observable is
+// backdraft's delay_clock, the module measures the pulse period from the
+// audio-clock rise times the bridge carries, and the faceplate's delay fader
+// dims + badges through the SAME shared predicate the legacy card's CLK badge
+// uses (backdraft-clocked-delay.ts). The engine-side observable is
 // read('effectiveDelayMs') — the delay draw() actually used — because the
 // picture cannot show which ring slot it tapped.
 //
@@ -25,11 +25,36 @@
 // singularity (measured periods 253 ms one moment, 4430 ms the next; at a
 // steady 8.00 fps it never locked). Now the edges are counted on the audio
 // thread and replayed on the ~25 ms scheduler tick — a Worker, immune to rAF —
-// so this spec waits for edges WITH THE LOOP PAUSED and asserts the period
-// POSITIVELY: 250 ms ± one bridge tick. On the pre-widen engine this file
-// fails at the first lock wait, deterministically (zero edges without a
+// so this spec waits for edges WITH THE LOOP PAUSED. On the pre-widen engine
+// this file fails at the first lock, deterministically (zero rises without a
 // frame), which is what tells "the product is right" apart from "the beat
 // phase was lucky".
+//
+// WHAT THIS INSTRUMENT CAN SEE — two assertions, on the two clocks it can
+// each vouch for:
+//
+//  - THE PERIOD, the positive control. Each replayed rise carries the
+//    audio-thread time it HAPPENED (`GateEdgeTiming`, video/engine.ts) and the
+//    module stamps the rise with that, so every period it measures is the
+//    difference of two audio-clock rise times: the LFO's 250 ms to a sample,
+//    however late the main thread replayed either edge. It is asserted to
+//    within ONE bridge tick — the band backdraft.ts stated for delay_clock,
+//    >1000× the stamp's own resolution — with NO precondition on the main
+//    thread. Before the stamp fix the module timestamped a rise when the
+//    replayed write LANDED, and on a shared CI runner that thread is starved
+//    by the other workers' SwiftShader pages: run 34372134124 (shard 11) saw
+//    an in-page setTimeout(25) resolve every ~250 ms for the whole wait
+//    (530 ms at worst), and the periods read 5.1, 95, 402, 635 ms while the
+//    count was exactly 4 Hz (39 rises in 10.16 s). A replay-time stamp cannot
+//    pass this band on that runner; an edge-time stamp cannot fail it.
+//
+//  - THE RATE. Rises counted across a window of AUDIO time, against 4 Hz. The
+//    COUNT is still read on the main thread, so a rise can be in flight at
+//    each end of the window for as long as the main thread was away; that
+//    tolerance is DERIVED from the sampler's own longest interval (the
+//    longest it was away), never a constant tuned to a runner, and a
+//    non-vacuity guard fails the run if it ever swallows the expected count.
+//    On a quiet machine it is ±1-2 rises.
 //
 // Frames are then only the OBSERVABLE: `heldEffectiveMs` and `clockPatched`
 // are written inside draw(), so each leg drives `vid.step()` itself (the #2345
@@ -38,10 +63,11 @@
 // waitFrames, 103 s against a 120 s cap on the attempt that "passed").
 //
 // The hold/lock/re-patch state machine is pinned at unit level
-// (backdraft-delay-ring.test.ts); the dispatch's per-sample counting and its
-// one-tick period accuracy at engine-gate-dispatch.test.ts. This spec proves
-// the live wiring: badge on patch, the draw uses the clock's period, fader
-// writes ignored while patched, control returned on unpatch.
+// (backdraft-delay-ring.test.ts); the dispatch's per-sample counting, the
+// stamp it carries and the module's use of it at engine-gate-dispatch.test.ts
+// and backdraft-gate-edges.test.ts. This spec proves the live wiring: badge on
+// patch, the draw uses the clock's period, fader writes ignored while patched,
+// control returned on unpatch.
 
 import { test, expect, type Page } from '@playwright/test';
 import { waitFrames } from '../_helpers/frames';
@@ -59,42 +85,35 @@ const FADER_MS = 120;
 const PARKED_MS = 900;
 /** BACKDRAFT_MAX_DELAY_MS — the cap the module applies to a measured period. */
 const MAX_DELAY_MS = 1000;
-/** BACKDRAFT_CLOCK_PATCH_GRACE_MS = 20 × SCHEDULER_TICK_MS (backdraft.ts): how
- *  stale the bridge's last write may be before the input reads UNPATCHED. */
+/** BACKDRAFT_CLOCK_PATCH_GRACE_MS = 20 × SCHEDULER_TICK_MS and
+ *  BACKDRAFT_CLOCK_PATCH_GRACE_FRAMES = 3 (backdraft.ts): how stale the
+ *  bridge's last write may be — in ms OR in draws — before the input reads
+ *  UNPATCHED. Both units, because the return to the fader needs both. */
 const CLOCK_PATCH_GRACE_MS = 20 * SCHEDULER_TICK_MS;
+const CLOCK_PATCH_GRACE_FRAMES = 3;
 /**
- * How many consecutive periods the lock is measured over, and why the MEAN of
- * them is the right observable. The module stamps each rise when the bridge
- * REPLAYS it — the first ~25 ms tick after the true edge, plus whatever that
- * tick was late by — so a single period carries the difference of two replay
- * delays: with a 250 ms clock on a 25 ms grid every rise sits at the same
- * phase and can land a tick early or late, and consecutive periods honestly
- * read 225 / 275 (measured). Those delays TELESCOPE: N consecutive periods sum
- * to `t_last − t_first`, so their mean is the clock's period to within
- * `(one tick + tick lateness) / N`, whatever the per-rise jitter — while a
- * manufactured or dropped edge inside the window (the defect class this file
- * exists for) shifts it by a whole period / N. With N = 8 that is ≤ ~16 ms of
- * jitter against a ≥ 31 ms defect signature, both against the one-tick
- * tolerance backdraft.ts states for delay_clock.
+ * How long each lock is measured, in LFO CYCLES of the AUDIO clock (the thing
+ * that drives its cost, never a flat ms). The rate assertion compares the rises
+ * the module counted across this window with LFO_RATE_HZ × the audio time it
+ * spanned; its tolerance is derived per run (see `countToleranceFor`) and the
+ * window has to be long enough that the tolerance a starved runner earns
+ * stays well under the count — at 16 cycles a 0.55 s stall (the worst CI has
+ * shown) earns ±5.4 against 16 due, and the check keeps its power up to a
+ * ~1.8 s stall.
  */
-const LOCK_PERIODS = 8;
-/**
- * The window is only measured while the main thread was RESPONSIVE: right
- * after a cable lands the flow and the face re-render (measured under
- * SwiftShader: ~0.6 s with no tick delivered, then the backlog replayed at
- * queue-drain pace), and a replay delay that large is not "jitter". The
- * in-page sampler measures its own interval, and a window is admitted only if
- * no interval inside it exceeded this many ticks — an instrument condition the
- * instrument checks, not a product tolerance. It also bounds the tick
- * lateness in the derivation above.
- */
-const QUIET_GAP_TICKS = 4;
-/** Bound on the lock wait, in LFO CYCLES (the thing that drives its cost),
- *  never a flat ms. 40 cycles of a 4 Hz clock is 10 s. */
-const LOCK_MAX_CYCLES = 40;
+const LOCK_CYCLES = 16;
+/** The positive control has to SEE periods: a burst (several rises replayed
+ *  in one sample) exposes only its last period, so on a starved runner not
+ *  every cycle yields one — CI shard 11 read 12-13 of 16. A quarter of the
+ *  window is the floor below which the period assertion would be vacuous. */
+const MIN_PERIODS = LOCK_CYCLES / 4;
 
 const SLOW_RENDER = process.env.E2E_SWIFTSHADER === '1' || !!process.env.CI;
 const CASE_MS = SLOW_RENDER ? 120_000 : 45_000;
+/** Local reproduction of a starved CI main thread: `E2E_CPU_THROTTLE=12`
+ *  applies CDP CPU throttling to the page. A real-GPU Mac cannot otherwise
+ *  see the failure mode this file is written for. Never set on CI. */
+const CPU_THROTTLE = Number(process.env.E2E_CPU_THROTTLE ?? '1');
 
 /** ADD to the live patch (never spawnPatch — it clears the seeded video zone);
  *  per-node domain because this spec needs an AUDIO clock source. Same shape
@@ -230,106 +249,101 @@ function drawOnce(page: Page): Promise<{ effectiveMs: number; drawsDelta: number
 }
 
 interface LockSample {
-  /** Rising edges the module counted while this wait ran — with the renderer
-   *  STOPPED, so every one of them arrived off the frame clock. */
+  /** Rises the module counted between the window's first and last sample —
+   *  with the renderer STOPPED, so every one of them arrived off the frame
+   *  clock. */
   risesSeen: number;
-  /** Every period the module measured while this wait ran, ms, in order. */
-  periodsMs: number[];
-  /** The last `LOCK_PERIODS` of them, once a window passed the quiet check;
-   *  empty if none did inside the bound. */
-  windowMs: number[];
-  /** The longest interval the in-page sampler itself observed inside that
-   *  window (ms) — how late the main thread ran while it was measured. */
-  windowMaxGapMs: number;
-  /** The longest sampler interval over the whole wait — a stall reads as a
-   *  stall, never as "the clock never fired". */
+  /** AudioContext time the window spanned (s) — the audio thread's own clock,
+   *  which a starved main thread does not slow down. */
+  audioSpanSec: number;
+  /** The longest interval the in-page sampler itself observed (ms): the
+   *  longest the main thread was away during the window. */
   maxGapMs: number;
-  settled: boolean;
+  /**
+   * Every period the module measured for a rise whose PREVIOUS rise was also
+   * detected inside the window (ms, in order). The first rise detected has its
+   * previous one before the window — possibly the "patched while HIGH → fires
+   * once" rise, whose partial first period is a documented product behaviour
+   * and not a clock measurement — so its period is not one of these. When
+   * several rises are replayed in one sample only the last one's period is
+   * readable; `bursts` counts the others.
+   */
+  periodsMs: number[];
+  bursts: number;
+  samples: number;
+  elapsedMs: number;
   /** The module's period at the instant of the ONE draw below, ms. */
   periodAtDrawMs: number;
   /** What that draw actually used, ms. */
   effectiveMs: number;
   driving: boolean;
   drawsDelta: number;
-  samples: number;
-  elapsedMs: number;
 }
 
 /**
- * Wait IN THE PAGE until the DELAY CLOCK has been measured over `periods`
- * consecutive rises during which the main thread stayed responsive (no
- * sampler interval over `quietGapMs`), then drive ONE draw synchronously and
- * read what it used.
+ * Sample IN THE PAGE, once per bridge tick, for `cycles` LFO cycles of the
+ * AUDIO clock; then drive ONE draw synchronously and read what it used.
  *
  * ONE evaluate: the accumulator lives in the page (never a Playwright poll
  * loop — one round trip per sample on the same main thread as the subject).
- * The rAF loop is paused for this file, so once the post-patch re-render has
- * drained the main thread is QUIET and the bridge's 25 ms ticks land on time;
- * the draw is the LAST thing before the read and nothing can interleave, so
+ * Nothing here waits for a condition on the main thread's punctuality: the
+ * window closes on the audio clock, and what the sampler measured about its
+ * own lateness is returned so the rate assertion can derive its bound from it.
+ * The draw is the LAST thing before the read and nothing can interleave, so
  * `effectiveMs` is exactly the function of `periodAtDrawMs` the module
- * computes. Bounded in LFO cycles.
+ * computes. Bounded in LFO cycles (a wall bound of twice the window guards a
+ * stalled audio clock, i.e. a suspended context — never the expected path).
  */
-function lockOnClock(
-  page: Page,
-  opts: { periods: number; quietGapMs: number; maxCycles: number },
-): Promise<LockSample> {
+function lockOnClock(page: Page, opts: { cycles: number }): Promise<LockSample> {
   return page.evaluate(
-    async ({ id, periods, quietGapMs, maxCycles, periodMs, tickMs }) => {
-      const w = globalThis as unknown as { __engine: () => { getDomain: (d: string) => VideoSeam } };
-      const vid = w.__engine().getDomain('video');
+    async ({ id, cycles, hz, tickMs }) => {
+      const w = globalThis as unknown as {
+        __engine: () => { getDomain: (d: string) => unknown };
+      };
+      const eng = w.__engine();
+      const vid = eng.getDomain('video') as VideoSeam;
+      const audio = eng.getDomain('audio') as { ctx: { currentTime: number } };
+      const spanSec = cycles / hz;
+      const wallBudgetMs = 2 * spanSec * 1000;
       const t0 = performance.now();
-      const budgetMs = maxCycles * periodMs;
-      const rise0 = vid.read(id, 'clockRiseCount') as number;
-      let seen = rise0;
       let samples = 0;
       let maxGapMs = 0;
-      /** Max sampler interval seen since the previous rise was detected. */
-      let gapSinceRise = 0;
-      const periodsMs: number[] = [];
-      /**
-       * EVERY rise detected in this loop, in order: the period the module
-       * measured at it (null for the first ever rise, and for all but the last
-       * of a burst), and the longest sampler interval since the previous
-       * detected rise — i.e. how late the main thread may have replayed it.
-       * A burst (two or more rises in one sample) is a backlog being drained
-       * and is never quiet, whatever the sampler saw.
-       */
-      const log: Array<{ periodMs: number | null; gap: number }> = [];
-      let windowMs: number[] = [];
-      let windowMaxGapMs = 0;
-      let settled = false;
       let last = performance.now();
-      while (!settled && performance.now() - t0 < budgetMs) {
+      let startCount = -1;
+      let startAudio = 0;
+      let seen = -1;
+      let audioNow = audio.ctx.currentTime;
+      /** Rises detected inside the window so far — the second one on is the
+       *  first whose period is a measurement between two windowed rises. */
+      let detected = 0;
+      const periodsMs: number[] = [];
+      let bursts = 0;
+      for (;;) {
         await new Promise((r) => setTimeout(r, tickMs));
         samples++;
         const now = performance.now();
         const gap = now - last;
         last = now;
         if (gap > maxGapMs) maxGapMs = gap;
-        if (gap > gapSinceRise) gapSinceRise = gap;
         const n = vid.read(id, 'clockRiseCount') as number;
-        if (n <= seen) continue;
-        const d = n - seen;
-        seen = n;
-        const p = vid.read(id, 'clockPeriodSec') as number;
-        for (let i = 0; i < d; i++) {
-          const periodMs = i === d - 1 && p > 0 ? p * 1000 : null;
-          if (periodMs !== null) periodsMs.push(periodMs);
-          log.push({ periodMs, gap: d > 1 ? Infinity : gapSinceRise });
+        audioNow = audio.ctx.currentTime;
+        if (startCount < 0) {
+          // The window OPENS at the first sample, not at the evaluate's start:
+          // its gap is measured like every other one.
+          startCount = n;
+          startAudio = audioNow;
+          seen = n;
+          continue;
         }
-        gapSinceRise = 0;
-        // A window is `periods` consecutive periods bounded by `periods + 1`
-        // rises ALL detected in this loop — so the opening rise's lateness is
-        // measured too, not inherited from whatever happened before the loop.
-        if (log.length < periods + 1) continue;
-        const win = log.slice(-(periods + 1));
-        const body = win.slice(1);
-        const tailGap = Math.max(...win.map((r) => r.gap));
-        if (tailGap <= quietGapMs && body.every((r) => r.periodMs !== null)) {
-          windowMs = body.map((r) => r.periodMs as number);
-          windowMaxGapMs = tailGap;
-          settled = true;
+        if (n > seen) {
+          const d = n - seen;
+          seen = n;
+          detected += d;
+          const p = vid.read(id, 'clockPeriodSec') as number;
+          if (detected > d && p > 0) periodsMs.push(p * 1000);
+          bursts += d - 1;
         }
+        if (audioNow - startAudio >= spanSec || now - t0 >= wallBudgetMs) break;
       }
       // Synchronous from here: no scheduler tick can land between this read
       // and the draw that consumes it.
@@ -337,44 +351,40 @@ function lockOnClock(
       const before = vid.framesDrawnFor(id);
       vid.step();
       return {
-        risesSeen: seen - rise0,
-        periodsMs,
-        windowMs,
-        windowMaxGapMs,
+        risesSeen: seen - startCount,
+        audioSpanSec: audioNow - startAudio,
         maxGapMs,
-        settled,
+        periodsMs,
+        bursts,
+        samples,
+        elapsedMs: performance.now() - t0,
         periodAtDrawMs,
         effectiveMs: vid.read(id, 'effectiveDelayMs') as number,
         driving: vid.read(id, 'clockDriving') === true,
         drawsDelta: vid.framesDrawnFor(id) - before,
-        samples,
-        elapsedMs: performance.now() - t0,
       };
     },
-    {
-      id: NODE,
-      periods: opts.periods,
-      quietGapMs: opts.quietGapMs,
-      maxCycles: opts.maxCycles,
-      periodMs: CLOCK_PERIOD_MS,
-      tickMs: SCHEDULER_TICK_MS,
-    },
+    { id: NODE, cycles: opts.cycles, hz: LFO_RATE_HZ, tickMs: SCHEDULER_TICK_MS },
   );
 }
 
 /**
  * After the cable is gone: drive draws IN THE PAGE until the module hands the
  * delay back to the fader. `backdraftClockPatched` is
- * `(now - lastWrite <= GRACE_MS) || (frame - lastWriteFrame <= 3)`, so the
- * return needs both the wall-clock grace to elapse AND a few draws — this
- * steps on the bridge's own cadence and stops the moment the observable flips.
- * Bounded by a multiple of the product's grace window, never a flat ms.
+ * `(now - lastWrite <= GRACE_MS) || (frame - lastWriteFrame <= GRACE_FRAMES)`,
+ * so the return needs BOTH the wall-clock grace to elapse AND enough draws
+ * after the bridge's last write — and the bridge's teardown itself runs on the
+ * main thread, some time after the cable's removal reaches the flow. On a
+ * starved runner one iteration here can take hundreds of ms (run 34379445097:
+ * 4 draws in 2.4 s), so the bound is in BOTH of the product's units and gives
+ * up only when each has been exceeded four times over; it stops the moment
+ * the observable flips.
  */
 function returnToFader(page: Page, opts: { expectMs: number }): Promise<{
   value: number; driving: boolean; steps: number; elapsedMs: number;
 }> {
   return page.evaluate(
-    async ({ id, expectMs, budgetMs, tickMs }) => {
+    async ({ id, expectMs, budgetMs, budgetSteps, tickMs }) => {
       const w = globalThis as unknown as { __engine: () => { getDomain: (d: string) => VideoSeam } };
       const vid = w.__engine().getDomain('video');
       const t0 = performance.now();
@@ -384,7 +394,8 @@ function returnToFader(page: Page, opts: { expectMs: number }): Promise<{
         vid.step();
         steps++;
         value = vid.read(id, 'effectiveDelayMs') as number;
-        if (value === expectMs || performance.now() - t0 >= budgetMs) break;
+        if (value === expectMs) break;
+        if (performance.now() - t0 >= budgetMs && steps >= budgetSteps) break;
         await new Promise((r) => setTimeout(r, tickMs));
       }
       return {
@@ -394,55 +405,95 @@ function returnToFader(page: Page, opts: { expectMs: number }): Promise<{
         elapsedMs: performance.now() - t0,
       };
     },
-    { id: NODE, expectMs: opts.expectMs, budgetMs: 4 * CLOCK_PATCH_GRACE_MS, tickMs: SCHEDULER_TICK_MS },
+    {
+      id: NODE,
+      expectMs: opts.expectMs,
+      budgetMs: 4 * CLOCK_PATCH_GRACE_MS,
+      budgetSteps: 4 * (CLOCK_PATCH_GRACE_FRAMES + 1),
+      tickMs: SCHEDULER_TICK_MS,
+    },
   );
 }
 
 const fmt = (xs: number[]): string => xs.map((x) => x.toFixed(1)).join(', ');
-const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
 
-/** The positive control: over a responsive window, the clock measures as the
- *  clock — its mean period within one bridge tick of the LFO's, the precision
- *  backdraft.ts states for delay_clock (see LOCK_PERIODS for why the mean is
- *  exact where a single period is not). One line of evidence is printed
- *  either way, so a CI report carries the measurement and not just the
- *  verdict. */
+/**
+ * How late a replay can be, derived from the sampler's own worst interval: the
+ * scheduler tick period, one more tick for port latency, plus however long
+ * the main thread was away beyond the sampler's own interval. A quiet machine
+ * earns ~2-3 ticks here; the starved CI runner above earns ~0.55 s. This
+ * bounds the COUNT only — a period no longer depends on when a replay landed.
+ */
+function replayLatenessBoundMs(lock: LockSample): number {
+  const stallMs = Math.max(0, lock.maxGapMs - SCHEDULER_TICK_MS);
+  return 2 * SCHEDULER_TICK_MS + stallMs;
+}
+
+/**
+ * The rate assertion's tolerance: a rise can be in flight at each end of the
+ * window for at most `replayLatenessBoundMs`, so the count the module shows
+ * can differ from the true count inside the audio window by the rises that fit
+ * in twice that, plus one for the window's fractional cycle. Quiet: ±1.
+ */
+function countToleranceFor(lock: LockSample): number {
+  return 1 + LFO_RATE_HZ * 2 * (replayLatenessBoundMs(lock) / 1000);
+}
+
+/** The positive control: over a window of the AUDIO clock the module counts
+ *  the LFO's rises at the LFO's rate, with the renderer stopped, and every
+ *  period it measured between two windowed rises is the clock's to within one
+ *  bridge tick — on the audio clock, whatever the main thread did. One line of
+ *  evidence is printed either way, so a CI report carries the measurement and
+ *  not just the verdict. */
 function expectLockedOnClock(lock: LockSample, what: string): void {
+  const expected = LFO_RATE_HZ * lock.audioSpanSec;
+  const tolerance = countToleranceFor(lock);
   console.log(
-    `[backdraft-clocked-delay] ${what}: settled=${lock.settled} window=[${fmt(lock.windowMs)}] ms ` +
-      `mean=${lock.windowMs.length ? mean(lock.windowMs).toFixed(1) : 'n/a'} ` +
-      `windowMaxGap=${lock.windowMaxGapMs.toFixed(0)} ms all=[${fmt(lock.periodsMs)}] ms ` +
-      `rises=${lock.risesSeen} maxGap=${lock.maxGapMs.toFixed(0)} ms in ${lock.elapsedMs.toFixed(0)} ms`,
+    `[backdraft-clocked-delay] ${what}: rises=${lock.risesSeen} expected=${expected.toFixed(2)} ` +
+      `(±${tolerance.toFixed(2)}) over ${lock.audioSpanSec.toFixed(3)} s audio / ${lock.elapsedMs.toFixed(0)} ms wall, ` +
+      `${lock.samples} samples, maxGap=${lock.maxGapMs.toFixed(0)} ms, band=±${SCHEDULER_TICK_MS} ms, ` +
+      `bursts=${lock.bursts}, periods=[${fmt(lock.periodsMs)}] ms`,
   );
   expect(
-    lock.settled,
-    `${what}: the clock is measured over ${LOCK_PERIODS} rises on a responsive main thread, with the ` +
-      `renderer STOPPED — ${lock.risesSeen} rises, ${lock.periodsMs.length} periods in ` +
-      `${lock.elapsedMs.toFixed(0)} ms over ${lock.samples} in-page samples, longest sampler gap ` +
-      `${lock.maxGapMs.toFixed(0)} ms (periods: ${fmt(lock.periodsMs)} ms; the pre-widen per-frame ` +
-      `bridge delivers no edge at all without a frame)`,
-  ).toBe(true);
+    lock.risesSeen,
+    `${what}: with the renderer STOPPED at least one rise must arrive — the pre-widen per-frame ` +
+      `bridge delivers no edge at all without a frame (${lock.samples} samples over ${lock.elapsedMs.toFixed(0)} ms)`,
+  ).toBeGreaterThan(0);
+  // Non-vacuity: the derived tolerance must be able to fail the total-loss
+  // case. If the main thread was away for so long that every expected rise
+  // could be "in flight", the rate check has no power and says so, rather
+  // than passing on nothing.
   expect(
-    Math.abs(mean(lock.windowMs) - CLOCK_PERIOD_MS),
-    `${what}: the measured period is the ${LFO_RATE_HZ} Hz clock's ${CLOCK_PERIOD_MS} ms to within ONE ` +
-      `${SCHEDULER_TICK_MS} ms bridge tick — mean of ${LOCK_PERIODS} consecutive periods ` +
-      `${mean(lock.windowMs).toFixed(1)} ms (window: ${fmt(lock.windowMs)} ms, longest main-thread gap ` +
-      `inside it ${lock.windowMaxGapMs.toFixed(0)} ms; a manufactured or dropped edge would move this by ` +
-      `${(CLOCK_PERIOD_MS / LOCK_PERIODS).toFixed(0)} ms)`,
-  ).toBeLessThanOrEqual(SCHEDULER_TICK_MS);
-  // Each single period, derived rather than tolerated: on an admitted window
-  // no replay was later than one tick plus the longest gap the sampler saw, so
-  // no period can sit further than that from the clock's. A manufactured edge
-  // (a ~25 ms period) or a dropped one (~500 ms) cannot hide inside the band
-  // the way it could inside a mean.
-  const band = SCHEDULER_TICK_MS + QUIET_GAP_TICKS * SCHEDULER_TICK_MS;
-  for (const p of lock.windowMs) {
+    tolerance,
+    `${what}: the instrument has power — the main thread was away for up to ${lock.maxGapMs.toFixed(0)} ms, ` +
+      `so the rate check could not tell a total loss of the clock from latency`,
+  ).toBeLessThan(expected);
+  expect(
+    Math.abs(lock.risesSeen - expected),
+    `${what}: ${lock.risesSeen} rises counted across ${lock.audioSpanSec.toFixed(3)} s of AUDIO time — the ` +
+      `${LFO_RATE_HZ} Hz clock owes ${expected.toFixed(2)}, and at most ${tolerance.toFixed(2)} can be ` +
+      `in flight at the window's ends (longest main-thread gap ${lock.maxGapMs.toFixed(0)} ms); ` +
+      `fewer is a dropped edge, more a manufactured one`,
+  ).toBeLessThanOrEqual(tolerance);
+  // THE PERIOD. Each one is the difference of two audio-clock rise times the
+  // bridge carried on the writes — not of two replay instants — so it is the
+  // clock's 250 ms to a sample, and the band is the one backdraft.ts states,
+  // fixed, with no allowance for how late the main thread ran. A shorter
+  // period is a manufactured edge or a replay-time stamp (a drained backlog
+  // reads ~0-10 ms); a longer one is a dropped edge or a stall read as a
+  // period (~400-635 ms on CI before the stamp fix).
+  expect(
+    lock.periodsMs.length,
+    `${what}: the period assertion needs periods to assert on — ${lock.periodsMs.length} readable out of ` +
+      `${lock.risesSeen} rises (${lock.bursts} hidden inside bursts); fewer than ${MIN_PERIODS} would make it vacuous`,
+  ).toBeGreaterThanOrEqual(MIN_PERIODS);
+  for (const p of lock.periodsMs) {
     expect(
       Math.abs(p - CLOCK_PERIOD_MS),
-      `${what}: every period in the window is one real clock pulse — within one tick plus the ` +
-        `${QUIET_GAP_TICKS}-tick quiet bound (±${band} ms) of ${CLOCK_PERIOD_MS} ms (window: ` +
-        `${fmt(lock.windowMs)} ms); a shorter one is a manufactured edge, a longer one a dropped edge`,
-    ).toBeLessThanOrEqual(band);
+      `${what}: every period measured between two windowed rises is one clock pulse — ${CLOCK_PERIOD_MS} ms ` +
+        `± one ${SCHEDULER_TICK_MS} ms bridge tick, on the AUDIO clock, however late the main thread replayed it ` +
+        `(periods: ${fmt(lock.periodsMs)} ms; longest main-thread gap ${lock.maxGapMs.toFixed(0)} ms)`,
+    ).toBeLessThanOrEqual(SCHEDULER_TICK_MS);
   }
   expect(lock.drawsDelta, `${what}: the one explicit draw really ran`).toBe(1);
   expect(lock.driving, `${what}: the module reports the clock is driving the delay`).toBe(true);
@@ -452,7 +503,7 @@ test.describe('backdraft — clocked delay makes the fader inert', () => {
   test('badge on patch, fader ignored while patched, control returned on unpatch', async ({ page }) => {
     test.setTimeout(CASE_MS);
     // Pause the engine's rAF loop BEFORE boot (see the header): every draw in
-    // this test is one this test asked for, and the lock wait below runs with
+    // this test is one this test asked for, and the lock waits below run with
     // no frame at all.
     await installRenderSmokeHooks(page);
     await gotoShell(page);
@@ -478,6 +529,11 @@ test.describe('backdraft — clocked delay makes the fader inert', () => {
     const unclocked = await drawOnce(page);
     expect(unclocked.drawsDelta, 'an explicit step draws the node (the observable is written in draw())').toBe(1);
     expect(unclocked.effectiveMs, 'unpatched, the draw uses the fader (ms)').toBe(FADER_MS);
+
+    if (CPU_THROTTLE > 1) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
+    }
 
     // Patch the clock — the badge and the dim must follow the CABLE, and the
     // engine must start ignoring the fader.
@@ -505,16 +561,19 @@ test.describe('backdraft — clocked delay makes the fader inert', () => {
       'the CLK badge appears on the face the moment the cable lands',
     ).toBeVisible();
     await expect(delayCell, 'the cell dims (overridden class)').toHaveClass(/ms-cell-overridden/);
+    // The cable landing re-renders the flow and the face — under SwiftShader
+    // a 0.4-0.9 s main-thread task (measured). Two ANIMATION FRAMES after the
+    // badge means the main thread has yielded twice, so the window below opens
+    // after the patch's own work rather than inside it; that keeps the derived
+    // count bound tight where it can be, and costs frames, not milliseconds.
+    // The engine's loop is paused (see the header) — rAF itself is not.
+    await waitFrames(page, 2);
 
     // THE LOCK — and the POSITIVE CONTROL. The renderer is stopped, so every
     // edge counted here arrived through the audio-thread counter and the
     // scheduler tick, exactly as the module's docs promise; the per-frame
     // sampler this cable used to fall to delivers NOTHING without a frame.
-    const lock = await lockOnClock(page, {
-      periods: LOCK_PERIODS,
-      quietGapMs: QUIET_GAP_TICKS * SCHEDULER_TICK_MS,
-      maxCycles: LOCK_MAX_CYCLES,
-    });
+    const lock = await lockOnClock(page, { cycles: LOCK_CYCLES });
     expectLockedOnClock(lock, 'on patch');
     expect(
       lock.effectiveMs,
@@ -531,11 +590,7 @@ test.describe('backdraft — clocked delay makes the fader inert', () => {
       },
       { id: NODE, ms: PARKED_MS },
     );
-    const clocked = await lockOnClock(page, {
-      periods: LOCK_PERIODS,
-      quietGapMs: QUIET_GAP_TICKS * SCHEDULER_TICK_MS,
-      maxCycles: LOCK_MAX_CYCLES,
-    });
+    const clocked = await lockOnClock(page, { cycles: LOCK_CYCLES });
     expectLockedOnClock(clocked, 'across the fader write');
     expect(
       clocked.effectiveMs,
@@ -560,7 +615,7 @@ test.describe('backdraft — clocked delay makes the fader inert', () => {
     expect(
       back.value,
       `the fader rules again at its parked ${PARKED_MS} ms — took ${back.steps} draws / ` +
-        `${back.elapsedMs.toFixed(0)} ms against a ${CLOCK_PATCH_GRACE_MS} ms grace window`,
+        `${back.elapsedMs.toFixed(0)} ms against a ${CLOCK_PATCH_GRACE_MS} ms / ${CLOCK_PATCH_GRACE_FRAMES}-draw grace window`,
     ).toBe(PARKED_MS);
     expect(back.driving, 'the module reports the clock is no longer driving').toBe(false);
   });
