@@ -1057,4 +1057,205 @@ test.describe('CLIP PLAYER faceplate', () => {
     expect(errors, 'no page errors across the view swap').toEqual([]);
   });
 
+  // ── THE INVISIBLE REFUSAL (owner, 2026-09-09) ────────────────────────────
+  //
+  // "Selected a pad in lane 1, clicked the lane's record toggle (it turned
+  // red), started the transport — and it just stays red and keeps playing."
+  // The recorder had REFUSED the arm (the selected slot held a note clip with
+  // notes in it) and said so to `console.warn` and to a registry field no
+  // surface read. The toggle kept `aria-pressed=true` and its armed red, the
+  // transport ran, and nothing on screen said why nothing was recording.
+  //
+  // This drives the OWNER'S EXACT SEQUENCE through the real face and the real
+  // registry, and asserts the sentence lands ON THE BUTTON — then, as the
+  // positive control the instrument needs, performs the SAME gesture on a lane
+  // whose selected slot is empty and asserts the recorder takes it and the
+  // button says nothing. Without that second half a face that painted every
+  // armed lane amber would pass the first.
+  //
+  // ⚠ NO SCOPE, NO AUDIO ASSERTION, ON PURPOSE. The audible legs of clip
+  // recording are `cliprec-clip-mode.spec.ts` and `cliprec-endless.spec.ts`;
+  // this test's subject is what the SURFACE says about a refusal, and a lane
+  // that records silence is enough to prove the accept.
+  test('an ARMED lane the recorder REFUSES says why on the button — and an accepted arm says nothing', async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('console', (msg) => {
+      if (msg.text().includes('[clip-rec]')) console.log(`page: ${msg.text()}`);
+    });
+
+    await gotoShell(page);
+    await spawnPatch(page, [
+      // STOPPED at spawn: the owner armed while stopped and then pressed play,
+      // and clause 4 makes that the sequence that asks the recorder anything.
+      {
+        id: 'f-tl-ref', type: 'timelorde', position: { x: 0, y: 0 }, domain: 'audio',
+        params: { running: 0, bpm: 200 },
+      },
+      // The capture SOURCE. Without a mixer every arm is refused with a
+      // different sentence ("no mixmstrs …") AND snapped off, which would make
+      // this test pass for the wrong reason on the first half and fail the
+      // second.
+      { id: 'f-mx-ref', type: 'mixmstrs', position: { x: 360, y: 0 }, domain: 'audio' },
+      { id: CP, type: 'clipplayer', position: { x: 60, y: 320 }, domain: 'audio' },
+    ]);
+
+    // AUTHORED NOTES in lane 1 slot 1 (flat key 0) — the slot a fresh lane's
+    // record button aims at. An EMPTY note clip is a placeholder the recorder
+    // records over; one with notes in it is someone's work and is refused.
+    await page.evaluate((cp) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes[cp]!;
+        if (!n.data) n.data = {};
+        n.data.clips = {
+          '0': {
+            kind: 'note', lengthSteps: 4, root: 48, loop: true,
+            steps: [
+              { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
+              { step: 2, midi: 76, velocity: 127, lengthSteps: 1 },
+            ],
+          },
+        };
+      });
+    }, CP);
+
+    const dock = await openDock(page, CP);
+    await showPage(page, CP, 'session');
+    const grid = dock.getByTestId('clipplayer-face-grid');
+    await expect(grid.getByTestId('clipplayer-pad-0')).toHaveAttribute('data-state', 'loaded');
+    const arm0 = grid.getByTestId('clipplayer-rec-arm-0');
+    const arm1 = grid.getByTestId('clipplayer-rec-arm-1');
+
+    // ── AT REST: a RECORD control, not an empty 10 px box ─────────────────
+    // The owner could not tell what the button was. It now carries a resting
+    // glyph — a CSS dot, so it is the same size on every host — and no refusal.
+    await expect(arm0).toHaveAttribute('aria-pressed', 'false');
+    await expect(arm0).not.toHaveAttribute('data-rec-refusal');
+    const glyph = await arm0.evaluate((el) => {
+      const s = getComputedStyle(el, '::before');
+      return { content: s.content, width: s.width, radius: s.borderRadius };
+    });
+    expect(glyph.content, 'the button paints a resting glyph').not.toBe('none');
+    expect(glyph.radius, 'a dot').toBe('50%');
+    expect(parseFloat(glyph.width), 'visible, not a 0 px box').toBeGreaterThan(0);
+
+    // ── THE OWNER'S SEQUENCE: arm while stopped, then play ────────────────
+    await arm0.click();
+    await expect(arm0).toHaveAttribute('aria-pressed', 'true');
+    // Armed while STOPPED nothing is asked of the recorder (the arm is
+    // level-triggered on toggle AND running), so nothing can be refused yet.
+    await expect(arm0).not.toHaveAttribute('data-rec-refusal');
+
+    await setTransport(page, 1);
+
+    // ── THE REFUSAL, ON THE BUTTON ────────────────────────────────────────
+    await expect(
+      arm0,
+      'the refusal is painted on the toggle the moment the recorder makes it',
+    ).toHaveAttribute('data-rec-refusal', /^lane 1 slot 1 holds a note clip with notes in it/);
+    await expect(arm0, 'the AMBER state, distinct from armed and recording').toHaveClass(/\brefused\b/);
+    await expect(arm0, 'a screen reader hears it in the name').toHaveAttribute(
+      'aria-label',
+      /^channel 1 audio record — refused: lane 1 slot 1 holds a note clip/,
+    );
+    await expect(arm0, 'the tooltip says it too').toHaveAttribute('title', /NOT recording — lane 1 slot 1 holds a note clip/);
+    // …and the toggle is still ON and still IDLE: that pairing IS the defect,
+    // now visible instead of a red button with nothing behind it.
+    await expect(arm0).toHaveAttribute('aria-pressed', 'true');
+    await expect(arm0).toHaveAttribute('data-rec-phase', 'idle');
+    const refusedBg = await arm0.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // ── DROPPING THE TOGGLE RETIRES THE SENTENCE ──────────────────────────
+    // The projection stops painting it the moment the toggle is off (the
+    // Y.Doc repaints first); the registry retires it on its next pump.
+    await arm0.click();
+    await expect(arm0).toHaveAttribute('aria-pressed', 'false');
+    await expect(arm0, 'no complaint on a disarmed lane').not.toHaveAttribute('data-rec-refusal');
+    await expect(arm0).not.toHaveClass(/\brefused\b/);
+    // …and the REGISTRY retired it, not just the paint. Waited on the
+    // registry's own state through its probe, because the next leg re-arms
+    // and a re-arm that lands before that pump would find the old sentence
+    // still standing — the sub-tick window the model documents.
+    await expect
+      .poll(
+        () =>
+          page.evaluate((cp) => {
+            const w = globalThis as unknown as {
+              __clipRecRefusals?: (id: string) => readonly (string | null)[];
+            };
+            const probe = w.__clipRecRefusals;
+            return probe ? probe(cp)[0] : 'probe missing';
+          }, CP),
+        { message: "the registry retired lane 1's refusal on the pump after the toggle went off" },
+      )
+      .toBeNull();
+
+    // ── FIX THE SLOT, RE-ARM WHILE STOPPED: the OLD sentence stays gone ───
+    // The registry used to keep a refusal until an arm was ACCEPTED, and it
+    // evaluates only while running — so this exact sequence (refused, disarm,
+    // clear the notes, re-arm with the transport stopped) painted "holds a
+    // note clip" on a slot that no longer did, until play.
+    await page.evaluate((cp) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const clips = w.__patch.nodes[cp]!.data?.clips as Record<string, unknown> | undefined;
+        if (clips) delete clips['0'];
+      });
+    }, CP);
+    await expect(grid.getByTestId('clipplayer-pad-0')).toHaveAttribute('data-state', 'empty');
+    await setTransport(page, 0);
+    // ENDLESS, so the accept below stays in `recording` under its assertions.
+    await grid.getByTestId('clipplayer-rec-mode-0').click();
+    await expect(grid.getByTestId('clipplayer-rec-mode-0')).toHaveAttribute('data-rec-mode', 'endless');
+    await arm0.click();
+    await expect(arm0).toHaveAttribute('aria-pressed', 'true');
+    await expect(arm0).toHaveAttribute('data-rec-phase', 'idle');
+    await expect(arm0, 'armed while stopped on the fixed slot: nothing stale').not.toHaveAttribute(
+      'data-rec-refusal',
+    );
+    await expect(arm0).not.toHaveClass(/\brefused\b/);
+    await expect(arm0).toHaveAttribute('aria-label', 'channel 1 audio record');
+    // …and on play the fixed slot is TAKEN — the control that the slot, not
+    // the paint, is what changed.
+    await setTransport(page, 1);
+    await expect(arm0, 'the re-arm on the cleared slot is accepted').toHaveAttribute(
+      'data-rec-phase',
+      /^(armed|recording)$/,
+    );
+    await expect(arm0).not.toHaveAttribute('data-rec-refusal');
+
+    // ── THE POSITIVE CONTROL: the same gesture on an EMPTY slot is TAKEN ──
+    // ENDLESS so the take stays in `recording` until told otherwise, rather
+    // than committing after one loop and snapping the toggle off under the
+    // assertions below.
+    await grid.getByTestId('clipplayer-rec-mode-1').click();
+    await expect(grid.getByTestId('clipplayer-rec-mode-1')).toHaveAttribute('data-rec-mode', 'endless');
+    await arm1.click();
+    await expect(arm1).toHaveAttribute('aria-pressed', 'true');
+    // The recorder TOOK it: the prepare projection reaches the lane (armed),
+    // then the worklet arms (recording). Either is an accept.
+    await expect(arm1, 'the arm on an empty slot is accepted').toHaveAttribute(
+      'data-rec-phase',
+      /^(armed|recording)$/,
+    );
+    await expect(arm1, 'and says nothing').not.toHaveAttribute('data-rec-refusal');
+    await expect(arm1).not.toHaveClass(/\brefused\b/);
+    await expect(arm1).toHaveAttribute('aria-label', 'channel 2 audio record');
+    const acceptedBg = await arm1.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(refusedBg, 'amber is not the armed/recording red').not.toBe(acceptedBg);
+    // …and lane 1's stale sentence did not migrate onto the lane that was taken.
+    await expect(arm0).not.toHaveAttribute('data-rec-refusal');
+
+    expect(errors, 'no page errors across arm, refuse, disarm, accept').toEqual([]);
+  });
+
 });

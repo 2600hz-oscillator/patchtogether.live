@@ -129,6 +129,20 @@ export interface ClipplayerLaneView {
   /** Whether this lane is mid-take, so the surface can show the toggle as
    *  actively recording rather than merely armed. */
   recPhase: 'idle' | 'armed' | 'recording' | 'stopping';
+  /** WHY this lane is armed and NOT recording — the recorder's refusal, or
+   *  null when there is none for this lane.
+   *
+   *  ⚠ THE HOLE THIS CLOSES (owner, 2026-09-09): the recorder can refuse an arm
+   *  for six reasons (no mixer, no launcher clock, no OPFS store, another
+   *  collaborator's lease, a note clip with notes in the target slot, a media
+   *  open that failed) and every one of them went to `console.warn` and to a
+   *  `lastRefusal(nodeId)` that NOTHING on a surface read. The toggle kept
+   *  `aria-pressed=true` and its red `.on`, the transport ran, and the player
+   *  saw an armed button that would never record and was never told why.
+   *
+   *  Non-null ONLY on a lane that is `recArmed` and still `idle` — the exact
+   *  "armed, asked, not accepted" state. See `laneRecRefusal` for the rule. */
+  recRefusal: string | null;
   muted: boolean;
   /** How many MODULES are assigned to this lane's automation. */
   assigned: number;
@@ -209,21 +223,60 @@ export function clipplayerPadViews(data: ClipPlayerData | undefined): Clipplayer
   return out;
 }
 
+/**
+ * The refusal ONE lane paints, from the recorder's standing refusal for THAT
+ * lane (`nodeClipRecorder.laneRefusals(nodeId)[lane]` — keyed per lane in the
+ * registry, so no attribution happens here).
+ *
+ * A refusal is CURRENT only while the lane is armed and the recorder has not
+ * taken it — `recArmed` and phase `idle`. The registry retires a lane's
+ * refusal on its toggle being OFF and on its arm being ACCEPTED, but it does
+ * so on its next 50 ms pump, and the Y.Doc toggle repaints this surface
+ * first; the two guards below close that tick:
+ *
+ *   · not armed → the sentence describes an arm the player just dropped;
+ *     painting it would put a complaint on a control nobody is pressing;
+ *   · armed and `armed`/`recording`/`stopping` → the arm was ACCEPTED (the
+ *     prepare projection sets the phase in the same pump that retires the
+ *     refusal), so nothing can be "armed and not taking" here.
+ *
+ * ⚠ ONE WINDOW STAYS OPEN, by construction of "evaluate only while running":
+ * a lane refused, disarmed and RE-ARMED between two pumps (under 50 ms) never
+ * shows the registry its OFF level, so the old sentence stands until play
+ * re-evaluates it. A human double-tap inside a tick is the only way in.
+ */
+function laneRecRefusal(
+  reason: string | null | undefined,
+  recArmed: boolean,
+  recPhase: ClipplayerLaneView['recPhase'],
+): string | null {
+  return reason && recArmed && recPhase === 'idle' ? reason : null;
+}
+
 /** All eight lanes.
  *
  *  `exists` filters DANGLING automation assignments (a module that has since
  *  been deleted) out of the `assigned` count — the same guard the card's chip
  *  row takes, so the face can never count a ghost while the prune catches up.
- *  Omitted = count every stored assignment. */
+ *  Omitted = count every stored assignment.
+ *
+ *  `recRefusals` is the recorder's `laneRefusals(nodeId)` — one sentence or
+ *  null per lane — PASSED IN rather than read here so this file stays a plain
+ *  function of plain values (its header rule); the launch panel is the one
+ *  caller that reads the registry, and it is the only surface with a record
+ *  toggle to paint it on. Omitted = no lane carries a refusal. */
 export function clipplayerLaneViews(
   data: ClipPlayerData | undefined,
   exists?: (moduleId: string) => boolean,
+  recRefusals?: readonly (string | null)[],
 ): ClipplayerLaneView[] {
   const arms = armedAutomationLanes(data);
   const assigned = autoAssignCounts(data, exists);
   const out: ClipplayerLaneView[] = [];
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const rate = laneRateIndex(data, lane);
+    const recArmed = laneRecArm(data, lane);
+    const recPhase = audioRecState(data, lane)?.phase ?? 'idle';
     out.push({
       lane,
       color: laneColorEff(data, lane),
@@ -231,9 +284,10 @@ export function clipplayerLaneViews(
       rate,
       rateLabel: RATE_LABELS[rate] ?? RATE_LABELS[3]!,
       armed: !!arms[lane],
-      recArmed: laneRecArm(data, lane),
+      recArmed,
       recMode: laneRecMode(data, lane),
-      recPhase: audioRecState(data, lane)?.phase ?? 'idle',
+      recPhase,
+      recRefusal: laneRecRefusal(recRefusals?.[lane], recArmed, recPhase),
       muted: laneMuted(data, lane),
       assigned: assigned[lane] ?? 0,
       playing: lanePlaying(data, lane),

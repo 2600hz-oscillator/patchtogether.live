@@ -339,6 +339,108 @@ describe('clipplayer face — the pure projections', () => {
       'the ghost is filtered while the prune catches up',
     ).toBe(1);
   });
+
+  // ── THE RECORDER'S REFUSAL, PROJECTED PER LANE ───────────────────────────
+  //
+  // ⚠ THE DEFECT (owner, 2026-09-09): arm a lane, start the transport, and the
+  // toggle "just stays red and keeps playing". The registry had refused the
+  // arm and said so ONLY to console.warn and to `lastRefusal(nodeId)`, which
+  // nothing but its own test read. The registry now keys a refusal PER LANE
+  // (`laneRefusals(nodeId)`, one sentence or null per lane), so this
+  // projection does no attribution — it applies the staleness rule and
+  // nothing else. These legs pin that rule, and, as load-bearing, the cases
+  // where it must NOT paint.
+  const NOTE_REFUSAL = 'lane 3 slot 2 holds a note clip with notes in it — clear it or pick another slot';
+  const RACK_REFUSAL = 'this browser has no OPFS clip media store (worker sync access required)';
+  const armed = (...lanes: number[]): ClipPlayerData =>
+    ({ recArm: Object.fromEntries(lanes.map((l) => [String(l), true])) }) as unknown as ClipPlayerData;
+  /** The registry's shape: eight entries, a sentence where a lane is refused. */
+  const refusals = (at: Record<number, string>): readonly (string | null)[] =>
+    Array.from({ length: 8 }, (_, l) => at[l] ?? null);
+
+  it('no refusal → every lane null, whether or not one is armed', () => {
+    expect(clipplayerLaneViews(undefined).every((l) => l.recRefusal === null)).toBe(true);
+    expect(clipplayerLaneViews(armed(0, 4)).every((l) => l.recRefusal === null)).toBe(true);
+    expect(clipplayerLaneViews(armed(0), undefined, refusals({})).every((l) => l.recRefusal === null)).toBe(true);
+    // A short or empty array (a registry with no entry for this node) is no refusal.
+    expect(clipplayerLaneViews(armed(0, 7), undefined, []).every((l) => l.recRefusal === null)).toBe(true);
+  });
+
+  // ⚠ THE STALE CASE. The registry retires a lane's refusal on its toggle
+  // being OFF, but only on its next pump; the Y.Doc toggle repaints this
+  // surface first. In that tick the sentence is still there, describing a
+  // press nobody is making — and it must not paint.
+  it('STALE: a refusal on a lane that is not armed paints nowhere', () => {
+    for (const reason of [NOTE_REFUSAL, RACK_REFUSAL]) {
+      const lanes = clipplayerLaneViews(undefined, undefined, refusals({ 2: reason }));
+      expect(lanes.every((l) => l.recRefusal === null), reason).toBe(true);
+      // …including a player whose OTHER fields are busy.
+      const busy = clipplayerLaneViews(loadedData(), undefined, refusals({ 2: reason }));
+      expect(busy.every((l) => l.recRefusal === null), reason).toBe(true);
+      // …and with a DIFFERENT lane armed: the sentence is lane 3's, not lane 5's.
+      const other = clipplayerLaneViews(armed(4), undefined, refusals({ 2: reason }));
+      expect(other.every((l) => l.recRefusal === null), reason).toBe(true);
+    }
+  });
+
+  it('a refusal lands on ITS armed lane and no other', () => {
+    // Lanes 3 and 5 (indices 2 and 4) armed; only lane 3 is refused.
+    const lanes = clipplayerLaneViews(armed(2, 4), undefined, refusals({ 2: NOTE_REFUSAL }));
+    expect(lanes[2]!.recRefusal).toBe(NOTE_REFUSAL);
+    expect(lanes[4]!.recRefusal, 'armed, but not refused').toBeNull();
+    expect(lanes.filter((l) => l.recRefusal !== null)).toHaveLength(1);
+  });
+
+  // ⚠ TWO REFUSED LANES AT ONCE — the hole the node-keyed refusal had: lanes
+  // 1 and 3 both armed on note-clip slots overwrote each other every tick and
+  // the first sat plain red. Per-lane, each carries its own.
+  it('two refused lanes each carry their OWN sentence', () => {
+    const one = 'lane 1 slot 1 holds a note clip with notes in it — clear it or pick another slot';
+    const lanes = clipplayerLaneViews(armed(0, 2, 5), undefined, refusals({ 0: one, 2: NOTE_REFUSAL }));
+    expect(lanes[0]!.recRefusal).toBe(one);
+    expect(lanes[2]!.recRefusal).toBe(NOTE_REFUSAL);
+    expect(lanes[5]!.recRefusal, 'armed, waiting, not refused').toBeNull();
+    expect(lanes.filter((l) => l.recRefusal !== null).map((l) => l.lane)).toEqual([0, 2]);
+  });
+
+  it('a rack-level sentence paints on each armed lane the registry raised it for', () => {
+    const lanes = clipplayerLaneViews(
+      armed(0, 5, 6),
+      undefined,
+      refusals({ 0: RACK_REFUSAL, 5: RACK_REFUSAL }),
+    );
+    expect(lanes[0]!.recRefusal).toBe(RACK_REFUSAL);
+    expect(lanes[5]!.recRefusal).toBe(RACK_REFUSAL);
+    expect(lanes[6]!.recRefusal, 'armed but not (yet) evaluated').toBeNull();
+    expect(lanes.filter((l) => l.recRefusal !== null).map((l) => l.lane)).toEqual([0, 5]);
+  });
+
+  // ⚠ AN ACCEPTED LANE NEVER CARRIES ONE. The accept retires the refusal and
+  // the prepare projection sets the phase in the same pump — but the phase
+  // reaches this surface through the Y.Doc and the refusal through the
+  // registry's version, so the guard is what makes the tick between them
+  // paint nothing on a lane that is taking.
+  it('a lane the recorder already TOOK shows no refusal', () => {
+    const rec = (phase: 'armed' | 'recording' | 'stopping') =>
+      ({
+        recArm: { '0': true, '1': true },
+        audioRec: {
+          '0': { lane: 0, slot: 0, mode: 'single', phase, startFrame: null, stopFrame: null, unitFrames: 96000, recorderId: 1 },
+        },
+      }) as unknown as ClipPlayerData;
+    for (const phase of ['armed', 'recording', 'stopping'] as const) {
+      const lanes = clipplayerLaneViews(
+        rec(phase),
+        undefined,
+        refusals({ 0: RACK_REFUSAL, 1: RACK_REFUSAL }),
+      );
+      expect(lanes[0]!.recPhase).toBe(phase);
+      expect(lanes[0]!.recRefusal, `phase ${phase}: the take was accepted`).toBeNull();
+      // The lane still WAITING gets it — that is the one it is stopping.
+      expect(lanes[1]!.recPhase).toBe('idle');
+      expect(lanes[1]!.recRefusal).toBe(RACK_REFUSAL);
+    }
+  });
 });
 
 describe('clipplayer face — what a def-reading gate cannot see', () => {
@@ -563,6 +665,29 @@ describe('clipplayer face — what a def-reading gate cannot see', () => {
         /import[^;]*pruneAutoAssignDangling/,
       );
     }
+  });
+
+  // ⚠ THE REFUSAL REACHES THE BUTTON, and only from the one surface that has
+  // the button. `lastRefusal(nodeId)` existed and was read by nothing but the
+  // registry's own test — the owner's "stays red" report is what a field with
+  // no reader looks like. The launch panel hands it to the projection and
+  // paints all three channels (tooltip, accessible name, test attribute); the
+  // lane TILE, which mounts on every rack boot, does not touch the registry.
+  it('the launch panel paints the recorder refusal; the tile never reads the registry', () => {
+    const panel = read('ClipplayerLaunchPanel.svelte');
+    expect(panel, 'reads the registry').toContain("from '../node-clip-recorder-registry.svelte'");
+    expect(panel, 'the reactive PER-LANE read').toContain('nodeClipRecorder.laneRefusals(nodeId)');
+    expect(panel, 'hands it to the projection, never attributes it itself').toMatch(
+      /clipplayerLaneViews\(live\.d, undefined, recRefusals\)/,
+    );
+    expect(panel, 'the painted state').toContain('class:refused={l.recRefusal !== null}');
+    expect(panel, 'the test attribute').toContain('data-rec-refusal={l.recRefusal ?? undefined}');
+    expect(panel, 'the screen reader hears it').toMatch(
+      /aria-label=\{`channel \$\{l\.lane \+ 1\} audio record\$\{[\s\S]*?l\.recRefusal/,
+    );
+    // A resting glyph — the empty 10 px button the owner could not identify.
+    expect(panel, 'the record dot').toMatch(/\.rec-arm::before\s*\{[\s\S]*?border-radius: 50%/);
+    expect(read('ClipplayerTileBody.svelte')).not.toContain('node-clip-recorder-registry');
   });
 
   // ⚠ THE PANELS WRITE THROUGH THE SHARED SEAMS, never their own arithmetic.

@@ -58,6 +58,7 @@
     clipplayerSetNowSticky,
   } from './clipplayer-face-selection.svelte';
   import { requestFaceTab } from '$lib/ui/workflow/face-tab-request.svelte';
+  import { nodeClipRecorder } from '../node-clip-recorder-registry.svelte';
   import ClipplayerClipMenu from './ClipplayerClipMenu.svelte';
 
   interface Props {
@@ -76,7 +77,20 @@
   }));
 
   let pads = $derived(clipplayerPadViews(live.d));
-  let lanes = $derived(clipplayerLaneViews(live.d));
+  /** THE RECORDER'S REFUSALS, one per lane, read off the registry the same
+   *  way the samsloop and recorderbox faces read theirs
+   *  (`nodeSamsloop.isRecording`, `nodeRecorder.view`). Reactive through the
+   *  registry's own `#version`.
+   *
+   *  ⚠ THE REGISTRY HANDS BACK THE SAME FROZEN ARRAY until a sentence is
+   *  raised or retired, and that is what keeps this cheap: a refused idle lane
+   *  re-raises its refusal every 50 ms pump, and a `$derived` whose value is
+   *  `===` its last does not invalidate its readers — so `lanes` below
+   *  re-projects when a refusal CHANGES, not fifty times a second. The model
+   *  applies the staleness rule (`laneRecRefusal`); this surface only hands
+   *  the array in, which keeps that file store-free. */
+  let recRefusals = $derived(nodeClipRecorder.laneRefusals(nodeId));
+  let lanes = $derived(clipplayerLaneViews(live.d, undefined, recRefusals));
   /** Pads indexed by `[slot][lane]` for the row-major render. */
   let rows = $derived(
     Array.from({ length: CLIP_SLOTS }, (_, slot) =>
@@ -186,19 +200,37 @@
              two eight-wide rows of like controls. That row-of-eight shape is
              exactly what the owner rejected on the mixer. -->
         <span class="rec-strip">
+          <!-- ⚠ A REFUSED ARM SAYS SO ON THE BUTTON (owner, 2026-09-09: armed
+               lane 1, started the transport, "it just stays red and keeps
+               playing"). The recorder's six refusals all went to console.warn
+               and to a registry field no surface read, so the toggle sat red
+               with nothing to show for it. Now: `refused` paints AMBER (not the
+               armed red, not the recording blink), the sentence is the tooltip
+               AND part of the accessible name so a screen reader hears it, and
+               `data-rec-refusal` carries it for tests. The toggle stays
+               `aria-pressed` — it IS still on; what changed is that the player
+               can now see it is not being honoured, and why.
+               The resting glyph is a CSS dot (`::before`), not a font `●`, so
+               its size is the same on every capture host. -->
           <button
             class="rec-arm"
             class:on={l.recArmed}
             class:live={l.recPhase === 'recording' || l.recPhase === 'stopping'}
+            class:refused={l.recRefusal !== null}
             aria-pressed={l.recArmed}
-            title={`Record into channel ${l.lane + 1}'s SELECTED clip — ${
-              l.recMode === 'endless'
-                ? 'ENDLESS: keeps recording until you tap this again or the transport stops, always ending at the end of the current loop'
-                : 'CLIP: records exactly one loop, then stops'
-            }. Can be armed while stopped — recording starts when the transport plays.`}
-            aria-label={`channel ${l.lane + 1} audio record`}
+            title={l.recRefusal !== null
+              ? `NOT recording — ${l.recRefusal}. Tap to disarm.`
+              : `Record into channel ${l.lane + 1}'s SELECTED clip — ${
+                  l.recMode === 'endless'
+                    ? 'ENDLESS: keeps recording until you tap this again or the transport stops, always ending at the end of the current loop'
+                    : 'CLIP: records exactly one loop, then stops'
+                }. Can be armed while stopped — recording starts when the transport plays.`}
+            aria-label={`channel ${l.lane + 1} audio record${
+              l.recRefusal !== null ? ` — refused: ${l.recRefusal}` : ''
+            }`}
             data-lane={l.lane}
             data-rec-phase={l.recPhase}
+            data-rec-refusal={l.recRefusal ?? undefined}
             data-testid={`clipplayer-rec-arm-${l.lane}`}
             onclick={() => toggleClipplayerLaneRecArm(nodeId, l.lane)}
           ></button>
@@ -330,8 +362,24 @@
     line-height: 1;
     cursor: pointer;
   }
+  /* THE RECORD GLYPH — a dim record-red ● at rest, so the control reads as
+     RECORD the way its sibling reads `1` / `∞`. The owner could not tell what
+     the empty 10 px button was (2026-09-09); its meaning lived only in the
+     hover title. Drawn as a pseudo-element dot rather than a font glyph so it
+     is the same 5 px on every capture host, and INSIDE the existing 10 px
+     footprint — the strip's geometry is VRT-pinned and unchanged. */
   .rec-arm {
     flex: 1 1 auto;
+    display: grid;
+    place-items: center;
+    color: rgb(226 83 108 / 0.55);
+  }
+  .rec-arm::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
   }
   .rec-mode {
     flex: 0 0 10px;
@@ -344,11 +392,25 @@
   .rec-arm.on {
     background: #c0304a;
     border-color: #e2536c;
+    color: #fff;
   }
   .rec-arm.live {
     background: #ff3b30;
     border-color: #fff;
+    color: #fff;
     animation: clipplayer-pad-blink 0.5s steps(2, end) infinite;
+  }
+  /* REFUSED — armed, asked, not accepted. AMBER, a third colour on purpose:
+     the armed red says "will record when it plays", the blinking red says
+     "recording", and neither is true here. Declared LAST so it wins over `.on`
+     (a refused lane is always armed) and over `.live` (it never is — the model
+     only paints a refusal on an idle lane — but the cascade should not have to
+     know that). No animation: a steady warning, not an activity light. */
+  .rec-arm.refused {
+    background: #b8730f;
+    border-color: #ffb547;
+    color: #1a1200;
+    animation: none;
   }
   .rec-mode.endless {
     color: #fff;
