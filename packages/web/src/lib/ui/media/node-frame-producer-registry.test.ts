@@ -615,6 +615,11 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     conversions: number;
     /** Overlay rasters minted through `env.createRaster`. */
     rasters: number;
+    /** `lossy` harness only: lose / restore the surface's 2D context (the
+     *  context reports lost in between), or lose the last minted raster's. */
+    loseSurface: () => void;
+    restoreSurface: () => void;
+    loseRaster: () => void;
   }
 
   function tlHarness(opts: {
@@ -631,21 +636,60 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     /** What the surface's `getImageData` reports — the bare owl the overlay
      *  is classified from. Defaults to all-zero (nothing pulses). */
     pixel?: [number, number, number, number];
+    /** The owl's `drawImage` THROWS this many times before it succeeds — a
+     *  decode race: the load resolved, the raster is not yet usable. */
+    owlDrawFails?: number;
+    /** Give the surface and every raster `contextlost` / `contextrestored`
+     *  events, and the surface context an `isContextLost()` — the 2D-canvas
+     *  loss seam `tlOnContextLoss` / `tlContextLost` read. */
+    lossy?: boolean;
     graph?: FrameGraph;
   }): TlHarness {
     const ops: string[] = [];
     let conversions = 0;
     let rasters = 0;
+    let owlDrawFails = opts.owlDrawFails ?? 0;
+    let surfaceLost = false;
+    let lastSurface: object | null = null;
+    let lastRaster: object | null = null;
+    const listeners = new Map<object, Map<string, Array<() => void>>>();
+    /** Make a fake canvas an event target, when the harness is `lossy`. */
+    const lossyCanvas = (c: object): void => {
+      if (!opts.lossy) return;
+      (c as { addEventListener: (type: string, fn: () => void) => void }).addEventListener = (
+        type,
+        fn,
+      ) => {
+        const byType = listeners.get(c) ?? new Map<string, Array<() => void>>();
+        byType.set(type, [...(byType.get(type) ?? []), fn]);
+        listeners.set(c, byType);
+      };
+    };
+    const dispatch = (c: object | null, type: string): void => {
+      if (!c) return;
+      for (const fn of listeners.get(c)?.get(type) ?? []) fn();
+    };
     const pending: Array<() => void> = [];
     const eng = fakeEngine();
     eng.read = (_n, key) => (key === 'hasDisplayFrame' ? (opts.holdsFrame?.() ?? 0) : undefined);
     /** A recording 2D context; `prefix` separates the SURFACE's op stream from
      *  the overlay RASTER's, which is the distinction the tests below assert. */
-    const recordingContext = (prefix: string) =>
+    const recordingContext = (prefix: string, lost?: () => boolean) =>
       new Proxy(
         {},
         {
           get(_t, k) {
+            // A probe, not an op: unrecorded, so op-stream equalities hold.
+            if (k === 'isContextLost') return () => lost?.() === true;
+            if (k === 'drawImage') {
+              return (...args: unknown[]) => {
+                ops.push(`${prefix}drawImage(${args.length})`);
+                if (args.length === 5 && owlDrawFails > 0) {
+                  owlDrawFails--;
+                  throw new Error('decode race: the image is not yet usable');
+                }
+              };
+            }
             if (k === 'getImageData') {
               return (_x: number, _y: number, gw: number, gh: number) => {
                 ops.push(`${prefix}getImageData`);
@@ -677,11 +721,14 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
       [TIMELORDE_FRAME_PRODUCER],
       {
         createSurface(_nodeId, _type, w, h) {
-          return {
+          const s = {
             width: w,
             height: h,
-            getContext: () => recordingContext(''),
-          } as unknown as FrameSurface;
+            getContext: () => recordingContext('', () => surfaceLost),
+          };
+          lossyCanvas(s);
+          lastSurface = s;
+          return s as unknown as FrameSurface;
         },
         startTicker: () => () => {},
         env: {
@@ -700,11 +747,14 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
           createRaster(w, h) {
             if (opts.noRaster) return null;
             rasters++;
-            return {
+            const r = {
               width: w,
               height: h,
               getContext: () => recordingContext('raster:'),
-            } as unknown as FrameSurface;
+            };
+            lossyCanvas(r);
+            lastRaster = r;
+            return r as unknown as FrameSurface;
           },
         },
       },
@@ -720,6 +770,15 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
       get rasters() {
         return rasters;
       },
+      loseSurface: () => {
+        surfaceLost = true;
+        dispatch(lastSurface, 'contextlost');
+      },
+      restoreSurface: () => {
+        surfaceLost = false;
+        dispatch(lastSurface, 'contextrestored');
+      },
+      loseRaster: () => dispatch(lastRaster, 'contextlost'),
       settle: async () => {
         for (const r of pending.splice(0)) r();
         // Two microtask turns: one for the bitmap promise, one for the `.then`.
@@ -800,6 +859,50 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     h.registry.tick();
     h.registry.tick();
     expect(h.conversions, 'and NOW it converges').toBe(2);
+  });
+
+  it('⚠ an owl whose draw is REFUSED (decode race) leaves a placeholder — the reduced-motion arm does not converge on it', async () => {
+    // The same latch one branch over: `complete` used to flip whenever the
+    // owl LOAD had resolved, not when the owl was PAINTED. `tlDrawOwl` catches
+    // a throwing `drawImage` and leaves the ground; a convergence that took the
+    // resolved load as "finished" stopped on that ground for the session.
+    let holds: 0 | 1 = 0;
+    const h = tlHarness({ reduced: true, holdsFrame: () => holds, owlDrawFails: 1 });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick(); // owl pending → the ground, pushed
+    await h.settle(); // the owl decodes
+    h.ops.length = 0;
+    h.registry.tick(); // drawImage(owl) THROWS → the ground again, pushed
+    expect(h.ops, 'the draw was attempted').toContain('drawImage(5)');
+    expect(h.conversions).toBe(2);
+    expect(h.registry.snapshot()[0]!.lastError, 'and the refusal was swallowed').toBeNull();
+    holds = 1; // the node now holds THAT frame
+    await h.settle(); // …and its push lands
+    h.ops.length = 0;
+    h.registry.tick();
+    expect(h.ops, 'the owl is painted although the node holds a (ground-only) frame').toContain(
+      'drawImage(5)',
+    );
+    expect(h.conversions, 'a refused draw does not end the convergence').toBe(3);
+    await h.settle(); // the OWL frame lands
+    h.registry.tick();
+    h.registry.tick();
+    expect(h.conversions, 'the painted owl does').toBe(3);
+  });
+
+  it('a runtime with NO images (owl null) converges on the ground under reduced motion — it IS the picture', async () => {
+    let holds: 0 | 1 = 0;
+    const h = tlHarness({ reduced: true, holdsFrame: () => holds, owl: null });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick(); // pending → ground
+    await h.settle(); // the load resolves null
+    h.registry.tick(); // ground — and this one is final
+    expect(h.conversions).toBe(2);
+    holds = 1;
+    await h.settle();
+    h.registry.tick();
+    h.registry.tick();
+    expect(h.conversions, 'no owl to wait for: converged').toBe(2);
   });
 
   it('⚠ under REDUCED MOTION the picture is the BARE owl — no beat boost, no overlay built', async () => {
@@ -889,6 +992,97 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     expect(owlDraw).toBeGreaterThanOrEqual(0);
     expect(readback).toBeGreaterThan(owlDraw);
     expect(alpha).toBeGreaterThan(readback);
+  });
+
+  it('⚠ a LOST surface context drops the baked overlay — the bare owl stands while lost, the overlay is re-baked after restore', async () => {
+    // Membership is a function of the RASTERISER, not only of the owl: a
+    // context that comes back after a GPU-process crash or an acceleration
+    // fallback can land on a different one (measured: 5738 member pixels GPU
+    // vs 5730 CPU on the same owl), and a lost context reads back BLANK. The
+    // per-frame classification could not go stale; the bake can, so loss
+    // drops it and nothing is baked from a context that reports itself lost.
+    const h = tlHarness({ lossy: true });
+    h.registry.sync([node('t', 'timelorde', { bpm: 120, running: 1 })], h.eng);
+    h.registry.tick();
+    await h.settle();
+    fakeNowMs = 0; // phase 0 — full pulse
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops.filter((o) => o === 'getImageData').length, 'baked once').toBe(1);
+    expect(h.rasters).toBe(1);
+    expect(h.ops.some((o) => o.startsWith('set:globalAlpha=0.6')), 'and drawn').toBe(true);
+
+    h.loseSurface();
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops, 'while LOST: no readback — it would classify a blank').not.toContain('getImageData');
+    expect(h.rasters, 'nothing minted from a lost context').toBe(1);
+    expect(h.ops.some((o) => o.startsWith('set:globalAlpha=')), 'no stale overlay drawn').toBe(false);
+    expect(h.ops, 'the bare owl still stands').toContain('drawImage(5)');
+
+    h.restoreSurface();
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops.filter((o) => o === 'getImageData').length, 're-baked from a fresh readback').toBe(1);
+    expect(h.rasters, 'on a fresh raster').toBe(2);
+    expect(h.ops.some((o) => o.startsWith('set:globalAlpha=0.6')), 'and drawn again').toBe(true);
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops, 'and cached again').not.toContain('getImageData');
+    expect(h.registry.snapshot()[0]!.lastError).toBeNull();
+    fakeNowMs = 0;
+  });
+
+  it('a lost RASTER context drops the overlay too — a blank overlay is a boost that never comes', async () => {
+    const h = tlHarness({ lossy: true });
+    h.registry.sync([node('t', 'timelorde', { bpm: 120, running: 1 })], h.eng);
+    h.registry.tick();
+    await h.settle();
+    fakeNowMs = 0;
+    h.registry.tick();
+    await h.settle();
+    expect(h.rasters).toBe(1);
+    h.loseRaster();
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops.filter((o) => o === 'getImageData').length, 're-baked').toBe(1);
+    expect(h.rasters, 'on a fresh raster').toBe(2);
+    expect(h.ops.some((o) => o.startsWith('set:globalAlpha=0.6'))).toBe(true);
+    fakeNowMs = 0;
+  });
+
+  it('the owl + overlay draw starts from a RESET context — a foreign feed drawFrame cannot leave a composite op behind', async () => {
+    // `tlDrawVideoFeed` hands the SAME context to the patched source's
+    // `drawFrame`. The readback boost wrote pixels and was immune to whatever
+    // composite op that left behind; the overlay is a `drawImage`, so the
+    // owl frame begins with `reset()` (every default restored, bitmap cleared)
+    // before anything is drawn.
+    let connected = true;
+    const graph: FrameGraph = {
+      findSource: (n, p) =>
+        connected && n === 't' && p === 'video_in' ? { nodeId: 'src', portId: 'out' } : null,
+      node: (id) => ({ id, type: 'src', domain: 'audio' } as unknown as ModuleNode),
+    };
+    const h = tlHarness({ graph });
+    h.eng.videoSource = () => ({ drawFrame: () => void h.ops.push('feedDrawFrame') });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick();
+    await h.settle();
+    expect(h.ops).toContain('feedDrawFrame');
+    connected = false; // the feed goes away — the owl is back on the same context
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    const reset = h.ops.indexOf('reset(0)');
+    const owl = h.ops.indexOf('drawImage(5)');
+    expect(reset, 'the context is reset').toBeGreaterThanOrEqual(0);
+    expect(owl, 'before the owl is drawn').toBeGreaterThan(reset);
+    expect(h.ops.slice(0, reset), 'and nothing is drawn before the reset').toEqual([]);
   });
 
   it('a runtime with NO raster to mint draws the bare owl and never throws', async () => {
