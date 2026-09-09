@@ -138,7 +138,7 @@ async function readLastCheat(page: Page, nodeId: string): Promise<string | null>
 }
 
 test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-char keypress sequence', () => {
-  test('rising edge on iddqd_in injects the IDDQD god-mode cheat within ~500ms', async ({ page }) => {
+  test('rising edge on iddqd_in injects the IDDQD god-mode cheat', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
@@ -171,23 +171,20 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
     // Rising edge on iddqd_in.
     await pulseCheatGate(page, doomId, 'iddqd');
 
-    // The injection scheduler posts 5 char-down + 5 char-up setTimeouts;
-    // the 5th char-down lands at t=200ms, the 5th char-up at t=210ms. The
-    // engine's I_GetEvent drain runs each tic (~28.5ms), so the parser sees
-    // all 5 characters within ~250ms of the rising edge. Poll up to 500ms
-    // for `lastCheatInjected` to reflect the trigger — it flips the moment
-    // the rising edge fires (synchronous with setParam), so this is a
-    // structural assertion that the gate path wired correctly.
-    await expect.poll(
-      async () => readLastCheat(page, doomId),
-      {
-        timeout: 500,
-        intervals: [50, 100, 150],
-        message:
-          'extras.lastCheatInjected stayed null after a rising edge on iddqd_in — '
-          + 'either the factory did not detect cv_iddqd_in, the param did not route '
-          + 'through setParam, or the rising-edge detector mis-fired.',
-      },
+    // `lastCheatInjected` flips on the first line of `injectCheat`, which the
+    // factory's `setParam` calls synchronously from the rising-edge detector,
+    // and `VideoEngine.setParam` is a direct handle call — so by the time the
+    // pulse's own evaluate resolves the oracle already reads 'iddqd'. There is
+    // no latency at this seam to bound: a single direct read is the honest
+    // structural assertion (same shape as the sticky-gate test below). A
+    // budgeted poll here measured Playwright's own CDP round trip on a page
+    // running DOOM's rAF tic, not the product, and discarded the correct
+    // answer when the runner was slow.
+    expect(
+      await readLastCheat(page, doomId),
+      'extras.lastCheatInjected stayed null after a rising edge on iddqd_in — '
+        + 'either the factory did not detect cv_iddqd_in, the param did not route '
+        + 'through setParam, or the rising-edge detector mis-fired.',
     ).toBe('iddqd');
 
     // Give the schedule time to drain into the WASM (5 × 50ms = 250ms).
@@ -217,7 +214,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
     expect(stillLive, 'DOOM runtime crashed after IDDQD injection').toBe(true);
   });
 
-  test('rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat within ~500ms', async ({ page }) => {
+  test('rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
@@ -247,16 +244,12 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
 
     await pulseCheatGate(page, doomId, 'idkfa');
 
-    await expect.poll(
-      async () => readLastCheat(page, doomId),
-      {
-        timeout: 500,
-        intervals: [50, 100, 150],
-        message:
-          'extras.lastCheatInjected stayed null after a rising edge on idkfa_in — '
-          + 'either the factory did not detect cv_idkfa_in, the param did not route '
-          + 'through setParam, or the rising-edge detector mis-fired.',
-      },
+    // Direct read, no poll — see the note on the iddqd test above.
+    expect(
+      await readLastCheat(page, doomId),
+      'extras.lastCheatInjected stayed null after a rising edge on idkfa_in — '
+        + 'either the factory did not detect cv_idkfa_in, the param did not route '
+        + 'through setParam, or the rising-edge detector mis-fired.',
     ).toBe('idkfa');
 
     await page.waitForTimeout(300);
