@@ -721,9 +721,11 @@ export class NodeClipRecorderRegistry {
         st.preparing = false;
         st.prepared = false;
         clearTake(st);
+        // `lane N` FIRST — the launcher face attributes a refusal to a lane by
+        // that prefix (`clipplayerRefusalLane`), and this one is per-lane.
         this.#refuse(
           entry,
-          `could not open a take: ${err instanceof Error ? err.message : String(err)}`,
+          `lane ${lane + 1} could not open a take: ${err instanceof Error ? err.message : String(err)}`,
         );
         this.#snapArmOff(entry, lane);
         this.#writeAudioRec(entry, lane); // machine is idle → clears the projection
@@ -975,7 +977,14 @@ export class NodeClipRecorderRegistry {
       this.#dispatch(entry, lane, { type: 'commitOk' });
     } catch (err) {
       console.warn(`[clip-rec] commit failed on lane ${lane + 1}; scratch kept for recovery`, err);
-      this.#refusals.set(entry.nodeId, `commit failed: ${err instanceof Error ? err.message : String(err)}`);
+      // `lane N` FIRST, like every other per-lane refusal: the launcher face
+      // attributes the sentence to a lane by that prefix. Without it a commit
+      // that failed on THIS lane could paint on another lane that happens to
+      // be armed and waiting.
+      this.#refusals.set(
+        entry.nodeId,
+        `lane ${lane + 1} commit failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       this.#snapArmOff(entry, lane);
       this.#dispatch(entry, lane, { type: 'commitFail' });
     }

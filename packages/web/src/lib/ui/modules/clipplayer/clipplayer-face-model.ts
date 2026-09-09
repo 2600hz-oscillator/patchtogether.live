@@ -129,6 +129,20 @@ export interface ClipplayerLaneView {
   /** Whether this lane is mid-take, so the surface can show the toggle as
    *  actively recording rather than merely armed. */
   recPhase: 'idle' | 'armed' | 'recording' | 'stopping';
+  /** WHY this lane is armed and NOT recording — the recorder's refusal, or
+   *  null when there is none for this lane.
+   *
+   *  ⚠ THE HOLE THIS CLOSES (owner, 2026-09-09): the recorder can refuse an arm
+   *  for six reasons (no mixer, no launcher clock, no OPFS store, another
+   *  collaborator's lease, a note clip with notes in the target slot, a media
+   *  open that failed) and every one of them went to `console.warn` and to a
+   *  `lastRefusal(nodeId)` that NOTHING on a surface read. The toggle kept
+   *  `aria-pressed=true` and its red `.on`, the transport ran, and the player
+   *  saw an armed button that would never record and was never told why.
+   *
+   *  Non-null ONLY on a lane that is `recArmed` and still `idle` — the exact
+   *  "armed, asked, not accepted" state. See `laneRecRefusal` for the rule. */
+  recRefusal: string | null;
   muted: boolean;
   /** How many MODULES are assigned to this lane's automation. */
   assigned: number;
@@ -209,21 +223,85 @@ export function clipplayerPadViews(data: ClipPlayerData | undefined): Clipplayer
   return out;
 }
 
+/**
+ * Which lane a recorder refusal is ABOUT, read off the sentence itself, or
+ * null for a refusal that names no lane.
+ *
+ * ⚠ THE REFUSAL IS KEYED PER CLIPPLAYER NODE, NOT PER LANE.
+ * `node-clip-recorder-registry` does `#refusals.set(entry.nodeId, reason)` —
+ * one slot per launcher — and only deletes it when an arm is ACCEPTED. So a
+ * surface painting it per lane has to recover the lane from the message, and
+ * the per-lane refusals already carry it as a prefix: `lane N is being
+ * recorded by another collaborator`, `lane N slot M holds a note clip …`,
+ * `lane N could not open a take …`, `lane N commit failed …`. The rack-level
+ * ones (no mixer, no launcher clock, no OPFS store) name no lane because they
+ * apply to every lane alike, and read as null here.
+ *
+ * Parsed rather than re-keyed in the registry because WHEN the registry sets
+ * and clears its refusal is arm semantics, and this is a projection of it.
+ */
+export function clipplayerRefusalLane(reason: string | null | undefined): number | null {
+  if (!reason) return null;
+  const m = /^lane (\d+)\b/.exec(reason);
+  if (!m) return null;
+  const lane = Number(m[1]) - 1;
+  return Number.isInteger(lane) && lane >= 0 && lane < CLIP_LANES ? lane : null;
+}
+
+/**
+ * The refusal ONE lane paints, from the node's single refusal.
+ *
+ * A refusal is CURRENT for a lane only while that lane is armed and the
+ * recorder has not taken it — `recArmed` and phase `idle`. Every other
+ * combination is stale or belongs elsewhere:
+ *
+ *   · nothing armed → the sentence describes an arm the player already dropped
+ *     (the registry never deletes it on toggle-OFF); painting it would put a
+ *     complaint on a control nobody is pressing;
+ *   · armed and `armed`/`recording`/`stopping` → the arm was ACCEPTED (the
+ *     accept is what deletes the refusal, and the prepare projection is what
+ *     sets the phase), so a refusal still in the map is about ANOTHER lane's
+ *     later failure and must not land on a lane that is taking;
+ *   · a `lane N` prefix that names a different lane → not this lane's.
+ *
+ * A refusal with no lane prefix is rack-level and lands on every lane that is
+ * armed and waiting, which is exactly the set of lanes it is stopping.
+ */
+function laneRecRefusal(
+  reason: string | null | undefined,
+  lane: number,
+  recArmed: boolean,
+  recPhase: ClipplayerLaneView['recPhase'],
+): string | null {
+  if (!reason || !recArmed || recPhase !== 'idle') return null;
+  const at = clipplayerRefusalLane(reason);
+  return at === null || at === lane ? reason : null;
+}
+
 /** All eight lanes.
  *
  *  `exists` filters DANGLING automation assignments (a module that has since
  *  been deleted) out of the `assigned` count — the same guard the card's chip
  *  row takes, so the face can never count a ghost while the prune catches up.
- *  Omitted = count every stored assignment. */
+ *  Omitted = count every stored assignment.
+ *
+ *  `recRefusal` is the recorder's `lastRefusal(nodeId)`, PASSED IN rather than
+ *  read here so this file stays a plain function of plain values (its header
+ *  rule); the launch panel is the one caller that reads the registry, and it
+ *  is the only surface with a record toggle to paint it on. Omitted = no lane
+ *  carries a refusal. */
 export function clipplayerLaneViews(
   data: ClipPlayerData | undefined,
   exists?: (moduleId: string) => boolean,
+  recRefusal?: string | null,
 ): ClipplayerLaneView[] {
   const arms = armedAutomationLanes(data);
   const assigned = autoAssignCounts(data, exists);
   const out: ClipplayerLaneView[] = [];
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const rate = laneRateIndex(data, lane);
+    const recArmed = laneRecArm(data, lane);
+    const recPhase = audioRecState(data, lane)?.phase ?? 'idle';
     out.push({
       lane,
       color: laneColorEff(data, lane),
@@ -231,9 +309,10 @@ export function clipplayerLaneViews(
       rate,
       rateLabel: RATE_LABELS[rate] ?? RATE_LABELS[3]!,
       armed: !!arms[lane],
-      recArmed: laneRecArm(data, lane),
+      recArmed,
       recMode: laneRecMode(data, lane),
-      recPhase: audioRecState(data, lane)?.phase ?? 'idle',
+      recPhase,
+      recRefusal: laneRecRefusal(recRefusal, lane, recArmed, recPhase),
       muted: laneMuted(data, lane),
       assigned: assigned[lane] ?? 0,
       playing: lanePlaying(data, lane),

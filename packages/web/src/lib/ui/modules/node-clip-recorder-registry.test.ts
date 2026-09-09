@@ -476,6 +476,11 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.writerClose).toHaveBeenCalled();
     expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
     expect(h.reg.lastRefusal(CLIP)).toMatch(/commit failed/);
+    // …and it NAMES THE LANE, first: the launcher face attributes a refusal to
+    // a lane by its `lane N` prefix (`clipplayerRefusalLane`), and a commit
+    // failure is per-lane. Without the prefix it would land on whichever
+    // OTHER lane happened to be armed and waiting.
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/^lane 1 commit failed: /);
     // The toggle still snapped off — a failed take must not look armed, and a
     // still-on toggle would retry straight back into the same broken writer.
     expect(laneRecArm(clipData(), 0), 'a failed take must not leave the toggle on').toBe(false);
