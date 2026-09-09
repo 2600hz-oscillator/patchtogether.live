@@ -32,6 +32,7 @@ import {
 // continuous one. No WebGL is touched, and the import does not modify any file
 // in the WebGL attest basis.
 import { getVideoModuleDef } from '$lib/video/module-registry';
+import type { GateEdgeTiming } from '$lib/video/engine';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -1559,6 +1560,13 @@ export class PatchEngine {
    * (~25 ms) rather than on the video frame (~16.7 ms at 60 Hz), so cross-domain
    * trigger delivery moves by up to ~25 ms. That is the price of never dropping
    * one, and it is bounded — unlike the pre-fix stalls, which were unbounded.
+   * The DELIVERY is late; the EDGE's time is not lost with it: each replayed
+   * rise carries the audio-clock instant it happened (`GateEdgeTiming`,
+   * video/engine.ts), so a consumer measuring the interval between two rises
+   * — BACKDRAFT's clocked delay — reads the clock's period, not the replay
+   * cadence. On a starved main thread the two differ by hundreds of ms while
+   * the count stays exact (CI run 34372134124: 39 rises in 10.16 s IS 4 Hz;
+   * the replay gaps read 5, 95, 402, 635 ms).
    *
    * SCOPE — deliberately narrow, so nothing else changes behaviour:
    *  - the target input must POSITIVELY resolve to a def with NO `cvScale`
@@ -1609,11 +1617,16 @@ export class PatchEngine {
     if (edge.sourceType === 'cv' && input.edge !== 'trigger') return false;
 
     const targetParamId = ve.resolveTargetParamId(edge.target.nodeId, edge.target.portId);
-    const setParam = (v: number): void => {
+    // `timing` rides on the rise and settle writes only — see `GateEdgeTiming`
+    // (video/engine.ts) for the contract. The level flips are the edge; the
+    // timing says WHEN it happened, on the audio clock, so a consumer that
+    // measures the interval between two rises does not measure the interval
+    // between two REPLAYS (a starved main thread drains them in bursts).
+    const setParam = (v: number, timing?: GateEdgeTiming): void => {
       const handle = ve.getNodeHandle!(edge.target.nodeId) as
-        | { setParam?: (paramId: string, value: number) => void }
+        | { setParam?: (paramId: string, value: number, timing?: GateEdgeTiming) => void }
         | null;
-      try { handle?.setParam?.(targetParamId, v); } catch { /* */ }
+      try { handle?.setParam?.(targetParamId, v, timing); } catch { /* */ }
     };
 
     // ---- AUDIO-THREAD accumulator (the authoritative edge count) ----
@@ -1660,6 +1673,13 @@ export class PatchEngine {
     let wlTotal = 0;
     let wlReplayed = 0;
     let wlLevel = 0;
+    /** Audio-clock rise time of every counted edge NOT yet replayed, in count
+     *  order — one entry per unit of `wlTotal - wlReplayed`. The worklet's
+     *  message carries the rise time of the LAST rise in its block; a block
+     *  with more than one rise (a >187 Hz swing, not a clock) stamps them all
+     *  with that one. Drained by the tick alongside the delta, cleared at the
+     *  handoff with it. */
+    const pendingRiseT: number[] = [];
     /** The worklet's baseline level — its priming message — or -1 until it
      *  lands. On the shipping path this is the only record of "the source was
      *  already HIGH as the cable landed". */
@@ -1727,17 +1747,16 @@ export class PatchEngine {
         wn.port.onmessage = (ev: MessageEvent) => {
           const m = ev.data as GateEdgeMessage | undefined;
           if (!m || typeof m.count !== 'number') return;
+          const delta = m.count - wlTotal;
+          const riseT = typeof m.riseT === 'number' && m.riseT >= 0 ? m.riseT : -1;
           // A rise at or before the handoff poll was already replayed by the
           // analyser's final window; count it as delivered so the worklet
-          // delta cannot replay it a second time.
-          if (
-            m.count > wlTotal
-            && handoffAudioTime >= 0
-            && typeof m.riseT === 'number'
-            && m.riseT >= 0
-            && m.riseT <= handoffAudioTime
-          ) {
-            wlReplayed += m.count - wlTotal;
+          // delta cannot replay it a second time — and its time is not owed
+          // to anyone either.
+          if (delta > 0 && handoffAudioTime >= 0 && riseT >= 0 && riseT <= handoffAudioTime) {
+            wlReplayed += delta;
+          } else {
+            for (let i = 0; i < delta; i++) pendingRiseT.push(riseT);
           }
           wlTotal = m.count;
           wlLevel = m.level >= 1 ? 1 : 0;
@@ -1782,11 +1801,24 @@ export class PatchEngine {
     const unsub = getSchedulerClock().subscribe(() => {
       let edges: number;
       let level: number;
+      // The delivering tick's own place on the AUDIO clock — the stamp for
+      // every write this tick makes that has no per-sample rise time of its
+      // own (the fail-safe's windowed count, the prime rise, the settle).
+      // Same clock as the worklet's `riseT`, so a consumer pairing a 'tick'
+      // stamp with a 'sample' stamp is still subtracting like from like.
+      const tickTiming: GateEdgeTiming = { audioTimeSec: ae.ctx.currentTime, precision: 'tick' };
+      /** Per-edge stamps for this tick's replay, in count order. */
+      let riseTimings: GateEdgeTiming[] | null = null;
       if (wlLive) {
         // Audio-thread truth. Immune to how long we were away.
         edges = Math.max(0, wlTotal - wlReplayed);
         wlReplayed = wlTotal;
         level = wlLevel;
+        if (edges > 0) {
+          riseTimings = pendingRiseT.splice(0, edges).map((t) =>
+            (t >= 0 ? { audioTimeSec: t, precision: 'sample' } : tickTiming),
+          );
+        }
         if (primeWritePending && wlPrimed) {
           // A source already HIGH as the cable landed fires ONCE: the
           // consumer's detector starts low, so the first HIGH it sees is a
@@ -1795,7 +1827,7 @@ export class PatchEngine {
           // not a tick managed to run before the first real edge — a
           // post-patch stall would otherwise merge the two into one rise.
           primeWritePending = false;
-          if (primeLevel === 1) setParam(1);
+          if (primeLevel === 1) setParam(1, tickTiming);
         }
       } else if (wlPrimed) {
         // THE HANDOFF. The analyser scans everything up to this instant one
@@ -1809,6 +1841,7 @@ export class PatchEngine {
         edges = counter ? counter.poll(handoffAudioTime) : 0;
         level = failSafeLevel();
         wlReplayed = wlTotal;
+        pendingRiseT.length = 0;
         wlLive = true;
         releaseFailSafe();
       } else {
@@ -1819,10 +1852,12 @@ export class PatchEngine {
       // the 0 first makes the transition unconditional: if the consumer's
       // hysteresis state is already HIGH (a gate that re-triggered between
       // ticks) it falls before rising, so N counted edges deliver exactly N
-      // rising edges — never N-1, never 2N.
+      // rising edges — never N-1, never 2N. The HIGH half carries the edge's
+      // own audio-clock time (the worklet's per-sample `riseT`); a windowed
+      // fail-safe count can only vouch for the tick that saw it.
       for (let i = 0; i < edges; i++) {
         setParam(0);
-        setParam(1);
+        setParam(1, riseTimings?.[i] ?? tickTiming);
       }
       // Settle on the CURRENT level so a HELD gate stays high for
       // level-sensitive consumers (a DOOM key-down, a freezeframe hold) rather
@@ -1830,7 +1865,7 @@ export class PatchEngine {
       // change) because a module detects "this input is patched" from the fact
       // that setParam is called for it at all — SHAPEGEN's `clockPatched` flag
       // is exactly that, and it gates the whole sample-and-hold contract.
-      setParam(level);
+      setParam(level, tickTiming);
     });
 
     this.gateDispatchTeardowns.set(edge.id, () => {

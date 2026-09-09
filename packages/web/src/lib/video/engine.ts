@@ -168,6 +168,53 @@ export interface VideoFrameContext {
   connectedOutputPorts?(thisNodeId: string): ReadonlySet<string>;
 }
 
+/**
+ * WHEN a gate edge happened — the optional third argument of
+ * `VideoNodeHandle.setParam`, supplied by ONE writer: the engine's
+ * cross-domain audio → video gate dispatch (`PatchEngine.installGateDispatch`).
+ *
+ * WHY. The dispatch counts rising edges on the AUDIO THREAD and replays them on
+ * the ~25 ms scheduler tick as `setParam(id, 0); setParam(id, 1)`. A module
+ * that measures the time BETWEEN edges (BACKDRAFT's DELAY CLK period) used to
+ * stamp the rise with `performance.now()` inside setParam — i.e. with the
+ * moment the REPLAY landed, not the moment the edge happened. On a starved
+ * main thread (a shared CI runner: a 25 ms timer resolving every ~250 ms,
+ * 530 ms gaps) the tick and the worklet's port messages queue and drain in
+ * BURSTS, so two real edges 250 ms apart were replayed 5 ms apart and the
+ * stall before them read as 400-635 ms — while the COUNT was exact throughout
+ * (39 rises in 10.16 s IS 4 Hz). The count was never wrong; the timestamp was.
+ *
+ * THE CONTRACT
+ *  - The level flips ARE the edge. Every write the dispatch makes carries what
+ *    it always carried; a module that ignores `timing` sees no change, and a
+ *    level-sensitive (`edge: 'gate'`) consumer is untouched (AGENTS.md #7).
+ *  - A module that measures time between edges OPTS IN by stamping the rise it
+ *    detects with `timing.audioTimeSec` when `timing` is present, and with its
+ *    own clock only when it is absent (a legacy per-frame bridge write, a UI
+ *    write, a unit test).
+ *  - `audioTimeSec` is ALWAYS the AudioContext clock (`ctx.currentTime`,
+ *    seconds) — on every dispatch path:
+ *      'sample' — the audio-thread counter's per-sample rise time (the
+ *                 shipping path; exact to one sample);
+ *      'tick'   — the scheduler tick that carried the write, `currentTime` as
+ *                 the tick ran: the main-thread fail-safe counter's poll time
+ *                 (it counts a window, it does not place the rise inside it),
+ *                 the one rise a source already HIGH at patch time owes, and
+ *                 every per-tick settle write.
+ *    So two stamps from this channel are always on ONE clock, and a consumer
+ *    must never subtract a `performance.now()` stamp from one of them: the two
+ *    clocks share neither origin nor rate under load.
+ *  - Rise writes (`value` 1) and settle writes carry it; the `0` half of a
+ *    replayed pair carries nothing (a fall has no rise time).
+ */
+export interface GateEdgeTiming {
+  /** Seconds on the AudioContext clock — never `performance.now()`. */
+  audioTimeSec: number;
+  /** How that time was placed: per-sample by the audio-thread counter, or
+   *  the delivering tick's `currentTime`. */
+  precision: 'sample' | 'tick';
+}
+
 export interface VideoNodeHandle {
   domain: 'video';
   /** The module's runtime surface — engine reads this every frame. */
@@ -212,8 +259,14 @@ export interface VideoNodeHandle {
    */
   audioInputs?: Map<string, { node: AudioNode; input: number }>;
   /** Apply a param value (fader change). Routes to a uniform or internal
-   *  state that `draw()` reads next frame. */
-  setParam(paramId: string, value: number): void;
+   *  state that `draw()` reads next frame.
+   *
+   *  `timing` is present ONLY on writes the engine's cross-domain gate
+   *  dispatch makes (see `GateEdgeTiming`): it says WHEN the edge that write
+   *  carries happened, on the audio clock. Every module may ignore it — the
+   *  level flips are the edge — and a module that measures time between
+   *  edges reads it instead of stamping the write's arrival. */
+  setParam(paramId: string, value: number, timing?: GateEdgeTiming): void;
   /** Optional: hand the module the latest AUDIO time-domain window for a
    *  modulation input (so its UI can draw a raw-waveform overlay). The
    *  cross-domain AUDIO cv-bridge calls this once per frame for `audio`-sourced

@@ -31,6 +31,7 @@ import {
 } from './scheduler-clock';
 import { GATE_EDGE_WORKLET_SOURCE, isGateEdgeWorkletRegistered } from './gate-edge-worklet';
 import type { Edge, ModuleNode } from '$lib/graph/types';
+import type { GateEdgeTiming } from '$lib/video/engine';
 
 // LEAK-PROOFING: this file needs a synthetic VIDEO module def visible to
 // `engine.ts`'s `getVideoModuleDef` lookup. Registering it into the REAL
@@ -361,8 +362,10 @@ const TARGET_PARAM_BY_PORT: Record<string, string> = {
 class VideoEngineStub implements DomainEngine {
   domain = 'video' as const;
   /** Every (paramId, value) the engine wrote, in order, stamped with the fake
-   *  audio clock at the moment of the write (the module's own timestamp). */
-  writes: Array<{ paramId: string; value: number; atSec: number }> = [];
+   *  audio clock at the moment of the write (`atSec` — when the REPLAY landed,
+   *  the pre-fix consumer's timestamp) and carrying whatever `GateEdgeTiming`
+   *  the write brought with it (when the EDGE happened). */
+  writes: Array<{ paramId: string; value: number; atSec: number; timing?: GateEdgeTiming }> = [];
   /** Edge ids handed to the legacy per-frame bridge. */
   frameBridges: string[] = [];
   plainEdges: Edge[] = [];
@@ -380,8 +383,8 @@ class VideoEngineStub implements DomainEngine {
 
   getNodeHandle(_nodeId: string): unknown {
     return {
-      setParam: (paramId: string, value: number) => {
-        this.writes.push({ paramId, value, atSec: this.nowSec() });
+      setParam: (paramId: string, value: number, timing?: GateEdgeTiming) => {
+        this.writes.push({ paramId, value, atSec: this.nowSec(), timing });
       },
     };
   }
@@ -423,6 +426,23 @@ function risingEdgeTimes(
   for (const w of writes) {
     if (w.paramId !== paramId) continue;
     if (prev < 0.5 && w.value >= 0.5) out.push(w.atSec);
+    prev = w.value;
+  }
+  return out;
+}
+
+/** Every rising write for one param, with BOTH times: when the replay landed
+ *  (`atSec`) and when the edge happened (`timing`, as the write carried it —
+ *  `undefined` is what a pre-fix dispatch delivers). */
+function risingEdgeStamps(
+  writes: Array<{ paramId: string; value: number; atSec: number; timing?: GateEdgeTiming }>,
+  paramId: string,
+): Array<{ atSec: number; timing: GateEdgeTiming | undefined }> {
+  let prev = 0;
+  const out: Array<{ atSec: number; timing: GateEdgeTiming | undefined }> = [];
+  for (const w of writes) {
+    if (w.paramId !== paramId) continue;
+    if (prev < 0.5 && w.value >= 0.5) out.push({ atSec: w.atSec, timing: w.timing });
     prev = w.value;
   }
   return out;
@@ -1026,6 +1046,201 @@ describe('PatchEngine — a CV cable into an `edge: \'trigger\'` target (the DEL
     clock.advance(SCHEDULER_TICK_MS * 12);
     expect(ve.writes, 'a torn-down cv dispatcher must be silent').toEqual([]);
     pe.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE EDGE'S TIME — a period is measured where the edge HAPPENED, not where it
+// was replayed.
+// ---------------------------------------------------------------------------
+//
+// CI run 34372134124 (shard 11) counted 39 rises of a 4 Hz LFO in 10.16 s —
+// exactly 4 Hz — and measured periods of 5.1, 95, 402 and 635 ms. An
+// independent audio-thread truth worklet on the same output agreed with the
+// bridge's count in every run (40/40 at ×1, ×6, ×12 CPU throttle; every true
+// period 250.0 ms). The count was never wrong. The consumer stamped each rise
+// with the moment the REPLAY landed, and on a starved main thread (an in-page
+// 25 ms timer resolving every ~254 ms, 530 ms max) the scheduler tick and the
+// worklet's port messages queue and drain in BURSTS: two real edges 250 ms
+// apart were replayed a few ms apart, and the stall before them read as the
+// rest. So every rise write now carries `GateEdgeTiming` (video/engine.ts) —
+// the audio-thread time the edge rose at — and the target measures on the
+// audio clock. These cases pin that the stamp is right where the replay time
+// is wrong by construction: a main-thread stall that drains as one burst.
+
+describe('PatchEngine — the edge\'s TIME rides with the replay (the starved-main-thread period)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    __resetSchedulerClockForTests();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+  });
+  afterEach(() => {
+    __resetSchedulerClockForTests();
+    vi.useRealTimers();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+  });
+
+  const ONE_SAMPLE_SEC = 1 / SAMPLE_RATE;
+
+  for (const portLatency of PORT_LATENCIES) {
+    it(`THE DEFECT (port messages ${portLatency}): a 900 ms main-thread stall replays three real edges in ONE burst — the writes land together, the stamps they carry are one LFO period apart`, async () => {
+      // The shipping path: the worklet is counting from the first quantum. A
+      // ±1 sine from t = 0 rises at 20.8 ms + k × 250 ms.
+      const { pe, ve, clock } = await setupWithWave(
+        'trig_in', (t) => Math.sin(2 * Math.PI * LFO_HZ * t), 'cv', { portLatency, registration: 'eager' },
+      );
+      // Two ticks → 50 ms: the first rise (20.8 ms) has been replayed under
+      // either ordering. Everything after this marker is the stall's doing.
+      await tickAndDrain(clock);
+      await tickAndDrain(clock);
+      const marker = clock.nowSec();
+      const STALL_MS = 900;
+      clock.stallMainThread(STALL_MS); // the audio thread renders; the main thread is gone
+      // The main thread resumes. One tick drains the backlog ('before-tick');
+      // under 'after-tick' the messages land behind that tick and the next
+      // one drains them — one burst either way.
+      clock.advance(SCHEDULER_TICK_MS);
+      if (portLatency === 'after-tick') clock.advance(SCHEDULER_TICK_MS);
+
+      // The detector runs over the WHOLE stream (a slice would start it low
+      // and read a stale-level settle write as a rise); only rises replayed
+      // after the marker are the stall's.
+      const rises = risingEdgeStamps(ve.writes, 'cv_trig').filter((r) => r.atSec > marker);
+      // Rises at 270.8, 520.8, 770.8 ms — the ones inside the stall (the
+      // next, 1020.8 ms, is past the audio the fake has rendered).
+      const expected = trueRises(0, (50 + STALL_MS + SCHEDULER_TICK_MS) / 1000).filter((t) => t > marker);
+      expect(expected.length, 'the derivation yields three rises inside the stall').toBe(3);
+      expect(rises.length, 'the count is exact across the stall — this was never the bug').toBe(3);
+
+      // WHERE THE REPLAY LANDED: one tick, one instant. The interval between
+      // two replays — the pre-fix period — is ZERO.
+      const replayGapsSec = rises.slice(1).map((r, i) => r.atSec - rises[i]!.atSec);
+      expect(replayGapsSec, 'the burst replays every edge at the same instant').toEqual([0, 0]);
+
+      // WHERE THE EDGE HAPPENED: each rise carries the audio thread's own
+      // per-sample rise time, and consecutive stamps are one LFO period apart.
+      for (const r of rises) {
+        expect(r.timing, 'every replayed rise carries the time it rose').toBeDefined();
+        expect(r.timing!.precision, 'the shipping path places it to the sample').toBe('sample');
+        expect(r.timing!.audioTimeSec, 'a stamp is never later than the tick that delivered it')
+          .toBeLessThanOrEqual(r.atSec);
+      }
+      const stamps = rises.map((r) => r.timing!.audioTimeSec);
+      stamps.forEach((s, k) => {
+        expect(
+          Math.abs(s - expected[k]!),
+          `rise ${k} is stamped at its true crossing (${(expected[k]! * 1000).toFixed(1)} ms) to within one sample`,
+        ).toBeLessThanOrEqual(ONE_SAMPLE_SEC + 1e-9);
+      });
+      const periodsSec = stamps.slice(1).map((s, i) => s - stamps[i]!);
+      for (const p of periodsSec) {
+        expect(
+          Math.abs(p - LFO_PERIOD_SEC),
+          `the period between two stamps is the LFO's ${LFO_PERIOD_SEC * 1000} ms, not the replay's 0 ms ` +
+            `(saw ${periodsSec.map((x) => (x * 1000).toFixed(2)).join(', ')} ms)`,
+        ).toBeLessThanOrEqual(ONE_SAMPLE_SEC + 1e-9);
+      }
+      pe.dispose();
+    });
+  }
+
+  for (const worklet of [false, true]) {
+    const path = worklet ? 'AUDIO-THREAD counter' : 'main-thread fail-safe';
+    const tolSec = worklet ? ONE_SAMPLE_SEC : SCHEDULER_TICK_MS / 1000;
+    const precision: GateEdgeTiming['precision'] = worklet ? 'sample' : 'tick';
+
+    it(`THE PROMISE, on the audio clock (${path}): consecutive rise stamps are one LFO period apart to within ${worklet ? 'ONE SAMPLE' : 'one tick'}, and say so`, async () => {
+      // The fail-safe counts a WINDOW per tick and cannot place a rise inside
+      // it, so its stamp is the tick that saw the rise — 'tick' precision, on
+      // the same audio clock. The worklet places it to the sample.
+      const { pe, ve, clock } = await setup('trig_in', { source: 'cv', worklet });
+      clock.advance(SCHEDULER_TICK_MS);
+      ve.writes.length = 0;
+      const t0 = clock.nowSec();
+      clock.wave((t) => (t < t0 ? 0 : Math.sin(2 * Math.PI * LFO_HZ * (t - t0))));
+      for (let i = 0; i < 2000 / SCHEDULER_TICK_MS; i++) clock.advance(SCHEDULER_TICK_MS);
+
+      const rises = risingEdgeStamps(ve.writes, 'cv_trig');
+      expect(rises.length, 'enough rises to measure a period from').toBeGreaterThanOrEqual(4);
+      for (const r of rises) {
+        expect(r.timing, 'every rise carries a stamp').toBeDefined();
+        expect(r.timing!.precision).toBe(precision);
+        expect(r.timing!.audioTimeSec).toBeLessThanOrEqual(r.atSec);
+      }
+      const stamps = rises.map((r) => r.timing!.audioTimeSec);
+      const periodsMs = stamps.slice(1).map((s, i) => (s - stamps[i]!) * 1000);
+      for (const p of periodsMs) {
+        expect(
+          Math.abs(p - LFO_PERIOD_SEC * 1000),
+          `every stamped period is ${LFO_PERIOD_SEC * 1000} ms ± ${(tolSec * 1000).toFixed(3)} ms ` +
+            `(saw ${periodsMs.map((x) => x.toFixed(3)).join(', ')} ms)`,
+        ).toBeLessThanOrEqual(tolSec * 1000 + 1e-6);
+      }
+      pe.dispose();
+    });
+  }
+
+  it('every rise the dispatch writes is stamped on the AUDIO clock — the patched-while-HIGH rise and the settle writes by their tick — so a consumer never pairs a sample stamp with a wall-clock one', async () => {
+    // Source HIGH as the cable lands (a sine at phase 0.25 = its peak).
+    const { pe, ve, clock } = await setupWithWave(
+      'trig_in', (t) => Math.sin(2 * Math.PI * (LFO_HZ * t + 0.25)), 'cv', { registration: 'eager' },
+    );
+    const TICKS = 40;
+    for (let i = 0; i < TICKS; i++) await tickAndDrain(clock);
+    const writes = ve.writes.filter((w) => w.paramId === 'cv_trig');
+    expect(writes.length).toBeGreaterThan(0);
+    writes.forEach((w, i) => {
+      if (w.value >= 0.5) {
+        expect(w.timing, `a HIGH write at ${w.atSec.toFixed(3)} s carries a stamp`).toBeDefined();
+        expect(w.timing!.audioTimeSec).toBeLessThanOrEqual(w.atSec);
+      } else if (writes[i + 1]?.value === 1 && writes[i + 1]!.atSec === w.atSec) {
+        // The LOW half of a replayed pair: a fall has no rise time.
+        expect(w.timing, `the 0 of the pair at ${w.atSec.toFixed(3)} s carries nothing`).toBeUndefined();
+      } else {
+        // A settle write of a LOW level: stamped by its tick like every settle.
+        expect(w.timing?.precision, `a low settle at ${w.atSec.toFixed(3)} s is stamped by its tick`).toBe('tick');
+      }
+    });
+    const rises = risingEdgeStamps(writes, 'cv_trig');
+    expect(rises.length, 'the held-high phase fires once, then one rise per cycle').toBe(1 + trueRises(0.25, TICKS * SCHEDULER_TICK_MS / 1000).length);
+    expect(rises[0]!.timing!.precision, 'the patched-while-HIGH rise has no crossing to place: its tick stamps it').toBe('tick');
+    expect(rises.slice(1).every((r) => r.timing!.precision === 'sample'), 'every real rise is placed to the sample').toBe(true);
+    const settles = writes.filter((w) => w.timing?.precision === 'tick');
+    expect(settles.length, 'one settle write per tick, each stamped by its tick').toBeGreaterThanOrEqual(TICKS);
+    pe.dispose();
+  });
+
+  it('the fail-safe → worklet HANDOFF hands the stamps over clean: the i-th replayed rise carries the i-th real rise\'s time, under both port orderings', async () => {
+    // A rise the analyser already replayed must not leave its time queued for
+    // the worklet path to hand to the NEXT rise — that would shift every
+    // later stamp by a whole period and read as a perfect clock, one edge
+    // late. So each stamp is checked against ITS OWN true crossing.
+    for (const portLatency of PORT_LATENCIES) {
+      __resetSchedulerClockForTests();
+      const { pe, ve, clock } = await setupWithWave(
+        'trig_in', (t) => Math.sin(2 * Math.PI * LFO_HZ * t), 'cv', { portLatency, registration: 'deferred' },
+      );
+      const RUN_SEC = 2;
+      for (let i = 0; i < (RUN_SEC * 1000) / SCHEDULER_TICK_MS; i++) await tickAndDrain(clock);
+      const rises = risingEdgeStamps(ve.writes, 'cv_trig');
+      const expected = trueRises(0, RUN_SEC);
+      expect(rises.length, `${portLatency}: exact count across the handoff`).toBe(expected.length);
+      rises.forEach((r, k) => {
+        expect(r.timing, `${portLatency}: rise ${k} carries a stamp`).toBeDefined();
+        const s = r.timing!.audioTimeSec;
+        // 'tick' (the analyser's poll) may trail the crossing by up to a tick;
+        // 'sample' is the crossing itself. Neither may precede it, and neither
+        // may be a period away from it.
+        expect(s, `${portLatency}: rise ${k}'s stamp is not before its crossing`).toBeGreaterThanOrEqual(expected[k]! - 1e-9);
+        expect(
+          s - expected[k]!,
+          `${portLatency}: rise ${k}'s stamp (${r.timing!.precision}) is its own crossing, within a tick`,
+        ).toBeLessThanOrEqual(SCHEDULER_TICK_MS / 1000 + ONE_SAMPLE_SEC + 1e-9);
+      });
+      expect(rises.some((r) => r.timing!.precision === 'tick'), `${portLatency}: the analyser carried at least the first rise`).toBe(true);
+      expect(rises.at(-1)!.timing!.precision, `${portLatency}: the worklet carries the last`).toBe('sample');
+      pe.dispose();
+    }
   });
 });
 
