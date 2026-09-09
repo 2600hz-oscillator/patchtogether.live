@@ -711,4 +711,67 @@ describe('⚠ A RESTORE THAT OUTLIVES THE DOC IT WAS STARTED FOR — the CI catc
     expect(el.src, 'v1 is back on the element').toBe('blob:v1.webm');
     expect(h.metas.at(-1)?.name).toBe('v1.webm');
   });
+
+  it('⚠ THE PUT GAP: a restore whose decode WON still writes nothing when the load lands inside its IDB put', async () => {
+    // The case above parks the DECODE — the window the guard already covered.
+    // The guard used to be read ONCE, and `await hooks.put(...)` (a real IDB
+    // round trip that ALWAYS yields — a blob-backed handle throws
+    // DataCloneError after openDb) sat between that read and the doc write it
+    // protected. MEASURED on CI (#2377, e2e shard 8): both legs of
+    // load-staleness-video-reused-id.spec.ts read `…-b` for 15 s — a STICKY
+    // stamp, because `reattachIfHandleChanged` then sees wantId ===
+    // attachedHandleId and no-ops. The harness `put` above resolves inside the
+    // same microtask drain, so that case is structurally blind to this gap.
+    const c = makeClock(); const eng = makeEngine(); const hk = makeHooks();
+    const h = makeHarness(c.clock, eng.engine);
+    hk.handles.set('h-v1', { perm: 'granted', file: fakeFile('v1.webm', 'video/webm') });
+    hk.handles.set('h-v2', { perm: 'granted', file: fakeFile('v2.webm', 'video/webm') });
+    h.state.set('vb', {
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+      isPlaying: true, lastSyncTime: 1_000, lastSyncPosition: 0,
+    });
+    const reg = createNodeVideoSourceRegistry(h.deps, hk.hooks);
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    const el = h.els.get('vb::main')!;
+    expect(el.src).toBe('blob:v1.webm');
+
+    // From here the IDB put resolves only when the test says so. Metadata
+    // stays instant: the decode WINS, so the restore clears the pre-put guard.
+    const pendingPuts: Array<() => void> = [];
+    hk.hooks.put = (id, handle) => new Promise<void>((resolve) => {
+      hk.handles.set(id, handle as StoredHandle);
+      pendingPuts.push(resolve);
+    });
+
+    // v2 arrives: the restore of clip B decodes, passes the guard, and parks
+    // inside the put.
+    h.state.get('vb')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    expect(el.src, 'B is on the element').toBe('blob:v2.webm');
+    expect(pendingPuts.length, 'B\'s restore is inside hooks.put').toBe(1);
+    const metasBefore = h.metas.length;
+
+    // THE LOAD OF v1 lands inside the put gap. Same id, same controller.
+    h.state.get('vb')!.fileMeta = { name: 'v1.webm', duration: 10, handleId: 'h-v1' };
+    reg.sync([videoboxNode('vb')], eng.engine);
+    await settle();
+    expect(h.state.get('vb')!.fileMeta?.handleId, 'nothing has written yet').toBe('h-v1');
+
+    // B's put returns LATE.
+    pendingPuts.shift()!();
+    await settle();
+    expect(h.metas.length, 'the stale restore wrote no meta over the loaded doc').toBe(metasBefore);
+    expect(h.state.get('vb')!.fileMeta?.handleId, 'the doc still names v1 — not stamped back to B').toBe('h-v1');
+
+    // ...and the hand-off restored what the doc names: v1 is back on the
+    // element and its own restore is inside ITS put.
+    expect(el.src, 'v1 is back on the element').toBe('blob:v1.webm');
+    expect(pendingPuts.length, 'a restore of v1 is in flight').toBe(1);
+    pendingPuts.shift()!();
+    await settle();
+    expect(h.metas.at(-1)?.name).toBe('v1.webm');
+    expect(h.state.get('vb')!.fileMeta?.handleId).toBe('h-v1');
+  });
 });

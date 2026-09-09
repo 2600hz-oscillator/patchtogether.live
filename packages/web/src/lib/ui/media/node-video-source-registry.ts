@@ -516,18 +516,8 @@ export function createNodeVideoSourceRegistry<E>(
     // "drop the previous handle" rule would then DELETE the loaded patch's
     // handle from IDB — the loaded clip becomes unrestorable. Only a handle
     // RESTORE is guarded: a user pick (no `reuseHandleId`) is itself the
-    // intent. Record what the element holds (unless a newer restore has
-    // already claimed it) and re-check the doc so the right clip follows.
-    if (opts?.reuseHandleId) {
-      const docId = deps.doc.read(c.node.id)?.fileMeta?.handleId ?? null;
-      if (docId !== opts.reuseHandleId) {
-        if (c.reloadHandleId === opts.reuseHandleId) {
-          c.attachedHandleId = opts.reuseHandleId;
-          reattachIfHandleChanged(c);
-        }
-        return;
-      }
-    }
+    // intent.
+    if (opts?.reuseHandleId && abandonIfStale(c, opts.reuseHandleId)) return;
 
     // Persist the handle BEFORE writing fileMeta, so the id stamped into the
     // synced meta is the one the handle is stored under.
@@ -539,6 +529,15 @@ export function createNodeVideoSourceRegistry<E>(
       } catch { handleId = opts?.reuseHandleId; }
     }
     if (c.disposed) return;
+
+    // ⚠ RE-CHECK AFTER THE PUT. The guard above is a read BEFORE an await, and
+    // the write below is the use: `hooks.put` is a real IDB round trip that
+    // ALWAYS yields (a blob-backed handle throws DataCloneError after openDb),
+    // so a same-session load landing in that gap was stamped over — and the
+    // state was STICKY, because `reattachIfHandleChanged` then saw wantId ===
+    // attachedHandleId. MEASURED on CI (#2377, e2e shard 8): both legs of
+    // load-staleness-video-reused-id.spec.ts read the stale id for 15 s.
+    if (opts?.reuseHandleId && abandonIfStale(c, opts.reuseHandleId)) return;
 
     // ⚠ Reset the playhead only for a genuinely DIFFERENT file. Doing it
     // unconditionally was an independent cause of "it stopped playing": the
@@ -662,6 +661,22 @@ export function createNodeVideoSourceRegistry<E>(
       void tryReloadFromHandle(c);
     }
     return c;
+  }
+
+  /** Is this handle RESTORE still the one the doc names? Called on BOTH sides
+   *  of the `hooks.put` await in `loadFile` — a single read before an await is
+   *  a check-then-use, and the use is a doc write that also deletes the loaded
+   *  patch's handle. When the doc has moved on: record what the element holds
+   *  (unless a newer restore has already claimed the latch) and re-check the
+   *  doc so the right clip follows. Returns true when the restore is stale. */
+  function abandonIfStale(c: Controller<E>, reuseHandleId: string): boolean {
+    const docId = deps.doc.read(c.node.id)?.fileMeta?.handleId ?? null;
+    if (docId === reuseHandleId) return false;
+    if (c.reloadHandleId === reuseHandleId) {
+      c.attachedHandleId = reuseHandleId;
+      reattachIfHandleChanged(c);
+    }
+    return true;
   }
 
   /** The same-session re-attach: the doc names a handle the element does not
