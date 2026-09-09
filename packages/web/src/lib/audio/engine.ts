@@ -16,12 +16,13 @@ import { restedParams, type MomentaryDefLike } from './momentary-params';
 import { materializeAudioHandle, legInputsFor, resolveDualMonoInput } from './dual-mono';
 import { legChannelOfEdge, type StereoDef } from '$lib/graph/stereo-autowire';
 import { holdParamAtSeam, HOLD_NOW_EPS_S } from './hold-param';
-import { createEdgeCounter } from './edge-detect';
+import { createEdgeCounter, type EdgeCounter } from './edge-detect';
 import { GATE_HI } from './gate-trigger';
 import { getSchedulerClock } from './scheduler-clock';
 import { createWorkletNode } from './worklet-guard';
 import {
   ensureGateEdgeWorklet,
+  isGateEdgeWorkletRegistered,
   GATE_EDGE_PROCESSOR,
   type GateEdgeMessage,
 } from './gate-edge-worklet';
@@ -31,6 +32,7 @@ import {
 // continuous one. No WebGL is touched, and the import does not modify any file
 // in the WebGL attest basis.
 import { getVideoModuleDef } from '$lib/video/module-registry';
+import type { GateEdgeTiming } from '$lib/video/engine';
 
 /**
  * What a per-domain factory hands back: the connectable surface for one module
@@ -218,6 +220,13 @@ export class AudioEngine implements DomainEngine {
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
+    // Pre-register the cross-domain gate bridge's edge-counting worklet on
+    // this context NOW, so `installGateDispatch` can construct its node
+    // synchronously the moment a cable lands — counting from the first render
+    // quantum, with no main-thread analyser phase and no handoff. Idempotent,
+    // never throws; resolves false on a context that cannot host a worklet,
+    // in which case the bridge arms its main-thread fail-safe as before.
+    void ensureGateEdgeWorklet(ctx);
   }
 
   private paramTapKey(nodeId: string, paramId: string): string {
@@ -1465,10 +1474,11 @@ export class PatchEngine {
       this.pendingBridges.set(edge.id, { edge, kind: 'cv', sourceDomain, targetDomain });
       return;
     }
-    // A GATE source into a GATE-STYLE cv target takes a completely different
-    // path — see installGateDispatch for why the per-frame analyser sampler
-    // structurally cannot carry a pulse train. Everything else keeps the
-    // legacy per-frame bridge unchanged.
+    // A GATE source into a GATE-STYLE cv target — or a CV source into a target
+    // that declares `edge: 'trigger'` — takes a completely different path; see
+    // installGateDispatch for why the per-frame analyser sampler structurally
+    // cannot carry a pulse train. Everything else keeps the legacy per-frame
+    // bridge unchanged.
     if (this.installGateDispatch(edge, ae, ve, src)) return;
     const analyser = ae.ctx.createAnalyser();
     // An AUDIO source is envelope-followed (RMS over the window) by the bridge,
@@ -1532,10 +1542,14 @@ export class PatchEngine {
    * 24/24 locally. The worklet total is accumulated BEHIND the stall, so an
    * arbitrarily long gap now costs latency only, never an edge.
    *
-   * The main-thread `createEdgeCounter` path is RETAINED as a fail-safe: if the
-   * worklet can't be registered (CSP forbidding blob: worklets, a stubbed test
-   * context, an old browser) the bridge degrades to the windowed analyser
-   * counter rather than losing the gate entirely.
+   * The worklet is PRE-REGISTERED on the context by the AudioEngine constructor,
+   * so on the shipping path the node is constructed synchronously right here
+   * when the cable lands and counts from its first render quantum. The
+   * main-thread `createEdgeCounter` path is RETAINED as a fail-safe: if the
+   * cable lands before that registration has resolved, or the worklet can't be
+   * registered at all (CSP forbidding blob: worklets, a stubbed test context,
+   * an old browser), the bridge degrades to the windowed analyser counter
+   * rather than losing the gate entirely.
    *
    * This mirrors the `subscribePulse` discrete-dispatch path that
    * addSameDomainVideoCvBridge already installs for video→video gates ("so a
@@ -1546,14 +1560,31 @@ export class PatchEngine {
    * (~25 ms) rather than on the video frame (~16.7 ms at 60 Hz), so cross-domain
    * trigger delivery moves by up to ~25 ms. That is the price of never dropping
    * one, and it is bounded — unlike the pre-fix stalls, which were unbounded.
+   * The DELIVERY is late; the EDGE's time is not lost with it: each replayed
+   * rise carries the audio-clock instant it happened (`GateEdgeTiming`,
+   * video/engine.ts), so a consumer measuring the interval between two rises
+   * — BACKDRAFT's clocked delay — reads the clock's period, not the replay
+   * cadence. On a starved main thread the two differ by hundreds of ms while
+   * the count stays exact (CI run 34372134124: 39 rises in 10.16 s IS 4 Hz;
+   * the replay gaps read 5, 95, 402, 635 ms).
    *
    * SCOPE — deliberately narrow, so nothing else changes behaviour:
-   *  - source cable must be `gate` (a cv/audio source is a LEVEL, correctly
-   *    served by tail-sampling; only pulse trains alias);
    *  - the target input must POSITIVELY resolve to a def with NO `cvScale`
    *    hint. A hinted (continuous) target sweeps its param range across the
    *    incoming value and keeps the legacy per-frame bridge untouched. If the
-   *    def cannot be resolved we also fall through — fail-safe to legacy.
+   *    def cannot be resolved we also fall through — fail-safe to legacy;
+   *  - a `gate` source cable always qualifies (a pulse train by definition);
+   *  - a `cv` source cable qualifies ONLY when the target declares
+   *    `edge: 'trigger'` (the DELAY CLK widen, 2026-09-09, owner-approved).
+   *    The aliasing hazard is a property of "there is an edge detector
+   *    downstream" plus source periodicity, not of the cable's label: an LFO or
+   *    an envelope patched into BACKDRAFT's delay_clock is a pulse train in
+   *    disguise, and a 4 Hz swing tail-sampled at SwiftShader's ~8 fps sits on
+   *    the 2:1 Nyquist singularity (measured: 253 ms one moment, 4430 ms the
+   *    next; at a steady 8.00 fps it never locks at all). A cv source into a
+   *    raw-passthrough target that declares NO edge (DOOM's cv_<port> family,
+   *    read as a held LEVEL each frame) or `edge: 'gate'` is still a level,
+   *    still tail-sampled, and does NOT change path.
    *
    * Returns true iff it took ownership of the edge.
    */
@@ -1566,7 +1597,7 @@ export class PatchEngine {
     },
     src: { node: AudioNode; output: number },
   ): boolean {
-    if (edge.sourceType !== 'gate') return false;
+    if (edge.sourceType !== 'gate' && edge.sourceType !== 'cv') return false;
     if (typeof ve.getNodeHandle !== 'function' || typeof ve.resolveTargetParamId !== 'function') {
       return false;
     }
@@ -1579,44 +1610,123 @@ export class PatchEngine {
     // param's natural range. Those keep the per-frame sampler (a level, not a
     // pulse train). Only raw-passthrough targets are gate-style.
     if (input.cvScale && input.cvScale.mode !== 'passthrough') return false;
+    // A CV cable is a LEVEL unless the TARGET says it edge-detects it. Only a
+    // declared `edge: 'trigger'` target opts a cv source onto the counted path;
+    // an undeclared or `edge: 'gate'` (level-sensitive) target keeps the
+    // per-frame sampler exactly as before (see SCOPE above).
+    if (edge.sourceType === 'cv' && input.edge !== 'trigger') return false;
 
     const targetParamId = ve.resolveTargetParamId(edge.target.nodeId, edge.target.portId);
-    const analyser = ae.ctx.createAnalyser();
-    // 4096 samples ≈ 85 ms @ 48 kHz. `createEdgeCounter` scans only the samples
-    // that arrived since the previous poll, so the window must COMFORTABLY
-    // exceed the poll interval or old samples fall out of the ring before we
-    // look at them. The scheduler tick is 25 ms, giving >3× headroom even when
-    // a loaded main thread delays the tick callback.
-    analyser.fftSize = 4096;
-    analyser.smoothingTimeConstant = 0;
-    src.node.connect(analyser, src.output);
-
-    const counter = createEdgeCounter({ ctx: ae.ctx, analyser });
-    const buf = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
-    const setParam = (v: number): void => {
+    // `timing` rides on the rise and settle writes only — see `GateEdgeTiming`
+    // (video/engine.ts) for the contract. The level flips are the edge; the
+    // timing says WHEN it happened, on the audio clock, so a consumer that
+    // measures the interval between two rises does not measure the interval
+    // between two REPLAYS (a starved main thread drains them in bursts).
+    const setParam = (v: number, timing?: GateEdgeTiming): void => {
       const handle = ve.getNodeHandle!(edge.target.nodeId) as
-        | { setParam?: (paramId: string, value: number) => void }
+        | { setParam?: (paramId: string, value: number, timing?: GateEdgeTiming) => void }
         | null;
-      try { handle?.setParam?.(targetParamId, v); } catch { /* */ }
+      try { handle?.setParam?.(targetParamId, v, timing); } catch { /* */ }
     };
 
     // ---- AUDIO-THREAD accumulator (the authoritative edge count) ----
     // `wlTotal` is monotonic and updated from the worklet's port messages;
     // `wlReplayed` is how much of it we have already delivered. A main-thread
     // stall of ANY length just leaves messages queued — when we next run, the
-    // delta is still exact. `wlLive` gates the handoff: until the worklet is
-    // registered + connected we keep using the windowed analyser counter, so a
-    // context that cannot host a worklet still gets edges (fail-safe).
+    // delta is still exact. `wlLive` says the worklet is the tick's source of
+    // truth; `wlPrimed` that it has posted its baseline level.
+    //
+    // TWO WAYS IN. The AudioEngine pre-registers the processor on its context
+    // at construction, so when a cable lands the node is normally constructed
+    // and connected SYNCHRONOUSLY, right here, and counts from its first render
+    // quantum: no analyser phase, no handoff, and the main-thread stall that
+    // follows a patch (the flow + face re-render — measured 0.4-0.9 s under
+    // SwiftShader) costs latency only, never an edge. Only when the cable lands
+    // before that registration has resolved, or on a context that cannot host
+    // a worklet at all, is the windowed main-thread analyser counter ARMED as
+    // the fail-safe; if the worklet does arrive later it takes over at a tick.
+    //
+    // THE HANDOFF (fail-safe path only) HAPPENS AT A TICK. The processor primes
+    // from its first sample and posts the level; the handoff waits for that
+    // message, then at the next tick the analyser scans up to that instant ONE
+    // last time. The settle level is read from that SAME buffer — never from
+    // the worklet's last delivered message: the scheduler tick (a Worker
+    // message) and the port message are two task sources with no ordering
+    // guarantee, so a rise the analyser has just replayed whose port message is
+    // still in flight would otherwise settle to a stale LOW and re-rise on the
+    // next tick — a manufactured 25 ms clock period, reproduced in
+    // engine-gate-dispatch.test.ts under `portLatency: 'after-tick'`. A rise
+    // the worklet reports LATER whose `riseT` is at or before the handoff
+    // instant was inside that final analyser window and is reconciled per
+    // message in onmessage below.
+    //
+    // RESIDUAL, STATED: the handoff instant is the main-thread `currentTime`,
+    // while the analyser's buffer ends at the render FRONTIER, which can lead
+    // it (gate-trigger.ts measures that lead at more than a 5 ms pulse width
+    // under load). A rise rendered inside that lead whose message lands after
+    // the handoff tick is replayed twice. It is bounded by the lead, it exists
+    // only on the fail-safe path, and closing it needs the frontier, which no
+    // main-thread API exposes — which is why the pre-registered path is the
+    // one that ships.
     let wlLive = false;
+    let wlPrimed = false;
     let wlTotal = 0;
     let wlReplayed = 0;
     let wlLevel = 0;
+    /** Audio-clock rise time of every counted edge NOT yet replayed, in count
+     *  order — one entry per unit of `wlTotal - wlReplayed`. The worklet's
+     *  message carries the rise time of the LAST rise in its block; a block
+     *  with more than one rise (a >187 Hz swing, not a clock) stamps them all
+     *  with that one. Drained by the tick alongside the delta, cleared at the
+     *  handoff with it. */
+    const pendingRiseT: number[] = [];
+    /** The worklet's baseline level — its priming message — or -1 until it
+     *  lands. On the shipping path this is the only record of "the source was
+     *  already HIGH as the cable landed". */
+    let primeLevel = -1;
+    /** Shipping path only: the patch-time HIGH still owes the consumer its
+     *  one rise (see the tick). The fail-safe path never sets this — its
+     *  analyser counter starts low and counts that HIGH as an edge itself. */
+    let primeWritePending = false;
+    let handoffAudioTime = -1;
     let workletNode: AudioWorkletNode | null = null;
     let keepAlive: GainNode | null = null;
     let disposed = false;
 
-    void ensureGateEdgeWorklet(ae.ctx).then((ok) => {
-      if (!ok || disposed) return;
+    // ---- MAIN-THREAD fail-safe: armed only while the worklet is not live ----
+    let analyser: AnalyserNode | null = null;
+    let counter: EdgeCounter | null = null;
+    let buf: Float32Array<ArrayBuffer> | null = null;
+    const armFailSafe = (): void => {
+      const an = ae.ctx.createAnalyser();
+      // 4096 samples ≈ 85 ms @ 48 kHz. `createEdgeCounter` scans only the
+      // samples that arrived since the previous poll, so the window must
+      // COMFORTABLY exceed the poll interval or old samples fall out of the
+      // ring before we look at them. The scheduler tick is 25 ms, giving >3×
+      // headroom even when a loaded main thread delays the tick callback.
+      an.fftSize = 4096;
+      an.smoothingTimeConstant = 0;
+      src.node.connect(an, src.output);
+      analyser = an;
+      counter = createEdgeCounter({ ctx: ae.ctx, analyser: an });
+      buf = new Float32Array(an.fftSize) as Float32Array<ArrayBuffer>;
+    };
+    const releaseFailSafe = (): void => {
+      if (!analyser) return;
+      try { src.node.disconnect(analyser, src.output); } catch { /* */ }
+      try { analyser.disconnect(); } catch { /* */ }
+      analyser = null;
+      counter = null;
+      buf = null;
+    };
+    /** The fail-safe's view of the CURRENT level: the newest sample. */
+    const failSafeLevel = (): number => {
+      if (!analyser || !buf) return wlLevel;
+      analyser.getFloatTimeDomainData(buf);
+      return (buf[buf.length - 1] ?? 0) >= GATE_HI ? 1 : 0;
+    };
+
+    const buildWorklet = (): boolean => {
       try {
         // Owner is the EDGE's target node, not a module the user placed: this
         // worklet is the engine's own cross-domain gate bridge. If it latches,
@@ -1637,8 +1747,21 @@ export class PatchEngine {
         wn.port.onmessage = (ev: MessageEvent) => {
           const m = ev.data as GateEdgeMessage | undefined;
           if (!m || typeof m.count !== 'number') return;
+          const delta = m.count - wlTotal;
+          const riseT = typeof m.riseT === 'number' && m.riseT >= 0 ? m.riseT : -1;
+          // A rise at or before the handoff poll was already replayed by the
+          // analyser's final window; count it as delivered so the worklet
+          // delta cannot replay it a second time — and its time is not owed
+          // to anyone either.
+          if (delta > 0 && handoffAudioTime >= 0 && riseT >= 0 && riseT <= handoffAudioTime) {
+            wlReplayed += delta;
+          } else {
+            for (let i = 0; i < delta; i++) pendingRiseT.push(riseT);
+          }
           wlTotal = m.count;
           wlLevel = m.level >= 1 ? 1 : 0;
+          if (!wlPrimed) primeLevel = wlLevel;
+          wlPrimed = true;
         };
         src.node.connect(wn, src.output);
         // Keep-alive: an AudioWorkletNode with no path to the destination is an
@@ -1649,40 +1772,92 @@ export class PatchEngine {
         wn.connect(keepAlive);
         if (ae.ctx.destination) keepAlive.connect(ae.ctx.destination);
         workletNode = wn;
-        // Hand off cleanly: everything the worklet counted before this instant
-        // was also seen by the analyser counter, so start the delta at the
-        // current total rather than replaying a backlog.
-        wlReplayed = wlTotal;
-        wlLive = true;
+        return true;
       } catch {
-        // Construction failed → stay on the analyser counter.
+        // Construction failed → the analyser counter carries the edge.
+        return false;
       }
-    });
+    };
+
+    const preRegistered = isGateEdgeWorkletRegistered(ae.ctx);
+    if (preRegistered && buildWorklet()) {
+      // THE SHIPPING PATH: the worklet is counting from this instant on. Until
+      // its priming message lands (one render quantum + port latency, well
+      // inside a tick) the level written is LOW; the first write of a HIGH
+      // level is the one rise a source already high at patch time is expected
+      // to fire, on every path.
+      wlLive = true;
+      primeWritePending = true;
+    } else {
+      armFailSafe();
+      if (!preRegistered) {
+        void ensureGateEdgeWorklet(ae.ctx).then((ok) => {
+          if (!ok || disposed) return;
+          buildWorklet();
+        });
+      }
+    }
 
     const unsub = getSchedulerClock().subscribe(() => {
       let edges: number;
       let level: number;
+      // The delivering tick's own place on the AUDIO clock — the stamp for
+      // every write this tick makes that has no per-sample rise time of its
+      // own (the fail-safe's windowed count, the prime rise, the settle).
+      // Same clock as the worklet's `riseT`, so a consumer pairing a 'tick'
+      // stamp with a 'sample' stamp is still subtracting like from like.
+      const tickTiming: GateEdgeTiming = { audioTimeSec: ae.ctx.currentTime, precision: 'tick' };
+      /** Per-edge stamps for this tick's replay, in count order. */
+      let riseTimings: GateEdgeTiming[] | null = null;
       if (wlLive) {
         // Audio-thread truth. Immune to how long we were away.
         edges = Math.max(0, wlTotal - wlReplayed);
         wlReplayed = wlTotal;
         level = wlLevel;
-        // Keep the fallback counter's window anchored to NOW so a later
-        // downgrade (shouldn't happen, but cheap) can't replay stale history.
-        counter.poll(ae.ctx.currentTime);
+        if (edges > 0) {
+          riseTimings = pendingRiseT.splice(0, edges).map((t) =>
+            (t >= 0 ? { audioTimeSec: t, precision: 'sample' } : tickTiming),
+          );
+        }
+        if (primeWritePending && wlPrimed) {
+          // A source already HIGH as the cable landed fires ONCE: the
+          // consumer's detector starts low, so the first HIGH it sees is a
+          // rise on every path (the legacy per-frame bridge included). Write
+          // it BEFORE the replayed edges, so the count is the same whether or
+          // not a tick managed to run before the first real edge — a
+          // post-patch stall would otherwise merge the two into one rise.
+          primeWritePending = false;
+          if (primeLevel === 1) setParam(1, tickTiming);
+        }
+      } else if (wlPrimed) {
+        // THE HANDOFF. The analyser scans everything up to this instant one
+        // last time and the settle level is read from the same buffer. Every
+        // rise the worklet has reported so far was rendered before its message
+        // arrived, i.e. lies inside that window — mark it delivered; any it
+        // reports later with `riseT` at or before this instant is reconciled
+        // in onmessage above. From here on the audio-thread total is the
+        // truth, the level is the worklet's, and the tap is released.
+        handoffAudioTime = ae.ctx.currentTime;
+        edges = counter ? counter.poll(handoffAudioTime) : 0;
+        level = failSafeLevel();
+        wlReplayed = wlTotal;
+        pendingRiseT.length = 0;
+        wlLive = true;
+        releaseFailSafe();
       } else {
-        edges = counter.poll(ae.ctx.currentTime);
-        analyser.getFloatTimeDomainData(buf);
-        level = (buf[buf.length - 1] ?? 0) >= GATE_HI ? 1 : 0;
+        edges = counter ? counter.poll(ae.ctx.currentTime) : 0;
+        level = failSafeLevel();
       }
       // Replay each counted rising edge as an explicit low→high pair. Writing
       // the 0 first makes the transition unconditional: if the consumer's
       // hysteresis state is already HIGH (a gate that re-triggered between
       // ticks) it falls before rising, so N counted edges deliver exactly N
-      // rising edges — never N-1, never 2N.
+      // rising edges — never N-1, never 2N. The HIGH half carries the edge's
+      // own audio-clock time (the worklet's per-sample `riseT`); a windowed
+      // fail-safe count can only vouch for the tick that saw it.
       for (let i = 0; i < edges; i++) {
         setParam(0);
-        setParam(1);
+        setParam(1, riseTimings?.[i] ?? tickTiming);
       }
       // Settle on the CURRENT level so a HELD gate stays high for
       // level-sensitive consumers (a DOOM key-down, a freezeframe hold) rather
@@ -1690,14 +1865,13 @@ export class PatchEngine {
       // change) because a module detects "this input is patched" from the fact
       // that setParam is called for it at all — SHAPEGEN's `clockPatched` flag
       // is exactly that, and it gates the whole sample-and-hold contract.
-      setParam(level);
+      setParam(level, tickTiming);
     });
 
     this.gateDispatchTeardowns.set(edge.id, () => {
       disposed = true;
       try { unsub(); } catch { /* */ }
-      try { src.node.disconnect(analyser, src.output); } catch { /* */ }
-      try { analyser.disconnect(); } catch { /* */ }
+      releaseFailSafe();
       if (workletNode) {
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.port.close(); } catch { /* */ }

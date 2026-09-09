@@ -2107,17 +2107,30 @@ export function backdraftFlickerTerms(
 }
 
 /**
+ * Which clock a DELAY-CLOCK rise was stamped on.
+ *  - 'audio': the AudioContext clock — the bridge's `GateEdgeTiming`, the time
+ *    the edge actually ROSE in the audio thread (or the tick that carried it).
+ *  - 'wall':  `performance.now()` at the write — the only clock a write that
+ *    carries no timing (a legacy per-frame bridge write, a UI write, a bare
+ *    unit test) can be stamped on.
+ * A period is the difference of two stamps on the SAME clock, never across.
+ */
+export type BackdraftClockSource = 'audio' | 'wall';
+
+/**
  * Per-instance DELAY-CLOCK tracker state. A rising edge on the (hysteresis)
- * gate timestamps `time` (wall-clock seconds from the engine frame); the
- * period is the interval between the last two rising edges. We keep only the
- * most-recent edge time + the last measured period, so once a steady clock
- * has fired twice we can PREDICT the next pulse one period ahead and keep
- * the feedback delay locked to it without waiting for the next edge.
+ * gate timestamps the rise; the period is the interval between the last two
+ * rising edges. We keep only the most-recent edge time + the last measured
+ * period, so once a steady clock has fired twice we can PREDICT the next pulse
+ * one period ahead and keep the feedback delay locked to it without waiting
+ * for the next edge.
  */
 export interface BackdraftClockState {
   edge: EdgeState;
-  /** Wall-clock seconds of the most recent rising edge (-1 = none yet). */
+  /** Seconds, on `clock`, of the most recent rising edge (-1 = none yet). */
   lastRiseTime: number;
+  /** The clock `lastRiseTime` was read from. */
+  clock: BackdraftClockSource;
   /** Measured pulse period in seconds (interval between the last two rising
    *  edges). 0 until we've seen two edges. On a steady clock this is the
    *  one-pulse-ahead prediction window. */
@@ -2125,7 +2138,7 @@ export interface BackdraftClockState {
 }
 
 export function makeBackdraftClockState(): BackdraftClockState {
-  return { edge: makeEdgeState(), lastRiseTime: -1, periodSec: 0 };
+  return { edge: makeEdgeState(), lastRiseTime: -1, clock: 'wall', periodSec: 0 };
 }
 
 /**
@@ -2136,31 +2149,39 @@ export function makeBackdraftClockState(): BackdraftClockState {
  * steady clock predicts the next pulse one period ahead; random/irregular
  * gates simply use whatever the last interval was, i.e. stochastic).
  *
+ * `timeSec` is read on `clock`. Two rises on DIFFERENT clocks measure no
+ * period between them — the audio clock and the wall clock share neither an
+ * origin nor, under load, a rate — so the second rise only re-stamps, and the
+ * next rise on the same clock as it measures again.
+ *
  * Returns true iff this sample produced a rising edge (useful for tests).
  */
 export function backdraftClockTick(
   state: BackdraftClockState,
   sample: number,
   timeSec: number,
+  clock: BackdraftClockSource = 'wall',
 ): boolean {
   const ev = detectEdge(state.edge, sample);
   if (ev?.pressed) {
-    if (state.lastRiseTime >= 0) {
+    if (state.lastRiseTime >= 0 && state.clock === clock) {
       const dt = timeSec - state.lastRiseTime;
       if (dt > 0) state.periodSec = dt;
     }
     state.lastRiseTime = timeSec;
+    state.clock = clock;
     return true;
   }
   return false;
 }
 
-/** Monotonic wall clock in ms. ONE source of time for the DELAY CLOCK seam, so
- *  the unit is visible at every call site. Deliberately NOT the engine's
- *  `frame.time`: that is a RENDER clock, pinned by the render-smoke determinism
- *  hook, and both quantities here — when the bridge last wrote, and how far
- *  apart two rising edges arrived — are real wall-clock cadences that a frame
- *  never observes. (Same helper, same reasoning, as freezeframe's `nowMs`.) */
+/** Monotonic wall clock in ms. ONE source of time for the DELAY CLOCK's
+ *  LIVENESS stamp (when the bridge last wrote), so the unit is visible at every
+ *  call site. Deliberately NOT the engine's `frame.time`: that is a RENDER
+ *  clock, pinned by the render-smoke determinism hook, and the write cadence
+ *  is a real wall-clock cadence that a frame never observes. (Same helper,
+ *  same reasoning, as freezeframe's `nowMs`.) The PERIOD is not measured on
+ *  this clock when the bridge says when the edge happened — see `setParam`. */
 export function backdraftNowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -3522,7 +3543,7 @@ export const backdraftDef: VideoModuleDef = {
       mix: "CV (linear) that modulates the Mix crossfade between IN A (0) and IN B (1).",
       feedback: "CV (linear) that modulates the FB (feedback) amount, the per-frame persistence ratio of the fed-back frame.",
       delay: "CV (linear) that modulates the Delay control, the feedback tap delay in milliseconds (0-1000ms). The range was DELIBERATELY doubled from its original 0-500ms (owner request), so a ±1 sweep from an older patch now covers twice the milliseconds it was authored against.",
-      delay_clock: "Gate/clock input (raw passthrough, edge-detected). While a cable is patched here the Delay fader is ignored ENTIRELY: from the moment of patching the effective delay HOLDS its current value (no jump), and once two rising edges land it locks to one clock-pulse duration (capped at 1000ms = one beat at 60 BPM, the same cap as the fader) and tracks the clock from then on. Fader moves while patched change only the stored position; unpatching returns control to the fader at wherever it now sits. The fader shows the override (dimmed, with a CLK badge). A short TRIGGER works exactly as well as a held gate: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a 5ms pulse cannot be missed and the lock does not depend on how fast the renderer is running. The measured period is accurate to about one 25ms bridge tick, which is how often the bridge can deliver an edge at all — well inside the resolution the delay is quantized to anyway (one video frame).",
+      delay_clock: "Gate/clock input (raw passthrough, edge-detected). While a cable is patched here the Delay fader is ignored ENTIRELY: from the moment of patching the effective delay HOLDS its current value (no jump), and once two rising edges land it locks to one clock-pulse duration (capped at 1000ms = one beat at 60 BPM, the same cap as the fader) and tracks the clock from then on. Fader moves while patched change only the stored position; unpatching returns control to the fader at wherever it now sits. The fader shows the override (dimmed, with a CLK badge). A short TRIGGER works exactly as well as a held gate, and an audio-domain CV cable (an LFO or envelope patched straight in) exactly as well as a gate cable: the rising edge is counted on the audio thread as the value arrives and replayed by the patch bridge, never sampled once per rendered frame, so a 5ms pulse cannot be missed and the lock does not depend on how fast the renderer is running. A video-domain CV output (a player's playhead) or a pitch cable still arrives on the per-frame sampler. The period is measured on the AUDIO clock: each replayed edge carries the audio-thread time it actually rose at, so the lock is sample-accurate however late the main thread gets round to replaying it (a starved page replays edges in bursts; the count and the times survive the burst). Only a per-frame write is stamped when it arrives — well inside the resolution the delay is quantized to anyway (one video frame).",
       luma: "CV (linear) that modulates the Luma control, the feedback's overall brightness gain about black.",
       chroma: "CV (linear) that modulates the Chr (chroma/saturation) control of the fed-back frame.",
       r: "CV (linear, bipolar) that modulates the R per-channel red gain of the feedback (range -1..+2).",
@@ -3804,9 +3825,20 @@ export const backdraftDef: VideoModuleDef = {
     // COUNT is OR'd in as the floor for the opposite extreme, CI's ~8 fps
     // SwiftShader renderer, where a handful of frames outlasts the ms window.
     //
-    // The PERIOD, likewise, is measured in setParam from `performance.now()` —
-    // the same monotonic wall clock freezeframe times its gate writes on. It
-    // cannot come from `frame.time`: a frame is not where the edge arrives.
+    // The PERIOD is measured in setParam too — but NOT from the moment the
+    // write lands. The bridge counts the rise on the audio thread and REPLAYS
+    // it on the scheduler tick; on a starved main thread (CI: a 25 ms timer
+    // resolving every ~250 ms) the tick and the port messages drain in BURSTS,
+    // so two real edges 250 ms apart land 5 ms apart and the stall before them
+    // reads as 600 ms — while the COUNT stays exact. So the rise is stamped
+    // with the AUDIO-CLOCK time the bridge carries on the write
+    // (`GateEdgeTiming`, video/engine.ts: the audio thread's per-sample rise
+    // time, or the delivering tick's `currentTime` when that is all it has).
+    // Only a write that carries no timing — the legacy per-frame bridge, a UI
+    // write, a bare unit test — is stamped on `performance.now()`, and the two
+    // clocks are never subtracted from each other (`backdraftClockTick`). It
+    // cannot come from `frame.time` either: a frame is not where the edge
+    // arrives.
     const clock = makeBackdraftClockState();
     let lastClockWriteMs = Number.NEGATIVE_INFINITY;
     let lastClockWriteFrame = Number.NEGATIVE_INFINITY;
@@ -4155,7 +4187,7 @@ export const backdraftDef: VideoModuleDef = {
     return {
       domain: 'video',
       surface,
-      setParam(paramId, value) {
+      setParam(paramId, value, timing) {
         if (paramId in params) (params as unknown as Record<string, number>)[paramId] = value;
         // ── THE EDGE SEAM. Every `edge: 'trigger'` input is detected HERE,
         // as the value arrives, because this is the only place a bridge-
@@ -4164,13 +4196,21 @@ export const backdraftDef: VideoModuleDef = {
           case 'delayClock': {
             // The bridge writes this every scheduler tick while the input is
             // patched; stamp the write so draw() can tell the input is live
-            // (vs an unpatched input that never writes).
+            // (vs an unpatched input that never writes). That is a LIVENESS
+            // stamp, so the replay's own (wall) time is the right one.
             const t = backdraftNowMs();
             lastClockWriteMs = t;
             lastClockWriteFrame = framesElapsed;
-            // Rising edge -> timestamp the pulse. Two edges give the period
-            // that overrides DELAY.
-            if (backdraftClockTick(clock, value, t / 1000)) clockRises++;
+            // Rising edge -> timestamp the pulse WHERE IT HAPPENED. Two edges
+            // give the period that overrides DELAY, and a period is the
+            // clock's only if both stamps are the edges' own times: the
+            // bridge's audio-clock `timing` when it supplies one, the wall
+            // clock only for a write that carries none (see the block above
+            // draw()).
+            const rose = timing
+              ? backdraftClockTick(clock, value, timing.audioTimeSec, 'audio')
+              : backdraftClockTick(clock, value, t / 1000, 'wall');
+            if (rose) clockRises++;
             break;
           }
           // MIRROR gates: a rising edge FLIPS the matching mirror boolean. The

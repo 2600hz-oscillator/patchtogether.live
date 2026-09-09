@@ -70,10 +70,11 @@
 // ⚠ THE SECOND BLIND SPOT — found in review, fixed 2026-08-02. SAME CAUSE.
 //
 // Rule 3 filtered on `type: 'gate'`. THE DISPATCH DOES NOT. `installGateDispatch`
-// keys off the SOURCE cable (`edge.sourceType === 'gate'`, engine.ts:1491) and
-// requires only that the TARGET have no non-passthrough `cvScale` (:1503) — it
-// never reads the target's declared type, and `canConnect` puts cv/pitch/gate in
-// one interchangeable CV_FAMILY. All ten sites in rule 1's KNOWN_REMAINING are
+// keys off the SOURCE cable (`edge.sourceType === 'gate'` — and, since the
+// 2026-09-09 DELAY CLK widen, a `cv` cable into a target that DECLARES
+// `edge: 'trigger'`) and otherwise requires only that the TARGET have no
+// non-passthrough `cvScale` — it never reads the target's declared TYPE, and
+// `canConnect` puts cv/pitch/gate in one interchangeable CV_FAMILY. All ten sites in rule 1's KNOWN_REMAINING are
 // `type: 'cv'`, so rule 3 could not see ONE of the defects rule 1 already names.
 //
 // MEASURED: re-typing freezeframe's port to `type: 'cv'` and deleting the
@@ -908,12 +909,16 @@ describe("video modules: a port declaring edge:'trigger' must edge-detect in set
 //
 // Rule 3 used to require `type: 'gate'` on the port literal. THE DISPATCH DOES
 // NOT LOOK AT THE TARGET'S TYPE AT ALL. `PatchEngine.installGateDispatch`
-// (audio/engine.ts) keys off the SOURCE CABLE —
+// (audio/engine.ts) keys off the SOURCE CABLE and the target's declared EDGE —
 //
-//     if (edge.sourceType !== 'gate') return false;                    // :1491
-//     if (input.cvScale && input.cvScale.mode !== 'passthrough') return false;  // :1503
+//     if (edge.sourceType !== 'gate' && edge.sourceType !== 'cv') return false;
+//     if (input.cvScale && input.cvScale.mode !== 'passthrough') return false;
+//     if (edge.sourceType === 'cv' && input.edge !== 'trigger') return false;
 //
-// — and `canConnect` puts `cv`, `pitch` and `gate` in ONE interchangeable
+// (a gate cable reaches any raw-passthrough target; a cv cable reaches only a
+// target that DECLARES `edge: 'trigger'` — the 2026-09-09 DELAY CLK widen — so
+// rule 3's "undeclared" set is exactly the set a gate cable can still reach and
+// a cv cable now cannot) — and `canConnect` puts `cv`, `pitch` and `gate` in ONE interchangeable
 // CV_FAMILY (graph/types.ts), so a gate cable patched into a `type: 'cv'` input
 // is a legal, ordinary patch that gets the REPLAY. All ten sites in rule 1's
 // KNOWN_REMAINING list are `type: 'cv'` ports — i.e. the old rule 3 could not
