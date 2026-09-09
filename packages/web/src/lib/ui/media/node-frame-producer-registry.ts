@@ -139,6 +139,17 @@ export interface FrameEnv {
   nowMs(): number;
   /** `createImageBitmap`, or null where the runtime has none. */
   createImageBitmap: ((src: unknown) => Promise<unknown>) | null;
+  /**
+   * Mint an off-DOM raster the producer OWNS beside its `ctx.surface` — the
+   * same `OffscreenCanvas` / detached `<canvas>` mint the surface came from, so
+   * a picture baked into one composites through the same rasteriser as the
+   * surface it is drawn onto. Null where the runtime has no canvas.
+   *
+   * TIMELORDE bakes its beat-boost overlay into one, ONCE per node: the thing
+   * that replaced a per-frame `getImageData` readback (see `frame-producers`).
+   * Held in the producer's `state`, so it lives and dies with the node.
+   */
+  createRaster(w: number, h: number): FrameSurface | null;
   /** Load an image asset by URL, resolving only once it is DECODED (not merely
    *  loaded — see `TimelordeCard`'s note on the difference and what it cost the
    *  VRT lane). Resolves null when the runtime cannot load images. */

@@ -92,6 +92,7 @@ const env: FrameEnv = {
   nowMs: () => fakeNowMs,
   createImageBitmap: null,
   loadImage: () => Promise.resolve(null),
+  createRaster: () => null,
 };
 
 /** A ticker the test drives by hand — the whole reason `tick()` is public. */
@@ -612,6 +613,8 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     /** Bitmaps handed to `createImageBitmap`, resolved by `settle()`. */
     settle: () => Promise<void>;
     conversions: number;
+    /** Overlay rasters minted through `env.createRaster`. */
+    rasters: number;
   }
 
   function tlHarness(opts: {
@@ -622,13 +625,54 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     owl?: { width: number; height: number } | null;
     /** Hold conversions open until `settle()` — models a slow bitmap encode. */
     slowConvert?: boolean;
+    /** A runtime with NO canvas to mint the overlay raster on (`createRaster`
+     *  answers null) — the bare owl must stand and nothing may throw. */
+    noRaster?: boolean;
+    /** What the surface's `getImageData` reports — the bare owl the overlay
+     *  is classified from. Defaults to all-zero (nothing pulses). */
+    pixel?: [number, number, number, number];
     graph?: FrameGraph;
   }): TlHarness {
     const ops: string[] = [];
     let conversions = 0;
+    let rasters = 0;
     const pending: Array<() => void> = [];
     const eng = fakeEngine();
     eng.read = (_n, key) => (key === 'hasDisplayFrame' ? (opts.holdsFrame?.() ?? 0) : undefined);
+    /** A recording 2D context; `prefix` separates the SURFACE's op stream from
+     *  the overlay RASTER's, which is the distinction the tests below assert. */
+    const recordingContext = (prefix: string) =>
+      new Proxy(
+        {},
+        {
+          get(_t, k) {
+            if (k === 'getImageData') {
+              return (_x: number, _y: number, gw: number, gh: number) => {
+                ops.push(`${prefix}getImageData`);
+                const data = new Uint8ClampedArray(gw * gh * 4);
+                const px = opts.pixel ?? [0, 0, 0, 0];
+                for (let i = 0; i < data.length; i += 4) {
+                  data[i] = px[0]; data[i + 1] = px[1]; data[i + 2] = px[2]; data[i + 3] = px[3];
+                }
+                return { data };
+              };
+            }
+            if (k === 'createImageData') {
+              return (gw: number, gh: number) => {
+                ops.push(`${prefix}createImageData`);
+                return { width: gw, height: gh, data: new Uint8ClampedArray(gw * gh * 4) };
+              };
+            }
+            return (...args: unknown[]) => {
+              ops.push(`${prefix}${String(k)}(${args.length})`);
+            };
+          },
+          set(_t, k, v) {
+            ops.push(`${prefix}set:${String(k)}${k === 'globalAlpha' ? `=${String(v)}` : ''}`);
+            return true;
+          },
+        },
+      );
     const registry = createNodeFrameProducerRegistry(
       [TIMELORDE_FRAME_PRODUCER],
       {
@@ -636,27 +680,7 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
           return {
             width: w,
             height: h,
-            getContext: () =>
-              new Proxy(
-                {},
-                {
-                  get(_t, k) {
-                    if (k === 'getImageData') {
-                      return (_x: number, _y: number, gw: number, gh: number) => {
-                        ops.push('getImageData');
-                        return { data: new Uint8ClampedArray(gw * gh * 4) };
-                      };
-                    }
-                    return (...args: unknown[]) => {
-                      ops.push(`${String(k)}(${args.length})`);
-                    };
-                  },
-                  set(_t, k) {
-                    ops.push(`set:${String(k)}`);
-                    return true;
-                  },
-                },
-              ),
+            getContext: () => recordingContext(''),
           } as unknown as FrameSurface;
         },
         startTicker: () => () => {},
@@ -673,6 +697,15 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
             Promise.resolve(
               opts.owl === null ? null : ((opts.owl ?? { width: 400, height: 400 }) as never),
             ),
+          createRaster(w, h) {
+            if (opts.noRaster) return null;
+            rasters++;
+            return {
+              width: w,
+              height: h,
+              getContext: () => recordingContext('raster:'),
+            } as unknown as FrameSurface;
+          },
         },
       },
       opts.graph ?? noGraph,
@@ -683,6 +716,9 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
       ops,
       get conversions() {
         return conversions;
+      },
+      get rasters() {
+        return rasters;
       },
       settle: async () => {
         for (const r of pending.splice(0)) r();
@@ -719,15 +755,17 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     expect(h.ops.some((o) => o.startsWith('fillRect'))).toBe(false);
   });
 
-  it('⚠ under REDUCED MOTION it CONVERGES: pushes while the node holds nothing, then stops', () => {
+  it('⚠ under REDUCED MOTION it CONVERGES: pushes while the node holds nothing, then stops', async () => {
     // The live bug this arm encodes: a one-shot push that lands before the
     // engine handle exists — or on a handle that is then replaced — is lost
     // FOREVER, and video_out serves the idle field for the rest of the session.
     let holds: 0 | 1 = 0;
     const h = tlHarness({ reduced: true, holdsFrame: () => holds });
     h.registry.sync([node('t', 'timelorde')], h.eng);
-    h.registry.tick();
-    h.registry.tick();
+    h.registry.tick(); // the owl is still decoding — the ground is painted and pushed
+    await h.settle(); // the owl decodes; that push lands
+    h.registry.tick(); // the OWL is painted and pushed
+    await h.settle();
     expect(h.conversions, 'it keeps trying while the node holds no frame').toBeGreaterThan(0);
     const before = h.conversions;
     holds = 1;
@@ -736,10 +774,40 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     expect(h.conversions, 'and stops the moment the node holds one').toBe(before);
   });
 
-  it('⚠ under REDUCED MOTION the picture is the BARE owl — no per-pixel beat boost', async () => {
+  it('⚠ under REDUCED MOTION a held frame painted BEFORE the owl decoded does NOT end the convergence', async () => {
+    // The other half of the same defect. The owl arrives asynchronously, and a
+    // tick that runs before it lands paints the bare #07090d ground — a frame
+    // the node then HOLDS, byte-identical to the idle field. A convergence that
+    // asked only "does the node hold a frame" stopped there. MEASURED by
+    // `timelorde-owl-overlay-parity.spec.ts` under `reducedMotion: 'reduce'`:
+    // 1 boot in 4 latched the ground and video_out never showed the owl.
+    let holds: 0 | 1 = 0;
+    const h = tlHarness({ reduced: true, holdsFrame: () => holds });
+    h.registry.sync([node('t', 'timelorde')], h.eng);
+    h.registry.tick(); // owl pending → the ground only, pushed
+    expect(h.ops.some((o) => o === 'drawImage(5)'), 'no owl on the first frame').toBe(false);
+    expect(h.conversions).toBe(1);
+    holds = 1; // …and the node now holds THAT frame
+    await h.settle(); // the owl decodes
+    h.ops.length = 0;
+    h.registry.tick();
+    expect(
+      h.ops.some((o) => o === 'drawImage(5)'),
+      'the OWL is painted although the node already holds a (ground-only) frame',
+    ).toBe(true);
+    expect(h.conversions, 'and pushed').toBe(2);
+    await h.settle(); // the owl frame lands
+    h.registry.tick();
+    h.registry.tick();
+    expect(h.conversions, 'and NOW it converges').toBe(2);
+  });
+
+  it('⚠ under REDUCED MOTION the picture is the BARE owl — no beat boost, no overlay built', async () => {
     // `pulse` is pinned to 0 there, and the boost is what makes the frame a
     // function of wall-clock time. Its absence is the whole VRT determinism
-    // claim, so it is asserted at the op stream rather than described.
+    // claim, so it is asserted at the op stream rather than described — and
+    // since the overlay is built lazily on the first PULSING frame, a
+    // reduced-motion rack never even mints the raster or reads back once.
     const h = tlHarness({ reduced: true });
     h.registry.sync([node('t', 'timelorde')], h.eng);
     h.registry.tick();
@@ -749,18 +817,28 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
     await h.settle();
     expect(h.ops).not.toContain('getImageData');
     expect(h.ops.some((o) => o.startsWith('putImageData'))).toBe(false);
+    expect(h.ops.some((o) => o.startsWith('set:globalAlpha'))).toBe(false);
+    expect(h.rasters, 'no overlay raster is minted for a frame that never pulses').toBe(0);
     fakeNowMs = 0;
   });
 
   it('the beat boost runs when the CLOCK says it should — the picture follows time', async () => {
     // The inverse control of the leg above: with motion allowed, the same
-    // producer DOES read back and boost, and it does so because `nowMs` moved.
-    // Injecting the clock is what makes that assertable without sleeping.
+    // producer DOES boost, and it does so because `nowMs` moved. Injecting the
+    // clock is what makes that assertable without sleeping.
+    //
+    // ⚠ AND THE BOOST IS NOW A DRAW, NOT A READBACK. The evidence of a boosted
+    // frame is the OVERLAY draw — `globalAlpha` set to `pulse·amount`, a second
+    // `drawImage` after the owl's, `globalAlpha` restored — with NO
+    // `getImageData`/`putImageData` on the surface. That readback-per-frame was
+    // the measured hog (see `tlDrawOwl`), so a frame that reads back is the
+    // regression this leg exists to catch.
     const h = tlHarness({});
     h.registry.sync([node('t', 'timelorde', { bpm: 120, running: 1 })], h.eng);
     h.registry.tick();
     await h.settle();
-    let boosted = false;
+    let boosted = 0;
+    let readbacks = 0;
     // Sweep a whole beat: `beatPulse` is FLAT 0 for the last 40 % of every beat,
     // so a single sample can legitimately miss — the same trap the e2e movement
     // probe records for this module.
@@ -769,10 +847,72 @@ describe('TIMELORDE_FRAME_PRODUCER — the composited display, off the card', ()
       h.ops.length = 0;
       h.registry.tick();
       await h.settle();
-      if (h.ops.includes('getImageData')) boosted = true;
+      readbacks += h.ops.filter((o) => o === 'getImageData').length;
+      const alphaSet = h.ops.findIndex((o) => o.startsWith('set:globalAlpha=') && !o.endsWith('=1'));
+      if (alphaSet < 0) continue;
+      boosted++;
+      // The overlay draw sits between the alpha set and the alpha restore, and
+      // the surface is never read back or written per-pixel for it.
+      const after = h.ops.slice(alphaSet);
+      expect(after.filter((o) => o === 'drawImage(3)').length, 'one overlay drawImage').toBe(1);
+      expect(after).toContain('set:globalAlpha=1');
+      expect(h.ops.some((o) => o.startsWith('putImageData'))).toBe(false);
     }
     fakeNowMs = 0;
-    expect(boosted, 'somewhere in a beat the pulse is non-zero and the boost runs').toBe(true);
+    expect(boosted, 'somewhere in a beat the pulse is non-zero and the boost runs').toBeGreaterThan(0);
+    expect(
+      readbacks,
+      'the surface is read back EXACTLY ONCE per node — to bake the overlay — never per frame',
+    ).toBe(1);
+    expect(h.rasters, 'and one overlay raster is minted for it').toBe(1);
+  });
+
+  it('the overlay is BAKED from the composited bare owl — white, alpha = membership', async () => {
+    // The raster receives one `createImageData` + one `putImageData`, and the
+    // buffer it is given is what `buildBeatBoostOverlay` makes of the surface's
+    // pixels: a fully-yellow surface bakes a fully-opaque white overlay.
+    const h = tlHarness({ pixel: [255, 255, 0, 255] });
+    h.registry.sync([node('t', 'timelorde', { bpm: 120, running: 1 })], h.eng);
+    h.registry.tick();
+    await h.settle();
+    fakeNowMs = 0; // phase 0 — full pulse
+    h.ops.length = 0;
+    h.registry.tick();
+    await h.settle();
+    const bake = h.ops.filter((o) => o.startsWith('raster:'));
+    expect(bake).toEqual(['raster:createImageData', 'raster:putImageData(3)']);
+    // The bake happens AFTER the owl is drawn (so it classifies the composited
+    // pixels) and BEFORE the overlay is drawn at alpha.
+    const owlDraw = h.ops.indexOf('drawImage(5)');
+    const readback = h.ops.indexOf('getImageData');
+    const alpha = h.ops.findIndex((o) => o.startsWith('set:globalAlpha=0.6'));
+    expect(owlDraw).toBeGreaterThanOrEqual(0);
+    expect(readback).toBeGreaterThan(owlDraw);
+    expect(alpha).toBeGreaterThan(readback);
+  });
+
+  it('a runtime with NO raster to mint draws the bare owl and never throws', async () => {
+    const h = tlHarness({ noRaster: true });
+    h.registry.sync([node('t', 'timelorde', { bpm: 120, running: 1 })], h.eng);
+    h.registry.tick();
+    await h.settle();
+    let readbacks = 0;
+    for (let ms = 0; ms <= 100; ms += 25) {
+      fakeNowMs = ms;
+      h.ops.length = 0;
+      h.registry.tick();
+      await h.settle();
+      readbacks += h.ops.filter((o) => o === 'getImageData').length;
+      expect(h.ops.some((o) => o.startsWith('set:globalAlpha')), 'no overlay draw').toBe(false);
+      expect(h.ops.some((o) => o.startsWith('drawImage(5)')), 'the owl is still drawn').toBe(true);
+    }
+    fakeNowMs = 0;
+    expect(h.registry.snapshot()[0]!.lastError).toBeNull();
+    expect(
+      readbacks,
+      'the failed mint is cached after ONE readback — not re-attempted every frame',
+    ).toBe(1);
+    expect(h.eng.writes.map((w) => w.key)).toContain('displayFrame');
   });
 
   it('⚠ ONE bitmap conversion in flight — a slow encode must not queue up', async () => {

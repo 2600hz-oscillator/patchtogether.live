@@ -27,11 +27,16 @@
 
 import { rasterizeDef } from '$lib/audio/modules/rasterize';
 import { scopeDef } from '$lib/audio/modules/scope';
-import { applyBeatBoost, beatPulse } from '$lib/audio/modules/timelorde-wizard';
+import {
+  beatBoostOverlayAlpha,
+  beatPulse,
+  buildBeatBoostOverlay,
+} from '$lib/audio/modules/timelorde-wizard';
 import { videoChannelLevels } from '../../../../../dsp/src/lib/synesthesia-dsp';
 import {
   frameProducerTypes,
   type FrameCtx,
+  type FrameEnv,
   type FrameImage,
   type FrameProducer,
   type FrameSurface,
@@ -232,6 +237,8 @@ const TL_DISPLAY_H = 220;
  *  root. Referenced by static path (the cadillac / media-burn precedent). */
 const TL_OWL_SRC = '/img/timelorde-owl.png';
 
+type Ctx2d = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
 interface TimelordeState {
   owl?: FrameImage | null;
   owlPending?: boolean;
@@ -239,6 +246,18 @@ interface TimelordeState {
   prevRunning?: boolean;
   /** An `ImageBitmap` conversion is in flight — see the note at the push. */
   converting?: boolean;
+  /** A frame painted with the FINISHED picture (the feed, or the owl after its
+   *  load resolved) has landed in the node — the reduced-motion arm's second
+   *  convergence condition. See the note at the arm. */
+  heldFrameComplete?: boolean;
+  /**
+   * The baked beat-boost OVERLAY — white, alpha = membership — for the owl in
+   * `boostOverlayFor`, at its fixed placement. `undefined` = not built yet;
+   * `null` = this runtime cannot build one (no canvas), so the bare owl stands.
+   * See `tlBeatBoostOverlay`.
+   */
+  boostOverlay?: FrameSurface | null;
+  boostOverlayFor?: FrameImage | null;
 }
 
 function tlParam(ctx: FrameCtx, id: string, dflt: number): number {
@@ -279,16 +298,78 @@ function tlDrawVideoFeed(
   }
 }
 
-/** The owl, with the colour-targeted beat boost. Until the image decodes we
- *  paint just the dark idle ground, so the display is never garbage. */
-function tlDrawOwl(
-  ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  owl: FrameImage | null,
-  pulse: number,
-): void {
+/**
+ * The node's beat-boost OVERLAY — built ONCE, from the bare owl the surface
+ * holds on the first frame that needs it, and cached on `state` for the life
+ * of the node. Returns null when this runtime cannot build one.
+ *
+ * ⚠ CLASSIFIED FROM THE SURFACE, NOT FROM THE IMAGE. Membership is a function
+ * of the COMPOSITED pixels — the painting scaled to its placement over the
+ * `#07090d` ground, by this very context — because that is what the per-frame
+ * readback classified before, and classifying the source PNG would see
+ * pre-scaling colours at the wrong resolution. The one `getImageData` here is
+ * the readback this design KEEPS: once per node lifetime, on the first pulsing
+ * frame, instead of on ~60 % of every frame the transport runs. A rack under
+ * reduced motion or with the transport stopped never pays it at all.
+ *
+ * Keyed to the decoded owl object: the placement is a pure function of its
+ * dimensions and two constants, so a different owl is the only thing that can
+ * change the overlay. A readback that throws (a lost context) is NOT cached —
+ * the next pulsing frame tries again, which is what the old path did every
+ * frame; a runtime with no canvas to mint IS cached as null, once.
+ */
+function tlBeatBoostOverlay(
+  ctx2d: Ctx2d,
+  state: TimelordeState,
+  env: FrameEnv,
+  owl: FrameImage,
+): FrameSurface | null {
+  if (state.boostOverlayFor === owl && state.boostOverlay !== undefined) {
+    return state.boostOverlay;
+  }
+  let bare: ImageData;
+  try {
+    bare = ctx2d.getImageData(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+  } catch {
+    return null; // tainted/locked — the owl still shows; retried next pulse
+  }
+  state.boostOverlayFor = owl;
+  state.boostOverlay = null;
+  const raster = env.createRaster(TL_DISPLAY_W, TL_DISPLAY_H);
+  const rctx = (raster?.getContext('2d') ?? null) as Ctx2d | null;
+  if (!raster || !rctx) return null;
+  try {
+    const overlay = rctx.createImageData(TL_DISPLAY_W, TL_DISPLAY_H);
+    buildBeatBoostOverlay(bare.data, overlay.data);
+    rctx.putImageData(overlay, 0, 0);
+  } catch {
+    return null;
+  }
+  state.boostOverlay = raster;
+  return raster;
+}
+
+/**
+ * The owl, with the colour-targeted beat boost. Until the image decodes we
+ * paint just the dark idle ground, so the display is never garbage.
+ *
+ * ⚠ THE BOOST IS A DRAW, NOT A READBACK. It used to be `getImageData` → a
+ * 48,400-pixel JS loop (`applyBeatBoost`) → `putImageData`, on every frame with
+ * `pulse > 0` — which is ~60 % of all frames while the transport runs, on a
+ * pinned singleton every rack carries whether or not anyone is looking at it.
+ * MEASURED with the CDP profiler on a plain `/rack`, 15 s windows: `tlDrawOwl`
+ * 2.1–2.3 s inclusive (getImageData 1.2–1.4 s, boostBeatColor 0.66 s,
+ * applyBeatBoost 0.2 s) — the largest single main-thread cost on an otherwise
+ * idle rack. The lerp-toward-white IS a source-over of white at alpha `k`
+ * (`timelorde-wizard.ts` §2b), so the per-pixel half is baked once into an
+ * overlay and the per-frame half is one `drawImage` at `globalAlpha`. The
+ * parity tests hold the two forms to ±1 per channel.
+ */
+function tlDrawOwl(ctx2d: Ctx2d, state: TimelordeState, env: FrameEnv, pulse: number): void {
   ctx2d.clearRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
   ctx2d.fillStyle = '#07090d';
   ctx2d.fillRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+  const owl = state.owl ?? null;
   if (!owl) return;
   const iw = owl.naturalWidth || owl.width;
   const ih = owl.naturalHeight || owl.height;
@@ -311,16 +392,20 @@ function tlDrawOwl(
   }
   // ⚠ ONLY WHEN PULSING, which is what keeps the reduced-motion frame
   // deterministic: `pulse` is pinned to 0 there, so the captured picture is the
-  // bare owl and the per-pixel boost never runs.
-  if (pulse <= 0) return;
-  let frame: ImageData;
+  // bare owl — no overlay is built, none is drawn, and the frame is the same
+  // bytes the pre-overlay producer painted.
+  const alpha = beatBoostOverlayAlpha(pulse);
+  if (alpha <= 0) return;
+  const overlay = tlBeatBoostOverlay(ctx2d, state, env, owl);
+  if (!overlay) return; // no raster in this runtime — the bare owl stands
+  ctx2d.globalAlpha = alpha;
   try {
-    frame = ctx2d.getImageData(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+    ctx2d.drawImage(overlay as unknown as CanvasImageSource, 0, 0);
   } catch {
-    return; // tainted/locked — the owl still shows
+    /* the bare owl stands */
+  } finally {
+    ctx2d.globalAlpha = 1;
   }
-  applyBeatBoost(frame.data, pulse);
-  ctx2d.putImageData(frame, 0, 0);
 }
 
 /**
@@ -376,7 +461,24 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
     // So: ask the node whether it HOLDS a frame, and re-do the work only while
     // it does not. One boolean read per frame, no allocation, no repaint — and
     // it heals a replaced handle too, which a one-shot retry could not.
-    if (reduced && ctx.engine.read(ctx.node, 'hasDisplayFrame') === 1) return;
+    //
+    // ⚠ AND "HOLDS A FRAME" IS NOT ENOUGH ON ITS OWN — it has to be the
+    // FINISHED picture. The owl arrives asynchronously (`loadImage` resolves on
+    // decode), and a tick that runs before it lands paints the bare `#07090d`
+    // ground: a frame the node then holds, byte-identical to the idle field.
+    // Converging on THAT is the same defect wearing the other hat. MEASURED by
+    // `timelorde-owl-overlay-parity.spec.ts` under `reducedMotion: 'reduce'`:
+    // 1 boot in 4 latched the ground and `video_out` never showed the owl. So
+    // the arm also asks whether the frame it pushed was COMPLETE — the feed, or
+    // the owl once its load has resolved — and keeps painting until one that
+    // was has landed (`heldFrameComplete` flips when that write lands).
+    if (
+      reduced &&
+      state.heldFrameComplete &&
+      ctx.engine.read(ctx.node, 'hasDisplayFrame') === 1
+    ) {
+      return;
+    }
 
     const pulse = reduced
       ? 0
@@ -394,7 +496,13 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
     // it does not stop the module emitting one, so `video_out` still carries a
     // coherent frame. `wizardDisplayMode` is the surfaces' business, not this
     // one's.
-    if (!tlDrawVideoFeed(ctx, surface, ctx2d)) tlDrawOwl(ctx2d, state.owl ?? null, pulse);
+    const feed = tlDrawVideoFeed(ctx, surface, ctx2d);
+    if (!feed) tlDrawOwl(ctx2d, state, ctx.env, pulse);
+    // Is THIS frame the finished picture? The feed always is; the owl is once
+    // its load has RESOLVED — decoded, or null in a runtime with no images,
+    // where the ground IS the picture. Read now, before the async push, so the
+    // flag describes the frame that was painted rather than a later one.
+    const complete = feed || state.owl !== undefined;
 
     // ⚠ ONE CONVERSION IN FLIGHT AT A TIME. `createImageBitmap` is async, and
     // the card's version fired one per frame unguarded — fine while conversion
@@ -412,6 +520,7 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
         // only leak to worry about is a node that left mid-conversion — the
         // registry has already dropped it, and the write is a no-op there.
         ctx.engine.write(ctx.node, 'displayFrame', bmp);
+        if (complete) state.heldFrameComplete = true;
       })
       .catch(() => {
         state.converting = false;
