@@ -1,14 +1,14 @@
 // art/scenarios/moog921-vco/profile.test.ts
 //
-// AUDIO PROFILE for MOOG 921 VCO (backfill batch 3 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// AUDIO PROFILE for MOOG 921 VCO (backfill batch 3 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + worklet.ts).
 //
-// Category: self-driving SOURCE — params only (spec §4.2). Patch: the
+// Category: self-driving SOURCE — params only (spec §2.2). Patch: the
 // SHIPPING DEFAULTS (octave 0, tune 0 → C4 off the codebase's 1V/oct 0 V
 // reference; width 0.5 → square; level 1; sync off; no FM), 0.5 s steady.
 //
-// SIGNATURE outputs (owner decision §6b.2): ALL FOUR waveform jacks —
+// SIGNATURE outputs (owner decision §4 item 2): ALL FOUR waveform jacks —
 // sine / triangle / sawtooth / rectangular. Like the hardware, the four
 // jacks ride ONE shared phase accumulator and carry genuinely different
 // spectra (the polyBLEP/polyBLAMP band-limited shapes), so each gets its

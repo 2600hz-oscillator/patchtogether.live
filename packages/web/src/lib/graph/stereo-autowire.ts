@@ -9,8 +9,9 @@
 // paths, the AI driver and the unpatch menu all route through here — a writer
 // that does not is a writer that ships single-leg cables.
 //
-// THE POLICY MATRIX (owner-locked 2026-08-07; .myrobots/stereo-audio-plan/plan.md
-// §0b DUAL-MONO, which REVERSED the earlier unity-sum decision):
+// THE POLICY MATRIX (owner-locked 2026-08-07; the why:
+// docs/adr/008-stereo-as-dual-mono.md — DUAL-MONO REVERSED the earlier
+// unity-sum decision):
 //
 //   | source → target   | legs written                                      |
 //   |-------------------|---------------------------------------------------|

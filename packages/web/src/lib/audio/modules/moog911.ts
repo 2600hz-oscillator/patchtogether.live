@@ -2,8 +2,9 @@
 //
 // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 contour generator.
 //
-// Slice of the Moog System 55 / 35 clone initiative (.myrobots/MOOG/),
-// after the 921 VCO. The 911 ships in BOTH systems (S35 ×3, S55 ×6), so
+// Slice of the Moog System 55 / 35 clone initiative
+// (docs/adr/018-moog-clone-provenance.md), after the 921 VCO. The 911
+// ships in BOTH systems (S35 ×3, S55 ×6), so
 // like the 921 it's categorized under Ports → moogafakkin (the shared bucket).
 //
 // NOT a literal ADSR — the 911 is a three-time-constant CONTOUR generator
@@ -55,9 +56,10 @@ export const moog911Def: AudioModuleDef = {
     { id: 'gate', type: 'gate', edge: 'gate' },
     // CV inputs route to the corresponding AudioParam with engine-level
     // scaling (cvScale), so a -1..+1 LFO sweeps each param's full natural
-    // range centered on the user's knob position (see .myrobots/plans/
-    // cv-range-standard.md). T-times use log scaling (their range spans
-    // log decades); Esus is unipolar 0..1 so it uses linear scaling.
+    // range centered on the user's knob position (see
+    // docs/adr/004-cv-range-convention.md). T-times use log scaling (their
+    // range spans log decades); Esus is unipolar 0..1 so it uses linear
+    // scaling.
     { id: 't1_cv',   type: 'cv', paramTarget: 't1',   cvScale: { mode: 'log' } },
     { id: 't2_cv',   type: 'cv', paramTarget: 't2',   cvScale: { mode: 'log' } },
     { id: 'esus_cv', type: 'cv', paramTarget: 'esus', cvScale: { mode: 'linear' } },

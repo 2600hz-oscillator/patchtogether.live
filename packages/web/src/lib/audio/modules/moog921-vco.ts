@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog921-vco.ts
 //
 // MOOG 921 VCO — the first module of the Moog System 55 / 35 clone
-// initiative (.myrobots/MOOG/). Voltage-controlled oscillator faithful to
+// initiative (docs/adr/018-moog-clone-provenance.md).
+// Voltage-controlled oscillator faithful to
 // the original 921: ONE oscillator core presenting four simultaneous
 // waveform jacks (sine / triangle / sawtooth / rectangular with variable
 // pulse width), 1V/oct + linear frequency-control inputs, and a

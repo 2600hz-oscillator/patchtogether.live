@@ -1,7 +1,7 @@
 // art/scenarios/destroy/profile.test.ts
 //
 // AUDIO PROFILE for DESTROY (bitcrusher) — backfill batch 6, Faust-in-Node
-// harness (spec §5). DESTROY is Faust (packages/dsp/src/destroy.dsp):
+// harness (spec §3). DESTROY is Faust (packages/dsp/src/destroy.dsp):
 // sample-rate reduction (decimation — ba.sAndH holds the input for `decimate`
 // samples) + bit-depth reduction (quantize to 2^bits levels), dry/wet. Single
 // audio input; output 0 = `audio`. Its `decimate`/`bits`/`wet` params are each
@@ -15,7 +15,7 @@
 // COARSE quantization grid (~a dozen distinct levels) and grows strong odd
 // harmonics — the bitcrush signature.
 //
-// SIGNATURE output (owner §6b.2): the single `audio` output.
+// SIGNATURE output (owner §4 item 2): the single `audio` output.
 
 import { describe, expect, it } from 'vitest';
 import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';

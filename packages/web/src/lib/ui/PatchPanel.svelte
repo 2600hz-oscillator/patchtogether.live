@@ -1,7 +1,9 @@
 <script lang="ts">
   // Redesigned patch panel — every module card hosts one.
   //
-  // THE MODEL (see .myrobots / patch-menu-redesign UX spec items 1–5):
+  // THE MODEL (from the patch-menu redesign UX spec, items 1–5 — that spec was
+  // never committed and is in no preservation tag, so the model below is the
+  // record):
   //
   //   * Default state: two small "patch" affordances (top-LEFT + top-RIGHT)
   //     on the card. Every <Handle> declared on the module def is rendered

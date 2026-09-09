@@ -10,8 +10,9 @@
 // CARD applies the returned blob through the existing preset machinery
 // (applyDataBlobToNode → one LOCAL_ORIGIN transact ⇒ one Cmd-Z per roll).
 //
-// Design per the prior-art distillation (.myrobots/2026-08-13-random-preset-
-// prior-art.md, R1–R25):
+// Design per the prior-art distillation (R1–R25 below; the distillation itself
+// was never committed and is in no preservation tag, so these rules are the
+// record):
 //
 //   - CURATED, not uniform (R1): scalars roll from designer-tuned sub-ranges
 //     (CURATED_OP_RANGES; content uniforms jitter around their manifest

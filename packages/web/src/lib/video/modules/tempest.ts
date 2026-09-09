@@ -2,8 +2,9 @@
 //
 // TEMPEST (P1) — the vector well + player claw.
 //
-// A faithful Tempest-style tube shooter as a video module (owner-specced; plan in
-// .myrobots/plans/tempest-module-plan-2026-06-27.md). This phase is the first
+// A faithful Tempest-style tube shooter as a video module (owner-specced; design
+// in docs/design/game-modules.md, TEMPEST section; the build plan itself is
+// evidence/active/plans/tempest-module-plan-2026-06-27.md). This phase is the first
 // VISIBLE tube: a glowing additive-line "well" (the QuadraScan vector look) with
 // the player claw riding the near rim, its position driven by a CV input (the
 // authentic rotary-spinner control → a gamepad joystick axis). Enemies, fire,

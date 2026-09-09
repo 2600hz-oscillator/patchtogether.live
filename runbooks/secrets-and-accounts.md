@@ -101,6 +101,17 @@ flox activate -- gh secret list                          # GitHub Actions secret
 | **AWS ECR Public** | Docker image mirror for CI Postgres (avoids Docker Hub rate limits) | public read, no secret |
 | **ibiblio / distro mirror** | CI fetch of the shareware DOOM1.WAD (SHA-verified) | public, no secret |
 | **git-LFS** | tracks `.f32` ART baselines, `.png` VRT screenshots, `.wasm` assets | no separate account; uses GitHub |
+| **Apple Developer** | code-signing + notarization for the native shell (not yet wired) | <https://developer.apple.com/account> |
+
+**Apple signing topology** (no values, and nothing to copy into this repo): the
+`Developer ID Application` identity lives in the operator's macOS **login
+keychain** — list identities with `security find-identity -v -p codesigning`. The
+App Store Connect API key used by `notarytool` is a `.p8` file kept **outside
+every repo**, under the operator's home (`~/.appstoreconnect/private_keys/`); only
+its key id and issuer id are ever passed, as CLI flags or the electron-builder
+`APPLE_API_KEY*` environment triple, at build time on that machine. There is no
+Apple credential in GitHub Actions, Cloudflare or Fly, and signing releases is
+owner-gated.
 
 ## Critical lockstep + safety rules
 

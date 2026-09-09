@@ -1,7 +1,7 @@
 // art/scenarios/flipper/profile.test.ts
 //
-// AUDIO PROFILE for FLIPPER (backfill batch 1 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// AUDIO PROFILE for FLIPPER (backfill batch 1 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: gate UTILITY (alternating flip-flop router). Driver: the
@@ -9,7 +9,7 @@
 // pinned to sample 0), 1.0 s → four 5 ms pulses at 0 / 0.25 / 0.5 / 0.75 s.
 // The first gate after reset fires FLIP, so the train alternates
 // flip-flop-flip-flop — both outputs carry genuinely different pulse
-// positions and BOTH are captured (owner decision §6b.2: distinct taps).
+// positions and BOTH are captured (owner decision §4 item 2: distinct taps).
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/flipper-dsp.ts
 // FlipperState) — the EXACT per-sample code the worklet runs

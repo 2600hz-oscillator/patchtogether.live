@@ -1,10 +1,11 @@
 // art/scenarios/ninelives/profile.test.ts
 //
 // AUDIO PROFILE for NINE LIVES (9-output ⅓-ladder LFO) (backfill batch 3 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + worklet.ts).
 //
-// Category: self-driving MODULATION source — params only (spec §4.2), phase
+// Category: self-driving MODULATION source — params only (spec §2.2), phase
 // pinned to 0 at sample 0 by construction (fresh core, no reset needed).
 //
 // Patch: rate 8 Hz, shape 0 (sine — the shipping default waveform). Over
@@ -14,12 +15,12 @@
 //   down to out9 = 8/6561 Hz (a 13.7-minute cycle — over this window it is
 //   still CLIMBING its first quarter-cycle, asserted structurally below).
 //
-// SIGNATURE outputs (owner decision §6b.2): out1, out2, out3 — the three
+// SIGNATURE outputs (owner decision §4 item 2): out1, out2, out3 — the three
 // taps whose rates genuinely read inside a gallery-scale window. out4..out9
 // are the SAME waveform at (1/3)^n rates (near-DC here); they are rendered
 // and asserted structurally (ladder ordering + the out9 quarter-cycle
 // climb), not pinned as 6 more near-identical/near-DC dumps (the
-// multi-out "independent information only" rule, spec §4.1/§5).
+// multi-out "independent information only" rule, spec §2.1/§3).
 //
 // Rendering path: the REAL worklet processor class via the shared shim
 // loader — ninelives.ts is a thin self-contained wrapper around

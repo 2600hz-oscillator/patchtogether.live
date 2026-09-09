@@ -187,8 +187,9 @@ export function mixmstrsRecTapPair(
 // WHAT STAYED IS THE AUDIO: the pre-board insert heads, the three tap rosters
 // published by `read('recTaps')`, and `mixmstrsRecTapPair` above. The recorder
 // still captures this module's per-lane pre-board input — it is just no longer
-// ARMED from here. See `.myrobots/2026-09-02-mixmstrs-multitrack-clip-recording/spec.md`
-// §0.5.
+// ARMED from here. See `docs/adr/013-clip-owned-state-per-clip.md` (the spec
+// §0.5 it was ruled against is provenance, at
+// `evidence/active/2026-09-02-mixmstrs-multitrack-clip-recording/spec.md`).
 
 // ---------------- Comp macro mapping ----------------
 //

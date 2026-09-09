@@ -2,10 +2,10 @@
 //
 // DUAL-MONO — a module with ONE audio input runs its DSP TWICE, one instance
 // per channel, so a stereo signal is not destroyed the first time it meets a
-// mono module. Owner decision, 2026-08-07 (.myrobots/stereo-audio-plan/plan.md
-// §0b): "if we pass a stereo signal through a module which is, at present,
-// mono, we do not want to lose the stereo data." 2× CPU on those modules is
-// accepted deliberately.
+// mono module. Owner decision, 2026-08-07 (the why:
+// docs/adr/008-stereo-as-dual-mono.md): "if we pass a stereo signal through a
+// module which is, at present, mono, we do not want to lose the stereo data."
+// 2× CPU on those modules is accepted deliberately.
 //
 // There is NO "is the input really stereo?" heuristic. A runtime guess about
 // whether two channels "are the same signal" is exactly the class of instrument

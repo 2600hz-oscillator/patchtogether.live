@@ -3,8 +3,9 @@
 // MOOG CP3 / CP3A CONSOLE PANEL (mixer) AudioWorkletProcessor.
 //
 // CP3 console mixer slice of the Moog System 55 / 35 clone initiative
-// (.myrobots/MOOG/). Shared by BOTH systems (registered under SYS55, the
-// shared bucket, per the resolved Q4 decision).
+// (docs/adr/018-moog-clone-provenance.md). Shared by BOTH systems
+// (registered under SYS55, the shared bucket, per the resolved Q4
+// decision).
 //
 // DSP is OWN CODE — a forked + expanded version of the repo's `mixer`
 // (own code, permissive;), not a port of any

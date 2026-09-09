@@ -4,8 +4,9 @@
 // AudioWorkletProcessor.
 //
 // Batch-1 module of the Moog System 55 / 35 clone initiative
-// (.myrobots/MOOG/), shipped together with the 921A driver (the 921B is
-// meaningless without a 921A bus — though it can also self-stand if you
+// (docs/adr/018-moog-clone-provenance.md), shipped together with the 921A
+// driver (the 921B is meaningless without a 921A bus — though it can also
+// self-stand if you
 // patch a pitch source straight into freq_bus). The hardware 921B is the
 // slaved oscillator: it presents FOUR fixed-level simultaneous waveform
 // outs (Sine / Triangle / Saw / Rectangular) off ONE common core,

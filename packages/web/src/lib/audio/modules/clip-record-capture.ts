@@ -1,8 +1,8 @@
 // packages/web/src/lib/audio/modules/clip-record-capture.ts
 //
 // DETERMINISTIC live-record CAPTURE math for the dual-Launchpad KEYS recorder
-// (redesign: .myrobots/plans/clipplayer-live-record-overdub-redesign-2026-07-19.md
-// §4.1). PURE + engine-free: given a pad event's own timestamp + the recording
+// (redesign: docs/adr/013-clip-owned-state-per-clip.md).
+// PURE + engine-free: given a pad event's own timestamp + the recording
 // lane's published audio-clock PHASE, it returns the NEAREST quantized step the
 // note should land on — replacing the old "floor to the lagging 25 ms-stale
 // audible integer step" (`getLanePlayhead`) that dropped a musician's

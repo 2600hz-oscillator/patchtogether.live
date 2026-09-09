@@ -1,8 +1,8 @@
 // art/scenarios/unityscalemathematik/profile.test.ts
 //
 // AUDIO PROFILE for UNITYSCALEMATHEMATIK (triple CV shaper) (backfill
-// batch 4 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// batch 4 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: CV UTILITY (waveshaper). All three sections are fed the SAME
@@ -19,7 +19,7 @@
 // loader — unityscalemathematik.ts is fully self-contained pure math
 // (sign-preserving |x|^k power law + attenuverter), no RNG, no state.
 //
-// SIGNATURE outputs (owner decision §6b.2): all three — u_out / a_out /
+// SIGNATURE outputs (owner decision §4 item 2): all three — u_out / a_out /
 // b_out are three genuinely different transfer laws over the same input.
 //
 // The .sha pins the (self-contained) worklet entry.

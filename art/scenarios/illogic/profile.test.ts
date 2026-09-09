@@ -1,8 +1,8 @@
 // art/scenarios/illogic/profile.test.ts
 //
 // AUDIO PROFILE for ILLOGIC (4-ch attenuverter + sum/diff mixer + digital
-// logic) (backfill batch 5 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// logic) (backfill batch 5 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + offline.ts).
 //
 // Category: CV UTILITY — a three-in-one module, so the profile drives all
@@ -14,7 +14,7 @@
 //   Attenuverters: att1=+1, att2=−1 (INVERT — the "verter" half), att3=+0.5,
 //   att4=+1 — so SUM and DIFF carry a genuinely attenuverted, sign-mixed blend.
 //
-// SIGNATURE outputs (owner decision §6b.2) — one from each distinct behavior:
+// SIGNATURE outputs (owner decision §4 item 2) — one from each distinct behavior:
 //   and  — the digital logic block (gate1 ∧ gate2)
 //   or   — the digital logic block (gate1 ∨ gate2), a superset of AND
 //   sum  — the attenuverted 4-input mix (att1..att4 added)

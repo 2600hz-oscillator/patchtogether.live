@@ -26,7 +26,7 @@
 #     It did: the same commit retired the `card:` DEF FIELD, six declarations of
 #     which live in lib/video/modules/ — 96 of the 220 basis files.
 #
-# Do not trust a hash written down anywhere, including in .myrobots notes. Run
+# Do not trust a hash written down anywhere, an agent record included. Run
 # `flox activate -- task webgl:attest:check`.
 #
 # Usage:

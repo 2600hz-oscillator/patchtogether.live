@@ -13,8 +13,8 @@
 //     Image pass last) and per-pass channel resolution.
 //
 // The GL side (FBO allocation, ping-pong feedback, uniform binding) lives in
-// modules/toybox.ts and CONSUMES these helpers. See the design in
-// .myrobots / the PR for the full plan; the contract here is the testable seam.
+// modules/toybox.ts and CONSUMES these helpers. See the PR for the full plan;
+// the contract here is the testable seam.
 
 // ----------------------------------------------------------------------
 // 1. Single-pass shim + uniform preamble

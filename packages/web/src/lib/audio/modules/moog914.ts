@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog914.ts
 //
 // MOOG 914 EXTENDED FIXED FILTER BANK — a slice of the Moog System 55/35
-// clone initiative (.myrobots/MOOG/). The 914 is the Moog System 55's full
+// clone initiative (docs/adr/018-moog-clone-provenance.md). The 914 is
+// the Moog System 55's full
 // FIXED filter bank: a fan of TWELVE fixed-frequency bandpass sections (the
 // classic 1/3-octave series), each with its own level knob, plus a fixed
 // low-pass and a fixed high-pass section at the band-edges, all summed to one

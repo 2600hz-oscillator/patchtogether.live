@@ -1,7 +1,7 @@
 // art/scenarios/filter/profile.test.ts
 //
 // AUDIO PROFILE for FILTER (multi-mode resonant SVF) — backfill batch 6,
-// Faust-in-Node harness (spec §5). FILTER is Faust
+// Faust-in-Node harness (spec §3). FILTER is Faust
 // (packages/dsp/src/filter.dsp): LP/HP/BP resonant modes, cutoff CV mapped
 // -1..+1 → ±5 octaves around the knob by the DSP itself. Faust input order =
 // the def's ChannelMerger wiring [audio, cutoffCv, resCv]; output 0 = `audio`.
@@ -13,7 +13,7 @@
 // up as the sweep rises — the iconic diagonal filter-sweep spectrogram.
 // resonance high (0.7) so the sweeping resonant peak is prominent.
 //
-// SIGNATURE output (owner §6b.2): the single `audio` output.
+// SIGNATURE output (owner §4 item 2): the single `audio` output.
 
 import { describe, expect, it } from 'vitest';
 import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';

@@ -1,7 +1,8 @@
 // art/scenarios/moog-cp3/profile.test.ts
 //
 // AUDIO PROFILE for MOOG CP3 (console panel mixer) (backfill batch 4 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
 // Category: MIXER — the CP3's signature is (a) per-channel gain UP TO ×2
@@ -21,7 +22,7 @@
 // the first few ms (a deterministic spawn-transient — part of the shipping
 // sound, kept in the profile).
 //
-// SIGNATURE output (owner decision §6b.2): ONE baseline `out_positive`.
+// SIGNATURE output (owner decision §4 item 2): ONE baseline `out_positive`.
 // The other six outs are proven derivative in-scenario, not pinned:
 //   out_negative   ≡ −out_positive (exact phase inverse, affine dup)
 //   multiple_1..3  ≡ in1 (unaltered passthrough of the driver)

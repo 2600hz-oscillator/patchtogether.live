@@ -1,6 +1,7 @@
 // packages/web/src/lib/audio/modules/moog994.ts
 //
-// MOOG 994 DUAL MULTIPLES — Moog System 55 clone (.myrobots/MOOG/). The 994
+// MOOG 994 DUAL MULTIPLES — Moog System 55 clone
+// (docs/adr/018-moog-clone-provenance.md). The 994
 // is the console's passive MULTIPLE panel: two INDEPENDENT 1→3 fan-out
 // busses. Patch a signal into a group's input jack and it appears, unaltered,
 // on that group's three output jacks. Two such busses (A + B) per panel.

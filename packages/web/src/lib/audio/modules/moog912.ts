@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog912.ts
 //
 // MOOG 912 ENVELOPE FOLLOWER — a slice of the Moog System 55 / 35 clone
-// initiative (.myrobots/MOOG/). The 912 is a passive ANALYSIS utility: it
+// initiative (docs/adr/018-moog-clone-provenance.md). The 912 is a
+// passive ANALYSIS utility: it
 // watches an incoming AUDIO signal's amplitude and turns it into a smooth
 // control voltage (an "envelope") plus a GATE that goes high while the input
 // is sounding. Patch a drum or vocal in and use the env to open a VCF/VCA, or

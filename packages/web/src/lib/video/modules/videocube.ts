@@ -52,7 +52,8 @@
 // nothing. A brand new visual — do NOT auto-merge (held for owner
 // visual preview).
 //
-// Redesign spec: .myrobots/plans/videocube-redesign-2026-07-20.md
+// Redesign rationale: docs/adr/016-model-the-cause-state-the-divergence.md
+// (the spec itself: evidence/archive/2026/plans/videocube-redesign-2026-07-20.md)
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';

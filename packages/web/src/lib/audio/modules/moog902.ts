@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog902.ts
 //
 // MOOG 902 — Voltage Controlled Amplifier (slice 3 of the Moog System
-// 55 / 35 clone initiative, .myrobots/MOOG/). The classic Moog differential
+// 55 / 35 clone initiative, docs/adr/018-moog-clone-provenance.md).
+// The classic Moog differential
 // VCA: a manual GAIN pot, summing CONTROL INPUTS, a SIGNAL input, and TWO
 // complementary outputs (the differential pair — the normal output + its
 // phase-inverted twin), with a LINEAR / EXPONENTIAL response switch.

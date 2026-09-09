@@ -20,7 +20,8 @@
 // asserted rather than described.)
 //
 // P1 BATCH 1 (2026-07-25): the first faced-module wave — six total reworks to
-// the gallery spec (see .myrobots/plans, workflow-mode UI refactor §3.6 + §5).
+// the gallery spec (the ranking model now lives in
+// .claude/skills/module-surfaces/references/bespoke-surface-lessons.md).
 // Each entry below carries a complete co-located `face` (order + pages + glyph)
 // authored against its fullcard mock.
 //
@@ -3548,8 +3549,9 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   //
   // Two faces, and the batch is TWO rather than four because the re-derivation
   // moved two of its four assigned modules OUT of the plain set. Both
-  // reclassifications are recorded in `.myrobots/2026-08-23-cut-a-batch2-
-  // derivation.md` with the read sites; the short form is that `samsloop`'s
+  // reclassifications are recorded in
+  // `evidence/archive/2026/2026-08-23-cut-a-batch2-derivation.md` with the read
+  // sites; the short form is that `samsloop`'s
   // recording switches are `node.data` and not params, and `joystick` could
   // not paint a lane tile with the pad-only shape it was then assumed to need.
   // (⚠ RESOLVED 2026-09-01: the owner's two-ordinary-cells fallback ranks the
@@ -5254,7 +5256,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // should look like a face with one control.
   //
   // ⚠ THE SPEC'S PRECURSOR HAD ALREADY LANDED, AND CHECKING THAT IS THE ONLY
-  // REASON THIS PR IS CHEAP. `.myrobots/2026-08-24-bespoke-wave6/tvLibrarian/`
+  // REASON THIS PR IS CHEAP. `evidence/archive/2026/2026-08-24-bespoke-wave6/tvLibrarian/`
   // is a PROMOTE-WITH-PRECURSOR: face completeness is unconditional, so a face
   // must rank `gain`, and `gain` was declared, exposed nowhere and read by
   // nothing — the def's own docs said so. #2189 wired the `uGain` uniform for
@@ -5518,9 +5520,10 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // pins the `tileBody`'s EXISTENCE for exactly that reason.
   //
   // ⚠ THE STANDING REFUSE-SPEC'S LEAD BLOCKER WAS ALREADY DEAD.
-  // `.myrobots/2026-08-24-bespoke-wave5/skifree/spec.md` refused this face on
-  // three legs, and B1 ("promotion DELETES THE GAME — the engine lives on the
-  // card") was TRUE WHEN WRITTEN and was retired by #2192 (868ddb9ee), which
+  // `evidence/archive/2026/2026-08-24-bespoke-wave5/skifree/spec.md` refused
+  // this face on three legs, and B1 ("promotion DELETES THE GAME — the engine
+  // lives on the card") was TRUE WHEN WRITTEN and was retired by #2192
+  // (868ddb9ee), which
   // moved the bundle load, the controller and its disposal into the FACTORY on
   // node lifetime. B3 (no determinism seam) survives and is discharged
   // honestly, as a `FACES_WITHOUT_SCENES` entry with the measurement in it
@@ -6397,7 +6400,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // ⚠ THE PICTURE ALREADY SURVIVES WITH NO SURFACE MOUNTED, and that half is
   // NOT this PR's work — #1720 moved the op-log replay onto NODE lifetime in
   // `$lib/ui/media/extras-producers`, which is why a saved rack renders the
-  // drawing rather than the white placeholder. The `.myrobots` spec predicted
+  // drawing rather than the white placeholder. The face spec
+  // (evidence/archive/2026/face-specs/painter.html) predicted
   // this PR would have to port it; the tree had already done so, verified
   // against `extras-producers.ts` before writing a line. What this PR adds is
   // the EDITOR, and the lease handshake that lets the body push its own live
@@ -6777,7 +6781,7 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // if a revoke/stop/detach ever returns to an unmount path. The IMAGE half is
   // a node-lifetime `extras-producers` entry (`EXTRAS_PRODUCER_TYPES`), so an
   // image layer is reconstructed from `node.data` with no surface at all. The
-  // spec package that recorded the blocker (.myrobots/face-specs/toybox.html
+  // spec package that recorded the blocker (evidence/archive/2026/face-specs/toybox.html
   // rev 2) still describes the pre-#1589 card in the PRESENT TENSE and calls
   // the registry port "the face PR's precondition"; it had already shipped a
   // fortnight earlier. Read the card, never the why.

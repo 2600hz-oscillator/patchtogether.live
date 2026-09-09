@@ -1,6 +1,7 @@
 <script lang="ts">
   // MoogPanel — the SHARED beige Moog faceplate wrapper for the Moog
-  // System 55 / 35 clone module family (.myrobots/MOOG/). This is the
+  // System 55 / 35 clone module family
+  // (docs/adr/018-moog-clone-provenance.md). This is the
   // intrinsic, always-on Moog look (per the plan's resolved decision:
   // "beige Moog panel is the intrinsic always-on look") — it does NOT
   // depend on the active UI skin.

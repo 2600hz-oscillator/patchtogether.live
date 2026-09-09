@@ -116,7 +116,7 @@ describe('docs do not point at files that no longer exist', () => {
   it('README repo-relative doc references resolve', () => {
     const readme = read('README.md');
     const refs = new Set<string>();
-    for (const [, p] of readme.matchAll(/`((?:docs|runbooks|\.myrobots)\/[A-Za-z0-9._/-]+\.md)`/g)) {
+    for (const [, p] of readme.matchAll(/`((?:docs|runbooks|evidence)\/[A-Za-z0-9._/-]+\.md)`/g)) {
       refs.add(p);
     }
     expect(refs.size, 'no repo-relative doc references found to check').toBeGreaterThan(0);

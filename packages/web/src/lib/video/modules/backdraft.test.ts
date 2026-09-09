@@ -669,7 +669,8 @@ describe('backdraftHallComposite — additive ↔ ring-gated hall of mirrors', (
 // ── FLICKER ─────────────────────────────────────────────────────────────
 // The display's pulsed emission as the virtual camera captures it, AND what
 // the camera does to it downstream. Model + sources:
-// .myrobots/plans/backdraft-flicker-research-2026-07-26.md.
+// docs/adr/016-model-the-cause-state-the-divergence.md (provenance:
+// evidence/archive/2026/plans/backdraft-flicker-research-2026-07-26.md).
 //
 //   g(t, v) = A * [ 1 + m*sinc(f*T_e)*|H| * cos(2*pi*f*(t_n + T_e/2) + argH
 //                                              + 2*pi*f*T_ro*v) ]

@@ -1,7 +1,7 @@
 // art/scenarios/bluebox/profile.test.ts
 //
-// AUDIO PROFILE for BLUEBOX (backfill batch 1 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// AUDIO PROFILE for BLUEBOX (backfill batch 1 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts).
 //
 // Category: gate-driven SOURCE (12 push-to-talk tone buttons). The driver
@@ -20,7 +20,7 @@
 // a-rate arrays, so segment edges are sample-exact); the gate inputs are
 // the OR'd equivalent path.
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `out`.
+// SIGNATURE output (owner decision §4 item 2): the single mono `out`.
 //
 // The .sha pins BOTH the worklet entry and the tone-table lib
 // (combinedSourceSha discipline) so a change in either forces an

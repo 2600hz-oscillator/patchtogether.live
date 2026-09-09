@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog992.ts
 //
 // MOOG 992 CONTROL VOLTAGE PANEL — a slice of the Moog System 55 / 35 clone
-// initiative (.myrobots/MOOG/). The 992 is a passive CV utility: a 4-into-1
+// initiative (docs/adr/018-moog-clone-provenance.md). The 992 is a
+// passive CV utility: a 4-into-1
 // CONTROL-VOLTAGE summing/attenuating panel. Each of the four inputs has its
 // own attenuator; the summed result appears at a single CV output. The 4th
 // channel is SIGNAL-INVERTING — its attenuator subtracts from the sum, so the

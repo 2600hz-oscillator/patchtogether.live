@@ -1,7 +1,7 @@
 // art/setup/drivers.ts
 //
 // Canonical DETERMINISTIC drivers for ART audio-profile scenarios (spec
-// §4.2/§4.3 — .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md).
+// §2.2/§1.2 — evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 // One driver per module category, so every profile is driven the same way:
 //
 //   source (self-driving)   → none (params only; seeded PRNG where RNG-based)

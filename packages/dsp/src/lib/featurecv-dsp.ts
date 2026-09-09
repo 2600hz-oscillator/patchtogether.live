@@ -19,7 +19,9 @@
 // The three CV features are emitted BIPOLAR (−1..+1) by DEFAULT (a `bipolar`
 // toggle switches to unipolar 0..1). A unipolar source from a knob-centred
 // destination only sweeps half the range; bipolar sweeps the full range — see
-// .myrobots/plans/synesthesia-modulation-depth-2026-06-20.md + applyBipolar.
+// docs/adr/004-cv-range-convention.md (bipolar ±1 = the full sweep) +
+// applyBipolar. Provenance for the measurement:
+// evidence/active/plans/synesthesia-modulation-depth-2026-06-20.md.
 //
 // REUSE: the one-pole EnvFollower + applyBipolar come straight from
 // synesthesia-dsp; the onset detector (FeatureOnset) reuses synesthesia's

@@ -3,7 +3,8 @@
 // MOOG 904B — Voltage Controlled High Pass Filter AudioWorkletProcessor.
 //
 // Batch-1 module of the Moog System 55 / 35 clone initiative
-// (.myrobots/MOOG/). The 904B is the high-pass companion to the 904A LPF:
+// (docs/adr/018-moog-clone-provenance.md). The 904B is the high-pass
+// companion to the 904A LPF:
 // a 24 dB/oct transistor-ladder HIGH-pass. Like the hardware, the high-pass
 // is derived from the ladder by SUBTRACTING the low-passed signal from the
 // input (the ladder is fundamentally a low-pass; hp = input − lp).

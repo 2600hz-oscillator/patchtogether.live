@@ -1,8 +1,12 @@
 // packages/dsp/src/lib/master-limiter-dsp.ts
 //
 // MASTER LIMITER — the terminal safety stage for `audioOut`, replacing the
-// full-band stereo-linked `DynamicsCompressorNode` that the DSP audit indicts
-// as P0-A1 (.myrobots/plans/dsp-stack-bass-freq-audit-2026-07-01.md):
+// full-band stereo-linked `DynamicsCompressorNode` that the DSP audit indicted
+// (the decision: docs/adr/010-terminal-sink-and-audio-health.md; the audit:
+// evidence/active/plans/dsp-stack-bass-freq-audit-2026-07-01.md — the finding it
+// labelled A1 was closed by #1369 and its text swept out of that record by
+// #1490, so the sentence quoted below survives at f263e52bb8, not in the live
+// file):
 //
 //   "It is full-band and stereo-linked. Attack 3 ms + release 50 ms is on the
 //    order of the sub period (40 Hz = 25 ms), so on a −6 dBFS+ kick it

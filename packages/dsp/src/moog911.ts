@@ -3,8 +3,9 @@
 // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 contour generator
 // AudioWorkletProcessor.
 //
-// Slice 3 of the Moog System 55 / 35 clone initiative (.myrobots/MOOG/),
-// after the 921 VCO (slice 1). The 911 ships in both systems (S35 ×3,
+// Slice 3 of the Moog System 55 / 35 clone initiative
+// (docs/adr/018-moog-clone-provenance.md), after the 921 VCO (slice 1).
+// The 911 ships in both systems (S35 ×3,
 // S55 ×6) so it's categorized under Moog → SYS55 (the shared bucket).
 //
 // This is NOT a literal A-D-S-R. The real 911 is a THREE-time-constant

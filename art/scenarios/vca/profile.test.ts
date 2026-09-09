@@ -1,8 +1,8 @@
 // art/scenarios/vca/profile.test.ts
 //
 // AUDIO PROFILE for VCA (voltage-controlled amplifier, mono) — backfill
-// batch 6, the FAUST-IN-NODE harness's first pinned module (spec §5,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md).
+// batch 6, the FAUST-IN-NODE harness's first pinned module (spec §3,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 //
 // VCA is Faust (packages/dsp/src/vca.dsp): out = audio * (base + cvAmount*cv),
 // gain one-pole-smoothed (si.smoo). No pure-TS core, no self-contained TS
@@ -17,7 +17,7 @@
 // gated VCA. cvAmount=1, base=0 (silent-when-unpatched), so the output is
 // audio×cv with the smoother rounding the gate edges.
 //
-// SIGNATURE output (owner decision §6b.2): `audio`. The def's second port
+// SIGNATURE output (owner decision §4 item 2): `audio`. The def's second port
 // `audio_inv` is a factory-side GainNode(-1) tap = exactly −audio (no
 // independent information), so it is NOT separately pinned.
 

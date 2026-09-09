@@ -4,8 +4,9 @@
 // source) AudioWorkletProcessor.
 //
 // Batch-1 module of the Moog System 55 / 35 clone initiative
-// (.myrobots/MOOG/), shipped together with the 921B oscillator (the 921A is
-// meaningless without ≥1 slaved 921B). The hardware 921A generates the two
+// (docs/adr/018-moog-clone-provenance.md), shipped together with the 921B
+// oscillator (the 921A is meaningless without ≥1 slaved 921B). The
+// hardware 921A generates the two
 // CONTROL VOLTAGES that drive N 921B oscillators off a common bus: a
 // frequency CV (encoding pitch) and a width CV (pulse-width). It has a
 // FREQUENCY pot, a two-position frequency-RANGE switch (SEMITONE = 2-oct /

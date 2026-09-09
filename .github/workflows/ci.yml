@@ -1720,8 +1720,14 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
-  # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (.myrobots/plans/webgl-
-  # attestation-semaphore.md §6). CI's only WebGL renderer is SwiftShader and
+  # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (both WebGL lanes and why they
+  # gate: runbooks/ci.md § "Required checks (branch protection)", whose
+  # GATING-through-the-umbrella list names both webgl-smoke and webgl-attest;
+  # the retired planning record `plans/webgl-attestation-semaphore.md §6` that
+  # first argued for this floor is one of the four that no ref, reflog or stash
+  # still holds — see docs/migrations/myrobots-retirement-plan.md §2, so the
+  # runbook holds the GATING STATUS and the argument for the floor is the
+  # paragraph below). CI's only WebGL renderer is SwiftShader and
   # there is no heavy WebGL e2e lane on PRs (the dead `e2e-video` lane was
   # deleted 2026-06-20), so without this CI would be fully BLIND to gross WebGL
   # breakage. This runs a tiny, fast,
@@ -1896,8 +1902,12 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
-  # webgl-attest — the REAL-GPU attestation VERIFY gate (.myrobots/plans/webgl-
-  # attestation-semaphore.md §7). Recomputes the deterministic WebGL content-
+  # webgl-attest — the REAL-GPU attestation VERIFY gate (runbooks/ci.md for the
+  # gating status, `.claude/skills/renderer-tests/SKILL.md` "Real-GPU
+  # attestation" for how one is produced; the retired planning record
+  # `plans/webgl-attestation-semaphore.md §7` this block used to cite is
+  # unrecoverable — docs/migrations/myrobots-retirement-plan.md §2).
+  # Recomputes the deterministic WebGL content-
   # hash (scripts/webgl-attest-hash.sh) and checks ci-webgl-attest/<hash>.json
   # exists. The attestation was produced by the owner's local real-GPU
   # `task webgl:attest` run and committed WITH the PR; it travels through

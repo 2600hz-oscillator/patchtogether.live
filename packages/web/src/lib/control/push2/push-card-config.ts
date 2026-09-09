@@ -189,8 +189,10 @@ export const PUSH_CARD_CONTROLS: Readonly<Record<string, readonly string[]>> = {
   // channel fader off the display.
   //
   // An override REPLACES rather than merges, so this also pins the card against
-  // the drift CLAUDE.md warns about — `.myrobots/stereo-audio-plan/plan.md`
-  // PR-6 adds eight `pan{N}` params to this module, which would otherwise
+  // the drift CLAUDE.md warns about — the still-unshipped PR-6 of the stereo
+  // plan (provenance: `evidence/active/stereo-audio-plan/plan.md`; the
+  // decision: docs/adr/008-stereo-as-dual-mono.md) adds eight `pan{N}` params
+  // to this module, which would otherwise
   // re-rank the generic tier underneath it.
   //
   // Spelled out rather than generated from `MIXMSTRS_CHANNELS`: this file is a

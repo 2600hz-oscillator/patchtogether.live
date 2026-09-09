@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/poly-alloc.ts
 //
 // STABLE per-voice allocator for the poly cable — Phase 2a of the gate/held-note
-// model (.myrobots/plans/gate-heldnote-model-2026-07-01.md §3.2).
+// model (the why: docs/adr/009-gate-carries-timing-only.md).
 //
 // THE PROBLEM it fixes. Live-keyboard / audition voices used to be packed
 // POSITIONALLY into lanes 0..n-1 and REBUILT on every key edge (clipplayer

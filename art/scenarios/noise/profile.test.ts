@@ -1,14 +1,15 @@
 // art/scenarios/noise/profile.test.ts
 //
 // AUDIO PROFILE for NOISE (basic noise source) (backfill batch 5 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: self-driving SOURCE with a seedable PRNG (the batch-4 verified
 // lead: the generators take an explicit `seed`, so the profile never touches
 // Math.random — DETERMINISM.md "Random seed (ART audio profiles)"). Each of
 // the three flavor outputs is a genuinely different spectrum — the module's
-// whole point — so ALL THREE are signature outputs (owner decision §6b.2):
+// whole point — so ALL THREE are signature outputs (owner decision §4 item 2):
 //   white — flat        (≈ 0 dB/oct)
 //   pink  — 1/f         (≈ −3 dB/oct, Voss-McCartney)
 //   brown — 1/f²        (≈ −6 dB/oct, leaky-integrated white)
@@ -19,7 +20,7 @@
 // render (the factory's per-output GainNode is a plain multiply).
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/noise-dsp.ts —
-// extracted from the def in this batch per the plan's §5 "extract a core
+// extracted from the def in this batch per the plan's §3 "extract a core
 // instead" rule; the factory pre-generates its looping AudioBuffers from
 // EXACTLY these functions). The factory-side wiring (2 s loop + LEVEL gain)
 // lives in noise.ts's def — deliberately NOT pinned: that file co-locates

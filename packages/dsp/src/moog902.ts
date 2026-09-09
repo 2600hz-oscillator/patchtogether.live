@@ -2,7 +2,8 @@
 //
 // MOOG 902 — Voltage Controlled Amplifier AudioWorkletProcessor.
 //
-// Slice 3 of the Moog System 55 / 35 clone initiative (.myrobots/MOOG/).
+// Slice 3 of the Moog System 55 / 35 clone initiative
+// (docs/adr/018-moog-clone-provenance.md).
 // The 902 is the classic Moog differential VCA: a manual GAIN pot, a set of
 // summing CONTROL INPUTS, a SIGNAL input, and TWO complementary outputs (the
 // differential pair — the normal output + its phase-inverted twin). It has a
@@ -10,7 +11,8 @@
 // (S35×3, S55×5) → shared → categorized under Moog → SYS55 (the shared
 // bucket, mirroring the 921 + 904A).
 //
-// GAIN LAW (the load-bearing behavior — see .myrobots/MOOG/ spec Fig 9):
+// GAIN LAW (the load-bearing behavior — originally anchored to the lost
+// "MOOG/ spec Fig 9"; restated in docs/adr/018-moog-clone-provenance.md):
 //   The amplifier's gain is driven by a CONTROL SUM measured in volts:
 //       control = gainKnob(0..6 V)  +  fcv (fixed-control-voltage bias)
 //                 + cvAmount * cv   (the summing CONTROL INPUTS)
@@ -46,8 +48,9 @@
 // DSP is OWN CODE. A clean-room amplifier gain law forked from the repo's own
 // existing `vca` (packages/dsp/src/vca.dsp) — re-implemented here in TS with
 // the added EXPONENTIAL branch + the Moog ×2-at-6V / ×3-ceiling scaling. NOT
-// a port of any Moog schematic or copyleft source (.myrobots/MOOG/
-// LICENSING.md: permissive / own-code only).
+// a port of any Moog schematic or copyleft source (permissive / own-code
+// only — the lost MOOG/LICENSING.md attestation is reconstructed in
+// docs/adr/018-moog-clone-provenance.md).
 //
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART

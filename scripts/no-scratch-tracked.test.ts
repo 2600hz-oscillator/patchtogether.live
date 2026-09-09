@@ -34,6 +34,13 @@ const DENY: ReadonlyArray<{ re: RegExp; why: string }> = [
     why: 'session-UUID directory — agent run identity',
   },
   { re: /(^|\/)-Users-/, why: 'flattened absolute home path (`-Users-…`) — leaks a username' },
+  {
+    // The 2026-09 retirement moved the whole tree out (plan §6.5). This keeps it
+    // out: a re-added record would otherwise land back in a tree nothing reads,
+    // outside the evidence ledger that now accounts for every record.
+    re: /(^|\/)\.myrobots\//,
+    why: 'retired agent-evidence tree — archived under evidence/',
+  },
 ];
 
 function trackedFiles(): string[] {
@@ -71,15 +78,20 @@ describe('no agent scratch or generated-report tree is tracked', () => {
       'private/tmp/claude-501/x/scratchpad/gallery-out/index.html',
       'packages/web/src/lib/2ffc60a3-c8f8-46ab-86cb-6ffeae3fd374/x.ts',
       'tools/-Users-someone-workspace/notes.md',
+      // Was in the ALLOW list below until the 2026-09 retirement; it moved
+      // sides rather than being deleted, so the flip is visible in one diff.
+      '.myrobots/plans/face-specs-batch-4-INDEX.md',
     ];
     for (const p of synthetic) {
       expect(DENY.some((d) => d.re.test(p)), `denylist failed to reject ${p}`).toBe(true);
     }
-    // …and it must not reject ordinary source paths.
+    // …and it must not reject ordinary source paths — including the tree the
+    // retired records now live in, which is ordinary tracked project content.
     for (const p of [
       'packages/web/src/lib/audio/modules/vca.ts',
       'e2e/vrt/__screenshots__/vrt.spec.ts/linux/adsr.png',
-      '.myrobots/plans/face-specs-batch-4-INDEX.md',
+      'evidence/active/2026-09-04-native-shell-plan/build-brief.md',
+      'evidence/archive/2026/plans/face-specs-batch-4-INDEX.md',
     ]) {
       expect(DENY.some((d) => d.re.test(p)), `denylist wrongly rejected ${p}`).toBe(false);
     }

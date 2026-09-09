@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog905.ts
 //
 // MOOG 905 SPRING REVERBERATION — a slice of the Moog System 55 / 35 clone
-// initiative (.myrobots/MOOG/). The 905 is the classic Moog spring-reverb
+// initiative (docs/adr/018-moog-clone-provenance.md). The 905 is the
+// classic Moog spring-reverb
 // tank: metallic, dispersive, with the characteristic "boing" / chirp on
 // transients. Its wet output is a spring-reverb of the audio input, blended
 // dry↔wet by the MIX knob.

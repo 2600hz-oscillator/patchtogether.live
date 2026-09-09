@@ -113,6 +113,7 @@ and Cloudflare so they never drift. Full inventory:
 | [ci.md](ci.md) | Every GitHub Actions workflow, required checks, **how to read a failure** |
 | [deployment.md](deployment.md) | Tier map + triggers + exact by-hand deploy commands, rollback, single-machine invariant |
 | [observability.md](observability.md) | `/health` + `/metrics`, memory alarm, live-smoke-alert, BetterStack pointer |
+| [native-shell.md](native-shell.md) | Electron desktop shell + native helpers: install, build, run, harness, Electron pin bumps |
 | [secrets-and-accounts.md](secrets-and-accounts.md) | Table of every secret/env var (values redacted) + every external account |
 | [integrations/cloudflare.md](integrations/cloudflare.md) | Cloudflare Pages deep dive |
 | [integrations/clerk.md](integrations/clerk.md) | Clerk auth deep dive |

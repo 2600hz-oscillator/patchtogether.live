@@ -1,14 +1,14 @@
 // art/scenarios/adsr/profile.test.ts
 //
-// AUDIO PROFILE for ADSR (backfill Phase-0 pilot — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// AUDIO PROFILE for ADSR (backfill Phase-0 pilot — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
-// Category: ENVELOPE — driven by the canonical held-square gate (spec §4.2:
+// Category: ENVELOPE — driven by the canonical held-square gate (spec §2.2:
 // gate high then released, ≥1.0 s so attack→decay→sustain→release are all
 // visible in the gallery). Gate: high for 0.6 s of a 1.2 s render.
 //
-// SIGNATURE outputs only (owner decision §6b.2): `env` is captured;
+// SIGNATURE outputs only (owner decision §4 item 2): `env` is captured;
 // `env_inv` is skipped as a non-distinct inverse (1 − env carries no
 // independent information).
 //

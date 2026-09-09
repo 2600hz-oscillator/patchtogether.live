@@ -1,7 +1,8 @@
 // packages/web/src/lib/audio/modules/moog993.ts
 //
 // MOOG 993 TRIGGER & ENVELOPE VOLTAGES PANEL — a slice of the Moog System 55
-// clone initiative (.myrobots/MOOG/). The 993 is a patch-bay convenience
+// clone initiative (docs/adr/018-moog-clone-provenance.md). The 993 is a
+// patch-bay convenience
 // panel: a configurable TRIGGER ROUTER (three trigger outs, each selecting
 // one of two trigger sources, or OFF) plus two unity ENVELOPE-CV passthroughs.
 // Categorized under Ports → moogafakkin (the shared bucket, mirroring the CP3 / 921A).

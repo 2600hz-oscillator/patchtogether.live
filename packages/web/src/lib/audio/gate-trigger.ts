@@ -5,7 +5,7 @@
 // "trigger" and a "gate" ARE — mirrors the `$lib/audio/midi-timing` precedent
 // (one util every bridge must use).
 //
-// Hardware grounding (see .myrobots/plans/io-trigger-gate-sanitization.md §2):
+// Hardware grounding (see docs/adr/009-gate-carries-timing-only.md):
 // in Eurorack a gate and a trigger are the SAME binary CV — the only
 // difference is TIME. A TRIGGER is a very short pulse that STARTS an event
 // (the receiver fires once on the rising edge and ignores the fall). A GATE

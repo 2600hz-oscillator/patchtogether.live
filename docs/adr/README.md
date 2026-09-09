@@ -18,6 +18,17 @@ just enough.
 | 005 | [Persistence formats: server Y-state vs. envelope JSON](005-persistence-envelope.md) | Accepted                 |
 | 006 | [Capacity + auth gate ordering for rackspace joins](006-rackspace-join-capacity.md) | Accepted (with known race) |
 | 007 | [Game-asset distribution (DOOM + Blood)](007-game-asset-distribution.md) | Accepted (with an OPEN owner decision) |
+| 008 | [Model stereo as dual mono](008-stereo-as-dual-mono.md)         | Accepted (two module groups deferred) |
+| 009 | [Let a gate carry timing only, and own a voice by note identity](009-gate-carries-timing-only.md) | Accepted (later phases unbuilt) |
+| 010 | [Make the terminal sink safe, and name every way audio dies](010-terminal-sink-and-audio-health.md) | Accepted (3 audit items open) |
+| 011 | [Separate rig lifetime from patch lifetime](011-rig-lifetime-versus-patch-lifetime.md) | Accepted (crossfade mechanism Proposed) |
+| 012 | [Size modules in rack units, not pixels](012-rack-units-not-pixels.md) | Accepted                 |
+| 013 | [Keep clip-owned state per clip, and media out of the Y.Doc](013-clip-owned-state-per-clip.md) | Accepted (song mode 2–6 unbuilt) |
+| 014 | [Keep a local replica for the unsynced scratch rack](014-local-replica-for-the-scratch-rack.md) | Accepted (5 decisions open) |
+| 015 | [Re-architect only on a measurement](015-re-architect-only-on-a-measurement.md) | Accepted                 |
+| 016 | [Model the cause, and state every deliberate divergence](016-model-the-cause-state-the-divergence.md) | Accepted                 |
+| 017 | [Decline the tidiness changes that cost behaviour or evidence](017-decline-tidiness-that-costs-behaviour.md) | Accepted (one item overturned) |
+| 018 | [Moog clone provenance — own code, clean-room, no port](018-moog-clone-provenance.md) | Accepted (source record lost) |
 
 ## What goes in an ADR
 
@@ -75,5 +86,12 @@ don't have access to the codebase's tribal-knowledge memory files.
 
 - In-app docs: <https://patchtogether.live/docs>
 - Design docs: [`docs/design/`](../design/)
-- Plan docs (work-in-flight): `.myrobots/plans/` (repo-local; not always
-  current — ADRs are the snapshot of what shipped).
+- Skills: [`.claude/skills/`](../../.claude/skills/) — reusable judgement for
+  work in flight (an ADR carries the *why*; a skill carries what to do about it).
+- Plan docs (work-in-flight): [`evidence/active/`](../../evidence/active/) — live
+  specs and unresolved owner decisions. Retired ones:
+  [`evidence/archive/<year>/`](../../evidence/archive/), frozen, with
+  `evidence/MANIFEST.tsv` as the ledger. Both are evidence, not instruction.
+  Where an ADR's decision came from a record that was not kept, its References
+  section names the preservation tag that holds it. ADRs are the snapshot of
+  what shipped — when an ADR and the tree disagree, the tree wins.

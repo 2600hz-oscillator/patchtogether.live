@@ -16,7 +16,7 @@
 //           fundamental is replaced by sum/difference sidebands)
 // Same C4 saw into both audio inputs; only the strength content differs.
 //
-// SIGNATURE outputs (owner §6b.2 — distinct): out_l (VCA) and out_r (ring mod)
+// SIGNATURE outputs (owner §4 item 2 — distinct): out_l (VCA) and out_r (ring mod)
 // are genuinely different signals, both pinned.
 
 import { describe, expect, it } from 'vitest';

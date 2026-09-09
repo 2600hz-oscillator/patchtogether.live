@@ -1,10 +1,11 @@
 // art/scenarios/moog905/profile.test.ts
 //
 // AUDIO PROFILE for MOOG905 (spring reverberation) (backfill batch 1 —
-// spec §4.1/§4.3, .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md),
+// spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),
 // through the shared capture harness (art/setup/capture.ts + drivers.ts).
 //
-// Category: FX / PROCESSOR with a DECAY TAIL — so per spec §4.1 the render
+// Category: FX / PROCESSOR with a DECAY TAIL — so per spec §2.1 the render
 // is ≥1.0 s (1.5 s here) and the driver is a short transient, not a steady
 // tone: a 60 ms C4 saw burst at t=0, then silence, so the spring's
 // signature dispersive "boing" chirp + metallic feedback tail is what the
@@ -13,7 +14,7 @@
 // applied exactly as ../moog905.ts does (out = x·(1−mix) + wet·mix — the
 // lib returns pure WET by design).
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `audio` out.
+// SIGNATURE output (owner decision §4 item 2): the single mono `audio` out.
 //
 // Rendering path: the pure-TS core (packages/dsp/src/lib/spring-reverb-dsp.ts
 // SpringReverb) — the EXACT per-sample tank the worklet steps. NOTE: the

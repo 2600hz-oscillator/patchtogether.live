@@ -3,7 +3,8 @@
 // MOOG 921 VCO — voltage-controlled oscillator AudioWorkletProcessor.
 //
 // First module of the Moog System 55 / 35 clone initiative
-// (.myrobots/MOOG/). The 921 is shared by both systems (listed under
+// (docs/adr/018-moog-clone-provenance.md). The 921 is shared by both
+// systems (listed under
 // SYS55). DSP is OWN CODE — a clean-room polyBLEP oscillator core in
 // ./lib/moog-vco-dsp.ts, not a port of any Moog schematic / copyleft
 // source (permissive / own-code only).

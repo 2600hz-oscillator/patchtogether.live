@@ -1,8 +1,8 @@
 // art/scenarios/moog904b/profile.test.ts
 //
 // AUDIO PROFILE for MOOG 904B (voltage controlled high pass filter)
-// (backfill batch 2 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// (backfill batch 2 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).
 //
 // Category: FILTER — driven by the canonical VCO test signal (C4 saw,
@@ -24,7 +24,7 @@
 // `cutoff` AudioParam with full-length arrays, so segment values are
 // sample-exact.
 //
-// SIGNATURE output (owner decision §6b.2): the single mono `audio` out.
+// SIGNATURE output (owner decision §4 item 2): the single mono `audio` out.
 //
 // The .sha pins the worklet entry + BOTH libs its per-sample path runs
 // through (the ladder core and the WtParamSmoother in wavetable-osc), so a

@@ -17,7 +17,9 @@
 //                        alias would be a different instrument wearing the
 //                        old node's id). Old nodes take the visible
 //                        unknown-type drop path.
-//   Design + the full migration argument: .myrobots/plans/warrens-spectrum-2026-08-02.md
+//   Design + the full migration argument:
+//   docs/adr/016-model-the-cause-state-the-divergence.md (provenance:
+//   evidence/active/plans/warrens-spectrum-2026-08-02.md)
 //
 // ── ⚠ PORT-ID CONTRACT (load-bearing, not cosmetic) ───────────────────────
 // `audio_in` / `pitch` / `gate` / `out` are the FOUR ports a saved `callsine`

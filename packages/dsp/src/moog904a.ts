@@ -2,7 +2,8 @@
 //
 // MOOG 904A — Voltage Controlled Low Pass Filter AudioWorkletProcessor.
 //
-// Slice 2 of the Moog System 55 / 35 clone initiative (.myrobots/MOOG/).
+// Slice 2 of the Moog System 55 / 35 clone initiative
+// (docs/adr/018-moog-clone-provenance.md).
 // The 904A is the classic transistor-ladder LPF: 24 dB/oct, with a
 // FIXED CONTROL VOLTAGE (cutoff) pot, a RANGE switch (shifts cutoff in
 // 2-octave steps), summed 1 V/oct CONTROL INPUTS, and a REGENERATION pot

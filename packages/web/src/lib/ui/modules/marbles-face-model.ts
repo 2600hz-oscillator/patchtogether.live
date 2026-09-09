@@ -7,11 +7,14 @@
 // ⚠ WHY THAT DISTINCTION IS THE WHOLE FILE. marbles is the hardest module in
 // this repo to measure honestly, because a wrong answer about a random source
 // looks exactly like a finding. The face spec that preceded this file
-// (`.myrobots/plans/face-specs-batch-4-marbles.md`) says so itself — it got the
-// module wrong three times and called the third wrong answer "the most
-// convincing" — and it was still wrong about four things when this face was
-// built, every one of them an artifact of probing a random process at one seed
-// on a coarse grid. The corrections are recorded on the def.
+// (provenance: `evidence/archive/2026/plans/face-specs-batch-4-marbles.md`)
+// says so itself — it got the module wrong three times and called the third
+// wrong answer "the most convincing" — and it was still wrong about four
+// things when this face was built, every one of them an artifact of probing a
+// random process at one seed on a coarse grid. The corrections are recorded
+// on the def, and the lesson is
+// .claude/skills/audio-runtime/references/measuring-audio.md
+// (validate the instrument before indicting the module).
 //
 // So NOTHING here is a fitted curve. Each law is read out of
 // `$lib/audio/modules/marbles-engine` — the host mirror the worklet shares its

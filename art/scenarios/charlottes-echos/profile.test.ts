@@ -1,11 +1,11 @@
 // art/scenarios/charlottes-echos/profile.test.ts
 //
 // AUDIO PROFILE for CHARLOTTE'S ECHOS (4-stage cascaded tape echo)
-// (backfill batch 4 — spec §4.1/§4.3,
-// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md), through the
+// (backfill batch 4 — spec §2.1/§1.2,
+// evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + drivers.ts + worklet.ts).
 //
-// Category: FX with an ECHO TAIL — so per spec §4.1 the render is 2.0 s and
+// Category: FX with an ECHO TAIL — so per spec §2.1 the render is 2.0 s and
 // the driver is the canonical TRANSIENT (toneBurst: a 60 ms C4 saw hit,
 // then silence — the cocoadelay batch-2 precedent), so the compounding
 // multi-stage tail IS the profile.
@@ -29,10 +29,10 @@
 // deterministic (RNG-free) VarispeedShifter, so the render is deterministic by
 // construction.
 //
-// SIGNATURE output (owner decision §6b.2): ONE baseline `L`. With the mono
+// SIGNATURE output (owner decision §4 item 2): ONE baseline `L`. With the mono
 // driver and this patch (stereoOffset 0, pan 0) the chain is left/right
 // symmetric — L ≡ R is asserted below, so one profile covers both ports
-// (bus-duplicate rule, spec §4.1).
+// (bus-duplicate rule, spec §2.1).
 //
 // The .sha pins the worklet entry AND the shared cores it renders through
 // (analog-delay-core + varispeed-shifter).

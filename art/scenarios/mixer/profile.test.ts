@@ -1,7 +1,7 @@
 // art/scenarios/mixer/profile.test.ts
 //
 // AUDIO PROFILE for MIXER (4-channel mono summing mixer) — backfill batch 6,
-// Faust-in-Node harness (spec §5). MIXER is Faust
+// Faust-in-Node harness (spec §3). MIXER is Faust
 // (packages/dsp/src/mixer.dsp): out = (in1*ch1 + … + in4*ch4) * master, each
 // gain one-pole-smoothed. Faust input order = the def's ChannelMerger wiring
 // [in1, in2, in3, in4]; output 0 = the `audio` bus.
@@ -12,7 +12,7 @@
 // 0.9. The bus must carry BOTH tones with the sine's amplitude pinned by its
 // channel × master gain — the linear-sum signature.
 //
-// SIGNATURE output (owner §6b.2): the single `audio` bus.
+// SIGNATURE output (owner §4 item 2): the single `audio` bus.
 
 import { describe, expect, it } from 'vitest';
 import { dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';

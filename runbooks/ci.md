@@ -182,3 +182,9 @@ flox activate -- gh workflow run live-smoke-alert.yml -f force_fire=true
 - **Relay CD** only fires on `packages/server/**` or `fly.*.toml` changes —
   web-only merges skip relay redeploy (no dropped WS connections). See
   [deployment.md](deployment.md).
+- **A timeout kill concludes `cancelled`, not `failure`.** A `timeout-minutes`
+  ceiling that fires ends the job as cancelled, so an alert / notify / watchdog
+  step guarded by `if: failure()` alone is silent for exactly the runs that hang.
+  Those steps use `if: failure() || cancelled()` (see `collab-nightly.yml`). The
+  opposite rule holds for a report aggregator, where a cancelled run is genuinely
+  not a signal — read the intent before copying an `if:` between jobs.
