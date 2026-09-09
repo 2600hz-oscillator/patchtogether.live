@@ -668,7 +668,7 @@ describe('a missing input records SILENCE at the right frames — never a skip',
     h.quantum([4]);
     h.quantum([4], { missing: true }); // frames 256..384: nothing connected
     h.quantum([4]);
-    expect(h.doneFor(4)[0]!.frames).toBe(512); // exact — no third outcome
+    expect(h.doneFor(4)[0]!.frames).toBe(512); // exact — silence at its own frames, never a skip
     const L = takeL(h.chunksFor(4));
     expect(L[255]).toBe(sampleAt(4, 255));
     expect(L[256]).toBe(0); // silence, not a skip
