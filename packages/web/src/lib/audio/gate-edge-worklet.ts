@@ -160,6 +160,17 @@ export function ensureGateEdgeWorklet(ctx: BaseAudioContext): Promise<boolean> {
   return p;
 }
 
+/**
+ * Synchronous: is the processor ALREADY registered on `ctx`? The AudioEngine
+ * pre-registers at construction, so by the time a cable lands this is normally
+ * true and the bridge can construct its node on the spot — counting from the
+ * first render quantum, with no analyser phase and no handoff. False while the
+ * registration is still in flight or after it declined.
+ */
+export function isGateEdgeWorkletRegistered(ctx: BaseAudioContext): boolean {
+  return REGISTERED.has(ctx);
+}
+
 /** Test-only: forget registration state between cases. */
 export function __resetGateEdgeWorkletForTests(ctx: BaseAudioContext): void {
   REGISTERED.delete(ctx);
