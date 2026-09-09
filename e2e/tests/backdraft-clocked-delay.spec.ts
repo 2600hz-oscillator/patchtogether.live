@@ -489,7 +489,13 @@ function expectLockedOnClock(lock: LockSample, what: string): void {
   // pre-fix engine this is the assertion the starved runner fails (periods of
   // 5 ms and 635 ms for a 250 ms clock), and a manufactured (~25 ms) or
   // dropped (~500 ms) edge cannot hide in the band on any machine.
-  expect(lock.periodsMs.length, `${what}: at least one period measured between two windowed rises`).toBeGreaterThan(0);
+  // Non-vacuity: a burst exposes only its LAST period, so a runner that
+  // replayed everything in a few bursts could leave the band with nothing to
+  // judge. A quarter of the window's cycles must have been readable.
+  expect(
+    lock.periodsMs.length,
+    `${what}: at least ${LOCK_CYCLES / 4} periods readable between windowed rises (${lock.bursts} rises hidden in bursts)`,
+  ).toBeGreaterThanOrEqual(LOCK_CYCLES / 4);
   for (const p of lock.periodsMs) {
     expect(
       Math.abs(p - CLOCK_PERIOD_MS),
