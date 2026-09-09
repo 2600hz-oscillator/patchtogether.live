@@ -25,7 +25,7 @@
 // Zero wall-clock, zero rAF: the processor is driven block-by-block with
 // synthesized sample data.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   GATE_EDGE_WORKLET_SOURCE,
   GATE_EDGE_PROCESSOR,
@@ -34,6 +34,7 @@ import {
 import { GATE_HI } from './gate-trigger';
 
 const BLOCK = 128;
+const SAMPLE_RATE = 48000;
 
 interface Harness {
   /** Feed one 128-sample block; `level(i)` returns the sample value. */
@@ -41,9 +42,16 @@ interface Harness {
   /** Feed `n` blocks all at a constant value. */
   hold(value: number, n: number): void;
   messages: GateEdgeMessage[];
+  /** Messages after the PRIMING one — the transitions. */
+  transitions(): GateEdgeMessage[];
   /** Registered processor name, as seen by registerProcessor. */
   name: string;
 }
+
+/** The AudioWorkletGlobalScope clock the processor stamps `riseT` from:
+ *  `currentTime` is the start of the block being processed. Advanced per block
+ *  by the harness, exactly as the real scope would present it. */
+const scope = globalThis as unknown as { currentTime?: number; sampleRate?: number };
 
 /** Evaluate the shipped worklet source with shimmed AudioWorkletGlobalScope
  *  globals and return a driveable processor instance. */
@@ -70,19 +78,22 @@ function makeProcessor(): Harness {
   }
   if (!Ctor) throw new Error('worklet source did not registerProcessor');
   const proc = new Ctor();
+  scope.currentTime = 0;
+  const feed = (ch: Float32Array): void => {
+    proc.process([[ch]]);
+    scope.currentTime = (scope.currentTime ?? 0) + BLOCK / SAMPLE_RATE;
+  };
   return {
     name,
     messages,
+    transitions: () => messages.slice(1),
     block(level) {
       const ch = new Float32Array(BLOCK);
       for (let i = 0; i < BLOCK; i++) ch[i] = level(i);
-      proc.process([[ch]]);
+      feed(ch);
     },
     hold(value, n) {
-      for (let k = 0; k < n; k++) {
-        const ch = new Float32Array(BLOCK).fill(value);
-        proc.process([[ch]]);
-      }
+      for (let k = 0; k < n; k++) feed(new Float32Array(BLOCK).fill(value));
     },
   };
 }
@@ -93,20 +104,57 @@ function total(h: Harness): number {
 }
 
 describe('gate-edge worklet — audio-thread rising-edge accumulator', () => {
+  beforeAll(() => { scope.sampleRate = SAMPLE_RATE; });
+  afterAll(() => { delete scope.currentTime; delete scope.sampleRate; });
+
   it('registers under the name the engine constructs', () => {
     expect(makeProcessor().name).toBe(GATE_EDGE_PROCESSOR);
   });
 
-  it('is silent while the signal never crosses (an off-by-one-per-block would post)', () => {
+  // ---- PRIMING: the first sample is a LEVEL, not a transition -------------
+  it('PRIMES from its first block: one baseline message, count 0, then silence while nothing crosses', () => {
     const h = makeProcessor();
     h.hold(0, 200);
-    expect(h.messages, '200 blocks of pure LOW must produce NO messages').toEqual([]);
+    expect(h.messages.length, 'exactly the priming message — an off-by-one-per-block would keep posting').toBe(1);
+    expect(h.messages[0], 'priming reports the baseline level with no rise').toEqual({ count: 0, level: 0, riseT: -1 });
     expect(total(h)).toBe(0);
+  });
+
+  it('PRIMED HIGH: a source already HIGH when the tap starts is the baseline, NOT a rising edge', () => {
+    // The bridge connects this tap to a source that is already running — a gate
+    // being held, or a CV LFO in its positive half-cycle. Before priming, the
+    // processor started from `prev = 0` and reported that level as a rise; the
+    // main-thread bridge replayed it 25 ms later, on top of the rise the
+    // analyser fail-safe had already delivered — a manufactured 25 ms clock
+    // period on BACKDRAFT's DELAY CLK (measured). The level is reported so the
+    // main thread knows it; the count stays put.
+    const h = makeProcessor();
+    h.hold(1, 100);
+    expect(h.messages.length, 'the priming message only').toBe(1);
+    expect(h.messages[0], 'baseline HIGH, no rise').toEqual({ count: 0, level: 1, riseT: -1 });
+    h.hold(0, 10);
+    expect(h.messages.at(-1)!.level, 'the fall is reported').toBe(0);
+    expect(total(h), 'still no rising edge — nothing ROSE').toBe(0);
+    h.hold(1, 10);
+    expect(total(h), 'the first real rise counts').toBe(1);
+  });
+
+  it('stamps `riseT` with the audio-clock time of the rise inside its block', () => {
+    const h = makeProcessor();
+    h.hold(0, 3); // t = 0 .. 3 blocks
+    const riseIdx = 37;
+    h.block((i) => (i >= riseIdx ? 1 : 0)); // the 4th block starts at t = 3·BLOCK/SR
+    const rise = h.messages.at(-1)!;
+    expect(rise.count).toBe(1);
+    expect(rise.riseT).toBeCloseTo((3 * BLOCK + riseIdx) / SAMPLE_RATE, 9);
+    h.hold(0, 1);
+    expect(h.messages.at(-1)!.riseT, 'a fall carries no rise time').toBe(-1);
   });
 
   // ---- PROOF 2: exact counting, no double-count -------------------------
   it('PROOF 2: counts a known pulse train EXACTLY', () => {
     const h = makeProcessor();
+    h.hold(0, 1); // the tap starts on a LOW source
     // 40 pulses, each 3 blocks HIGH then 7 blocks LOW. Nothing here is a
     // multiple of anything the consumer does — the count must be exactly 40.
     for (let p = 0; p < 40; p++) {
@@ -138,6 +186,7 @@ describe('gate-edge worklet — audio-thread rising-edge accumulator', () => {
 
   it('PROOF 2: the count is monotonic and never rewinds', () => {
     const h = makeProcessor();
+    h.hold(0, 1);
     for (let p = 0; p < 25; p++) { h.hold(1, 1); h.hold(0, 1); }
     const counts = h.messages.map((m) => m.count);
     for (let i = 1; i < counts.length; i++) {
@@ -152,12 +201,13 @@ describe('gate-edge worklet — audio-thread rising-edge accumulator', () => {
     h.hold(0, 5);
     h.hold(1, 500); // a long held gate — ~1.3 s of audio at 48 kHz
     expect(total(h), 'a held gate is ONE edge, not one per block').toBe(1);
-    expect(h.messages.length, 'exactly one transition message while held').toBe(1);
-    expect(h.messages[0]!.level, 'the rise reports level HIGH').toBe(1);
+    expect(h.transitions().length, 'exactly one transition message while held').toBe(1);
+    expect(h.transitions()[0]!.level, 'the rise reports level HIGH').toBe(1);
   });
 
   it('PROOF 1: release lands — the falling edge reports level 0 without a new edge', () => {
     const h = makeProcessor();
+    h.hold(0, 1);
     h.hold(1, 100);
     expect(h.messages.at(-1)!.level).toBe(1);
     h.hold(0, 100);
@@ -169,6 +219,7 @@ describe('gate-edge worklet — audio-thread rising-edge accumulator', () => {
 
   it('PROOF 1: a long hold then a re-trigger gives exactly two edges', () => {
     const h = makeProcessor();
+    h.hold(0, 1);
     h.hold(1, 300); // held
     h.hold(0, 10);  // released
     h.hold(1, 300); // held again

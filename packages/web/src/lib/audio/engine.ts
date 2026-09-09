@@ -1465,10 +1465,11 @@ export class PatchEngine {
       this.pendingBridges.set(edge.id, { edge, kind: 'cv', sourceDomain, targetDomain });
       return;
     }
-    // A GATE source into a GATE-STYLE cv target takes a completely different
-    // path — see installGateDispatch for why the per-frame analyser sampler
-    // structurally cannot carry a pulse train. Everything else keeps the
-    // legacy per-frame bridge unchanged.
+    // A GATE source into a GATE-STYLE cv target — or a CV source into a target
+    // that declares `edge: 'trigger'` — takes a completely different path; see
+    // installGateDispatch for why the per-frame analyser sampler structurally
+    // cannot carry a pulse train. Everything else keeps the legacy per-frame
+    // bridge unchanged.
     if (this.installGateDispatch(edge, ae, ve, src)) return;
     const analyser = ae.ctx.createAnalyser();
     // An AUDIO source is envelope-followed (RMS over the window) by the bridge,
@@ -1548,12 +1549,22 @@ export class PatchEngine {
    * one, and it is bounded — unlike the pre-fix stalls, which were unbounded.
    *
    * SCOPE — deliberately narrow, so nothing else changes behaviour:
-   *  - source cable must be `gate` (a cv/audio source is a LEVEL, correctly
-   *    served by tail-sampling; only pulse trains alias);
    *  - the target input must POSITIVELY resolve to a def with NO `cvScale`
    *    hint. A hinted (continuous) target sweeps its param range across the
    *    incoming value and keeps the legacy per-frame bridge untouched. If the
-   *    def cannot be resolved we also fall through — fail-safe to legacy.
+   *    def cannot be resolved we also fall through — fail-safe to legacy;
+   *  - a `gate` source cable always qualifies (a pulse train by definition);
+   *  - a `cv` source cable qualifies ONLY when the target declares
+   *    `edge: 'trigger'` (the DELAY CLK widen, 2026-09-09, owner-approved).
+   *    The aliasing hazard is a property of "there is an edge detector
+   *    downstream" plus source periodicity, not of the cable's label: an LFO or
+   *    an envelope patched into BACKDRAFT's delay_clock is a pulse train in
+   *    disguise, and a 4 Hz swing tail-sampled at SwiftShader's ~8 fps sits on
+   *    the 2:1 Nyquist singularity (measured: 253 ms one moment, 4430 ms the
+   *    next; at a steady 8.00 fps it never locks at all). A cv source into a
+   *    raw-passthrough target that declares NO edge (DOOM's cv_<port> family,
+   *    read as a held LEVEL each frame) or `edge: 'gate'` is still a level,
+   *    still tail-sampled, and does NOT change path.
    *
    * Returns true iff it took ownership of the edge.
    */
@@ -1566,7 +1577,7 @@ export class PatchEngine {
     },
     src: { node: AudioNode; output: number },
   ): boolean {
-    if (edge.sourceType !== 'gate') return false;
+    if (edge.sourceType !== 'gate' && edge.sourceType !== 'cv') return false;
     if (typeof ve.getNodeHandle !== 'function' || typeof ve.resolveTargetParamId !== 'function') {
       return false;
     }
@@ -1579,6 +1590,11 @@ export class PatchEngine {
     // param's natural range. Those keep the per-frame sampler (a level, not a
     // pulse train). Only raw-passthrough targets are gate-style.
     if (input.cvScale && input.cvScale.mode !== 'passthrough') return false;
+    // A CV cable is a LEVEL unless the TARGET says it edge-detects it. Only a
+    // declared `edge: 'trigger'` target opts a cv source onto the counted path;
+    // an undeclared or `edge: 'gate'` (level-sensitive) target keeps the
+    // per-frame sampler exactly as before (see SCOPE above).
+    if (edge.sourceType === 'cv' && input.edge !== 'trigger') return false;
 
     const targetParamId = ve.resolveTargetParamId(edge.target.nodeId, edge.target.portId);
     const analyser = ae.ctx.createAnalyser();
@@ -1605,12 +1621,31 @@ export class PatchEngine {
     // `wlReplayed` is how much of it we have already delivered. A main-thread
     // stall of ANY length just leaves messages queued — when we next run, the
     // delta is still exact. `wlLive` gates the handoff: until the worklet is
-    // registered + connected we keep using the windowed analyser counter, so a
-    // context that cannot host a worklet still gets edges (fail-safe).
+    // registered + connected AND has posted its baseline level (`wlPrimed`)
+    // we keep using the windowed analyser counter, so a context that cannot
+    // host a worklet still gets edges (fail-safe).
+    //
+    // THE HANDOFF IS EXACT, AND HAPPENS AT A TICK. The first version flipped
+    // `wlLive` the instant the node was constructed and assumed "everything the
+    // worklet counted so far was also seen by the analyser". Two things were
+    // wrong with that, and a CV LFO patched into BACKDRAFT's DELAY CLK measured
+    // both: (1) the processor started from `prev = 0`, so a source already HIGH
+    // when the tap connected posted a manufactured rise — replayed on the next
+    // tick as a bogus 25 ms clock period; (2) the level read 0 until the
+    // worklet's first TRANSITION message, so a gate held high across the
+    // handoff dipped low for a tick. Now the processor primes from its first
+    // sample and posts the level; the handoff waits for that message, then at
+    // the next tick the analyser scans up to that instant ONE last time and
+    // the worklet total takes over from there. A rise the worklet reports
+    // LATER (port latency) that happened at or before the handoff instant was
+    // inside that final analyser window, and is reconciled per message by its
+    // audio-clock timestamp — never by arrival order.
     let wlLive = false;
+    let wlPrimed = false;
     let wlTotal = 0;
     let wlReplayed = 0;
     let wlLevel = 0;
+    let handoffAudioTime = -1;
     let workletNode: AudioWorkletNode | null = null;
     let keepAlive: GainNode | null = null;
     let disposed = false;
@@ -1637,8 +1672,21 @@ export class PatchEngine {
         wn.port.onmessage = (ev: MessageEvent) => {
           const m = ev.data as GateEdgeMessage | undefined;
           if (!m || typeof m.count !== 'number') return;
+          // A rise at or before the handoff poll was already replayed by the
+          // analyser's final window; count it as delivered so the worklet
+          // delta cannot replay it a second time.
+          if (
+            m.count > wlTotal
+            && handoffAudioTime >= 0
+            && typeof m.riseT === 'number'
+            && m.riseT >= 0
+            && m.riseT <= handoffAudioTime
+          ) {
+            wlReplayed += m.count - wlTotal;
+          }
           wlTotal = m.count;
           wlLevel = m.level >= 1 ? 1 : 0;
+          wlPrimed = true;
         };
         src.node.connect(wn, src.output);
         // Keep-alive: an AudioWorkletNode with no path to the destination is an
@@ -1649,11 +1697,6 @@ export class PatchEngine {
         wn.connect(keepAlive);
         if (ae.ctx.destination) keepAlive.connect(ae.ctx.destination);
         workletNode = wn;
-        // Hand off cleanly: everything the worklet counted before this instant
-        // was also seen by the analyser counter, so start the delta at the
-        // current total rather than replaying a backlog.
-        wlReplayed = wlTotal;
-        wlLive = true;
       } catch {
         // Construction failed → stay on the analyser counter.
       }
@@ -1670,6 +1713,18 @@ export class PatchEngine {
         // Keep the fallback counter's window anchored to NOW so a later
         // downgrade (shouldn't happen, but cheap) can't replay stale history.
         counter.poll(ae.ctx.currentTime);
+      } else if (wlPrimed) {
+        // THE HANDOFF. The analyser scans everything up to this instant one
+        // last time. Every rise the worklet has reported so far was rendered
+        // before its message arrived, i.e. lies inside that window — mark it
+        // delivered; any it reports later with `riseT` at or before this
+        // instant is reconciled in onmessage above. From here on the
+        // audio-thread total is the truth and the level is the worklet's.
+        handoffAudioTime = ae.ctx.currentTime;
+        edges = counter.poll(handoffAudioTime);
+        wlReplayed = wlTotal;
+        wlLive = true;
+        level = wlLevel;
       } else {
         edges = counter.poll(ae.ctx.currentTime);
         analyser.getFloatTimeDomainData(buf);

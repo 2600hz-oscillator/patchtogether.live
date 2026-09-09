@@ -44,12 +44,19 @@ import { GATE_HI } from './gate-trigger';
 /** Registered processor name (also used by the unit test). */
 export const GATE_EDGE_PROCESSOR = 'patchtogether-gate-edge-counter';
 
-/** Message the processor posts to the main thread on every level transition. */
+/** Message the processor posts to the main thread: once when the tap PRIMES
+ *  (its baseline level, count unchanged), then on every level transition. */
 export interface GateEdgeMessage {
   /** Monotonic count of rising edges since the processor was constructed. */
   count: number;
   /** Level AFTER this transition: 1 while the gate is held HIGH, else 0. */
   level: number;
+  /** Audio-clock time (sec) of the LAST rising edge in the block this message
+   *  reports, or -1 when it reports no rise (a fall, or the priming message).
+   *  The main-thread bridge uses it to reconcile rises that straddle its
+   *  analyser → worklet handoff: a rise at or before the handoff poll was
+   *  already inside the window that poll scanned. */
+  riseT: number;
 }
 
 /**
@@ -58,8 +65,18 @@ export interface GateEdgeMessage {
  * time and the detection predicate is character-for-character the one
  * `createRisingEdgeDetector` uses: `prev < TH && cur >= TH`.
  *
- * Posts ONLY on a transition, so a 2 Hz clock produces ~4 messages/sec — the
- * port is never a bottleneck, and a held gate is silent on the wire.
+ * PRIMED FROM ITS FIRST SAMPLE. The tap is connected to a source that is
+ * already running, so the first sample it sees is a LEVEL, not a transition:
+ * a gate held high — or a CV LFO in its positive half — at the moment the tap
+ * starts must not be reported as a rising edge. (Measured before this: a 4 Hz
+ * LFO patched into a trigger input read one manufactured rise 25 ms after the
+ * worklet took over, on top of the real ones — a bogus 25 ms clock period.) The
+ * priming block posts the baseline level with the count unchanged, so the main
+ * thread knows the level before any edge.
+ *
+ * Posts ONLY on a transition after that, so a 2 Hz clock produces ~4
+ * messages/sec — the port is never a bottleneck, and a held gate is silent on
+ * the wire.
  */
 export const GATE_EDGE_WORKLET_SOURCE = `
 class GateEdgeCounterProcessor extends AudioWorkletProcessor {
@@ -67,6 +84,7 @@ class GateEdgeCounterProcessor extends AudioWorkletProcessor {
     super();
     this._prev = 0;
     this._count = 0;
+    this._primed = false;
   }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
@@ -75,18 +93,26 @@ class GateEdgeCounterProcessor extends AudioWorkletProcessor {
     let prev = this._prev;
     let count = this._count;
     let changed = false;
-    for (let i = 0; i < ch.length; i++) {
+    let riseT = -1;
+    let i = 0;
+    if (!this._primed) {
+      prev = ch[0];
+      this._primed = true;
+      changed = true;
+      i = 1;
+    }
+    for (; i < ch.length; i++) {
       const cur = ch[i];
       const wasHigh = prev >= TH;
       const isHigh = cur >= TH;
-      if (!wasHigh && isHigh) { count++; changed = true; }
+      if (!wasHigh && isHigh) { count++; changed = true; riseT = currentTime + i / sampleRate; }
       else if (wasHigh && !isHigh) { changed = true; }
       prev = cur;
     }
     this._prev = prev;
     this._count = count;
     if (changed) {
-      this.port.postMessage({ count: count, level: prev >= TH ? 1 : 0 });
+      this.port.postMessage({ count: count, level: prev >= TH ? 1 : 0, riseT: riseT });
     }
     return true;
   }

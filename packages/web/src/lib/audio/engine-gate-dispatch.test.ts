@@ -73,14 +73,18 @@ interface FakeClock {
   nowSec(): number;
   /** Install the fake AudioWorkletNode global bound to THIS clock. */
   enableWorklet(): void;
+  /** Replace the 0/1 pulse timeline with an arbitrary CONTINUOUS signal —
+   *  an LFO's ±1 sine, the shape a user patches into DELAY CLK. */
+  wave(fn: (tSec: number) => number): void;
 }
 
 function makeFakeClock(): FakeClock {
   let now = 0;
   let fedUntil = 0;
   const pulses: Array<[number, number]> = [];
+  let waveFn: ((tSec: number) => number) | null = null;
   const high = (t: number): number =>
-    pulses.some(([s, e]) => t >= s && t < e) ? 1 : 0;
+    waveFn ? waveFn(t) : pulses.some(([s, e]) => t >= s && t < e) ? 1 : 0;
 
   const node = () => ({ connect() { /* */ }, disconnect() { /* */ } });
 
@@ -89,12 +93,18 @@ function makeFakeClock(): FakeClock {
   /** Messages produced by the audio thread, awaiting main-thread delivery. */
   let pendingDeliveries: Array<() => void> = [];
 
-  /** Produce whole render quanta up to `now` and feed every worklet tap. */
+  /** Produce whole render quanta up to `now` and feed every worklet tap. The
+   *  AudioWorkletGlobalScope globals the processor reads (`currentTime` = the
+   *  block's start, `sampleRate`) are set per block, exactly as the real scope
+   *  would present them. */
   function pumpAudio(): void {
     const quantumSec = RENDER_QUANTUM / SAMPLE_RATE;
+    const g = globalThis as unknown as { currentTime?: number; sampleRate?: number };
+    g.sampleRate = SAMPLE_RATE;
     while (taps.length > 0 && fedUntil + quantumSec <= now) {
       const ch = new Float32Array(RENDER_QUANTUM);
       for (let i = 0; i < RENDER_QUANTUM; i++) ch[i] = high(fedUntil + i / SAMPLE_RATE);
+      g.currentTime = fedUntil;
       for (const t of taps) t(ch);
       fedUntil += quantumSec;
     }
@@ -171,6 +181,7 @@ function makeFakeClock(): FakeClock {
       pumpAudio();
     },
     nowSec() { return now; },
+    wave(fn) { waveFn = fn; },
     enableWorklet() {
       const g = globalThis as unknown as Record<string, unknown>;
       // `ensureGateEdgeWorklet` builds a blob: URL; node's URL has no
@@ -231,9 +242,38 @@ const GATE_SOURCE_DEF: AudioModuleDef = {
   },
 };
 
-// Two inputs: `clock_in` is GATE-STYLE (no cvScale → the module edge-detects
-// the raw value, SHAPEGEN's contract); `speed_cv` is CONTINUOUS (a cvScale hint
-// → the per-frame bridge maps it across the param range).
+/** A CV source — an LFO's phase output, the cable a user makes by patching an
+ *  LFO or an envelope straight into a clock/trigger input. */
+const CV_SOURCE_DEF: AudioModuleDef = {
+  type: 'gateDispatchTestCvSource',
+  domain: 'audio',
+  label: 'CvSrc',
+  category: 'sources',
+  inputs: [],
+  outputs: [{ id: 'phase', type: 'cv' }],
+  params: [],
+  async factory() {
+    const n = { connect() { /* */ }, disconnect() { /* */ } };
+    return {
+      domain: 'audio' as const,
+      inputs: new Map(),
+      outputs: new Map([['phase', { node: n as unknown as AudioNode, output: 0 }]]),
+      setParam() { /* */ },
+      readParam() { return undefined; },
+      dispose() { /* */ },
+    };
+  },
+};
+
+// Four inputs, one per branch of the dispatch predicate:
+//  - `clock_in`  GATE-STYLE, NO `edge` declared (no cvScale → the module
+//                edge-detects the raw value, SHAPEGEN's contract — and the exact
+//                shape of DOOM's cv_<port> family, doom.ts `inputs`);
+//  - `trig_in`   `edge: 'trigger'` (BACKDRAFT's delay_clock, verbatim shape);
+//  - `level_in`  `edge: 'gate'` (a level-sensitive consumer, FREEZEFRAME's
+//                gate_in shape);
+//  - `speed_cv`  CONTINUOUS (a cvScale hint → the per-frame bridge maps it
+//                across the param range).
 const VIDEO_TARGET_TYPE = 'gateDispatchTestTarget';
 function registerVideoTarget(): void {
   // Into the FILE-LOCAL overlay (see the vi.mock above) — never the real
@@ -245,24 +285,38 @@ function registerVideoTarget(): void {
     category: 'video',
     inputs: [
       { id: 'clock_in', type: 'cv', paramTarget: 'cv_clock' },
+      { id: 'trig_in', type: 'cv', edge: 'trigger', paramTarget: 'cv_trig' },
+      { id: 'level_in', type: 'cv', edge: 'gate', paramTarget: 'cv_level' },
       { id: 'speed_cv', type: 'cv', paramTarget: 'speed', cvScale: { mode: 'bipolar' } },
     ],
     outputs: [{ id: 'out', type: 'video' }],
     params: [
       { id: 'cv_clock', label: 'clk', min: 0, max: 1, defaultValue: 0 },
+      { id: 'cv_trig', label: 'trig', min: 0, max: 1, defaultValue: 0 },
+      { id: 'cv_level', label: 'lvl', min: 0, max: 1, defaultValue: 0 },
       { id: 'speed', label: 'speed', min: 0, max: 4, defaultValue: 1 },
     ],
     factory: () => { throw new Error('not instantiated in this test'); },
   });
 }
 
+const TARGET_PARAM_BY_PORT: Record<string, string> = {
+  clock_in: 'cv_clock',
+  trig_in: 'cv_trig',
+  level_in: 'cv_level',
+  speed_cv: 'speed',
+};
+
 class VideoEngineStub implements DomainEngine {
   domain = 'video' as const;
-  /** Every (paramId, value) the engine wrote, in order. */
-  writes: Array<{ paramId: string; value: number }> = [];
+  /** Every (paramId, value) the engine wrote, in order, stamped with the fake
+   *  audio clock at the moment of the write (the module's own timestamp). */
+  writes: Array<{ paramId: string; value: number; atSec: number }> = [];
   /** Edge ids handed to the legacy per-frame bridge. */
   frameBridges: string[] = [];
   plainEdges: Edge[] = [];
+
+  constructor(private readonly nowSec: () => number = () => 0) {}
 
   setAudioContext(): void { /* */ }
 
@@ -270,13 +324,13 @@ class VideoEngineStub implements DomainEngine {
   removeCvBridge(): void { /* */ }
 
   resolveTargetParamId(_nodeId: string, portId: string): string {
-    return portId === 'clock_in' ? 'cv_clock' : portId === 'speed_cv' ? 'speed' : portId;
+    return TARGET_PARAM_BY_PORT[portId] ?? portId;
   }
 
   getNodeHandle(_nodeId: string): unknown {
     return {
       setParam: (paramId: string, value: number) => {
-        this.writes.push({ paramId, value });
+        this.writes.push({ paramId, value, atSec: this.nowSec() });
       },
     };
   }
@@ -307,23 +361,46 @@ function countRisingEdges(
   return n;
 }
 
+/** Rising-edge write times (sec) for one param — the instants the consuming
+ *  module would timestamp its rises, i.e. what BACKDRAFT's period comes from. */
+function risingEdgeTimes(
+  writes: Array<{ paramId: string; value: number; atSec: number }>,
+  paramId: string,
+): number[] {
+  let prev = 0;
+  const out: number[] = [];
+  for (const w of writes) {
+    if (w.paramId !== paramId) continue;
+    if (prev < 0.5 && w.value >= 0.5) out.push(w.atSec);
+    prev = w.value;
+  }
+  return out;
+}
+
 let registered = false;
-async function setup(targetPortId: string, opts: { worklet?: boolean } = {}) {
+async function setup(
+  targetPortId: string,
+  opts: { worklet?: boolean; source?: 'gate' | 'cv' } = {},
+) {
   if (!registered) {
     registerModule(GATE_SOURCE_DEF);
+    registerModule(CV_SOURCE_DEF);
     registerVideoTarget();
     registered = true;
   }
+  const source = opts.source ?? 'gate';
   const clock = makeFakeClock();
   if (opts.worklet) clock.enableWorklet();
   const ae = new AudioEngine(clock.ctx);
-  const ve = new VideoEngineStub();
+  const ve = new VideoEngineStub(() => clock.nowSec());
   const pe = new PatchEngine();
   pe.registerDomain(ae);
   pe.registerDomain(ve);
 
   const srcNode: ModuleNode = {
-    id: 'seq', type: 'gateDispatchTestSource', domain: 'audio',
+    id: 'seq',
+    type: source === 'gate' ? 'gateDispatchTestSource' : 'gateDispatchTestCvSource',
+    domain: 'audio',
     position: { x: 0, y: 0 }, params: {},
   };
   const dstNode: ModuleNode = {
@@ -335,9 +412,9 @@ async function setup(targetPortId: string, opts: { worklet?: boolean } = {}) {
 
   const edge: Edge = {
     id: 'e-clk',
-    source: { nodeId: 'seq', portId: 'clock' },
+    source: { nodeId: 'seq', portId: source === 'gate' ? 'clock' : 'phase' },
     target: { nodeId: 'vid', portId: targetPortId },
-    sourceType: 'gate',
+    sourceType: source,
     targetType: 'cv',
   };
   pe.addEdge(edge, 'audio', 'video');
@@ -347,6 +424,61 @@ async function setup(targetPortId: string, opts: { worklet?: boolean } = {}) {
   // vi.useFakeTimers, so this is deterministic.
   for (let i = 0; i < 8; i++) await Promise.resolve();
   return { pe, ve, clock, edge };
+}
+
+/**
+ * PATCH-TIME variant of `setup`: the source is ALREADY RUNNING `wave` when the
+ * cable lands, the worklet is available, and — unlike `setup` — the worklet's
+ * registration microtasks are NOT drained here. They resolve when the test
+ * next awaits (see `tickAndDrain`), so the analyser fail-safe takes the first
+ * tick and the worklet takes over at the second: the handoff happens mid-run,
+ * at a known tick, against whatever phase of `wave` that lands on.
+ */
+async function setupWithWave(
+  targetPortId: string,
+  wave: (tSec: number) => number,
+  source: 'gate' | 'cv' = 'cv',
+) {
+  if (!registered) {
+    registerModule(GATE_SOURCE_DEF);
+    registerModule(CV_SOURCE_DEF);
+    registerVideoTarget();
+    registered = true;
+  }
+  const clock = makeFakeClock();
+  clock.enableWorklet();
+  clock.wave(wave);
+  const ae = new AudioEngine(clock.ctx);
+  const ve = new VideoEngineStub(() => clock.nowSec());
+  const pe = new PatchEngine();
+  pe.registerDomain(ae);
+  pe.registerDomain(ve);
+  await pe.addNode({
+    id: 'seq',
+    type: source === 'gate' ? 'gateDispatchTestSource' : 'gateDispatchTestCvSource',
+    domain: 'audio',
+    position: { x: 0, y: 0 }, params: {},
+  });
+  await pe.addNode({
+    id: 'vid', type: VIDEO_TARGET_TYPE, domain: 'video',
+    position: { x: 0, y: 0 }, params: {},
+  });
+  const edge: Edge = {
+    id: 'e-clk',
+    source: { nodeId: 'seq', portId: source === 'gate' ? 'clock' : 'phase' },
+    target: { nodeId: 'vid', portId: targetPortId },
+    sourceType: source,
+    targetType: 'cv',
+  };
+  pe.addEdge(edge, 'audio', 'video');
+  return { pe, ve, clock, edge };
+}
+
+/** One scheduler tick, then let pending microtasks (the worklet registration
+ *  chain) resolve — the shape a real main thread has between two ticks. */
+async function tickAndDrain(clock: FakeClock): Promise<void> {
+  clock.advance(SCHEDULER_TICK_MS);
+  for (let i = 0; i < 4; i++) await Promise.resolve();
 }
 
 describe('PatchEngine — frame-independent gate dispatch (audio → video)', () => {
@@ -664,6 +796,266 @@ describe('PatchEngine — gate dispatch on the AUDIO-THREAD counter', () => {
     clock.pulse(clock.nowSec() + 0.005, 0.010);
     clock.advance(SCHEDULER_TICK_MS * 4);
     expect(ve.writes, 'a torn-down worklet dispatcher must be silent').toEqual([]);
+    pe.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE DELAY CLK WIDEN (2026-09-09, owner-approved): a CV cable into a target
+// that declares `edge: 'trigger'` is dispatched too.
+// ---------------------------------------------------------------------------
+//
+// BACKDRAFT's `delay_clock` is `{ type: 'cv', edge: 'trigger' }` and its docs
+// promised the rising edge "is detected as the value arrives from the patch
+// bridge rather than sampled once per rendered frame, so … the lock does not
+// depend on how fast the renderer is running". Before the widen that was true
+// ONLY for a `gate` cable: the dispatch declined every `cv` source on its first
+// line, so an LFO patched into DELAY CLK — the ordinary user gesture — fell to
+// `tickCvBridges`, ONE analyser tail sample per VIDEO FRAME. A 4 Hz ±1 sine is
+// above the rise threshold for 29.5 % of its cycle (73.8 ms of 250), narrower
+// than one frame gap at SwiftShader's measured ~8 fps, which is the 2:1 Nyquist
+// singularity: simulated at a steady 8.00 fps, ZERO edges in 30 s; at 7.9 fps,
+// 253 ms one moment and 4430 ms the next.
+//
+// The predicate now keys on the TARGET's declared semantics as well as the
+// source cable. Every other branch is pinned UNCHANGED below — in particular the
+// no-`edge` raw-passthrough shape, which is DOOM's cv_<port> family.
+
+const LFO_HZ = 4;
+/** Where a ±1 sine first crosses GATE_HI (0.5) upward: sin(2π·f·t) = 0.5 at
+ *  2π·f·t = π/6 → t = 1/(12·f). Derived, so a threshold change moves it. */
+const FIRST_RISE_SEC = 1 / (12 * LFO_HZ);
+const LFO_PERIOD_SEC = 1 / LFO_HZ;
+
+describe('PatchEngine — a CV cable into an `edge: \'trigger\'` target (the DELAY CLK widen)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    __resetSchedulerClockForTests();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+  });
+  afterEach(() => {
+    __resetSchedulerClockForTests();
+    vi.useRealTimers();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+  });
+
+  it('a cv source into an `edge: \'trigger\'` target takes the dispatch, not the per-frame sampler', async () => {
+    const { pe, ve } = await setup('trig_in', { source: 'cv' });
+    expect(ve.frameBridges, 'a trigger-edge target must NOT be tail-sampled per frame').toEqual([]);
+    expect(ve.plainEdges, 'must not fall through to single-domain dispatch').toEqual([]);
+    pe.dispose();
+  });
+
+  it('CONTROL — a cv source into a raw-passthrough target with NO `edge` declared (DOOM\'s cv_<port> shape) stays on the per-frame bridge', async () => {
+    // `{ id, type: 'cv', paramTarget }` and nothing else is exactly how
+    // doom.ts declares every movement/fire/cheat input (doom.ts `inputs`). The
+    // widen keys on a DECLARED `edge: 'trigger'`, so this shape is structurally
+    // untouched — pinned here so a later "just drop the edge check" cannot
+    // silently pull DOOM onto the counted path.
+    const { pe, ve } = await setup('clock_in', { source: 'cv' });
+    expect(ve.frameBridges, 'an undeclared-edge cv target keeps the legacy sampler').toContain('e-clk');
+    pe.dispose();
+  });
+
+  it('CONTROL — a cv source into an `edge: \'gate\'` (level-sensitive) target stays on the per-frame bridge', async () => {
+    const { pe, ve } = await setup('level_in', { source: 'cv' });
+    expect(ve.frameBridges, 'a level consumer reads a LEVEL; it is not converted to edge-only').toContain('e-clk');
+    pe.dispose();
+  });
+
+  it('CONTROL — a cv source into a CONTINUOUS (cvScale) target stays on the per-frame bridge', async () => {
+    const { pe, ve } = await setup('speed_cv', { source: 'cv' });
+    expect(ve.frameBridges, 'a cvScale-hinted target still needs per-frame range mapping').toContain('e-clk');
+    pe.dispose();
+  });
+
+  it('a GATE source into an `edge: \'trigger\'` target is dispatched exactly as before', async () => {
+    const { pe, ve } = await setup('trig_in', { source: 'gate' });
+    expect(ve.frameBridges).toEqual([]);
+    expect(ve.plainEdges).toEqual([]);
+    pe.dispose();
+  });
+
+  for (const worklet of [false, true]) {
+    const path = worklet ? 'AUDIO-THREAD counter' : 'main-thread fail-safe';
+
+    it(`THE DEFECT (${path}): a 4 Hz LFO sine delivers exactly one rising edge per cycle with no frame ever sampled`, async () => {
+      const { pe, ve, clock } = await setup('trig_in', { source: 'cv', worklet });
+      clock.advance(SCHEDULER_TICK_MS);
+      ve.writes.length = 0;
+
+      // A ±1 sine starting at phase 0 from NOW — LFO defaults (shape 0 = sine,
+      // depth = unity) at the rate the e2e spec uses.
+      const t0 = clock.nowSec();
+      clock.wave((t) => (t < t0 ? 0 : Math.sin(2 * Math.PI * LFO_HZ * (t - t0))));
+      const RUN_SEC = 2.0;
+      for (let i = 0; i < (RUN_SEC * 1000) / SCHEDULER_TICK_MS; i++) clock.advance(SCHEDULER_TICK_MS);
+
+      // Rises at t0 + FIRST_RISE + k/f for every k with that instant < t0 + RUN.
+      const expected = Math.ceil((RUN_SEC - FIRST_RISE_SEC) / LFO_PERIOD_SEC);
+      expect(expected, 'the derivation yields a real count').toBe(8);
+      expect(
+        countRisingEdges(ve.writes, 'cv_trig'),
+        `${LFO_HZ} Hz for ${RUN_SEC} s → ${expected} rising edges, none dropped, none doubled`,
+      ).toBe(expected);
+      pe.dispose();
+    });
+
+    it(`THE PROMISE (${path}): consecutive replayed edges are one LFO period apart to within ONE bridge tick`, async () => {
+      // "The measured period is accurate to about one 25ms bridge tick" —
+      // backdraft.ts delay_clock docs. The module timestamps a rise when the
+      // replayed setParam(1) lands, so the period it measures is the spacing
+      // of those writes: here every one of them, not a median.
+      const { pe, ve, clock } = await setup('trig_in', { source: 'cv', worklet });
+      clock.advance(SCHEDULER_TICK_MS);
+      ve.writes.length = 0;
+
+      const t0 = clock.nowSec();
+      clock.wave((t) => (t < t0 ? 0 : Math.sin(2 * Math.PI * LFO_HZ * (t - t0))));
+      for (let i = 0; i < 2000 / SCHEDULER_TICK_MS; i++) clock.advance(SCHEDULER_TICK_MS);
+
+      const rises = risingEdgeTimes(ve.writes, 'cv_trig');
+      expect(rises.length, 'enough rises to measure a period from').toBeGreaterThanOrEqual(4);
+      const periodsMs = rises.slice(1).map((t, i) => (t - rises[i]!) * 1000);
+      for (const p of periodsMs) {
+        expect(
+          Math.abs(p - LFO_PERIOD_SEC * 1000),
+          `every measured period is ${LFO_PERIOD_SEC * 1000} ms ± one ${SCHEDULER_TICK_MS} ms tick ` +
+            `(saw ${periodsMs.map((x) => x.toFixed(1)).join(', ')} ms)`,
+        ).toBeLessThanOrEqual(SCHEDULER_TICK_MS);
+      }
+      pe.dispose();
+    });
+  }
+
+  it('the settled LEVEL still follows the cv between edges (a held-high half-cycle reads HIGH)', async () => {
+    // The dispatch writes `setParam(currentLevel)` every tick after any replayed
+    // edges. For a slow cv that is a 0/1 square at the tick rate — which is how
+    // a `clockPatched`-style liveness flag keeps seeing writes, and how a
+    // consumer that ALSO reads the level (SHAPEGEN's sample-and-hold) is not
+    // reduced to blips by the widen.
+    const { pe, ve, clock } = await setup('trig_in', { source: 'cv', worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    ve.writes.length = 0;
+    const t0 = clock.nowSec();
+    // 1 Hz: HIGH for [t0+1/12, t0+5/12) — a 333 ms plateau, 13 ticks wide.
+    clock.wave((t) => (t < t0 ? 0 : Math.sin(2 * Math.PI * 1 * (t - t0))));
+    for (let i = 0; i < 10; i++) clock.advance(SCHEDULER_TICK_MS); // → t0 + 250 ms, inside the plateau
+    const last = ve.writes.filter((w) => w.paramId === 'cv_trig').at(-1);
+    expect(last?.value, 'inside the positive half-cycle the settled level reads HIGH').toBe(1);
+    for (let i = 0; i < 12; i++) clock.advance(SCHEDULER_TICK_MS); // → t0 + 550 ms, past the fall at 417 ms
+    const after = ve.writes.filter((w) => w.paramId === 'cv_trig').at(-1);
+    expect(after?.value, 'past the fall the settled level reads LOW').toBe(0);
+    expect(countRisingEdges(ve.writes, 'cv_trig'), 'one half-cycle, one edge').toBe(1);
+    pe.dispose();
+  });
+
+  it('removeEdge tears the cv dispatcher down (no writes after teardown)', async () => {
+    const { pe, ve, clock, edge } = await setup('trig_in', { source: 'cv', worklet: true });
+    clock.advance(SCHEDULER_TICK_MS);
+    pe.removeEdge(edge, 'audio');
+    ve.writes.length = 0;
+    const t0 = clock.nowSec();
+    clock.wave((t) => (t < t0 ? 0 : Math.sin(2 * Math.PI * LFO_HZ * (t - t0))));
+    clock.advance(SCHEDULER_TICK_MS * 12);
+    expect(ve.writes, 'a torn-down cv dispatcher must be silent').toEqual([]);
+    pe.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH TIME — the analyser → worklet HANDOFF must not manufacture an edge.
+// ---------------------------------------------------------------------------
+//
+// Found by the e2e positive control the widen made possible (the renderer
+// stopped, a 4 Hz LFO into DELAY CLK): the first measured periods read 15, 20
+// and 87 ms before settling at 250. Reproduced here deterministically: the
+// worklet processor started from `prev = 0`, so a source that was HIGH when the
+// tap connected posted a rise no transition produced, and the bridge replayed
+// it on the next tick — on top of the real rise the analyser fail-safe had
+// already delivered. A CV sine is high 30 % of the time, so this fired on
+// roughly every third patch; a 10 ms gate pulse is high 4 % of the time at
+// 4 Hz, which is why it hid for a year. The fix primes the processor from its
+// first sample and hands off at a tick boundary with per-rise timestamps; these
+// cases pin the count EXACTLY across every phase of the cycle at patch time.
+//
+// ONE rise IS still expected when the source is HIGH as the cable lands: the
+// consumer's own detector starts low, so the first write of a high level is a
+// rise on every path (the legacy per-frame bridge included) — that is the
+// "patch a held gate → it fires once" semantic, unchanged here. What must
+// never happen is a SECOND one from the same high phase.
+
+describe('PatchEngine — gate dispatch at PATCH TIME (the analyser → worklet handoff)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    __resetSchedulerClockForTests();
+  });
+  afterEach(() => {
+    __resetSchedulerClockForTests();
+    vi.useRealTimers();
+    delete (globalThis as unknown as Record<string, unknown>).AudioWorkletNode;
+    delete (globalThis as unknown as Record<string, unknown>).currentTime;
+    delete (globalThis as unknown as Record<string, unknown>).sampleRate;
+  });
+
+  /** True rising edges of sin(2π(f·t + phase)) in (0, runSec]: the crossings of
+   *  GATE_HI upward at f·t + phase = 1/12 + k. */
+  function trueRises(phase: number, runSec: number): number[] {
+    const out: number[] = [];
+    for (let k = -2; k < runSec * LFO_HZ + 2; k++) {
+      const t = (1 / 12 + k - phase) / LFO_HZ;
+      if (t > 0 && t <= runSec) out.push(t);
+    }
+    return out;
+  }
+
+  for (const phase of [0, 0.05, 0.1, 0.2, 0.3, 0.45, 0.6, 0.8]) {
+    const highAtPatch = Math.sin(2 * Math.PI * phase) >= 0.5;
+    it(`a ${LFO_HZ} Hz sine at phase ${phase} (${highAtPatch ? 'HIGH' : 'low'} as the cable lands) counts EXACTLY, across the handoff`, async () => {
+      // Install with the wave ALREADY RUNNING — the user patches a live LFO —
+      // and let the worklet take over at whatever point in the cycle the
+      // registration lands. The worklet primes from its first block and the
+      // handoff waits for that, so no phase can manufacture a rise.
+      const { pe, ve, clock } = await setupWithWave(
+        'trig_in',
+        (t) => Math.sin(2 * Math.PI * (LFO_HZ * t + phase)),
+      );
+      const RUN_SEC = 2.0;
+      for (let i = 0; i < (RUN_SEC * 1000) / SCHEDULER_TICK_MS; i++) await tickAndDrain(clock);
+
+      const expected = trueRises(phase, RUN_SEC).length + (highAtPatch ? 1 : 0);
+      const rises = risingEdgeTimes(ve.writes, 'cv_trig');
+      const periodsMs = rises.slice(1).map((t, i) => (t - rises[i]!) * 1000);
+      expect(
+        rises.length,
+        `${expected} rises expected (${trueRises(phase, RUN_SEC).length} true crossings` +
+          `${highAtPatch ? ' + the one for a source HIGH as the cable lands' : ''}); ` +
+          `replayed periods: ${periodsMs.map((p) => p.toFixed(1)).join(', ')} ms`,
+      ).toBe(expected);
+      // …and nothing in the replay looks like a clock faster than the LFO:
+      // every period after the patch-time one is a full LFO period ± a tick.
+      for (const p of periodsMs.slice(highAtPatch ? 1 : 0)) {
+        expect(
+          Math.abs(p - LFO_PERIOD_SEC * 1000),
+          `no manufactured short period (saw ${periodsMs.map((x) => x.toFixed(1)).join(', ')} ms)`,
+        ).toBeLessThanOrEqual(SCHEDULER_TICK_MS);
+      }
+      pe.dispose();
+    });
+  }
+
+  it('a gate HELD across the handoff neither double-fires nor dips low', async () => {
+    // The gate-source shape of the same defect: a GATE cable (the pre-widen
+    // scope) held HIGH from before the cable lands until well after the
+    // worklet takes over, into the undeclared-edge target a gate can reach.
+    const { pe, ve, clock } = await setupWithWave('clock_in', (t) => (t >= -1 ? 1 : 0), 'gate');
+    for (let i = 0; i < 20; i++) await tickAndDrain(clock);
+    expect(countRisingEdges(ve.writes, 'cv_clock'), 'one rise for one held gate, handoff included').toBe(1);
+    const afterFirst = ve.writes.filter((w) => w.paramId === 'cv_clock').slice(3);
+    expect(
+      afterFirst.every((w) => w.value === 1),
+      `held HIGH throughout — no dip at the handoff (saw ${JSON.stringify(afterFirst.map((w) => w.value))})`,
+    ).toBe(true);
     pe.dispose();
   });
 });
