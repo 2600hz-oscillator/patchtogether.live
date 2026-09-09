@@ -22,6 +22,7 @@ import {
   CLIP_RECORDER_CHUNK_FRAMES as CHUNK_FRAMES,
   CLIP_RECORDER_LANES as NUM_LANES,
   CLIP_RECORDER_MAX_ARM_SLIP_FRAMES as MAX_ARM_SLIP,
+  CLIP_RECORDER_MAX_GAP_FRAMES as MAX_GAP,
   CLIP_RECORDER_PROCESSOR,
   type ClipRecorderChunkMsg as ChunkMsg,
   type ClipRecorderDoneMsg as DoneMsg,
@@ -92,6 +93,13 @@ interface Harness {
    *  default every listed lane's samples carry their own global frame index
    *  (value = lane * 1e7 + frame), so captures are identified by value. */
   quantum(lanes?: number[], opts?: { channels?: 1 | 2; missing?: boolean }): void;
+  /** Advance the clock by `frames` WITHOUT rendering them — an output-device
+   *  underrun, as the worklet sees one: `currentFrame` jumps past audio that
+   *  was never asked for. Deliberately not a multiple of the quantum in the
+   *  tests below, because that is the real shape (one Chromium/Linux output
+   *  buffer = 480 frames) and the shape that tells a clock gap from every
+   *  other shortfall. */
+  skip(frames: number): void;
   chunksFor(lane: number): ChunkMsg[];
   doneFor(lane: number): DoneMsg[];
 }
@@ -128,6 +136,9 @@ function makeHarness(): Harness {
       }
       proc.process(inputs);
       frameNow += BLOCK;
+    },
+    skip(frames) {
+      frameNow += frames;
     },
     chunksFor(lane) {
       return posted.filter((p): p is { m: ChunkMsg; transfer: unknown[] | undefined } =>
@@ -395,6 +406,232 @@ describe('⚠ a LATE arm SLIDES, never truncates', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// ⚠ THE RENDER CLOCK IS NOT GAP-FREE — and the reason a second real take was
+// lost. When the output device underruns, `currentFrame` jumps past audio this
+// thread was never asked to render. The old slice kept counting `to − from`
+// per callback and fell behind the absolute window by exactly the skip:
+// 287520 of 288000 frames, 480 short — one Chromium/Linux output buffer, and
+// NOT a multiple of 128, which is what ruled out every other cause. The commit
+// refused the short take and the whole take went to the recovery pile.
+//
+// The take is now padded with SILENCE at the frames the device dropped — the
+// missing-input rule — bounded by one chunk, refused past it, and `gapFrames`
+// on `done` says how much. EVERY `frames`/`gapFrames`/offset ASSERTION BELOW
+// FAILS AGAINST THE OLD SLICE: it returned `frames` short by the skip, and the
+// samples after the skip landed `skip` frames early. The phase half is
+// asserted BY VALUE — a test that only checked the count would pass on an
+// implementation that appended the silence at the end.
+// ---------------------------------------------------------------------------
+
+/** 480 frames: one Chromium/Linux output buffer at 48 k, the exact shortfall
+ *  the CI failure reported. 480 = 3.75 quanta, so it is not a shape any
+ *  quantum-shaped bug could produce. */
+const DEVICE_BUFFER = 480;
+
+describe('⚠ a render-clock GAP is padded as SILENCE at the right frames', () => {
+  it('POSITIVE CONTROL — a gap-free take is bit-identical: every sample is its own planted value, gapFrames 0', () => {
+    // Nothing moved for the path that ships on a contiguous clock. The pad's
+    // guard needs `q0` to run AHEAD of the next expected sample; here it never
+    // does, so the take is the same bytes it always was — checked at EVERY
+    // sample of a multi-chunk take, not at the ends.
+    const h = makeHarness();
+    h.quantum([0]);
+    const start = 2 * BLOCK + 41;
+    const len = 2 * CHUNK_FRAMES + 700;
+    h.send({ type: 'arm', lane: 0, startFrame: start, stopFrame: start + len });
+    for (let q = 0; q * BLOCK < start + len + BLOCK; q++) h.quantum([0]);
+    const done = h.doneFor(0);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(len);
+    expect(done[0]!.startFrame).toBe(start);
+    const L = takeL(h.chunksFor(0));
+    expect(L).toHaveLength(len);
+    let mismatches = 0;
+    for (let i = 0; i < len; i++) if (L[i] !== sampleAt(0, start + i)) mismatches++;
+    expect(mismatches).toBe(0);
+    // Last on purpose: every assertion above this line also holds against the
+    // pre-pad worklet (checked by swapping it in), so this is the ONE line
+    // that separates "the new field exists" from "the samples moved".
+    expect(done[0]!.gapFrames).toBe(0);
+  });
+
+  it('a 480-frame jump mid-take yields the FULL length with exactly 480 zero frames at the skipped offset, and the stream resumes AT ITS OWN FRAME', () => {
+    const h = makeHarness();
+    const start = 3 * BLOCK;
+    const len = 9600; // 200 ms — the shape of a real clip take
+    h.send({ type: 'arm', lane: 1, startFrame: start, stopFrame: start + len });
+    for (let q = 0; q < 3 + 10; q++) h.quantum([1]); // 10 quanta captured: 1280 frames
+    const gapAt = 10 * BLOCK; // take-relative frame of the hole
+    h.skip(DEVICE_BUFFER); // the device underran: 480 frames never rendered
+    for (let q = 0; q < len / BLOCK + 4; q++) h.quantum([1]);
+    const done = h.doneFor(1);
+    expect(done).toHaveLength(1);
+    // THE LENGTH IS THE CONTRACT. Under the old slice this was len − 480.
+    expect(done[0]!.frames).toBe(len);
+    expect(done[0]!.startFrame).toBe(start); // no slip — the punch-in was on time
+    expect(done[0]!.gapFrames).toBe(DEVICE_BUFFER); // …and the glitch is a number
+    const L = takeL(h.chunksFor(1));
+    expect(L).toHaveLength(len);
+    // The sample BEFORE the hole is the last one the device rendered…
+    expect(L[gapAt - 1]).toBe(sampleAt(1, start + gapAt - 1));
+    // …the hole is digital silence, all of it…
+    let nonZero = 0;
+    for (let i = gapAt; i < gapAt + DEVICE_BUFFER; i++) if (L[i] !== 0) nonZero++;
+    expect(nonZero).toBe(0);
+    // …and the sample AFTER it is the frame the clock actually resumed at —
+    // NOT `start + gapAt` (which is what a skip-and-shift would put there).
+    expect(L[gapAt + DEVICE_BUFFER]).toBe(sampleAt(1, start + gapAt + DEVICE_BUFFER));
+    expect(L[len - 1]).toBe(sampleAt(1, start + len - 1)); // the tail is in phase
+  });
+
+  it('⚠ THE CI SHAPE — an ENDLESS take that lost one device buffer still stops on a WHOLE unit', () => {
+    // 288000 demanded, 287520 captured. The stop lands from the main thread at
+    // requestedStart + n × unit; the pad is what makes the count reach it.
+    const h = makeHarness();
+    const unit = 2048;
+    const start = 2 * BLOCK;
+    h.send({ type: 'arm', lane: 2, startFrame: start, stopFrame: null });
+    for (let q = 0; q < 2 + 20; q++) h.quantum([2]);
+    h.skip(DEVICE_BUFFER);
+    for (let q = 0; q < 10; q++) h.quantum([2]);
+    h.send({ type: 'stopAt', lane: 2, stopFrame: start + 3 * unit });
+    for (let q = 0; q < 3 * unit / BLOCK; q++) h.quantum([2]);
+    const done = h.doneFor(2);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(3 * unit); // THREE WHOLE UNITS, not 3 × unit − 480
+    expect(done[0]!.gapFrames).toBe(DEVICE_BUFFER);
+    const L = takeL(h.chunksFor(2));
+    expect(L[3 * unit - 1]).toBe(sampleAt(2, start + 3 * unit - 1)); // in phase to the end
+  });
+
+  it('a hole that straddles a chunk boundary flushes mid-pad and the chunks still tile', () => {
+    // 30 quanta = 3840 frames captured; the 480-frame hole covers 3840..4320,
+    // crossing the 4096 chunk edge — so the pad itself must post a chunk.
+    const h = makeHarness();
+    const len = 6000;
+    h.send({ type: 'arm', lane: 3, startFrame: 0, stopFrame: len });
+    for (let q = 0; q < 30; q++) h.quantum([3]);
+    h.skip(DEVICE_BUFFER);
+    for (let q = 0; q < len / BLOCK + 2; q++) h.quantum([3]);
+    const chunks = h.chunksFor(3);
+    expect(chunks.map((c) => c.frames)).toEqual([CHUNK_FRAMES, len - CHUNK_FRAMES]);
+    const L = takeL(chunks); // takeL asserts firstFrame contiguity
+    expect(L).toHaveLength(len);
+    expect(L[3839]).toBe(sampleAt(3, 3839));
+    expect(L[3840]).toBe(0);
+    expect(L[4095]).toBe(0); // last sample of chunk 1 — silence
+    expect(L[4096]).toBe(0); // first sample of chunk 2 — still silence
+    expect(L[4319]).toBe(0);
+    expect(L[4320]).toBe(sampleAt(3, 4320));
+    expect(h.doneFor(3)[0]!.frames).toBe(len);
+    expect(h.doneFor(3)[0]!.gapFrames).toBe(DEVICE_BUFFER);
+  });
+
+  it('a jump past a RESOLVED stop pads only up to the stop and finishes exactly there', () => {
+    // 30 quanta = 3840 captured, stop at 4000: the 480-frame jump overshoots
+    // the window by 320. Only the 160 frames the window still owed are padded.
+    const h = makeHarness();
+    h.send({ type: 'arm', lane: 4, startFrame: 0, stopFrame: 4000 });
+    for (let q = 0; q < 30; q++) h.quantum([4]);
+    h.skip(DEVICE_BUFFER);
+    h.quantum([4]); // the finishing quantum
+    const done = h.doneFor(4);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(4000); // exact — never over
+    expect(done[0]!.gapFrames).toBe(160);
+    const L = takeL(h.chunksFor(4));
+    expect(L[3839]).toBe(sampleAt(4, 3839));
+    expect(L[3840]).toBe(0);
+    expect(L[3999]).toBe(0);
+  });
+
+  it('a gap AT the punch-in goes through the SLIDE, not the pad (the two are mutually exclusive)', () => {
+    // Nothing captured yet, so the clock running past `startFrame` is
+    // indistinguishable from a late arm — and is handled as one: the window
+    // moves whole, `slip` is reported via startFrame, `gapFrames` stays 0.
+    const h = makeHarness();
+    const start = 4 * BLOCK;
+    h.send({ type: 'arm', lane: 5, startFrame: start, stopFrame: start + 1024 });
+    for (let q = 0; q < 4; q++) h.quantum([5]); // up to the punch-in, nothing captured
+    h.skip(DEVICE_BUFFER); // the device drops the buffer that held the punch-in
+    for (let q = 0; q < 12; q++) h.quantum([5]);
+    const done = h.doneFor(5)[0]!;
+    expect(done.frames).toBe(1024);
+    expect(done.startFrame).toBe(start + DEVICE_BUFFER); // slid, not padded
+    expect(done.gapFrames).toBe(0);
+    expect(takeL(h.chunksFor(5))[0]).toBe(sampleAt(5, start + DEVICE_BUFFER));
+  });
+
+  it('⚠ REFUSES past the pad bound: zero frames, the punch-in it really got, and the hole that broke it', () => {
+    // Past one chunk the hole is not a click, it is a ruined take, and a loud
+    // refusal beats a silent hole. 4097 > MAX_GAP (4096).
+    const h = makeHarness();
+    const start = 2 * BLOCK;
+    h.send({ type: 'arm', lane: 6, startFrame: start, stopFrame: start + 19_200 });
+    for (let q = 0; q < 2 + 8; q++) h.quantum([6]);
+    const before = h.chunksFor(6).length;
+    h.skip(MAX_GAP + 1);
+    for (let q = 0; q < 200; q++) h.quantum([6]);
+    const done = h.doneFor(6);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(0); // REFUSED — not a short take, and not a padded one
+    expect(done[0]!.gapFrames).toBe(MAX_GAP + 1); // the cause, named
+    // The punch-in was ON TIME; a refusal must not report it as a slip.
+    expect(done[0]!.startFrame).toBe(start);
+    expect(h.chunksFor(6)).toHaveLength(before); // nothing more was posted
+    expect(MAX_GAP).toBe(4096); // the bound these numbers straddle
+    expect(MAX_GAP).toBe(MAX_ARM_SLIP); // symmetric with the slide bound
+  });
+
+  it('pads EXACTLY at the bound (the boundary is honoured, not approximated)', () => {
+    const h = makeHarness();
+    const len = 3 * CHUNK_FRAMES;
+    h.send({ type: 'arm', lane: 7, startFrame: 0, stopFrame: len });
+    for (let q = 0; q < 8; q++) h.quantum([7]);
+    h.skip(MAX_GAP);
+    for (let q = 0; q < len / BLOCK + 2; q++) h.quantum([7]);
+    const done = h.doneFor(7)[0]!;
+    expect(done.frames).toBe(len);
+    expect(done.gapFrames).toBe(MAX_GAP);
+  });
+
+  it('the bound is CUMULATIVE over the take — two small gaps that add up past it refuse', () => {
+    // Symmetric with the slide bound (`slip + miss > MAX_ARM_SLIP`): a take
+    // that has already absorbed most of a chunk of silence does not get a
+    // fresh allowance for the next glitch.
+    const h = makeHarness();
+    h.send({ type: 'arm', lane: 0, startFrame: 0, stopFrame: 48_000 });
+    for (let q = 0; q < 8; q++) h.quantum([0]);
+    h.skip(MAX_GAP - 100);
+    for (let q = 0; q < 8; q++) h.quantum([0]);
+    expect(h.doneFor(0)).toHaveLength(0); // still recording after the first gap
+    h.skip(101); // 4096 − 100 + 101 = 4097 > MAX_GAP
+    h.quantum([0]);
+    const done = h.doneFor(0);
+    expect(done).toHaveLength(1);
+    expect(done[0]!.frames).toBe(0);
+    expect(done[0]!.gapFrames).toBe(MAX_GAP + 1);
+  });
+
+  it('eight lanes glitched by ONE clock all pad the same hole and stay sample-aligned', () => {
+    const h = makeHarness();
+    const lanes = [0, 1, 2, 3, 4, 5, 6, 7];
+    for (const lane of lanes) h.send({ type: 'arm', lane, startFrame: 0, stopFrame: 2048 });
+    for (let q = 0; q < 5; q++) h.quantum(lanes);
+    h.skip(DEVICE_BUFFER);
+    for (let q = 0; q < 16; q++) h.quantum(lanes);
+    for (const lane of lanes) {
+      const done = h.doneFor(lane)[0]!;
+      expect(done.frames).toBe(2048);
+      expect(done.gapFrames).toBe(DEVICE_BUFFER);
+      const L = takeL(h.chunksFor(lane));
+      expect(L[640]).toBe(0);
+      expect(L[640 + DEVICE_BUFFER]).toBe(sampleAt(lane, 640 + DEVICE_BUFFER));
+    }
+  });
+});
+
 describe('eight lanes share one currentFrame', () => {
   it('all 8 lanes armed together capture the SAME first frame and the same exact count', () => {
     const h = makeHarness();
@@ -431,7 +668,7 @@ describe('a missing input records SILENCE at the right frames — never a skip',
     h.quantum([4]);
     h.quantum([4], { missing: true }); // frames 256..384: nothing connected
     h.quantum([4]);
-    expect(h.doneFor(4)[0]!.frames).toBe(512); // exact — no third outcome
+    expect(h.doneFor(4)[0]!.frames).toBe(512); // exact — silence at its own frames, never a skip
     const L = takeL(h.chunksFor(4));
     expect(L[255]).toBe(sampleAt(4, 255));
     expect(L[256]).toBe(0); // silence, not a skip

@@ -9,14 +9,41 @@
 // (`startFrame` / `stopFrame`) resolved once on the main thread from
 // `ctx.currentTime × ctx.sampleRate`; this processor only ever compares them
 // against its own `currentFrame` and slices each 128-frame quantum with sample
-// offsets. `to - from` summed over the take is `stopFrame - startFrame`
-// EXACTLY, whatever the main thread is doing — a take is the requested number
-// of samples or it is cancelled; there is no third outcome. No `setInterval`
-// anywhere, no frame count derived from a tick count (the blood-pcm lesson:
-// a tick-shaped budget delivered 62 % of demand and the SCOPE read 0.0000).
+// offsets. The LENGTH is the contract: a take is `stopFrame - startFrame`
+// samples EXACTLY, whatever the main thread is doing, or it is refused and the
+// commit says so. No `setInterval` anywhere, no frame count derived from a
+// tick count (the blood-pcm lesson: a tick-shaped budget delivered 62 % of
+// demand and the SCOPE read 0.0000).
 //
-// ⚠ A LATE ARM SLIDES; IT NEVER TRUNCATES — and that is what MAKES the "no
-// third outcome" sentence above true. It was FALSE as shipped, and the
+// ⚠ THE RENDER CLOCK IS NOT GAP-FREE, and this file used to assume it was.
+// "`to - from` summed over the take is `stopFrame - startFrame` exactly" holds
+// only if `currentFrame` advances by exactly `n` between consecutive process()
+// calls. When the OUTPUT DEVICE UNDERRUNS, Chrome's frame counter jumps past
+// audio this thread was never asked to render — and a take that simply kept
+// slicing fell behind the absolute window by the skipped interval: 287520 of
+// 288000 frames, 480 short, exactly one Chromium/Linux output buffer (10 ms @
+// 48 k) and NOT a multiple of the 128-frame quantum, which is what ruled out
+// every other cause. The commit refused the short take and the whole take
+// went to the recovery pile: one underrun anywhere inside a take destroyed
+// it, and the longer the take the likelier it was.
+//
+// So there IS a third outcome, and this header now says so honestly: a
+// full-length take containing a BOUNDED run of digital silence at the frames
+// where the device dropped audio. That is the same rule the missing-input
+// clause below has always applied, and it is the honest description of what
+// the user's OUTPUT actually did — the speakers went silent for those frames
+// too. The samples never existed, but the window still does; padding it keeps
+// the length exact and every later sample AT ITS OWN FRAME, where skipping
+// would have shifted the rest of the loop early. The pad is bounded by
+// CLIP_RECORDER_MAX_GAP_FRAMES (one chunk, ~85 ms, cumulative over the take —
+// symmetric with the slide bound); past it the lane REFUSES, because a loud
+// refusal beats a hole nobody asked for. `done` carries `gapFrames`, so a
+// padded take is OBSERVABLE rather than a silent repair. An on-time, gap-free
+// take is bit-identical: the pad's guard needs `q0` to run AHEAD of the next
+// expected sample, which a contiguous clock never does.
+//
+// ⚠ A LATE ARM SLIDES; IT NEVER TRUNCATES — and that is what keeps the LENGTH
+// exact at the punch-in. It was FALSE as shipped, and the
 // counter-example cost a whole take. `startFrame`
 // is resolved on the main thread from `ctx.currentTime` plus a fixed lead
 // (CLIP_REC_ARM_LEAD_S, 0.12 s); whether THIS thread has already rendered past
@@ -75,6 +102,7 @@ import {
   CLIP_RECORDER_CHUNK_FRAMES as CHUNK_FRAMES,
   CLIP_RECORDER_LANES as NUM_LANES,
   CLIP_RECORDER_MAX_ARM_SLIP_FRAMES as MAX_ARM_SLIP,
+  CLIP_RECORDER_MAX_GAP_FRAMES as MAX_GAP,
   CLIP_RECORDER_QUANTUM as RENDER_QUANTUM,
   type ClipRecorderInMsg as InMsg,
 } from './lib/clip-recorder-protocol';
@@ -89,6 +117,10 @@ interface LaneTake {
    *  on-time arm. It is what rebases an incoming absolute `stopAt` — the main
    *  thread computes every boundary from the start it REQUESTED. */
   slip: number;
+  /** Frames of digital silence padded where the render clock skipped ahead
+   *  mid-take (see the file header). Zero on a gap-free clock. Cumulative, and
+   *  bounded by MAX_GAP — past the bound the lane refuses. */
+  gap: number;
   /** Take-relative first frame of the chunk currently accumulating. */
   chunkFirst: number;
   bufL: Float32Array;
@@ -114,6 +146,7 @@ class ClipRecorderProcessor extends AudioWorkletProcessor {
           stopFrame: m.stopFrame === null ? null : Math.trunc(m.stopFrame),
           written: 0,
           slip: 0,
+          gap: 0,
           chunkFirst: 0,
           bufL: new Float32Array(CHUNK_FRAMES),
           bufR: new Float32Array(CHUNK_FRAMES),
@@ -158,12 +191,41 @@ class ClipRecorderProcessor extends AudioWorkletProcessor {
       if (s.written === 0 && s.fill === 0 && q0 > s.startFrame) {
         const miss = q0 - s.startFrame;
         if (s.slip + miss > MAX_ARM_SLIP) {
-          this.refuse(lane, q0);
+          this.refuse(lane, q0, 0);
           continue;
         }
         s.slip += miss;
         s.startFrame += miss;
         if (s.stopFrame !== null) s.stopFrame += miss;
+      }
+      // ⚠ THE RENDER CLOCK IS NOT GAP-FREE (see the file header). An output-
+      // device underrun advances `currentFrame` past audio this thread was
+      // never asked to render. Those samples do not exist — but the window
+      // still does, and a take that simply stops counting is BOTH short (the
+      // commit refuses it and the whole take is lost) and out of phase (every
+      // later sample slides earlier against the loop grid). Capture the hole as
+      // SILENCE at the right frames, exactly as the missing-input clause below
+      // does — bounded, and refused past the bound. The guard is the gap
+      // signature and nothing else: `expected` is the absolute frame of the
+      // NEXT sample, and on a contiguous clock `q0 === expected` for every
+      // quantum after the punch-in. `written > 0` makes this and the slide
+      // above mutually exclusive by construction — a gap AT the punch-in is
+      // indistinguishable from a late arm and is handled as one.
+      const expected = s.startFrame + s.written;
+      if (s.written > 0 && q0 > expected) {
+        const hole = Math.min(q0 - expected, (s.stopFrame ?? Infinity) - expected);
+        if (s.gap + hole > MAX_GAP) {
+          this.refuse(lane, s.startFrame, s.gap + hole);
+          continue;
+        }
+        for (let i = 0; i < hole; i++) {
+          s.bufL[s.fill] = 0;
+          s.bufR[s.fill] = 0;
+          s.fill++;
+          s.written++;
+          s.gap++;
+          if (s.fill === CHUNK_FRAMES) this.flush(lane, s);
+        }
       }
       // Slice the quantum against the take window — SAMPLE OFFSETS, not seconds.
       const from = Math.max(0, s.startFrame - q0);
@@ -198,21 +260,36 @@ class ClipRecorderProcessor extends AudioWorkletProcessor {
   /** Emit the final partial chunk + `done`, then retire the lane. `startFrame`
    *  is where the take ACTUALLY punched in — requested plus slip — so the main
    *  thread can see a slide instead of inferring one from a count that now
-   *  always matches. */
+   *  always matches; `gapFrames` is how much of the take is padded silence,
+   *  so a device glitch is a number on the commit rather than a silent
+   *  repair. */
   private finish(lane: number, s: LaneTake): void {
     this.flush(lane, s);
-    this.port.postMessage({ type: 'done', lane, frames: s.written, startFrame: s.startFrame });
+    this.port.postMessage({
+      type: 'done',
+      lane,
+      frames: s.written,
+      startFrame: s.startFrame,
+      gapFrames: s.gap,
+    });
     this.takes[lane] = null;
   }
 
-  /** REFUSE a take whose arm drained further past its punch-in than the slide
-   *  may absorb: retire the lane and report zero frames at the frame this
-   *  thread had actually reached. The commit's byte-exact check then fails
-   *  LOUDLY and keeps the recover scratch — which is the point. Sliding a take
-   *  this far would have been silent and wrong; a short take was silent and
-   *  wrong; a refusal that names its own slip is neither. */
-  private refuse(lane: number, atFrame: number): void {
-    this.port.postMessage({ type: 'done', lane, frames: 0, startFrame: atFrame });
+  /** REFUSE a take: retire the lane and report zero frames. The commit's
+   *  byte-exact check then fails LOUDLY and keeps the recover scratch — which
+   *  is the point. Two causes, told apart by the fields:
+   *   - the arm drained further past its punch-in than the slide may absorb:
+   *     `startFrame` is the frame this thread had actually reached, `gapFrames`
+   *     is 0;
+   *   - the render clock skipped further mid-take than the pad may absorb:
+   *     `startFrame` is the punch-in the take really got (so the main thread
+   *     does not read the glitch as a slip) and `gapFrames` is the hole that
+   *     broke the bound.
+   *  Sliding or padding a take this far would have been silent and wrong; a
+   *  short take was silent and wrong; a refusal that names its own cause is
+   *  neither. */
+  private refuse(lane: number, startFrame: number, gapFrames: number): void {
+    this.port.postMessage({ type: 'done', lane, frames: 0, startFrame, gapFrames });
     this.takes[lane] = null;
   }
 }

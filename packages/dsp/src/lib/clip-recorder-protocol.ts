@@ -54,6 +54,26 @@ export const CLIP_RECORDER_QUANTUM = 128;
  *  timing wobble rather than a different take. */
 export const CLIP_RECORDER_MAX_ARM_SLIP_FRAMES = CLIP_RECORDER_CHUNK_FRAMES;
 
+/** ⚠ HOW MUCH RENDER-CLOCK GAP A TAKE MAY ABSORB AS SILENCE — one chunk,
+ *  ~85 ms @ 48 k, symmetric with CLIP_RECORDER_MAX_ARM_SLIP_FRAMES.
+ *
+ *  The audio render clock is NOT gap-free. When the OUTPUT DEVICE underruns,
+ *  `currentFrame` jumps past audio this thread was never asked to render —
+ *  one Chromium/Linux output buffer is 480 frames, and 480 is not a multiple
+ *  of the 128-frame quantum, which is how a clock gap is told apart from
+ *  every other shortfall. Those samples do not exist, but the WINDOW still
+ *  does: the worklet pads the hole with digital silence at the right frames
+ *  (the missing-input rule), so the take stays full-length and in phase and
+ *  the whole of it is not lost to one glitch.
+ *
+ *  Past this bound the hole is not a click, it is a RUINED take — a stalled
+ *  render thread, a device that went away — and padding would trade a loud,
+ *  recoverable failure for a silent musical one. So the lane REFUSES instead
+ *  (`frames: 0`), the commit's byte-exact check keeps the scratch, and
+ *  `gapFrames` on `done` names the cause. The bound is CUMULATIVE over the
+ *  take, exactly as the slide bound accumulates over an arm. */
+export const CLIP_RECORDER_MAX_GAP_FRAMES = CLIP_RECORDER_CHUNK_FRAMES;
+
 // ---------------------------------------------------------------------------
 // Main thread → worklet
 // ---------------------------------------------------------------------------
@@ -106,20 +126,31 @@ export interface ClipRecorderChunkMsg {
   data: Float32Array;
 }
 /** The take is complete: exactly `frames` frames were captured. Posted after
- *  the final (partial) chunk. `frames === 0` is a REFUSAL — the arm drained
- *  more than CLIP_RECORDER_MAX_ARM_SLIP_FRAMES past its own punch-in and the
- *  lane was retired rather than slid.
+ *  the final (partial) chunk. `frames === 0` is a REFUSAL — either the arm
+ *  drained more than CLIP_RECORDER_MAX_ARM_SLIP_FRAMES past its own punch-in
+ *  (`gapFrames === 0`), or the render clock skipped more than
+ *  CLIP_RECORDER_MAX_GAP_FRAMES mid-take (`gapFrames` > the bound) — and the
+ *  lane was retired rather than slid or padded.
  *
  *  `startFrame` is the ABSOLUTE frame of the take's first captured sample —
- *  the requested start plus whatever slip a late arm cost, and on a refusal
- *  the frame the audio thread had already reached. It exists so a slip is
- *  OBSERVABLE: without it the main thread cannot tell a punched-on-time take
- *  from one that slid, and a silent slide is exactly what this field is here
- *  to stop being silent. */
+ *  the requested start plus whatever slip a late arm cost. On a SLIDE refusal
+ *  it is the frame the audio thread had already reached; on a GAP refusal it
+ *  is the punch-in the take actually got, so the main thread does not read a
+ *  glitch as a slip. It exists so a slip is OBSERVABLE: without it the main
+ *  thread cannot tell a punched-on-time take from one that slid, and a silent
+ *  slide is exactly what this field is here to stop being silent.
+ *
+ *  `gapFrames` is how many of the `frames` are DIGITAL SILENCE the worklet
+ *  padded where the render clock skipped (see CLIP_RECORDER_MAX_GAP_FRAMES).
+ *  Zero for every take rendered on a gap-free clock. It is here for the same
+ *  reason `startFrame` is: a padded hole that nobody can see is a silent
+ *  repair, and the commit path reports it so the next investigator has a
+ *  number to read. */
 export interface ClipRecorderDoneMsg {
   type: 'done';
   lane: number;
   frames: number;
   startFrame: number;
+  gapFrames: number;
 }
 export type ClipRecorderOutMsg = ClipRecorderChunkMsg | ClipRecorderDoneMsg;

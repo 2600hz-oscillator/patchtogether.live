@@ -105,6 +105,7 @@ import {
   stopClipRecorderLane,
   wireClipRecorder,
   CLIP_RECORDER_BYTES_PER_FRAME,
+  CLIP_RECORDER_MAX_GAP_FRAMES,
   attachClipRecorderSink,
   type ClipRecorderWiring,
 } from '$lib/audio/modules/clip-recorder-node';
@@ -271,6 +272,11 @@ interface LaneRec {
    *  both is what turns that from invisible into a console line. */
   armStartFrame: number | null;
   doneStartFrame: number | null;
+  /** Frames of device-glitch silence the worklet padded into the take where
+   *  the render clock skipped (clip-recorder.ts header). Reported on `done`;
+   *  the commit names it so a padded hole is a console line, not a silent
+   *  repair. */
+  doneGapFrames: number | null;
   doneWait: Promise<void> | null;
   doneResolve: (() => void) | null;
 }
@@ -293,6 +299,7 @@ function freshLane(): LaneRec {
     doneFrames: null,
     armStartFrame: null,
     doneStartFrame: null,
+    doneGapFrames: null,
     doneWait: null,
     doneResolve: null,
   };
@@ -668,6 +675,7 @@ export class NodeClipRecorderRegistry {
     st.doneFrames = null;
     st.armStartFrame = null;
     st.doneStartFrame = null;
+    st.doneGapFrames = null;
     st.doneWait = new Promise<void>((res) => {
       st.doneResolve = res;
     });
@@ -880,6 +888,23 @@ export class NodeClipRecorderRegistry {
           `[clip-rec] lane ${lane + 1} punched in ${slip} frames late (arm reached the audio thread after its own start)`,
         );
       }
+      // How much of the take is device-glitch silence. The audio thread pads a
+      // render-clock gap with zeros at the right frames so the take stays
+      // full-length and in phase (clip-recorder.ts header) — REPORTED here,
+      // never acted on: the take is what the user's output actually did.
+      // ⚠ HELD FOLLOW-UP: the surplus-truncate branch below is still a
+      // console.info, so a padded take on the transport-stop path commits with
+      // its post-gap samples where the clock put them and nothing gates it.
+      // This number is what lets that path be made loud; making it loud is a
+      // behaviour change on a green path and is the owner's call.
+      const gap = st.doneGapFrames ?? 0;
+      // (`doneFrames > 0`: on a REFUSAL nothing was padded — the throw below
+      // names the gap as the cause instead.)
+      if (gap > 0 && st.doneFrames > 0) {
+        console.warn(
+          `[clip-rec] lane ${lane + 1}: ${gap} frames of device-glitch silence padded mid-take (the render clock skipped them)`,
+        );
+      }
       // ⚠ SHORT IS A DEFECT; LONG IS BY DESIGN. This was a strict equality check
       // and it made the endless transport-stop path impossible: that path
       // resolves its stop at the LAST COMPLETED LOOP, which is in the PAST, so
@@ -893,13 +918,18 @@ export class NodeClipRecorderRegistry {
       // it is how a dead input, a dropped chunk and the worklet's own arm
       // REFUSAL (`frames: 0`) surface at all.
       if (st.doneFrames < frames) {
-        // `frames: 0` is the worklet REFUSING an arm that drained further past
-        // its punch-in than the slide may absorb — say which it was, because
-        // "captured 0 frames" alone reads like a dead input.
+        // `frames: 0` is the worklet REFUSING — an arm that drained further
+        // past its punch-in than the slide may absorb, or a render clock that
+        // skipped further mid-take than the pad may absorb. Say which it was,
+        // because "captured 0 frames" alone reads like a dead input.
         const why =
-          st.doneFrames === 0 && slip !== null && slip > 0
-            ? ` — arm drained ${slip} frames past its punch-in, beyond the slide bound`
-            : '';
+          st.doneFrames === 0 && gap > CLIP_RECORDER_MAX_GAP_FRAMES
+            ? ` — the render clock skipped ${gap} frames mid-take, beyond the silence-pad bound`
+            : st.doneFrames === 0 && slip !== null && slip > 0
+              ? ` — arm drained ${slip} frames past its punch-in, beyond the slide bound`
+              : gap > 0
+                ? ` (${gap} of them device-glitch silence)`
+                : '';
         throw new Error(`captured ${st.doneFrames} frames, window demanded ${frames}${why}`);
       }
       if (st.doneFrames > frames) {
@@ -1123,11 +1153,12 @@ export class NodeClipRecorderRegistry {
         entry.tapsRef = liveTaps;
         attachClipRecorderSink(entry.wiring.node, {
           drainFor: (lane) => entry.lanes[lane]?.drain ?? null,
-          onDone: (lane, frames, startFrame) => {
+          onDone: (lane, frames, startFrame, gapFrames) => {
             const st = entry.lanes[lane];
             if (!st) return;
             st.doneFrames = frames;
             st.doneStartFrame = startFrame;
+            st.doneGapFrames = gapFrames;
             st.doneResolve?.();
           },
         });
@@ -1183,6 +1214,7 @@ function clearTake(st: LaneRec): void {
   st.doneFrames = null;
   st.armStartFrame = null;
   st.doneStartFrame = null;
+  st.doneGapFrames = null;
   st.doneWait = null;
   st.doneResolve = null;
 }
