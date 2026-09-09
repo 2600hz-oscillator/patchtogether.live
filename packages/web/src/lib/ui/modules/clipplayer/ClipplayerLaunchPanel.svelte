@@ -77,19 +77,20 @@
   }));
 
   let pads = $derived(clipplayerPadViews(live.d));
-  /** THE RECORDER'S REFUSAL, read off the registry the same way the samsloop
-   *  and recorderbox faces read theirs (`nodeSamsloop.isRecording`,
-   *  `nodeRecorder.view`). Reactive through the registry's own `#version`.
+  /** THE RECORDER'S REFUSALS, one per lane, read off the registry the same
+   *  way the samsloop and recorderbox faces read theirs
+   *  (`nodeSamsloop.isRecording`, `nodeRecorder.view`). Reactive through the
+   *  registry's own `#version`.
    *
-   *  ⚠ A STRING, NOT THE LANE ARRAY, and that is deliberate: the registry
-   *  bumps its version on EVERY pump tick while a lane is refused (it re-runs
-   *  the refusal each time), and a `$derived` that returns an equal primitive
-   *  does not invalidate its readers — so `lanes` below re-projects only when
-   *  the sentence actually changes, not fifty times a second. The model does
-   *  the per-lane attribution and the staleness rule (`laneRecRefusal`); this
-   *  surface only hands the value in, which keeps that file store-free. */
-  let recRefusal = $derived(nodeClipRecorder.lastRefusal(nodeId));
-  let lanes = $derived(clipplayerLaneViews(live.d, undefined, recRefusal));
+   *  ⚠ THE REGISTRY HANDS BACK THE SAME FROZEN ARRAY until a sentence is
+   *  raised or retired, and that is what keeps this cheap: a refused idle lane
+   *  re-raises its refusal every 50 ms pump, and a `$derived` whose value is
+   *  `===` its last does not invalidate its readers — so `lanes` below
+   *  re-projects when a refusal CHANGES, not fifty times a second. The model
+   *  applies the staleness rule (`laneRecRefusal`); this surface only hands
+   *  the array in, which keeps that file store-free. */
+  let recRefusals = $derived(nodeClipRecorder.laneRefusals(nodeId));
+  let lanes = $derived(clipplayerLaneViews(live.d, undefined, recRefusals));
   /** Pads indexed by `[slot][lane]` for the row-major render. */
   let rows = $derived(
     Array.from({ length: CLIP_SLOTS }, (_, slot) =>

@@ -323,14 +323,39 @@ export interface ClipRecLaneView {
   mediaId: string | null;
 }
 
+/** WHY a lane is armed and not taking — the samsloop "refuse with the numbers
+ *  in the message" rule made observable, per launcher node.
+ *
+ *  ⚠ KEYED PER LANE, WITH A LIFETIME (2026-09-09). This was one string per
+ *  node, deleted only when an arm was ACCEPTED, and that shape had three holes
+ *  once a surface started painting it: two refused lanes overwrote each other
+ *  every tick (the last lane in pump order kept the sentence, the first sat
+ *  plain red — the reported defect, on that lane); a refusal outlived the
+ *  toggle that raised it, so fixing the slot and re-arming while STOPPED
+ *  painted the old sentence until play; and an accept on lane j blanked lane
+ *  i's standing refusal for a tick. Now every lane holds its own, retired
+ *  when THAT lane's toggle is off or THAT lane's arm is accepted. */
+interface NodeRefusals {
+  /** Per lane: the sentence, and the order it was raised in (`lastRefusal`). */
+  lanes: Map<number, { reason: string; seq: number }>;
+  /** A FROZEN per-lane copy handed to readers, replaced ONLY when a sentence
+   *  is raised or retired — so a `$derived` holding it keeps identity across
+   *  the pumps that re-raise an unchanged refusal, and a face re-projects its
+   *  lanes when a sentence changes, not fifty times a second. */
+  view: readonly (string | null)[];
+}
+
+const NO_REFUSALS: readonly (string | null)[] = Object.freeze(
+  Array.from({ length: CLIP_LANES }, () => null),
+);
+
 export class NodeClipRecorderRegistry {
   #entries = new Map<string, Entry>();
   #deps: ClipRecRegistryDeps;
   #stopTicker: (() => void) | null = null;
   #version = $state(0);
-  /** The last refusal's reason, per mixer node — the samsloop "refuse with
-   *  the numbers in the message" rule made observable. */
-  #refusals = new Map<string, string>();
+  #refusals = new Map<string, NodeRefusals>();
+  #refusalSeq = 0;
 
   constructor(deps: Partial<ClipRecRegistryDeps> = {}) {
     this.#deps = { ...DEFAULT_DEPS, ...deps };
@@ -350,9 +375,30 @@ export class NodeClipRecorderRegistry {
     }));
   }
 
+  /** The most recently RAISED refusal still standing on any lane of this node,
+   *  or null. Tests and debug surfaces; a face reads `laneRefusals`. */
   lastRefusal(nodeId: string): string | null {
     void this.#version;
-    return this.#refusals.get(nodeId) ?? null;
+    let best: { reason: string; seq: number } | null = null;
+    for (const r of this.#refusals.get(nodeId)?.lanes.values() ?? []) {
+      if (!best || r.seq > best.seq) best = r;
+    }
+    return best?.reason ?? null;
+  }
+
+  /** ONE lane's standing refusal, or null. */
+  laneRefusal(nodeId: string, lane: number): string | null {
+    void this.#version;
+    return this.#refusals.get(nodeId)?.lanes.get(lane)?.reason ?? null;
+  }
+
+  /** Every lane's standing refusal, indexed by lane, null where there is
+   *  none. THE SAME FROZEN ARRAY comes back until a sentence is raised or
+   *  retired (`NodeRefusals.view`), which is what lets a `$derived` on it hold
+   *  across the pumps that re-raise an unchanged refusal. */
+  laneRefusals(nodeId: string): readonly (string | null)[] {
+    void this.#version;
+    return this.#refusals.get(nodeId)?.view ?? NO_REFUSALS;
   }
 
   get nodeIds(): string[] {
@@ -495,10 +541,19 @@ export class NodeClipRecorderRegistry {
         if (mixNode) {
           this.#beginPrepare(entry, lane, engine, ctx, mixNode, clipNode, clock, laneRecMode(data, lane));
         } else {
-          this.#refuse(entry, 'no mixmstrs in the rack to record from');
+          this.#refuse(entry, lane, 'no mixmstrs in the rack to record from');
           this.#writeRecArm(entry, lane, false);
         }
       } else if (!armed) {
+        // THE TOGGLE IS OFF, so whatever refused THIS lane's last arm is moot:
+        // the sentence answers "why is this lane armed and not taking", and
+        // the lane is not armed. Retired LEVEL-based on this lane's own key —
+        // a refusal on lane 0 survives lanes 1..7 running this branch on the
+        // same tick, and a Map miss costs nothing on the seven unarmed lanes
+        // of an idle rack. Without this a player who was refused, dropped the
+        // toggle, fixed the slot and re-armed while STOPPED saw the old
+        // sentence painted until play re-evaluated it (2026-09-09).
+        this.#retireRefusal(entry, lane);
         // THE TOGGLE WENT OFF. For an ENDLESS take this is the owner's "tap the
         // record button again": stop at the end of the CURRENT loop, keeping
         // every whole loop captured so far. For anything else it is the escape
@@ -550,10 +605,46 @@ export class NodeClipRecorderRegistry {
   // Arming
   // -------------------------------------------------------------------------
 
-  #refuse(entry: Entry, reason: string): void {
-    this.#refusals.set(entry.nodeId, reason);
-    this.#version++;
+  #refuse(entry: Entry, lane: number, reason: string): void {
+    this.#noteRefusal(entry, lane, reason);
     console.warn(`[clip-rec] ${entry.nodeId}: refusing to arm — ${reason}`);
+  }
+
+  /** Raise `reason` on ONE lane. The version bumps only when the sentence
+   *  CHANGES — a refused idle lane re-raises the same one every pump, and a
+   *  face re-projecting on each of those is the churn `NodeRefusals.view`
+   *  exists to avoid. */
+  #noteRefusal(entry: Entry, lane: number, reason: string): void {
+    let node = this.#refusals.get(entry.nodeId);
+    if (!node) {
+      node = { lanes: new Map(), view: NO_REFUSALS };
+      this.#refusals.set(entry.nodeId, node);
+    }
+    if (node.lanes.get(lane)?.reason === reason) return;
+    node.lanes.set(lane, { reason, seq: ++this.#refusalSeq });
+    this.#publishRefusals(node);
+  }
+
+  /** Drop ONE lane's standing refusal, if any. Called on that lane's toggle
+   *  being OFF (the pump) and on that lane's arm being ACCEPTED
+   *  (`#beginPrepare`) — the two states in which "armed and not taking" is
+   *  no longer this lane's condition. A miss is a no-op with no version bump. */
+  #retireRefusal(entry: Entry, lane: number): void {
+    const node = this.#refusals.get(entry.nodeId);
+    if (!node?.lanes.delete(lane)) return;
+    if (node.lanes.size === 0) {
+      this.#refusals.delete(entry.nodeId);
+      this.#version++;
+    } else {
+      this.#publishRefusals(node);
+    }
+  }
+
+  #publishRefusals(node: NodeRefusals): void {
+    node.view = Object.freeze(
+      Array.from({ length: CLIP_LANES }, (_, i) => node.lanes.get(i)?.reason ?? null),
+    );
+    this.#version++;
   }
 
   /** THE EDGE — step one of the arm sequence. Sync refusal checks, the tempo
@@ -578,18 +669,18 @@ export class NodeClipRecorderRegistry {
     mode: ClipRecMode,
   ): boolean {
     if (!clipNode || !clock) {
-      this.#refuse(entry, 'no clip launcher in the rack to record into');
+      this.#refuse(entry, lane, 'no clip launcher in the rack to record into');
       return false;
     }
     if (!this.#deps.hasStore()) {
-      this.#refuse(entry, 'this browser has no OPFS clip media store (worker sync access required)');
+      this.#refuse(entry, lane, 'this browser has no OPFS clip media store (worker sync access required)');
       return false;
     }
     const data = clipNode.data as ClipPlayerData | undefined;
     // Single-writer lease: a lane another peer is recording is not ours.
     const foreign = audioRecState(data, lane);
     if (foreign && foreign.recorderId !== ydoc.clientID) {
-      this.#refuse(entry, `lane ${lane + 1} is being recorded by another collaborator`);
+      this.#refuse(entry, lane, `lane ${lane + 1} is being recorded by another collaborator`);
       return false;
     }
     // ⚠ CLAUSE 2 — THE SELECTED CLIP, NOT THE FIRST EMPTY ONE. This used to be
@@ -612,6 +703,7 @@ export class NodeClipRecorderRegistry {
     if (noteClipHasContent(readClip(data, clipIndex(slot, lane)))) {
       this.#refuse(
         entry,
+        lane,
         `lane ${lane + 1} slot ${slot + 1} holds a note clip with notes in it — clear it or pick another slot`,
       );
       return false;
@@ -671,7 +763,9 @@ export class NodeClipRecorderRegistry {
     st.doneWait = new Promise<void>((res) => {
       st.doneResolve = res;
     });
-    this.#refusals.delete(entry.nodeId);
+    // THIS lane's refusal only. Dropping the whole node's used to blank a
+    // still-refused sibling for a tick (it re-raised on the next pump).
+    this.#retireRefusal(entry, lane);
     this.#writePrepArmed(entry, lane);
     void this.#openTake(entry, lane, st.takeSeq);
     this.#version++;
@@ -721,10 +815,11 @@ export class NodeClipRecorderRegistry {
         st.preparing = false;
         st.prepared = false;
         clearTake(st);
-        // `lane N` FIRST — the launcher face attributes a refusal to a lane by
-        // that prefix (`clipplayerRefusalLane`), and this one is per-lane.
+        // `lane N` FIRST, like the other per-lane sentences, so the console
+        // line and the button read the same.
         this.#refuse(
           entry,
+          lane,
           `lane ${lane + 1} could not open a take: ${err instanceof Error ? err.message : String(err)}`,
         );
         this.#snapArmOff(entry, lane);
@@ -977,12 +1072,11 @@ export class NodeClipRecorderRegistry {
       this.#dispatch(entry, lane, { type: 'commitOk' });
     } catch (err) {
       console.warn(`[clip-rec] commit failed on lane ${lane + 1}; scratch kept for recovery`, err);
-      // `lane N` FIRST, like every other per-lane refusal: the launcher face
-      // attributes the sentence to a lane by that prefix. Without it a commit
-      // that failed on THIS lane could paint on another lane that happens to
-      // be armed and waiting.
-      this.#refusals.set(
-        entry.nodeId,
+      // `lane N` FIRST, like every other per-lane sentence. Raised through
+      // `#noteRefusal` (already warned one line up) on THIS lane's key.
+      this.#noteRefusal(
+        entry,
+        lane,
         `lane ${lane + 1} commit failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       this.#snapArmOff(entry, lane);

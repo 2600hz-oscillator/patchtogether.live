@@ -661,6 +661,163 @@ describe('node-clip-recorder-registry — arm-single end to end', () => {
     expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
     expect(h.reg.lastRefusal(CLIP)).toMatch(/another collaborator/);
     expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
+    // …on ITS lane, and no other.
+    expect(h.reg.laneRefusal(CLIP, 0)).toMatch(/another collaborator/);
+    expect(h.reg.laneRefusals(CLIP).map((r) => r !== null)).toEqual([true, false, false, false, false, false, false, false]);
+  });
+
+  // ── THE REFUSAL'S LIFETIME (2026-09-09) ──────────────────────────────────
+  //
+  // A refusal is now painted on the launcher's record toggle, which made its
+  // lifetime load-bearing. It was ONE string per node, deleted only when an
+  // arm was ACCEPTED: dropping the toggle left it standing, so fixing the slot
+  // and re-arming while STOPPED painted the old sentence until play; and two
+  // refused lanes overwrote each other every tick. These legs pin the per-lane
+  // key and the two retirements (toggle OFF, arm accepted).
+
+  /** AUTHORED notes in `slot` of `lane` — the thing a take is refused for. */
+  function authorNotes(lane: number, slot: number): void {
+    ydoc.transact(() => {
+      const d = clipData();
+      if (!d.clips) d.clips = {};
+      d.clips[String(clipIndex(slot, lane))] = {
+        kind: 'note',
+        lengthSteps: 4,
+        root: 48,
+        loop: true,
+        steps: [{ step: 0, midi: 72, velocity: 127, lengthSteps: 1 }],
+      } as never;
+    });
+  }
+  function clearNotes(lane: number, slot: number): void {
+    ydoc.transact(() => {
+      delete clipData().clips?.[String(clipIndex(slot, lane))];
+    });
+  }
+
+  it('a refusal is RETIRED when its toggle goes OFF — and a re-arm while STOPPED does not resurrect it', async () => {
+    const h = makeHarness();
+    authorNotes(0, 0);
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.setRecArm(0, true);
+    h.reg.pump();
+    await settle();
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/^lane 1 slot 1 holds a note clip/);
+    expect(h.reg.laneRefusal(CLIP, 0)).toMatch(/^lane 1 slot 1 holds a note clip/);
+    // The array a face derives from keeps IDENTITY across the pumps that
+    // re-raise an unchanged sentence — that is what stops it re-projecting
+    // every 50 ms.
+    const view = h.reg.laneRefusals(CLIP);
+    expect(view[0]).toMatch(/^lane 1 slot 1/);
+    h.reg.pump();
+    h.reg.pump();
+    expect(h.reg.laneRefusals(CLIP), 'same sentence, same array').toBe(view);
+    expect(h.posted.filter((m) => m.type === 'arm').length).toBe(0);
+
+    // THE TOGGLE GOES OFF: the next pump retires the refusal.
+    h.setRecArm(0, false);
+    h.reg.pump();
+    expect(h.reg.lastRefusal(CLIP), 'nothing armed, nothing refused').toBeNull();
+    expect(h.reg.laneRefusal(CLIP, 0)).toBeNull();
+    expect(h.reg.laneRefusals(CLIP).every((r) => r === null)).toBe(true);
+
+    // The player fixes the slot and RE-ARMS WHILE STOPPED (clause 4). Nothing
+    // is evaluated until play, so nothing may be standing from before.
+    clearNotes(0, 0);
+    h.recClock.running = false;
+    h.reg.pump(); // adopt the stopped transport
+    h.setRecArm(0, true);
+    h.reg.pump();
+    h.reg.pump();
+    expect(h.reg.lastRefusal(CLIP), 'the old sentence did not come back').toBeNull();
+    expect(h.reg.laneRefusal(CLIP, 0)).toBeNull();
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('idle');
+    expect(h.reg.view(CLIP)![0]!.preparing, 'nothing evaluated while stopped').toBe(false);
+
+    // POSITIVE CONTROL: play, and the fixed slot is TAKEN, not refused.
+    h.recClock.running = true;
+    h.reg.pump(); // prepare
+    await settle();
+    h.reg.pump(); // confirm
+    expect(h.reg.view(CLIP)![0]!.phase, 'the arm on the cleared slot is accepted').toBe('armed');
+    expect(h.reg.lastRefusal(CLIP)).toBeNull();
+    expect(h.posted.filter((m) => m.type === 'arm').length).toBe(1);
+  });
+
+  it('TWO refused lanes each keep their OWN sentence; an accept on a third retires only its own', async () => {
+    const h = makeHarness();
+    authorNotes(0, 0);
+    authorNotes(2, 0);
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.setRecArm(0, true);
+    h.setRecArm(2, true);
+    h.setRecArm(4, true); // an EMPTY slot — accepted
+    h.reg.pump();
+    expect(h.reg.laneRefusal(CLIP, 0)).toMatch(/^lane 1 slot 1 holds a note clip/);
+    expect(h.reg.laneRefusal(CLIP, 2)).toMatch(/^lane 3 slot 1 holds a note clip/);
+    expect(h.reg.laneRefusal(CLIP, 4), 'accepted — no sentence').toBeNull();
+    expect(h.reg.view(CLIP)![4]!.preparing).toBe(true);
+    // `lastRefusal` is the most recently RAISED — lane 3's, raised after lane
+    // 1's in pump order — and lane 1's is still standing beside it.
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/^lane 3 slot 1/);
+    const view = h.reg.laneRefusals(CLIP);
+    expect(view.map((r) => r !== null)).toEqual([true, false, true, false, false, false, false, false]);
+    // The accept on lane 5 (its confirm, on this pump) does not blank the
+    // refused siblings for a tick, and an unchanged pair keeps identity.
+    await settle();
+    h.reg.pump();
+    expect(h.reg.view(CLIP)![4]!.phase).toBe('armed');
+    expect(h.reg.laneRefusal(CLIP, 0)).toMatch(/^lane 1 slot 1/);
+    expect(h.reg.laneRefusal(CLIP, 2)).toMatch(/^lane 3 slot 1/);
+    expect(h.reg.laneRefusals(CLIP), 'unchanged sentences, same array').toBe(view);
+    // Dropping ONE toggle retires ONE sentence; the other stands.
+    h.setRecArm(2, false);
+    h.reg.pump();
+    expect(h.reg.laneRefusal(CLIP, 2)).toBeNull();
+    expect(h.reg.laneRefusal(CLIP, 0)).toMatch(/^lane 1 slot 1/);
+    expect(h.reg.lastRefusal(CLIP), 'the newest STANDING one').toMatch(/^lane 1 slot 1/);
+    expect(h.reg.laneRefusals(CLIP), 'a retirement is a new array').not.toBe(view);
+  });
+
+  it('NO MIXER: the refusal snaps the toggle off and is retired with it; a mixer added later arms clean', async () => {
+    const h = makeHarness();
+    delete patch.nodes[MIX];
+    h.reg.sync(liveNodes());
+    h.reg.pump();
+    await settle();
+    h.setRecArm(0, true);
+    h.reg.pump();
+    expect(h.reg.lastRefusal(CLIP)).toMatch(/no mixmstrs/);
+    expect(h.reg.laneRefusal(CLIP, 0)).toMatch(/no mixmstrs/);
+    expect(laneRecArm(clipData(), 0), 'snapped off').toBe(false);
+    // The OFF level retires it on the next pump — there is no armed control
+    // for the sentence to sit on, and a mixer added later must not inherit it.
+    h.reg.pump();
+    expect(h.reg.lastRefusal(CLIP)).toBeNull();
+    patch.nodes[MIX] = {
+      id: MIX,
+      type: 'mixmstrs',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: {},
+    } as never;
+    h.reg.sync(liveNodes());
+    h.recClock.running = false;
+    h.reg.pump();
+    h.setRecArm(0, true);
+    h.reg.pump();
+    expect(h.reg.lastRefusal(CLIP), 'armed while stopped with a mixer: no stale "no mixmstrs"').toBeNull();
+    expect(laneRecArm(clipData(), 0), 'and the toggle stays on').toBe(true);
+    h.recClock.running = true;
+    h.reg.pump(); // prepare
+    await settle();
+    h.reg.pump(); // confirm
+    expect(h.reg.view(CLIP)![0]!.phase).toBe('armed');
+    expect(h.reg.lastRefusal(CLIP)).toBeNull();
   });
 
   it('the reference bar sets the take length when something is playing', async () => {

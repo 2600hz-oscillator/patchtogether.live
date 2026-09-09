@@ -1172,12 +1172,66 @@ test.describe('CLIP PLAYER faceplate', () => {
     const refusedBg = await arm0.evaluate((el) => getComputedStyle(el).backgroundColor);
 
     // ── DROPPING THE TOGGLE RETIRES THE SENTENCE ──────────────────────────
-    // The registry never deletes a refusal on toggle-OFF; the projection must
-    // not paint a stale one on a control nobody is pressing.
+    // The projection stops painting it the moment the toggle is off (the
+    // Y.Doc repaints first); the registry retires it on its next pump.
     await arm0.click();
     await expect(arm0).toHaveAttribute('aria-pressed', 'false');
     await expect(arm0, 'no complaint on a disarmed lane').not.toHaveAttribute('data-rec-refusal');
     await expect(arm0).not.toHaveClass(/\brefused\b/);
+    // …and the REGISTRY retired it, not just the paint. Waited on the
+    // registry's own state through its probe, because the next leg re-arms
+    // and a re-arm that lands before that pump would find the old sentence
+    // still standing — the sub-tick window the model documents.
+    await expect
+      .poll(
+        () =>
+          page.evaluate((cp) => {
+            const w = globalThis as unknown as {
+              __clipRecRefusals?: (id: string) => readonly (string | null)[];
+            };
+            const probe = w.__clipRecRefusals;
+            return probe ? probe(cp)[0] : 'probe missing';
+          }, CP),
+        { message: "the registry retired lane 1's refusal on the pump after the toggle went off" },
+      )
+      .toBeNull();
+
+    // ── FIX THE SLOT, RE-ARM WHILE STOPPED: the OLD sentence stays gone ───
+    // The registry used to keep a refusal until an arm was ACCEPTED, and it
+    // evaluates only while running — so this exact sequence (refused, disarm,
+    // clear the notes, re-arm with the transport stopped) painted "holds a
+    // note clip" on a slot that no longer did, until play.
+    await page.evaluate((cp) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const clips = w.__patch.nodes[cp]!.data?.clips as Record<string, unknown> | undefined;
+        if (clips) delete clips['0'];
+      });
+    }, CP);
+    await expect(grid.getByTestId('clipplayer-pad-0')).toHaveAttribute('data-state', 'empty');
+    await setTransport(page, 0);
+    // ENDLESS, so the accept below stays in `recording` under its assertions.
+    await grid.getByTestId('clipplayer-rec-mode-0').click();
+    await expect(grid.getByTestId('clipplayer-rec-mode-0')).toHaveAttribute('data-rec-mode', 'endless');
+    await arm0.click();
+    await expect(arm0).toHaveAttribute('aria-pressed', 'true');
+    await expect(arm0).toHaveAttribute('data-rec-phase', 'idle');
+    await expect(arm0, 'armed while stopped on the fixed slot: nothing stale').not.toHaveAttribute(
+      'data-rec-refusal',
+    );
+    await expect(arm0).not.toHaveClass(/\brefused\b/);
+    await expect(arm0).toHaveAttribute('aria-label', 'channel 1 audio record');
+    // …and on play the fixed slot is TAKEN — the control that the slot, not
+    // the paint, is what changed.
+    await setTransport(page, 1);
+    await expect(arm0, 'the re-arm on the cleared slot is accepted').toHaveAttribute(
+      'data-rec-phase',
+      /^(armed|recording)$/,
+    );
+    await expect(arm0).not.toHaveAttribute('data-rec-refusal');
 
     // ── THE POSITIVE CONTROL: the same gesture on an EMPTY slot is TAKEN ──
     // ENDLESS so the take stays in `recording` until told otherwise, rather

@@ -862,6 +862,14 @@
       // while the device was already permanently `ended`.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__nodeAudioInput = (nodeId: string) => nodeAudioInput.probe(nodeId);
+      // 2026-09-09: the NODE-owned CLIP RECORDER's standing refusals, one per
+      // lane. The registry retires a lane's refusal on its OWN pump after the
+      // toggle goes off, and the toggle repaints the face first — so a spec
+      // that disarms and re-arms needs to wait on the registry's state, not
+      // on the DOM's, to know the retirement happened. Reads the registry's
+      // record; a getter (mount-only-hooks invariant).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__clipRecRefusals = (nodeId: string) => nodeClipRecorder.laneRefusals(nodeId);
       // #1590: the NODE-owned DOOM session probe. `pumpRuns` is the CAUSAL
       // quantity (units: session-pump invocations, one per frame) — the exact
       // mechanism whose death starved every peer's lockstep barrier when the
