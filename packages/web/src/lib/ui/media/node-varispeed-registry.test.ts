@@ -1082,4 +1082,64 @@ describe('⚠ A RESTORE THAT OUTLIVES THE DOC IT WAS STARTED FOR — the CI catc
     expect(el0.src).toBe('blob:v1.webm');
     expect(h.metaWrites.at(-1)?.meta).toMatchObject({ name: 'v1.webm', handleId: 'h-v1' });
   });
+
+  it('⚠ THE PUT GAP: a slot restore whose decode WON still writes nothing when the load lands inside its IDB put', async () => {
+    // The videobox twin's hazard, per slot: the guard was read ONCE and
+    // `await hooks.put(...)` sat between that read and BOTH doc writes
+    // (`writeFileMeta` and `writeSlotMeta`). The harness `put` resolves inside
+    // the same microtask drain, so the case above — which parks the DECODE —
+    // is structurally blind to this gap.
+    const c = makeClock(); const f = makeFrames(); const eng = makeEngine();
+    const h = makeHarness(c.clock, f.frames, eng.engine);
+    h.handles.set('h-v1', { perm: 'granted', file: fakeVideo('v1.webm') });
+    h.handles.set('h-v2', { perm: 'granted', file: fakeVideo('v2.webm') });
+    h.state.set('v1', {
+      isPlaying: false, loop: true, crop: null,
+      fileMeta: { name: 'v1.webm', duration: 10, handleId: 'h-v1' },
+    });
+    const reg = createNodeVarispeedRegistry(h.deps, h.hooks);
+    reg.sync([vvNode('v1')], eng.engine);
+    await settle();
+    const el0 = h.els.get(`v1::${varispeedSlotKey(0)}`)!;
+    expect(el0.src).toBe('blob:v1.webm');
+
+    // From here the IDB put resolves only when the test says so. Metadata
+    // stays instant: the decode WINS, so the restore clears the pre-put guard.
+    const pendingPuts: Array<() => void> = [];
+    h.hooks.put = (id, handle) => new Promise<void>((resolve) => {
+      h.handles.set(id, handle as { perm: 'granted' | 'prompt' | 'denied'; file: File });
+      pendingPuts.push(resolve);
+    });
+
+    // v2 arrives: the restore of clip B decodes, passes the guard, and parks
+    // inside the put.
+    h.state.get('v1')!.fileMeta = { name: 'v2.webm', duration: 10, handleId: 'h-v2' };
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(el0.src, 'B is on the slot').toBe('blob:v2.webm');
+    expect(pendingPuts.length, 'B\'s restore is inside hooks.put').toBe(1);
+    const writesBefore = h.metaWrites.length;
+
+    // THE LOAD OF v1 lands inside the put gap; the pump ticks and, seeing the
+    // slot still recorded as holding v1, has nothing to do.
+    h.state.get('v1')!.fileMeta = { name: 'v1.webm', duration: 10, handleId: 'h-v1' };
+    c.tick(HOUSEKEEPING_INTERVAL_MS);
+    await settle();
+    expect(h.state.get('v1')!.fileMeta?.handleId, 'nothing has written yet').toBe('h-v1');
+
+    // B's put returns LATE.
+    pendingPuts.shift()!();
+    await settle();
+    expect(h.metaWrites.length, 'no meta stamped over the loaded doc').toBe(writesBefore);
+    expect(h.state.get('v1')!.fileMeta?.handleId, 'the doc still names v1 — not stamped back to B').toBe('h-v1');
+
+    // ...and the hand-off: v1 is back on the slot and its own restore is
+    // inside ITS put.
+    expect(el0.src, 'v1 is back on the slot').toBe('blob:v1.webm');
+    expect(pendingPuts.length, 'a restore of v1 is in flight').toBe(1);
+    pendingPuts.shift()!();
+    await settle();
+    expect(h.metaWrites.at(-1)?.meta).toMatchObject({ name: 'v1.webm', handleId: 'h-v1' });
+    expect(h.state.get('v1')!.fileMeta?.handleId).toBe('h-v1');
+  });
 });

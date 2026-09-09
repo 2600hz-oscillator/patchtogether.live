@@ -677,16 +677,7 @@ export function createNodeVarispeedRegistry<E>(
       // lands while this restore awaits metadata must not have its slot meta
       // stamped over (and its handle deleted) by the restore completing late.
       // Only a handle RESTORE is guarded; a user pick is itself the intent.
-      if (opts?.reuseHandleId) {
-        const docId = slotMetaOf(deps.doc.readMeta(c.node.id), slot)?.handleId ?? null;
-        if (docId !== opts.reuseHandleId) {
-          if (c.reloadHandleIds[slot] === opts.reuseHandleId) {
-            c.attachedHandleIds[slot] = opts.reuseHandleId;
-            pumpReloads(c);
-          }
-          return;
-        }
-      }
+      if (opts?.reuseHandleId && abandonIfStale(c, slot, opts.reuseHandleId)) return;
 
       const duration = deps.el.duration(el);
       c.slotDuration[slot] = duration;
@@ -705,6 +696,15 @@ export function createNodeVarispeedRegistry<E>(
         } catch { handleId = opts?.reuseHandleId; }
       }
       if (c.disposed) return;
+
+      // ⚠ RE-CHECK AFTER THE PUT, before BOTH doc writes below. The guard
+      // above is a read BEFORE an await; `hooks.put` is a real IDB round trip
+      // that ALWAYS yields, so a same-session load landing in that gap was
+      // stamped over by `writeFileMeta` AND `writeSlotMeta` — and stuck, since
+      // the pump then saw wantId === attachedHandleIds[slot]. MEASURED on CI
+      // (#2377, e2e shard 8, the varispeed leg of
+      // load-staleness-video-reused-id.spec.ts).
+      if (opts?.reuseHandleId && abandonIfStale(c, slot, opts.reuseHandleId)) return;
 
       const meta: VideoboxFileMeta = {
         name: file.name,
@@ -802,6 +802,22 @@ export function createNodeVarispeedRegistry<E>(
       patch(c, { pendingHandleName: meta?.name ?? handleId });
     }
     // 'denied' → the re-link prompt covers it.
+  }
+
+  /** Is this slot RESTORE still the one the doc names? Called on BOTH sides of
+   *  the `hooks.put` await in `loadFileIntoSlot` — a single read before an
+   *  await is a check-then-use, and the use is two doc writes that also delete
+   *  the loaded patch's handle. When the doc has moved on: record what the slot
+   *  holds (unless a newer restore has already claimed the latch) and pump so
+   *  the right clip follows. Returns true when the restore is stale. */
+  function abandonIfStale(c: Controller<E>, slot: number, reuseHandleId: string): boolean {
+    const docId = slotMetaOf(deps.doc.readMeta(c.node.id), slot)?.handleId ?? null;
+    if (docId === reuseHandleId) return false;
+    if (c.reloadHandleIds[slot] === reuseHandleId) {
+      c.attachedHandleIds[slot] = reuseHandleId;
+      pumpReloads(c);
+    }
+    return true;
   }
 
   /** Fire a slot's restore whenever its synced meta names a handle the slot
