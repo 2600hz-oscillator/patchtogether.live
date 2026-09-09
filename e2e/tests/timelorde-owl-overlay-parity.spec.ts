@@ -28,8 +28,11 @@
 //   1. THE COMPOSITOR. Under `prefers-reduced-motion` the producer paints the
 //      bare owl (pulse pinned to 0) and `video_out` serves it 1:1 — so the
 //      product's own bare frame is read there, the overlay is built from it
-//      with the shipped builder, and a real canvas composites it at three
-//      pulses against the reference. Max |Δ| is reported, not just bounded.
+//      with the shipped builder, and a real canvas composites it at 100 pulses
+//      across (0, 1] against the reference — on an UNHINTED context (the
+//      producer's own surface kind) and on a `willReadFrequently` one (the CPU
+//      rasteriser), which blend with different arithmetic. Max |Δ| is
+//      reported, not just bounded.
 //   2. THE LIVE PRODUCT. On an ordinary rack with the transport running,
 //      `video_out`'s frames are sampled INSIDE the page over more than a beat
 //      and held to the bare owl: outside the bands byte-identical on every
@@ -148,7 +151,7 @@ async function bareOwlFrom(page: Page): Promise<Uint8ClampedArray> {
 test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS * 2 });
 
 test.describe('timelorde — the beat-boost OVERLAY is the per-pixel boost, on the real compositor', () => {
-  test('LEG 1: a real canvas composites the overlay within ±1 of applyBeatBoost on the real owl; zero-membership pixels byte-identical', async ({ browser }) => {
+  test('LEG 1: a real canvas composites the overlay within ±1 of applyBeatBoost on the real owl at 100 pulses, unhinted AND willReadFrequently; zero-membership pixels byte-identical', async ({ browser }) => {
     const ctx = await browser.newContext({ reducedMotion: 'reduce' });
     const page = await ctx.newPage();
     try {
@@ -158,78 +161,121 @@ test.describe('timelorde — the beat-boost OVERLAY is the per-pixel boost, on t
 
       // The shipped builder, on the product's own bare frame.
       const overlay = buildBeatBoostOverlay(bare);
-      let members = 0;
-      for (let i = 3; i < overlay.length; i += 4) if (overlay[i]! > 0) members++;
+      const memberIdx: number[] = [];
+      for (let p = 0; p < W * H; p++) if (overlay[p * 4 + 3]! > 0) memberIdx.push(p);
+      const members = memberIdx.length;
       expect(members, 'the real owl has eyes and a border — the overlay is not empty').toBeGreaterThan(500);
       expect(members, '…and it is not the whole picture either').toBeLessThan((W * H) / 2);
 
-      for (const pulse of [0.5, 1, 0.1]) {
-        const alpha = beatBoostOverlayAlpha(pulse);
-        const reference = applyBeatBoost(Uint8ClampedArray.from(bare), pulse);
-        // THE REAL COMPOSITOR: the same two draws `tlDrawOwl` performs —
-        // the bare owl, then the overlay at `globalAlpha` — on an
-        // OffscreenCanvas, which is what the producer's surface is.
-        const composited = await page.evaluate(
-          ({ W, H, bare, overlay, alpha }) => {
+      // ⚠ THE WHOLE DOMAIN, NOT THREE POINTS. `beatPulse` is a linear decay,
+      // so every alpha in (0, amount] is drawn on some frame; 100 evenly spaced
+      // pulses walk it in steps of ~1.5/255 of paint alpha, which is finer
+      // than the 8-bit quantisation the compositor rounds at. The REFERENCE
+      // is the real oracle, `applyBeatBoost`, run here once per pulse over the
+      // whole frame; the page returns only the member pixels (everything
+      // else is held to the bare owl in-page), so a hundred frames cross the
+      // bridge as ~1.7 M numbers rather than 19 M.
+      const PULSES = 100;
+      const pulses = Array.from({ length: PULSES }, (_, i) => (i + 1) / PULSES);
+      const alphas = pulses.map((p) => beatBoostOverlayAlpha(p));
+      const references = pulses.map((p) => applyBeatBoost(Uint8ClampedArray.from(bare), p));
+
+      // ⚠ TWO DESTINATION CONTEXTS. The producer's surface is an UNHINTED
+      // `OffscreenCanvas` 2D context — GPU-rastered where there is a GPU,
+      // SwiftShader in CI; `willReadFrequently` forces the CPU rasteriser. The
+      // two blend with different arithmetic (measured: the same owl classifies
+      // to 5738 member pixels GPU-rastered and 5730 CPU-rastered), and the
+      // product can land on either, so the bar is held on both.
+      for (const mode of ['unhinted', 'willReadFrequently'] as const) {
+        const sweep = await page.evaluate(
+          ({ W, H, bare, overlay, alphas, memberIdx, mode }) => {
             const base = new OffscreenCanvas(W, H);
-            const g = base.getContext('2d', { willReadFrequently: true })!;
+            const g = (
+              mode === 'unhinted'
+                ? base.getContext('2d')
+                : base.getContext('2d', { willReadFrequently: true })
+            )!;
             const img = g.createImageData(W, H);
             img.data.set(bare);
-            g.putImageData(img, 0, 0);
             const ov = new OffscreenCanvas(W, H);
             const og = ov.getContext('2d')!;
             const oimg = og.createImageData(W, H);
             oimg.data.set(overlay);
             og.putImageData(oimg, 0, 0);
-            g.globalAlpha = alpha;
-            g.drawImage(ov, 0, 0);
-            g.globalAlpha = 1;
-            return Array.from(g.getImageData(0, 0, W, H).data);
+            const memberValues: number[] = [];
+            let zeroMembershipMoved = 0;
+            let darker = 0;
+            let notOpaque = 0;
+            for (const alpha of alphas) {
+              // THE REAL COMPOSITOR: the same two draws `tlDrawOwl` performs —
+              // the bare owl, then the overlay at `globalAlpha`.
+              g.putImageData(img, 0, 0);
+              g.globalAlpha = alpha;
+              g.drawImage(ov, 0, 0);
+              g.globalAlpha = 1;
+              const px = g.getImageData(0, 0, W, H).data;
+              for (let i = 0; i < px.length; i += 4) {
+                const a8 = overlay[i + 3]!;
+                for (let ch = 0; ch < 3; ch++) {
+                  const got = px[i + ch]!;
+                  const b = bare[i + ch]!;
+                  if (a8 === 0 && got !== b) zeroMembershipMoved++;
+                  if (got < b) darker++;
+                }
+                if (px[i + 3] !== 255) notOpaque++;
+              }
+              for (const p of memberIdx) {
+                const i = p * 4;
+                memberValues.push(px[i]!, px[i + 1]!, px[i + 2]!);
+              }
+            }
+            return { memberValues, zeroMembershipMoved, darker, notOpaque };
           },
-          { W, H, bare: Array.from(bare), overlay: Array.from(overlay), alpha },
+          { W, H, bare: Array.from(bare), overlay: Array.from(overlay), alphas, memberIdx, mode },
         );
-        expect(composited.length).toBe(W * H * 4);
+        expect(sweep.memberValues.length).toBe(PULSES * members * 3);
 
-        // ⚠ PLAIN COUNTERS, ONE expect PER PROPERTY. An `expect` per pixel
-        // (48,400 × 3 pulses) costs more than the whole boot and timed the
-        // first draft of this leg out at 60 s with nothing wrong in the data.
+        // ⚠ PLAIN COUNTERS, ONE expect PER PROPERTY PER MODE. An `expect` per
+        // pixel costs more than the whole boot and timed the first draft of
+        // this leg out at 60 s with nothing wrong in the data.
         let maxDev = 0;
         let where = '';
-        let exact = 0;
-        let zeroMembershipMoved = 0;
-        let darker = 0;
-        let notOpaque = 0;
-        for (let i = 0; i < composited.length; i += 4) {
-          const a8 = overlay[i + 3]!;
-          for (let ch = 0; ch < 3; ch++) {
-            const got = composited[i + ch]!;
-            const ref = reference[i + ch]!;
-            const b = bare[i + ch]!;
-            const dev = Math.abs(got - ref);
-            if (dev === 0) exact++;
-            if (dev > maxDev) {
-              maxDev = dev;
-              where = `px ${(i / 4) % W},${Math.floor(i / 4 / W)} ch${ch}: canvas ${got} vs reference ${ref} (bare ${b}, a8 ${a8}, alpha ${alpha})`;
+        let exactMember = 0;
+        let over1 = 0;
+        for (let k = 0; k < PULSES; k++) {
+          const ref = references[k]!;
+          for (let j = 0; j < members; j++) {
+            const px = memberIdx[j]!;
+            const i = px * 4;
+            for (let ch = 0; ch < 3; ch++) {
+              const got = sweep.memberValues[(k * members + j) * 3 + ch]!;
+              const dev = Math.abs(got - ref[i + ch]!);
+              if (dev === 0) exactMember++;
+              if (dev > 1) over1++;
+              if (dev > maxDev) {
+                maxDev = dev;
+                where = `pulse ${pulses[k]} px ${px % W},${Math.floor(px / W)} ch${ch}: canvas ${got} vs reference ${ref[i + ch]} (bare ${bare[i + ch]}, a8 ${overlay[i + 3]}, alpha ${alphas[k]})`;
+              }
             }
-            if (a8 === 0 && got !== b) zeroMembershipMoved++;
-            if (got < b) darker++;
           }
-          if (composited[i + 3] !== 255) notOpaque++;
         }
-        const total = W * H * 3;
-        expect(notOpaque, `pulse ${pulse}: the frame stays opaque`).toBe(0);
+        const total = PULSES * W * H * 3;
+        expect(sweep.notOpaque, `${mode}: the frame stays opaque`).toBe(0);
         expect(
-          zeroMembershipMoved,
-          `pulse ${pulse}: ${zeroMembershipMoved} channel(s) OUTSIDE the bands moved — the body/ground must be byte-identical`,
+          sweep.zeroMembershipMoved,
+          `${mode}: ${sweep.zeroMembershipMoved} channel(s) OUTSIDE the bands moved over ${PULSES} pulses — the body/ground must be byte-identical`,
         ).toBe(0);
-        expect(darker, `pulse ${pulse}: the boost only ever brightens`).toBe(0);
+        expect(sweep.darker, `${mode}: the boost only ever brightens`).toBe(0);
+        // Every zero-membership channel is exact (asserted just above), so the
+        // exact count is those plus the member channels that matched.
+        const exact = exactMember + (total - PULSES * members * 3);
         expect(
           maxDev,
-          `pulse ${pulse}: max per-channel deviation ${maxDev} (${exact}/${total} exact) at ${where}`,
+          `${mode}: max per-channel deviation ${maxDev} over ${PULSES} pulses (${over1} channel(s) over 1; ${exact}/${total} exact) at ${where}`,
         ).toBeLessThanOrEqual(1);
-        expect(exact, `pulse ${pulse}: most channels EXACT, not merely within tolerance`).toBeGreaterThan(total * 0.95);
+        expect(exact, `${mode}: most channels EXACT, not merely within tolerance`).toBeGreaterThan(total * 0.95);
         // eslint-disable-next-line no-console
-        console.log(`[owl-overlay-parity] pulse ${pulse}: maxDev ${maxDev}, exact ${exact}/${total}, members ${members}${maxDev > 0 ? `, worst ${where}` : ''}`);
+        console.log(`[owl-overlay-parity] ${mode}: ${PULSES} pulses, maxDev ${maxDev}, over1 ${over1}, exact ${exact}/${total}, members ${members}${maxDev > 0 ? `, worst ${where}` : ''}`);
       }
     } finally {
       await ctx.close();

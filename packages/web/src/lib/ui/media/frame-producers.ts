@@ -246,18 +246,86 @@ interface TimelordeState {
   prevRunning?: boolean;
   /** An `ImageBitmap` conversion is in flight — see the note at the push. */
   converting?: boolean;
-  /** A frame painted with the FINISHED picture (the feed, or the owl after its
-   *  load resolved) has landed in the node — the reduced-motion arm's second
-   *  convergence condition. See the note at the arm. */
+  /** A frame painted with the FINISHED picture (the feed, or the owl once it
+   *  was actually PAINTED — see `tlDrawOwl`'s return) has landed in the node —
+   *  the reduced-motion arm's second convergence condition. See the note at
+   *  the arm. */
   heldFrameComplete?: boolean;
   /**
    * The baked beat-boost OVERLAY — white, alpha = membership — for the owl in
-   * `boostOverlayFor`, at its fixed placement. `undefined` = not built yet;
-   * `null` = this runtime cannot build one (no canvas), so the bare owl stands.
+   * `boostOverlayFor` composited on the surface in `boostOverlaySurface`, at
+   * its fixed placement. `undefined` = not built yet; `null` = this runtime
+   * cannot build one (no canvas), so the bare owl stands.
    * See `tlBeatBoostOverlay`.
    */
   boostOverlay?: FrameSurface | null;
   boostOverlayFor?: FrameImage | null;
+  boostOverlaySurface?: FrameSurface | null;
+  /** The surface whose context-loss events already invalidate the overlay. */
+  lossWatched?: FrameSurface | null;
+}
+
+/** Forget the baked overlay: the next pulsing frame rebuilds it from a fresh
+ *  readback. The bare owl stands in between — never a blank, never a throw. */
+function tlDropOverlay(state: TimelordeState): void {
+  state.boostOverlay = undefined;
+  state.boostOverlayFor = undefined;
+  state.boostOverlaySurface = undefined;
+}
+
+/**
+ * Is this 2D context LOST right now? A lost context ignores every draw and
+ * reads back blank, so a bake taken from it would classify nothing and be
+ * cached as a boost that never comes. Runtimes without `isContextLost`
+ * (older browsers, the unit fakes) answer "no" and rely on the events below.
+ */
+function tlContextLost(ctx2d: Ctx2d): boolean {
+  const probe = (ctx2d as { isContextLost?: () => boolean }).isContextLost;
+  return typeof probe === 'function' && probe.call(ctx2d) === true;
+}
+
+/**
+ * Invalidate on CONTEXT LOSS. A canvas whose 2D context is lost comes back
+ * BLANK, and after a GPU-process crash or an acceleration fallback it can come
+ * back on a DIFFERENT RASTERISER — where bilinear filtering differs by an LSB
+ * on a few boundary pixels, which crosses the band feathers (measured: 5738
+ * member pixels GPU-rastered vs 5730 CPU-rastered on the same owl). The
+ * per-frame readback could not go stale; the baked overlay can, so both
+ * events drop it. `contextlost`/`contextrestored` are the 2D-canvas events
+ * (Chrome 99+); a canvas without `addEventListener` (the unit fakes) is
+ * simply not watched.
+ */
+function tlOnContextLoss(canvas: FrameSurface | null, onLoss: () => void): void {
+  const target = canvas as unknown as {
+    addEventListener?: (type: string, listener: () => void) => void;
+  } | null;
+  if (!target || typeof target.addEventListener !== 'function') return;
+  target.addEventListener('contextlost', onLoss);
+  target.addEventListener('contextrestored', onLoss);
+}
+
+/**
+ * Put the SHARED context into a known state before the owl + overlay draws.
+ *
+ * ⚠ `tlDrawVideoFeed` hands this very context to a foreign `vsrc.drawFrame`,
+ * and a feed that was connected earlier may have left a composite operation,
+ * a transform, a filter or an alpha behind when it went away. The readback
+ * boost was immune to the composite op (it wrote pixels); the overlay is a
+ * `drawImage`, so `'lighter'` or `'multiply'` left on the context would change
+ * the picture. `reset()` restores every default AND clears the bitmap (the
+ * `clearRect` this replaces); a runtime without it gets the explicit subset
+ * that decides what a `drawImage` lands as, plus the clear.
+ */
+function tlResetContext(ctx2d: Ctx2d): void {
+  const reset = (ctx2d as { reset?: () => void }).reset;
+  if (typeof reset === 'function') {
+    reset.call(ctx2d);
+    return;
+  }
+  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+  ctx2d.globalCompositeOperation = 'source-over';
+  ctx2d.globalAlpha = 1;
+  ctx2d.clearRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
 }
 
 function tlParam(ctx: FrameCtx, id: string, dflt: number): number {
@@ -312,21 +380,29 @@ function tlDrawVideoFeed(
  * frame, instead of on ~60 % of every frame the transport runs. A rack under
  * reduced motion or with the transport stopped never pays it at all.
  *
- * Keyed to the decoded owl object: the placement is a pure function of its
- * dimensions and two constants, so a different owl is the only thing that can
- * change the overlay. A readback that throws (a lost context) is NOT cached —
- * the next pulsing frame tries again, which is what the old path did every
- * frame; a runtime with no canvas to mint IS cached as null, once.
+ * Keyed to the decoded owl object AND the surface it was classified on: the
+ * placement is a pure function of the owl's dimensions and two constants, and
+ * the classification is a function of the surface's rasteriser (see
+ * `tlOnContextLoss`), so those two are the only things that can change the
+ * overlay. A readback that throws, or a context that reports itself LOST, is
+ * NOT cached — the next pulsing frame tries again, which is what the old path
+ * did every frame; a runtime with no canvas to mint IS cached as null, once.
  */
 function tlBeatBoostOverlay(
   ctx2d: Ctx2d,
+  surface: FrameSurface,
   state: TimelordeState,
   env: FrameEnv,
   owl: FrameImage,
 ): FrameSurface | null {
-  if (state.boostOverlayFor === owl && state.boostOverlay !== undefined) {
+  if (
+    state.boostOverlayFor === owl &&
+    state.boostOverlaySurface === surface &&
+    state.boostOverlay !== undefined
+  ) {
     return state.boostOverlay;
   }
+  if (tlContextLost(ctx2d)) return null; // reads back blank — bake later, not now
   let bare: ImageData;
   try {
     bare = ctx2d.getImageData(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
@@ -334,6 +410,7 @@ function tlBeatBoostOverlay(
     return null; // tainted/locked — the owl still shows; retried next pulse
   }
   state.boostOverlayFor = owl;
+  state.boostOverlaySurface = surface;
   state.boostOverlay = null;
   const raster = env.createRaster(TL_DISPLAY_W, TL_DISPLAY_H);
   const rctx = (raster?.getContext('2d') ?? null) as Ctx2d | null;
@@ -345,6 +422,12 @@ function tlBeatBoostOverlay(
   } catch {
     return null;
   }
+  // The raster's OWN context can be lost too, and a lost raster is blank: a
+  // boost that silently never comes. Guarded on identity so a stale raster's
+  // late event cannot drop a fresher bake.
+  tlOnContextLoss(raster, () => {
+    if (state.boostOverlay === raster) tlDropOverlay(state);
+  });
   state.boostOverlay = raster;
   return raster;
 }
@@ -364,16 +447,29 @@ function tlBeatBoostOverlay(
  * (`timelorde-wizard.ts` §2b), so the per-pixel half is baked once into an
  * overlay and the per-frame half is one `drawImage` at `globalAlpha`. The
  * parity tests hold the two forms to ±1 per channel.
+ *
+ * RETURNS whether the frame it painted is the FINISHED picture — the owl
+ * landed, or there is no owl to wait for (a runtime without images, an image
+ * with no pixels; the ground is the picture then). False while the owl is
+ * still decoding or its draw was refused (a decode race): that frame is a
+ * placeholder, and the reduced-motion arm must not converge on it.
  */
-function tlDrawOwl(ctx2d: Ctx2d, state: TimelordeState, env: FrameEnv, pulse: number): void {
-  ctx2d.clearRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
+function tlDrawOwl(
+  ctx2d: Ctx2d,
+  surface: FrameSurface,
+  state: TimelordeState,
+  env: FrameEnv,
+  pulse: number,
+): boolean {
+  tlResetContext(ctx2d);
   ctx2d.fillStyle = '#07090d';
   ctx2d.fillRect(0, 0, TL_DISPLAY_W, TL_DISPLAY_H);
-  const owl = state.owl ?? null;
-  if (!owl) return;
+  const owl = state.owl;
+  if (owl === undefined) return false; // still decoding — the ground is a placeholder
+  if (owl === null) return true; // no images in this runtime — the ground IS the picture
   const iw = owl.naturalWidth || owl.width;
   const ih = owl.naturalHeight || owl.height;
-  if (!iw || !ih) return;
+  if (!iw || !ih) return true; // decoded, no pixels: nothing will ever paint over the ground
   // object-fit: contain — preserve the painting's aspect, centred.
   const scale = Math.min(TL_DISPLAY_W / iw, TL_DISPLAY_H / ih);
   const dw = iw * scale;
@@ -388,16 +484,16 @@ function tlDrawOwl(ctx2d: Ctx2d, state: TimelordeState, env: FrameEnv, pulse: nu
       dh,
     );
   } catch {
-    return; // not yet usable (decode race) — the idle ground stands
+    return false; // not yet usable (decode race) — the idle ground stands, and the next frame retries
   }
   // ⚠ ONLY WHEN PULSING, which is what keeps the reduced-motion frame
   // deterministic: `pulse` is pinned to 0 there, so the captured picture is the
   // bare owl — no overlay is built, none is drawn, and the frame is the same
   // bytes the pre-overlay producer painted.
   const alpha = beatBoostOverlayAlpha(pulse);
-  if (alpha <= 0) return;
-  const overlay = tlBeatBoostOverlay(ctx2d, state, env, owl);
-  if (!overlay) return; // no raster in this runtime — the bare owl stands
+  if (alpha <= 0) return true;
+  const overlay = tlBeatBoostOverlay(ctx2d, surface, state, env, owl);
+  if (!overlay) return true; // no raster in this runtime — the bare owl stands
   ctx2d.globalAlpha = alpha;
   try {
     ctx2d.drawImage(overlay as unknown as CanvasImageSource, 0, 0);
@@ -406,6 +502,7 @@ function tlDrawOwl(ctx2d: Ctx2d, state: TimelordeState, env: FrameEnv, pulse: nu
   } finally {
     ctx2d.globalAlpha = 1;
   }
+  return true;
 }
 
 /**
@@ -470,8 +567,9 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
     // `timelorde-owl-overlay-parity.spec.ts` under `reducedMotion: 'reduce'`:
     // 1 boot in 4 latched the ground and `video_out` never showed the owl. So
     // the arm also asks whether the frame it pushed was COMPLETE — the feed, or
-    // the owl once its load has resolved — and keeps painting until one that
-    // was has landed (`heldFrameComplete` flips when that write lands).
+    // the owl once it was actually PAINTED (a resolved load whose draw the
+    // decoder still refuses leaves the same ground) — and keeps painting until
+    // one that was has landed (`heldFrameComplete` flips when that write lands).
     if (
       reduced &&
       state.heldFrameComplete &&
@@ -490,6 +588,11 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
       | (CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D)
       | null;
     if (!ctx2d) return;
+    // Once per surface: a lost/restored context drops the baked overlay.
+    if (state.lossWatched !== surface) {
+      state.lossWatched = surface;
+      tlOnContextLoss(surface, () => tlDropOverlay(state));
+    }
 
     // The feed wins; the owl is the fallback. ⚠ AND THE OWL IS COMPOSITED EVEN
     // WHEN A SURFACE SHOWS "wizard off" — that switch hides the on-card picture,
@@ -497,12 +600,14 @@ export const TIMELORDE_FRAME_PRODUCER: FrameProducer = {
     // coherent frame. `wizardDisplayMode` is the surfaces' business, not this
     // one's.
     const feed = tlDrawVideoFeed(ctx, surface, ctx2d);
-    if (!feed) tlDrawOwl(ctx2d, state, ctx.env, pulse);
-    // Is THIS frame the finished picture? The feed always is; the owl is once
-    // its load has RESOLVED — decoded, or null in a runtime with no images,
-    // where the ground IS the picture. Read now, before the async push, so the
-    // flag describes the frame that was painted rather than a later one.
-    const complete = feed || state.owl !== undefined;
+    const owlFrame = feed ? false : tlDrawOwl(ctx2d, surface, state, ctx.env, pulse);
+    // Is THIS frame the finished picture? The feed always is; the owl frame
+    // says so itself — only once the owl was actually PAINTED (or there is no
+    // owl to wait for), never merely because its load resolved: a draw the
+    // decoder refuses leaves the ground, and the ground is not the picture.
+    // Read now, before the async push, so the flag describes the frame that
+    // was painted rather than a later one.
+    const complete = feed || owlFrame;
 
     // ⚠ ONE CONVERSION IN FLIGHT AT A TIME. `createImageBitmap` is async, and
     // the card's version fired one per frame unguarded — fine while conversion
