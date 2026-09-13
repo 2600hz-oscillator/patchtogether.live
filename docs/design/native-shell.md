@@ -142,9 +142,14 @@ PTZ rosters) rather than reinventing it — so the same screen drives the browse
 Stated so a reader does not infer them from the sections above:
 
 - **Output windows and the display map** — `main.ts` creates no output
-  `BrowserWindow`s and holds no display map. The premise was spiked and passed
-  (same-origin opener→popup DOM access, painted, frames advanced), so the blit
-  design holds, but nothing consumes it yet.
+  `BrowserWindow`s and holds no display map. The earlier probe passed
+  same-origin opener→popup DOM access, painting, and advancing frames on one
+  display. Cross-display blitting still awaits a recorded hardware result from
+  [`task desktop:spike`](../../apps/desktop/SPIKE-OPENER-DISPLAY.md). The harness
+  exercises the shipped server, security policy, and `/present` sink; a local
+  dry-run verifies its wiring but does not settle the two-display assumption.
+  A real pass now includes page captures, placement checks after rendering,
+  and the operator’s confirmation of visible motion on the physical target.
 - **Click-free crossfade on patch swap** — mandatory by owner answer, with no
   design and no owning phase. `packages/web/src/lib/audio/continuity-probe.ts`
   records the blocker: there is no app-lifetime master bus today.
