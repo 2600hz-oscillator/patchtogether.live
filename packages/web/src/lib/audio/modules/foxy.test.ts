@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy.test.ts
-//
 // FOXY module-def shape. Pins that FOXY exposes WAVECEL's FULL param + IO
 // surface (so a WAVECEL patch is drop-in compatible) plus the internal
 // mini-SWOLEVCO source controls + the simplified-RUTTETRA "XYZ" controls.

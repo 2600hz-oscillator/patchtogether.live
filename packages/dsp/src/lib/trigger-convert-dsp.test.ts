@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/trigger-convert-dsp.test.ts
-//
 // Pure timing tests for the MOOG 961 INTERFACE conversion logic. Proves the
 // two behaviours the spec calls out for explicit coverage:
 //   • the audio→trigger SENSITIVITY threshold (rectified crossing fires a

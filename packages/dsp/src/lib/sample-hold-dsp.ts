@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/sample-hold-dsp.ts
-//
 // SAMPLE & HOLD / quantizer — the PURE DSP core, shared verbatim by:
 //   * the AudioWorklet (packages/dsp/src/sample-hold.ts) — the live latch +
 //     quantizer hot path, and

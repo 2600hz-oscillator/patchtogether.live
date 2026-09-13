@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/rackspaces/+server.ts
-//
 // POST /api/rackspaces — create a new rackspace owned by the signed-in user.
 //   Body: { name?: string }. There is ONE rack shell, so there is no `mode`
 //   any more — the dashboard has a single create card.

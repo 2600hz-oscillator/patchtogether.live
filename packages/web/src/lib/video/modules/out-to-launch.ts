@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/out-to-launch.ts
-//
 // OUT TO LAUNCH — turns a Novation Launchpad Mini Mk3 into a live 9×9 RGB video
 // MONITOR. Takes a `video` input, downsamples it to a 9×9 RGB grid on the GPU,
 // and pushes those 81 pixels to a BOUND Launchpad's LEDs via the batch-RGB
@@ -166,7 +164,6 @@ export const outToLaunchDef: VideoModuleDef = {
     },
   },
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: this is the only module that turns a piece of MIDI control
   // hardware into a video DISPLAY. Every other video sink ends in a screen; this

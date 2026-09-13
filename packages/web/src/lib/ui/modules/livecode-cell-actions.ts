@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/livecode-cell-actions.ts
-//
 // The LIVECODE faceplate's cell seam, and the ONE evaluation path both of this
 // module's surfaces call.
 //

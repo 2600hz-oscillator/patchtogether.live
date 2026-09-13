@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/edges.ts
-//
 // EDGES — per-frame Sobel edge-detection PROCESSOR.
 //
 // Takes a `video` input, runs a 3×3 Sobel operator on its per-pixel
@@ -260,7 +258,6 @@ export const edgesDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thick',  defaultValue: EDGES_DEFAULTS.thickness, min: 1, max: EDGES_MAX_THICKNESS, curve: 'linear', units: 'px' },
   ],
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['threshold', 'thickness'],
 

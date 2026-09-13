@@ -1,5 +1,3 @@
-// art/setup/render-completion.ts
-//
 // ⚠ `OfflineAudioContext.startRendering()` IN THE PINNED BINDING CAN RESOLVE TO
 // `null`, WITH NO ERROR, ON A GRAPH THAT RENDERED PERFECTLY.
 //
@@ -8,9 +6,7 @@
 // covered — `setup/offline.ts` and the ~40 scenario-local `startRendering()`
 // call sites alike — without a list to keep in step.
 //
-// ---------------------------------------------------------------------------
 // THE DEFECT, IN THE BINDING'S OWN WORDS
-// ---------------------------------------------------------------------------
 //
 // node-web-audio-api 1.0.9 hands the rendered buffer to JS on a path that is
 // SEPARATE from the promise it returns, and nothing orders the two:
@@ -48,9 +44,7 @@
 // ConstantSourceNode — illogic, moog907a, moog914, the whole `renderOfflineDef`
 // population) returns immediately, so it gets no slack at all.
 //
-// ---------------------------------------------------------------------------
 // WHY THIS RECOVERS RATHER THAN JUST FAILING
-// ---------------------------------------------------------------------------
 //
 // The buffer is not lost — it is late. The Rust side dispatches `complete`
 // INSIDE `start_rendering().await` (web-audio-api-rs `context/offline.rs` sends

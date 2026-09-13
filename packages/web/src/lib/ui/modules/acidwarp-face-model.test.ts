@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/acidwarp-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the ACIDWARP faceplate (#2111).
 //
 // Everything here is a claim the shipped face MAKES and that no pixel gate can

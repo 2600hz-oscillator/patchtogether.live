@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/ninelives.test.ts
-//
 // Two test layers for NINE LIVES:
 //   1. Module-def shape — the reset trigger input, the 9 cv outputs, the
 //      rate + shape params (matching the LFO's rate definition), docs

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog904c.test.ts
-//
 // Three test layers for the MOOG 904C VOLTAGE CONTROLLED FILTER COUPLER:
 //   1. Module-def shape — pins the 904C's I/O surface (audio in + cutoff_cv
 //      CONTROL INPUT, the single band-passed output, the literal param array:

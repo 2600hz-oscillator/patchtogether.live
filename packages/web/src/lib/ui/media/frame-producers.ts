@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/frame-producers.ts
-//
 // THE NODE-LIFETIME PER-FRAME PRODUCERS (legacy-removal S1). See
 // ./node-frame-producer-registry for the mechanism, the shared ticker, and why
 // this is a registry rather than a permanent off-screen card mount.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/sync-bender.ts
-//
 // sync-bender — COMPOSITE/ANALOG-era bent VFPGA (design §3.1). Corrupts the
 // NTSC/PAL composite (CVBS) HORIZONTAL + VERTICAL SYNC separator: the classic
 // rolling / tearing / torn-frame / line-slip TV bend. One video in → one video

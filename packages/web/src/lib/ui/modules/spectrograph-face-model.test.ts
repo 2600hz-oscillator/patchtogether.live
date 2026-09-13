@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/spectrograph-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the SPECTROGRAPH faceplate (cut B).
 //
 // Two claims carry this face and both are judgements against the obvious

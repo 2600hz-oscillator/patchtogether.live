@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/preset-slot-store.test.ts
-//
 // Unit tests for the preset-slot IndexedDB store. Vitest runs in node (no real
 // IndexedDB), so — exactly like video-file-store.test.ts — we:
 //   * exercise the missing-API fallbacks (no indexedDB defined), and

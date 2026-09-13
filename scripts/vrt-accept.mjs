@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// scripts/vrt-accept.mjs
-//
 // PROMOTE a failed vrt-strict run's `actual` bytes over their committed
 // baselines — the verify-and-copy core of .github/workflows/vrt-accept.yml.
 //
@@ -262,7 +260,6 @@ export function buildCommitMessage({ accepted, identical, excludedUnsettled, run
   return lines.join('\n') + '\n';
 }
 
-// ---- CLI -------------------------------------------------------------------
 
 function parseArgs(argv) {
   const args = {

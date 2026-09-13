@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/databend.ts
-//
 // CLB cell `databend(a, shift, dropout, wrap, seed)` — composite-as-DATA bending
 // (the databend-cvbs bend, design §3.4). Models corrupting the per-column
 // composite samples the way databending mangles a file: a horizontal byte-shift

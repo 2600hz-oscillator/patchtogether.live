@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/midi-lane-face-model.test.ts
-//
 // MIDI LANE's face, pinned where a def-reading gate cannot see it.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-cells`,

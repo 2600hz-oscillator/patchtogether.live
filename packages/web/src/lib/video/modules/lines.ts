@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/lines.ts
-//
 // LINES — procedural line/grid mono-video source. Phase 0 implementation
 // of the spec at
 //
@@ -167,7 +165,6 @@ export const linesDef: VideoModuleDef = {
     },
   ],
 
-  // ── FACE (batch 23a) ──────────────────────────────────────────────────────
   //
   // WHAT LINES IS FOR: it is a GRATING. One trigonometric stripe field, dialled
   // by angle, density, duty and offset, emitted as mono-video. Its siblings

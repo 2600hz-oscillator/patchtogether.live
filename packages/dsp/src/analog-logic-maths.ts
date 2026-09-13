@@ -1,5 +1,3 @@
-// packages/dsp/src/analog-logic-maths.ts
-//
 // ANALOGLOGICMATHS (ALM) worklet processor.
 //
 // Analog logic mixer inspired by Mystic Instruments ANA. Operates on TWO

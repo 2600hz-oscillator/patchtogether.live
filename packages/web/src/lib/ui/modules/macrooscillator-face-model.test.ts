@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/macrooscillator-face-model.test.ts
-//
 // THE FACE'S CLAIMS, ANCHORED TO THE ARTIFACT.
 //
 // ⚠ THIS FILE IS NOT A TABLE TEST. Every shape claim the engine roster makes —
@@ -98,7 +96,6 @@ function axisRender(e: MacroEngine, axis: 'harmonics' | 'timbre' | 'morph', v: n
 
 const AXES = ['harmonics', 'timbre', 'morph'] as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
 describe('macrooscillator face model — the roster is ANCHORED to the DSP mirror', () => {
   it('the roster covers exactly the fourteen engines, indexed by `model`', () => {
     expect(MACRO_ENGINES).toHaveLength(14);
@@ -269,7 +266,6 @@ describe('macrooscillator face model — the roster is ANCHORED to the DSP mirro
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 describe('macrooscillator face model — the LEVEL figures are re-measured, not remembered', () => {
   it('every roster outRmsDb / auxRmsDb matches a fresh render', () => {
     const drift: string[] = [];
@@ -319,7 +315,6 @@ describe('macrooscillator face model — the LEVEL figures are re-measured, not 
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 describe('macrooscillator face model — the readouts, and what each is NOT', () => {
   const read = (p: Partial<MacroFaceParams>) => macroFaceParams((id) => (p as Record<string, number>)[id]);
 
@@ -502,7 +497,6 @@ describe('macrooscillator face model — the readouts, and what each is NOT', ()
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 describe('macrooscillator face model — the hero picture', () => {
   const read = (p: Partial<MacroFaceParams>) => macroFaceParams((id) => (p as Record<string, number>)[id]);
 

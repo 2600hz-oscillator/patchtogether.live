@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/videovarispeed/VideoVarispeedTransportBody.svelte
-  //
   // The VIDEOVARISPEED dock full-view body: the picture, the SCREEN switch, the
   // transport, the crop editor and the seven-slot asset bank.
   //

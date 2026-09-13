@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/register-swap.ts
-//
 // The register ping-pong SWAP (P1, design §1.1/§4.3) — the fabric "clock edge".
 // A register tile is a flip-flop: it WRITES its front buffer this frame, and a
 // `<regId>:prev` net READS its back buffer (last frame). After a frame's passes

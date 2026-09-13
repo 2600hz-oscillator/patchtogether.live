@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-clipboard.ts
-//
 // THE ONE clip clipboard. The typed COPY BUFFER that every surface which copies
 // or pastes a clip reads and writes — the Launchpad (and therefore Push 2, which
 // injects itself as that singleton's surface port rather than forking parity

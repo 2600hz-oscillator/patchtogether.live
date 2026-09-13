@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapegen-math.test.ts
-//
 // Belt-and-suspenders import-pin test for the shapegen-math extraction:
 //   • imports from the NEW location (video/modules/shapegen-math.ts)
 //     directly — proves the symbols live there and behave correctly

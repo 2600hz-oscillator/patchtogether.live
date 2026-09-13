@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/warrensvisions-core.ts
-//
 // WARREN'S VISIONS — the 2D SPECTRAL RESYNTH core.
 //
 // The visual analogue of the WARREN'S SPECTRUM audio engine
@@ -84,9 +82,7 @@
 //    and coarse structure drifts slowly. At DRIFT 0 the phases only move when
 //    the servo moves them.
 
-// ---------------------------------------------------------------------------
 // Fixed algorithm constants.
-// ---------------------------------------------------------------------------
 
 /** Analysis + synthesis grid, one side. 128×128 = 16384 bins; the 2D FFT is
  *  2·N row/column transforms of length N. Deliberately NOT the engine
@@ -182,10 +178,8 @@ export const WV_SLICE_MAX_FRAMES = 16;
 export const WV_CENTER_MIN_CENTS = -3600;
 export const WV_CENTER_MAX_CENTS = 3600;
 
-// ---------------------------------------------------------------------------
 // Radix-2 complex FFT, strided, in place. One instance per grid size; the
 // twiddles are shared by every transform of that size.
-// ---------------------------------------------------------------------------
 
 export class WvFft {
   readonly n: number;
@@ -288,10 +282,8 @@ export function wvFft2d(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Salience — `wsPeakSalience` with the harmonic comb replaced by a lattice
 // comb. Same shape, same constants, same purpose.
-// ---------------------------------------------------------------------------
 
 /**
  * @param kx,ky      the peak's wavevector, in cycles per grid
@@ -327,9 +319,7 @@ export function wvPeakSalience(
   return amp * bonus;
 }
 
-// ---------------------------------------------------------------------------
 // SHAPE — the harmonic weights of the sine→saw→square morph.
-// ---------------------------------------------------------------------------
 
 /**
  * Relative amplitude of harmonic `n` (1 = the fundamental) at morph position
@@ -350,9 +340,7 @@ export function wvHarmonicWeight(n: number, shape: number): number {
   return (series * parity) / n;
 }
 
-// ---------------------------------------------------------------------------
 // Engine
-// ---------------------------------------------------------------------------
 
 export interface WvComponentSnapshot {
   kx: number;
@@ -1275,9 +1263,6 @@ export class WarrensVisionsEngine {
   }
 }
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
 
 function parabolicDelta(lm1: number, lm: number, lm2: number): number {
   const denom = lm1 - 2 * lm + lm2;

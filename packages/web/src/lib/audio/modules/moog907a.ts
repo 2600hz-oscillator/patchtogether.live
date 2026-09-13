@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog907a.ts
-//
 // MOOG 907A FIXED FILTER BANK — a slice of the Moog System 55/35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md). The 907A is the
 // Moog System 35's smaller

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/spirographs-draw.ts
-//
 // SPIROGRAPHS — Canvas2D renderer. Strokes the sampled trochoid polylines with
 // a real, visible line width (the THICKNESS control) onto a 2D canvas, which
 // spirographs.ts uploads as a GL texture. Canvas2D (not GLSL) is the right tool

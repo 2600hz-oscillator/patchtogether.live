@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/textmarquee.ts
-//
 // TEXTMARQUEE — a rich-text MARQUEE video generator (source).
 //
 // The user types a styled paragraph in the card's tiny rich-text editor

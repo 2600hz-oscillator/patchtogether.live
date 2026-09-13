@@ -1,5 +1,3 @@
-// e2e/tests/score.spec.ts
-//
 // SCORE module — sheet-music sequencer, on the DEFAULT shell. Covers the
 // user-facing flows the faceplate carries plus the engine-level playback
 // contracts (which never touched a surface at all):
@@ -50,7 +48,6 @@ async function readScoreData(page: import('@playwright/test').Page) {
   });
 }
 
-/** Open the score's dock full view (the staff's home on the default shell). */
 async function openFace(page: import('@playwright/test').Page) {
   await page.waitForFunction(
     () => typeof (globalThis as unknown as { __openDockFullView?: unknown }).__openDockFullView === 'function',
@@ -384,9 +381,7 @@ test('score: bar overflow rejected — second whole note in the same bar does NO
   expect(data.notes.length).toBe(1);
 });
 
-// ----------------------------------------------------------------------
 // v2 features: page navigation, stop-bar + loop, tied-note single envelope
-// ----------------------------------------------------------------------
 
 async function readScoreV2(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
@@ -486,7 +481,6 @@ test('score: END (stop-bar) — "here" writes the marker at the end of the writt
   // Tick is on a 16th boundary by construction.
   expect(sb!.tick % 3).toBe(0);
 
-  // Stop-bar SVG is rendered on the staff.
   await expect(pane.locator('[data-testid="score-stop-bar-score"]')).toBeVisible();
 
   // And "none" clears it — the card had no remover either; the selector does.

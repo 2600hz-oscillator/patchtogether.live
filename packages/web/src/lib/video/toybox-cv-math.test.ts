@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-cv-math.test.ts
-//
 // PURE coverage for the TOYBOX modulation-section math (attenuverter + offset +
 // no-cable + clamp + param-range map). Deterministic — no Yjs / GL / DOM.
 

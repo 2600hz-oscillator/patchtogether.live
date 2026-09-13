@@ -1,5 +1,3 @@
-// e2e/worktree-port.ts
-//
 // The per-worktree default app port + base URL for the AUXILIARY Playwright
 // configs (vrt / vrt-annotated / chaos / audio-drift).
 //

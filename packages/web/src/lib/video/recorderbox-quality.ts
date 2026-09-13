@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-quality.ts
-//
 // RECORDERBOX quality/size tiers + codec selection.
 //
 // The card exposes a QUALITY selector (HIGH / BALANCED / SMALL). Each tier maps

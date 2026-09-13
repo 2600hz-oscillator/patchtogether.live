@@ -1,5 +1,3 @@
-// e2e/tests/cv-buddy-clock-worklet.spec.ts
-//
 // THE REAL-BROWSER LEG of the cv-clock worklet wiring (the SPEEDERR-001
 // dropped-pulse fix). The unit suites prove the core and the wiring against
 // fakes; only a browser has the actual AudioWorklet machinery — addModule of

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-color.test.ts
-//
 // PURE unit tests for the control-colour resolver — the single source of truth
 // the Control Surface / ElectraControl stripes + the Electra preset all read.
 // Asserts: assigned colour wins, auto default is stable + distinct + legible,

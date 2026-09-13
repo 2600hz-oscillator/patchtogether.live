@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/canvas/workflow-zoom.ts
-//
 // The ONE shared workflow-mode viewport-zoom signal + the derived LOD tier
 // context (STRATA reactive plumbing). This is the thin reactive wrapper around
 // the pure `lodTier` in ./lod: Canvas.svelte writes the live zoom here from the

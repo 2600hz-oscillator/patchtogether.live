@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-out-failover.ts
-//
 // THE TERMINAL SINK'S DEGRADED TAIL — and the runtime path to it.
 //
 // Split out of `audio-out.ts` for ONE reason: `audio-out.ts` imports the

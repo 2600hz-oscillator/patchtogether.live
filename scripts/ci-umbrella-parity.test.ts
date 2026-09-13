@@ -1,5 +1,3 @@
-// scripts/ci-umbrella-parity.test.ts
-//
 // THE UMBRELLA'S `needs:` AND ITS FAILING `if` MUST NAME THE SAME JOBS (#1505).
 //
 // The `ci` job is what branch protection requires. It is `if: always()`, so it

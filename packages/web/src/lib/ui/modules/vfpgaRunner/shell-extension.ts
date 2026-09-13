@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vfpgaRunner/shell-extension.ts
-//
 // The vfpga-runner SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512).
 //

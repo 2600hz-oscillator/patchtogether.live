@@ -1,5 +1,3 @@
-// e2e/tests/awareness.spec.ts
-//
 // Multi-context Stage B PR B-c (@collab) tests for the Awareness layer.
 // Two browser contexts attach to the same Hocuspocus rackspace, set their
 // `user` + `cursor` local state, and verify each sees the other's cursor

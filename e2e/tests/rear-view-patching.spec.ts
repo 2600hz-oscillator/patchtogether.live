@@ -1,5 +1,3 @@
-// e2e/tests/rear-view-patching.spec.ts
-//
 // Rack Phase 3 follow-up — PATCHING in rear view ("Flip rack").
 //
 // #771 shipped the rear view: the "Flip rack" toggle flips every card over its

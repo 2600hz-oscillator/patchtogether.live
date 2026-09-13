@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/default-pitch-accuracy.test.ts
-//
 // DEFAULT-TUNING PITCH ACCURACY — the owner guarantee "default tuning always
 // leads to sequence notes matching reality": at a pitched voice's DEFAULT
 // params, a sequenced note must produce the correct real-world pitch

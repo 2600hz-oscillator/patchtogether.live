@@ -1,5 +1,3 @@
-// scripts/vrt-update-revalidate.test.ts
-//
 // A SAFETY STEP THAT IS SKIPPED LOOKS EXACTLY LIKE A SAFETY STEP THAT PASSED.
 //
 // `vrt-update.yml`'s `revalidate` job close+reopens the PR so a real

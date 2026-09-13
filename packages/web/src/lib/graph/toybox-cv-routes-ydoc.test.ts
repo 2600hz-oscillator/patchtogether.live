@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-cv-routes-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the TOYBOX Phase-5 cvRoutes mutator. Runs
 // against the SAME syncedStore + Y.Doc the live patch uses, so cvRoutes entries
 // become real Y.Maps once written — the way to catch the "Type already

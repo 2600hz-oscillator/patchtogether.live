@@ -1,5 +1,3 @@
-// packages/web/src/lib/art/fingerprints.consistency.test.ts
-//
 // HONESTY GUARD for the committed ART fingerprint manifest (the data behind the
 // future ART Gallery). Pure fs + JSON — no python, no numpy, no FFT — so it runs
 // on the plain `unit` CI lane and even on git-LFS POINTER `.f32` files (it keys
@@ -87,7 +85,6 @@ describe('ART fingerprint manifest — consistency honesty guard', () => {
 		expect(manifestKeys).toEqual(baselineKeys);
 	});
 
-	// ---------------------------------------------------------------------
 	// (d) PROVENANCE — the drift-proofing that #1174 needed and did not have.
 	//
 	// #1174 re-pinned art/baselines/delay/audio.f32 (an owner-approved
@@ -197,12 +194,10 @@ describe('ART fingerprint manifest — consistency honesty guard', () => {
 	});
 });
 
-// -------------------------------------------------------------------------
 // The two STRUCTURAL fixes that keep the drift from recurring. Both are plain
 // text assertions over committed config — no python, no LFS, no CI cost — and
 // both exist because #1174 proved a human will re-pin one artifact and forget
 // the other, and that CI will not notice if the gate can't run.
-// -------------------------------------------------------------------------
 describe('ART fingerprint drift — recurrence prevention is wired up', () => {
 	const taskfile = readFileSync(join(REPO_ROOT, 'Taskfile.yml'), 'utf8');
 	const ci = readFileSync(join(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8');

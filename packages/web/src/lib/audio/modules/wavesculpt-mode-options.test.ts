@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavesculpt-mode-options.test.ts
-//
 // THE NINE VISUALISATION / FX STATES, PINNED BY NAME.
 //
 // `fxType{1..4}`, `video_mode` and `blink_mode` are 3-state discrete params

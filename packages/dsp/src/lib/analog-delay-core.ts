@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/analog-delay-core.ts
-//
 // AnalogDelayCore — a from-scratch, OWN-CODE analog BBD/tape-style stereo
 // delay engine for the COFEFVE DELAY module. Written clean-room from a fresh
 // behavioral spec (see below); it is NOT a translation of any GPL delay

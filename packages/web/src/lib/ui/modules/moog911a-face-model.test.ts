@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog911a-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for moog911a's two derived readouts.
 //
 // The face rests on two claims, and each is checked against the input a KNOB

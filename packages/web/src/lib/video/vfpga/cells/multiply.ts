@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/multiply.ts
-//
 // CLB cell `multiply(a, b, gain)` — the multiplicative ALU cell: per-channel
 // product of two inputs (a ring-modulator / masker / multiplicative keyer). The
 // product is scaled by `gain` (default 1) and clamped to [0,1]. Two inputs, one

@@ -1,5 +1,3 @@
-// packages/server/src/heartbeat.ts
-//
 // Hocuspocus extension that emits a per-document heartbeat over Yjs
 // Awareness. Each tick carries `{ tick: int, ts_ms: float }` keyed under
 // the reserved field `__heartbeat`. Clients use these to derive a shared

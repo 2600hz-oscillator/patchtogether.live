@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/quadralogical-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the QUADRALOGICAL faceplate (#2102).
 //
 // Everything asserted here is a claim the shipped face MAKES and that no pixel

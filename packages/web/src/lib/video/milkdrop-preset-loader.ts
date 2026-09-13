@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/milkdrop-preset-loader.ts
-//
 // Browser-side `.milk` → butterchurn-JSON loader + a tiny preset-name resolver,
 // both pulled OUT of MilkdropCard so they can be unit-tested without mounting the
 // card or booting WebGL.

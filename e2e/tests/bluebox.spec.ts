@@ -1,5 +1,3 @@
-// e2e/tests/bluebox.spec.ts
-//
 // BLUEBOX end-to-end smoke. Spawn BLUEBOX + SCOPE, patch the audio
 // output into ch1, click each test button, and confirm the analyser
 // sees the expected spectral peaks. Three flavours:
@@ -21,7 +19,6 @@ import { pollScopeBandAmp, scopePollMsg } from '../_helpers/scope-poll';
 
 test.describe.configure({ mode: 'parallel' });
 
-// ─── helpers ────────────────────────────────────────────────────────────────
 
 async function readScopeChannel(
   page: Page,
@@ -126,7 +123,6 @@ async function setBlueboxParam(page: Page, nodeId: string, paramId: string, valu
   );
 }
 
-// ─── tests ──────────────────────────────────────────────────────────────────
 
 test('bluebox: the shell mounts with no console errors and the full keypad', async ({ page, rack, errorWatch }) => {
   await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 100, y: 100 } }]);

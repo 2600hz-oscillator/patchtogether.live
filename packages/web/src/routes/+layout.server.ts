@@ -1,5 +1,3 @@
-// packages/web/src/routes/+layout.server.ts
-//
 // Two jobs:
 //   1. Hand Clerk's auth state (userId, sessionId, etc.) to the client so
 //      <ClerkProvider> can render the right UI without a round-trip. This

@@ -1,5 +1,3 @@
-// e2e/tests/outlines-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for OUTLINES — a STATEFUL particle video
 // SOURCE. Modeled on spirographs-render-smoke.spec.ts + the shared
 // _render-smoke harness (installRenderSmokeHooks / stepAndReadStats /

@@ -1,5 +1,3 @@
-// art/scenarios/rings/resonator-character.test.ts
-//
 // Audio Regression Test scenarios for RINGS — longer renders that pin
 // perceptually-meaningful spectral character (modal bell-tone harmonics
 // under a noise-burst pluck; sympathetic-string ring length under

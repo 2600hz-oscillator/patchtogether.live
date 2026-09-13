@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/mappy/MappyMapBody.svelte
-  //
   // THE MAPPY MAP SURFACE — the dock full-view body, and the surface a promoted
   // MAPPY is actually aligned on.
   //

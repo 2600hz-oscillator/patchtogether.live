@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/acidwarp.test.ts
-//
 // Unit tests for the ACIDWARP module def + pure pattern/palette helpers.
 // The actual GL pipeline is exercised by E2E (jsdom can't render shaders).
 

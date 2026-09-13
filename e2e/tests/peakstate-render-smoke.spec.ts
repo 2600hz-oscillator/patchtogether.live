@@ -1,5 +1,3 @@
-// e2e/tests/peakstate-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for PEAKSTATE — an animated mandala
 // generator SOURCE (no video input; only cv inputs). Modeled EXACTLY on
 // spirographs-render-smoke.spec.ts + the shared _render-smoke harness.
@@ -134,7 +132,6 @@ test.describe('PEAKSTATE — deterministic render smoke', () => {
 
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // PER-PORT RENDER GATE — the REAL engine, not a mock.
   //
   // PEAKSTATE rasterizes ~57,600 stroked segments per frame across its three
@@ -157,7 +154,6 @@ test.describe('PEAKSTATE — deterministic render smoke', () => {
   // Deterministic: same seed + frozen clock + paused loop as the smoke above,
   // no waitForTimeout, no animation-diff. One extra page nav on top of the
   // existing spec.
-  // ─────────────────────────────────────────────────────────────────────────
   // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
   // NONDETERMINISM: 3 recovered-on-retry observation(s) across 3 SHA(s) / 3 branch(es) in the
   // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.

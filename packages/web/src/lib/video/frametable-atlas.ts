@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/frametable-atlas.ts
-//
 // FRAMETABLE — pure PNG sprite-sheet ATLAS layout math (the `.frametable.png`
 // file format). NO WebGL / NO DOM here — every function is a pure, jsdom-safe
 // transform so the SAVE tiler + LOAD detiler share ONE source of truth that is

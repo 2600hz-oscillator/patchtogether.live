@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/completions.ts
-//
 // CodeMirror autocomplete source. Knows about:
 //
 //   * Static API symbols   (spawn / patch / unpatch / set / read /

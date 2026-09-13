@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/timelorde/TimelordeDisplayBody.svelte
-  //
   // The TIMELORDE dock full-view body: the big display — the owner's owl
   // painting, beat-pulsing, or the live VIDEO IN feed — plus the SCREEN ON/OFF
   // switch.

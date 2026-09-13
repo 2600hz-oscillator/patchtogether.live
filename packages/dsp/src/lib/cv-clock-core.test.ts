@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/cv-clock-core.test.ts
-//
 // Unit tests for the CV-CLOCK CORE — CV Buddy's RUN + CLOCK generator moved
 // onto the audio thread (the SPEEDERR-001 dropped-pulse fix). Pure +
 // deterministic: every grid point, anchor, tempo change and drop is pinned at

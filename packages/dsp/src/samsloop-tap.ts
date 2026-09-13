@@ -1,5 +1,3 @@
-// packages/dsp/src/samsloop-tap.ts
-//
 // SAMSLOOP-TAP — input recorder worklet.
 //
 // Sits in front of the SAMSLOOP record path. Two audio inputs (`l` + `r`,

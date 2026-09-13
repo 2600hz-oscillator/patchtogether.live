@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/vdelay.ts
-//
 // VDELAY — video delay + feedback echo. Visual analog to CHARLOTTE'S
 // ECHOS for the audio domain.
 //
@@ -172,7 +170,6 @@ export const vdelayDef: VideoModuleDef = {
     { id: 'colorShift', label: 'Color',    defaultValue: DEFAULTS.colorShift, min: 0, max: 1,                curve: 'linear' },
   ],
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['delayTime', 'feedback', 'mix', 'colorShift'],
 

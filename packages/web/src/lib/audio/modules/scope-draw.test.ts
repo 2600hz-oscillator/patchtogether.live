@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/scope-draw.test.ts
-//
 // Unit tests for SCOPE's drawScope() phosphor-persistence behaviour. The
 // web package's vitest runs in `node` (no real canvas), so we stub the 2D
 // context with a recorder that captures every op (incl. globalAlpha at the
@@ -199,7 +197,6 @@ describe('drawScope phosphor: trail length tracks INTENSITY', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // DSP CORRECTNESS: waveform → trace geometry. This is the deterministic,
 // GPU-free half of SCOPE's video-out coverage split (see
 // e2e/tests/scope-video-out.spec.ts). SCOPE's video output is drawScope run
@@ -207,7 +204,6 @@ describe('drawScope phosphor: trail length tracks INTENSITY', () => {
 // "what the user sees on the OUTPUT" assertion — pinned here without WebGL /
 // SwiftShader / live-audio-analyser timing, where the e2e can only afford a
 // renderer-tolerant non-black + structured floor.
-// ---------------------------------------------------------------------------
 describe('drawScope geometry: a real waveform → a multi-row trace (the flat-line / Bug-2 guard)', () => {
   it('NORMAL mode: the waveform trace spans MANY distinct rows, not a flat center line', () => {
     // A flat trace (the Bug-2 regression: a LINEAR-filtered R32F texture

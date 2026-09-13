@@ -1,5 +1,3 @@
-// e2e/tests/color-field.spec.ts
-//
 // DOM gate for <ColorField> — the packed-RGB colour cell, and the substitute
 // `param-cell-coverage.test.ts` names for it.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/face-screen-render-4.spec.ts
-//
 // PARTITION 4 OF 4 of the SCREEN ON / OFF render sweep.
 //
 // ⚠ THERE IS NOTHING MODULE-SPECIFIC IN THIS FILE AND THERE MUST NOT BE. It

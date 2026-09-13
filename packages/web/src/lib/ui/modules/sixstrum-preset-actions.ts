@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/sixstrum-preset-actions.ts
-//
 // SIX STRUM's PRESET RECALL — the guitar / bass / harp voice roster — as ONE
 // shared implementation.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-control-params.ts
-//
 // TOYBOX → CONTROL-SURFACE param adapter (PURE: no Yjs txn, no GL).
 //
 // PROBLEM. The Control Surface aggregates POINTERS to other modules' controls

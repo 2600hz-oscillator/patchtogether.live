@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/matrixmix.ts
-//
 // MATRIXMIX — data model + ydoc helpers.
 //
 // MATRIXMIX is a meta-domain card whose ONLY persisted state is the two axis

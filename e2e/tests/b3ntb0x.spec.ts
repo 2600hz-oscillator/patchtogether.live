@@ -1,5 +1,3 @@
-// e2e/tests/b3ntb0x.spec.ts
-//
 // B3NTB0X — circuit-level NTSC composite re-arch OUTPUT. Real-GL coverage
 // (jsdom can't exercise WebGL, so the 4-pass float pipeline is only verifiable
 // in a browser): spawn a SHAPES source → B3NTB0X, confirm the card + canvas

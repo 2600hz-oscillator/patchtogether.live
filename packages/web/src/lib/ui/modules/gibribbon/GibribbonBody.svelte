@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/gibribbon/GibribbonBody.svelte
-  //
   // The GIBRIBBON dock full-view body: the game screen (the shared
   // GibribbonScreen — one playfield, one keyboard map, both surfaces) plus
   // the two per-node switches the face platform requires of it:

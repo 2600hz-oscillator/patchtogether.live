@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/graphic-eq-core.test.ts
-//
 // Pure unit tests for the GRAPHIC EQ core — GL-free, deterministic.
 
 import { describe, expect, it } from 'vitest';

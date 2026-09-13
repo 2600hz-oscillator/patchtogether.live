@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/worker-factories.ts
-//
 // THE RENDER WORKER'S BUNDLE MANIFEST — which module factories the worker is
 // allowed to instantiate.
 //

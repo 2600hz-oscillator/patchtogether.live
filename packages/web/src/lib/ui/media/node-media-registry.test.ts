@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-media-registry.test.ts
-//
 // The registry's job is to make a node's media survive a CARD unmount while
 // still being torn down when the NODE dies. Both halves are asserted, and the
 // dangerous half (teardown on unmount) is negative-controlled: a registry that

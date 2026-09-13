@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-frame-upload.test.ts
-//
 // Unit coverage for the rVFC-driven, engine-resolution-downscaled frame
 // uploader that fixes the few-FPS VIDEOBOX output regression. Vitest runs
 // under node (no WebGL2 / no real OffscreenCanvas), so we inject fakes:
@@ -90,7 +88,6 @@ afterEach(() => {
   delete (globalThis as unknown as { OffscreenCanvas?: unknown }).OffscreenCanvas;
 });
 
-// --- Tests ---------------------------------------------------------------
 
 describe('createVideoFrameUploader — rVFC path', () => {
   it('uploads once per decoded frame, not once per uploadIfReady() call', () => {

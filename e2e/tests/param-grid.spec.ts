@@ -1,5 +1,3 @@
-// e2e/tests/param-grid.spec.ts
-//
 // DOM gate for <ParamGrid> — the PF-15 chip + PORTALED grid popover, the
 // primitive dx7's algorithm picker (PR 4) is built on.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/tempest/tempest-core.ts
-//
 // TEMPEST geometry core (module P0) — the pure, GL-free heart of the playfield.
 //
 // Models the classic Tempest "well": a tube of N lanes whose OUTER rim (nearest

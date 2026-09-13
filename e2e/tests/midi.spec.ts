@@ -1,5 +1,3 @@
-// e2e/tests/midi.spec.ts
-//
 // MIDI e2e harness — drives the running app with simulated MIDI traffic via
 // a mocked `navigator.requestMIDIAccess()` installed as a page init-script
 // (see e2e/_helpers/midi.ts). Distinct from `midi-learn.spec.ts`, which uses
@@ -53,9 +51,7 @@ async function clearMidiBindings(page: Page): Promise<void> {
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 }
 
-// ============================================================================
 // Case #0 — REGRESSION: no Web-MIDI permission prompt on page load.
-// ============================================================================
 //
 // The bug: the app popped the browser "Control and reprogram your MIDI
 // devices" prompt on boot / on loading a non-MIDI patch. Web MIDI must be
@@ -101,9 +97,7 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
 
 });
 
-// ============================================================================
 // Case #1 — Plain CC reception drives a learned param.
-// ============================================================================
 //
 // Asserts: with the MIDI mock as the only "device" present, entering MIDI
 // Learn on a knob and sending a CC binds + drives the param across the whole
@@ -163,9 +157,7 @@ test('@midi plain CC reception drives a learned param across the full range', as
 
 });
 
-// ============================================================================
 // Case #2 — REGRESSION: save patch → reload → CC still drives the bound param.
-// ============================================================================
 //
 // PR #389 (fix(midi): rewire MIDI bindings on performance load) fixed the
 // case where a saved performance's `setter` was registered by the mounted
@@ -319,9 +311,7 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
 
 });
 
-// ============================================================================
 // Case #3 — NoteOn / NoteOff cleanup (lightweight — no audio probing).
-// ============================================================================
 //
 // midi-cv-buddy is the in-rack module that turns NoteOn / NoteOff into V/oct
 // gate + CV. Spawn a MIDI-CV-BUDDY, send NoteOn → NoteOff, and observe its
@@ -384,9 +374,7 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-// ============================================================================
 // Case #4 — MIDI Clock (0xF8) drives midi-clock-source BPM derivation.
-// ============================================================================
 //
 // midi-clock-source is a separate subscriber (not the midi-learn singleton)
 // that holds its own `access` reference + `onmidimessage` handler. It attaches

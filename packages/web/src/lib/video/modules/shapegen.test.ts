@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapegen.test.ts
-//
 // SHAPEGEN — unit coverage for:
 //   • Module def shape (3 video inputs, 1 video output, 3 params, defaults).
 //   • Size scaling: a SIZE knob of 2 produces shapes whose final radii are

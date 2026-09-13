@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-lane-return.test.ts
-//
 // The launcher→mixer NORMALLED RETURN seam: the MON mode roster and the two
 // pure decisions that define it. Slice 1 ships the contract; slice 3 wires the
 // param + duck and slice 5 the return itself — so these tests are what stops

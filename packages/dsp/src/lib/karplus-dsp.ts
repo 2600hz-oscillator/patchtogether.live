@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/karplus-dsp.ts
-//
 // KARPLUS (id `karplus`) — pure DSP core for the extended Karplus-Strong
 // string/percussive-harp voice. Built ON THE COFEFVE DELAY FUNDAMENTALS
 // (owner directive): the string loop IS cofefve's `DelayChannel`
@@ -159,9 +157,7 @@ const FLUSH = 1e-20;
 const TWO_PI = Math.PI * 2;
 const LN_0_001 = Math.log(0.001); // −60 dB
 
-// ─────────────────────────────────────────────────────────────────────────
 // Params (ids match the def's params; pitchCv is the 1V/oct input)
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface KarplusParams {
   /** Base pitch, Hz (55–1760, default 220 = A3). */
@@ -200,9 +196,6 @@ export const KARPLUS_DEFAULTS: KarplusParams = {
   pitchCv: 0,
 };
 
-// ─────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface KarplusState {
   /** THE string: cofefve's fractional delay line (shared import). */
@@ -269,9 +262,7 @@ function xorshift32(s: number): number {
   return s >>> 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Pure laws (exported — unit-tested directly)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Jaffe–Smith per-period loss for a t60-second decay at f0:
  *  ρ = 0.001^(1/(f0·t60)), so ρ^(f0·t) hits −60 dB at t = t60 at ANY pitch. */
@@ -364,9 +355,7 @@ export function karplusF0(p: KarplusParams): number {
   return clamp(tune * Math.pow(2, p.pitchCv), KARPLUS_F0_MIN, KARPLUS_F0_MAX);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample step
-// ─────────────────────────────────────────────────────────────────────────
 
 /**
  * One sample of the voice. `trigger` fires the strike on its rising edge,

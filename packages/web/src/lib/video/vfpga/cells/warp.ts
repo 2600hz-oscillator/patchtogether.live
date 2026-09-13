@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/warp.ts
-//
 // CLB cell `warp(a, zoom, rot, hue, gain)` — a centre UV zoom + rotate + per-pass
 // hue-rotate + gain (the frame-store HOWL recirculation transform, design §3.3).
 // On its own it is a generic geometric/colour transform; wired so its input is a

@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/trails-monitor.test.ts
-//
 // The monitor's job is to be BELIEVABLE ABOUT TRAFFIC IT DOES NOT UNDERSTAND,
 // because that is the only kind of traffic that can correct this module's wire
 // constants. So the load-bearing tests here are the ones that drive it with

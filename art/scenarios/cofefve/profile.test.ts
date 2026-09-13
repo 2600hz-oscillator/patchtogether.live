@@ -1,5 +1,3 @@
-// art/scenarios/cofefve/profile.test.ts
-//
 // AUDIO PROFILE for COFEFVE DELAY (the own-code analog delay replacing COCOA
 // DELAY), through the shared capture harness (art/setup/capture.ts +
 // drivers.ts).
@@ -70,7 +68,6 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ── Render ──────────────────────────────────────────────────────────────────
 
 async function renderProfile(): Promise<Record<string, Float32Array>> {
   const Proc = await loadProcessor();

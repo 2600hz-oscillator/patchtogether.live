@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/annotate-mode.svelte.ts
-//
 // Per-node "Annotate" mode — a PERSONAL view mode that arms an on-card hover
 // resolver showing each control / port's AUTHORED docs in an anchored popover.
 //

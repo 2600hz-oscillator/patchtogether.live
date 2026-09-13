@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-div-swing.test.ts
-//
 // ENGINE behavior for the single-pad Launchpad rework's two new per-clip/-lane
 // timing knobs, driven through the REAL clipplayer factory + tick loop against a
 // fake (advanceable) AudioContext — the same harness style as clipplayer.test.ts

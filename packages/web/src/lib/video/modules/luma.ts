@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/luma.ts
-//
 // LUMA — single-input POSTERIZE / CONTRAST / GAMMA / BIAS processor.
 //
 // History: prior versions of this module conflated "luma-mask extraction"
@@ -132,7 +130,6 @@ export const lumaDef: VideoModuleDef = {
     { id: 'bias',            label: 'Bias',   defaultValue: DEFAULTS.bias,            min: -0.5, max: 0.5,  curve: 'linear' },
   ],
 
-  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
   //
   // WHAT LUMA IS FOR: it is a TRANSFER CURVE over brightness that PRESERVES
   // CHROMA. Every stage runs on the Rec. 601 luma alone and the result is

@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-control.svelte.ts
-//
 // Binds the Launchpad PAIR (launchpad-device) to ONE focused clip-player node.
 // The Launchpad analogue of monome-control.svelte.ts, with the owner-locked L/R
 // split:
@@ -229,7 +227,6 @@ import {
   type ArpState,
 } from '$lib/audio/arp-engine';
 
-// ---------------------------------------------------------------------------
 // INJECTABLE CONTROL SURFACE (decision A — the Push 2 adapter, plan §3). The
 // clip-launch / note-editor / arm / scene / KEYS PARITY logic in this file is a
 // module-level singleton bound to launchpad-device. To let a DIFFERENT surface
@@ -863,13 +860,11 @@ export function restoreLaunchpadBinding(): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // L/R PAIRING — the press-a-pad handshake. Connect (sysex), enumerate the
 // `… MIDI` ports, light a prompt on each candidate, and ask the user to press a
 // pad on the unit that should be LEFT. The pressed unit → L, the other → R.
 // Both port ids persist per-machine (localStorage), so a re-load restores the
 // pair without re-prompting. PURE port→unit mapping is testable via the helpers.
-// ---------------------------------------------------------------------------
 
 type PairListener = () => void;
 const pairListeners = new Set<PairListener>();
@@ -1021,14 +1016,12 @@ export function cancelPairing(): void {
   bumpPair();
 }
 
-// ---------------------------------------------------------------------------
 // SINGLE-UNIT deployment — bind ONE Launchpad (no L/R handshake) to the L slot
 // and flip its role with the VIEW toggle. Connects (sysex, gesture-gated),
 // enumerates the Launchpad-MIDI ports, and binds the FIRST one to the L slot.
 // The single path RELAXES the pair's `ports.length < 2` requirement — it needs
 // just ONE port. The R slot stays UNBOUND (so isSingleBound() is true), and the
 // control layer routes/paints the lone device per `singleView`.
-// ---------------------------------------------------------------------------
 
 /** Bind the SINGLE Launchpad (the first enumerated port) to the L slot. Returns
  *  false if access can't be acquired or NO Launchpad port is present. */
@@ -1418,11 +1411,9 @@ function nudgeTempo(delta: number): void {
   });
 }
 
-// ---------------------------------------------------------------------------
 // KEYS mode (note/keyboard + clip-record). Pair AND single deployments — the
 // handlers below are deployment-agnostic; only entry-routing + the painted
 // frame (16- vs 8-cell playhead) differ, and both live at the routing seams.
-// ---------------------------------------------------------------------------
 
 /** The bottom-left keyboard cell pitch for a clip — the clip's root shifted by
  *  the live KEYS octave offset (P7), so every octave of the (shifted) root lights
@@ -1940,9 +1931,7 @@ function serviceKeysRecord(nodeId: string, data: ClipPlayerData | undefined): vo
   keysPrevStep = step;
 }
 
-// ---------------------------------------------------------------------------
 // Inbound key routing — split by unit.
-// ---------------------------------------------------------------------------
 function handleKey(e: LaunchpadKeyEvent): void {
   const nodeId = boundNodeId;
   if (!nodeId || !livePatch.nodes[nodeId]) return;
@@ -1966,7 +1955,6 @@ function handleKey(e: LaunchpadKeyEvent): void {
   else handleR(nodeId, e);
 }
 
-// ===========================================================================
 // SINGLE-UNIT routing (S2b). The lone device is bound to the L slot, so every
 // event arrives tagged unit:'L'; we route it by the PERMANENT TOP ROW first,
 // then by the active mode/view:
@@ -1979,7 +1967,6 @@ function handleKey(e: LaunchpadKeyEvent): void {
 //     returns to Grid / Clip / KEYS per how it was opened.
 //   · else route by singleView: grid → handleSingleGrid, clip → handleSingleClip,
 //     control → handleSingleControl, arranger → inert.
-// ===========================================================================
 function singleShiftEff(): boolean {
   return shiftHeldSingle;
 }
@@ -3427,10 +3414,8 @@ function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
   );
 }
 
-// ---------------------------------------------------------------------------
 // LED render loop. PAIR: repaint BOTH units each tick (L = matrix, R = deck).
 // SINGLE: repaint the LONE device (the L slot) in its active-view role.
-// ---------------------------------------------------------------------------
 
 /** Paint the L-role (clip matrix) frame onto a physical unit. PAIR-ONLY now (the
  *  single device paints the per-view frames): the top row is the 8 per-lane MUTE
@@ -3812,9 +3797,7 @@ function renderLeds(): void {
   paintRRole('R', nodeId, data, blinkOn);
 }
 
-// ---------------------------------------------------------------------------
 // Test seams.
-// ---------------------------------------------------------------------------
 export function __test_resetBinding(): void {
   stopLoops();
   surface = launchpadSurface; // restore the default control surface (drop any Push adapter)

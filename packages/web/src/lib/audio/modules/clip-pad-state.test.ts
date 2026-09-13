@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-pad-state.test.ts
-//
 // THE AGREEMENT PIN for `clipPadState` — the one projection of how a launch-grid
 // cell paints.
 //
@@ -42,9 +40,7 @@ import {
   type ClipPlayerData,
 } from './clip-types';
 
-// ---------------------------------------------------------------------------
 // The matrix
-// ---------------------------------------------------------------------------
 
 function noteClip() {
   return defaultNoteClip();
@@ -275,9 +271,7 @@ describe('clipPadState — the painted ladder', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The cross-surface agreement, and the control that proves the matrix bites
-// ---------------------------------------------------------------------------
 
 /** A verbatim transcription of the OTHER surface's clause set (the v2 face's
  *  `clipplayerPadState`). Kept here as a reference implementation so the two
@@ -364,9 +358,7 @@ describe('clipPadState — one ladder, both surfaces', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The delegation scan — a re-typed ladder is red
-// ---------------------------------------------------------------------------
 
 const LIB_FILES = import.meta.glob('../../**/*.{ts,svelte}', {
   query: '?raw',

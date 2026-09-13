@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/snapshot.test.ts
-//
 // Unit tests for the pure SMPTE-bars CPU snapshot (the card preview math, a
 // 1:1 mirror of SMPTE_FRAG). Deterministic + GL-free.
 

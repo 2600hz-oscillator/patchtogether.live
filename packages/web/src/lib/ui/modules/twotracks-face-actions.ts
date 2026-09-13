@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/twotracks-face-actions.ts
-//
 // THE ONE TWOTRACKS TRANSPORT — shared by `TwotracksCard.svelte` (the legacy
 // card), the faceplate's `SHELL_CELLS` entries and the faceplate BODY.
 //

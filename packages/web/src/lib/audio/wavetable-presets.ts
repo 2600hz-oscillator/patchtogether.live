@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavetable-presets.ts
-//
 // Baked-in wavetable PRESET registry. The 46 .WAV files listed below are
 // shipped in packages/web/static/wavetables/ and served at /wavetables/<FILE>
 // via SvelteKit's static path (i.e. NOT bundled into the JS chunk — fetched

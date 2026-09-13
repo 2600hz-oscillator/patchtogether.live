@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-display-frame.ts
-//
 // Ableton Push 2 DISPLAY protocol CODEC — PURE, hardware-free. The display half
 // of the Push stack, and the exact sibling of `push2-sysex.ts`: bytes in, bytes
 // out, no `navigator`, no DOM, no timers. Everything here is golden-vector
@@ -41,9 +39,7 @@
 // worker/WASM offload is a later optimisation; this stays on the main thread and
 // stays pure so it can be moved wholesale into a worker without changes.
 
-// ---------------------------------------------------------------------------
 // Device identity (USB topology — the transport's only magic numbers)
-// ---------------------------------------------------------------------------
 
 /** Ableton vendor id. */
 export const PUSH2_USB_VENDOR_ID = 0x2982;
@@ -56,9 +52,7 @@ export const PUSH2_USB_ENDPOINT = 1;
 /** USB configuration value to select before claiming the interface. */
 export const PUSH2_USB_CONFIGURATION = 1;
 
-// ---------------------------------------------------------------------------
 // Frame geometry
-// ---------------------------------------------------------------------------
 
 /** Display width in pixels. */
 export const PUSH_DISPLAY_W = 960;
@@ -98,9 +92,7 @@ export const PUSH_DISPLAY_KEEPALIVE_MS = 500;
  *  only bounds the burst while an encoder is being spun. */
 export const PUSH_DISPLAY_MIN_FRAME_MS = 33;
 
-// ---------------------------------------------------------------------------
 // Pixel packing
-// ---------------------------------------------------------------------------
 
 /** Clamp an arbitrary number to an 8-bit channel value (NaN → 0). */
 function clamp8(v: number): number {
@@ -153,9 +145,7 @@ export function pushFrameByteOffset(x: number, y: number): number {
   return y * PUSH_DISPLAY_LINE_BYTES + x * PUSH_DISPLAY_BPP;
 }
 
-// ---------------------------------------------------------------------------
 // Frame packing
-// ---------------------------------------------------------------------------
 
 /**
  * Pack a 960×160 RGBA buffer (canvas `ImageData.data` layout) into a ready-to-
@@ -286,9 +276,7 @@ export function pushFrameChunks(frame: Uint8Array, chunkBytes = PUSH_DISPLAY_CHU
   return chunks;
 }
 
-// ---------------------------------------------------------------------------
 // Pacing (pure decisions — the timers live in the transport)
-// ---------------------------------------------------------------------------
 
 /**
  * How long (ms) the next frame must wait to respect the ~30 Hz floor. 0 = send

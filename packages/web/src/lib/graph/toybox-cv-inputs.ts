@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-cv-inputs.ts
-//
 // TOYBOX — Yjs mutator for the per-input modulation-shaping map
 // (node.data.cvInputs). Each of the 6 generic modulation inputs (cv1..cv6) has
 // a bipolar SCALE (attenuverter, −1..+1) and an OFFSET (0..1), edited by the

@@ -1,5 +1,3 @@
-// scripts/verify-deploy-sha.test.ts
-//
 // Guards the deploy gate's decision logic (scripts/verify-deploy-sha.mjs) and,
 // separately, that deploy.yml actually CALLS it.
 //

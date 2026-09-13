@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/crop-core.test.ts
-//
 // Pure unit tests for the reusable crop model + math. GL-free + deterministic
 // (mirrors loopback-crop.test.ts / mappy-hit style). Covers: aspect-derived
 // height in both output modes AND a decoupled frame/region aspect, edge

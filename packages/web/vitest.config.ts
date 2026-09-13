@@ -1,5 +1,3 @@
-// packages/web/vitest.config.ts
-//
 // Vitest config for unit tests in the web package. Pure-data tests live next
 // to their source as `*.test.ts`. Audio-context-dependent code is covered by
 // the e2e Playwright suite (real browser, real AudioContext) and the ART

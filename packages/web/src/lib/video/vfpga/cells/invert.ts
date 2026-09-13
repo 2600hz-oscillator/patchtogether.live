@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/invert.ts
-//
 // CLB cell `invert(a, amount)` — the negate ALU cell: per-channel 1 - a, mixed
 // toward the original by `amount` (0 = passthru, 1 = full negative). The classic
 // video "negative" / colour-invert primitive. One input (a), one knob (amount,

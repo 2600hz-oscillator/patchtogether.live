@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/varispeed-shifter.ts
-//
 // VarispeedShifter — a from-scratch, OWN-CODE granular pitch shifter for a
 // SINGLE channel. Written clean-room from first-principles DSP; it copies no
 // upstream algorithm and shares no code with the retired GPL cocoadelay-core.

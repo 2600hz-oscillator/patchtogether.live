@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/nibbles-game-actions.ts
-//
 // THE NIBBLES GESTURE SEAM — one implementation of RESET, of arrow-key
 // steering, and of the two per-view screen preferences, called by every
 // surface that offers them.

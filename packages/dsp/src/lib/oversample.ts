@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/oversample.ts
-//
 // Shared 2×/4× oversampler for per-sample NONLINEARITIES (drive, wavefold,
 // exciter saturation) — the DSP-audit A4 primitive; the kick voice consumes it
 // first, and it's reusable by every future nonlinear stage.

@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-face.spec.ts
-//
 // LAUNCHPAD CONTROL's FIRST SURFACE TEST — and the module had none before this.
 //
 // ── ⚠ THE MEASUREMENT THAT MADE THIS FILE MANDATORY ─────────────────────────

@@ -1,5 +1,3 @@
-// packages/dsp/src/moog904a.ts
-//
 // MOOG 904A — Voltage Controlled Low Pass Filter AudioWorkletProcessor.
 //
 // Slice 2 of the Moog System 55 / 35 clone initiative

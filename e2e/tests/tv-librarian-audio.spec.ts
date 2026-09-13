@@ -1,5 +1,3 @@
-// e2e/tests/tv-librarian-audio.spec.ts
-//
 // TV LIBRARIAN — AUDIBILITY of the tuned stream (the real-chain regression
 // guard for the operator-reported "video module = no audio out" bug).
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/delete-bridge.ts
-//
 // BRIDGE-ON-DELETE (#1821) — deleting a pass-through module MAINTAINS the chain.
 //
 // Owner, 2026-08-17:

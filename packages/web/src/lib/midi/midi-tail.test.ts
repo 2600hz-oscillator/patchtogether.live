@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-tail.test.ts
-//
 // The MIDI tail's decode vocabulary and ring semantics. Every string the
 // debug panel can paint is decided in `midi-tail.ts`, so it is pinned here —
 // a wrong decode on a diagnostic surface is worse than no surface, because a

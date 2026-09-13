@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-cells.ts
-//
 // The FAMILY / STATIC cell registry for the RACKLINE <ModuleShell>.
 //
 // A curated face ranks three kinds of control (curated-face.ts): a `param`

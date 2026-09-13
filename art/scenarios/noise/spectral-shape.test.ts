@@ -1,5 +1,3 @@
-// art/scenarios/noise/spectral-shape.test.ts
-//
 // ART for NOISE. Drives the actual noiseDef.factory(ctx, node) under
 // node-web-audio-api's OfflineAudioContext (no Faust DSP — NOISE is
 // pure JS Math.random + buffer playback), then asserts the spectral

@@ -1,5 +1,3 @@
-// e2e/tests/wavecel-viz.spec.ts
-//
 // E2E for the WAVECEL on-card 3D visualizer reactivity:
 //  1. Morph moves the white-highlight position (the active wavetable frame).
 //  2. Spread > 1 widens the highlight (more bright pixels).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cartesian-snh.test.ts
-//
 // Gate-sampled Sample & Hold on CARTESIAN's pitch CV. Drives the REAL factory +
 // tick loop against a fake AudioContext, asserting:
 //   • the `snh` param exists, defaults ON (1), discrete 0..1.

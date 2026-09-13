@@ -1,5 +1,3 @@
-// packages/dsp/src/featurecv-snapshot.test.ts
-//
 // THE SNAPSHOT PIPE — the worklet→host display channel behind FEATURECV's card
 // meters and its ONSET LED, and the gate for #1744.
 //

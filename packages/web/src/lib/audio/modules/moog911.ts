@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog911.ts
-//
 // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 contour generator.
 //
 // Slice of the Moog System 55 / 35 clone initiative
@@ -79,7 +77,6 @@ export const moog911Def: AudioModuleDef = {
     { id: 't3',   label: 'T3',   defaultValue: 0.4,  min: 0.0001, max: 10, curve: 'log', units: 's' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
   //
   // WHAT THE 911 IS FOR. It is the rack's only THREE-TIME-CONSTANT contour
   // generator: not attack-decay-sustain-release but rise -> settle -> (hold) ->

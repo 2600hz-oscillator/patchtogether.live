@@ -1,5 +1,3 @@
-// e2e/tests/cellshade-functional.spec.ts
-//
 // FUNCTIONAL validation of CELLSHADE against CEL-SHADING THEORY — phases 1+4
 // of the cellshade-rebuild program.
 //
@@ -155,7 +153,6 @@ function fmt(px: readonly number[]): string {
   return `(${px[0]},${px[1]},${px[2]})`;
 }
 
-/** assert channel ~= expected within ±TOL. */
 function expectNear(actual: number, expected: number, label: string): void {
   expect(Math.abs(actual - expected), `${label}: got ${actual}, want ${expected}±${TOL}`).toBeLessThanOrEqual(TOL);
 }

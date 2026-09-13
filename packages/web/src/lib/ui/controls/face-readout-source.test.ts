@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/face-readout-source.test.ts
-//
 // THE GATE FOR "NO FACE PRINTS A DECIMAL UNDER A CONTROL".
 //
 // ── THE RULING ─────────────────────────────────────────────────────────────

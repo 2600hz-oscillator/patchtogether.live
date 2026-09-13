@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cofefve-face-model.ts
-//
 // THE PURE MODEL BEHIND COFEFVE's FACEPLATE — the enabler graph the sidebar
 // prints, the effective echo geometry the hero picture draws, and the three
 // hero readouts.

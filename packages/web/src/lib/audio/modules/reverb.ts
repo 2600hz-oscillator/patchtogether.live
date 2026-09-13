@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/reverb.ts
-//
 // REVERB — the plain-room reverb (size / damp / mix).
 //
 // The minimal-knob reverb the basic palette ships. Faust-compiled DSP

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-health.svelte.ts
-//
 // THE READOUT — a Svelte 5 rune store that polls the three audio-health sensors
 // and publishes them to the footer.
 //

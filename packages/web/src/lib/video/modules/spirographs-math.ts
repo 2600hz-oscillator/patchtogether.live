@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/spirographs-math.ts
-//
 // SPIROGRAPHS — pure, GPU-free curve + motion math. This is the deterministic
 // correctness core: the parametric hypotrochoid / epitrochoid point functions,
 // the "how many revolutions until the figure closes" derivation, and the

@@ -1,5 +1,3 @@
-// e2e/audio-drift/audio-drift.config.ts
-//
 // Standalone Playwright config for the audio-drift research harness.
 // Runs all scenarios serially (one at a time) to avoid CPU contention biasing
 // the AudioContext scheduling — multiple AudioContexts on a single browser

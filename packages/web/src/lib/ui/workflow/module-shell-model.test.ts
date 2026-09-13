@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/module-shell-model.test.ts
-//
 // Pure display model for the ModuleShell / ModuleShellPlaceholder (P0.3b).
 // Proves the spine/domain hue resolution + the LANE face-tier mapping (the LOD
 // 'dock' band collapses to 'full' in the lane; the full faceplate is a separate
@@ -989,4 +987,3 @@ describe('laneFlowLabel — the lane tile CRASHED on a key it did not own', () =
     expect(laneFlowLabel({ sendSlot: Number.POSITIVE_INFINITY })).toBe('▶ out');
   });
 });
-

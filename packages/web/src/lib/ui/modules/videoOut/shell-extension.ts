@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/videoOut/shell-extension.ts
-//
 // The videoOut SHELL EXTENSION (#1512 seam, #1821 adopter) — the module-owned
 // end of the extension registry, and the SECOND adopter of `fullViewBody` after
 // backdraft.

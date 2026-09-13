@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/marbles-names.ts
-//
 // MARBLES' two named rosters, and the ONE reason they are not on the def:
 // `marbles.ts` imports its worklet as `…/marbles.js?url`, which Node cannot
 // resolve. Anything that imports the def is therefore unloadable from a

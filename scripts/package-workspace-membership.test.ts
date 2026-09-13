@@ -1,5 +1,3 @@
-// scripts/package-workspace-membership.test.ts
-//
 // DENY BY DEFAULT: every package.json in the tree is either an npm WORKSPACE,
 // or a NAMED independent package that states WHY it is not one *and* names the
 // lane file that runs its tests. A package can be outside the workspace graph.

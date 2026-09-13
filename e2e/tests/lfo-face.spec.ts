@@ -1,5 +1,3 @@
-// e2e/tests/lfo-face.spec.ts
-//
 // The LFO's curated FACE — the three claims no other gate can make.
 //
 // What the existing gates DO cover: the face SHAPE (module-face-lint's
@@ -54,7 +52,6 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Open the module's dock full-view and return the dock-tier shell locator. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
   await expect(shell).toBeVisible();

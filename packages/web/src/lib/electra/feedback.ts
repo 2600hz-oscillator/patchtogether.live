@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/feedback.ts
-//
 // FEEDBACK PUMP — app value/level → Electra control display.
 //
 // Two streams, both on the CTRL port as PLAIN CC (the device's parameter-map

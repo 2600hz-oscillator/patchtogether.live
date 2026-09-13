@@ -1,5 +1,3 @@
-// e2e/tests/destructor-render-smoke.spec.ts
-//
 // DRS for DESTRUCTOR (the mangle/glitch video processor). This is the
 // param→PIXELS half of the deleted video-phase1.spec.ts, whose ONE test proved
 // "an audio LFO on DESTRUCTOR.mangle moves the rendered pixels" by sleeping

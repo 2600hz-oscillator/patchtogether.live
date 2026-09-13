@@ -1,5 +1,3 @@
-// e2e/tests/kickdrum.spec.ts
-//
 // KICK DRUM — REAL-SOURCE-CHAIN e2e (the poly/MIDI-adjacent discipline from
 // CLAUDE.md: a per-port "edge materializes" assert does NOT count as chain
 // coverage). One test drives the full default-mode chain:

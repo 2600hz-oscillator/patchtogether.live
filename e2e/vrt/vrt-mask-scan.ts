@@ -1,8 +1,5 @@
-// e2e/vrt/vrt-mask-scan.ts
-//
 // THE MASK DETECTOR behind the anti-vacuity guard.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // WHY THIS FILE EXISTS AT ALL: the first version of the guard was EVADABLE.
 //
 // It grepped the VRT specs with `/^\s*mask:/m` — `mask:` had to be the first
@@ -36,7 +33,6 @@
 // under e2e/ would never be collected by any lane — a test nobody runs is
 // worse than a corrected pointer.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE SECOND HOLE: THE DETECTOR WAS RIGHT AND THE SCAN SET WAS TOO SMALL.
 //
 // Catching every spelling of `mask` is only half a gate. The guard fed this
@@ -172,7 +168,6 @@ export function findHandRolledMasks(src: string): MaskHit[] {
   return hits;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE IMPORT-GRAPH WALK — what makes the scan set right, not just the detector.
 
 /** Relative (`./` or `../`) module specifiers imported by `src`.

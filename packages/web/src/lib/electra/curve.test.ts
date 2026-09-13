@@ -1,4 +1,3 @@
-// packages/web/src/lib/electra/curve.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   valueToCc7,

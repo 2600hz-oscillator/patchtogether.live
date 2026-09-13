@@ -1,5 +1,3 @@
-// e2e/_helpers/frames.ts
-//
 // THE frame-counting helpers for e2e. One export site, imported by specs and by
 // e2e/vrt/_shell-faces.ts (which re-exports them, so its existing callers are
 // unchanged). Issue #1523 asks for exactly one home for this; adding a second

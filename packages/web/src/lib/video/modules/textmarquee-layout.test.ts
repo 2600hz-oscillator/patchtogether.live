@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/textmarquee-layout.test.ts
-//
 // Pure-helper coverage for TEXTMARQUEE: the rich-text model coercion, line
 // layout/metrics, and the CV-calibrated position/scroll math. No WebGL2, no
 // real <canvas> — a synthetic monospace measure (1 px per char) makes the

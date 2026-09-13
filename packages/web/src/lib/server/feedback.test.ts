@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/feedback.test.ts
-//
 // Unit test for recordFeedback. Mocks the Neon HTTP client tagged template
 // so we exercise the parameter-binding path without needing a live DB.
 //

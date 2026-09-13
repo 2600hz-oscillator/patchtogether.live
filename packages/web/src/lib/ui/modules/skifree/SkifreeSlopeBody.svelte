@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/skifree/SkifreeSlopeBody.svelte
-  //
   // The SKIFREE dock full-view body: the live slope, its SCREEN switch, and the
   // module's ONE direct-manipulation instrument — the mouse.
   //

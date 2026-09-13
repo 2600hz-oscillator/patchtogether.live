@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/charlottes-echos.test.ts
-//
 // CHARLOTTE'S ECHOS — a 4-stage AnalogDelayCore cascade. Tests assert:
 //   • the module def is UNCHANGED (id + ports + params) so old patches load.
 //   • DELAY means what the def declares: the TIME TO THE FIRST ECHO, in

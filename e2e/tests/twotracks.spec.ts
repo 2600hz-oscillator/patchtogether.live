@@ -1,5 +1,3 @@
-// e2e/tests/twotracks.spec.ts
-//
 // TWOTRACKS end-to-end coverage (Phase 1 + Phase 2 + Phase 3 + Phase 4).
 //
 // Phase 1 tests:
@@ -436,7 +434,6 @@ test.describe('TWOTRACKS module', () => {
       await ttTab(pane, 'mix');
       const buttons = pane.getByTestId('control-lofi').locator('[role="radio"]');
 
-      // Start: OFF checked.
       await expect(buttons.nth(0)).toHaveAttribute('aria-checked', 'true');
 
       // LOW → HIGH → ERROR → OFF, each click moving the checked segment.
@@ -728,7 +725,6 @@ test.describe('TWOTRACKS module', () => {
       const end = await readParam(page, 'end_a');
       expect(end).toBeGreaterThan(0.35);
       expect(end).toBeLessThan(0.65);
-      // Start untouched.
       expect(await effStart(page)).toBe(0);
     });
 

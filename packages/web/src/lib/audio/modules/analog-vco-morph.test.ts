@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-vco-morph.test.ts
-//
 // Unit coverage for the ANALOG VCO saw→sine→square MORPH (the 5th output
 // added alongside the four fixed taps).
 //

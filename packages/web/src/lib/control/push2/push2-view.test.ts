@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-view.test.ts
-//
 // The per-rack, per-lane "last viewed module" memory. The two things worth
 // proving are that two racks CANNOT see each other's memory (the owner said
 // "in this rack") and that the store is bounded.

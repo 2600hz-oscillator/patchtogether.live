@@ -1,5 +1,3 @@
-// packages/dsp/vitest.config.ts
-//
 // Vitest config for the DSP package's pure-lib unit tests. Historically the dsp
 // workspace had NO test target, so DSP-lib math was tested from packages/web via
 // relative imports (see the resofilter-dsp.test.ts / treeohvox-dsp.test.ts

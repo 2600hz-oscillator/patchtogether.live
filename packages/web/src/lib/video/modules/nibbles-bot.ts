@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/nibbles-bot.ts
-//
 // NIBBLES self-player. Pure function: state in → direction out. NO
 // internal state, NO RNG (so the bot itself stays deterministic on a
 // given board state — the only stochastic input is the engine's seeded

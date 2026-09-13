@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-tap-tempo.spec.ts
-//
 // LIVE-patch coverage for TIMELORDE's TAP TEMPO. Claims:
 //
 //   1. TAP button locks the BPM: two clicks ~500 ms apart set bpm ≈ 120 (the

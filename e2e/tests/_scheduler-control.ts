@@ -1,9 +1,6 @@
-// e2e/tests/_scheduler-control.ts
-//
 // Deterministic scheduler control for playhead-vs-sounding-step tests.
 //
 // Why this exists
-// ---------------
 // Sequencer / DRUMSEQZ / SCORE et al. expose `currentStep` / `currentNoteId`
 // via `engine.read(node, key)`. Internally each module computes the value as
 // `playhead.currentAt(ctx.currentTime)` — i.e. the answer changes with
@@ -16,7 +13,6 @@
 //     passes and the answer can be different on repeat reads.
 //
 // Strategy
-// --------
 // 1. Drive playback by *step target*, not wall-clock. Use
 //    `waitForSoundingStep(page, id, K)` to block until the audio thread
 //    reports `currentStep === K` (or any value in an inclusive range).
@@ -30,7 +26,6 @@
 //    otherwise let test teardown drop the page.
 //
 // Why suspend/resume (not a fake clock)
-// -------------------------------------
 // The module reads `ctx.currentTime` directly via a closure on the
 // AudioContext. Injecting a fake clock would require threading an indirection
 // through every per-module scheduler — invasive and risky. Suspend/resume is

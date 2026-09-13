@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/livecode/shell-extension.ts
-//
 // The LIVECODE shell extension — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

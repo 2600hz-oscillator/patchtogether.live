@@ -1,5 +1,3 @@
-// art/scenarios/mixmstrs/board-insert-identity.test.ts
-//
 // DOES THE PRE-BOARD INSERT CHANGE ANY SAMPLE?
 //
 // The clip-recording programme adds a per-input-port insert to the mixmstrs JS

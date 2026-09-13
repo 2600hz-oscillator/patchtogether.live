@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/knob-conic-model.ts
-//
 // PURE value-arc math for KnobConic.svelte (the RACKLINE conic dial). The
 // component is a thin shell over these: it drives the CSS value-arc (`--v`,
 // 0..1) + the pointer rotation from a single normalized fraction, exactly

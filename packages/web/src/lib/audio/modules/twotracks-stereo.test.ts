@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-stereo.test.ts
-//
 // TWOTRACKS — OUT L and OUT R must be two DIFFERENT graph edges.
 //
 // ── THE DEFECT ────────────────────────────────────────────────────────────

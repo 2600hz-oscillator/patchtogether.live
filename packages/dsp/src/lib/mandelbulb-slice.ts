@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/mandelbulb-slice.ts
-//
 // MANDELBULB slice → waveform readout — the bulb analogue of cube-dsp's
 // sliceRay / rayDepth / sampleSlice. CUBE marches a rotatable slice plane
 // through its scalar field to turn the cube's shape into a 256-sample waveform;

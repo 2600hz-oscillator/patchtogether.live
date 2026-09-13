@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/node-clip-recorder-registry.svelte.ts
-//
 // THE CLIP-RECORD REGISTRY — the third node-keyed registry, written after
 // reading node-samsloop-registry.svelte.ts:62-91 (which explains field by
 // field why the first two were not merged). This one differs from BOTH, and
@@ -608,9 +606,7 @@ export class NodeClipRecorderRegistry {
     }
   }
 
-  // -------------------------------------------------------------------------
   // Arming
-  // -------------------------------------------------------------------------
 
   #refuse(entry: Entry, lane: number, reason: string): void {
     this.#noteRefusal(entry, lane, reason);
@@ -893,9 +889,7 @@ export class NodeClipRecorderRegistry {
     this.#version++;
   }
 
-  // -------------------------------------------------------------------------
   // The machine + its effects
-  // -------------------------------------------------------------------------
 
   #dispatch(entry: Entry, lane: number, event: ClipRecEvent): void {
     const st = entry.lanes[lane]!;
@@ -1157,9 +1151,7 @@ export class NodeClipRecorderRegistry {
     this.#version++;
   }
 
-  // -------------------------------------------------------------------------
   // audioRec projection — what the pads paint
-  // -------------------------------------------------------------------------
 
   /** The PREPARING projection: armed with `startFrame: null` — the exact
    *  "armed and not yet resolved" state AudioRecState declares. The pad shows
@@ -1214,9 +1206,7 @@ export class NodeClipRecorderRegistry {
     });
   }
 
-  // -------------------------------------------------------------------------
   // Wiring + teardown
-  // -------------------------------------------------------------------------
 
   #ensureWiring(
     entry: Entry,

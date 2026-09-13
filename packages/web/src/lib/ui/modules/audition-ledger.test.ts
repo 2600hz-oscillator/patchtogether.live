@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audition-ledger.test.ts
-//
 // THE PERMANENT, BOTH-DIRECTIONS NEGATIVE CONTROL for the action-cell probe.
 //
 // ⚠ THE POINT OF THIS FILE. `faces-parity`'s `action` branch had no probe: it

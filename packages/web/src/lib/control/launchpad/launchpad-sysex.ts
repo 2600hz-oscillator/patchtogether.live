@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-sysex.ts
-//
 // Novation Launchpad Mini Mk3 PROGRAMMER-MODE protocol CODEC — PURE, hardware-
 // free. The Launchpad analogue of the monome `mext.ts`: it encodes the SysEx /
 // MIDI messages the host sends (enter/exit programmer mode, per-LED RGB + by
@@ -36,9 +34,7 @@
 //   - Note/CC lighting channel:               ch 1 = static, ch 2 = flashing,
 //                                                       ch 3 = pulsing
 
-// ---------------------------------------------------------------------------
 // Protocol constants
-// ---------------------------------------------------------------------------
 
 /** Novation/Focusrite SysEx manufacturer id. */
 export const NOVATION_MFR_ID = [0x00, 0x20, 0x29] as const;
@@ -83,9 +79,7 @@ export const CC_LOGO = 99;
 /** Right scene-column CCs, top (row 7) → bottom (row 0). */
 export const SCENE_CCS = [89, 79, 69, 59, 49, 39, 29, 19] as const;
 
-// ---------------------------------------------------------------------------
 // Small helpers
-// ---------------------------------------------------------------------------
 
 /** Clamp + integerize an RGB component to 0..127. */
 export function clampRgb(v: number): number {
@@ -125,9 +119,7 @@ export function noteToPad(note: number): { x: number; y: number } | null {
   return { x: col, y: row };
 }
 
-// ---------------------------------------------------------------------------
 // TX — encode commands (host → Launchpad). Golden-vector tested.
-// ---------------------------------------------------------------------------
 
 /** Wrap a SysEx body (the bytes AFTER the manufacturer/product header, BEFORE
  *  the F7 terminator) in a full Mini Mk3 SysEx frame. */
@@ -194,7 +186,6 @@ export function encodeLedRgbBatch(specs: readonly RgbSpec[]): Uint8Array {
   return sysex(...body);
 }
 
-// ---------------------------------------------------------------------------
 // DEVICE-SIDE decode of the host→Launchpad SysEx we just encoded. This is the
 // hardware's half of the protocol: what a real Mini Mk3 DOES when it receives
 // one of the frames above.
@@ -208,7 +199,6 @@ export function encodeLedRgbBatch(specs: readonly RgbSpec[]): Uint8Array {
 // device is dark" and "the device is in Live mode" become directly observable
 // facts, which is what a Launchpad-blanking regression is actually about.
 // Round-tripped against the encoders in launchpad-sysex.test.ts.
-// ---------------------------------------------------------------------------
 
 /** One decoded host→Launchpad command. */
 export type LaunchpadTxCommand =
@@ -250,12 +240,10 @@ export function decodeSurfaceSysex(bytes: Uint8Array | readonly number[]): Launc
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // RX — decode the inbound MIDI stream (Launchpad → host). Programmer mode sends
 // pad presses as Note-On/Off and the top-row/scene buttons as CC. A single MIDI
 // message is 3 bytes ([status, data1, data2]); a Note-On with velocity 0 is a
 // Note-Off (the running convention). We decode ONE message and classify it.
-// ---------------------------------------------------------------------------
 
 export type LaunchpadRxEvent =
   | { type: 'pad'; x: number; y: number; s: 0 | 1; velocity: number } // 8×8 grid
@@ -306,7 +294,6 @@ export function decodeMidiMessage(msg: Uint8Array | number[] | ArrayLike<number>
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // MONITOR mapping — the 9×9 RGB-video surface ("out to launch"). The Mini Mk3's
 // FULL addressable surface is a 9×9 grid: the 8×8 pads (11..88) PLUS the top CC
 // row (91..98), the right scene column (19..89) and the corner logo (99). In the
@@ -314,7 +301,6 @@ export function decodeMidiMessage(msg: Uint8Array | number[] | ArrayLike<number>
 // col` for row/col 1..9 — so a downsampled 9×9 video frame maps DIRECTLY onto
 // the hardware with no special-casing. PURE (bytes ⇄ indices), so the whole
 // video→LED map is unit-testable with synthetic grids.
-// ---------------------------------------------------------------------------
 
 /** The monitor surface is 9 wide × 9 tall (pads + top row + scene col + logo). */
 export const LP_MONITOR_COLS = 9;

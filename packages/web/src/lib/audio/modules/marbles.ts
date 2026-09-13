@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/marbles.ts
-//
 // MARBLES — random sampler / Bernoulli-gate + quantized-CV generator
 // (Mutable Instruments archetype). Audio-domain module def + a pure-math
 // host mirror (marbles-engine.ts) for tests/ART. Worklet DSP at
@@ -261,7 +259,6 @@ export const marblesDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // marbles is the RANDOM SOURCE of the rack — nothing else does this — and it
   // is the module most tempted to NARRATE, because randomness genuinely cannot

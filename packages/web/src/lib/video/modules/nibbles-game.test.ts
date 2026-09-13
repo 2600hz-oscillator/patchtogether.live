@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/nibbles-game.test.ts
-//
 // Pure-engine determinism + collision tests. No DOM / Web Audio / GL.
 
 import { describe, it, expect } from 'vitest';

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavetable-osc-smoothing.test.ts
-//
 // Pure-math tests for the per-sample shape-param smoother that lives in
 // packages/dsp/src/lib/wavetable-osc.ts. The smoother is THE fix for the
 // "clicks on FOXY even with FREEZE TABLE on" report: morph / spread /

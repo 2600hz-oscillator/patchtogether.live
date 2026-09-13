@@ -1,5 +1,3 @@
-// e2e/_helpers/midi.ts
-//
 // MIDI mock for Playwright. Replaces `navigator.requestMIDIAccess` with an
 // in-page fake before the app's first call, so the real midi-learn singleton
 // and the real midi-clock-source both see our mock input and wire their
@@ -198,9 +196,7 @@ export async function sendCc(page: Page, channel: number, cc: number, value: num
 // campaign row 16. The __mockMidi init-script still exposes noteOn/noteOff;
 // re-add thin wrappers if a spec needs them.)
 
-// ---------------------------------------------------------------------------
 // OUTBOUND capture — the bytes-on-the-wire instrument
-// ---------------------------------------------------------------------------
 //
 // WHY THIS EXISTS SEPARATELY FROM `installMidiMock` ABOVE. That mock's output
 // port has a deliberately NO-OP `send()` ("outbound MIDI not asserted by
@@ -360,9 +356,7 @@ export async function readCapturedCcs(
     }));
 }
 
-// ---------------------------------------------------------------------------
 // ELECTRA mock — a sysex-capable Web MIDI fake with hot-plug + permission state
-// ---------------------------------------------------------------------------
 //
 // WHY A THIRD MOCK. The two above cannot exercise the Electra auto-reconnect
 // (#2248): `installMidiMock` is inbound-only with a no-op output and no sysex;
@@ -598,7 +592,6 @@ export function replayDerivedBpm(sentAtMs: number[]): number | null {
   return bpm;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Sysex I/O harness (ptzcam): outputs that CAPTURE + inputs that can INJECT.
 //
 // `installMidiOutCapture` above exposes outputs only and `sysexEnabled: false`,
@@ -611,7 +604,6 @@ export function replayDerivedBpm(sentAtMs: number[]): number | null {
 // ⚠ Known instrument limit, here as everywhere: the fake's `send()` accepts any
 // bytes, so it cannot reproduce Chrome's InvalidAccessError for sysex on a
 // non-sysex access. The permission REQUEST path is a unit concern.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /** A fake input port to expose on the mocked MIDIAccess. */
 export interface FakeMidiInPort {
@@ -715,9 +707,7 @@ export async function injectMidiIn(
   );
 }
 
-// ---------------------------------------------------------------------------
 // THE DEVICE-BINDING HARNESS — one mock the whole MIDI regression suite shares
-// ---------------------------------------------------------------------------
 //
 // WHY A FOURTH MOCK, STATED PLAINLY. The three above each answer one question
 // and structurally cannot answer this one:

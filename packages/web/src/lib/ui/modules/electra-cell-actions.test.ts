@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/electra-cell-actions.test.ts
-//
 // THE SEND-TO-ELECTRA CELL'S AUDITION PROBE, AND ITS PERMANENT NEGATIVE CONTROL.
 //
 // `electra-connect-button-{n}` declares

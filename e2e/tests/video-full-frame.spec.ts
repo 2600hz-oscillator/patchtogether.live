@@ -1,5 +1,3 @@
-// e2e/tests/video-full-frame.spec.ts
-//
 // In-app "Full Frame" mode for the video cards (VIDEO OUT / VIDEOBOX /
 // BENTBOX). Distinct from true browser fullscreen (video-fullscreen.spec.ts):
 // Full Frame keeps the node IN the rack at its position but expands the video

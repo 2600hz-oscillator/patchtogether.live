@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/trails/trails-status-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for every string and every lamp state the
 // TRAILS bodies can produce — including the ones that are never painted.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/scoreboard.ts
-//
 // SCOREBOARD — 4-digit neon 7-segment counter widget.
 //
 // I/O:
@@ -172,7 +170,6 @@ export const scoreboardDef: VideoModuleDef = {
       resetTrig: "Synthetic gate param (hidden from the faceplate, exposed as the RESET cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a reset of the counter to 0.",
     },
   },
-  // ─────────────────────────────────────────────────────────────────────────
   // THE FACEPLATE — the thinnest face in the video fleet, and deliberately so.
   //
   // WHAT IT IS FOR. SCOREBOARD is a COUNTER YOU CAN SEE. It has no video input

@@ -1,5 +1,3 @@
-// packages/dsp/src/clip-recorder.ts
-//
 // THE CLIP RECORDER — one AudioWorklet with EIGHT stereo inputs, not eight
 // recorders. Every armed lane is sliced inside ONE process() call against ONE
 // `currentFrame`, so a multitrack pass is sample-aligned BY CONSTRUCTION: two

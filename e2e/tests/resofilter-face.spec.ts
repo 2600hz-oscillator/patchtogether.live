@@ -1,5 +1,3 @@
-// e2e/tests/resofilter-face.spec.ts
-//
 // The RESOFILTER faceplate, covering the four things only a browser can settle.
 // Everything arithmetic — the closed forms, the mode partition, the preset
 // notes — is already re-derived from the SHIPPING DSP on every unit run by

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/render-cost.ts
-//
 // MAIN-THREAD RENDER COST — an IN-PAGE accumulator for #1811.
 //
 // ── why this file exists ────────────────────────────────────────────────────

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/gamepad.ts
-//
 // GAMEPAD — connected USB/Bluetooth game controller as a CV/gate
 // source. Reads navigator.getGamepads() in the main thread at ~60Hz
 // and pushes the stick axes, triggers, and button states into a
@@ -72,7 +70,6 @@ export function applyDeadzone(raw: number, dz = STICK_DEADZONE): number {
   return Math.sign(v) * ((abs - dz) / (1 - dz));
 }
 
-// ---------------------------------------------------------------------------
 // LEFT-STICK CALIBRATION (Gladiator NXT support — first deliverable)
 //
 // Prior art (analog-stick calibration; min/max normalization + deadzone):
@@ -95,7 +92,6 @@ export function applyDeadzone(raw: number, dz = STICK_DEADZONE): number {
 // frame — a per-frame Y.Doc write is the render/update-storm bug class). The
 // factory reads it on its rAF poll and applies `applyCalibration` to lx/ly in
 // place of the fixed `applyDeadzone`.
-// ---------------------------------------------------------------------------
 
 /** Default radial deadzone (fraction of the calibrated half-range) applied
  *  around the calibrated centre. 0.10 sits in the "typical" 0.05–0.12 band
@@ -282,7 +278,6 @@ export function triggerToCv(raw: number): number {
   return Math.max(0, Math.min(1, raw));
 }
 
-// ---------------------------------------------------------------------------
 // CONTROL-REMAP DETECTION (broad button/control support — feasibility core).
 //
 // The Gamepad API has NO events — you can only POLL navigator.getGamepads()
@@ -298,7 +293,6 @@ export function triggerToCv(raw: number): number {
 // what an armed "press the control to bind" listener consumes. The card-side
 // binding store + per-output UI is the follow-up slice (see the PR body); this
 // ships the tested detection core the rest builds on.
-// ---------------------------------------------------------------------------
 
 /** A physical control on a gamepad: one analog axis, or one button. */
 export type PhysicalControl =
@@ -428,7 +422,6 @@ const STD_BTN = {
 /** Standard-mapping axis indices. */
 const STD_AXIS = { lx: 0, ly: 1, rx: 2, ry: 3 } as const;
 
-// ---------------------------------------------------------------------------
 // CONTROL REMAP — per-output physical-control bindings.
 //
 // Each output port (lx, a, du, …) is driven by ONE physical control (an axis or
@@ -441,7 +434,6 @@ const STD_AXIS = { lx: 0, ly: 1, rx: 2, ry: 3 } as const;
 // Bindings live on `node.data.bindings` (a single in-place Y.Doc key). Absent /
 // invalid → the default control for that output. Pure helpers below so the card
 // is a thin arm-and-render shell.
-// ---------------------------------------------------------------------------
 
 /** Per-output remap overrides. Key = output port id; value = the physical
  *  control that drives it. An output absent here uses its DEFAULT control. */
@@ -823,7 +815,6 @@ export interface GamepadData {
   invert?: StickInvert;
 }
 
-// ---------------------------------------------------------------------------
 // SAVE / LOAD MAPPING — the full user-configurable control state as one
 // serializable bundle, plus a built-in named-preset registry.
 //
@@ -841,7 +832,6 @@ export interface GamepadData {
 // it never re-assigns an already-integrated Y type (the trap that killed the
 // module after a 2nd remap). Both the file "Load mapping" and the "Load preset"
 // menu funnel through `applyMapping`.
-// ---------------------------------------------------------------------------
 
 /** The full, serializable GAMEPAD control configuration — the persistable
  *  subset of GamepadData (everything EXCEPT live/raw runtime fields). This is

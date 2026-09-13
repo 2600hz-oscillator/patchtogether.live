@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/monome-device.svelte.ts
-//
 // monome grid WebSerial device singleton — the browser-native, NO-helper grid
 // I/O layer (the clip-launcher's hardware side). One `navigator.serial`
 // connection per page (a grid is a singleton peripheral), modeled on the
@@ -34,10 +32,8 @@ import {
   type GridRxEvent,
 } from './mext';
 
-// ---------------------------------------------------------------------------
 // Transport abstraction — the only seam that differs between real hardware and
 // the simulated test device.
-// ---------------------------------------------------------------------------
 
 export interface GridTransport {
   /** Write a byte run to the device (host → grid). */
@@ -55,9 +51,7 @@ export interface GridKeyEvent {
   s: 0 | 1; // 1 = down, 0 = up
 }
 
-// ---------------------------------------------------------------------------
 // Singleton state
-// ---------------------------------------------------------------------------
 
 let transport: GridTransport | null = null;
 let connectStarted = false;
@@ -83,9 +77,7 @@ function bumpStatus() {
   statusVersion++;
 }
 
-// ---------------------------------------------------------------------------
 // Capability + status
-// ---------------------------------------------------------------------------
 
 /** Is the WebSerial API available? Chromium-only; gates the whole feature so
  *  Safari/Firefox/iOS + CI (no hardware) degrade cleanly. */
@@ -115,9 +107,7 @@ export function gridDeviceId(): string {
   return deviceId;
 }
 
-// ---------------------------------------------------------------------------
 // Connect / disconnect
-// ---------------------------------------------------------------------------
 
 /**
  * Connect to a real grid over WebSerial. MUST be called from a user gesture
@@ -189,9 +179,7 @@ export async function disconnect(): Promise<void> {
   bumpStatus();
 }
 
-// ---------------------------------------------------------------------------
 // RX dispatch
-// ---------------------------------------------------------------------------
 
 function dispatchRx(ev: GridRxEvent): void {
   switch (ev.type) {
@@ -222,9 +210,7 @@ export function onKey(cb: (e: GridKeyEvent) => void): () => void {
   return () => keyListeners.delete(cb);
 }
 
-// ---------------------------------------------------------------------------
 // LED output
-// ---------------------------------------------------------------------------
 
 function cellIndex(x: number, y: number): number {
   return y * gridW + x;
@@ -296,9 +282,7 @@ function rawWrite(bytes: Uint8Array): Promise<void> {
   return writeChain;
 }
 
-// ---------------------------------------------------------------------------
 // Real WebSerial transport
-// ---------------------------------------------------------------------------
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function createWebSerialTransport(port: any): GridTransport {
@@ -362,9 +346,7 @@ function createWebSerialTransport(port: any): GridTransport {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-// ---------------------------------------------------------------------------
 // Simulated-device test hook
-// ---------------------------------------------------------------------------
 //
 // Installs an in-memory grid so an e2e (or unit test) can drive key presses +
 // assert the LED bytes the device emitted, with no hardware and no WebSerial

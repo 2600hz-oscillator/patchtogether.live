@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/treeohvox-dsp.test.ts
-//
 // Unit tests for the TREE.oh.VOX DSP helpers in
 // packages/dsp/src/lib/treeohvox-dsp.ts. Pin algorithmic behaviour
 // independently of the AudioWorkletProcessor wrapper — a topology
@@ -86,9 +84,7 @@ describe('PolyBlepBlendOsc — saw↔square waveform morph', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // pitchCvToFreq — 1V/oct sanity.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / pitchCvToFreq', () => {
   it('0 V at 0 semitones → C4 (≈261.626 Hz)', () => {
@@ -114,9 +110,7 @@ describe('treeohvox-dsp / pitchCvToFreq', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // resonanceSkew — mirrors Open303's exponential skew formula.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / resonanceSkew', () => {
   it('skew(0) = 0', () => {
@@ -138,13 +132,11 @@ describe('treeohvox-dsp / resonanceSkew', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // tb303Coeffs — verbatim port of Open303's TB_303 coefficient math.
 // We don't have a golden reference for the exact b0/g/k values without
 // running upstream C++; instead we pin them at known cutoffs/resonances
 // and assert the values stay STABLE across regressions. If a refactor
 // breaks the constants, these snapshots fail loud.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / tb303Coeffs', () => {
   it('produces finite, sensible coefficients at canonical cutoff (1 kHz, r=0.5)', () => {
@@ -195,9 +187,7 @@ describe('treeohvox-dsp / tb303Coeffs', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // TbVoxDecayEnv — exponential decay shape.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / TbVoxDecayEnv', () => {
   it('starts at 1.0 after trigger', () => {
@@ -242,11 +232,9 @@ describe('treeohvox-dsp / TbVoxDecayEnv', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // TbVoxFilter — verify (a) it doesn't blow up at canonical settings, (b)
 // produces low-pass character (highs attenuated more than lows), (c) at
 // high resonance the filter rings on an impulse.
-// ────────────────────────────────────────────────────────────────────────────
 
 function sineBuf(freqHz: number, durSec: number, sr = SR, amp = 0.5): Float32Array {
   const n = Math.round(sr * durSec);
@@ -319,11 +307,9 @@ describe('treeohvox-dsp / TbVoxFilter', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // envModScalerOffset — pin the measured-mapping constants. Different
 // (cutoff, envMod) inputs must produce different (scaler, offset) outputs;
 // hold-test the canonical mid-cutoff/mid-env values.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / envModScalerOffset', () => {
   it('finite + scaler positive at canonical mid (cutoff=1 kHz, envMod=50)', () => {
@@ -346,10 +332,8 @@ describe('treeohvox-dsp / envModScalerOffset', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // TreeohvoxVoice — end-to-end sanity: trigger a note, render 200 ms, check
 // the output is non-empty, audible, and finite.
-// ────────────────────────────────────────────────────────────────────────────
 
 const CANONICAL: VoiceParams = {
   tuneSemitones: 0,
@@ -447,10 +431,8 @@ describe('treeohvox-dsp / TreeohvoxVoice end-to-end', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // renderVoiceSequence + utilities — the offline render helper used by
 // ART scenarios and the parity test.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / renderVoiceSequence', () => {
   it('returns a Float32Array of exactly totalSamples length', () => {
@@ -514,11 +496,9 @@ describe('treeohvox-dsp / rmsWindow', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // PolyBlepSaw + TbVoxAmpEnv + TbVoxFeedbackHp — quick sanity (the building
 // blocks above sit inside the higher-level tests too, but a focused unit
 // catches regressions earlier).
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('treeohvox-dsp / building blocks', () => {
   it('PolyBlepSaw produces a periodic ±1 ramp', () => {

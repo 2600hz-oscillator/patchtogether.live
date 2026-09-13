@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/duplicate.ts
-//
 // Pure helper that builds a duplicate of a ModuleNode. Used by the
 // right-click "Duplicate" action on the canvas.
 //

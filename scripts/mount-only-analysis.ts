@@ -1,10 +1,7 @@
-// scripts/mount-only-analysis.ts
-//
 // "Does this `onMount` latch a reactive value?" — a SOURCE-level analysis,
 // because no runtime gate can see the difference.
 //
 // WHY THIS EXISTS
-// ---------------
 // `onMount(fn)` is `$effect(() => untrack(fn))`. The `untrack` is the whole
 // point and the whole hazard: a reactive value read at the callback's OWN top
 // level is captured ONCE, at mount, and the callback never runs again. Under
@@ -19,7 +16,6 @@
 // which publish getters (`() => engine`) precisely so the value stays live.
 //
 // WHAT IT MEASURES
-// ----------------
 // Per component: the names declared with a rune (`$state`, `$state.raw`,
 // `$derived`, `$derived.by`, `$props`) in the instance script, and, for each
 // `onMount(…)`, the identifiers read at the callback's OWN top level —
@@ -27,7 +23,6 @@
 // case being distinguished. The intersection is the finding.
 //
 // WHAT IT IS STRUCTURALLY UNABLE TO SEE — state the gate's scope inside the gate
-// -----------------------------------------------------------------------------
 //   * Reactivity that is not a rune declaration in THIS file. `someStore.value`
 //     where `someStore` is an imported `.svelte.ts` class instance IS a signal
 //     read, and this analysis cannot tell a reactive import from an inert one.

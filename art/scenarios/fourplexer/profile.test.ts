@@ -1,5 +1,3 @@
-// art/scenarios/fourplexer/profile.test.ts
-//
 // AUDIO PROFILE for 4PLEXER (4-in/4-out discrete router) (backfill batch 4 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

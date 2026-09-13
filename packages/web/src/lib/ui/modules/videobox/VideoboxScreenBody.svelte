@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/videobox/VideoboxScreenBody.svelte
-  //
   // The VIDEOBOX dock full-view body: the picture, the SCREEN switch, and the
   // file/transport gestures this module exists for.
   //

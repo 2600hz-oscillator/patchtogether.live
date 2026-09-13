@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/automation-touch.test.ts
-//
 // The TOUCH-SUSPEND registry (task #183): the decoupling seam between a grabbed
 // control and the clip-player that automates it. A live grab anywhere calls
 // notifyAutomationTouch; the registry fans it out to every registered

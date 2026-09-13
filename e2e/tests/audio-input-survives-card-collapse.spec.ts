@@ -1,5 +1,3 @@
-// e2e/tests/audio-input-survives-card-collapse.spec.ts
-//
 // AUDIO IN must keep streaming when the SURFACE that opened it goes away
 // (#1590, from the #1583 audit) — now asserted through the FACE.
 //

@@ -1,9 +1,6 @@
-// packages/web/src/lib/ui/stereo-jack-collapse.ts
-//
 // JACK COLLAPSE — "render one jack per stereo pair", in ONE place.
 //
 // WHY THIS IS CENTRAL AND NOT PER-CARD
-// ------------------------------------
 // 208 cards exist; 188 mount PatchPanel and ~44 hand-build their descriptor
 // lists. Some of those hand-built lists sit beside files inside the **WebGL
 // attest hash basis** (FoxyCard is in it directly; cube and wavesculpt keep
@@ -15,7 +12,6 @@
 // `blind-gates` Pattern 4 is about.
 //
 // THE RULE
-// --------
 // A pair collapses iff BOTH of its ports are present in the descriptor list
 // being rendered. That "both present" clause is load-bearing, not defensive:
 //   * `MixmstrsCard.pickInputs` SILENTLY DROPS ids it does not recognise, so a

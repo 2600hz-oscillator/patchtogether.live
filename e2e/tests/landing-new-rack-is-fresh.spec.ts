@@ -1,5 +1,3 @@
-// e2e/tests/landing-new-rack-is-fresh.spec.ts
-//
 // "NEW … RACK" MUST ACTUALLY BE NEW (owner report 2026-08-07: "when i do 'new
 // workflow rack', i don't get a fresh rack, i still get what's in local cache").
 //

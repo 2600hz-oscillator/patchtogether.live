@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-scene-repeats.test.ts
-//
 // SCENE REPEATS on the single-unit Launchpad — the owner's 3-button, two-hands
 // gesture: HOLD the permanent GRID button + HOLD a scene-launch button → the
 // 8×8 becomes the orange REPEAT-COUNT view for that scene; taps set the count
@@ -98,9 +96,7 @@ const TOP: PermanentTopOpts = {
   canRedo: false,
 };
 
-// ===========================================================================
 // PURE — the repeat-view mapping + paint truth.
-// ===========================================================================
 describe('PURE repeat-view mapping (row-major from the upper-left)', () => {
   it('repeatPadOrdinal: upper-left = 1, second in the top row = 2, bottom-right = 64', () => {
     expect(repeatPadOrdinal(0, 7)).toBe(1);
@@ -164,9 +160,7 @@ describe('PURE frame paint — the LED truth IS the stored count', () => {
   });
 });
 
-// ===========================================================================
 // GESTURE — HOLD GRID + HOLD a scene button on the real sim.
-// ===========================================================================
 describe('SINGLE Grid — the 3-button repeat-count gesture', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {

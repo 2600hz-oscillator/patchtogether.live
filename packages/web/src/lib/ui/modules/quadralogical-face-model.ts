@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/quadralogical-face-model.ts
-//
 // The PURE half of the QUADRALOGICAL faceplate — the geometry and the accessible
 // name of the joystick field, extracted from `QuadralogicalScreenBody.svelte` so
 // they can be asserted without a browser.

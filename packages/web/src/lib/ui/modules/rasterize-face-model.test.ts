@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/rasterize-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the RASTERIZE faceplate.
 //
 // This face makes three claims in prose that no shared gate can check, and each

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapegen-draw.ts
-//
 // SHAPEGEN — on-canvas vaporwave renderer (extracted from FOXY's
 // `foxy-shapes-draw.ts`). Same wireframe-vaporwave look as before plus a
 // new SOLIDS mode that renders per-primitive lit canvas2D shapes. Both

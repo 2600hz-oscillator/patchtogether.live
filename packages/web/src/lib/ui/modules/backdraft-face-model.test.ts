@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/backdraft-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for BACKDRAFT's three derived readouts, plus
 // the two structural assertions the FIRST VIDEO FACE owes that no generic gate
 // can make.

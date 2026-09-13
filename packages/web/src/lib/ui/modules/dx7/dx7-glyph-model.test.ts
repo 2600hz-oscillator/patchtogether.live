@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/dx7-glyph-model.test.ts
-//
 // The DX7 algorithm diagram is a PICTURE, and a picture is exactly the kind of
 // output that looks right while being wrong — every one of these 32 diagrams
 // renders as "some boxes with some lines" whether or not the lines connect the

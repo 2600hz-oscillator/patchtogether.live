@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/manual-strike-actions.ts
-//
 // THE AUDITION SEAM — "make this voice sound with nothing patched into it" —
 // as ONE implementation for every externally-struck voice in the rack, in BOTH
 // of the edge shapes the repo's own vocabulary already distinguishes.

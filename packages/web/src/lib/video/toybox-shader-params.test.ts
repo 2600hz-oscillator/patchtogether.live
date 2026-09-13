@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-shader-params.test.ts
-//
 // Gate for #1576 workstream 1's param extraction.
 //
 // ⚠ SCOPE — what these tests structurally CANNOT see: whether a shader that
@@ -274,9 +272,7 @@ void mainImage(out vec4 o, in vec2 c) { o = vec4(zoom, warp, unlabelled, 1.0); }
   });
 });
 
-// ---------------------------------------------------------------------------
 // #1708 — the DECLARATION guard that keeps compile-site and draw-site agreeing.
-// ---------------------------------------------------------------------------
 //
 // ⚠ SCOPE: these are STRING assertions. They prove the wrapper is handed the
 // right names; they cannot prove that a GLSL compiler REJECTS a duplicate

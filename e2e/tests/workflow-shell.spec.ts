@@ -1,5 +1,3 @@
-// e2e/tests/workflow-shell.spec.ts
-//
 // P0.3b — the WORKFLOW-SHELL legacy-fallback bridge, end to end. Proves the
 // core day-one guarantee: a module renders a uniform styled tile in its lane
 // (cables stay attached), while its full surface opens in the bottom dock

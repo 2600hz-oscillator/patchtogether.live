@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/dock-faceplate-model.test.ts
-//
 // PF-20 — the unit pin for the dock faceplate's LAYOUT ARITHMETIC.
 //
 // The one genuinely dangerous operation in the platform is the HERO PROMOTION:
@@ -486,4 +484,3 @@ describe('heroFacePlan — PROMOTES a control, never copies it', () => {
 });
 
 // ── 3. READOUTS ─────────────────────────────────────────────────────────────
-

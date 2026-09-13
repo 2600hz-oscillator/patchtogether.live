@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outToLaunch/out-to-launch-status-model.test.ts
-//
 // WHERE THE CARD'S FOUR SENTENCES WENT — asserted, because a promotion that
 // silently drops one of them looks exactly like a promotion that relocated it.
 //

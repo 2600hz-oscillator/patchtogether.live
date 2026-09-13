@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/mappy-edit-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the MAPPY surface edit mutators (add/remove
 // surfaces, set/move corners, surfaceCount). Runs against the SAME syncedStore +
 // Y.Doc the live patch uses (graph/store.ts), so node.data.surfaces becomes a

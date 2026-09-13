@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/monoglitch.ts
-//
 // MONOGLITCH — luma → vertical-scanline displacement OUTPUT. Originally
 // shipped as RUTTETRA (PR-99) but renamed when the actual Rutt/Etra
 // raster-coordinate-remap model landed in its own module. MONOGLITCH is
@@ -177,7 +175,6 @@ export const monoglitchDef: VideoModuleDef = {
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE ────────────────────────────────────────────────────────
   //
   // WHAT IT IS, MUSICALLY. MONOGLITCH quantises the incoming picture into a
   // stack of horizontal scanlines and LIFTS each line by the luma it samples at

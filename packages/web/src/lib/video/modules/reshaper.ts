@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/reshaper.ts
-//
 // RESHAPER — fragment-shader raster-scan-coordinate REMAP.
 //
 // (Formerly shipped as RUTTETRA. Renamed when the AUTHENTIC forward-
@@ -154,7 +152,6 @@ export const reshaperDef: VideoModuleDef = {
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE ────────────────────────────────────────────────────────
   //
   // WHAT IT IS. RESHAPER is a CRT raster whose two SWEEPS ARE CABLES. For every
   // output pixel it reads a horizontal coordinate from the X field and a

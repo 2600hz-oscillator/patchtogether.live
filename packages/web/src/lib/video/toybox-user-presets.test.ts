@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-user-presets.test.ts
-//
 // Pure registry coverage for the TOYBOX *user* preset localStorage store. An
 // injected fake Storage keeps this fully DOM-free + deterministic — the
 // correctness guard for the SAVE-side of #61 (load/restore is exercised in the

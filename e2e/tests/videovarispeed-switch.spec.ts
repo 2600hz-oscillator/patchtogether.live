@@ -1,5 +1,3 @@
-// e2e/tests/videovarispeed-switch.spec.ts
-//
 // VIDEOVARISPEED 7-slot SWITCH-PATH regression guard (the multi-slot stall).
 //
 // THE BUG (owner report): load N videos → after a brief time only the first
@@ -410,7 +408,6 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
       ],
     );
 
-    // Load slot 0 (C) + slot 1 (D) via the real pickers.
     await loadSlot(page, 0);
     await loadSlot(page, 1);
 

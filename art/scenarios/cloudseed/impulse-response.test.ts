@@ -1,5 +1,3 @@
-// art/scenarios/cloudseed/impulse-response.test.ts
-//
 // CLOUDSEED parity tests: feed a unit impulse through the simplified
 // pure-math renderer, measure RT60 from the late-field envelope, and
 // confirm the displayed DECAY readout matches the actual decay within

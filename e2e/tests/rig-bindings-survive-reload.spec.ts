@@ -1,5 +1,3 @@
-// e2e/tests/rig-bindings-survive-reload.spec.ts
-//
 // NATIVE-SHELL PART-3 — THE RECEIVER SIDE OF "DEVICE BINDINGS LIVE OFF THE Y.DOC".
 //
 // The bug this proves fixed: File→New (and a plain reload / refresh) used to wipe
@@ -57,10 +55,8 @@ const SINK_DEVICE_B = 'ptl-fake-sink-b';
  *  on the MediaStream track + its presented-frame counter, not on pixels. */
 const LEVEL_A = 90;
 
-// ---------------------------------------------------------------------------
 // The fake device rig — cameras, an audio sink, installed BEFORE boot so it
 // survives the reload (addInitScript re-runs on every navigation).
-// ---------------------------------------------------------------------------
 
 /**
  * Stub `enumerateDevices` (one videoinput + one audiooutput, with REAL labels),
@@ -209,9 +205,7 @@ async function installFakeDevices(page: Page, initialLevel: number): Promise<voi
   );
 }
 
-// ---------------------------------------------------------------------------
 // Probes
-// ---------------------------------------------------------------------------
 
 interface CamSample {
   found: boolean;
@@ -369,9 +363,7 @@ async function appliedSink(page: Page): Promise<string | null> {
   );
 }
 
-// ---------------------------------------------------------------------------
 // The camera manager — the REAL bind path (mirrors device-slot-continuity)
-// ---------------------------------------------------------------------------
 
 async function openCamerasMenu(page: Page): Promise<void> {
   const panel = page.getByTestId('workflow-cameras-panel');
@@ -434,7 +426,6 @@ async function bootEngine(page: Page): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------------
 
 test.describe('NATIVE-SHELL PART-3 — rig bindings survive a reload / File→New', () => {
   test.afterEach(async ({ page }) => {

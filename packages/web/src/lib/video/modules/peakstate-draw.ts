@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/peakstate-draw.ts
-//
 // PEAKSTATE — pure (CV-free, DOM-free, GL-free) drawing logic for the
 // animated mandala generator. Inspired by florianjs/Mandala-JS — a
 // canvas2D mirror-arm kaleidoscope. The pen traces a slow Lissajous-with-
@@ -117,11 +115,9 @@ export function advancePen(state: PenState, dt: number, speedMul: number): void 
   state.ring.push(x, y);
 }
 
-// ---------------------------------------------------------------------------
 // 2D canvas rendering — used by mono_out (white pen) + rgb_out (HSL cycling)
 // + by the 3D output's "fat-line fake-3D" v1 path (renders the same mandala
 // onto an OffscreenCanvas with a perspective tilt + Y-mirror for the bowl).
-// ---------------------------------------------------------------------------
 
 /** RGB triple in 0..255. */
 export interface Rgb { r: number; g: number; b: number; }
@@ -349,9 +345,7 @@ export function drawMandalaFrame(
   }
 }
 
-// ---------------------------------------------------------------------------
 // 3D "fake tube" output — fat-line v1 path per the spec.
-// ---------------------------------------------------------------------------
 //
 // The user wants the third output to "render as 3D tubes". A real
 // tube-cross-section fragment shader is heavy and brittle. v1 path:

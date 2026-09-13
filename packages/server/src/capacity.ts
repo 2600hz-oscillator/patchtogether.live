@@ -1,5 +1,3 @@
-// packages/server/src/capacity.ts
-//
 // Per-rackspace concurrent-connection cap. The product constraint is 4
 // concurrent users per rackspace (1 owner + 3 others); the 5th visitor
 // gets a friendly "full" page on the client. Slots free up on disconnect.

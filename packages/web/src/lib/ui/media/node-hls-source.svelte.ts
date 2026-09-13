@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-hls-source.svelte.ts
-//
 // THE REAL-DOM SINGLETON for ./node-hls-source-registry — a thin binding of the
 // pure core to the browser, hls.js, the Y.Doc and the engine.
 //

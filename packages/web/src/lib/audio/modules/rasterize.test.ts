@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rasterize.test.ts
-//
 // Unit test for RASTERIZE's def shape — the cross-domain video bridge +
 // CV bridge + io-spec-consistency harness all depend on these invariants.
 // The factory needs an AudioContext (AnalyserNode/GainNode), so the

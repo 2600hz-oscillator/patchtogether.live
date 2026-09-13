@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/module-registry.ts
-//
 // Registry of ModuleDefs keyed by ModuleType. Each module def declares its
 // domain (D18), ports, params, and a factory that materializes an instance.
 //

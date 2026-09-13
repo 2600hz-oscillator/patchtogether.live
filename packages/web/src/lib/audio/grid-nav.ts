@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/grid-nav.ts
-//
 // Pure 2D-grid focus resolver shared by sequencer-family cards
 // (CartesianCard, KriaCard — the surviving grid cards; was also the
 // sequencer family until its deletion 2026-08-24).

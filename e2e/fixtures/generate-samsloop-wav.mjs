@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// e2e/fixtures/generate-samsloop-wav.mjs
-//
 // Generates `samsloop-test.wav` — a tiny, deterministic 440 Hz sine with a
 // short fade-in / fade-out envelope. Used by:
 //   - e2e/tests/samsloop.spec.ts (file upload smoke)

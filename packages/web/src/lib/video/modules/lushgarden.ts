@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/lushgarden.ts
-//
 // LUSH GARDEN — generative layered-garden video SOURCE. Assembles a dense
 // 2D English-garden bed from a bank of plant cutout PNGs (flowers, bushes,
 // small trees — static/lushgarden/manifest.json is the atlas contract) and
@@ -130,7 +128,6 @@ export const LUSHGARDEN_HUE_SPEED = 0.12;
 /** Plant count of the deterministic __lushgardenVrtSeed scene. */
 export const LUSHGARDEN_VRT_PLANTS = 24;
 
-// ----------------- params -------------------------------------------------
 
 interface LushgardenParams {
   rate: number;    // 0.5..10 spawns/sec (log knob)
@@ -304,7 +301,6 @@ interface BakedEntry {
   watercolor: WebGLTexture | null;
 }
 
-// ----------------- module def ---------------------------------------------
 
 export const lushgardenDef: VideoModuleDef = {
   type: 'lushgarden',
@@ -399,7 +395,6 @@ export const lushgardenDef: VideoModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS FOR. It is a generative botanical garden: plants spawn on
   // a rate, each integrates a grow-in curve, and the scene is composited in depth

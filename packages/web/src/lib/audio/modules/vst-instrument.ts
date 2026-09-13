@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/vst-instrument.ts
-//
 // VST INSTRUMENT — mounts one of the user's installed instrument plugins
 // (AU builds — Serum, the Arturia collection, Apple's DLS synth, …) through
 // the vst-bridge native helper (repo: patchtogether.nativeapps;
@@ -29,52 +27,12 @@ import type { ModuleFace } from '$lib/graph/types';
 import { createVstHandle } from './vst-bridge-shared';
 
 /**
- * THE FACE — and it is the thinnest in the fleet, which is the honest outcome
- * rather than a gap.
+ * CONNECT ranks first because the instrument is silent without the helper.
+ * DISCONNECT releases a plugin slot. The shared VstBridgeFaceBody owns plugin
+ * selection and mount controls; this def has no scalar params to rank.
  *
- * WHAT THIS MODULE IS FOR, MUSICALLY: it makes a plugin you already own behave
- * like a module you patched. The one thing it does that no sibling does is
- * borrow a voice from OUTSIDE the browser and give it rack citizenship — poly CV
- * in, stereo audio out, sample-accurate MIDI in between. The verb a player
- * performs is MOUNT: choose an instrument and hand it the lane's notes.
- *
- * ⚠ THE RANKING IS FORCED BY THE CONTRACT, NOT CHOSEN. `params: []` — this def
- * declares no ParamDef at all, so there is no scalar to rank. The whole surface
- * is a control plane, and exactly two of its gestures are expressible as generic
- * cells (see the `vstInstrument` entry in `shell-cells.ts` for the two gate
- * mechanics that decide the other five, and `VstBridgeFaceBody.svelte` for the
- * long form).
- *
- * THE TIER LADDER, READ BACK AS A SENTENCE: at every tier from mini upward the
- * player gets CONNECT, because a card that never connects is silent and nothing
- * else on the plate can change that; compact adds DISCONNECT, the gesture that
- * frees a plugin slot when the helper's sixteen are full; and the dock adds the
- * plugin surface itself, which is where a plugin is actually chosen. That is a
- * genuine priority ordering rather than a declaration order — CONNECT outranks
- * DISCONNECT because one of them is the precondition for every other affordance
- * this module has, and the other is a housekeeping gesture.
- *
- * ONE PAGE, and it earns its header on the "1 control that is the module's
- * identity" clause: `bridge` is the only idea here. A second page would be a
- * header over nothing — the plugin controls are not `order` keys, they are the
- * extension body's own surface, so there is no second group of keys to name.
- *
- * ⚠ NO HERO. `heroFacePlan` MOVES a key out of its band, and this face has ONE
- * band holding exactly two keys — promoting either would leave a band whose hint
- * renders nowhere, and promoting both would empty the band entirely. A hero also
- * SUPPRESSES the shell glyph at the dock, and the glyph is the only live picture
- * this plate has.
- *
- * ⚠ GLYPH `'meter'`, matching es9 and derived rather than decorative: the def
- * has an audio out (`out_l`), so `glyphBinding` resolves a real analyser tap. On
- * a runner with no helper the plugin returns digital silence, so it draws the
- * same flat centreline every other faced module's live glyph draws — which is
- * what keeps the VRT scene a function of the code rather than of the machine.
- *
- * ⚠ NO `rear.groups`. The derived default is already right: the input rail is
- * the four note inputs (poly / pitch / gate / vel) and the output rail is the
- * stereo pair. Authoring a group here would restate the cable domains, which the
- * rear-card rules name as the thing NOT to author.
+ * Keep both actions in their band: a hero moves a key out of the band and
+ * suppresses the dock meter.
  */
 export const VST_INSTRUMENT_FACE: ModuleFace = {
   glyph: 'meter',

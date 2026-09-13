@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/backdraft-face-model.ts
-//
 // BACKDRAFT's three derived faceplate readouts, in one pure place.
 //
 // WHY A DERIVED READOUT AT ALL. The bar (face-readout-values.ts header) is that

@@ -1,5 +1,3 @@
-// art/vitest.config.ts
-//
 // Pinned-environment vitest config for Audio Regression Tests (D16).
 // Runs in Node with node-web-audio-api shimming OfflineAudioContext.
 // Baselines live in art/baselines/ tracked under git-lfs.

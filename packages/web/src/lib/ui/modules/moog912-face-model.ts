@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog912-face-model.ts
-//
 // The two numbers a MOOG 912 ENVELOPE FOLLOWER knows about itself and prints
 // nowhere — which, for this module, IS the reason it has a face at all.
 //

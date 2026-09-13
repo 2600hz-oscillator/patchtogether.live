@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/fader.ts
-//
 // FADER — a simple two-source video mixer with a send/return FX loop.
 //
 // ── SIGNAL FLOW
@@ -155,7 +153,6 @@ export const faderDef: VideoModuleDef = {
     },
   ],
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     // The card's own reading order, preserved: each crossfader sits next to the
     // FX shape that steers it. Splitting the two sliders from the two selectors

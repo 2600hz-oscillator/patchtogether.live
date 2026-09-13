@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/canvas/import-confirm.ts
-//
 // PURE guard decision for the destructive "Import JSON" path (persistence-
 // hardening P4). `loadEnvelopeIntoStore` clears-then-re-adds the whole graph;
 // in a shared rack that clear propagates tombstones to every peer + the relay

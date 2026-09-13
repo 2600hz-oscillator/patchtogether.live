@@ -1,5 +1,3 @@
-// packages/web/scripts/check-prerender.mjs
-//
 // POSTBUILD GUARD: the landing (`/`, prerender=true) must actually be baked
 // into the build output. On 2026-07-11 a build intermittently emitted the
 // empty SPA shell for index.html instead of the prerendered landing — the

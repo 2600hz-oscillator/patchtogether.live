@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mirrorpool/shell-extension.ts
-//
 // The mirrorpool SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), and the FOURTH adopter of the `fullViewBody` slot after `backdraft`,
 // `videoOut` and `spirographs`.

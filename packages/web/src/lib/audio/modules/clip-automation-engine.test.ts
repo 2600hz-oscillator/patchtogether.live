@@ -1,4 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-engine.test.ts
 import { describe, it, expect } from 'vitest';
 import type { AutomationEvent } from './clip-types';
 import {

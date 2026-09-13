@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tv-librarian-data.test.ts
-//
 // Pure data-layer tests for TV LIBRARIAN. No network, no DOM — exercises the
 // tolerant parser + the country/channel selection helpers against fixture JSON
 // shaped exactly like the famelack dataset (uppercase metadata keys, lowercase

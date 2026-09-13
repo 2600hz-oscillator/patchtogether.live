@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-synesthesia-video.spec.ts
-//
 // VRT for SYNESTHESIA's VIDEO mode: copy A switched to VIDEO, driven with a
 // SOLID RED frame so the R channel meter redlines (and the L/luma meter reads
 // the BT.601 luma of red, ≈0.30). Copy B stays in AUDIO mode (dark) — proving

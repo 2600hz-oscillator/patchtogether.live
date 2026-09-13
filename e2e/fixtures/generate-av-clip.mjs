@@ -1,5 +1,3 @@
-// e2e/fixtures/generate-av-clip.mjs
-//
 // One-time generator for `av-clip.webm` — a tiny moving-picture + audible-tone
 // WebM used by multi-video-playback.spec.ts to prove BOTH that each source's
 // decode runs (frame-to-frame change downstream) AND that audio is produced

@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/autoconfig.ts
-//
 // AUTOCONFIG — the "Connect Electra (Automagic)" orchestrator.
 //
 // One call wires the whole flow:

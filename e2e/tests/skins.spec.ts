@@ -1,5 +1,3 @@
-// e2e/tests/skins.spec.ts
-//
 // Palette switcher (formerly "skins"): ships in Canvas's topbar between Clear
 // and Sign in. Lets the user pick one of the in-tree COLOR-ONLY palettes; the
 // choice persists in localStorage ("pt.skin") and re-applies on reload.

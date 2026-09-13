@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/attenumix-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for ATTENUMIX's three derived readouts, plus
 // the one measurement its `face.order` is ranked on.
 //

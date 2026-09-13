@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/adsr-env.test.ts
-//
 // Unit tests for the shared ADSR Envelope (per-voice-ADSR feature). Pins:
 //   1. The state machine: attack reaches 1, decay→sustain, release→0→Idle.
 //   2. SOFT-retrigger regression: triggerSoft(true) mid-release produces no

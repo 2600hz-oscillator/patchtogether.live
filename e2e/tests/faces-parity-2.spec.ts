@@ -1,5 +1,3 @@
-// e2e/tests/faces-parity-2.spec.ts
-//
 // PARTITION 2 OF 4 of the registry-driven face parity sweep.
 //
 // ⚠ THERE IS NOTHING MODULE-SPECIFIC IN THIS FILE AND THERE MUST NOT BE. It

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/lushgarden-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the LUSH GARDEN faceplate.
 //
 // Four claims carry this face, and every one of them is either invisible from

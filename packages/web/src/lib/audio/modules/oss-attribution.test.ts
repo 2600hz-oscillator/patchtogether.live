@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/oss-attribution.test.ts
-//
 // Locks down the per-module `ossAttribution` field for modules whose code is a
 // direct port of an upstream OSS project. The card-side <OssAttribution>
 // component reads this field — if a future refactor of a def silently drops

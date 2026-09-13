@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-store.ts
-//
 // RECORDERBOX crash-recovery store. Two cooperating pieces of per-browser,
 // origin-local persistence:
 //
@@ -76,9 +74,7 @@ const STORE = 'manifests';
 /** The OPFS sub-directory all scratch recordings live under. */
 export const OPFS_DIR = 'recorderbox';
 
-// ---------------------------------------------------------------------------
 // Pure helpers (exported for unit tests — no browser API touched)
-// ---------------------------------------------------------------------------
 
 /** Build the per-recording OPFS scratch path. Deterministic from
  *  (nodeId, startEpoch) so the Worker + the manifest + the recovery scan all
@@ -138,9 +134,7 @@ export function sanitizeRecordingFilename(
   return `${name}${dotExt}`;
 }
 
-// ---------------------------------------------------------------------------
 // Feature detection
-// ---------------------------------------------------------------------------
 
 /** True when OPFS (the SCRATCH/recovery substrate) is available. Requires
  *  navigator.storage.getDirectory AND a Worker (the SyncAccessHandle writer
@@ -182,9 +176,7 @@ export function canPickDirectory(): boolean {
   );
 }
 
-// ---------------------------------------------------------------------------
 // IndexedDB manifest CRUD (best-effort, never-throws)
-// ---------------------------------------------------------------------------
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -283,10 +275,8 @@ export async function deleteManifest(opfsPath: string): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
 // OPFS read / delete (main-thread side — reads are allowed on the main thread;
 // only the SyncAccessHandle WRITE path must live in a Worker)
-// ---------------------------------------------------------------------------
 
 /** Resolve (creating intermediate dirs) the OPFS FileSystemFileHandle for a
  *  scratch path. Returns null when OPFS is unavailable or the file is missing

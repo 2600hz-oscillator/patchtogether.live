@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/colourofmagic-colorspace.test.ts
-//
 // Pure-core correctness gate for COLOUR OF MAGIC. Known-value + round-trip
 // property tests over the colorspace math the GLSL mirrors. This — NOT the
 // SwiftShader GPU — is where colorspace correctness is pinned.

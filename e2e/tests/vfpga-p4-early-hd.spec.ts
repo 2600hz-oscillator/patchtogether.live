@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-p4-early-hd.spec.ts
-//
 // vfpga P4 — the EARLY-HD-era bent VFPGA catalog (macroblock-mosh, tmds-sparkle,
 // scaler-glitch), end-to-end on a REAL WebGL2 context. Each bent program needs a
 // video source, so the patch is:

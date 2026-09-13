@@ -1,5 +1,3 @@
-// e2e/tests/midi-autobind-perfzip.spec.ts
-//
 // FIX 1: MIDI auto-bind on perf-zip load.
 //
 // Before this fix, loading a perf zip that had MIDI mappings required the user
@@ -135,7 +133,6 @@ test.describe('MIDI auto-bind on perf-zip load', () => {
     await expect.poll(() => readMidiBinding(page, LANE_ID).then((b) => b?.lastDeviceId), { timeout: 5000 }).toBe(MOCK_ID);
     await expect.poll(() => readMidiBinding(page, CLK_ID).then((b) => b?.lastDeviceId), { timeout: 5000 }).toBe(MOCK_ID);
 
-    // Export → clear → load.
     const zipB64 = await exportZip(page);
     expect(zipB64.length).toBeGreaterThan(100);
     await clearRack(page);

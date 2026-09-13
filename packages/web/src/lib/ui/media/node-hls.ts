@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-hls.ts
-//
 // NODE-SCOPED hls.js ownership — the companion to node-media-registry for the
 // two streaming players (PEERTUBE, TVLIBRARIAN).
 //

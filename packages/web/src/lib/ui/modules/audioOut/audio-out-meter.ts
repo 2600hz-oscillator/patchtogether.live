@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioOut/audio-out-meter.ts
-//
 // THE TERMINAL METER'S ARITHMETIC — pure, so the face's one picture is
 // assertable without a browser.
 //

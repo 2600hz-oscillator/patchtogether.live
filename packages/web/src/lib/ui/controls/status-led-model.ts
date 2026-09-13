@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/status-led-model.ts
-//
 // THE STATUS LED's pure model — the accessible name and the hover title for a
 // faceplate INDICATOR, and the one place a measurement is allowed to become a
 // string.

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/noise-dsp.ts
-//
 // NOISE — the pure noise-flavor generators (extracted from the NOISE module
 // def, packages/web/src/lib/audio/modules/noise.ts, for the ART audio-profile
 // backfill batch 5 — the plan's §5 "when a module needs a mirror, extract a

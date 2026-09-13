@@ -1,5 +1,3 @@
-// e2e/tests/midiclock.spec.ts
-//
 // MIDICLOCK end-to-end, against the FACEPLATE.
 //
 // ── WHAT CHANGED, AND WHY THE SPEC GOT STRONGER RATHER THAN JUST DIFFERENT ──

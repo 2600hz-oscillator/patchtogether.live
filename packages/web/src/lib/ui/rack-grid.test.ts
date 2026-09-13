@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/rack-grid.test.ts
-//
 // Pure snap-math for the virtual-rack grid. Covers: exact-on-line, round-down,
 // round-up, the half-boundary, negatives, a custom unit, and the {x,y} wrapper
 // (incl. the "1u lands on a third of a 3u slot" behaviour the Phase-2 spec

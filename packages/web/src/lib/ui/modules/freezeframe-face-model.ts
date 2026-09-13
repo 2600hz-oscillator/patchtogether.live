@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/freezeframe-face-model.ts
-//
 // The PURE model behind the FREEZEFRAME faceplate — the arithmetic for its two
 // derived readouts.
 //

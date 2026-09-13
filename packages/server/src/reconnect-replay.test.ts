@@ -1,5 +1,3 @@
-// packages/server/src/reconnect-replay.test.ts
-//
 // PROOF that client-side "unacked update replay" needs NO new code — the
 // y-protocols sync handshake + Hocuspocus's own ack loop already provide
 // it. This test exists because the durability plan (stack study §7/§8)

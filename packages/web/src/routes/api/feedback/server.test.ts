@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/feedback/server.test.ts
-//
 // Route-level validation tests for POST /api/feedback. We mock the server
 // data layer so the test focuses on input shape (auth, kind enum, length,
 // patch_json size cap) without touching Postgres.

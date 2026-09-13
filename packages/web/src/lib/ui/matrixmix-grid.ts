@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/matrixmix-grid.ts
-//
 // MATRIXMIX — PURE matrix-classification core (no Svelte / no Yjs).
 //
 // MATRIXMIX is an EMS-Synthi / Buchla-style patch MATRIX card. The user picks

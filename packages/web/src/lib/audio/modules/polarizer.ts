@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/polarizer.ts
-//
 // POLARIZER — a tiny 1-in / 1-out CV utility that maps a UNIPOLAR signal to a
 // BIPOLAR one. It takes a [0, 1] control voltage and stretches it across
 // [-1, +1], scaled by a single DEPTH knob:

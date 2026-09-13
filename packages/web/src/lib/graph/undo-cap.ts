@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/undo-cap.ts
-//
 // BOUND THE UNDO WINDOW, AND ACTUALLY RECLAIM WHAT AGES OUT OF IT.
 //
 // Why this exists (owner ask, 2026-08-28): a Y.UndoManager with no depth cap

@@ -1,5 +1,3 @@
-// art/scenarios/moog904b/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 904B (voltage controlled high pass filter)
 // (backfill batch 2 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
@@ -75,7 +73,6 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ── Render ──────────────────────────────────────────────────────────────────
 
 async function renderProfile(): Promise<Record<string, Float32Array>> {
   const Proc = await loadProcessor();

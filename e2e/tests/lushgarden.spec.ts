@@ -1,5 +1,3 @@
-// e2e/tests/lushgarden.spec.ts
-//
 // LUSH GARDEN — bespoke behavioral spec for the generative garden video
 // source. Everything asserts through the module's deterministic engine
 // probes (read('plantCount') / read('spawnCount') — the SHAPEGEN

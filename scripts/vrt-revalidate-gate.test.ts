@@ -1,5 +1,3 @@
-// scripts/vrt-revalidate-gate.test.ts
-//
 // Gate for the SELF-VERIFYING VRT re-fire (.github/workflows/vrt-update.yml's
 // `revalidate` job + scripts/vrt-revalidate-gate.mjs). Pure-unit, zero-flake,
 // runs in the `unit` lane via `task test` → `task test:scripts`.

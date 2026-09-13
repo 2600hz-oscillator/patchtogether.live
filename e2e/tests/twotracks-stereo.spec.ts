@@ -1,5 +1,3 @@
-// e2e/tests/twotracks-stereo.spec.ts
-//
 // TWOTRACKS — the two output JACKS must carry two DIFFERENT signals.
 //
 // ── WHY THIS SPEC HAS TO EXIST ────────────────────────────────────────────

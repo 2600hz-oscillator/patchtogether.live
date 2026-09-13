@@ -1,5 +1,3 @@
-// scripts/vrt-accept.test.ts
-//
 // Gate for the VRT ACCEPT path (.github/workflows/vrt-accept.yml +
 // scripts/vrt-accept.mjs + the ci.yml candidates step + `task vrt:accept`).
 // Pure-unit, zero-flake, runs in the `unit` lane via `task test:scripts`.

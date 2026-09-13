@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/clip-surface-map.ts
-//
 // CONTROLLER-AGNOSTIC clip-surface "brain" — the PURE clip↔cell logic every
 // hardware control surface (monome grid, Launchpad, …) shares. It knows NOTHING
 // about a specific surface's physical placement (where STOP / EDIT / a note row
@@ -46,11 +44,9 @@ import {
   type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
 
-// ---------------------------------------------------------------------------
 // Session LED levels (0-15 varibright) — the canonical state→level decisions a
 // monome-style brightness surface uses. A richer (RGB) surface can map these to
 // hues, but the STATE distinctions (empty/loaded/queued/playing/…) are shared.
-// ---------------------------------------------------------------------------
 export const LED_EMPTY = 0;
 export const LED_LOADED = 6;
 export const LED_QUEUED_LO = 3;
@@ -82,11 +78,9 @@ export const LED_LEN_BLOCK = 6; // a counted 16-step block (cells 1..endBlock−
 export const LED_LEN_END = 15; // the END block / END step (bright)
 export const LED_LEN_EXIT = 5; // the EXIT pad (row 0, cell 16)
 
-// ---------------------------------------------------------------------------
 // Clip-index math (placement-free). Which clip a (slot, lane) addresses, and
 // the inverse. A surface decides WHERE the matrix lands; this decides WHICH clip
 // a given (slot, lane) is.
-// ---------------------------------------------------------------------------
 
 /** (slot, lane) inside the clip matrix → flat clip index, or null when out of
  *  the 8×8 matrix. (Placement-free: a surface maps a pad to (slot, lane) first.) */
@@ -99,9 +93,7 @@ export function slotLaneForClipIndex(index: number): { slot: number; lane: numbe
   return { slot: slotOf(index), lane: laneOf(index) };
 }
 
-// ---------------------------------------------------------------------------
 // EDIT-mode pitch/step math (placement-free).
-// ---------------------------------------------------------------------------
 
 /**
  * Logical pitch ROW (0 = bottom-of-window note, increasing up) → MIDI for a
@@ -235,11 +227,9 @@ export function shownEditPageFor(
   return Math.max(0, Math.min(editPageCount(clip) - 1, frozenPage));
 }
 
-// ---------------------------------------------------------------------------
 // LENGTH-EDIT classifier (placement-free) — maps an abstract ruler cell to its
 // action. ROW 0 = the 16-step BLOCK the pattern ends in (1-based); ROW 0's last
 // pad = EXIT; ROW 1 = the STEP within that end block (1-based).
-// ---------------------------------------------------------------------------
 export type LengthEditAction =
   | { kind: 'exit' }
   | { kind: 'block'; block: number } // 1-based 16-step block

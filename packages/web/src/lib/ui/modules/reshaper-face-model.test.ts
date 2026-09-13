@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/reshaper-face-model.test.ts
-//
 // RESHAPER — the permanent gates on the claims this face is built from. Each
 // reads the LIVE def through the SAME pure resolvers the shell renders from, so
 // an assertion here cannot drift from what actually paints.

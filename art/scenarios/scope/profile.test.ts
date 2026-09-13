@@ -1,5 +1,3 @@
-// art/scenarios/scope/profile.test.ts
-//
 // AUDIO PROFILE for SCOPE (2-channel passthrough oscilloscope) — backfill
 // batch 6. SCOPE is a pure Web Audio node graph (GainNode passthrough +
 // AnalyserNode tap, packages/web/src/lib/audio/modules/scope.ts) with NO

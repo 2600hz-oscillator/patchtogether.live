@@ -1,5 +1,3 @@
-// art/scenarios/destroy/profile.test.ts
-//
 // AUDIO PROFILE for DESTROY (bitcrusher) — backfill batch 6, Faust-in-Node
 // harness (spec §3). DESTROY is Faust (packages/dsp/src/destroy.dsp):
 // sample-rate reduction (decimation — ba.sAndH holds the input for `decimate`

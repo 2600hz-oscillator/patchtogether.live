@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/preview-downscale-source.test.ts
-//
 // THE GATE FOR "A CARD NEVER SHRINKS A PICTURE IN ONE TAP" (#1846).
 //
 // ── WHY A SOURCE GATE ──────────────────────────────────────────────────────
@@ -265,9 +263,7 @@ const DELIBERATELY_CRISP = [
   'rasterize/RasterizeOutputBody.svelte',
 ] as const;
 
-// ---------------------------------------------------------------------------
 // The scanner. ONE predicate, used by the sweep AND by its negative controls.
-// ---------------------------------------------------------------------------
 
 interface FoundCall {
   file: string;

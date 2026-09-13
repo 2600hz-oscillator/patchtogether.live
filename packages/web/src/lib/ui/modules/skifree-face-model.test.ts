@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/skifree-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the SKIFREE faceplate.
 //
 // ⚠ THIS FILE IS LOAD-BEARING IN A WAY MOST FACE-MODEL TESTS ARE NOT, and the

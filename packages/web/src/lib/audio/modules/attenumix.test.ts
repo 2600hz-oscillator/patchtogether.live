@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/attenumix.test.ts
-//
 // Unit tests for ATTENUMIX — the simple 4-channel attenuating mixer.
 // Pin per-channel attenuation, the 0..1 clamp at the channel level, the
 // mix-sum identity, the master+tanh saturation curve, the CV+knob sum,

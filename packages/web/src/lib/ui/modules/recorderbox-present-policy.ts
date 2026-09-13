@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/recorderbox-present-policy.ts
-//
 // Pure UI-policy for starting a RECORDING without breaking PRESENTATION mode.
 //
 // While the page is in element-fullscreen, Chrome resolves ANY modal browser

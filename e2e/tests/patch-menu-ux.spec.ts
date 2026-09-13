@@ -1,5 +1,3 @@
-// e2e/tests/patch-menu-ux.spec.ts
-//
 // Patch-menu interaction contract after the no-drag / overlay-replace
 // redesign. The click-and-hold-to-open gesture is RETIRED (the fixme'd
 // hold-race case was deleted), and the side-by-side cascade became an

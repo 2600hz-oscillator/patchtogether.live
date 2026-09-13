@@ -1,5 +1,3 @@
-// e2e/tests/collab.spec.ts
-//
 // Multi-context Stage B tests, tagged @collab. Each test spawns 2 browser
 // contexts (separate cookie jars, localStorage, ydocs) and attaches both
 // to the same Hocuspocus rackspace via the dev-only __attachProvider

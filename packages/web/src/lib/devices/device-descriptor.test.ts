@@ -1,5 +1,3 @@
-// packages/web/src/lib/devices/device-descriptor.test.ts
-//
 // DENY BY DEFAULT: every shipped descriptor must validate. The validator is
 // itself negative-controlled here — each check is proved to FIRE on a
 // deliberately broken descriptor, because a validator that silently returns

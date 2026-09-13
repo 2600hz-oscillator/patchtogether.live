@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mandelbulb-math.test.ts
-//
 // Pure-TS tests for the Mandelbulb distance estimate (DE) + camera-zoom
 // mapping. jsdom can't render the GLSL, but the GLSL `mandelbulbDE` is a
 // line-for-line port of `jsDistanceEstimate` (the only differences are

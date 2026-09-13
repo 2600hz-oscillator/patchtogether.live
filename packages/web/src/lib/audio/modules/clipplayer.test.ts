@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clipplayer.test.ts
-//
 // Drives the REAL clipplayer (v2, 8-lane) factory + tick loop against a fake
 // AudioContext (advanceable currentTime) and the live graph store, asserting
 // per-lane launch / quantized switch / stop / TIMELORDE-lock / silent-when-empty
@@ -293,14 +291,12 @@ describe('clipplayer: per-lane launch', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // PER-NOTE PITCH PROBABILITY through the REAL engine. The model is pinned by
 // $lib/audio/pitch-probability.test.ts and the card write by
 // clipplayer-prob-menu.test.ts + the e2e; what only THIS harness can prove is
 // that the engine's emit path actually consults it — i.e. that the stored
 // `pitchProb` reaches the lane's pitch CV, and that a clip WITHOUT it is
 // untouched (the negative control, and the back-compat guarantee).
-// ---------------------------------------------------------------------------
 describe('clipplayer: per-note PITCH PROBABILITY reaches the emitted pitch', () => {
   /** A note clip whose single note carries `pitchProb`. */
   function pitchProbClip(midi: number, pitchProb?: number): NoteClipRecord {
@@ -955,13 +951,11 @@ describe('clipplayer: overdub vs replace record mode', () => {
   });
 });
 
-// ===========================================================================
 // LIVE AUDITION (dual-Launchpad KEYS keyboard side-channel). The binding pushes
 // note on/off into clip-audition; the factory tick DRAINS it BEFORE the
 // transport gate + drives the lane's gate/vel/poly, so keys sound with the
 // transport STOPPED. (The audible end-to-end chain is the e2e's job; here we pin
 // the drain drives the lane outputs.)
-// ===========================================================================
 describe('clipplayer: live audition (KEYS)', () => {
   function velOf(handle: { outputs: Map<string, { node: unknown }> }, lane: number): FakeParam {
     return (handle.outputs.get(`vel${lane + 1}`)!.node as unknown as FakeConstantSource)
@@ -1028,13 +1022,11 @@ describe('clipplayer: live audition (KEYS)', () => {
   });
 });
 
-// ===========================================================================
 // TIED-NOTE POLY GATE (gate/held-note plan Phase 1). A held/tied note
 // (lengthSteps>1) must hold its POLY-bus gate across the whole span exactly like
 // its MONO gate — before the fix, poly.scheduleStep re-zeroed the gate on every
 // rest step, so a tied note released a step early into poly synths while the
 // mono bus sustained. Assert the two gates' close schedules AGREE.
-// ===========================================================================
 describe('clipplayer: tied-note poly gate (Phase 1)', () => {
   it('a tied note holds the POLY gate across its span, matching the MONO gate (no early poly close)', async () => {
     clearAudition(NODE_ID);
@@ -1067,14 +1059,12 @@ describe('clipplayer: tied-note poly gate (Phase 1)', () => {
   });
 });
 
-// ===========================================================================
 // STABLE VOICE ALLOCATOR (gate/held-note plan Phase 2a). Held KEYS-audition
 // notes each keep their OWN poly voice-lane for their whole life. Releasing a
 // LOWER held note must free ONLY its voice and NOT shift/re-write a still-held
 // HIGHER note (the old positional repack shifted the survivors down a lane,
 // rewriting pitch on a sounding voice → glitch/retrigger). We assert directly on
 // the per-voice poly params via the merger-input tracking.
-// ===========================================================================
 describe('clipplayer: stable voice allocator (KEYS audition, Phase 2a)', () => {
   function polyPitchOf(
     handle: { outputs: Map<string, { node: unknown }> },

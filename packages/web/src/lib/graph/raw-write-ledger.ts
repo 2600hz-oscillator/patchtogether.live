@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/raw-write-ledger.ts
-//
 // THE OPT-OUT LEDGER for `mutate.guard.test.ts` — every raw `node.params` write
 // in the tree, CLASSIFIED, with a stated reason.
 //

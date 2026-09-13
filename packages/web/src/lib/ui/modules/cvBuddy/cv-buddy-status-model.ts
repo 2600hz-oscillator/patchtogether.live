@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cvBuddy/cv-buddy-status-model.ts
-//
 // The CV BUDDY status surface's pure model — every string it shows, and the one
 // place a rack-global measurement is turned into words.
 //

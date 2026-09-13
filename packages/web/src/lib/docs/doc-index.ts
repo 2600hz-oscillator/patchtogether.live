@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/doc-index.ts
-//
 // buildDocIndex(mod) — a FLAT, client-resolvable doc payload for the
 // interactive "virtual module" doc page (the LEFT live card / RIGHT hover-pane
 // redesign that replaces the numbered face as the PRIMARY view; the static face

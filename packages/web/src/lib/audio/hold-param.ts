@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/hold-param.ts
-//
 // CANCEL-AND-HOLD / PIN utils for the clip-automation param-jump policy (Phase 0).
 //
 // The automation lane schedules a ~200 ms lookahead of setValueAtTime /

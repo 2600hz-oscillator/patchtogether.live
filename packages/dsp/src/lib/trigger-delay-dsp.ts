@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/trigger-delay-dsp.ts
-//
 // Pure DSP for the MOOG 911A DUAL TRIGGER DELAY. A trigger delay watches a
 // gate input for a RISING edge, waits a programmed delay, then emits a short
 // output pulse. The 911A pairs two of these with a coupling MODE:

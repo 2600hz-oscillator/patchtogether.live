@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/per-leg-patching.test.ts
-//
 // PER-LEG STEREO PATCHING, pinned against the OWNER'S REAL RACK.
 //
 // THE PATCH (decoded from his `es-9_sends.zip`, a `pt-performance-v1` bundle).
@@ -76,9 +74,7 @@ function commit(args: {
   return plan.legs.map((l) => `${l.fromPortId}->${l.toPortId}`);
 }
 
-// ---------------------------------------------------------------------------
 // THE EIGHT EDGES
-// ---------------------------------------------------------------------------
 
 describe("the owner's ES-9 send/return patch is reconstructible one leg at a time", () => {
   // THE SENDS. The user right-clicks the COLLAPSED `SEND1` jack (which
@@ -193,9 +189,7 @@ describe("the owner's ES-9 send/return patch is reconstructible one leg at a tim
   });
 });
 
-// ---------------------------------------------------------------------------
 // ES-9 = MONO AUDIO POINTS
-// ---------------------------------------------------------------------------
 
 describe('ES-9 audio ports are independent MONO POINTS', () => {
   it('a STEREO source into one ES-9 jack does NOT sum both legs into it', () => {
@@ -303,9 +297,7 @@ describe('MONO_AUDIO_POINT_MODULES is anchored to the live registry', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // UNPATCH must not co-delete across the reversed mapping
-// ---------------------------------------------------------------------------
 
 describe('unpatching a single-leg cable leaves its neighbours alone', () => {
   /** The owner's eight edges, as a live edge map. */

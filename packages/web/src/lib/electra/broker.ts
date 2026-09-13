@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/broker.ts
-//
 // ELECTRA BROKER — the Web MIDI adapter.
 //
 // A single `navigator.requestMIDIAccess({ sysex: true })` (Electra needs SysEx

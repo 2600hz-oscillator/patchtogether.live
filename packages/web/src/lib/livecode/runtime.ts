@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/runtime.ts
-//
 // LIVECODE JS sandbox runtime. Replaces the old custom-DSL parser +
 // evaluator (parser.ts / evaluator.ts, deleted in the same PR) with a
 // `new Function`-based sandbox that runs user code with a curated set
@@ -537,7 +535,6 @@ class Runtime {
     this.log.push({ message });
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────
 
   private resolveDef(type: string): DefPorts | undefined {
     return getDefForType(type) ?? getDefForType(type.toLowerCase());

@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-annotated.config.ts
-//
 // Playwright config for the numbered card-FACE generator (vrt-annotated.spec.ts).
 // Reuses the deterministic VRT rendering settings (viewport / DPR / pinned
 // fonts / reduced motion) from vrt.config.ts but:

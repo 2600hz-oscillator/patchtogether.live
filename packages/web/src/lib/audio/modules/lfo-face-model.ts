@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/lfo-face-model.ts
-//
 // The LFO FACE's arithmetic, in one pure place (the `lfo-state` / `dx7-glyph-
 // model` / `param-grid-model` idiom): what each of the three knobs' numbers
 // MEAN, and the one constant the glyph's amplitude is derived from.

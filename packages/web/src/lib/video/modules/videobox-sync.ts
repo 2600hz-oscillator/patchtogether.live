@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videobox-sync.ts
-//
 // Pure-functional playhead-sync helpers for VIDEOBOX. The card writes
 // the SyncState below into Yjs (`node.data`) on every local play/pause/
 // seek; every peer (including the writer) runs these helpers each tick

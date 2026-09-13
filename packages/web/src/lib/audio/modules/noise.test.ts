@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/noise.test.ts
-//
 // Unit tests for NOISE: module-def shape + spectral characteristics of
 // the three noise generators.
 //

@@ -1,5 +1,3 @@
-// art/scenarios/cube/slice-readout.test.ts
-//
 // ART scenario for CUBE — the 3D wavetable-navigator oscillator. Two layers:
 //
 //   1. Repo-standard build-toolchain pin: the compiled worklet artifact exists

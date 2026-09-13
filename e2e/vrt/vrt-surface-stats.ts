@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-surface-stats.ts
-//
 // THE INSTRUMENT behind the VRT live-surface masks.
 //
 // A mask deletes pixel coverage. On its own that is the vacuous-assertion

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kria-types.test.ts
-//
 // Golden tests for KRIA's PURE step model — step advance (forward / reverse /
 // pingpong / drunk / random), loop windows, scale → V/oct note mapping, pattern
 // cue quantize, and coercion. No AudioContext, no Y.Doc.
@@ -249,9 +247,7 @@ describe('kria-types: edit helpers are immutable', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE STEP-EDITOR GRID MODEL — and the octave defect it closes
-// ---------------------------------------------------------------------------
 describe('kria grid model: rows are in BIJECTION with values', () => {
   /**
    * ⚠ THE PROPERTY THAT WAS FALSE, and it is stated as a property rather than

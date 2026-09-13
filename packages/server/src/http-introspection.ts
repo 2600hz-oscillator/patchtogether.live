@@ -1,5 +1,3 @@
-// packages/server/src/http-introspection.ts
-//
 // Hocuspocus extension that exposes two HTTP routes on the SAME listener
 // the WS server uses (the Hocuspocus `Server` wraps `http.createServer`
 // and the `onRequest` hook lets extensions reply before the default 200

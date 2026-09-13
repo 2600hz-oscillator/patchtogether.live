@@ -1,5 +1,3 @@
-// e2e/tests/shared-clock.spec.ts
-//
 // Phase 0/1 of the shared-state-sync plan: a real two-context test that
 // boots two browsers, attaches both to the same Hocuspocus rackspace,
 // drops in an LFO, and confirms both clients agree on the LFO's

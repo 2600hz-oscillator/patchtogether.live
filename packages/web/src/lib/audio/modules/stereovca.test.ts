@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/stereovca.test.ts
-//
 // Unit tests for STEREOVCA's pure math + module-def shape. The worklet
 // itself is exercised via the ART harness; here we pin the per-sample
 // multiply, normalling rules, ring-mod sum/difference frequencies, and

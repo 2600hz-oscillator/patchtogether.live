@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/midiclock-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for MIDICLOCK's faceplate.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-cells`,

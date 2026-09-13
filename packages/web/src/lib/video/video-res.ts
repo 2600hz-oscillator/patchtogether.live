@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-res.ts
-//
 // Pure aspect → resolution math for the OUTPUT aspect switch (4:3 ↔ 16:9).
 // GL-free + side-effect free so it unit-tests deterministically (see
 // video-res.test.ts). Modelled on p10entrancer's OutputGeometry/OutputResolution

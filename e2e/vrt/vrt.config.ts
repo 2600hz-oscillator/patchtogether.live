@@ -1,5 +1,3 @@
-// e2e/vrt/vrt.config.ts
-//
 // Visual Regression Test (VRT) Playwright config.
 //
 // Goals:

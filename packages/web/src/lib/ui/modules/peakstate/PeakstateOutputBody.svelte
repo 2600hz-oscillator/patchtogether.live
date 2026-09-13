@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/peakstate/PeakstateOutputBody.svelte
-  //
   // The PEAKSTATE dock full-view body: the live mandala picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

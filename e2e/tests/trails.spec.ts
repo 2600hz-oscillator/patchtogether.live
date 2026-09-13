@@ -1,5 +1,3 @@
-// e2e/tests/trails.spec.ts
-//
 // ═════════ THE REAL-SOURCE-CHAIN GATE FOR THE BELA TRAILS MODULE ═════════
 //
 // AGENTS.md rule 8: a MIDI module ships an e2e wiring the REAL default-mode

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/backdraft.test.ts
-//
 // Unit tests for BACKDRAFT's pure helpers + def shape. The GL-side draw
 // is covered by the e2e + VRT suites; here we pin the delay-frame
 // selection, the ring tap index, the mask-combine math, and the

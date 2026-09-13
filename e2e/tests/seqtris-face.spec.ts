@@ -1,5 +1,3 @@
-// e2e/tests/seqtris-face.spec.ts
-//
 // SEQTRIS'S PROMOTED FACE — the DEFAULT shell, which nothing else in the repo
 // exercises for this module.
 //
@@ -246,7 +244,6 @@ function graph(opts: { clocked: boolean; gravity?: number }): {
   return { nodes, edges };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 
 test.describe('SEQTRIS — the promoted FACE, on the default shell', () => {
   test('the LANE TILE paints a LIVE WELL with nothing expanded', async ({ page }) => {

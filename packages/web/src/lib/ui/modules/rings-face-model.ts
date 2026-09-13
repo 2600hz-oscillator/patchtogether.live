@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/rings-face-model.ts
-//
 // The PURE model behind the RINGS faceplate — its three derived readouts and
 // the pickup-comb picture. No DOM, no engine, no store: params in, numbers and
 // strings out, so every claim the faceplate makes is unit-testable and

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/snaredrum-factory-strike.test.ts
-//
 // THE HOST-SIDE AUDIO WIRING FOR THE TWO AUDITIONS, against the REAL factory.
 //
 // ⚠ WHY THIS FILE EXISTS — the kickdrum #1277 lesson, applied before it bites.

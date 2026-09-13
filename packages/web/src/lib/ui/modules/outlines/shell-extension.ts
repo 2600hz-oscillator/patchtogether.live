@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outlines/shell-extension.ts
-//
 // The outlines SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), and the fifth adopter of the `fullViewBody` slot after `backdraft`,
 // `videoOut`, `spirographs` and `mirrorpool`.

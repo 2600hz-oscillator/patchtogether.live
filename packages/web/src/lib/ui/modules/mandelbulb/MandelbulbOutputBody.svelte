@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/mandelbulb/MandelbulbOutputBody.svelte
-  //
   // The MANDELBULB dock full-view body: the ray-marched preview, the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module,
   // and the SLICE WAVEFORM readout — the module's audio half made visible.

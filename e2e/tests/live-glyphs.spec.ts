@@ -1,5 +1,3 @@
-// e2e/tests/live-glyphs.spec.ts
-//
 // LIVE proof for the glyph primitives (VuMeter + ScopeScreen), on the
 // DEFAULT shell: the glyphs' shell home is the DOCK HERO (`shell-glyph-meter`
 // / `shell-glyph` / `shell-glyph-wave`, bound per module by glyphKind — the
@@ -57,7 +55,6 @@ async function meterLit(page: Page, nodeId: string): Promise<number> {
   return raw ? Number(raw) : 0;
 }
 
-/** Open a node's dock pane (the shell home of its hero glyph). */
 async function openPane(page: Page, nodeId: string): Promise<void> {
   await page.evaluate(
     (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),

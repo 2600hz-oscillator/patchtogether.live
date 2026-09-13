@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-boot.test.ts
-//
 // The BLOOD BOOT SEAM, tested where it is cheap — the pure half of the thing
 // that, if it went wrong, would ship a module that never starts.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/face-videovarispeed.spec.ts
-//
 // VIDEOVARISPEED's faceplate — the acceptance test for the wave-4 promotion.
 //
 // ⚠ THE FILENAME IS LOAD-BEARING — NOT `videovarispeed-face.spec.ts` or any

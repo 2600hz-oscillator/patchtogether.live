@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-songmode.spec.ts
-//
 // CLIP PLAYER song mode (Phase 1): record clip launches into the arrangement,
 // toggle SESSION ⇄ ARRANGEMENT, and replay the log. No TIMELORDE in the rack →
 // the clip player free-runs (transportRunning true) at the 120bpm fallback, so
@@ -60,7 +58,6 @@ async function readData(page: Page, nodeId: string): Promise<CPData> {
   }, nodeId);
 }
 
-/** Open the clip player's dock full view — the shell home of deck + grid. */
 async function openDock(page: Page) {
   const tile = page.locator('.svelte-flow__node[data-id="cp"] [data-testid="module-shell"]');
   await expect(tile).toBeVisible();
@@ -70,7 +67,6 @@ async function openDock(page: Page) {
   return dock;
 }
 
-/** Open the full-window ARRANGE editor from the deck. */
 async function openArrange(page: Page, dock: import('@playwright/test').Locator) {
   await dock.getByTestId('clipplayer-arrange-open-cp').scrollIntoViewIfNeeded();
   await dock.getByTestId('clipplayer-arrange-open-cp').click();
@@ -349,7 +345,6 @@ test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', 
     });
   });
 
-  // Open the full-window editor from the dock deck.
   const dock = await openDock(page);
   const dialog = await openArrange(page, dock);
 

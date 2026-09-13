@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/button-model.ts
-//
 // PURE press/edge semantics for Button.svelte (the RACKLINE `.btn` — strike /
 // reset / load / SAVE). A card button is one of two behaviours:
 //   • TRIGGER (default) — fires ONCE on the press edge (a strike, a reset, a

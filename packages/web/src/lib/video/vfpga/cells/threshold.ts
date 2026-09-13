@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/threshold.ts
-//
 // CLB cell `threshold` — per-channel hard threshold (the comparator/key cell):
 // each RGB channel of input `a` becomes 0 or 1 depending on whether it exceeds
 // the `level` knob. One input (a), one knob (level, default 0.5). Alpha kept.

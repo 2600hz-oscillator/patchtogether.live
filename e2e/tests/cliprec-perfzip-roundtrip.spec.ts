@@ -36,11 +36,9 @@ import { test, expect } from './_fixtures';
 import { spawnPatch, MOUNT_CAP_MS } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
-// ---------------------------------------------------------------------------
 // THE BUDGET IS DERIVED FROM THE STEPS, NOT TYPED OVER THEM (see
 // cliprec-clip-mode.spec.ts for why a flat wall smaller than its steps' sum
 // fails with a bare "Test timeout exceeded" and nothing to grep).
-// ---------------------------------------------------------------------------
 
 /** Cold boot: navigation + topbar. Charged for BOTH page loads. */
 const BOOT_MS = 30_000;
@@ -131,7 +129,6 @@ async function setTransport(page: Page, running: boolean): Promise<void> {
   );
 }
 
-/** Open the launcher's DOCK faceplate on its SESSION page (grid + rec strip). */
 async function openLauncher(page: Page): Promise<void> {
   const shell = page.locator(`.svelte-flow__node[data-id="${CP}"] [data-testid="module-shell"]`);
   await expect(shell).toBeVisible({ timeout: MOUNT_CAP_MS });

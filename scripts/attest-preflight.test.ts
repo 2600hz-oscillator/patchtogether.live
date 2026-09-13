@@ -1,5 +1,3 @@
-// scripts/attest-preflight.test.ts
-//
 // THE QUIET-MACHINE GUARD, TESTED AGAINST THE SIGNAL THAT BROKE IT (#1331).
 //
 // The fixture is not invented: it is the 45-sample, 2 s-interval recording of a

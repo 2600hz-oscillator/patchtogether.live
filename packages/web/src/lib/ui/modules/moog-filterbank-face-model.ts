@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog-filterbank-face-model.ts
-//
 // THE PURE MODEL BEHIND BOTH MOOG FIXED-FILTER-BANK FACEPLATES — the 907A and
 // the 914. ONE file for TWO modules, for the same reason they are one queue
 // entry: they share `moog-filterbank-dsp`'s centre-frequency grid and

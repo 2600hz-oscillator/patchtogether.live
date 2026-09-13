@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/mandelbulb-glyph-tap.test.ts
-//
 // THE PERMANENT PROOF that `mandelbulb` must declare `glyph: 'none'`, and that
 // the reason is NOT the one every other video module has.
 //

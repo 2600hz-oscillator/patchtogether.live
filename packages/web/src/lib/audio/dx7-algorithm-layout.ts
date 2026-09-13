@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-algorithm-layout.ts
-//
 // GEOMETRY FOR THE DX7 ALGORITHM PICTURE — derived, never hand-drawn.
 //
 // ONE pure function feeds the algorithm picker, the operator map, the operator

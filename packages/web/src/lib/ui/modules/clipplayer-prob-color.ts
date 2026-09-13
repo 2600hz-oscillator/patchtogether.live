@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-prob-color.ts
-//
 // PURE cell-fill colour for the clipplayer card's note grid — extracted from
 // ClipplayerCard.svelte so the SOURCE-AWARE probability colouring (white /
 // purple / orange) is unit-testable without rendering the component (the repo's

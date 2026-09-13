@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/out-to-launch-cell-actions.ts
-//
 // THE OUT TO LAUNCH "CONNECT LAUNCHPAD" GESTURE, as a face cell — plus the
 // OUTCOME + ROSTER store the faceplate body needs, because a ranked cell cannot
 // own component state.

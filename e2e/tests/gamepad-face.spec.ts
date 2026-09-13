@@ -1,5 +1,3 @@
-// e2e/tests/gamepad-face.spec.ts
-//
 // GAMEPAD, against the FACEPLATE — the DEFAULT renderer.
 //
 // ── ⚠ WHY THIS FILE EXISTS, AND WHY `gamepad.spec.ts` IS NOT ENOUGH ─────────

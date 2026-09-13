@@ -1,5 +1,3 @@
-// scripts/worktree-guard.test.ts
-//
 // The worktree guard's CLASSIFIER, tested against real git worktrees in a
 // scratch repo (#1571).
 //

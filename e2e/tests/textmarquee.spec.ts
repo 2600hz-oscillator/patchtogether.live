@@ -1,5 +1,3 @@
-// e2e/tests/textmarquee.spec.ts
-//
 // TEXTMARQUEE (rich-text marquee video generator) functional e2e — the REAL
 // edit → render → OUTPUT chain.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/devices/hologram-chroma-console.ts
-//
 // HOLOGRAM ELECTRONICS — CHROMA CONSOLE. The first device descriptor.
 //
 // ══════════════════════════ SOURCE OF THE CC MAP ══════════════════════════

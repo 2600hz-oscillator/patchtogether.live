@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/meowbox.test.ts
-//
 // Unit tests for MEOWBOX module-def shape + the V/oct → Hz conversion mirror
 // of the Faust DSP. The full DSP rendering path is exercised by the ART
 // scenario in art/scenarios/meowbox/voct-tracking.test.ts.

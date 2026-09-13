@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cube/cube-view-mounts.ts
-//
 // The ONE home for how cube's node-owned renderer is MOUNTED per claimant kind,
 // and the drag-to-orbit action both mounts share (legacy-removal S1.5).
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog956/ribbon-actions.ts
-//
 // THE RIBBON GESTURE, as ONE action seam — press, slide, release — called
 // verbatim by both surfaces that play the 956: the face's lane `tileBody` and
 // its dock `fullViewBody`.

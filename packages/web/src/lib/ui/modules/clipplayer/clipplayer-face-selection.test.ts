@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer/clipplayer-face-selection.test.ts
-//
 // Pins the node-keyed SELECTION seam the launch panel writes and the note panel
 // reads — specifically its ACCEPTANCE DOMAIN, because that is what shipped
 // wrong: the guard checked `CLIP_COUNT` (the visible 8×8 = 64, a PAD count)

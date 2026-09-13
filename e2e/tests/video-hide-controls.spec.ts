@@ -1,5 +1,3 @@
-// e2e/tests/video-hide-controls.spec.ts
-//
 // MONITOR MODE + the PatchPanel corner-trigger cascade, on the DEFAULT shell.
 //
 // ⚠ HISTORY (#2009): this file used to carry a parameterised suite driving
@@ -83,7 +81,6 @@ async function readNodeData(page: Page, id: string): Promise<NodeDataShape> {
 // the drag drill-down (cable-drag-drilldown.spec.ts). `triggerInfoFromEvent`
 // died with the surface that raised those events.
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE FACED LEG (#2009) — MONITOR MODE on the workflow-shell dock faceplate.
 //
 // This is the half the suite above structurally cannot see. Promotion swaps
@@ -224,7 +221,6 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Open a node's dock faceplate and return the full-view locator. */
 async function openFace(page: Page, nodeId: string): Promise<Locator> {
   await centerOnNode(page, nodeId);
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);

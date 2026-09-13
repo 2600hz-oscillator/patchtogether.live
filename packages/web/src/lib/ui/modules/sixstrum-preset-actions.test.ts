@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/sixstrum-preset-actions.test.ts
-//
 // The browser-free pre-gate for SIX STRUM's guitar / bass / harp PRESET RECALL
 // — the ONE implementation the classic card's MODE knob and the RACKLINE shell's
 // PRESET cell both call.

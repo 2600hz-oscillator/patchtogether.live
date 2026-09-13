@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-vco-sync.test.ts
-//
 // Unit coverage for the ANALOG VCO HARD-SYNC in/out (feat/analog-vco-sync).
 //
 // The sync logic lives in Faust (packages/dsp/src/analog-vco.dsp) and is

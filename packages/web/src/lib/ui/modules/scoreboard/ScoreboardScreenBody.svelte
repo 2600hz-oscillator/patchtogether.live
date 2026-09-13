@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/scoreboard/ScoreboardScreenBody.svelte
-  //
   // THE SCOREBOARD DISPLAY — the dock full-view body: the 4-digit neon counter
   // plus the SCREEN ON/OFF switch the 2026-08-18 ruling requires of every video
   // module.

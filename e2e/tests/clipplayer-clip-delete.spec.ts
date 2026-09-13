@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-clip-delete.spec.ts
-//
 // DELETING A CLIP FROM THE LAUNCH GRID — the one case that is about the ENGINE
 // rather than the menu: a PLAYING clip must not be deleted out from under the
 // lane that is playing it. Leaving `playing[lane]` (or a pending `queued[lane]`)

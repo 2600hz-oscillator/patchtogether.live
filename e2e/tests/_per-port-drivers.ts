@@ -1,5 +1,3 @@
-// e2e/tests/_per-port-drivers.ts
-//
 // Per-module test-driver registry for the per-port output-emit sweep.
 //
 // This file replaces the old `EXEMPT_OUTPUT_EMIT_MODULES` quasi-exemption

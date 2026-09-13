@@ -1,4 +1,3 @@
-// packages/web/src/lib/electra/tap-tempo.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   TapTempo,

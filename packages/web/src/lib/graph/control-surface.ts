@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface.ts
-//
 // CONTROL SURFACE — data model + helpers.
 //
 // A Control Surface is a meta-domain node that aggregates POINTERS to other

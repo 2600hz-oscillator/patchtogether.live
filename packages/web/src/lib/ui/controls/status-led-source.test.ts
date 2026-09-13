@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/status-led-source.test.ts
-//
 // THE GATE THAT KEEPS `StatusLed` UNABLE TO PAINT A MEASUREMENT.
 //
 // ── WHY A SOURCE GATE AND NOT A RENDER TEST ────────────────────────────────

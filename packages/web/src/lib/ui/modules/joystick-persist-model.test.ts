@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/joystick-persist-model.test.ts
-//
 // THE PERMANENT LEGS BEHIND THE #1963 RULING — the stick STAYS where you put it.
 //
 // The owner's answer on #1963 (verbatim "1 - persist") turned a value that was

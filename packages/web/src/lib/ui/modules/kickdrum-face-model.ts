@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/kickdrum-face-model.ts
-//
 // THE PURE MODEL BEHIND KICK DRUM's FACEPLATE — every number the faceplate
 // prints or draws, derived here and nowhere else.
 //

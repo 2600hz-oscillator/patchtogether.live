@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/recorderbox/RecorderboxTileBody.svelte
-  //
   // THE RECORDERBOX LANE TILE's own transport: arm a take, end a take, and see
   // that one is running — without expanding the module.
   //

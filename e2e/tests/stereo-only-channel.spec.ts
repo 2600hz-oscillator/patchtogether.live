@@ -1,5 +1,3 @@
-// e2e/tests/stereo-only-channel.spec.ts
-//
 // "PATCH ONLY L" / "PATCH ONLY R", end to end, with AUDIO as the verdict.
 //
 // The gesture under test is the real one: right-click a collapsed stereo OUTPUT

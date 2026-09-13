@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/resofilter-face-model.ts
-//
 // RESOFILTER's FACE MODEL — the pure arithmetic behind the faceplate's three
 // derived readouts and its sidebar response curve.
 //

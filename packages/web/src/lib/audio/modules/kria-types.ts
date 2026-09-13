@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kria-types.ts
-//
 // Data model + PURE helpers for the `kria` module — a clean-room reimagining of
 // monome's Kria grid step-sequencer (inspired by monome Kria; NO monome source
 // or doc prose is reproduced — behavior was reimplemented from the public docs).
@@ -23,9 +21,7 @@ import {
   PENTATONIC_SCALE_STEPS,
 } from '$lib/mike/music-theory';
 
-// ---------------------------------------------------------------------------
 // Dimensions
-// ---------------------------------------------------------------------------
 /** Kria is a 4-track sequencer. */
 export const KRIA_TRACKS = 4;
 /** Steps per track. Kria's grid shows 16 columns = 16 steps. */
@@ -39,9 +35,7 @@ export const GRID_H = 8;
 /** Default MIDI root for a track's NOTE page (one octave below C4 = 0V). */
 export const KRIA_DEFAULT_ROOT = C3_MIDI; // 48
 
-// ---------------------------------------------------------------------------
 // Scales
-// ---------------------------------------------------------------------------
 export type KriaScaleName = 'major' | 'minor' | 'pentatonic' | 'chromatic';
 
 /** Built-in scale presets, in the order Kria's SCALE page lists them. The
@@ -69,9 +63,7 @@ export function scaleSemitones(scale: KriaScaleName): readonly number[] {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Playback direction (Kria's DIRECTION modes)
-// ---------------------------------------------------------------------------
 export type KriaDirection = 'forward' | 'reverse' | 'pingpong' | 'drunk' | 'random';
 export const KRIA_DIRECTIONS: readonly KriaDirection[] = [
   'forward',
@@ -87,9 +79,7 @@ export const KRIA_DIRECTIONS: readonly KriaDirection[] = [
  *  1 = every 16th-note tick, 2 = every 8th, 4 = quarter, etc. */
 export const KRIA_TIME_DIVISIONS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16] as const;
 
-// ---------------------------------------------------------------------------
 // Per-track / per-step model
-// ---------------------------------------------------------------------------
 /** A single track's full per-step + per-track state. All arrays are length
  *  KRIA_STEPS. Kept as plain arrays of primitives so the whole thing
  *  round-trips through Y.Doc / JSON with no class instances. */
@@ -152,9 +142,7 @@ export interface KriaData {
   cueSteps?: number;
 }
 
-// ---------------------------------------------------------------------------
 // Defaults + coercion
-// ---------------------------------------------------------------------------
 export function defaultTrack(): KriaTrack {
   return {
     trig: new Array<boolean>(KRIA_STEPS).fill(false),
@@ -285,9 +273,7 @@ export function slotOccupied(data: KriaData | undefined, slot: number): boolean 
   return !!bankSlot(data?.patterns, slot);
 }
 
-// ---------------------------------------------------------------------------
 // Note/scale → V/oct mapping (PURE)
-// ---------------------------------------------------------------------------
 /**
  * Map a track step's NOTE degree + OCTAVE offset to a MIDI note, through the
  * pattern's scale + root. Kria semantics: the NOTE page selects a scale degree
@@ -310,9 +296,7 @@ export function stepVOct(pattern: KriaPattern, track: KriaTrack, step: number): 
   return midiToVOct(stepMidi(pattern, track, step));
 }
 
-// ---------------------------------------------------------------------------
 // Loop + direction step-advance math (PURE)
-// ---------------------------------------------------------------------------
 /** The ordered list of step indices a track visits within its loop window,
  *  given a direction. For forward/reverse/pingpong this is deterministic;
  *  drunk/random need an RNG and are advanced incrementally (advanceStep). */
@@ -405,9 +389,7 @@ export function willWrap(track: KriaTrack, cursor: KriaCursor): boolean {
   return cursor.pos === len - 1;
 }
 
-// ---------------------------------------------------------------------------
 // Pattern-cue quantize (PURE)
-// ---------------------------------------------------------------------------
 export interface CueState {
   active: number;
   cued: number | null;
@@ -447,10 +429,8 @@ export function tickCue(
   return { state, switched: false };
 }
 
-// ---------------------------------------------------------------------------
 // Card / grid edit helpers (PURE) — return NEW arrays/objects; callers mutate
 // node.data under the in-place Y.Doc discipline at the call site.
-// ---------------------------------------------------------------------------
 export function toggleTrig(track: KriaTrack, step: number): KriaTrack {
   const trig = track.trig.slice();
   trig[step] = !trig[step];
@@ -502,9 +482,7 @@ export function setMuted(track: KriaTrack, muted: boolean): KriaTrack {
   return { ...track, muted: !!muted };
 }
 
-// ---------------------------------------------------------------------------
 // THE STEP-EDITOR GRID MODEL (PURE) — the ONE place row↔value lives
-// ---------------------------------------------------------------------------
 //
 // Every editor of this sequencer reads this model: the faceplate's step-grid
 // panel and — through the pure mutators above — the

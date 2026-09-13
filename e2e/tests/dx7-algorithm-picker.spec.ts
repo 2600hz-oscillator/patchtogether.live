@@ -1,5 +1,3 @@
-// e2e/tests/dx7-algorithm-picker.spec.ts
-//
 // The DX7 ALGORITHM PICKER — dx7 PR 4's user-facing deliverable, and the one
 // part of it no other gate can see.
 //

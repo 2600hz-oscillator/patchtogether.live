@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/treeohvox-parity.test.ts
-//
 // Parity profile vs Open303. The brief asks: "do your best to profile the
 // audio output vs open303 itself if that's practical." Reality check —
 // compiling Open303 from C++ to a CLI binary inside this worktree's
@@ -69,13 +67,11 @@ function buildPattern(rootCv: number): ScheduledNote[] {
   }));
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 // Structural parity — any faithful 303 must obey these. Each test pins a
 // PROPERTY rather than an exact numerical match against C++, because
 // (a) we don't have a C++ binary available in CI, and (b) even with one,
 // the 4× oversampling + post chain we deliberately omit in the voice slice
 // would make exact bit-equality impossible without porting more code.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('TREE.oh.VOX vs Open303 — structural parity', () => {
   it('produces audible output for the canonical C-D-Eb-F-Eb-D-C pattern at 130 BPM', () => {
@@ -175,12 +171,10 @@ describe('TREE.oh.VOX vs Open303 — structural parity', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // Numerical fingerprint — pin the EXACT first-200-sample SHA of the
 // canonical pattern. This catches IEEE-754 reordering or a single-letter
 // constant typo in the polynomial that wouldn't be caught by the
 // structural tests above. Like the ART baselines but cheaper to maintain.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('TREE.oh.VOX numerical fingerprint', () => {
   it('first 200 samples of the canonical pattern produce a stable digest', async () => {
@@ -214,11 +208,9 @@ describe('TREE.oh.VOX numerical fingerprint', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // Open303 binary parity — runs ONLY when a reference WAV is present at
 // __fixtures__/treeohvox/open303-cdefedc-130bpm.wav. The doc-block below
 // describes how to produce that WAV.
-// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * How to produce the Open303 reference WAV (for future contributors):

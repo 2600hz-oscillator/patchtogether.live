@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-shapes.test.ts
-//
 // Unit tests for the 3dShapeGen pure path: feature-grid + peak extraction,
 // per-type SDFs, voxel scan, wavetable scan. No canvas, no GL, no
 // AudioContext.

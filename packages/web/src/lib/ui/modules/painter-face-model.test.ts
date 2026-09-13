@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/painter-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the PAINTER faceplate.
 //
 // Everything here is a claim the shipped face MAKES and that no other gate in

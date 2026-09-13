@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/recorderbox-transport.ts
-//
 // THE RECORDERBOX TRANSPORT SEAM — the one home for "arm a take, end a take,
 // remember a folder, recover a crashed one", shared by every surface that can
 // operate this module.

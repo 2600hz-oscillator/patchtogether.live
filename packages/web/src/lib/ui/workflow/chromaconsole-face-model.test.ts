@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/chromaconsole-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the CHROMA CONSOLE's faceplate.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-cells`,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-context.ts
-//
 // Module cards need access to the live PatchEngine so faders can read
 // AudioParam values at frame rate (motorized fader convention). We pass the
 // engine down via Svelte context as a getter, so even if the engine is

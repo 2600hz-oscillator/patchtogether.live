@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/audioin.ts
-//
 // AUDIO IN — system audio input source. Streams from a user-selected
 // audioinput device (mic / line-in / aggregate) via `getUserMedia` +
 // `createMediaStreamSource`, exposing L + R audio outputs for downstream
@@ -161,7 +159,6 @@ export const audioInDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // The rack's SOURCE FROM OUTSIDE, promoted — `audioOut`'s twin, one wire
   // earlier, and deliberately built to the same narrow shape.

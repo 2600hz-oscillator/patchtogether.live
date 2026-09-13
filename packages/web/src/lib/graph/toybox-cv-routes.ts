@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-cv-routes.ts
-//
 // TOYBOX — Yjs mutator for the modulation routing map (node.data.cvRoutes).
 //
 // The card's modulation section edits which addressed param each generic input

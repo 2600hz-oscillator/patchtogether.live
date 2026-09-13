@@ -1,5 +1,3 @@
-// art/scenarios/analog-vco/vco-mirror.ts
-//
 // THE ONE TS mirror of packages/dsp/src/analog-vco.dsp.
 //
 // WHY A MIRROR EXISTS AT ALL. The analog-vco ART scenarios predate the
@@ -230,7 +228,6 @@ export function renderVcoMirror(opts: VcoRenderOptions): VcoTaps {
   return out;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // ⚠ DO NOT TRUST THIS FILE'S sqr POLARITY YET — the measurement is unresolved.
 //
 // Three framings of "does the mirror's square match the shipped DSP" gave
@@ -251,4 +248,3 @@ export function renderVcoMirror(opts: VcoRenderOptions): VcoTaps {
 // The blind-gate finding this branch exists for does NOT depend on any of that:
 // it was demonstrated with the repo's own commands (edit .dsp → task dsp:build
 // → art:update → git status) and no custom probe at all.
-// ─────────────────────────────────────────────────────────────────────────

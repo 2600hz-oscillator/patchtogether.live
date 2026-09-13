@@ -1,5 +1,3 @@
-// e2e/tests/scratch-persist.spec.ts
-//
 // SCRATCH PERSISTENCE (FIX A) — the `/rack` scratch canvas mirrors its Y.Doc
 // into an IndexedDB local replica keyed by a stable per-device id
 // (localStorage `pt:local-scratch-id`), so a browser REFRESH rehydrates

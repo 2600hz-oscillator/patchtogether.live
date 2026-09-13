@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/marbles-engine.ts
-//
 // HOST-SIDE MIRROR of packages/dsp/src/marbles-core.ts — kept numerically
 // identical so vitest + ART exercise the same math as the AudioWorklet.
 // IF YOU EDIT THIS FILE, also edit packages/dsp/src/marbles-core.ts.
@@ -31,9 +29,7 @@
 //    the quantizer search, the Bernoulli/coin/cluster/drum T generators, the
 //    lag_processor crossfade — all ported line-for-line.
 
-// ---------------------------------------------------------------------------
 // Deterministic random stream (firmware RandomGenerator LCG).
-// ---------------------------------------------------------------------------
 
 const K_MAX_UINT32 = 4294967296.0;
 
@@ -59,14 +55,12 @@ function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x;
 }
 
-// ---------------------------------------------------------------------------
 // Beta distribution sample (analytic approximation of marbles' table lookup).
 //   uniform: a uniform [0,1) draw.
 //   spread:  0 = degenerate (always == bias), 1 = wide/near-uniform.
 //   bias:    mean of the distribution in [0,1].
 // The firmware interpolates a 9-spread x 5-bias inverse-CDF table. We map the
 // uniform through a power curve whose exponents follow bias, scaled by spread.
-// ---------------------------------------------------------------------------
 
 export function betaDistributionSample(uniform: number, spread: number, bias: number): number {
   const s = clamp(spread, 0, 1);
@@ -100,11 +94,9 @@ function semitonesToRatio(semitones: number): number {
   return Math.pow(2, semitones / 12);
 }
 
-// ---------------------------------------------------------------------------
 // RandomSequence — déjà-vu loop with Markov locking (random_sequence.h).
 // Ported line-for-line from the firmware. The "redo" pointers are replaced by
 // integer indices into loop_/history_ to keep TS GC-friendly.
-// ---------------------------------------------------------------------------
 
 const K_DEJA_VU_BUFFER_SIZE = 16;
 const K_HISTORY_BUFFER_SIZE = 16;
@@ -244,9 +236,7 @@ export class RandomSequence {
   }
 }
 
-// ---------------------------------------------------------------------------
 // SlaveRamp (slave_ramp.h) — ported line-for-line.
-// ---------------------------------------------------------------------------
 
 const K_MAX_RAMP_VALUE = 1.0;
 
@@ -326,9 +316,7 @@ export class SlaveRamp {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Quantizer (quantizer.{h,cc}) — weighted variable-resolution scale snap.
-// ---------------------------------------------------------------------------
 
 const K_MAX_DEGREES = 16;
 const K_NUM_THRESHOLDS = 7;
@@ -444,9 +432,7 @@ export class Quantizer {
   }
 }
 
-// ---------------------------------------------------------------------------
 // LagProcessor (lag_processor.cc) — STEPS portamento/glide.
-// ---------------------------------------------------------------------------
 
 export class LagProcessor {
   private rampStart = 0;
@@ -486,9 +472,7 @@ export class LagProcessor {
   }
 }
 
-// ---------------------------------------------------------------------------
 // OutputChannel (output_channel.{h,cc}) — SPREAD/BIAS/STEPS voltage gen.
-// ---------------------------------------------------------------------------
 
 export class ScaleOffset {
   scale: number;
@@ -589,10 +573,8 @@ export class OutputChannel {
   }
 }
 
-// ---------------------------------------------------------------------------
 // TGenerator (t_generator.{h,cc}) — gate generation: Bernoulli (coin),
 // independent Bernoulli, three-states, drums, clusters, markov.
-// ---------------------------------------------------------------------------
 
 export const T_MODEL = {
   COMPLEMENTARY_BERNOULLI: 0,
@@ -857,12 +839,10 @@ export class TGenerator {
   }
 }
 
-// ---------------------------------------------------------------------------
 // XYGenerator (x_y_generator.{h,cc}) — X1/X2/X3 + Y CV outputs.
 // Simplified to the INTERNAL_T2 (shared-master) clock source, which is the
 // musically useful default for a browser module; per-channel pseudo-random
 // shifting via ReplayPseudoRandom is preserved so the 3 X channels diverge.
-// ---------------------------------------------------------------------------
 
 export const K_NUM_X_CHANNELS = 3;
 export const K_NUM_CHANNELS = 4; // X1 X2 X3 + Y
@@ -922,9 +902,7 @@ export class XYGenerator {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Preset scales (settings.cc preset_scales[6]).
-// ---------------------------------------------------------------------------
 
 export const PRESET_SCALES: Scale[] = [
   // C major

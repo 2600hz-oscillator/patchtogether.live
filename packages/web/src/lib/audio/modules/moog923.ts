@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog923.ts
-//
 // MOOG 923 FILTERS / NOISE SOURCE — a slice of the Moog System 35 clone
 // (docs/adr/018-moog-clone-provenance.md). The 923 is a dual-purpose
 // utility panel:
@@ -84,7 +82,6 @@ export const moog923Def: AudioModuleDef = {
     { id: 'hpCutoff', label: 'Hi Pass', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. The 923 is the System 35's utility drawer: the panel you
   // patch when you need raw noise AND a way to split one signal into a low half

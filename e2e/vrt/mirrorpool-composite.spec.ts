@@ -1,5 +1,3 @@
-// e2e/vrt/mirrorpool-composite.spec.ts
-//
 // Deterministic composite VRT for MIRRORPOOL (the hemisphere-pool liquid
 // renderer). Each scene patches two deterministic pure-UV sources into the
 // POOL + SCENE inputs and dials MIRRORPOOL to a visually distinct setting,

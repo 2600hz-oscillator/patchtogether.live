@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/samsloop/shell-extension.ts
-//
 // The SAMSLOOP SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

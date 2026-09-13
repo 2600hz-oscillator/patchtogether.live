@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/load-diagnostics.test.ts
-//
 // Pure-unit gate for the load-diagnostic summariser — the user-facing half of
 // the unknown-type drop path. Zero fs, zero DOM, ~0 CI wall-time.
 //

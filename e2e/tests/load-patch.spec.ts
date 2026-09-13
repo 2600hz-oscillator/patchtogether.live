@@ -1,5 +1,3 @@
-// e2e/tests/load-patch.spec.ts
-//
 // @load — regression test for the "load patch, no audio ~50% of the time" bug.
 //
 // Bug shape (fix/load-patch-audio-race):
@@ -216,4 +214,3 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
     await ctx.close();
   }
 });
-

@@ -1,5 +1,3 @@
-// e2e/tests/coverage-group-2-sources.spec.ts
-//
 // Group 2 of the module-coverage roadmap (see e2e/MODULE-COVERAGE-PLAN.md):
 // audio sources (oscillators + noise). Every audio-source module must
 // emit audio at its declared `audio` outputs when given default knob
@@ -141,7 +139,6 @@ test('integration (Group 2): sequencer drives analogVco + wavetableVco in parall
     ],
   );
 
-  // Set step pattern.
   await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
 
   await runFor(page, 1000);

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/worker-proxy-handle.ts
-//
 // Fix E Phase 1 — the WorkerProxyHandle.
 //
 // Lives in the MAIN VideoEngine in place of a worker-locus module's normal

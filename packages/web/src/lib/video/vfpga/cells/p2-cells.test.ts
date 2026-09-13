@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/p2-cells.test.ts
-//
 // P2 cell-library breadth — placement + resource-accounting tests. The shared
 // kernel<->metadata contract is asserted for EVERY cell by cells.test.ts (the
 // glob-driven sweep); this file proves each P2 cell PLACES through place-and-route:
@@ -14,9 +12,7 @@ import { cellInputUniform } from './types';
 import { fabricToEffect, validateFabric } from '$lib/video/vfpga/place-and-route';
 import type { VfpgaFabric, VfpgaTile, VfpgaTileType } from '$lib/video/vfpga/types';
 
-// ----------------------------------------------------------------------
 // The full P2 cell set: (type, op, input-count) — the breadth this PR adds.
-// ----------------------------------------------------------------------
 const P2_CELLS: { type: VfpgaTileType; op: string; inputs: string[] }[] = [
   // CLB ops
   { type: 'clb', op: 'add', inputs: ['a', 'b'] },

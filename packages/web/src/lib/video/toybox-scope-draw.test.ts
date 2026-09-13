@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-scope-draw.test.ts
-//
 // PURE coverage for the TOYBOX inline mini-scope draw helpers. vitest runs in
 // `node` (no real canvas), so we stub the 2D context with a recorder that
 // captures every op + asserts the trace/fill/waveform geometry. pixelFromValue

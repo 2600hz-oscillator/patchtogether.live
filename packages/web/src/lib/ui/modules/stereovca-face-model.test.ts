@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/stereovca-face-model.test.ts
-//
 // THE PERMANENT LEGS BEHIND THE stereovca FACEPLATE (queue Q42).
 //
 // This face declares NO derived readout, so there is no `valueId` to

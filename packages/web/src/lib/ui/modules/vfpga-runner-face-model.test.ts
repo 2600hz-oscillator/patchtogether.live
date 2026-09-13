@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vfpga-runner-face-model.test.ts
-//
 // THE PERMANENT PINS for the VFPGA-RUNNER faceplate.
 //
 // Everything here is a claim the shipped face MAKES which no other gate can

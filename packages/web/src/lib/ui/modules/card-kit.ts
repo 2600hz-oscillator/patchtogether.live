@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/card-kit.ts
-//
 // Shared MECHANICAL helpers for module card components (LoC campaign rows
 // 5+6). Every card used to hand-copy the same four param closures and a
 // hand-typed PortDescriptor list restating its def's ports. Both are pure

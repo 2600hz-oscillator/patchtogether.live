@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-lane-return.ts
-//
 // THE NORMALLED RETURN — launcher lane N back into mixmstrs channel N.
 //
 // Owner decision, 2026-09-02: "record a loop and hear it take over" must work

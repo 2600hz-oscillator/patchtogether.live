@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midi-out-buddy.test.ts
-//
 // Unit tests for MIDI-OUT-BUDDY: module-def shape + the pure CV→MIDI mapping
 // (pitch CV → note quantization, velocity CV → 1..127, NoteOn/NoteOff byte
 // sequences) + the note-tracking state machine (NoteOff matches the held
@@ -262,9 +260,7 @@ describe('createMidiNoteTracker: gate edges → byte sequences + note tracking',
   });
 });
 
-// ================================================================
 // LANE vs MIDI-OUT CHANNEL (#1168)
-// ================================================================
 //
 // `node.data.channel` is the WORKFLOW CHANNEL-COLUMN membership scalar; the
 // card used to write it to set the MIDI output channel, which handed the value

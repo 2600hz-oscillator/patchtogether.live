@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/reshaper/monitor-box.ts
-//
 // THE RESHAPER MONITOR BOX — the geometry of "hide the controls and watch the
 // picture", in ONE place because TWO surfaces need it: `ReshaperCard.svelte`
 // (the legacy lane card) and `./ReshaperOutputBody.svelte` (the faced dock

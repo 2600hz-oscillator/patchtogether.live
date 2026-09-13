@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-chunk-name.ts
-//
 // GoPro-style chunk file naming for RECORDERBOX: a long take rolls to a NEW file
 // every ~10 min, and each chunk is named so it is UNIQUE and SORTS SEQUENTIALLY
 // in Finder.

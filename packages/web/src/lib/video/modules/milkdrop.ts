@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/milkdrop.ts
-//
 // MILKDROP — a Winamp/Milkdrop music visualizer as a fully CV-instrumented
 // video SOURCE, wrapping the open-source butterchurn engine (@webamp/butterchurn,
 // MIT) + the classic preset pack (butterchurn-presets, MIT).
@@ -256,7 +254,6 @@ export const milkdropDef: VideoModuleDef = {
     { id: 'milkdrop-milk-input', label: 'Load .milk preset', kind: 'other', testidPrefix: 'milkdrop-milk-input' },
   ],
 
-  // ── THE FACEPLATE ────────────────────────────────────────────────────────
   //
   // WHAT IT IS. MILKDROP is a Winamp-era preset visualizer as a CV-instrumented
   // video SOURCE. butterchurn drives nearly all preset motion from three audio

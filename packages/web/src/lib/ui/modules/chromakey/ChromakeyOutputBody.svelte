@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/chromakey/ChromakeyOutputBody.svelte
-  //
   // The CHROMAKEY dock full-view body: the live composite picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

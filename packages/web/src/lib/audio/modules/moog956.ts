@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog956.ts
-//
 // moogafakkin 956 — RIBBON CONTROLLER (moogafakkin System 55 clone).
 //
 // The 956 is a touch-ribbon: slide a finger along a horizontal strip and

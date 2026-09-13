@@ -1,5 +1,3 @@
-// art/scenarios/moog923/face-audit.test.ts
-//
 // THE ADVERSARIAL AUDIT FOR MOOG923, and the permanent anchor under its
 // faceplate (queue Q20).
 //

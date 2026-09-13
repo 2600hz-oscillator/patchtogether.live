@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/4plexvid/shell-extension.ts
-//
 // The 4PLEXVID SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), joining `backdraft`, `videoOut`, `spirographs`, `mirrorpool`,
 // `freezeframe`, `outlines` and `b3ntb0x` on the `fullViewBody` slot.

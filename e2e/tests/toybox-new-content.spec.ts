@@ -1,5 +1,3 @@
-// e2e/tests/toybox-new-content.spec.ts
-//
 // TOYBOX content-overhaul — pixel/data proofs for the NEW original content
 // (Part B of the overhaul). Mirrors toybox-shadertoy.spec.ts' harness (live
 // node.data writes via __ydoc + __toyboxFreeze, coarse canvas sampling).

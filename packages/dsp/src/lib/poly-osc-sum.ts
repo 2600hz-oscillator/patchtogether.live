@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/poly-osc-sum.ts
-//
 // Pure per-lane ENVELOPE + SUM + NORMALIZATION math shared by CUBE and WAVECEL's
 // polyphonic hot loops (the per-voice-ADSR feature). Factored out of the inline
 // worklet loops so the envelope/sum/norm arithmetic is unit-testable directly —

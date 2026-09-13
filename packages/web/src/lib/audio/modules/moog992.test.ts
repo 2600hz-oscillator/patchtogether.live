@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog992.test.ts
-//
 // Two test layers for the MOOG 992 CV PANEL (moogafakkin System 55/35 clone):
 //   1. Module-def shape — pins the 992's I/O surface (cv1..cv4 inputs, the
 //      single cv_out output, the literal atten1..atten4 param array) so a

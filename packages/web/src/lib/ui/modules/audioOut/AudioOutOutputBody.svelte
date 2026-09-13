@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/audioOut/AudioOutOutputBody.svelte
-  //
   // THE AUDIO OUT dock full-view body: the terminal stereo meter, plus the
   // output-device picker.
   //

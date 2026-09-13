@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/delete-bridge.test.ts
-//
 // BRIDGE-ON-DELETE (#1821), pure tier. No Yjs, no DOM — fake defs and a fake
 // resolver, the `validate-edge.test.ts` shape.
 //
@@ -23,7 +21,6 @@ import '$lib/video/modules';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { videoPortsOf } from '$lib/ui/patch-drop/drop-plan';
 
-// ---- fixtures -------------------------------------------------------------
 
 function n(id: string, type: string): ModuleNode {
   return { id, type, domain: 'video', position: { x: 0, y: 0 }, params: {} };

@@ -18,7 +18,6 @@ test.fixme('clear after voice demo removes all nodes + edges', { annotation: { t
   await fileMenuClick(page, 'workflow-file-clear');
   await page.waitForTimeout(300);
 
-  // Assert canvas is empty
   await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(0);
 });

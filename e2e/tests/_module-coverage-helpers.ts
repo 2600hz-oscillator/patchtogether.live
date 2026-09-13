@@ -1,5 +1,3 @@
-// e2e/tests/_module-coverage-helpers.ts
-//
 // Shared per-module-coverage helpers. Built lazily as the group-by-group
 // coverage PRs need them — start minimal, grow under demand. Lives next
 // to _helpers.ts (spawnPatch + readStatus) so test files only have to
@@ -85,9 +83,7 @@ export async function runFor(page: Page, ms: number): Promise<void> {
   await page.waitForTimeout(ms);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // SCOPE PEAK-HOLD — the accumulator lives IN THE PAGE
-// ═══════════════════════════════════════════════════════════════════════════
 //
 // `readScopeSnapshot` in a Playwright-side `for` loop is the exact pattern
 // CLAUDE.md forbids ("Never sample a page-side quantity with a Playwright-side
@@ -305,9 +301,7 @@ export function formatEmitDiagnostics(d: EmitDiagnostics): string {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // THE OBSERVATION PLAN — and the BUDGET derived from it
-// ═══════════════════════════════════════════════════════════════════════════
 //
 // The per-module behavioral sweep observes a module by spawning it twice per
 // input port (control + patched) and fingerprinting a sink. The size of that

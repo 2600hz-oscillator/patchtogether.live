@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/pong-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the PONG faceplate.
 //
 // Five claims carry this face, and every one is either invisible from the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/vst-fx.ts
-//
 // VST FX — mounts one of the user's installed effect plugins (AU builds)
 // through the vst-bridge native helper (patchtogether.nativeapps;
 // ws://127.0.0.1:9309/ws) as a stereo insert.
@@ -22,45 +20,12 @@ import type { ModuleFace } from '$lib/graph/types';
 import { createVstHandle } from './vst-bridge-shared';
 
 /**
- * THE FACE — the same shape as `vstInstrument`'s, for the same forced reason,
- * and the two were authored together because the surface is literally one
- * component.
+ * CONNECT and DISCONNECT are the ranked actions; the shared VstBridgeFaceBody
+ * owns plugin selection and mount controls. A disconnected effect bypasses
+ * locally, so losing the helper does not mute the lane.
  *
- * WHAT THIS MODULE IS FOR, MUSICALLY: it puts a plugin you already own INSIDE
- * the lane, as an insert. The one thing it does that no sibling does is process
- * with code that is not in the browser at all — and the price is a real round
- * trip, so it FEELS like patching through outboard gear on a send rather than
- * like an internal effect. The verb a player performs is MOUNT: choose an
- * effect and the chain runs through it.
- *
- * ⚠ THE RANKING IS FORCED BY THE CONTRACT, NOT CHOSEN. `params: []`. See the
- * `vstFx` entry in `shell-cells.ts` for the two gate mechanics that keep the
- * picker, its filter and the mount gestures off the ranked list, and
- * `VstBridgeFaceBody.svelte` for the long form.
- *
- * THE TIER LADDER, READ BACK AS A SENTENCE: every tier gets CONNECT, because
- * with the session down this insert is a local bypass and the plugin is not in
- * the path at all; compact adds DISCONNECT, which is how you free one of the
- * helper's sixteen instances; the dock adds the plugin surface, where an effect
- * is actually chosen. ⚠ THE FIRST CLAUSE IS WORTH SAYING PRECISELY, because it
- * differs from the instrument's in a way that matters to a player: a
- * disconnected `vstFx` does NOT go silent — the worklet bypasses locally, so a
- * missing helper can never mute a lane. What it does is stop being an effect.
- *
- * ONE PAGE (`bridge`), the module's only idea — the plugin controls are not
- * `order` keys, so there is no second group of keys a second page could name.
- *
- * ⚠ NO HERO, for the mechanical reason: one band, two keys, and `heroFacePlan`
- * MOVES rather than copies — promoting either would leave the band's hint
- * rendering nowhere, and a hero also suppresses the dock glyph.
- *
- * ⚠ GLYPH `'meter'` — derived from the real `out_l` audio out. With no helper
- * the local bypass passes whatever the lane feeds it, and in a fresh VRT scene
- * nothing is patched in, so the tap reads digital silence and draws the same
- * flat centreline as every other faced module.
- *
- * ⚠ NO `rear.groups`. Stereo in, stereo out; the derived default names both
- * rails correctly and an authored group would only restate the cable domain.
+ * Keep both actions in their band: a hero moves a key out of the band and
+ * suppresses the dock meter.
  */
 export const VST_FX_FACE: ModuleFace = {
   glyph: 'meter',

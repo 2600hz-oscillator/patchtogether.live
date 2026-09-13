@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/milkdrop-face-model.test.ts
-//
 // MILKDROP — the permanent gates on the claims this face is built from.
 //
 // ⚠ THIS FILE CARRIES MORE WEIGHT THAN ITS SIBLINGS, and the reason is worth

@@ -1,5 +1,3 @@
-// e2e/tests/quadralogical-assign.spec.ts
-//
 // QUADRALOGICAL joystick X/Y → Control Surface + Electra assignment.
 //
 // The pad is a bespoke <div> XY pad with its OWN 2-axis right-click menu. Unlike

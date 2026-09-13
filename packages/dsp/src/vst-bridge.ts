@@ -1,5 +1,3 @@
-// packages/dsp/src/vst-bridge.ts
-//
 // VST BRIDGE — AudioWorklet half, shared by BOTH cards (vstInstrument +
 // vstFx). Moves 128-frame quanta between the Web Audio graph and three
 // SharedArrayBuffer rings that the bridge Worker (web-side, owns the

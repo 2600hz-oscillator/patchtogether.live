@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clouds.test.ts
-//
 // Unit tests for CLOUDS:
 //   - module-def shape (ports, params, cvScale annotations)
 //   - grain envelope morph (rectangular → triangular → Hann)

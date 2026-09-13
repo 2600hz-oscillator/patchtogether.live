@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-save-flow.ts
-//
 // Pure-ish save-FLOW glue shared by RecorderboxCard, factored out of the
 // component so it's unit-testable without a Svelte harness:
 //
@@ -30,9 +28,7 @@ import {
   type ChunkSink,
 } from './recorderbox-store';
 
-// ---------------------------------------------------------------------------
 // DIRECTORY-handle save model (Tweak 1 no-prompt + Tweak 3 chunking)
-// ---------------------------------------------------------------------------
 
 /** The structural subset of showDirectoryPicker we use. */
 export type DirPicker = (o?: { id?: string; mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;

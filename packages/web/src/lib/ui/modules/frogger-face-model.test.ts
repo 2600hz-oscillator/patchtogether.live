@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/frogger-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the FROGGER faceplate.
 //
 // This face rests on five claims that no shared gate can check, and every one

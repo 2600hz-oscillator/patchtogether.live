@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-extras.ts
-//
 // The real-DOM singleton for the node-lifetime EXTRAS producer seam (#1720).
 //
 // Split out of ./node-extras-registry deliberately: that file is the PURE core

@@ -1,5 +1,3 @@
-// art/scenarios/twotracks/twotracks-lofi-off.test.ts
-//
 // ART scenario: TWOTRACKS Lofi mode OFF (lofi=0).
 //
 // Exercises the pure-math lofi signal chain (mirrored from packages/dsp/src/twotracks.ts)
@@ -58,7 +56,6 @@ function renderLofi(
   const wowInc     = 2 * Math.PI * 0.7 / SR;
   const flutterInc = 2 * Math.PI * 7.0 / SR;
 
-  // State
   let hfLoss = 0;
   let wowPhase = 0;
   let flutterPhase = 0;

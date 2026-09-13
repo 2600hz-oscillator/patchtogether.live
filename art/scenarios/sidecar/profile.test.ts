@@ -1,5 +1,3 @@
-// art/scenarios/sidecar/profile.test.ts
-//
 // AUDIO PROFILE for SIDECAR (stereo sidechain ducker) (backfill batch 3 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

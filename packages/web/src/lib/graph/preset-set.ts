@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/preset-set.ts
-//
 // The portable ".set" container — a ZIP-OF-ZIPS that bundles the five quick-
 // switch preset SLOTS (each a whole-rack performance `.zip`, see
 // performance-zip.ts) into ONE file, PLUS the global MIDI mapping.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/curated-face.test.ts
-//
 // Unit tests for the pure curatedFace(def, tier) top-N selector. No registry,
 // no fs — hand-built face fixtures exercise the ladder + key resolution.
 

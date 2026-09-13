@@ -1,5 +1,3 @@
-// e2e/tests/house-style.spec.ts
-//
 // Phase 0 of the UX-overhaul plan extracted the docs "house" stylesheet out of
 // routes/docs/+layout.svelte's inline <style> block into the shared global
 // packages/web/src/lib/styles/house.css, imported by the docs layout. The move

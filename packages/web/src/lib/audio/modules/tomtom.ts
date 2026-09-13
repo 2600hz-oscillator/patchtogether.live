@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/tomtom.ts
-//
 // TOM DRUM — analog-modeled tom-tom voice, the third member of the drum
 // family (KICK DRUM / SNARE DRUM), at deliberately CURATED complexity: one
 // synthesis engine, seven voice knobs + level, spanning the classic analog

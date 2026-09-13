@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/invites.ts
-//
 // Invite codes for anonymous /r/[id] access. A visitor with a valid
 // `?invite=<code>` query param can view + edit a rackspace without
 // signing in; a bare `/r/[id]` still redirects to /sign-in.

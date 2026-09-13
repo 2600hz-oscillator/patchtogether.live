@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/tvLibrarian/TvLibrarianPicker.svelte
-  //
   // THE BROWSE SURFACE — the map/list toggle, the world map, the country
   // dropdown, the channel roster and the two navigation gestures, plus the
   // legal disclaimer.

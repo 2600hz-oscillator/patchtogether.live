@@ -1,5 +1,3 @@
-// e2e/tests/automation-cv-record.spec.ts
-//
 // RECORD-CV-AUTOMATION (owner report, 2026-08): a cv-bridge-modulated param on
 // a lane-ASSIGNED module — the owner's exact case is Gamepad → BACKDRAFT.mix —
 // must behave like a hand on the knob:

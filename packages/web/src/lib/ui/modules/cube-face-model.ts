@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cube-face-model.ts
-//
 // The PURE derivations behind cube's faceplate — every readout the face prints
 // and every number in the hero caption, computed the way the DSP computes them
 // rather than read back off the nearest knob.

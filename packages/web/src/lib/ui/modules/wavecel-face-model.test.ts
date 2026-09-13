@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavecel-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the WAVECEL faceplate.
 //
 // This face rests on four claims that no shared gate checks, and each is the

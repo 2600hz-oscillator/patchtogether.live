@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mandleblot.ts
-//
 // MANDLEBLOT — Mandelbrot fractal generator with zoom + rotation +
 // RGB-cycling iteration shading. Two video outputs (mono + color).
 //
@@ -244,7 +242,6 @@ export const mandleblotDef: VideoModuleDef = {
     { id: 'center_y',    label: 'Y',     defaultValue: DEFAULTS.center_y,    min: -2,   max: 2,    curve: 'linear' },
   ],
 
-  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
   //
   // MANDLEBLOT is a Mandelbrot EXPLORER. The verb is TRAVEL: pan to a point, dive
   // in, and colour what you find. Every control is a coordinate on that journey

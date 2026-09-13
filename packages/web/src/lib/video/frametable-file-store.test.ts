@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/frametable-file-store.test.ts
-//
 // Unit tests for the FRAMETABLE atlas IndexedDB blob store. Vitest runs in node
 // (no real IndexedDB), so we:
 //   * exercise the missing-API fallbacks directly (no indexedDB defined), and

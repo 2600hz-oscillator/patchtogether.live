@@ -1,5 +1,3 @@
-// e2e/tests/scope-tuner.spec.ts
-//
 // E2E for SCOPE's pitch tuner readout. Spawn ANALOG-VCO -> SCOPE.ch1, set
 // ANALOG-VCO to A4 (MIDI 69, pitch CV = 0.75 V/oct), wait for the pitch
 // readout to settle, assert the displayed Hz is in the 435..445 range and

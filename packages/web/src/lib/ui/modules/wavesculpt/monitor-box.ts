@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavesculpt/monitor-box.ts
-//
 // THE WAVESCULPT MONITOR BOX — the geometry of "hide the controls and watch the
 // picture".
 //

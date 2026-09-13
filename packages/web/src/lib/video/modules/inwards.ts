@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/inwards.ts
-//
 // INWARDS — inward-zooming radial pattern generator (Phase-1 source module).
 //
 // The spec at originally framed
@@ -100,7 +98,6 @@ export const inwardsDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thickness', defaultValue: DEFAULTS.thickness, min: 0,    max: 1,   curve: 'linear' },
   ],
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['speed', 'density', 'thickness'],
 

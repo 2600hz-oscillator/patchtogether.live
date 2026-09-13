@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/matrixmix-face-model.test.ts
-//
 // matrixMix's FACE, as pure model: what the plate ranks, what each axis cell
 // reads, and what the roster costs. No DOM, no AudioContext.
 //

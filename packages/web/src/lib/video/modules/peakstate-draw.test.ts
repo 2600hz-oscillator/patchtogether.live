@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/peakstate-draw.test.ts
-//
 // Pure-TS tests for PEAKSTATE's algorithmic core: pen trajectory,
 // ring buffer determinism, HSL hue-cycle ratios, and the per-arm
 // segment-count formula that drives the kaleidoscope's mirror symmetry.
@@ -308,9 +306,7 @@ describe('drawMandalaFrame — kaleidoscope render', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // MOVE + OBLONG — spirograph centerpoint orbit.
-// ---------------------------------------------------------------------------
 
 describe('orbitCenter — spirograph centre orbit', () => {
   const W = 360, H = 360;

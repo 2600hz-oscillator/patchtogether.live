@@ -1,5 +1,3 @@
-// packages/server/src/reaper.test.ts
-//
 // Unit coverage for the slot-leak reaper. The reaper reconciles the
 // in-memory slot tracker against Hocuspocus's live connections so a slot
 // whose socket died without a clean onDisconnect (crashed tab, killed

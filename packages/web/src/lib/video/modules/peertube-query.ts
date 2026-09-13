@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/peertube-query.ts
-//
 // PEERTUBE pure cores — Sepia-Search query building, response parsing, and the
 // per-instance video → playable-stream resolution. NO network, NO DOM: every
 // function here is a pure transform so it can be unit-tested hard (see
@@ -154,9 +152,7 @@ export function parseTotal(raw: RawSearchResponse): number {
   return numOr0(raw?.total);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-instance video → playable stream resolution
-// ─────────────────────────────────────────────────────────────────────────
 
 /** A host can be either a bare host (`framatube.org`) or a full origin
  *  (`https://framatube.org`). Normalize to a bare host (no scheme, no

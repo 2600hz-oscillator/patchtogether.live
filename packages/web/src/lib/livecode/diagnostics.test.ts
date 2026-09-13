@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/diagnostics.test.ts
-//
 // Tests the standalone lintDoc() — the public testable surface of the
 // CodeMirror linter wiring. The linter is invoked on every doc change
 // in the editor and emits Diagnostic items at the offending text

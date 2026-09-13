@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-control-params.test.ts
-//
 // TOYBOX → control-surface param ADAPTER coverage. Proves resolveToyboxParam:
 //   - resolves a MATERIAL param (e.g. 'scale') against the first OBJ layer, with
 //     the def from MATERIAL_PARAMS' range, and round-trips get/set in place,
@@ -305,9 +303,7 @@ describe('cvInputs SCALE/OFFSET params (audit M6)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // #1708 — the control surface / MIDI-learn seam sees custom-shader uniforms.
-// ---------------------------------------------------------------------------
 //
 // The card's faders pass `layer:<idx>:<uniform>` as their paramId, so a binding
 // learned on a custom shader's fader resolves through here. Nothing below

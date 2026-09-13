@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog911-face-model.ts
-//
 // The PURE model behind the MOOG 911 faceplate — how long each stage of the
 // contour ACTUALLY takes, as a function of the live params.
 //
@@ -30,7 +28,6 @@
 //   t1 = 0.01  dial 10.000 ms  -> delivered  13.833 ms   (x1.3833)
 //   t2 = 0.2   dial 200.000 ms -> delivered 239.667 ms   (x1.1983)
 //   t3 = 0.4   dial 400.000 ms -> delivered 695.958 ms   (x1.7399)
-//   ------------------------------------------------------------
 //   the three dials sum to 610 ms; the contour takes 949.458 ms (x1.5565)
 //
 // and holding `t2` at its default while sweeping ESUS moves the delivered decay

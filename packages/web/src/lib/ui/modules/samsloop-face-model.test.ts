@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/samsloop-face-model.test.ts
-//
 // SAMSLOOP's face-model unit — the module-specific findings the generic face
 // gates cannot see, each with a permanent negative control.
 //

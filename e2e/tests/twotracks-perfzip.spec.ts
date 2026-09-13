@@ -1,5 +1,3 @@
-// e2e/tests/twotracks-perfzip.spec.ts
-//
 // FIX 3: TWOTRACKS media (reel tape) + loop boundaries must round-trip through
 // the portable performance .zip.
 //
@@ -133,7 +131,6 @@ test.describe('TWOTRACKS tape + boundaries perf-zip round-trip', () => {
     expect(before.end_a).toBeCloseTo(0.8, 5);
     expect(before.a2b).toBeCloseTo(0.5, 5);
 
-    // Export → clear → load.
     const zipB64 = await page.evaluate(async () => {
       const w = globalThis as unknown as { __perfZip: { export: () => Promise<Uint8Array> } };
       const bytes = await w.__perfZip.export();

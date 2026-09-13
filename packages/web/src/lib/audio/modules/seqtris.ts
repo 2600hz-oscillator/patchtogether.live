@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/seqtris.ts
-//
 // SEQTRIS — an 8×8 Tetris you play on a Launchpad, wired into the rack as a
 // clocked note source.
 //
@@ -335,7 +333,6 @@ export const seqtrisDef: AudioModuleDef = {
     const lineGate = makeGate();
     const spawnGate = makeGate();
 
-    // ─── Params ────────────────────────────────────────────────────────────
     const knobs: Record<string, number> = {};
     for (const p of seqtrisDef.params) {
       const saved = node.params?.[p.id];

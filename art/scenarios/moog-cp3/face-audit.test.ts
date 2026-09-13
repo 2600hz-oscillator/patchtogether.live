@@ -1,5 +1,3 @@
-// art/scenarios/moog-cp3/face-audit.test.ts
-//
 // THE ADVERSARIAL AUDIT FOR MOOG CP3, and the permanent anchor under its
 // faceplate (queue Q36, #1893).
 //

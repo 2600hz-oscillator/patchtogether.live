@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-prob.test.ts
-//
 // PER-NOTE PROBABILITY page on the single-unit Launchpad — the owner's gesture:
 // SHIFT + press a step in the single Clip note editor LATCHES the PROB page (the
 // 8×8 becomes a 40-level probability bar for that note, TOP 5 ROWS only); the next
@@ -111,9 +109,7 @@ function lane8Armed(): boolean {
   return !!(auto?.lanes && auto.lanes['7']);
 }
 
-// ===========================================================================
 // PURE — the 40-level probability-bar mapping (TOP 5 rows only) + paint truth.
-// ===========================================================================
 describe('PURE prob-page mapping (top 5 rows, row-major from the upper-left)', () => {
   it('probPadOrdinal: (0,7) = 1, (7,7) = 8, (0,6) = 9, (7,3) = 40; bottom 3 rows null', () => {
     expect(probPadOrdinal(0, 7)).toBe(1);
@@ -181,9 +177,7 @@ describe('PURE prob-page frame paint — computeSingleClipFrame(probView)', () =
   });
 });
 
-// ===========================================================================
 // GESTURE — SHIFT + step opens the PROB page; a selector tap writes + returns.
-// ===========================================================================
 describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -313,10 +307,8 @@ describe('SINGLE Clip — the SHIFT+step PROB page gesture', () => {
   });
 });
 
-// ===========================================================================
 // CLIP-DEFAULT PROBABILITY — the source-aware colour (noteProbRgb) + the ORANGE
 // grid PROB page frame paint.
-// ===========================================================================
 describe("PURE source-aware note colour (noteProbRgb: purple = note's own prob, orange = clip default)", () => {
   const clipWithDefault = (defaultProb: number, notePrs: (number | undefined)[]): NoteClipRecord => ({
     ...defaultNoteClip(),
@@ -375,11 +367,9 @@ describe('PURE clip-PROB grid frame paint — computeSingleGridFrame(clipProbVie
   });
 });
 
-// ===========================================================================
 // GESTURE — SHIFT + a Grid clip pad opens the CLIP-DEFAULT PROB page; a selector
 // tap writes setClipDefaultProb + auto-returns. Arm still consumes; no-shift
 // still launches.
-// ===========================================================================
 describe('SINGLE Grid — the SHIFT+clip CLIP-DEFAULT PROB page gesture', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {

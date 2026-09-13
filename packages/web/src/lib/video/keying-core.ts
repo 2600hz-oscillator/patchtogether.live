@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/keying-core.ts
-//
 // THE shared keying core for the keyer/compositor family (design:
 //, as amended by the §11
 // adversarial review). One source of truth for:

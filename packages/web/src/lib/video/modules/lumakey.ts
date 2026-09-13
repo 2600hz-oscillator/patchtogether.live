@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/lumakey.ts
-//
 // LUMAKEY — proper 2-input luminance-key compositor.
 //
 // Inputs: `fg` (foreground), `bg` (background). Output: composited video.
@@ -102,7 +100,6 @@ export const lumakeyDef: VideoModuleDef = {
     { id: 'invert',    label: 'Inv',  defaultValue: DEFAULTS.invert,    min: 0, max: 1,   curve: 'discrete' },
   ],
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['threshold', 'softness', 'invert'],
 

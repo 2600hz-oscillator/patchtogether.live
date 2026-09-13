@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/electra-control.test.ts
-//
 // ELECTRA CONTROL coverage. Two halves:
 //
 //   1. PURE GEOMETRY — the (row, knob) ↔ slotIndex ↔ (controlSetId, potId)

@@ -1,5 +1,3 @@
-// packages/web/vitest.setup.docs.ts
-//
 // Unit-lane EXISTENCE seam for `src/lib/docs/module-docs.generated.ts` — a
 // gitignored BUILD ARTIFACT since the LoC campaign row-4 PR (it used to be
 // committed). Several specs import it transitively (module-manifest,

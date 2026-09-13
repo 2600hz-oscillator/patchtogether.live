@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-record.ts
-//
 // PURE note-RECORD write helpers for the dual-Launchpad KEYS/record mode
 // (, Phase 1). These
 // are placement-free + engine-free: given a TARGET STEP they mutate a

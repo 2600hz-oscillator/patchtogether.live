@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-rack-budget.test.ts
-//
 // THE RACK-CEILING PROOF. It lives here rather than in Playwright because the
 // e2e version TIMED OUT ON CI — and the reason is worth stating, because it is
 // not "the e2e was flaky".
@@ -170,7 +168,6 @@ describe('the rack ceiling, against a REAL Y.Doc', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('the SEAM binds the ceiling to the arm gesture — source-anchored', () => {
   // ⚠ THIS DESCRIBE READ `SamsloopCard.svelte`, and the reason it read SOURCE at

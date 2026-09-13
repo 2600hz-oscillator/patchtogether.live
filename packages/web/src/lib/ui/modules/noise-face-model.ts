@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/noise-face-model.ts
-//
 // The PURE model behind the NOISE faceplate — the arithmetic for its three
 // derived readouts and for the TAPS picture in its dock sidebar.
 //

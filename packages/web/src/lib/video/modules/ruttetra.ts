@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/ruttetra.ts
-//
 // RUTTETRA — AUTHENTIC forward-scatter Rutt-Etra raster scope.
 //
 // A faithful WebGL2 port of p10entrancer's "XYZ" unit

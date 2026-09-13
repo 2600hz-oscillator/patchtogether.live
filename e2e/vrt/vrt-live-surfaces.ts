@@ -1,10 +1,7 @@
-// e2e/vrt/vrt-live-surfaces.ts
-//
 // THE LIVE-SURFACE REGISTRY — one data structure naming every region of every
 // VRT scene that is masked out of the pixel diff, WHY, and the COMPANION
 // assertion that replaces the coverage the mask deletes.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // EVERY ENTRY BELOW IS DERIVED FROM THE GATE ITSELF. NOTHING ELSE COUNTS.
 //
 // This list has been wrong three times, and each time for the SAME reason: it
@@ -52,7 +49,6 @@
 // disagreed with the gate on 2 of 7 cards — a probe that disagrees with the
 // gate is worse than no probe, because its output looks authoritative.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE 2026-08-01 DERIVATION, IN FULL, RE-RUN UNDER THE CORRECTED INSTRUMENTS.
 // darwin, real gate, real config, real tolerance, fresh unmasked baselines,
 // and — the round-4 change — N SEPARATE PLAYWRIGHT PROCESSES rather than
@@ -103,7 +99,6 @@
 //     5 237-6 783 px, then Timeout 15000 ms); with the scene calling it,
 //     10/10 with the shader preview AND the six mini scopes in the diff.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // TWO INSTRUMENT BUGS FOUND WHILE DERIVING THIS, both of which had been
 // silently corrupting every previous round's numbers:
 //
@@ -130,7 +125,6 @@
 //      retro-explains the scope saga: `scope` needed a synthetic-buffer seed
 //      because the freeze meant to stabilise it never ran.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // TWO MORE INSTRUMENT BUGS (round 4). Both were found by trying to CARRY OUT
 // an adversarial verifier's instruction to delete the timelorde mask, and both
 // erred in the same direction: they made an unstable card read as stable.
@@ -172,7 +166,6 @@
 //      ⚠ C and D COMPOUND, and that is why round 3's timelorde number was so
 //      far off. Neither is visible in the output; both produce a clean 10/10.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE OTHER GEOMETRY CHANGE: warrenspectrum 526x527 -> 527x527, EXPLAINED.
 //
 // One pixel of width, which is exactly the size at which "real layout shift"
@@ -200,7 +193,6 @@
 // scene relocates the card. Expect it, and check it with the probe rather than
 // re-pinning blind — the probe prints both spawns side by side.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE RULES (enforced by packages/web/src/lib/ui/vrt-live-surfaces.test.ts —
 // the anti-vacuity guard; that guard is the most important file in this PR)
 //
@@ -230,7 +222,6 @@
 // asserts both that the region's ink collapses AND that the companion rejects
 // the measurement. An assertion you cannot make fail is not evidence.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // LINUX BASELINES ARE NOT DONE. READ THIS BEFORE DISPATCHING vrt-update.yml.
 //
 // Everything above was captured and verified on DARWIN. The linux baselines

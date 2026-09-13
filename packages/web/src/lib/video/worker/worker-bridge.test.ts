@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/worker-bridge.test.ts
-//
 // Fix E Phase 1 unit tests — the flag gate, the capability gate, and the
 // latest-bitmap-wins frame queue of the main-thread bridge. The real worker
 // (OffscreenCanvas + WebGL2) is exercised in the e2e (jsdom has no worker GL);

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog904b.ts
-//
 // MOOG 904B — Voltage Controlled High Pass Filter (Moog System 55/35 clone,
 // batch 1). The high-pass companion to the 904A LPF: a 24 dB/oct transistor-
 // ladder HIGH-pass, built by subtracting the ladder's low-passed signal from

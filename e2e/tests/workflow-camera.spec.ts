@@ -1,5 +1,3 @@
-// e2e/tests/workflow-camera.spec.ts
-//
 // The camera manager on /rack:
 //
 //   📷 topbar slot → ＋ maps a HEADLESS camera (a FULL cameraInput module

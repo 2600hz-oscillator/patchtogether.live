@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/featurecv-dsp.test.ts
-//
 // Behaviour spec for the FEATURECV pure core: the window statistics
 // (rms/crest/zcr/flux) on known signals, the 0..1 feature maps, the onset
 // detector, and the full renderFeatureCv offline render (loud / bright / punch

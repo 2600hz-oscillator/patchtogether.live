@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kria.ts
-//
 // KRIA — a clean-room reimplementation of monome's Kria grid step-sequencer
 // (inspired by monome Kria; behavior reimagined from monome's public docs, NO
 // monome source or doc prose reproduced). 4 independent tracks, each with its

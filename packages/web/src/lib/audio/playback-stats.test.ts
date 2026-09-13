@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/playback-stats.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL for the underrun readout.
 //
 // ⚠ WHY THIS IS A UNIT TEST AND NOT AN E2E — read before adding an e2e row.

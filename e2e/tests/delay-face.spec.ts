@@ -1,5 +1,3 @@
-// e2e/tests/delay-face.spec.ts
-//
 // THE DELAY FACE, driven for real: the three knob values must follow the GRAPH,
 // and the repeat count must be the one the pure model computes.
 //

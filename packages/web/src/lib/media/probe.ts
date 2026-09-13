@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/probe.ts
-//
 // Default async metadata probes for library items — browser-only (they build
 // detached <video>/<audio>/<img> elements), called lazily per item so this
 // module stays import-safe under node/vitest. The library takes a probe as an
@@ -58,9 +56,7 @@ function probeImage(objectUrl: string): Promise<ProbedMeta> {
   });
 }
 
-// ---------------------------------------------------------------------------
 // Poster-frame capture (video hover thumbnails)
-// ---------------------------------------------------------------------------
 
 /** Structural surface of the <video> element the capture needs — real
  *  elements satisfy it; unit tests drive fakes (jsdom can't decode video). */

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-media-store.test.ts
-//
 // The clip media store, running for real against a fake OPFS + fake-indexeddb.
 // Four properties, and each one is a way a take gets lost if it is wrong:
 //
@@ -43,9 +41,7 @@ import {
 } from './clip-media-store';
 import { ClipMediaDrain } from './clip-media-drain';
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 let opfs: InstalledOpfs;
 let restoreWriter: ReturnType<typeof setClipMediaWriterFactory>;
@@ -124,7 +120,6 @@ afterEach(async () => {
   resetClipMediaSweepMemo();
 });
 
-// ---------------------------------------------------------------------------
 
 describe('names + capability', () => {
   it('paths are a pure function of the mediaId, under one directory', () => {

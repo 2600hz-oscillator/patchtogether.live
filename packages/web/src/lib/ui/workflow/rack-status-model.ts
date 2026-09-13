@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/rack-status-model.ts
-//
 // RACK-GLOBAL STATUS (#2024 item 3, owner ruling 2026-08-21: *"close the
 // gap"*) — the face home for state that is a property of THE RACK rather than
 // of this node's params.

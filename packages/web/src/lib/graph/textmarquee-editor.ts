@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/textmarquee-editor.ts
-//
 // TEXTMARQUEE's DOM ⇄ RICH-TEXT-MODEL SERIALIZER — shared by the legacy card
 // and by the face's `fullViewBody`, so the two cannot disagree about what a
 // typed paragraph MEANS.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioIn/audio-in-status.ts
-//
 // AUDIO IN's status, as PURE FUNCTIONS — the lamp's lit state, the sentence
 // that lamp announces, and which action its button offers.
 //

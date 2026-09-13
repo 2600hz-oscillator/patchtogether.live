@@ -1,5 +1,3 @@
-// e2e/tests/voice-pitch-accuracy.spec.ts
-//
 // DEFAULT-TUNING PITCH ACCURACY, REAL CHAIN — the owner guarantee "default
 // tuning always leads to sequence notes matching reality": sequencing a note
 // into a pitched voice AT FACTORY DEFAULTS must produce the correct

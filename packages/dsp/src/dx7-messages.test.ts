@@ -1,5 +1,3 @@
-// packages/dsp/src/dx7-messages.test.ts
-//
 // The DX7 port protocol: `patch` is the ONE destructive message (preset LOAD);
 // `voice` / `opParam` / `algorithm` / `feedback` are incremental and MUST NOT
 // disturb a sounding voice. This is the gate for live operator editing — the
@@ -125,7 +123,6 @@ beforeAll(async () => {
   if (!Dx7Processor) throw new Error('dx7 processor did not register');
 });
 
-// ---- fixtures -------------------------------------------------------------
 
 /** A serialized DX7Voice payload, in the shape sendPatch() posts. */
 function makeVoice(over: Partial<{ algorithm: number; feedback: number; transpose: number }> = {}) {

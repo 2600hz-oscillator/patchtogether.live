@@ -1,5 +1,3 @@
-// e2e/tests/toybox-node-controls.spec.ts
-//
 // TOYBOX combine-node CONTROLS — the always-visible bottom control pane.
 //
 // The card shows the CURRENTLY-SELECTED combine node's controls in a bottom pane
@@ -427,7 +425,6 @@ test.describe('TOYBOX node controls — delete auto-selects the next node', () =
     await expect(page.locator('[data-testid="toybox-combine-params"]')).toHaveAttribute('data-node', 'opB');
     expect(await renderedKnobParams(page)).toContain('mode'); // mirror's MODE knob
 
-    // Delete the LAST op → no op nodes remain → the control pane hides.
     await page.locator('[data-testid="toybox-delnode-opB"]').dispatchEvent('click');
     await expect(page.locator('[data-testid="toybox-combine-params"]')).toHaveCount(0);
 

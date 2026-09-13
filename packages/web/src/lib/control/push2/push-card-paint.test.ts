@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-paint.test.ts
-//
 // The draw-op EXECUTOR, against a recording context — so the one browser-facing
 // file in the renderer is still covered by the node unit lane. Only the five
 // lines that ALLOCATE a canvas need a real browser, and those are asserted to

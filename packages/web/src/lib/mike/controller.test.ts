@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/controller.test.ts
-//
 // Mike controller lifecycle + pacing assertions. Uses fake timers so we
 // can advance through the 5–15 s window synchronously.
 

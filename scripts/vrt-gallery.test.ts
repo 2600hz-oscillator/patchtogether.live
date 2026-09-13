@@ -1,10 +1,6 @@
-// scripts/vrt-gallery.test.ts
-//
 // The gate for `e2e/vrt/build_gallery.py` — the docs/vrt baseline catalog.
 //
-// ---------------------------------------------------------------------------
 // WHY THIS EXISTS
-// ---------------------------------------------------------------------------
 // Nothing checked the gallery against the tree it claims to render, and the
 // first thing that went wrong was invisible for exactly that reason: the
 // inventory was keyed by the PNG's bare stem, so two baselines with the same
@@ -15,9 +11,7 @@
 // `__screenshots__` in TypeScript and compare against the Python script's own
 // `coverage.json`. Two walkers, one answer, or red.
 //
-// ---------------------------------------------------------------------------
 // THERE IS ONE BASELINE SET (2026-08-10)
-// ---------------------------------------------------------------------------
 // `snapshotPathTemplate` dropped its `{platform}` segment, so a scene is one
 // PNG at `<spec>/<stem>.png` rather than a darwin/linux pair. Everything this
 // file used to carry about PARITY went with it — the two-platform walk, the
@@ -25,9 +19,7 @@
 // regression test, whose bug is now structurally impossible (see the comment
 // where that test used to be).
 //
-// ---------------------------------------------------------------------------
 // WHAT EACH TEST IS FOR — and what it is structurally unable to see
-// ---------------------------------------------------------------------------
 //  1. VACUITY      the tree is actually readable. See the long note on the
 //                  first test: every other assertion here is an agreement
 //                  between two walks, and two walks of an absent tree agree.

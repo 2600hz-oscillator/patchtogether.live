@@ -1,5 +1,3 @@
-// e2e/tests/clear-load-multiwindow.spec.ts
-//
 // B3 regression. Reproduces the original bug:
 //   "when i did a clear workspace in the host and then did 'load example'
 //    something weird happened. at first i heard it in the other window

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/spectrograph.ts
-//
 // SPECTROGRAPH — a real-time scrolling sonogram video generator. Takes a
 // MONO audio input and renders a log-binned spectrograph (frequency on
 // the vertical axis, log scale, 20 Hz at the bottom .. 20 kHz at the

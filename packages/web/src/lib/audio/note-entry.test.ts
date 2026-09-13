@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/note-entry.test.ts
-//
 // Unit tests for the note-name parser, canonicalizer, and v1->v2 migration
 // helpers used by the Sequencer + Cartesian text-entry pitch input.
 

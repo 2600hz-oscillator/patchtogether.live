@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-media-drain.test.ts
-//
 // The one property this file exists for: WHEN THE DISK FALLS BEHIND, THE DRAIN
 // STALLS. It does not drop a chunk to catch up, because a dropped chunk is a
 // hole in the middle of a loop — heard on every single pass, unlike a video

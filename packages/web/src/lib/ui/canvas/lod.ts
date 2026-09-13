@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/canvas/lod.ts
-//
 // STRATA — the PURE semantic-zoom (LOD) tier function for the workflow-mode
 // rack surface. Given the live viewport `zoom`, it returns the CONTENT tier the
 // ModuleShell should render (mini → compact → full-in-lane → dock), NOT a CSS

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/delete-bridge-ydoc.test.ts
-//
 // BRIDGE-ON-DELETE (#1821) against the REAL Y.Doc + syncedStore + UndoManager
 // — the tier `delete-bridge.test.ts` cannot reach.
 //

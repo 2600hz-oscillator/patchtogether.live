@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// scripts/vrt-changeset-gallery.mjs
-//
 // Per-PR "VRT changeset gallery": render a STATIC HTML page that shows ONLY the
 // VRT baseline PNGs this branch changed vs its merge base, each as a
 // side-by-side OLD (base) / NEW (this branch) / DIFF triptych.

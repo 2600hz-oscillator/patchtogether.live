@@ -1,5 +1,3 @@
-// art/scenarios/charlottes-echos/cv-path.test.ts
-//
 // DOES THE ONE DECLARED CV JACK CHANGE THE AUDIO — AND IS IT THE SAME TERMINAL
 // THE KNOB WRITES?
 //

@@ -1,5 +1,3 @@
-// e2e/tests/topbar-buttons.spec.ts
-//
 // Rack Phase 3 — topbar cleanup.
 //
 // The manual browser Save / Load (patch) and Save Perf / Load Perf (browser-
@@ -117,7 +115,6 @@ test('topbar: Raw JSON Export → Import round-trips the patch via the menu', as
     return { nodes: Object.keys(w.__patch.nodes).sort(), edges: Object.keys(w.__patch.edges).sort() };
   });
 
-  // Export via the menu, capture the file.
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     fileMenuClick(page, 'workflow-file-export-json', 'workflow-file-rawjson'),
@@ -125,7 +122,6 @@ test('topbar: Raw JSON Export → Import round-trips the patch via the menu', as
   const savedPath = (await download.path()) as string;
   expect(savedPath).toBeTruthy();
 
-  // Clear the rack.
   await fileMenuClick(page, 'workflow-file-clear');
   await expect.poll(async () =>
     page.evaluate(() => Object.keys((globalThis as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).length),

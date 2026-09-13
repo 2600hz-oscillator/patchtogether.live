@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine.test.ts
-//
 // Phase 2d — engine singleton / max-instance enforcement.
 //
 // The AudioEngine.addNode maxInstances guard used to count existing instances

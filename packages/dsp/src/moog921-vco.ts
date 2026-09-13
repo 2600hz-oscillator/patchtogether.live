@@ -1,5 +1,3 @@
-// packages/dsp/src/moog921-vco.ts
-//
 // MOOG 921 VCO — voltage-controlled oscillator AudioWorkletProcessor.
 //
 // First module of the Moog System 55 / 35 clone initiative

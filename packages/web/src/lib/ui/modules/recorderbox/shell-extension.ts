@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/recorderbox/shell-extension.ts
-//
 // The RECORDERBOX shell extension — the module-owned end of the extension seam
 // (#1512), filling BOTH wired body slots.
 //

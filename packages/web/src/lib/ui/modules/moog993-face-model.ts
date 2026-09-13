@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog993-face-model.ts
-//
 // The PURE model behind the MOOG 993 faceplate — HOW THE SWITCHBOARD IS
 // PATCHED, which is the one thing none of its three switches can say.
 //

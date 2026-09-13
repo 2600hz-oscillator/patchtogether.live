@@ -1,5 +1,3 @@
-// e2e/tests/unpatch-patch-point.spec.ts
-//
 // RIGHT-CLICK → UNPATCH on a PATCH POINT, in every view that renders one.
 //
 // Owner report: "there's no way to break a patch right now if i put six strum
@@ -59,9 +57,7 @@ function colPos(ch: number): { x: number; y: number } {
   return { x: (ch - 1) * COLUMN_W + 60, y: COLUMN_BASELINE_Y - 40 };
 }
 
-// ---------------------------------------------------------------------------
 // Workflow-lane harness (mirrors workflow-channel-columns.spec.ts).
-// ---------------------------------------------------------------------------
 
 async function gotoWorkflow(page: Page): Promise<void> {
   await page.goto('/rack');
@@ -142,9 +138,7 @@ function rearHole(page: Page, portId: string, direction: 'input' | 'output') {
     .locator(`[data-testid="back-jack"][data-port-id="${portId}"][data-direction="${direction}"]`);
 }
 
-// ---------------------------------------------------------------------------
 // Shared graph / menu readers.
-// ---------------------------------------------------------------------------
 
 /** "<src>.<port> -> <dst>.<port>" for every live edge. */
 async function edgeSummaries(page: Page): Promise<string[]> {
@@ -262,9 +256,7 @@ async function pollChannelRms(
   return max;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // (1) THE OWNER'S SCENARIO — unpatch POLY on a lane-hosted SIX STRUM's rear card
-// ═══════════════════════════════════════════════════════════════════════════
 
 test("rear card: right-click UNPATCH removes a lane's auto-wired POLY cable (and it stays gone); undo restores it", async ({
   page,
@@ -331,9 +323,7 @@ test("rear card: right-click UNPATCH removes a lane's auto-wired POLY cable (and
   await expect(poly).toHaveAttribute('data-patched', 'true');
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // (2) the AUDIO stops — the note path is really severed
-// ═══════════════════════════════════════════════════════════════════════════
 
 test('rear card: unpatching POLY silences the note path at the mixer channel meter', async ({ page }) => {
   test.setTimeout(120_000);
@@ -360,9 +350,7 @@ test('rear card: unpatching POLY silences the note path at the mixer channel met
   expect(await edgeSummaries(page)).toContain(`${strum}.out -> pinned-mixmstrs.ch1L`);
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // (3) fan-out + viewport clamp + no menu on an unpatched hole
-// ═══════════════════════════════════════════════════════════════════════════
 
 test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stays viewport-clamped, and an unpatched hole opens NO menu', async ({
   page,
@@ -459,14 +447,12 @@ test('rear card: a fanned-out OUTPUT lists every cable + "Unpatch all (N)", stay
   await expect(unpatchMenu(page)).toHaveCount(0);
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // (4) the PATCH PANEL — back-panel jacks + front drill-down rows (the shared
 //     component; the shell tile mounts the rear back panel AND the lane-rail
 //     drill-down, so both legs run on the default shell).
 //     ⚠ The two test TITLES below still say "legacy patch panel": the
 //     waitfortimeout ledger keys on test titles, so the historical name is
 //     pinned until those waits convert. The BOOT is the default shell.
-// ═══════════════════════════════════════════════════════════════════════════
 
 /** Spawn KRIA → ADSR with one pre-wired gate edge (the patch-panel
  *  jack-indicator fixture: two light, non-WebGL PatchPanel cards). */
@@ -530,7 +516,6 @@ test('legacy patch panel: right-click UNPATCH works on a FRONT drill-down port r
 }) => {
   await spawnSeqAdsrWired(page);
 
-  // Open ADSR's panel and drill into INPUTS — adsr.gate is fed by seq.gate.
   await page.locator('.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]').click();
   const chrome = page.locator('[data-patch-panel-chrome="adsr"]');
   await expect(chrome).toHaveAttribute('aria-hidden', 'false');

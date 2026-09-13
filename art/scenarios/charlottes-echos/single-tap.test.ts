@@ -1,5 +1,3 @@
-// art/scenarios/charlottes-echos/single-tap.test.ts
-//
 // Toolchain validation for CHARLOTTE'S ECHOS TS worklet. Once the render
 // harness gains stereo I/O, expands to scenarios `single-tap`,
 // `decaying-loop`, `pitch-rising`, `decay-rate`.

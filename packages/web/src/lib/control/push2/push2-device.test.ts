@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-device.test.ts
-//
 // PURE port-matcher tests — the fix for the "dark pads" bug. The Push 2 must bind
 // its LIVE port (default Live mode carries pad input + LED Note-Ons with no SysEx
 // dance), NOT the User port, and never an IAC / virtual bus. Covers the three host

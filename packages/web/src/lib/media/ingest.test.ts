@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/ingest.test.ts
-//
 // Unit coverage for the drop-ingestion core: the kind-sniffing table, plain
 // multi-file drops, recursive FOLDER drops (nested dirs, >batch-size listings,
 // per-entry read errors), and mixed file+folder drops. FileSystemEntry trees
@@ -17,9 +15,7 @@ import {
   type FileSystemEntryLike,
 } from './ingest';
 
-// ---------------------------------------------------------------------------
 // Builders
-// ---------------------------------------------------------------------------
 
 function makeFile(name: string, type = '', bytes = 4): File {
   return new File([new Uint8Array(bytes)], name, { type, lastModified: 1_700_000_000_000 });
@@ -90,9 +86,7 @@ function dt(items: DataTransferItemLike[]): DataTransferLike {
   return { items };
 }
 
-// ---------------------------------------------------------------------------
 // sniffKind — the classification table
-// ---------------------------------------------------------------------------
 
 describe('sniffKind', () => {
   it('classifies by MIME prefix first', () => {
@@ -134,9 +128,7 @@ describe('sniffKind', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ingestFiles — the <input> browse fallback
-// ---------------------------------------------------------------------------
 
 describe('ingestFiles', () => {
   it('classifies a plain FileList and reports unsupported files', () => {
@@ -163,9 +155,7 @@ describe('ingestFiles', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ingestDrop — plain files
-// ---------------------------------------------------------------------------
 
 describe('ingestDrop — plain file drops', () => {
   it('ingests a multi-file drop via items + webkitGetAsEntry', async () => {
@@ -208,9 +198,7 @@ describe('ingestDrop — plain file drops', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ingestDrop — folder drops (the traversal Playwright can't reach)
-// ---------------------------------------------------------------------------
 
 describe('ingestDrop — folder drops', () => {
   it('recursively traverses nested directories with folder-relative paths', async () => {

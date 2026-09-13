@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kickdrum.ts
-//
 // KICK DRUM — layered stereo kick VOICE. A super-deep, pulsing
 // bass kick built from three DECOUPLED generator layers on a serial
 // processing bus, so "deep pulse" (sub) and "punch" (body + click) live on

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-audition.ts
-//
 // Per-machine, IN-MEMORY LIVE-AUDITION channel for the clip player — the bridge
 // that lets the dual-Launchpad KEYS keyboard SOUND its notes immediately, with
 // or without recording (// P0/P3). It mirrors clip-playhead.ts exactly: the launchpad binding is a global

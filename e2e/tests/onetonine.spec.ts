@@ -1,5 +1,3 @@
-// e2e/tests/onetonine.spec.ts
-//
 // ONE TO NINE real-source-chain coverage: a known LIVE video source →
 // onetonine.in → videoOut. Asserts (renderer-tolerant, so it holds on CI's
 // SwiftShader software renderer):

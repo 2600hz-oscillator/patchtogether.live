@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ninelives-face-model.ts
-//
 // THE PURE MODEL BEHIND THE NINE LIVES FACEPLATE — the ladder arithmetic behind
 // its three hero readouts and its nine-row cycle-time table.
 //

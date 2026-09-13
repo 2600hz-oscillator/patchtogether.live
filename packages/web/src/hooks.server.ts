@@ -1,5 +1,3 @@
-// packages/web/src/hooks.server.ts
-//
 // Server-side request middleware. Three handles composed in sequence:
 //
 //   1. Beta gate — basic-auth gate while in beta. Off when BETA_GATE_PASS

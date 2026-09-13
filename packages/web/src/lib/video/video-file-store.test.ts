@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-file-store.test.ts
-//
 // Unit tests for the FileSystemFileHandle IndexedDB helper. Vitest runs in
 // node (no real IndexedDB / no File System Access), so we:
 //   * exercise the missing-API fallbacks directly (no indexedDB defined), and

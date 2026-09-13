@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/macroblock-mosh.ts
-//
 // macroblock-mosh — EARLY-HD-era bent VFPGA (design §3.5), the TWO-CLIP DATAMOSH
 // flagship (design research 2026-06-30 §4). Bends MPEG/H.264 motion-compensated
 // block prediction into the classic I-frame-removal DATAMOSH look: motion vectors

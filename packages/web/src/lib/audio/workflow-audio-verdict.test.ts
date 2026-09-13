@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/workflow-audio-verdict.test.ts
-//
 // The combined workflow verdict — and specifically the thing it exists to stop:
 // A VERDICT THAT IS GREEN BECAUSE EVERY LEG THAT COULD HAVE FAILED WAS OFF.
 //

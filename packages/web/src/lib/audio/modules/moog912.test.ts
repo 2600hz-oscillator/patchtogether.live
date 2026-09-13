@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog912.test.ts
-//
 // Two test layers for the MOOG 912 ENVELOPE FOLLOWER (moogafakkin System 55/35 clone):
 //   1. Module-def shape — pins the 912's I/O surface (single audio in, the env
 //      (cv) + gate outputs, the sensitivity/smoothing param array) so a

@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-wavesculpt-walls.spec.ts
-//
 // VRT baselines for WAVESCULPT's VIDEO WALL inputs (6 cross-domain video
 // inputs textured onto the 6 faces of the 3D room). Two deterministic cases:
 //

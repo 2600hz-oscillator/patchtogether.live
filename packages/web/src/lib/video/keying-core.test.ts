@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/keying-core.test.ts
-//
 // Pure unit tests for the shared keying core (the TS mirrors ARE the source
 // of truth; GLSL_KEY_HELPERS is a line-for-line port whose numeric constants
 // are template-interpolated from the SAME exports, so lockstep holds by

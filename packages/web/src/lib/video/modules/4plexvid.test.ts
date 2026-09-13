@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/4plexvid.test.ts
-//
 // Locks down 4PLEXVID's module-def shape + exercises the factory's
 // gate -> selector-advance plumbing with a fake GL context (no real
 // WebGL needed — mirrors videobox.test.ts). The GL-side per-output
@@ -22,9 +20,7 @@ describe('fourPlexVidDef — module def shape', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Factory gate -> selector-advance plumbing (fake GL — no real WebGL).
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   const stub = (): unknown => ({});
@@ -115,7 +111,6 @@ describe('fourPlexVidDef.factory — gate advances the matching selector', () =>
   });
 });
 
-// ---------------------------------------------------------------------------
 // #1959 — THE CARD/ENGINE DIVERGENCE, AND THE NaN SELECTOR
 //
 // ⚠ EVERY ASSERTION IN THE BLOCK ABOVE GOES THROUGH `readParam`, AND THAT IS
@@ -128,7 +123,6 @@ describe('fourPlexVidDef.factory — gate advances the matching selector', () =>
 // The legs below HOLD THE NODE OBJECT. That is the whole difference, and it is
 // why they are a separate block with its own spawn helper rather than more
 // cases in the one above.
-// ---------------------------------------------------------------------------
 
 /**
  * Spawn against a REAL node in the live patch store, and hand back that node.

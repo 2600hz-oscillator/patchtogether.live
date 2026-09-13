@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/timelorde-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the TIMELORDE faceplate.
 //
 // This module's whole design tension is that FOUR genuinely different states

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vfpga-floorplan-draw.ts
-//
 // The Canvas2D RENDERER for the vfpga fabric floorplan (P5). Pure draw routine:
 // given a floorplan MODEL (from buildFloorplan) + a 2D context + pixel size, it
 // paints the tile grid + the routing nets, with lit nets highlighted. NO DOM

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/moog956/Moog956TileBody.svelte
-  //
   // THE 956's LANE STRIP — the same playable ribbon, tile-sized, where a
   // player normally meets the module.
   //

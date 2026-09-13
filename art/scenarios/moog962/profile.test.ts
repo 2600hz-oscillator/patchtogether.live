@@ -1,5 +1,3 @@
-// art/scenarios/moog962/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 962 (sequential switch) (backfill batch 3 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

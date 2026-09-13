@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-health.svelte.test.ts
-//
 // THE PERMANENT LEG the brief asks for: feed the readout a NON-ZERO stats
 // object and assert it renders.
 //

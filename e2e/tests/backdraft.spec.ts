@@ -1,5 +1,3 @@
-// e2e/tests/backdraft.spec.ts
-//
 // BACKDRAFT (video feedback generator) functional e2e.
 //
 // Graph (matches the module spec's E2E request):

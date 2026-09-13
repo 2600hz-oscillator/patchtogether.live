@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mirrorpool.ts
-//
 // MIRRORPOOL — a WebGL2 VIDEO source: a hemisphere pool of liquid inside a
 // box, viewed by a repositionable ORBIT + FREE-LOOK camera (the card's two X-Y
 // pads: pad 1 = position az×el on a sphere around the pool, pad 2 = look
@@ -495,7 +493,6 @@ export const mirrorpoolDef: VideoModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. Every other video module in the fleet TRANSFORMS AN
   // INCOMING FRAME — feedback, keying, quantising, warping. mirrorpool renders

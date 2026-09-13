@@ -1,5 +1,3 @@
-// e2e/tests/backdraft-full-output.spec.ts
-//
 // BACKDRAFT "full output capabilities" — Full Frame / Full Screen /
 // Present-on-other-display, the same surface VIDEO OUT + BENTBOX ship, wired
 // onto the BACKDRAFT card via the shared helpers (use-fullscreen /
@@ -185,7 +183,6 @@ async function spawnBackdraft(page: Page) {
 
 type Pane = Awaited<ReturnType<typeof spawnBackdraft>>;
 
-/** Open the body's OUTPUT menu via the ⛶ button. */
 async function openOutputMenu(pane: Pane): Promise<void> {
   const btn = pane.locator('[data-testid="backdraft-output-menu"]');
   await expect(btn, 'OUTPUT button present on the body').toBeVisible();

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-clock.ts
-//
 // PURE per-lane clock RATE (mult/div) helpers for the `clipplayer` module.
 // Kept out of clipplayer.ts so the rate table + coercion math are unit-testable
 // with no engine, and out of clip-types.ts so the clip data model doesn't grow

@@ -1,5 +1,3 @@
-// e2e/vrt/topbar.spec.ts
-//
 // Visual-regression baseline for the app TOPBAR — the brand heading
 // ("patchtogether v<version>") plus the full button layout: the preset-slot bar
 // (5 numbered slots + Save Set / Load Set) and the actions cluster (New rack,

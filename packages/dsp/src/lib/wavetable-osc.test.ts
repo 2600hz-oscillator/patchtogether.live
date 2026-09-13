@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/wavetable-osc.test.ts
-//
 // Pure-DSP unit tests for the SHARED wavetable oscillator core — the most
 // widely-imported DSP core in the repo (cube, moog902,
 // moog904a/b, moog921-vco/921a/921b, treeohvox, wavecel, wavesculpt, …). It

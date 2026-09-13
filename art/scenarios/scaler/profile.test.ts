@@ -1,5 +1,3 @@
-// art/scenarios/scaler/profile.test.ts
-//
 // AUDIO PROFILE for SCALER (×0.1..×10 gain trim) (backfill batch 5 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/hold-param.test.ts
-//
 // The CANCEL-AND-HOLD / PIN utils for the clip-automation param-jump policy.
 //
 // Load-bearing cases:

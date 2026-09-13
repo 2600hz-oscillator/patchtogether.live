@@ -1,5 +1,3 @@
-// e2e/tests/voice-chain.spec.ts
-//
 // The canonical Phase 1 voice chain:
 //   Sequencer.pitch → AnalogVCO.pitch
 //   Sequencer.gate  → ADSR.gate
@@ -57,7 +55,6 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
     ]
   );
 
-  // Set the step pattern. Four steps on at known pitches; rest off.
   await seedKriaWith(page, 'seq', buildKriaMidiData([60, 64, 67, 72], { duration: 0.5 }));
 
   // Let the chain run for ~1.5 seconds — at 240 BPM, that's ~24 16th-note steps,
@@ -134,7 +131,6 @@ test('voice-chain: stopping the sequencer silences the output (gate goes low)', 
   const playingPeak = await readScopePeak(page);
   expect(playingPeak, 'expected audible signal while playing').toBeGreaterThan(0.01);
 
-  // Stop the sequencer
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { params: Record<string, number> }> };

@@ -1,5 +1,3 @@
-// e2e/tests/mappy-export-import.spec.ts
-//
 // MAPPY EXPORT MAP / IMPORT MAP — round-trip the venue SURFACE LAYOUT across
 // patches. The "map" is the projector-alignment: the COUNT of surfaces + each
 // surface's corner geometry + per-surface FIT. Align once, export, reuse in a

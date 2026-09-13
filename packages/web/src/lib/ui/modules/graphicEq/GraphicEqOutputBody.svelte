@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/graphicEq/GraphicEqOutputBody.svelte
-  //
   // The GRAPHIC EQ dock full-view body: the live meters and the
   // affordances that live only on `GraphicEqCard.svelte`, which promotion
   // would otherwise delete (`migrated('graphicEq')` stops BOTH surfaces

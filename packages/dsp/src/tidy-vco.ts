@@ -1,5 +1,3 @@
-// packages/dsp/src/tidy-vco.ts
-//
 // TIDY VCO — virtual-analog subtractive synth voice AudioWorkletProcessor.
 //
 // The per-sample DSP lives in ./lib/tidy-vco-dsp.ts (2× polyBLEP morph

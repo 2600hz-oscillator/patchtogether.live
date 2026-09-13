@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapes.ts
-//
 // SHAPES — geometry source. Mirrors LINES's structure: a single procedural
 // fragment shader writes a mono-video stream into the module's FBO.
 // Renders one of three primitive shapes (circle, square, triangle), with
@@ -191,7 +189,6 @@ export const shapesDef: VideoModuleDef = {
     { id: 'zoom',   label: 'Zoom',   defaultValue: DEFAULTS.zoom,   min: 0.05, max: 10,        curve: 'log' },
   ],
 
-  // ── FACE (batch 23b — the ATTEST half of the ≤5 cut) ──────────────────────
   //
   // WHAT SHAPES IS FOR: it is a PRIMITIVE GENERATOR. No input, no history — a
   // signed-distance field for one of three primitives, rendered white-on-black

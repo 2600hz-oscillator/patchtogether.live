@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/media/NodeVizSurfaceHost.svelte
-  //
   // ONE node, ONE viz surface, for as long as the NODE exists — the mount half
   // of `./node-viz-surface-registry` (read that file's header first; it carries
   // the whole argument for why these producers are components rather than

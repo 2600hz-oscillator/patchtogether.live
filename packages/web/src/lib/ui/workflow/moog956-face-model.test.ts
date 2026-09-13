@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/moog956-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the 956's faceplate.
 //
 // This face is held together by ABSENCES and by an ARITY, and the registry

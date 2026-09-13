@@ -1,5 +1,3 @@
-// packages/server/src/snapshot-config.ts
-//
 // Snapshot persistence knobs for Hocuspocus's onStoreDocument debouncer.
 // The full reasoning is summarized below.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog984-face-model.ts
-//
 // The PURE model behind the MOOG 984 faceplate — the four numbers a 4×4 matrix
 // cannot print from any one of its sixteen knobs.
 //

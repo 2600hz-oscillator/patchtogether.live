@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cloudseed.ts
-//
 // CLOUDSEED — module def + pure-math mirror.
 //
 // Exact algorithm port of Ghost Note Audio's CloudSeed reverb
@@ -65,9 +63,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
  *  cell both address it through `$lib/ui/modules/cloudseed-preset-actions`. */
 export const CLOUDSEED_CLEAR_TAIL_KEY = 'clearTail';
 
-// ============================================================================
 // Parameter enum (1:1 from CloudSeedCore/Parameters.h)
-// ============================================================================
 export const CloudseedParam = {
   Interpolation: 0,
   LowCutEnabled: 1,
@@ -117,9 +113,7 @@ export const CloudseedParam = {
   COUNT: 45,
 } as const;
 
-// ============================================================================
 // scaleParam — pure mirror of Parameters.h:ScaleParam.
-// ============================================================================
 const DEC1 = (10 / 9) * 0.1;
 const DEC2 = (100 / 99) * 0.01;
 const DEC3 = (1000 / 999) * 0.001;
@@ -187,9 +181,7 @@ export function scaleParam(val: number, index: number): number {
   return 0;
 }
 
-// ============================================================================
 // formatParameter — for the on-card readouts. 1:1 mirror of FormatParameter.
-// ============================================================================
 export function formatParameter(val: number, paramId: number): string {
   const s = scaleParam(val, paramId);
   switch (paramId) {
@@ -257,14 +249,12 @@ export function formatParameter(val: number, paramId: number): string {
   }
 }
 
-// ============================================================================
 // Built-in presets (port of Programs.h). v1 ships the canonical DarkPlate
 // + 3 derived presets that exercise different corners of the param space
 // (BRIGHT HALL, SHORT ROOM, INFINITE PAD). The full Ghost Note preset
 // bank is enormous and would bloat the bundle without proportionate
 // benefit; the in-app "load preset" picker can grow over time as users
 // surface favourites.
-// ============================================================================
 
 export interface CloudseedPreset {
   name: string;
@@ -386,11 +376,9 @@ export function presetDecaySeconds(preset: CloudseedPreset): number {
   return scaleParam(v, CloudseedParam.LateLineDecay);
 }
 
-// ============================================================================
 // Module def. The 7 macro params are AudioParams; the remaining 38
 // parameters live in node.params and are pushed through the worklet's
 // postMessage channel via the `non-AudioParam params helper` below.
-// ============================================================================
 
 /** Macro-AudioParam IDs → C++ Parameter enum, for the preset stamp + the
  *  per-knob readout formatter. Declared ABOVE the def because `cloudseedDef`'s
@@ -881,9 +869,7 @@ export const cloudseedDef: AudioModuleDef = {
   },
 };
 
-// ============================================================================
 // Pure-math primitives re-exported for tests (1:1 with the worklet)
-// ============================================================================
 
 // ---- LcgRandom (Borland 22695477/1 LCG) ----
 export class CloudseedLcg {

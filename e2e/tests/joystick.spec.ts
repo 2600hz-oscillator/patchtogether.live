@@ -1,5 +1,3 @@
-// e2e/tests/joystick.spec.ts
-//
 // JOYSTICK — the XY CV utility, on BOTH renderers.
 //
 // ⚠ THE SNAP-BACK LEG WAS INVERTED, NOT DELETED (owner ruling on #1963,

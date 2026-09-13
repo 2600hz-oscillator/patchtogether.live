@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/rear-card-model.ts
-//
 // PURE derivation for the REAR CARD — the RACKLINE flip-side patch field the
 // dock full-view shows on TAB.
 //

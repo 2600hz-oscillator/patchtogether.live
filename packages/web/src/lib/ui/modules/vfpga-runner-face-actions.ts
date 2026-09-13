@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vfpga-runner-face-actions.ts
-//
 // The VFPGA-RUNNER preset actions, shared by the LEGACY CARD and the FACED
 // shell cell so the two surfaces cannot drift.
 //

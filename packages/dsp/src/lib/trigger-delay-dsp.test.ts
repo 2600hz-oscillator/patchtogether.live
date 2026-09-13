@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/trigger-delay-dsp.test.ts
-//
 // Timing proofs for the MOOG 911A trigger-delay DSP:
 //   - TriggerDelay: a rising edge produces a pulse exactly N samples later,
 //     of the programmed width; no re-fire without a fresh edge; a held gate

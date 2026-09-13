@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/pong/pong-glyph-model.test.ts
-//
 // The pure-layout half of pong's lane glyph. `PongCourtGlyph.svelte` is a thin
 // renderer with no arithmetic of its own, so every way the court picture can be
 // WRONG is reachable from here — the same split `dx7-glyph-model` and

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/dx7-glyph-model.ts
-//
 // PURE SVG GEOMETRY for the DX7 algorithm diagram (dx7 PR 4).
 //
 // `dx7-algorithm-layout.ts` (PR 3) answers "which operator sits at which

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/painter-draw.ts
-//
 // PAINTER — pure drawing core (no DOM, no GL). The card is an MS-Paint-style
 // surface; this module holds the SERIALIZABLE op model + the deterministic paint
 // logic so it's unit-testable without a canvas/WebGL context and so the same ops

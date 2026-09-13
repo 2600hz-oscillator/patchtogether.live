@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-post-buffer.test.ts
-//
 // THE TEST WHOSE ABSENCE SHIPPED A DEAD START/END WINDOW.
 //
 // The regression (#1316 → owner report): the engine factory's RECORD branch

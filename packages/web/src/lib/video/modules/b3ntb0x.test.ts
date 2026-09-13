@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/b3ntb0x.test.ts
-//
 // Pure-DSP + module-def-shape coverage for B3NTB0X. The four GLSL passes are
 // the renderer; the math they mirror lives in b3ntb0x-dsp.ts and is tested
 // here in jsdom (no GL — jsdom can't exercise WebGL; the float-FBO + 4-pass
@@ -296,7 +294,6 @@ describe('B3NTB0X burst starve (decode colour-killer + subcarrier crawl)', () =>
   });
 });
 
-// ---------------------------------------------------------------------------
 // PARAM-MUTATION WIRING — downgraded from b3ntb0x.spec.ts test 3 ("CV-bending
 // knobs mutate params via the patch store"), webgl-suite-optimization §1/§2/§7-3.
 // The e2e only wrote node.params into the store and read them BACK from the store
@@ -307,7 +304,6 @@ describe('B3NTB0X burst starve (decode colour-killer + subcarrier crawl)', () =>
 // is VRT-EXEMPT + per-port-exempt: t1 — structured non-black decode — and t2 —
 // bend-mangles-output, the 4-pass NTSC proof — stay in b3ntb0x.spec as the ONLY
 // GL pixel gates, per plan §1/§6.)
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   return new Proxy(
@@ -362,7 +358,6 @@ describe('B3NTB0X factory setParam propagates to the live engine param', () => {
   });
 });
 
-// ===========================================================================
 // LIVE-CONTROLS AUDIT (owner: "a bunch of controls don't seem to do much").
 // Two layers:
 //   (A) CPU-mirror behaviour: each previously-dead/weak control's math, at min
@@ -371,7 +366,6 @@ describe('B3NTB0X factory setParam propagates to the live engine param', () => {
 //   (B) param→uniform WIRING guard: every control's uniform is not just
 //       declared but CONSUMED in its pass body, and no uniform is multiplied
 //       out by a literal 0 (the old `* 0.0` Bend stub). A static-source guard.
-// ===========================================================================
 
 describe('B3NTB0X HUE — receiver tint (decode-side demod-axis rotation)', () => {
   it('is the identity at hue=0 (no tint shift)', () => {
@@ -488,13 +482,11 @@ describe('B3NTB0X BEND NETWORK A–D — each tap is a real, distinct distortion
   });
 });
 
-// ===========================================================================
 // PARAM → UNIFORM WIRING GUARD. For EVERY param (except mirror gates, which
 // drive a CPU edge-detect, not a uniform) assert the uniform it feeds is
 // referenced in its pass body MORE than once (a declaration + at least one
 // real use), and that NO uniform is killed by a literal-0 multiply. This is
 // the regression guard for the owner's "dead control" class of bug.
-// ===========================================================================
 
 describe('B3NTB0X param→uniform wiring (no dead controls)', () => {
   // param id → { uniform name, which pass shader(s) must CONSUME it }.
@@ -565,10 +557,8 @@ describe('B3NTB0X param→uniform wiring (no dead controls)', () => {
 
 });
 
-// ===========================================================================
 // FACTORY SMOKE — drive every param through setParam/readParam (the CV hot
 // path) so a broken wiring of ANY control fails fast, GPU-free.
-// ===========================================================================
 
 describe('B3NTB0X factory accepts + round-trips EVERY param', () => {
   it('setParam/readParam survives a sweep of every declared param', () => {
@@ -588,12 +578,10 @@ describe('B3NTB0X factory accepts + round-trips EVERY param', () => {
   });
 });
 
-// ===========================================================================
 // REGRESSION: HUE + DRIFT must NOT cancel (the bug the owner reported). The
 // old encode applied hue/drift to BOTH the carrier AND the burst reference the
 // decoder locks to, so a clean encode→demod round-trip recovered the input
 // unchanged → the controls did nothing. Prove the new wiring is non-cancelling.
-// ===========================================================================
 
 describe('B3NTB0X HUE/DRIFT no-cancel regression (the owner-reported bug)', () => {
   it('HUE is applied DECODE-side so it cannot cancel an encode carrier shift', () => {

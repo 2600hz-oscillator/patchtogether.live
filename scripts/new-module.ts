@@ -1,6 +1,4 @@
 #!/usr/bin/env node --experimental-strip-types
-// scripts/new-module.ts
-//
 // New-module scaffolder. Emits the smallest typecheck-clean stub for a
 // new patchtogether.live module (audio / video / meta domain) and wires
 // it into every registry the codebase expects a new module to land in.
@@ -68,7 +66,6 @@ import {
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// ───────────────────────────────────────────────────────────────────────────
 // Repo + path helpers.
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -130,7 +127,6 @@ const MODULE_CATEGORIES_PATH = rp('packages/web/src/lib/ui/module-categories.ts'
 // VRT exemption list + the one card-map test that enumerates every type.
 const MANIFEST_PATH = rp('packages/web/src/lib/docs/module-manifest.ts');
 
-// ───────────────────────────────────────────────────────────────────────────
 // CLI parsing.
 
 type Domain = 'audio' | 'video' | 'meta';
@@ -263,7 +259,6 @@ Options:
 `.trim());
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // Name conversion helpers. Mirror the conventions already in the registry.
 
 /** kebab-case 'analog-vco' → camelCase 'analogVco'. Single-word ids
@@ -278,7 +273,6 @@ function toPascal(kebab: string): string {
   return camel.charAt(0).toUpperCase() + camel.slice(1);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // Shape parsing — only used when --from is set. Tolerant regex matching the
 // AudioModuleDef / VideoModuleDef literal-init pattern the codebase uses.
 // We extract a verbatim slice of the `inputs:`, `outputs:`, and `params:`
@@ -476,7 +470,6 @@ function tryExtractShape(src: string, fromType: string, domain: Domain, srcFile?
   return null;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // Stub generators.
 
 function defaultInputsBody(): string {
@@ -760,7 +753,6 @@ describe('${varName}: shape', () => {
 // `.mod-card` root, a `ModuleTitle`, and a Knob per param. There is no card
 // renderer to mount one.
 
-// ───────────────────────────────────────────────────────────────────────────
 // In-place file editors. Every edit goes through these helpers so the
 // undo path can reliably remove what scaffold added.
 //
@@ -842,7 +834,6 @@ function addManifestDescriptionEntry(type: string, label: string): void {
 // a new module's visual coverage is a FACE scene, which it earns by being
 // promoted rather than by being excused on the way in.
 
-// ───────────────────────────────────────────────────────────────────────────
 // Undo. Removes every `// [new-module:<type>]` line from the registry-edit
 // files and deletes the four newly-created files. Tolerates missing
 // files / missing lines for a clean re-run after a half-baked scaffold.
@@ -939,7 +930,6 @@ function undo(type: string): UndoResult {
   return { filesDeleted, filesEdited };
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // Scaffold orchestrator.
 
 interface ScaffoldResult {
@@ -1025,7 +1015,6 @@ function runTypecheck(): { ok: boolean; out: string } {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // Entry point.
 
 function main(): void {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/toybox/shell-extension.ts
-//
 // The TOYBOX SHELL EXTENSION (#1512) — the module-owned end of the extension
 // seam.
 //

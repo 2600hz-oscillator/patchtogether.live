@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/depolarizer.ts
-//
 // DEPOLARIZER — the reverse of POLARIZER: a tiny 1-in / 1-out CV utility that
 // maps a BIPOLAR signal back to a UNIPOLAR one. It takes a [-1, +1] control
 // voltage and folds it into [0, 1], scaled by a single DEPTH knob:

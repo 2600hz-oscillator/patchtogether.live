@@ -1,5 +1,3 @@
-// e2e/tests/patch-panel-jack-indicator.spec.ts
-//
 // Behavior coverage for the on-card patch-menu PATCHED-PORT INDICATOR + the
 // remote-patch hover overlay (the menu drill-down itself is covered by
 // patch-menu-redesign.spec.ts; this only exercises the new jack indicator).
@@ -26,7 +24,6 @@ function chrome(page: Page, nodeId: string) {
   return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
 }
 
-/** Open the panel from a given trigger side. */
 async function openFrom(page: Page, nodeId: string, side: 'left' | 'right') {
   const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
   await page
@@ -68,7 +65,6 @@ test('patched OUTPUT shows a filled jack with an arrow-only "→" remote title; 
 }) => {
   await spawnSeqAdsrWired(page);
 
-  // Open SEQUENCER and drill into OUTPUTs — seq.gate feeds adsr.gate.
   await openFrom(page, 'seq', 'left');
   await chrome(page, 'seq')
     .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
@@ -97,7 +93,6 @@ test('patched INPUT shows a filled jack with an arrow-only "←" remote title; u
 }) => {
   await spawnSeqAdsrWired(page);
 
-  // Open ADSR and drill into INPUTs — adsr.gate is fed by seq.gate.
   await openFrom(page, 'adsr', 'left');
   await chrome(page, 'adsr')
     .locator('[data-testid="patch-panel-nav"][data-nav="inputs"]')

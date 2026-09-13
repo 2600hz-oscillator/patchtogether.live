@@ -1,5 +1,3 @@
-// packages/dsp/src/kickdrum.ts
-//
 // KICK DRUM — layered stereo kick-voice AudioWorkletProcessor.
 //
 //. The per-sample

@@ -1,5 +1,3 @@
-// scripts/vrt-png-verify.test.ts
-//
 // The collector's PNG integrity check (scripts/vrt-png-verify.mjs). Run
 // 33198943725 committed a baseline whose zlib stream failed its Adler-32
 // check; every CI run on the branch then reddened in the cable-stripe gate.

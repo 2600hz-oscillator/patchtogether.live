@@ -1,5 +1,3 @@
-// art/scenarios/buggles/woggle-events.test.ts
-//
 // ART for BUGGLES.
 //
 // ⚠ WHY THIS SCENARIO NEVER INSTANTIATES THE MODULE — corrected 2026-08-15,
@@ -113,7 +111,6 @@ describe('BUGGLES ART: rendered ConstantSource ramp matches smooth-output spec',
     const tail = buf[Math.floor(0.18 * SAMPLE_RATE)] ?? 0;
     expect(tail, `tail sample=${tail.toFixed(4)} should be ~0.6`).toBeCloseTo(0.6, 2);
 
-    // Check midpoint of ramp (~25ms in) — should be ~0.3.
     const mid = buf[Math.floor(0.025 * SAMPLE_RATE)] ?? 0;
     expect(mid, `midpoint sample=${mid.toFixed(4)} should be ~0.3`)
       .toBeGreaterThan(0.2);

@@ -1,5 +1,3 @@
-// e2e/tests/shared-rack-sync.spec.ts
-//
 // @collab — the operator's exact "bulletproof multiplayer" flow, driven
 // end-to-end across two independent browser contexts (separate cookie
 // jars / localStorage / ydocs — i.e. two real users on two machines)

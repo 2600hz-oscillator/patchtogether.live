@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/scope-draw.ts
-//
 // Shared 2D-canvas draw logic for SCOPE. Used by:
 //   1. ScopeCard.svelte's on-card visualization (HTMLCanvasElement,
 //      hot-loop driven by rAF in the card).
@@ -559,9 +557,7 @@ function drawChannel(
   ctx2d.globalAlpha = 1;
 }
 
-// ==========================================================================
 // PHOSPHOR PERSISTENCE RENDER (INTENSITY ≠ 12:00 default)
-// ==========================================================================
 //
 // Same background + grid + labels as the legacy render; only the trace draw
 // differs. The beam's trail is reconstructed from the live analyser buffer

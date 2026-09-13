@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/rackspaces.ts
-//
 // Rackspace data layer — Neon HTTP API (B1).
 //
 // Stage A's in-memory Map died on Cloudflare Workers because each

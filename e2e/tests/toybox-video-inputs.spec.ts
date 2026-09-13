@@ -1,5 +1,3 @@
-// e2e/tests/toybox-video-inputs.spec.ts
-//
 // TOYBOX video INPUT ports (VID A / VID B) — a VIDEO-kind layer can source a
 // LIVE PATCHED FEED off the inA/inB ports instead of a local file/camera.
 // Proves the END-TO-END path through the real UI + engine:

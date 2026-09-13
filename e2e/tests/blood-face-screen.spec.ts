@@ -1,5 +1,3 @@
-// e2e/tests/blood-face-screen.spec.ts
-//
 // THE BLOOD FACE (2026-08-31) — the render legs for a promotion whose failure
 // mode is a module that never starts.
 //
@@ -132,7 +130,6 @@ async function bootRack(page: Page, errors: string[]) {
   await spawnPatch(page, NODES, []);
 }
 
-/** Open BLOOD's dock faceplate and return the dock shell locator. */
 async function openBloodDock(page: Page) {
   const shell = page.locator(`.svelte-flow__node[data-id="${BLOOD_ID}"] [data-testid="module-shell"]`);
   await expect(shell, 'the promoted face renders a ModuleShell tile in the lane')

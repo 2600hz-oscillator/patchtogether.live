@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/chromaconsole/chromaconsole-status-model.test.ts
-//
 // The strings the device body can produce — including the ones that are never
 // painted, which is the half a VRT baseline and a human reading one cannot check.
 //

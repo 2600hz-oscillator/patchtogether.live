@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/bluebox.ts
-//
 // BLUEBOX — DTMF dialer with phreaker buttons.
 //
 // 12 push-to-talk keys (digits 0..9 + the two phreaker buttons BLUEBOX
@@ -157,7 +155,6 @@ export const blueboxDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // Authored from what this module IS: a DIALER — twelve momentary keys into
   // ONE bank of ten sine oscillators.

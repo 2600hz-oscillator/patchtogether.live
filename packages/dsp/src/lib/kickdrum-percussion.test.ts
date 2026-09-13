@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/kickdrum-percussion.test.ts
-//
 // P0 BLIND-SPOT coverage for the KICK DRUM voice — two behaviors the coarse
 // per-module behavioral metric (an OR of RMS / spectral-centroid over the whole
 // render) is STRUCTURALLY BLIND to:

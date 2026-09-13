@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-keyboard.ts
-//
 // PURE computer-keyboard → clip-player CONTROL-STRIP mapping (Part B). The card's
 // 8-button control strip mirrors the single-pad Launchpad's PERMANENT top row
 // (CC 91..98); computer digits 1..8 drive those SAME eight buttons, in the SAME

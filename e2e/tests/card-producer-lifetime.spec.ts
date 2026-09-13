@@ -1,5 +1,3 @@
-// e2e/tests/card-producer-lifetime.spec.ts
-//
 // #1587 — "wavesculpt + timelorde render BLACK unless the card happens to be
 // open." THE REGRESSION GUARD, and it is NOT collapse-shaped.
 //
@@ -932,9 +930,7 @@ for (const subject of SUBJECTS) {
   // `timelorde-pinned-source.spec.ts` for the canvas-hidden arm.
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE OTHER HALF: producers the NODE owns (legacy-removal S1)
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // ⚠ WHY THIS LIVES IN THIS FILE AND NOT A NEW ONE. Everything above is derived
 // from `CARD_PRODUCER_LANE_TYPES`, so a module LEAVING that set does not turn a
@@ -1420,9 +1416,7 @@ for (const type of nodeFrameProducerTypes()) {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE THIRD SHAPE: a producer the NODE MOUNTS AS A SURFACE (legacy-removal S1)
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // Same file, same reason as the block above: subjects here are modules LEAVING
 // `CARD_PRODUCER_LANE_TYPES`, so a departure removes four tests from the first

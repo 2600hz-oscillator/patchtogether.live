@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/types.test.ts
-//
 // Unit tests for canConnect — the type-level compatibility gate the UI
 // uses to filter the "Patch to..." cascade and the inline drag-connect
 // preview. The rule set encodes both the trivially-allowed (equal types)

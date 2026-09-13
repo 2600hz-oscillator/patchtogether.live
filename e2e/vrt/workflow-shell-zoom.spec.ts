@@ -1,5 +1,3 @@
-// e2e/vrt/workflow-shell-zoom.spec.ts
-//
 // VRT: the `?shell=1` RACKLINE rack at THREE FIXED ZOOMS — the pixel gate for
 // the owner-reported ZOOM-REPOSITION bug (P0.3b). The same framed rack region
 // (lane 1..3 with one ch1 member + the video zone with its default trio) is

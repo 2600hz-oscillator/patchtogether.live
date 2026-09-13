@@ -1,5 +1,3 @@
-// e2e/tests/ui-refresh.spec.ts
-//
 // Coverage for the UI refresh PR — MiniMap drop-in, cable hover-shift,
 // card-hover cable de-emphasis, and Cmd-Z / Cmd-Shift-Z undo wiring.
 //
@@ -35,7 +33,6 @@ test.describe('MiniMap', () => {
     const toggle = page.getByTestId('minimap-toggle');
     await expect(toggle).toBeVisible();
 
-    // Open by default
     await expect(page.locator('.svelte-flow__minimap')).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 

@@ -1,5 +1,3 @@
-// e2e/tests/adsr-face.spec.ts
-//
 // The adsr FACE, at the tiers that show a SUBSET — the half of the curation
 // nothing else covers.
 //
@@ -65,7 +63,6 @@ function readParam(page: Page, nodeId: string, pid: string): Promise<number | nu
   );
 }
 
-/** Set the viewport zoom and wait for the LOD tier to settle on the tile. */
 async function setZoomTier(page: Page, nodeId: string, zoom: number, tier: string): Promise<void> {
   await page.evaluate((z) => {
     const f = (

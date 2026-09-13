@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-loopback-source.svelte.ts
-//
 // THE REAL-DOM SINGLETON for ./node-loopback-source-registry — a thin binding of
 // the pure core to the browser, the graph store and the engine.
 //

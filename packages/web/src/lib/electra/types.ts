@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/types.ts
-//
 // Shared types for the Electra One MULTI-VIEW integration.
 //
 // The Electra One is a programmable MIDI controller (3 control sets × 12 pots

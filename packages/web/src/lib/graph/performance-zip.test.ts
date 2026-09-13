@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/performance-zip.test.ts
-//
 // Unit tests for the PORTABLE performance .zip (build/parse). The patch
 // envelope inside the bundle is built from a REAL Y.Doc (per the
 // yjs-save-load-real-ydoc discipline — never a hand-faked update string where

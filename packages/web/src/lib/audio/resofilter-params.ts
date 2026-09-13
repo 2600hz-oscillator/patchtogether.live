@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/resofilter-params.ts
-//
 // RESOFILTER's FOUR PARAM DECLARATIONS, in one def-free module.
 //
 // WHY THEY MOVED OUT OF THE DEF. Two reasons, and the second is the one that

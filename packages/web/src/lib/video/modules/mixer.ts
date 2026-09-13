@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mixer.ts
-//
 // MIXER — 4-channel video mixer with per-channel amount + CV control.
 //
 // Phase-1 simplification of §3.10 (which spec'd a 6-channel + 6-color-wheel
@@ -102,7 +100,6 @@ export const mixerVideoDef: VideoModuleDef = {
     { id: 'amount4', label: 'A4', defaultValue: DEFAULTS.amount4, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
   //
   // WHAT V-MIXER IS FOR: it is the JOIN. Four independent video chains meet
   // here and leave as ONE frame, weighted per channel. Its siblings do

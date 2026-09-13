@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mirrorpool.test.ts
-//
 // MIRRORPOOL module-def + factory smoke test. jsdom can't run the GL render
 // (that is covered by the deferred-baseline mirrorpool-composite.spec.ts +
 // the pure physics in mirrorpool-core.test.ts), but the def contract and the

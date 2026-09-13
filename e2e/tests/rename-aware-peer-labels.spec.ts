@@ -1,5 +1,3 @@
-// e2e/tests/rename-aware-peer-labels.spec.ts
-//
 // PEER LABELS FOLLOW A RENAME (#2264). The owner's report, verbatim: a
 // rear-card port tooltip read "← FROM camera #1.OUT" while that camera was
 // RENAMED to "feedback" — "we don't need to see the 'from' and it is much

@@ -1,5 +1,3 @@
-// e2e/tests/snaredrum-roll.spec.ts
-//
 // SNARE DRUM — REAL-SOURCE-CHAIN e2e (the poly/MIDI discipline from CLAUDE.md +
 // the POLYHELM lesson: a per-port "edge materializes" assert or an engine-class-
 // driven test does NOT count as roll coverage — the default mode must actually

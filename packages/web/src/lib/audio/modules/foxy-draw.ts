@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-draw.ts
-//
 // FOXY canvas-draw helpers for the two small preview windows on the card:
 //
 //   1. drawFoxyXyz() — the simplified RUTTETRA "XYZ" window. Strokes each

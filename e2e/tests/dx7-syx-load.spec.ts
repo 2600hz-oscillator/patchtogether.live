@@ -1,5 +1,3 @@
-// e2e/tests/dx7-syx-load.spec.ts
-//
 // Regression: "uploading a .syx makes every patch sound like the bundled
 // E.PIANO 1". Root cause was that SYX-loaded voices live in the
 // SyncedStore Y.Doc; reading them returns Yjs PROXY arrays that fail to

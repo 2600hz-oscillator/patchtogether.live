@@ -1,5 +1,3 @@
-// e2e/tests/coverage-groups-3-4-5.spec.ts
-//
 // Batched coverage for Groups 3 (modulation), 4 (sequencers + transport),
 // and 5 (VCAs + filters + mixers) of the module-coverage roadmap (see
 // e2e/MODULE-COVERAGE-PLAN.md). Batched into one PR to reduce the
@@ -47,9 +45,7 @@ import {
 
 test.describe.configure({ mode: 'parallel' });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 3 — modulation + utility
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
 // NONDETERMINISM: 2 recovered-on-retry observation(s) across 1 SHA(s) / 1 branch(es) in the
@@ -335,9 +331,7 @@ test('integration (Group 3): lfo modulates filter cutoff → audible spectrum sw
 
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 4 — sequencers + transport
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function readCurrentStep(page: Page, nodeId: string): Promise<number | null> {
   return await page.evaluate((id) => {
@@ -501,9 +495,7 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
 
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 5 — VCAs + filters + mixers
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('vca: cv=0 silences output; cv=1 passes audio through', async ({ page, rack }) => {
   // noise (loud) -> vca.audio. lfo.shape param fixed; CV input held at 0

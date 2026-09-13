@@ -1,5 +1,3 @@
-// e2e/tests/_setup-credit.ts
-//
 // SETUP BUDGET CREDIT (#1648) — the pure half, so it can be unit-tested with a
 // permanent negative control (`scripts/e2e-setup-credit.test.ts`) instead of
 // being trusted. No `@playwright/test` import: everything here is a function of

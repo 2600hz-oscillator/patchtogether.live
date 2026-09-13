@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/index.ts
-//
 // The CELL LIBRARY registry — every primitive cell, GLOB-collected from
 // `cells/*.ts` (Vite `import.meta.glob`, eager) keyed by (type, op). Adding a
 // tile op is a drop-in `cells/<op>.ts` exporting a `VfpgaCell`; NO edit here, so

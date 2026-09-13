@@ -1,5 +1,3 @@
-// e2e/tests/videocube.spec.ts
-//
 // VIDEOCUBE (the video isomorph of the audio CUBE) — the REAL source-chain gate.
 // Two proofs, both renderer-tolerant (CI runs the SwiftShader software renderer,
 // where the combine's tap count gates to 4; a flat pixel/encode assert that

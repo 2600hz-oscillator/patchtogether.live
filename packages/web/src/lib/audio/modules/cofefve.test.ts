@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cofefve.test.ts
-//
 // Two test layers for COFEFVE DELAY:
 //   1. Module-def shape (ports / params / CV targets / category).
 //   2. Real DSP behavior — instantiate the worklet processor class directly

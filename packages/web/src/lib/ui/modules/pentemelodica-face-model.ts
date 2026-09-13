@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/pentemelodica-face-model.ts
-//
 // THE PURE MODEL BEHIND PENTEMELODICA's FACEPLATE.
 //
 // Four derived numbers, and each one exists because the nearest knob is BLIND

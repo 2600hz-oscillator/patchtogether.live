@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-cp3-dsp.ts
-//
 // MOOG CP3 / CP3A CONSOLE PANEL (mixer) — pure DSP core.
 //
 // Own-code (permissive,) — a forked, expanded

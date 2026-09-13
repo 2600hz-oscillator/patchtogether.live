@@ -1,5 +1,3 @@
-// e2e/_helpers/present.ts
-//
 // THE RECEIVER-SIDE PROBE for "is the projector actually showing something".
 //
 // ⚠ WHY A COUNTER IS NOT AN ANSWER. Every continuity assertion this project had

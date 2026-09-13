@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavetable-presets.test.ts
-//
 // Unit coverage for the preset registry (46 entries; stable ids/labels/urls)
 // + the lenient WAV→number[][] parser (16-bit PCM, 32-bit float, stereo,
 // non-256-multiple → zero-pad).

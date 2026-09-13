@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/videoout-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the videoOut face (#1821).
 //
 // ⚠ THIS FILE EXISTS BECAUSE EVERY GENERIC GATE PASSES VACUOUSLY OVER THIS FACE.

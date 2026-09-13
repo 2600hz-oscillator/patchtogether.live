@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-sideband.test.ts
-//
 // P0 BLIND-SPOT coverage for the DX7 FM voice renderer (renderDx7Note). The
 // coarse per-module behavioral metric is RMS/centroid over the whole render;
 // it cannot see the two FM properties that actually make DX7 a DX7:

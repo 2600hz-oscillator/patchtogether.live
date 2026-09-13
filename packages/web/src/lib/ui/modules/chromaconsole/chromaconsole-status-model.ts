@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/chromaconsole/chromaconsole-status-model.ts
-//
 // EVERY STRING THE CHROMA CONSOLE'S DEVICE BODY CAN PRODUCE — including the
 // ones that are never painted.
 //

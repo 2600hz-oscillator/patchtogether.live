@@ -1,5 +1,3 @@
-// e2e/tests/workflow-channel-columns.spec.ts
-//
 // WORKFLOW CHANNEL COLUMNS — acceptance. Drives the REAL palette-drop path into
 // numbered channel columns + the sends rail (via __setSpawnFlowPos +
 // __spawnFromPalette, which run the actual wcolDropTarget → membership + order +

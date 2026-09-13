@@ -1,5 +1,3 @@
-// e2e/tests/cv-buddy-face.spec.ts
-//
 // THE CV BUDDY FACE, driven for real — and specifically the seams no other gate
 // can see.
 //

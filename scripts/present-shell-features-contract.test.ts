@@ -1,5 +1,3 @@
-// scripts/present-shell-features-contract.test.ts
-//
 // THE PRESENT-WINDOW `features` STRING IS A TWO-SIDED CONTRACT, AND UNTIL NOW
 // EACH SIDE ONLY TESTED ITSELF.
 //

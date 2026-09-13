@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rasterize-map.ts
-//
 // Pure, table-testable raster-mapping math for the RASTERIZE module
 // (slice 1 of "crossing the streams" — the audio-video crossing plan it cited
 // was never committed and is in no preservation tag, so the model below is

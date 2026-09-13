@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/ruttetra/RuttetraOutputBody.svelte
-  //
   // The RUTTETRA dock full-view body: the live raster picture and the THREE
   // affordances that live only on `RuttetraCard.svelte` and that promotion
   // would otherwise delete (`migrated('ruttetra')` stops BOTH surfaces

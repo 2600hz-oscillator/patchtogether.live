@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/monome-control.test.ts
-//
 // Integration test for the grid↔clip-player binding, driven through the REAL
 // grid-device (simulated transport) + the REAL graph store. Mocks only the
 // scheduler-clock so the LED render loop can be stepped manually.
@@ -310,9 +308,7 @@ describe('unbind', () => {
   });
 });
 
-// ===========================================================================
 // CLIP-LAUNCHER MODS: multi-page edit (FOLLOW/LEFT/RIGHT/DOUBLE/LENGTH) + copy
-// ===========================================================================
 
 const clipsAt = (idx: number) => (liveData().clips as Record<string, NoteClipRecord>)[String(idx)];
 const tap = (x: number, y: number) => { sim.press(x, y); sim.release(x, y); };

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/unityscalemathematik.test.ts
-//
 // Unit tests for UNITYSCALEMATHEMATIK's pure math + module-def shape.
 // Worklet rendering is exercised by the ART harness.
 

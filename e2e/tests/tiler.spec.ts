@@ -1,5 +1,3 @@
-// e2e/tests/tiler.spec.ts
-//
 // TILER (video multiscreen / TILE effect processor) functional e2e.
 //
 // Graph:

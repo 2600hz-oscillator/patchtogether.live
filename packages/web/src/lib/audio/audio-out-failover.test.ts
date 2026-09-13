@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-out-failover.test.ts
-//
 // THE TERMINAL SINK'S RUNTIME LATCH RECOVERY — the single highest-value line in
 // the audio-health PR, and the one that must not be taken on trust.
 //

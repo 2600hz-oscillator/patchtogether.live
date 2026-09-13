@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-masspass.test.ts
-//
 // Gates for the MASSPASS engine (phase 4) and for the `engineMode` switch.
 //
 // The load-bearing test in this file is "MASSPASS is AUDIBLY DIFFERENT from

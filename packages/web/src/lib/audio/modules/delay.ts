@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/delay.ts
-//
 // DELAY — the PRIMITIVE single-tap echo: one audio jack in, one out, with
 // time + feedback + mix. Pure-JS factory using Web Audio's built-in
 // DelayNode + a feedback GainNode loop. No worklet, no Faust — the

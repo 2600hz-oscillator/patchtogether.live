@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midi-cv-buddy.test.ts
-//
 // Unit tests for MIDI-CV-BUDDY: module-def shape + pure helpers
 // (voice priority, velocity scaling, pitch-bend math, held-stack
 // manipulation, MIDI status parsing). Live AudioContext + the
@@ -40,11 +38,9 @@ describe('midiCvBuddyDef: module shape', () => {
   });
 });
 
-// ════════════════════════════════════════════════════════════════════
 // Factory wiring: the note path must schedule via timestamp projection,
 // NOT handler-dispatch time. (Root cause of MIDI jitter: this fix had
 // landed only in MIDICLOCK, not here.) Minimal mock AudioContext + MIDI.
-// ════════════════════════════════════════════════════════════════════
 
 interface RecordedSchedule { kind: 'cancel' | 'set'; value?: number; time: number }
 

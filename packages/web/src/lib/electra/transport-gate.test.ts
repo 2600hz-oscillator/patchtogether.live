@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/transport-gate.test.ts
-//
 // The UA predicate for the Chromium-152 macOS SysEx regression. The predicate
 // NEVER decides alone (a framed identity reply overrides it — asserted in
 // autoconfig.test.ts where the caller lives); here: exactly which environments

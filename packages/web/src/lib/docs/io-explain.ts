@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/io-explain.ts
-//
 // PURE PortDef/ParamDef → human-readable explanation layer for the docs
 // site's auto-generated Inputs & Outputs section (the (c) section of the
 // per-module doc page;

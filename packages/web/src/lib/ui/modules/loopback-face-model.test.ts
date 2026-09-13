@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/loopback-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the LOOPBACK faceplate.
 //
 // ⚠ WHY THIS FILE, GIVEN THE GENERIC GATES. `module-face-lint`, the dock

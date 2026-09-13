@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-cp3-dsp.test.ts
-//
 // Pure-DSP unit tests for the Moog CP3 console-mixer core (own-code, forked
 // from the repo `mixer`). Pins the math the worklet depends on so a refactor
 // surfaces as a specific quantitative regression:

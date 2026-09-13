@@ -1,5 +1,3 @@
-// packages/dsp/src/ringback.ts
-//
 // RINGBACK — AudioWorklet wrapper around RingChannel (see ringback-core.ts for
 // the full per-sample DSP + the derivation from the TWOTRACKS record artifact).
 //

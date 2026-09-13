@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-roll-audio-gap.test.ts
-//
 // REGRESSION: NO audio is lost across a chunk roll — including samples the
 // long-lived AudioCaptureDrain pops DURING the finishing chunk's (slow)
 // finalize() window.

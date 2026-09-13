@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/face-xy-body-source.test.ts
-//
 // `face.xyPads[].surface: 'body'` — THE CLAIM THAT THE MODULE'S OWN BODY PAINTS
 // THE PAD, CHECKED RATHER THAN RECORDED.
 //

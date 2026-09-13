@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-filterbank-dsp.ts
-//
 // Shared FIXED-FILTER-BANK center frequencies + bandwidth for the Moog
 // fixed-filter-bank family:
 //   • 914 — "Extended Fixed Filter Bank" (Moog System 55). The full TWELVE

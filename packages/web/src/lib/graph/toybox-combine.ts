@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-combine.ts
-//
 // TOYBOX Phase 4 — Yjs mutators for the combine GRAPH (node.data.combine).
 //
 // The card edits the combine DAG (toybox-combine-graph.ts) live; every mutation

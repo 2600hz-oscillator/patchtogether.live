@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-synesthesia-composite.spec.ts
-//
 // Composite-state VRT for SYNESTHESIA: a whole-patch screenshot showing the
 // SCOPE trace of the source frequency next to SYNESTHESIA's band response —
 // proving they're driven by the same signal (the user's "see the SCOPE

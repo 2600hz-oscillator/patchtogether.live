@@ -1,5 +1,3 @@
-// e2e/tests/adsr-vca-invert.spec.ts
-//
 // End-to-end coverage for the new invert outputs:
 //   - ADSR.env_inv: 1 - env (unipolar envelope flip)
 //   - VCA.audio_inv: -audio (sign-flip / phase-invert)

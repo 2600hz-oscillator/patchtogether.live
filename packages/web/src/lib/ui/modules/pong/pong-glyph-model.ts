@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/pong/pong-glyph-model.ts
-//
 // THE PONG LANE-GLYPH LAYOUT FUNCTION — the pure arithmetic behind the court
 // picture the shell paints in pong's glyph slot.
 //

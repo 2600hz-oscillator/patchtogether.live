@@ -1,5 +1,3 @@
-// scripts/ci-shard-count.mjs
-//
 // DERIVE a ci.yml job's shard-matrix width, for the timings-accept guards.
 //
 // ── THE MATRIX COUPLING THIS ENCODES ────────────────────────────────────────

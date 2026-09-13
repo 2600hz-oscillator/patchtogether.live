@@ -189,9 +189,7 @@ export function readPresentBindingsFromUpdate(base64Update: string): PresentBind
   return readPresentBindings(doc);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // WHO OWNS DISPLAY PLACEMENT
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Which authority decides where a projector opens.

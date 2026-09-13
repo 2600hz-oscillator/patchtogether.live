@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/clip-recorder-protocol.ts
-//
 // THE CLIP-RECORDER PORT PROTOCOL — one spelling for both threads. The worklet
 // (../clip-recorder.ts) imports these constants and shapes into the audio
 // thread; the web wiring (packages/web/src/lib/audio/clip-recorder-node.ts)
@@ -74,9 +72,7 @@ export const CLIP_RECORDER_MAX_ARM_SLIP_FRAMES = CLIP_RECORDER_CHUNK_FRAMES;
  *  take, exactly as the slide bound accumulates over an arm. */
 export const CLIP_RECORDER_MAX_GAP_FRAMES = CLIP_RECORDER_CHUNK_FRAMES;
 
-// ---------------------------------------------------------------------------
 // Main thread → worklet
-// ---------------------------------------------------------------------------
 
 /** Arm a lane for a take window (ABSOLUTE context frames; stopFrame null = an
  *  open endless take). Replaces any prior state on the lane wholesale. */
@@ -111,9 +107,7 @@ export type ClipRecorderInMsg =
   | ClipRecorderStopMsg
   | ClipRecorderCancelMsg;
 
-// ---------------------------------------------------------------------------
 // Worklet → main thread
-// ---------------------------------------------------------------------------
 
 /** One capture chunk: planar [L…, R…] float32, TRANSFERRED. `firstFrame` is
  *  TAKE-relative, so a chunk's byte offset in the store is a pure function of

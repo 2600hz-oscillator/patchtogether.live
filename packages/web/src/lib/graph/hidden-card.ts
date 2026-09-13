@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/hidden-card.ts
-//
 // WORKFLOW MODE P4 — the `hiddenCard` node-data flag: a CANVAS-LEVEL
 // "render no card" marker for graph nodes whose face lives in a workflow
 // topbar menu instead of on the canvas (today: the camera manager's

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/spectrograph/SpectrographOutputBody.svelte
-  //
   // The SPECTROGRAPH dock full-view body: the live scrolling sonogram, carried
   // forward from `SpectrographCard.svelte` onto the faceplate.
   //

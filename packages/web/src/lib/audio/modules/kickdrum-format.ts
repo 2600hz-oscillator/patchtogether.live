@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kickdrum-format.ts
-//
 // KICK DRUM's READOUT VOCABULARY — the `ParamDef.format` (PF-3) functions the
 // def attaches to its own params, so every knob on the faceplate prints a
 // value that says what it MEANS.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ptzcam-cell-actions.ts
-//
 // THE PTZ CAMERA'S NON-PARAM GESTURES, as one plain-TypeScript seam called by
 // BOTH surfaces — the ranked `ptzcam-connect-{n}` action cell, the shell
 // extension's device body, and the legacy card.

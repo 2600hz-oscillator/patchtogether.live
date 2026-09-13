@@ -1,5 +1,3 @@
-// packages/web/src/routes/r/[id]/+page.server.ts
-//
 // Resolves a rackspace by id and decides who's allowed in:
 //   - authed members → canvas, currentUserId set, inviteCode included
 //   - authed non-members → join page

@@ -1,5 +1,3 @@
-// e2e/tests/scaler-cv-passthrough.spec.ts
-//
 // REAL source → SCALER → video-module-param regression for the SCALER
 // dead-knob bug (PR "fix(scaler): out adopts upstream type").
 //

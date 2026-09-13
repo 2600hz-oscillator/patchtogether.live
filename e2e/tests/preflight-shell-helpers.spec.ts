@@ -1,5 +1,3 @@
-// e2e/tests/preflight-shell-helpers.spec.ts
-//
 // NATIVE-SHELL PRE-FLIGHT — the SHELL-only rows (ES-9 + PTZ helper presence, the
 // `retryable` retry affordance, the ES-9 config write) exercised in the RENDERER
 // lane through a fake `window.ptNative` bridge. This is the fast, deterministic

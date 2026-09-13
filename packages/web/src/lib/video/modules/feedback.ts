@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/feedback.ts
-//
 // FEEDBACK — analog-video-style feedback loop with affine warp.
 //
 // Per spec §3.6: read the previous frame from a ping-pong FBO, sample it
@@ -121,7 +119,6 @@ export const feedbackDef: VideoModuleDef = {
     { id: 'offsetY', label: 'OffsY',  defaultValue: DEFAULTS.offsetY, min: -1,   max: 1,      curve: 'linear' },
   ],
 
-  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
   //
   // FEEDBACK is the video-feedback LOOP: the frame is re-sampled from its own
   // previous output through a small affine warp, scaled by decay, and mixed back

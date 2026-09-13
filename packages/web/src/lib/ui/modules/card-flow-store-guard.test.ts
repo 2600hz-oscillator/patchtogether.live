@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/card-flow-store-guard.test.ts
-//
 // A PLAIN-MOUNTED MODULE SURFACE MUST NOT CALL `useStore()` BARE — the
 // SOURCE-level gate for a defect no runtime gate in this repo could see.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/numpad-plus.test.ts
-//
 // Pure-function coverage for NUMPAD+ — module def shape, default
 // keymap, the midiForKey + quantizeToNearestStep helpers, and the
 // layer-data coercion machinery. Audio + keyboard interaction is

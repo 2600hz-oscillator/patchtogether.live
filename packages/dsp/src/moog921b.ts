@@ -1,5 +1,3 @@
-// packages/dsp/src/moog921b.ts
-//
 // MOOG 921B OSCILLATOR — slave VCO driven by a 921A bus
 // AudioWorkletProcessor.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/media-loader.spec.ts
-//
 // The /media media-loader scaffold view: a synthesized DataTransfer drop
 // (real File objects built in-page), inline previews + probe statuses,
 // the unsupported-file notice, per-item remove, clear-all, and the hidden
@@ -105,7 +103,6 @@ test.describe('media loader (/media)', () => {
     await expect(items).toHaveCount(1);
     await expect(page.locator('[data-testid="media-item"][data-kind="audio"]')).toHaveCount(1);
 
-    // Clear-all → back to the empty state.
     await page.getByTestId('media-clear-all').click();
     await expect(items).toHaveCount(0);
     await expect(page.getByTestId('media-empty-hint')).toBeVisible();

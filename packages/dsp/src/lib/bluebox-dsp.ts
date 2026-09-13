@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/bluebox-dsp.ts
-//
 // BLUEBOX pure-math helpers.
 //
 // Two surfaces live here so unit tests + the worklet share one source of

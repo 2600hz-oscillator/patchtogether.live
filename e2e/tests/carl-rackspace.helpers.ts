@@ -1,5 +1,3 @@
-// e2e/tests/carl-rackspace.helpers.ts
-//
 // Shared scaffolding for the Rackspace Carl @collab tests across both
 // approach-A (carl/ephemeral) and approach-B (carl/leader-elected)
 // branches. Keeps the per-spec file small + ensures the two PRs test

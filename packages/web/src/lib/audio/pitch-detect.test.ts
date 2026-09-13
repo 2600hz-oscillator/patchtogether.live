@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/pitch-detect.test.ts
-//
 // Layer-1 calibration: pure-sine math sanity. Validates that the YIN detector
 // + hzToNoteCents math give the right Hz / note name / cents on synthesized
 // sines. Layers 2 and 3 (under art/scenarios/scope-tuner/) cover harmonic

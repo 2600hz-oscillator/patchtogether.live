@@ -1,5 +1,3 @@
-// packages/dsp/src/karplus.ts
-//
 // KARPLUS — extended Karplus-Strong string/harp voice AudioWorkletProcessor.
 //
 // The per-sample DSP lives in ./lib/karplus-dsp.ts (the EKS chain built on

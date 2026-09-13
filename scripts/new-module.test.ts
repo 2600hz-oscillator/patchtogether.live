@@ -1,5 +1,3 @@
-// scripts/new-module.test.ts
-//
 // Tests for the new-module scaffolder.
 //
 // ⚠ THESE TESTS USED TO MUTATE THE REAL WORKING COPY. scaffold() wrote into
@@ -32,7 +30,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// ───────────────────────────────────────────────────────────────────────────
 // The REAL checkout. Only ever READ here — never handed to the scaffolder.
 
 const REAL_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,7 +79,6 @@ const REAL_BEFORE = new Map<string, string>(
   REGISTRY_FILES.map((rel) => [rel, readFileSync(real(rel), 'utf8')]),
 );
 
-// ───────────────────────────────────────────────────────────────────────────
 // The FIXTURE TREE. Built before new-module.ts is imported, because that
 // module resolves its path constants eagerly at load time.
 
@@ -423,7 +419,6 @@ describe('scaffold — video / meta domain stubs', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // insertMarkerLine — the invariant that makes undo byte-exact, asserted at
 // the seam so the rule is stated once and cannot be quietly reintroduced.
 
@@ -454,7 +449,6 @@ describe('insertMarkerLine (byte-exact-undo invariant)', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE GUARD. Declared last so it runs after every test above (vitest executes
 // in declaration order). It asserts the thing this whole file is about: the
 // suite does not touch the real working copy.

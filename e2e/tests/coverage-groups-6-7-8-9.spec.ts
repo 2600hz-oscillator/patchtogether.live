@@ -1,5 +1,3 @@
-// e2e/tests/coverage-groups-6-7-8-9.spec.ts
-//
 // Final batch of the module-coverage roadmap (see
 // e2e/MODULE-COVERAGE-PLAN.md):
 //
@@ -25,9 +23,7 @@ import {
 
 test.describe.configure({ mode: 'parallel' });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 6 — time-based effects
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('reverb: input → output emits audio with mix > 0', async ({ page, rack }) => {
   await spawnPatch(
@@ -136,9 +132,7 @@ test('integration (Group 6): voice → reverb → audioOut produces wider/longer
   expect(sum.peak, `voice → reverb peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.005);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 7 — drum voices
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('drummergirl: gate ping → audio burst', async ({ page, rack }) => {
   await spawnPatch(
@@ -180,9 +174,7 @@ test('meowbox: gate → stereo L emits audio', async ({ page, rack }) => {
   expect(sum.peak, `meowbox L peak=${sum.peak.toFixed(4)}`).toBeGreaterThan(0.01);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 8 — video sources + effects
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface PixelStats {
   mean: number;
@@ -386,9 +378,7 @@ test('integration (Group 8): shapes → destructor → chroma → videoOut rende
 
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Group 9 — cross-domain (audio <-> video)
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('cross-domain: lfo cv → lines.amp modulates video output over time', async ({ page, rack }) => {
   // LFO (audio domain) → LINES.amp (video domain CV input). The

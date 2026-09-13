@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/featurecv-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for FEATURECV's seven derived readouts, plus
 // the face's own structural claims and the source table its sidebar picture
 // draws.

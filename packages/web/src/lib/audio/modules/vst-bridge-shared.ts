@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/vst-bridge-shared.ts
-//
 // Shared factory plumbing for the two VST BRIDGE cards (vst-instrument.ts +
 // vst-fx.ts). NOT a module def — the registry glob imports this file and
 // `looksLikeAudioDef` skips it. Both defs ride ONE AudioWorklet processor

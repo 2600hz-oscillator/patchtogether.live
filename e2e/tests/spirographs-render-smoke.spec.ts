@@ -1,5 +1,3 @@
-// e2e/tests/spirographs-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for SPIROGRAPHS — a pure generated video
 // SOURCE (no video input; only cv inputs). Modeled on the Phase-0 template
 // (acidwarp-render-smoke.spec.ts) + the shared _render-smoke harness.

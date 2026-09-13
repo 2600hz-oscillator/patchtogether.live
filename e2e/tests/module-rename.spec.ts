@@ -1,5 +1,3 @@
-// e2e/tests/module-rename.spec.ts
-//
 // RENAME DISPLAYS WHAT YOU TYPED — the #2247 report, verbatim: "i can type
 // and rename modules but when i hit enter i am not shown the string i tried
 // to rename it to."

@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-play-every.test.ts
-//
 // PER-NOTE PLAY EVERY on the single-unit Launchpad — the owner's gesture: SHIFT +
 // DOUBLE-tap a note (the second shift-tap on the SAME note, while the PROB page
 // from the first tap is latched) ESCALATES to the PLAY-EVERY view: the 8×8's TOP
@@ -80,9 +78,7 @@ function rootNotePlayEvery(): number | undefined {
   return clips[clipIndex(0, 0)]!.steps.find((s) => s.step === 0 && s.midi === 48)?.playEvery;
 }
 
-// ===========================================================================
 // PURE — the play-every ordinal mapping + colour + frame paint.
-// ===========================================================================
 describe('PURE play-every mapping (top row only, 1..8)', () => {
   it('playEveryPadOrdinal: (0,7)=1 … (7,7)=8; every other pad null', () => {
     expect(playEveryPadOrdinal(0, 7)).toBe(1);
@@ -138,9 +134,7 @@ describe('PURE play-every frame paint — computeSingleClipFrame(playEveryView)'
   });
 });
 
-// ===========================================================================
 // GESTURE — SHIFT + double-tap a note → play-every view; a top-row tap writes.
-// ===========================================================================
 describe('SINGLE Clip — the SHIFT + DOUBLE-tap PLAY EVERY view gesture', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {

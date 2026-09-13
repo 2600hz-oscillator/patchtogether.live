@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/gate-trigger.test.ts
-//
 // Pins the canonical trigger/gate constants + the emitted waveform shapes
 // (short triangle trigger / held square gate) used across the app.
 

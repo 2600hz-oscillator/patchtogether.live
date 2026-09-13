@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-user-presets.ts
-//
 // TOYBOX *user* presets — a small localStorage-backed registry of patches the
 // user SAVES from the card (distinct from the read-only BUNDLED presets shipped
 // in the manifest). A saved entry is the VERBATIM toybox node.data blob (layers

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-scene-repeats.test.ts
-//
 // PURE unit tests for the SCENE REPEATS model (clip-scene-repeats.ts): count
 // coercion (1..63, 0/absent = infinite), the per-key write seam, next-content-
 // scene selection with gaps + last-scene behavior, the FROZEN repeat unit

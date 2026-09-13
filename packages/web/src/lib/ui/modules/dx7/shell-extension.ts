@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/shell-extension.ts
-//
 // The dx7 SHELL EXTENSION (#1512) — the module-owned end of the extension
 // seam. `dx7Def.face.extension: 'dx7'` declares this file (the id IS this
 // directory's name — the glob in $lib/ui/workflow/shell-extensions.ts is the

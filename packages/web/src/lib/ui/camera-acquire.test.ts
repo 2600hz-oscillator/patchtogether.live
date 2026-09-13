@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/camera-acquire.test.ts
-//
 // The bare-constraints retry seam (Blackmagic-WDM class devices): rich
 // constraints first; NotReadableError + a specific device → one deviceId-only
 // retry at the driver's native format; other errors pass through untouched.

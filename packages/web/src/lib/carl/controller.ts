@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/controller.ts
-//
 // Tick loop for Rackspace Carl. Pulled out of the Svelte component so we
 // can unit-test the cancellation + sleep semantics without spinning up
 // a full DOM.

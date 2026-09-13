@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog904a-face-model.ts
-//
 // What the MOOG 904A's CUTOFF dial actually delivers, and which side of the
 // filter/oscillator line the module is on.
 //

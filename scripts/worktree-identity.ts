@@ -1,5 +1,3 @@
-// scripts/worktree-identity.ts
-//
 // AN ATTEST MUST NEVER REUSE A SERVER IT DID NOT BOOT (#1597).
 //
 // The attest runners used to inherit e2e/playwright.config.ts's webServer with

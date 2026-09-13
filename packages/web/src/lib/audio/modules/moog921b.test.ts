@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog921b.test.ts
-//
 // Two test layers for the MOOG 921B Oscillator (slave VCO):
 //   1. Module-def shape — pins the 921B's I/O surface: freq_bus + width_bus
 //      CONTROL INPUTS (from a 921A), dc_mod + ac_mod (audio FM inputs), sync;

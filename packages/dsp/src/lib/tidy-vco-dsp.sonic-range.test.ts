@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/tidy-vco-dsp.sonic-range.test.ts
-//
 // TIDY VCO sonic-range proofs — the drum-wave bar: EVERY control is
 // sonically dynamic across its whole travel, gated as 5-point (3-point for
 // the discrete OCT switch) STRICT-MONOTONE metrics on rendered audio. No
@@ -125,9 +123,7 @@ function renderGateOff(p: TidyVcoParams, voct: number, holdS: number, seconds: n
   return l;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // FILTER section
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('sonic range — filter', () => {
   it('CUTOFF sweeps the centroid across its whole 40 Hz–14 kHz travel (5-point)', () => {
@@ -191,9 +187,7 @@ describe('sonic range — filter', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // OSCILLATOR section
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('sonic range — oscillators', () => {
   it('SHAPE1 morphs saw→pulse: even harmonics drain monotonically (5-point)', () => {
@@ -324,9 +318,7 @@ describe('sonic range — oscillators', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // WAVEFOLDER
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Fold a pure sine through the ADAA folder INSIDE the 2× oversampler — the
  *  exact signal path the voice uses. A clean tone (vs a harmonically-dense
@@ -427,9 +419,7 @@ describe('sonic range — wavefolder', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // ENVELOPES
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('sonic range — envelopes', () => {
   it('ATK sets the audible rise time across its travel (5-point)', () => {
@@ -551,9 +541,7 @@ describe('sonic range — envelopes', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // GLOBAL
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('sonic range — global', () => {
   it('WIDTH opens the mono-unison stereo field monotonically (5-point)', () => {

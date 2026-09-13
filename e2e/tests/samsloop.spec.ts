@@ -1,5 +1,3 @@
-// e2e/tests/samsloop.spec.ts
-//
 // SAMSLOOP end-to-end:
 //   1. Drop the module, the shell tile mounts with no console errors; the
 //      dock face carries the waveform canvas.
@@ -373,7 +371,6 @@ test.describe('SAMSLOOP module', () => {
       ],
     );
 
-    // Load the committed test WAV via the dock FILE cell.
     const pane = await openSamsPane(page);
     const wavBytes = readFileSync(WAV_PATH);
     await pane.getByTestId('shell-cell-samsloop-wav-input').setInputFiles({

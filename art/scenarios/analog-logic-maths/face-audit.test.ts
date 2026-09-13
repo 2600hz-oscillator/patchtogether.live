@@ -1,5 +1,3 @@
-// art/scenarios/analog-logic-maths/face-audit.test.ts
-//
 // THE ADVERSARIAL AUDIT FOR ANALOGLOGICMATHS, and the permanent anchor under
 // its faceplate (queue Q19).
 //

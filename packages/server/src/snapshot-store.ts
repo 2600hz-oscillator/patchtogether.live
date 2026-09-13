@@ -1,5 +1,3 @@
-// packages/server/src/snapshot-store.ts
-//
 // Snapshot BLOB storage behind a small abstraction.
 //
 // Today a rack's Yjs snapshot is a bytea row in Postgres (db.ts). That's

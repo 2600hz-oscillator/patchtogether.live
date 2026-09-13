@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-cv-math.ts
-//
 // TOYBOX modulation-section math (PURE — no Yjs, no GL, no DOM).
 //
 // Each of the 6 modulation inputs is a Structure-style attenuverter + offset:

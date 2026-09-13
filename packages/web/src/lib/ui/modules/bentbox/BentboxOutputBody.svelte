@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/bentbox/BentboxOutputBody.svelte
-  //
   // The BENTBOX dock full-view body: the live CRT picture, the SCREEN ON/OFF
   // switch the 2026-08-18 owner ruling requires of every video module, and the
   // FOUR affordances that live only on `BentboxCard.svelte` and would otherwise

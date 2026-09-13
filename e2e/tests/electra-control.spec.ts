@@ -1,5 +1,3 @@
-// e2e/tests/electra-control.spec.ts
-//
 // ELECTRA CONTROL — the full behavioral loop for the fixed 6×6 Electra-laid-out
 // control surface:
 //   1. spawn an ElectraControl + a source (ADSR). The card shows the
@@ -104,7 +102,6 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
 
   const menu = page.locator('[data-testid="control-context-menu"]');
   await expect(menu).toBeVisible();
-  // Open the 3-level flyout: Send to <electra> → Row2 → knob 2.
   await menu.locator('[data-testid="ctx-electra-ec-1"]').click();
   await menu.locator('[data-testid="ctx-electra-ec-1-row-2"]').click();
   await menu.locator('[data-testid="ctx-electra-ec-1-row-2-knob-2"]').click();
@@ -157,7 +154,6 @@ test('send a control to a fixed (row, knob) slot → grid renders it, label pers
   });
   expect(attackAfter).not.toBe(0.9); // proxy reset the SOURCE to its default
 
-  // Clear the Row2→2 slot via the proxy's OWN control menu ("Remove from").
   await slot22.locator('[role="slider"]').click({ button: 'right' });
   const menu2 = page.locator('[data-testid="control-context-menu"]');
   await expect(menu2).toBeVisible();

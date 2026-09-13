@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-custom-assets.test.ts
-//
 // The bridge from a user-supplied SOURCE to a registered ASSET (#1576).
 //
 // ⚠ SCOPE — what these tests CANNOT see:
@@ -182,9 +180,7 @@ describe('label handling', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // #1708 — REGISTRATION DRIVEN BY OBSERVATION.
-// ---------------------------------------------------------------------------
 //
 // The defect being fenced off: registering where the FILE IS PICKED means a peer
 // that RECEIVES the layer over the Y.Doc never registers, so its lookup misses

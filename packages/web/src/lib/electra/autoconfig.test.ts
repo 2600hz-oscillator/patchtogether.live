@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/autoconfig.test.ts
-//
 // Drives the orchestrator against a fake broker + fake host: assert that a
 // generated control's inbound CC writes the right param, meters/banners are
 // app→device only (inbound ignored), tap notes converge BPM via the helper, an
@@ -318,14 +316,12 @@ describe('tap-tempo routing', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // MIXMASTER meter view — the per-channel VU feedback stream. The orchestrator
 // starts a FeedbackPump that, on every ~33ms tick, reads each channel's level
 // (host.readMeterAmp('mx:meter:N') → engine.read(mx,'levels')[N-1]) and sends a
 // dBFS-mapped meter CC on CTRL to the read-only meter controls. These tests
 // drive that pump on a fake clock and assert the right meter CCs land — the
 // channel-VU half of View 2 now has data (post-fader Faust taps in mixmstrs).
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Parse a plain CC message [0xB0|ch, cc, val] from a captured CTRL send. */
 function asCc(m: number[]): { cc: number; value: number } | null {

@@ -1,5 +1,3 @@
-// e2e/tests/shapegen.spec.ts
-//
 // SHAPEGEN — smoke + I/O coverage for the standalone 3D-shape-generator
 // video module extracted from FOXY. Confirms:
 //   1. The module spawns + the card renders with NO console errors.
@@ -19,7 +17,6 @@
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
 
-/** Open the shapegen dock full view — the preview canvas' shell home. */
 async function openDock(page: import('@playwright/test').Page) {
   await page.evaluate(
     () => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('sg'),
@@ -168,7 +165,6 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
     ]);
     await expect(page.locator('.svelte-flow__node:has([data-shell-type="shapegen"])')).toBeVisible();
 
-    // Set both knobs to non-default values.
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { nodes: Record<string, { params: Record<string, number> }> };

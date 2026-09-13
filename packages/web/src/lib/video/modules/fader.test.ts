@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/fader.test.ts
-//
 // PCU for FADER's pure transition core (no GL) + the module def contract. The GL
 // plumbing (fader.ts factory: 2-pass mix→out, SEND via read('outputTexture:send'))
 // is exercised on the real GPU by the per-module-per-port sweep + fader.spec.ts.

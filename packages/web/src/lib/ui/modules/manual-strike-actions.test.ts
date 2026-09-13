@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/manual-strike-actions.test.ts
-//
 // The browser-free pre-gate for the SHARED AUDITION seam — the functions a
 // struck voice's legacy-card audition pad and its RACKLINE shell `action` cell
 // both call, in BOTH edge shapes (kickdrum STRIKE / karplus PLUCK / snaredrum

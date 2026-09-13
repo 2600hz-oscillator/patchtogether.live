@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/es9-face-model.test.ts
-//
 // ES-9's face, pinned where a def-reading gate cannot see it — plus the ONE
 // behaviour the promotion fixed, which no gate anywhere could see.
 //

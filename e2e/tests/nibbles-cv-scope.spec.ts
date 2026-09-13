@@ -1,5 +1,3 @@
-// e2e/tests/nibbles-cv-scope.spec.ts
-//
 // E2E regression for PR #163 — NIBBLES.length_cv must actually emit CV
 // downstream when patched into a CV input. Patches NIBBLES.length_cv →
 // SCOPE.ch1 and reads SCOPE's most-recent analyser sample as the

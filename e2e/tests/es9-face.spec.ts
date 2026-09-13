@@ -1,5 +1,3 @@
-// e2e/tests/es9-face.spec.ts
-//
 // THE ES-9 FACE, driven for real — and specifically the seams no other gate can
 // see.
 //

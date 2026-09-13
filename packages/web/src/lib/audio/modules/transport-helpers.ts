@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/transport-helpers.ts
-//
 // Shared transport + quicksave logic used by Sequencer / DRUMSEQZ / SCORE.
 //
 ////

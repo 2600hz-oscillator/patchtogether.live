@@ -1,5 +1,3 @@
-// art/scenarios/illogic/attenuverter-and-logic.test.ts
-//
 // ART for ILLOGIC. Drives the actual `illogicDef.factory(ctx, node)` under
 // node-web-audio-api's OfflineAudioContext (no Faust DSP — ILLOGIC is
 // pure GainNodes + WaveShaperNodes), then asserts:

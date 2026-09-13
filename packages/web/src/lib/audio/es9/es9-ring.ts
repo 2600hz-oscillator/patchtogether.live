@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/es9-ring.ts
-//
 // Web-side MIRROR of the SharedArrayBuffer SPSC ring in
 // packages/dsp/src/lib/es9-bridge-core.ts — the bridge Worker's half (the
 // worklet's half ships inside the built dsp bundle). Duplicated on purpose:

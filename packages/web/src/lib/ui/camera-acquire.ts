@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/camera-acquire.ts
-//
 // Camera acquisition with a BARE-CONSTRAINTS retry — the seam CameraInputCard
 // uses instead of calling getUserMedia directly.
 //

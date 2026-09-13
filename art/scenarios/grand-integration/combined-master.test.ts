@@ -1,5 +1,3 @@
-// art/scenarios/grand-integration/combined-master.test.ts
-//
 // THE offline, deterministic, byte-stable "combined-master" ART for the
 // GRAND-INTEGRATION scenario. This is the DETERMINISTIC AUDIO PIN
 // (owner-confirmed) — NOT recorderbox: an H.264/AAC (or even raw-PCM

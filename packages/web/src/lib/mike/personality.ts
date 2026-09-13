@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/personality.ts
-//
 // Meticulous Mike — sibling personality to Rackspace Carl.
 //
 // Mike differs from Carl in three ways:

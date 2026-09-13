@@ -1,5 +1,3 @@
-// e2e/tests/inwards-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for INWARDS — a pure-GL procedural SOURCE
 // (concentric inward-zooming rings; category "sources", no video input — only
 // per-param CV). Its draw() animates SOLELY off `frame.time`: the fragment

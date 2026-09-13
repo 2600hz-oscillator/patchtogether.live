@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/device-rebind.ts
-//
 // REBINDING A SAVED PATCH TO THE PHYSICAL DEVICES THAT ARE ACTUALLY PLUGGED IN.
 //
 // ── THE PROBLEM, MEASURED ────────────────────────────────────────────────────

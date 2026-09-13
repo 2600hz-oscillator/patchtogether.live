@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/device-slots.ts
-//
 // NATIVE-SHELL P1 — THE DEVICE-SLOT LAYER.
 //
 // Two layers with different lifetimes, and this file defines the boundary:

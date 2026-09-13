@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/hidden-card.test.ts
-//
 // WORKFLOW MODE P4 — the `hiddenCard` node-data flag:
 //
 //   * the visibility predicates (isHiddenCardNode / isCanvasHiddenNode) —

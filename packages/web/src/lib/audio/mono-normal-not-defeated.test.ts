@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/mono-normal-not-defeated.test.ts
-//
 // A FACTORY CAN SILENTLY DISAGREE WITH ITS DSP.
 //
 // Five modules shipped a stereo input whose RIGHT channel was digital silence
@@ -28,7 +26,6 @@
 // module's own L to its own R; the docs gate reads prose, and cofefve's and
 // resofilter's docs PROMISED the normal while the code delivered silence.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // AND THEN THIS GATE — the one written to stop a SIXTH module joining that
 // class — SHIPPED BLIND TO 46 % OF THE POPULATION IT GUARDS.
 //
@@ -69,7 +66,6 @@
 // ENOENT. Factory resolution is now DERIVED from the registered processor name
 // across both module directories.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // HOW THIS IS NOW HELD OPEN. The scan itself lives in ./mono-normal-scan.ts and
 // resolves NAMES to input references, so spelling stopped mattering. But a
 // resolver is still a finite set of forms, so the gate does not rely on it
@@ -104,7 +100,6 @@ const E2E_SPEC = fileURLToPath(
   new URL('../../../../../e2e/tests/stereo-mono-normal.spec.ts', import.meta.url),
 );
 
-// ---------------------------------------------------------------------------
 // THE PINNED POPULATION. Anchored to the artifact: each entry must still be
 // found in the source, and the found-set must contain nothing unpinned. Add a
 // row when you add a mono normal.
@@ -112,7 +107,6 @@ const E2E_SPEC = fileURLToPath(
 // (The historical note stands without a hand-typed count — it was already one
 // behind the list: the shipped gate pinned 7 and could not see six of the
 // originals; see the header. The list itself is the truth.)
-// ---------------------------------------------------------------------------
 
 const KNOWN_MONO_NORMALS: readonly string[] = [
   'charlottes-echos.ts:input:1',
@@ -211,7 +205,6 @@ const E2E_ROSTER_EXEMPT: Readonly<Record<string, string>> = {
     + 'whose def exposes no audio OUTPUT ports at all.',
 };
 
-// ---------------------------------------------------------------------------
 
 const scan = scanDspTree();
 const normals = scan.normals;
@@ -298,10 +291,8 @@ describe('mono normals are not defeated by their factory', () => {
     }
   });
 
-  // -------------------------------------------------------------------------
   // LEG 1 — THE RESIDUAL AUDIT. This is what makes the coverage PROVED rather
   // than asserted, and it is the leg the shipped gate had no analogue of.
-  // -------------------------------------------------------------------------
   describe('residual audit: no fallback expression is left unaccounted for', () => {
     it('classifies every candidate; UNCLASSIFIED is zero', () => {
       const unclassified = scan.candidates.filter((c) => c.verdict === 'unclassified');
@@ -352,10 +343,8 @@ describe('mono normals are not defeated by their factory', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
   // LEG 2 — THE DEF-ANCHORED POPULATION. Blind in a different way from the text
   // scan: it never reads a fallback expression at all.
-  // -------------------------------------------------------------------------
   describe('def-anchored population: every L/R stereo module is accounted for', () => {
     const stereo = findStereoModules();
     const withNormal = new Set(normals.map((n) => n.dspFile));
@@ -408,10 +397,8 @@ describe('mono normals are not defeated by their factory', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
   // LEG 3 — E2E ROSTER PARITY. The behavioural spec's SUTS list is
   // hand-maintained, exactly like the VRT FACES set; without this it drifts.
-  // -------------------------------------------------------------------------
   describe('e2e roster parity: the behavioural spec cannot silently omit a module', () => {
     const specSrc = readFileSync(E2E_SPEC, 'utf8');
     const rosterSection = /const SUTS:[\s\S]*?\n\];/.exec(blankComments(specSrc))?.[0] ?? '';
@@ -473,9 +460,7 @@ describe('mono normals are not defeated by their factory', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
   // SCOPE — stated in the gate, and asserted rather than left as prose.
-  // -------------------------------------------------------------------------
   describe('states what it CANNOT see', () => {
     it('reads only the top level of packages/dsp/src, and that is sufficient', () => {
       expect(SCOPE.dspDir).toBe('packages/dsp/src/*.ts');
@@ -511,7 +496,6 @@ describe('mono normals are not defeated by their factory', () => {
     });
   });
 
-  // =========================================================================
   // NEGATIVE-CONTROL MATRIX.
   //
   // The shipped controls fed the detector only the one shape it could see, so a
@@ -522,7 +506,6 @@ describe('mono normals are not defeated by their factory', () => {
   //   (c) the REAL source of every module that was missed is fed in.
   // Plus a PERMANENT leg: the found-count may never fall below the known
   // population, so the next unmatchable spelling cannot pass silently.
-  // =========================================================================
   describe('negative control: the detector can actually FAIL, in every spelling', () => {
     /** One row per supported spelling, each declaring `input:1 ← 0`. */
     const SPELLINGS: { spelling: Spelling; src: string }[] = [
@@ -635,7 +618,6 @@ describe('mono normals are not defeated by their factory', () => {
       expect(scanSource('z.ts', 'const inL = inputs[0]?.[0];\nconst v = inL ? inL[i] : 0;').normals).toEqual([]);
     });
 
-    // -----------------------------------------------------------------------
     // moduleTypeOf: the leg whose ABSENCE reddened main.
     //
     // The first version took the earliest `type:` in the whole file. #1353
@@ -647,7 +629,6 @@ describe('mono normals are not defeated by their factory', () => {
     //
     // So the property under test is INVARIANCE TO CODE MOTION, asserted in both
     // directions on every run, not "does it return the right string once".
-    // -----------------------------------------------------------------------
     it('reads the DEF type, not whatever `type:` comes first', () => {
       const def = "export const fooDef: AudioModuleDef = {\n  type: 'foo',\n  domain: 'audio',\n};";
       const post = "port.postMessage({ type: 'loadSample', samples: b });";

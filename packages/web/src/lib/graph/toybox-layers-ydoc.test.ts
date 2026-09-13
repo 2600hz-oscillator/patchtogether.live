@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-layers-ydoc.test.ts
-//
 // REAL-Y.Doc regression for the TOYBOX per-layer mutators (graph/toybox-layers).
 // The card's LAYER-index selector routes every per-layer control through these,
 // targeting node.data.layers[<activeLayer>]. We run against the SAME syncedStore
@@ -416,9 +414,7 @@ describe('projective surface mode (#45)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // #1708 — a custom source now HAS params, so setting one must seed them.
-// ---------------------------------------------------------------------------
 //
 // Against a REAL Y.Doc specifically because the second write mutates an
 // already-integrated `layer.params`: seeding it by spread-and-reassign is the

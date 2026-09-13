@@ -1,5 +1,3 @@
-// packages/web/src/lib/devices/device-module.ts
-//
 // THE DEVICE MODULE MACHINERY — shared by every device module, parameterized by
 // a descriptor. A second device supplies a descriptor and a ten-line def; all
 // of the behaviour below is reused verbatim.

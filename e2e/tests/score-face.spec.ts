@@ -1,5 +1,3 @@
-// e2e/tests/score-face.spec.ts
-//
 // SCORE's FACEPLATE, on the DEFAULT shell.
 //
 // ⚠ WHY THIS FILE EXISTS ALONGSIDE `score.spec.ts`, WHICH DID NOT NEED TO

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/videocube-slot-actions.ts
-//
 // The VIDEOCUBE per-slot INGEST actions, shared by the LEGACY CARD and the FACED
 // shell cells so the two surfaces cannot drift.
 //

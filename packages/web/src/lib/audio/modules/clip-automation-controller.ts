@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-controller.ts
-//
 // The per-clip-player AUTOMATION CONTROLLER: the stateful adapter that composes
 // the pure engine cores (stepRampPoints / RecordGate / QuantizedRecordWindow)
 // with INJECTED side effects, so it unit-tests without a real AudioContext or

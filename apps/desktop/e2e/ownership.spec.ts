@@ -103,9 +103,7 @@ function foreignListener(port: number, reply: (msg: unknown) => unknown): Promis
   });
 }
 
-// ---------------------------------------------------------------------------
 // 1. Single instance.
-// ---------------------------------------------------------------------------
 
 test('a second launch on the same fixed port does not open a second shell', async () => {
   requireBundle();
@@ -201,9 +199,7 @@ test('the lock is per-instance, not a blanket refusal to start twice', async () 
   }
 });
 
-// ---------------------------------------------------------------------------
 // 2. Port ownership: a listener we did not spawn is never adopted.
-// ---------------------------------------------------------------------------
 
 /**
  * The core case, exactly as measured before the fix.
@@ -323,7 +319,6 @@ test('our own helper on the same port reaches running with ownership proven', as
   }
 });
 
-// ---------------------------------------------------------------------------
 // 3. The reply judge, arm by arm.
 //
 // The two legs above prove the PID layer end to end. The message layer's arms
@@ -331,7 +326,6 @@ test('our own helper on the same port reaches running with ownership proven', as
 // staged over a socket without building a fake helper per arm, which is
 // exactly why a socket-only suite quietly never covers them. The judge is
 // pure and exported; drive it directly.
-// ---------------------------------------------------------------------------
 
 test('reply judge: our helper is accepted, every impostor shape is not', async () => {
   const verdicts = judgeArms();

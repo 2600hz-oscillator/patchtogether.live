@@ -1,5 +1,3 @@
-// scripts/e2e-setup-credit.test.ts
-//
 // PERMANENT NEGATIVE CONTROL for the e2e SETUP BUDGET CREDIT (#1648, #1569).
 //
 // The credit exists because Playwright's test timeout is ONE wall-clock budget

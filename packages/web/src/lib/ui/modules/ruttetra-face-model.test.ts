@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ruttetra-face-model.test.ts
-//
 // RUTTETRA — the permanent gates on the claims this face is built from. Each
 // reads the LIVE def through the SAME pure resolvers the shell renders from, so
 // an assertion here cannot drift from what actually paints.

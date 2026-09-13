@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/backdraft-clocked-delay.ts
-//
 // THE ONE "is the DELAY CLOCK patched" predicate, shared by the legacy card's
 // CLK badge and the faceplate's delay-fader override badge — the range-bound
 // one-source rule applied to a graph fact: both surfaces must flip on exactly

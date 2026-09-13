@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/resofilter-dsp.ts
-//
 // RESOFILTER — shared DSP helpers for the multi-mode filter ported from
 // gabrielsoule/resonarium (Source/dsp/MultiFilter.{h,cpp}). Lives in `lib/`
 // so esbuild inlines it into packages/dsp/src/resofilter.ts at build time

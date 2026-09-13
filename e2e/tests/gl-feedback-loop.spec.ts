@@ -1,5 +1,3 @@
-// e2e/tests/gl-feedback-loop.spec.ts
-//
 // AN UNPATCHED VIDEO SINK MUST NOT SPAM GL_INVALID_OPERATION.
 //
 // Owner report (twice — 2026-08-06, then again 2026-08-07 after the first fix

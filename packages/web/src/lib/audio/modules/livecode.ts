@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/livecode.ts
-//
 // LIVECODE — text-DSL module that spawns + patches modules from a small
 // scripting language. The module itself has NO audio I/O — it's a side
 // tool that mutates the rack via the patch graph. Card UI lives in
@@ -61,7 +59,6 @@ export const livecodeDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE (PF-20) ───────────────────────────────────────────────
   //
   // WHAT IT IS FOR, IN ONE PARAGRAPH. Every other module in the fleet is a thing
   // you patch; this one is a thing that patches. Its subject is THE RACK — it

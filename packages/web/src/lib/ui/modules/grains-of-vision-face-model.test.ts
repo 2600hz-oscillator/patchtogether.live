@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/grains-of-vision-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for grains-of-vision's three derived
 // quantities, plus the face's own declaration legs.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/asset-modules.ts
-//
 // WORKFLOW MODE P3 — the PURE mapping + layout core for asset-backed
 // modules (the Loaded Assets Picker's click-to-patch flow):
 //
@@ -19,9 +17,7 @@
 
 import type { MediaKind } from './ingest';
 
-// ---------------------------------------------------------------------------
 // Kind → module mapping
-// ---------------------------------------------------------------------------
 
 export interface AssetModuleSpec {
   /** Registered module type id the asset spawns. */
@@ -50,9 +46,7 @@ export function assetModuleSpecFor(kind: MediaKind): AssetModuleSpec {
   return ASSET_MODULE_SPECS[kind];
 }
 
-// ---------------------------------------------------------------------------
 // Media descriptor — the durable (synced) half of the asset link
-// ---------------------------------------------------------------------------
 
 /**
  * Persisted on the auto-created node as `node.data.mediaDesc`. Media blobs
@@ -128,9 +122,7 @@ export function readMediaDescriptor(node: {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Right-rail layout — a single auto-stacked column at the FAR RIGHT
-// ---------------------------------------------------------------------------
 
 /** Flow-space box (positions from node.position; sizes measured from the
  *  DOM — offsetWidth/Height is zoom-independent — with a default for

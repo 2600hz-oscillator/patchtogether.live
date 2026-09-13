@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/colourofmagic-colorspace.ts
-//
 // COLOUR OF MAGIC — pure colorspace core. A 1:1 TS MIRROR of the GLSL in
 // modules/colourofmagic.ts (house pattern: mappy-homography.ts /
 // vfpga snapshot). NO WebGL here — pure functions the unit suite pins to

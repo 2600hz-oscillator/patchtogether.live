@@ -1,5 +1,3 @@
-// scripts/webgl-cotenancy.test.ts
-//
 // THE PRE-FLIGHT ONLY EVER SAMPLED AT START.
 //
 // `webgl:attest`'s quiet-machine guard is correct at t=0 — it refused with a

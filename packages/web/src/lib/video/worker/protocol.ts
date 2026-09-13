@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/protocol.ts
-//
 // Fix E Phase 1 — the postMessage RPC contract between the MAIN-thread
 // worker-bridge and the render worker. Kept in one file so both sides share a
 // single source of truth (a drift here = silently-dropped frames).

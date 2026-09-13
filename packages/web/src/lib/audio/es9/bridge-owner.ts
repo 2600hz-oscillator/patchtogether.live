@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/bridge-owner.ts
-//
 // WHO OWNS THE ES-9 CONNECTION — a per-NODE registry that outlives every view.
 //
 // THE BUG THIS DISSOLVES. `Es9Card.svelte` used to construct the

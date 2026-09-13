@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/loopback.test.ts
-//
 // Unit-level checks for the LOOPBACK module def. Vitest runs under node (no
 // WebGL2), so it verifies the def SHAPE — registration, I/O surface (zero
 // inputs, one video output), params + ranges, guardrails — while the GL-bound

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/noise-face-model.test.ts
-//
 // THE ORACLE for the NOISE faceplate model.
 //
 // `noise-face-model.ts` restates three coefficients that live in the DSP

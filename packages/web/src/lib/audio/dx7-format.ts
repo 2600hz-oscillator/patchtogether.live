@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-format.ts
-//
 // THE READOUTS. Every number the operator panel shows a human is formatted
 // here, from the RAW stored bytes, using the same laws the engine plays —
 // `dx7Ratio` / `dx7FixedHz` / `dx7LevelToDb` / `dx7RateToDbPerSec` from

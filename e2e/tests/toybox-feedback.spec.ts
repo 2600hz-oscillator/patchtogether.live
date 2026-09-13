@@ -1,5 +1,3 @@
-// e2e/tests/toybox-feedback.spec.ts
-//
 // TOYBOX FEEDBACK node — the first STATEFUL combine op.
 //
 // Every other combine node is a stateless RGBA8 blend; FEEDBACK keeps a per-node

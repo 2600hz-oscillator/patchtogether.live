@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/frogger-state.ts
-//
 // Pure deterministic game-state stepper for FROGGER — clean-room TypeScript
 // port of Adrian Eyre's Frogger (https://github.com/adrianeyre/frogger,
 // MIT-licensed, Copyright (c) 2021 Adrian Eyre). The upstream source is
@@ -196,10 +194,8 @@ export interface FroggerParams {
   initialTime: number;
 }
 
-// ---------------------------------------------------------------------------
 // Initial sprite table — vertically transcribed from upstream
 // src/classes/data/sprites.ts. Positions/directions/speeds preserved 1:1.
-// ---------------------------------------------------------------------------
 
 interface InitialSpriteDef {
   key: string;

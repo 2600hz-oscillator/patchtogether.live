@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/es9/shell-extension.ts
-//
 // The ES-9 shell extension — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

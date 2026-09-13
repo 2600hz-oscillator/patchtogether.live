@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/passthru.ts
-//
 // CLB cell `passthru` — the identity ALU: samples its single input `a` and
 // writes it unchanged. The trivial routing cell (and the simplest way to wire a
 // 1-tile fabric end-to-end through P&R). One input, no knobs.

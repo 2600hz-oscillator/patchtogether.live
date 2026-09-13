@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/push2-cell-actions.ts
-//
 // THE PUSH 2 CONNECT GESTURE, as a face cell — and the OUTCOME STORE the
 // faceplate needs because a cell cannot own component state.
 //

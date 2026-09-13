@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/exposable-controls.test.ts
-//
 // Exposable-control discovery tests.
 //
 // Schema-validates the module-def declarations (sequencers + TIMELORDE) so a

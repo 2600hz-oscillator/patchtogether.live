@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/clap-dsp.ts
-//
 // CLAP (id `clap`) — analog-modeled handclap voice, the fourth member of
 // the drum-voice family (KICK DRUM / SNARE DRUM / TOM DRUM). One curated
 // synthesis engine spans the classic analog clap lineage:
@@ -65,9 +63,7 @@ import { createOversampler, type Oversampler } from './oversample';
 
 const FLUSH = 1e-20;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Physical / voicing constants
-// ─────────────────────────────────────────────────────────────────────────
 
 /** COLOR one-pole low-pass sweep (Hz, log): 0 = ~white (the pole sits at
  *  9 kHz, essentially transparent under the ≤3 kHz band-pass), 1 = dark
@@ -132,9 +128,6 @@ const NOISE_SEED_BASE = 0x2b992ddf;
 /** Chamberlin SVF center clamp (fraction of sr) — stability guard. */
 const SVF_FC_FRAC = 0.153;
 
-// ─────────────────────────────────────────────────────────────────────────
-// Params
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface ClapParams {
   pulses: number; // burst onsets (2..5) — 3 = the 808, 4-5 = 909-dense
@@ -167,9 +160,7 @@ export const CLAP_DEFAULTS: ClapParams = {
   spreadCv: 0,
 };
 
-// ─────────────────────────────────────────────────────────────────────────
 // Shared primitives (defined locally — no cross-module coupling)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** −60 dB decay-time (ms) → per-sample envelope multiplier (sr-calibrated).
  *  ln(1000) ≈ 6.9078: env·a^(ms·sr/1000) = 10^(−60/20). */
@@ -186,9 +177,7 @@ export function xorshift32(x: number): number {
   return x >>> 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Control laws (pure — unit-tested directly)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Effective band-pass center (Hz): TONE knob × 2^(1.5·tone_cv), clamped
  *  200–4200 Hz. ±1 V covers the whole 400–3000 knob range from 1 kHz. */
@@ -236,9 +225,6 @@ export function clapColorFc(color: number): number {
   return COLOR_FC_MAX * Math.pow(COLOR_FC_MIN / COLOR_FC_MAX, clamp(color, 0, 1));
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface ClapState {
   // NOISE source + COLOR pole.
@@ -318,9 +304,7 @@ export function strikeClap(s: ClapState, accent: number, p: ClapParams, sr: numb
   s.tailLp = 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample step
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Chamberlin SVF `f` coefficient for a center freq, clamped for stability. */
 function svfF(fc: number, sr: number): number {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midiclock/midiclock-status-model.test.ts
-//
 // THE ONLY GATE THAT CAN SEE THESE STRINGS.
 //
 // `StatusLed`'s `detail` reaches `aria-label` and `title` and NEVER a text

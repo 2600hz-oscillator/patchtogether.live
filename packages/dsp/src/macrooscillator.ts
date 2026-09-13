@@ -1,5 +1,3 @@
-// packages/dsp/src/macrooscillator.ts
-//
 // MACROOSCILLATOR — Plaits-style macro oscillator.
 //
 // "Plaits" (Mutable Instruments) ships 16+ synthesis models behind a single

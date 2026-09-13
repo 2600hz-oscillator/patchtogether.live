@@ -1,5 +1,3 @@
-// e2e/tests/kria.spec.ts
-//
 // KRIA real-source-chain proof (the poly/real-source discipline): a running
 // KRIA pattern, clocked by the rack's TIMELORDE, must drive a downstream VOICE
 // to AUDIBLE output — not just "an edge materializes". The chain is the real one

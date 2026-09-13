@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/rbj-biquad.ts
-//
 // OWN-CODE RBJ biquads (Robert Bristow-Johnson's Audio EQ Cookbook — public-
 // domain formulas, re-derived here; deliberately NOT resofilter-dsp.ts, which
 // is a GPL Resonarium port and firewalled from permissive modules — see the
@@ -18,7 +16,6 @@ export interface Biquad {
   b2: number;
   a1: number;
   a2: number;
-  // State.
   x1: number;
   x2: number;
   y1: number;

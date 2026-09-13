@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/db.test.ts
-//
 // Phase 2b: the Postgres connection-string resolver must FAIL LOUD on a
 // deployed (non-dev) runtime when DATABASE_URL is unset, instead of silently
 // falling back to localhost — on a Cloudflare Worker that silent fallback

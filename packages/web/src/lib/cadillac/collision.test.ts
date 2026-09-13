@@ -1,5 +1,3 @@
-// packages/web/src/lib/cadillac/collision.test.ts
-//
 // Unit tests for the pure collision math. Zero DOM / no svelte —
 // runs in node via vitest.
 

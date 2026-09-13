@@ -1,5 +1,3 @@
-// e2e/tests/toybox-randomize.spec.ts
-//
 // TOYBOX RANDOMIZE (#1576, workstreams 3+4+5) — the dice button, end to end.
 //
 // ── WHERE THIS RUNS ─────────────────────────────────────────────────────────
@@ -318,9 +316,7 @@ test('@webgl-smoke three seeded rolls each apply a NEW patch and render PERCEPTI
   }
 });
 
-// ---------------------------------------------------------------------------
 // HEAVY LANE — the full acceptance floor
-// ---------------------------------------------------------------------------
 
 test.describe('toybox randomize — heavy proofs', () => {
   test('NEGATIVE CONTROL: star-field solo must FAIL the perceptual probe', async ({ page }) => {

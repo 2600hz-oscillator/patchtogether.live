@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/nibbles-game.ts
-//
 // NIBBLES — deterministic, pure game engine. No canvas, no audio, no DOM.
 // Mirrors the QBasic Nibbles algorithm (and kpreisser's Windows port at
 // https://github.com/kpreisser/Nibbles.git): snake on a fixed grid, one

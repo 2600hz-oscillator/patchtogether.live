@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/launchpad-cell-actions.ts
-//
 // THE TWO LAUNCHPAD HANDSHAKES, as face cells — and the OUTCOME STORE the
 // faceplate needs because a cell cannot own component state.
 //

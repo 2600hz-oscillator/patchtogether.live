@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/controlsurface-face-model.test.ts
-//
 // THE CONTROL SURFACE FACE — its model, and the legs that are NOT vacuous on it.
 //
 // ⚠ READ THIS FIRST: THE SHARED FACE GATES ARE STRUCTURALLY VACUOUS ON THIS

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/treeohvox-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the TREE.oh.VOX sweep readouts.
 //
 // WHAT MAKES THIS FILE NECESSARY: the nearest knob to all three readouts is

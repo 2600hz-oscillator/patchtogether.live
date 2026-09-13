@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/score-data.test.ts
-//
 // Pure-data unit tests for the SCORE module. Covers tickWidth,
 // barCapacityRemaining, canPlace (overflow + overlap + range),
 // staffStepToMidi (key sig + accidentals), dynamicAt, tieSpanNotes,

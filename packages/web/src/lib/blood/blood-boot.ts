@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-boot.ts
-//
 // THE BLOOD BOOT SEAM — the one-shot engine boot, extracted out of
 // `BloodCard.svelte` so BOTH surfaces run the SAME code.
 //

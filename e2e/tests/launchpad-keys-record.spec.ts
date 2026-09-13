@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-keys-record.spec.ts
-//
 // LAUNCHPAD **KEYS** real-source-chain proof (the poly/MIDI discipline,
 // CLAUDE.md): the dual-Launchpad note/keyboard + clip-record view must (1) play
 // the keys LIVE to a real voice — AUDIBLE — and (2) RECORD what you play into

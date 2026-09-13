@@ -1,5 +1,3 @@
-// e2e/tests/camerainput-shell-source.spec.ts
-//
 // CAMERA UNDER THE DEFAULT SHELL — the spec that had to exist before the
 // promotion could ship.
 //

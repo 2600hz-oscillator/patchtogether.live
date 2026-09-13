@@ -1,5 +1,3 @@
-// packages/web/src/lib/dev/test-hooks.ts
-//
 // Single gate for the dev-only window globals (`__patch`, `__ydoc`,
 // `__engine`, `__drumseqzCellAt`,
 // `__drumseqzSetCell`, etc.) that Playwright drives.

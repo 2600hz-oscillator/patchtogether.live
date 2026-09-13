@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/performance-bundle.test.ts
-//
 // Unit tests for the pure PerformanceBundle assembly + validation logic.
 // No IndexedDB / DOM needed — these are plain functions over plain objects.
 

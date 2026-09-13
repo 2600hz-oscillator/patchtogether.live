@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mapper.ts
-//
 // MAPPER — per-frame video KEYER / MATTE processor.
 //
 // Shows a `video` input ONLY where a `key` input is active, BLACK
@@ -195,7 +193,6 @@ export const mapperDef: VideoModuleDef = {
     { id: 'threshold', label: 'Thresh', defaultValue: MAPPER_DEFAULTS.threshold, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
   //
   // WHAT MAPPER IS FOR: it is a MATTE GENERATOR. Its siblings do neighbouring
   // things — `lumakey` COMPOSITES two frames and `chromakey` keys on hue — and

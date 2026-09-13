@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/dock-row-plan.ts
-//
 // PF-21 — the DOCK FACEPLATE's ROW PLAN: which SECTION BANDS share a horizontal
 // row, so a faceplate stops being one tall column of one-band-per-row strips.
 //

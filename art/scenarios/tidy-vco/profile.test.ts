@@ -1,5 +1,3 @@
-// art/scenarios/tidy-vco/profile.test.ts
-//
 // AUDIO PROFILE for TIDY VCO (id `tidyVco` — the flagship VA subtractive
 // voice: 2 polyBLEP morph oscillators + sub → nonlinear ZDF diode ladder
 // @2× oversampling → dual RC-punch ADSRs → OTA VCA → stereo). Ships with

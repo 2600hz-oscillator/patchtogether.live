@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/legacy-fallback.test.ts
-//
 // The lane-render decision — pure derivation gate. Proves:
 //   - the user-dock swap wins (unchanged P2.5a contract);
 //   - an organizational-native type resolves 'native' and emits its own type;

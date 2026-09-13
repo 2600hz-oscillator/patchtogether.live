@@ -1,5 +1,3 @@
-// scripts/ci-selection-audit.test.ts
-//
 // Every e2e spec must actually EXECUTE in some CI lane.
 //
 // Measured 2026-08-12 (#1501): three specs — audio-gate, rack-restoring-status,

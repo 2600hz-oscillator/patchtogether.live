@@ -1,5 +1,3 @@
-// e2e/tests/painter.spec.ts
-//
 // PAINTER — the real interactive draw → canvas → synced-op chain, driven in
 // the DOCK FULL VIEW (the default shell's home for the paint surface; every
 // affordance carries the `painter-face-` prefix). The per-port
@@ -43,7 +41,6 @@ function opCount(page: Page): Promise<number> {
   });
 }
 
-/** Open the painter's dock full view (the paint surface's shell home). */
 async function openDock(page: Page): Promise<void> {
   await page.evaluate(
     () => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView('pt'),

@@ -1,5 +1,3 @@
-// scripts/webgl-attest-hash.ts
-//
 // Prints the deterministic WebGL content-hash to stdout (and nothing else, so
 // it's shell-substitutable: HASH=$(node --import tsx scripts/webgl-attest-hash.ts)).
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/sixstrum.test.ts
-//
 // SIX STRUM module-def contract + worklet-wrapper WIRING. The per-sample DSP
 // (strum/mute/poly/chord/body, decay, determinism) is pinned in
 // packages/dsp/src/lib/sixstrum-dsp.test.ts and the raw audio profile in
@@ -178,7 +176,6 @@ describe('SIX STRUM worklet — input wiring', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-knob CV modulation (Pattern A). The engine's addEdge interposes a
 // WaveShaper (buildCvCurve → scaleCv) between a `cv` source and the target
 // AudioParam whenever the destination port declares cvScale + paramTarget —
@@ -189,7 +186,6 @@ describe('SIX STRUM worklet — input wiring', () => {
 // right index range; and (2) the factory's inputsMap routes each _cv port onto
 // the AudioParam its paramTarget names (no mis-wire). cv=0 is a no-op, so an
 // UNPATCHED CV input never perturbs the default sound (transient, no Y.Doc).
-// ─────────────────────────────────────────────────────────────────────────
 describe('SIX STRUM per-knob CV — scaling actually moves the target param', () => {
   const paramById = new Map(sixstrumDef.params.map((p) => [p.id, p]));
   const portById = new Map(sixstrumDef.inputs.map((p) => [p.id, p]));

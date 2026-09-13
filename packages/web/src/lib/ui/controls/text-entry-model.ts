@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/text-entry-model.ts
-//
 // PURE edit/commit/revert logic for TextEntry.svelte — the faceplate's ONE
 // typed-entry primitive.
 //

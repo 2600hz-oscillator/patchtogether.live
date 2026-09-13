@@ -1,5 +1,3 @@
-// packages/server/src/rack-accounting.ts
-//
 // PER-RACK memory accounting for the relay.
 //
 // The existing memory alarm (http-introspection.ts) watches PROCESS RSS —

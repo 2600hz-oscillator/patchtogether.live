@@ -1,5 +1,3 @@
-// art/scenarios/mixmstrs/prefader-sends.test.ts
-//
 // PRE/POST-FADER AUX SENDS + RETURN strips (owner 2026-08-06).
 //
 // The requirement in one sentence: "sends need to be pre-fader, so we always

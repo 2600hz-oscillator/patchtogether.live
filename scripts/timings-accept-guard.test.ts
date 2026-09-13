@@ -1,5 +1,3 @@
-// scripts/timings-accept-guard.test.ts
-//
 // Guards the PARTIAL-RUN refusal in the two cost-artifact accept loops
 // (scripts/e2e-timings-accept.mjs, scripts/vrt-strict-timings-accept.mjs).
 //

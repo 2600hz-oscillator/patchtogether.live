@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/playback-stats.ts
-//
 // THE UNDERRUN COUNTER — device-layer dropouts, named and counted.
 //
 // ── Why this file exists ────────────────────────────────────────────────────

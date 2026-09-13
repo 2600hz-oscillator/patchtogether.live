@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/rackspaces.test.ts
-//
 // Regression for the "stuck guest rack" bug: a user who joined someone
 // else's rackspace had no way to remove it from their dashboard, because
 // the only removal path was owner-only DELETE. `leaveRackspace` adds a

@@ -1,5 +1,3 @@
-// art/scenarios/audio-out/dc-blocker-and-limiter.test.ts
-//
 // ART for audio-out's two safety stages:
 //   1. 5Hz BiquadFilter highpass on each channel (DC blocker)
 //   2. the stereo look-ahead brickwall master limiter worklet

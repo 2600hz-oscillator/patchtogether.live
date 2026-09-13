@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/ringback-crush-model.test.ts
-//
 // The RINGBACK crush model + the claims its curated face makes about the
 // module. Five groups, and only the first is an ordinary formatter test:
 //
@@ -46,9 +44,7 @@ import { laneBodyPlan, laneGlyphFor } from '$lib/ui/workflow/module-shell-model'
 import { rearFieldPlan, rearSectionHoles } from '$lib/ui/workflow/rear-card-model';
 import { RingChannel } from '../../../../dsp/src/lib/ringback-core';
 
-// ───────────────────────────────────────────────────────────────────────────
 // 1. THE READOUTS
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('ringback readouts — the number, converted into what it does', () => {
   it('RATE prints the sample rate the wet path actually runs at', () => {
@@ -150,9 +146,7 @@ describe('ringback readouts — the number, converted into what it does', () => 
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // 2. THE LANE FIT — in PIXELS, not in characters
-// ───────────────────────────────────────────────────────────────────────────
 
 /** Dense sweep of a declared range (inclusive of both ends). */
 function sweep(min: number, max: number, n = 400): number[] {
@@ -192,9 +186,7 @@ describe('ringback readouts fit the 46 px lane knob column', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // 3. THE DEF ↔ WORKLET RANGE GATE
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * The worklet's `parameterDescriptors` table, parsed out of the DSP source.
@@ -302,9 +294,7 @@ describe('the DEF agrees with the WORKLET about every range', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // 4. THE `~` AUDIO-RATE CLAIM
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('face.rear.audioRate is TRUE of the worklet, not just declared', () => {
   // The rear card draws a `~` tick per listed input. CLAUDE.md / the design
@@ -348,9 +338,7 @@ describe('face.rear.audioRate is TRUE of the worklet, not just declared', () => 
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // 5. THE FACE
-// ───────────────────────────────────────────────────────────────────────────
 
 const SR = 48000;
 const RENDER_FRAMES = 12000; // 0.25 s at 48 kHz — the figures are stable to ±0.01 across 0.1–0.5 s

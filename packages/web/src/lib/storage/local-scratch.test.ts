@@ -1,5 +1,3 @@
-// packages/web/src/lib/storage/local-scratch.test.ts
-//
 // The stable per-device scratch-replica id. Covers the contracts the design
 // names: ONE id, stable across calls; a graceful ephemeral fallback when
 // localStorage throws / is absent (private mode) — the same degrade posture as
@@ -145,9 +143,7 @@ describe('readLastScratchRack — the landing "Return to last rack" card', () =>
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE MIGRATION. A stale two-mode entry must not resurrect a dead shell.
-// ---------------------------------------------------------------------------
 
 describe('the two-mode era keys are PRUNED, never adopted', () => {
   it('getOrCreateLocalScratchId ignores both old ids and mints a fresh one', () => {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/neon-fader-parity.test.ts
-//
 // THE THROW'S BEHAVIOUR CONTRACT — every capability `NeonFader.svelte` must
 // keep, named, with the reason it is there.
 //

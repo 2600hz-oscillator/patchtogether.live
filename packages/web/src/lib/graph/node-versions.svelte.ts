@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/node-versions.svelte.ts
-//
 // NODE-SCOPED version registry (phase 2 of the MIDI-CC perf fix) —
 // replaces the ~18 per-component `ydoc.on('update')` version pumps
 // (ModuleTitle mounted once per card + every sequencer-style card +

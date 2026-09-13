@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/matrixmix.ts
-//
 // MATRIXMIX — an EMS-Synthi / Buchla-style patch MATRIX card.
 //
 // Pick an X-axis module and a Y-axis module from everything currently in the
@@ -73,7 +71,6 @@ export const matrixmixDef: MetaModuleDef = {
     { id: 'matrixmix-y', label: 'Y axis', kind: 'other', testidPrefix: 'matrixmix-y' },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // matrixMix is the program's ZERO-PARAM case, and `order: []` is the wrong
   // answer to it. A face that ranks nothing is LEGAL (module-face-lint puts it

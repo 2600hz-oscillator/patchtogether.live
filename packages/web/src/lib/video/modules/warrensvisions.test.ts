@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/warrensvisions.test.ts
-//
 // Def-shape gates. The algorithm is covered by warrensvisions-core.test.ts;
 // what is checked here is the CONTRACT — that the def, the core's clamps and
 // the card cannot disagree.

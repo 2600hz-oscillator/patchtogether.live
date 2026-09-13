@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioout-face-model.test.ts
-//
 // ⚠ THIS FILE EXISTS BECAUSE THE GENERIC GATES PASS ALMOST VACUOUSLY OVER THIS
 // FACE. `audioOutDef` declares ONE param, so `module-face-lint`'s completeness
 // check, the dock render-plan parity check and `faces-parity` each enumerate a

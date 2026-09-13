@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/freezeframe-screen-source.test.ts
-//
 // SCREEN OFF MUST SKIP THE BLIT, NEVER THE LOOP — a source-level gate, because
 // no runtime gate in this repo can see the difference.
 //

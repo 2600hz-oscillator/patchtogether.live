@@ -1,5 +1,3 @@
-// e2e/tests/matrixmix.spec.ts
-//
 // MATRIXMIX — the full live patch-matrix loop against the REAL graph store:
 //   1. spawn the matrix + two real modules (ADSR + VCA).
 //   2. pick ADSR on the X axis + VCA on the Y axis from the dropdowns →

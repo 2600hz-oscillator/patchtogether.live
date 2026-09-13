@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/local-replica.test.ts
-//
 // The local rackspace replica, tested against REAL Y.Docs + the REAL
 // syncedStore bundle (createPatch) over fake-indexeddb — no mocked Yjs, no
 // mocked y-indexeddb (house rule: yjs-save-load-real-ydoc). Covers the

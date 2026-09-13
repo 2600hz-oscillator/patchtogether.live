@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/slewswitch-face-model.ts
-//
 // THE PURE MODEL behind SLEWSWITCH's derived readouts — the arithmetic the
 // faceplate prints, kept out of the shell and out of the def so both can import
 // it and neither can hold a second copy.

@@ -1,5 +1,3 @@
-// e2e/tests/mappy-output.spec.ts
-//
 // MAPPY real-source-chain coverage: a known LIVE video source → MAPPY →
 // videoOut. Asserts (renderer-tolerant, so it holds on CI's SwiftShader
 // software renderer):
@@ -433,7 +431,6 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     await expect(page.locator('[data-testid="mappy-editor-tab-1"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="mappy-editor-tab-2"]')).toHaveCount(0);
 
-    // add a surface → tab 2 appears
     await page.locator('[data-testid="mappy-editor-add"]').click();
     await expect(page.locator('[data-testid="mappy-editor-tab-2"]')).toHaveCount(1);
 

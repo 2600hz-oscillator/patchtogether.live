@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/sixstrum-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind SIX STRUM's derived readouts — the
 // whole difference between this model and seven relabelled knobs.
 //

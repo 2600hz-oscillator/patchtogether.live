@@ -1,5 +1,3 @@
-// e2e/tests/render-worker-toybox.spec.ts
-//
 // Fix E Phase 2 — TOYBOX off-main-thread render worker, end-to-end (determ.).
 //
 // The CORRECTNESS GATE for the TOYBOX worker path: with the flag ON, TOYBOX's

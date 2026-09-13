@@ -1,5 +1,3 @@
-// art/scenarios/audio-out/master-limiter-sub-pump.test.ts
-//
 // P0-A1 REGRESSION GATE — "the master bus must not gain-duck the sub when a
 // transient hits". The decision this pins (own-code look-ahead brickwall at
 // −1 dBFS, 1.5 s release, no makeup gain) is ADR-010,
@@ -37,7 +35,6 @@
 //   * It added a constant +1.35 dB of automatic makeup to EVERY patch, which
 //     is why the new bus is ~1.35 dB quieter on a normally levelled mix.
 //
-// ────────────────────────────────────────────────────────────────────────────
 // THE INSTRUMENT, AND WHY IT IS TRUSTWORTHY (CLAUDE.md: "validate the
 // instrument — a wrong metric reads exactly like a finding")
 //
@@ -102,9 +99,7 @@ const DUR_S = 3.0;
 /** Skip chain settling (5 Hz DC blocker ring-in, first strike) before measuring. */
 const ANALYSE_FROM_S = 0.8;
 
-// ---------------------------------------------------------------------------
 // Signal generator — a bass-heavy programme: sustained 40 Hz sub + a 2 Hz kick.
-// ---------------------------------------------------------------------------
 
 interface SigOpts {
   /** Sustained 40 Hz sine amplitude (linear). */
@@ -156,9 +151,7 @@ function buildSignal(o: SigOpts): Float32Array {
   return buf;
 }
 
-// ---------------------------------------------------------------------------
 // The chains under test.
-// ---------------------------------------------------------------------------
 
 type ChainKind =
   /** The REAL shipped terminal stage — `audioOutDef.factory`, real worklet. */
@@ -254,9 +247,7 @@ async function render(kind: ChainKind, sig: Float32Array, master = 1.0): Promise
   return rendered.getChannelData(0).slice();
 }
 
-// ---------------------------------------------------------------------------
 // The instrument: applied bus gain over time, by RMS ratio against `bypass`.
-// ---------------------------------------------------------------------------
 
 /** RMS window for the gain trace. 25 ms = exactly one 40 Hz period, so the
  *  measurement is phase-independent, and it still fully resolves the ~50 ms dip
@@ -338,9 +329,7 @@ function describeTrace(label: string, t: GainTrace): string {
   return `${label}: ripple ${t.rippleDb.toFixed(3)} dB, mean gain ${t.meanDb.toFixed(2)} dB, latency ${t.lagSamples} samples`;
 }
 
-// ---------------------------------------------------------------------------
 // Programme levels.
-// ---------------------------------------------------------------------------
 
 /** A normally levelled bass-heavy mix: pre-master peak ≈ 0.72 (−2.9 dBFS).
  *  Below the −1 dBFS ceiling, so a correct master bus must be TRANSPARENT. */

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/skifree/SkifreeScreen.svelte
-  //
   // THE SLOPE — skifree's one picture, shared by its dock body and its lane
   // tile so the two surfaces can never show different pictures.
   //

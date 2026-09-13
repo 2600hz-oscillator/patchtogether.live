@@ -1,5 +1,3 @@
-// packages/web/src/lib/bot/session-lock.test.ts
-//
 // Tests the generalized bot-session lock — the shared exclusivity layer
 // used by Carl + Mike to guarantee at most one bot per rackspace.
 

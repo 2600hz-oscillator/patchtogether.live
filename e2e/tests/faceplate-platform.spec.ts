@@ -1,5 +1,3 @@
-// e2e/tests/faceplate-platform.spec.ts
-//
 // PF-20 — the DOM gate for the dock faceplate PLATFORM: every dial's resolved
 // value, the page header, the band hints, the hero slot and the sidebar.
 //
@@ -93,7 +91,6 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Open the dock full-view for node `id` and return the faceplate root. */
 async function openFaceplate(page: Page, id: string) {
   const tile = page.locator(`.svelte-flow__node[data-id="${id}"] [data-testid="module-shell"]`);
   await expect(tile).toBeVisible();

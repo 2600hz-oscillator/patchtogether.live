@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-projective.ts
-//
 // TOYBOX Phase-7 PROJECTIVE surface mapping — PURE math helpers. No GL, no DOM.
 // An OBJ layer in 'projective' surface mode projects its SURFACE source (another
 // layer's rendered FBO) onto the mesh FROM A VIEWPOINT — the "video projector

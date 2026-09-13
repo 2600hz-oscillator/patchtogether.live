@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/preset.ts
-//
 // PRESET GENERATOR — the pure heart of the integration.
 //
 // Given a patch snapshot (nodes + edges + a control-surface's bindings) and a
@@ -106,7 +104,6 @@ export interface PresetGenInput {
   name?: string;
 }
 
-// ──────────────────────────── constants ────────────────────────────
 
 export const POTS_PER_SET = 12;
 export const SETS_PER_PAGE = 3;
@@ -657,7 +654,6 @@ export function emitPresetJson(preset: ElectraPreset): string {
   return out;
 }
 
-// ──────────────────────────── helpers ────────────────────────────
 
 /** Max chars the Electra One display renders for a control name. */
 export const ELECTRA_NAME_MAX = 14;

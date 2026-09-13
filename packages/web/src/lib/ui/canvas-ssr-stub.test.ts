@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/canvas-ssr-stub.test.ts
-//
 // THE GATE UNDER THE `<Canvas>` SSR STUB (#2088).
 //
 // `vite.config.ts`'s `ssrDropBrowserOnlyGraph()` replaces `Canvas.svelte` with a

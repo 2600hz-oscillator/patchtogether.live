@@ -1,5 +1,3 @@
-// art/scenarios/clouds/granular-texture.test.ts
-//
 // Audio Regression Test scenarios for CLOUDS. Longer-render checks of
 // pitch tracking, freeze behaviour, dry/wet decorrelation, and
 // numerical stability under extreme params.

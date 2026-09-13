@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/bentbox.test.ts
-//
 // Pure-math + module-def-shape coverage for BENTBOX. The shader is the
 // only renderer; the math helpers it ports to GLSL are mirrored here in
 // TS so the encode/decode and waveshape behavior can be unit-tested

@@ -1,5 +1,3 @@
-// e2e/tests/workflow-audio-io-face.spec.ts
-//
 // THE 🎧 AUDIO-I/O PANEL, ON THE DEFAULT SHELL — the arm a promotion moves.
 //
 // ── WHY THIS FILE EXISTS, WHICH IS THE FINDING ─────────────────────────────
@@ -168,7 +166,6 @@ async function waitForPins(page: Page, ids: readonly string[]): Promise<void> {
   );
 }
 
-/** Open the 🎧 panel and return it. */
 async function openAudioIoPanel(page: Page) {
   await page.getByTestId('workflow-topbar-slot-audio-io').click();
   const panel = page.getByTestId('workflow-io-panel');

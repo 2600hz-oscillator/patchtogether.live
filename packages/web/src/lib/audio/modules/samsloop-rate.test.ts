@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-rate.test.ts
-//
 // Asymmetric rate-fader mapping for SAMSLOOP.
 //
 // The rate AudioParam ranges over [-2, +2] with the numeric value === the

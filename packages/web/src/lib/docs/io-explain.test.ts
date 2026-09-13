@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/io-explain.test.ts
-//
 // Unit tests for the pure PortDef/ParamDef → human-text explainer. These
 // pin the human sentences the docs I/O section renders, so a wording change
 // is a deliberate diff and the "every field maps to text" contract the drift

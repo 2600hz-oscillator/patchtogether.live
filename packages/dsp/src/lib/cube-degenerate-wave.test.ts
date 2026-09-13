@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/cube-degenerate-wave.test.ts
-//
 // CUBE's two DC FAULTS, and the guard that was structurally blind to both.
 //
 // THE BUG. `crush ≥ 0.999` and `space_diffuse = 1.0` each drove the oscillator

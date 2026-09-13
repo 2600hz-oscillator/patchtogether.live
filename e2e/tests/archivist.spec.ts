@@ -1,5 +1,3 @@
-// e2e/tests/archivist.spec.ts
-//
 // ARCHIVIST — Internet Archive (archive.org) media source.
 //
 // MOCKED archive.org: the search + metadata + served-file requests are all

@@ -1,5 +1,3 @@
-// e2e/tests/videobox-output.spec.ts
-//
 // VIDEOBOX output-reaches-downstream coverage.
 //
 // Regression guard for the bug where a VIDEOBOX whose card preview played
@@ -18,9 +16,7 @@
 // to the right source + latches an input texture) and (b) VIDEOBOX's OWN output
 // FBO shows non-black, structured content.
 //
-// ============================================================================
 // DRS CONVERSION (plan §3 — converted IN-PLACE from the old wall-clock shape)
-// ============================================================================
 //
 // The OLD test sampled the downstream VIDEO-OUT *card canvas* via a 2D
 // getImageData read after `waitForTimeout(800)`, then ran an animation-diff
@@ -50,9 +46,7 @@
 // lets us assert the same "frame is live, not frozen black" fact the old pixel
 // reads chased, deterministically.
 //
-// ----------------------------------------------------------------------------
 // RE-ENABLED — the VIDEOBOX -> BENTBOX -> VIDEO-OUT test's PIXEL read.
-// ----------------------------------------------------------------------------
 // BENTBOX used to be a HARD determinism blocker for the DRS pixel path because
 // it derived its shader `uTime` from `performance.now()`, which
 // `__videoEngineFreezeTime` does NOT pin. bentbox.ts now ships a flag-gated

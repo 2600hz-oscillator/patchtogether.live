@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-clock-source.ts
-//
 // Shared MIDI-CLOCK tempo source — a small singleton (TIMELORDE-style) that
 // listens for MIDI System Real-Time Clock messages (0xF8) on ALL active MIDI
 // inputs, counts the fixed 24 PPQN, and derives an instantaneous BPM.

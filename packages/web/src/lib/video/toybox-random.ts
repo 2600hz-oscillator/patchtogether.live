@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-random.ts
-//
 // TOYBOX RANDOMIZE — the pure, seeded dice engine (#1576, workstreams 3+4).
 //
 // `generateToyboxPatch(seed, context, assets, exclude, current)` is a PURE

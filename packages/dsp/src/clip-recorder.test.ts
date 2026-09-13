@@ -1,5 +1,3 @@
-// packages/dsp/src/clip-recorder.test.ts
-//
 // THE CLIP-RECORDER WORKLET, captured through the registerProcessor shim (the
 // featurecv-snapshot / dx7-messages pattern — the worklet entry never
 // top-level-exports its class, because that would break the ART harness's
@@ -81,9 +79,7 @@ beforeAll(async () => {
   if (!Recorder) throw new Error('clip-recorder did not registerProcessor');
 });
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 interface Harness {
   proc: ProcInstance;
@@ -168,7 +164,6 @@ function takeL(chunks: ChunkMsg[]): Float32Array {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 
 describe('registration', () => {
   it("registers as 'clip-recorder' — the name the web wiring constructs", () => {
@@ -243,7 +238,6 @@ describe('frame-exact windows', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ⚠ THE CASE THIS FILE DID NOT HAVE — and the reason a real take was lost.
 //
 // The window is resolved on the MAIN thread from `ctx.currentTime` plus a fixed
@@ -256,7 +250,6 @@ describe('frame-exact windows', () => {
 // EVERY ASSERTION BELOW FAILS AGAINST THE OLD SLICE. That is the positive
 // control: `frames` came back short by 128×N, and the head samples were the
 // ones missing, so the take was out of phase with its own loop as well.
-// ---------------------------------------------------------------------------
 
 /** Arm `lane` for a `len`-frame take whose `arm` message drains `lateQuanta`
  *  quanta after its own punch-in — the message losing its race with the audio
@@ -406,7 +399,6 @@ describe('⚠ a LATE arm SLIDES, never truncates', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ⚠ THE RENDER CLOCK IS NOT GAP-FREE — and the reason a second real take was
 // lost. When the output device underruns, `currentFrame` jumps past audio this
 // thread was never asked to render. The old slice kept counting `to − from`
@@ -422,7 +414,6 @@ describe('⚠ a LATE arm SLIDES, never truncates', () => {
 // samples after the skip landed `skip` frames early. The phase half is
 // asserted BY VALUE — a test that only checked the count would pass on an
 // implementation that appended the silence at the end.
-// ---------------------------------------------------------------------------
 
 /** 480 frames: one Chromium/Linux output buffer at 48 k, the exact shortfall
  *  the CI failure reported. 480 = 3.75 quanta, so it is not a shape any

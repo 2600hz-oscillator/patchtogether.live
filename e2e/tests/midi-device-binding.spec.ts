@@ -1,5 +1,3 @@
-// e2e/tests/midi-device-binding.spec.ts
-//
 // THE MIDI DEVICE-BINDING REGRESSION SUITE — grant, enumerate, pick, send,
 // re-plug, reload — driven on the DEFAULT shell through the surfaces a player
 // actually touches.

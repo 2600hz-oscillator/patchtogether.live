@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/spirographs-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the SPIROGRAPHS faceplate, plus the
 // three audit findings the face is built on.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/grid-nav.test.ts
-//
 // Unit tests for the keyboard-grid focus resolver shared by SequencerCard +
 // CartesianCard. Each cell's gate (top) + pitch (bottom) form two conceptual
 // rows; arrow keys resolve against the (row, col) coordinate of the focused

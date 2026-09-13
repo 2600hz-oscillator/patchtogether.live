@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/pitch-probability.ts
-//
 // PER-NOTE PITCH PROBABILITY — the clip player's third per-note performance
 // control, alongside PROBABILITY (a firing chance) and PLAY EVERY (a loop
 // divider). PURE math: no Svelte, no Yjs, no engine (the `poly-alloc.ts`
@@ -111,9 +109,7 @@ import { MIN_MIDI, MAX_MIDI } from '$lib/audio/note-entry';
 import { mulberry32, fnv1a32 } from '$lib/sync/prng';
 import type { ScaleName } from '$lib/mike/music-theory';
 
-// ---------------------------------------------------------------------------
 // LEVEL DOMAIN — 40 increments, matching the existing per-note PROBABILITY
-// ---------------------------------------------------------------------------
 //
 // Owner: "to stay consistent with our other %'s for eventual push/launchpad
 // use, lets make sure we choose a number of intervals that's a multiple of 8,
@@ -162,9 +158,7 @@ export function pitchProbLabel(value: number): string {
   return (Number.isInteger(pct) ? pct.toFixed(0) : pct.toFixed(1)) + '%';
 }
 
-// ---------------------------------------------------------------------------
 // TUNING — every curve exponent and privileged-interval bonus, named + measured
-// ---------------------------------------------------------------------------
 //
 // The owner intends to experiment with these ("i want to first start by messing
 // with this"), so they are ONE documented record rather than magic numbers
@@ -317,9 +311,7 @@ export function octavePeakMinInstability(curve: PitchProbCurve = DEFAULT_PITCH_C
   return Math.pow(octavePeakMinSpread(curve) / curve.spreadMax, 1 / curve.spreadExp);
 }
 
-// ---------------------------------------------------------------------------
 // SCALE-DEGREE GEOMETRY
-// ---------------------------------------------------------------------------
 
 /**
  * The clip's editor ROW for a MIDI note, FRACTIONAL for an out-of-scale note.
@@ -357,9 +349,7 @@ export function isOnScale(midi: number, root: number, scale?: ScaleName): boolea
   return Number.isInteger(fractionalRow(midi, root, scale));
 }
 
-// ---------------------------------------------------------------------------
 // THE CANDIDATE DISTRIBUTION
-// ---------------------------------------------------------------------------
 
 /** One pitch the note may land on, with its weight fully decomposed so a test
  *  can assert each factor rather than a sampled histogram. */
@@ -539,9 +529,7 @@ export function samplePitch(opts: PitchCandidateOpts, rng: () => number): number
   return cands[cands.length - 1]!.midi; // r === 1 exactly / float tail
 }
 
-// ---------------------------------------------------------------------------
 // MULTIPLAYER DETERMINISM
-// ---------------------------------------------------------------------------
 
 /** The inputs every peer already agrees on for one note-firing instant. */
 export interface PitchRollSeedParts {

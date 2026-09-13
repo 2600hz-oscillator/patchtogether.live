@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-p2-cells.spec.ts
-//
 // vfpga P2 cell-library breadth — REAL-GPU GLSL compile/link coverage. The unit
 // tests (cells.test.ts / p2-cells.test.ts) are GL-FREE: they assert the kernel
 // <-> metadata contract + place-and-route placement, but jsdom has no GL context

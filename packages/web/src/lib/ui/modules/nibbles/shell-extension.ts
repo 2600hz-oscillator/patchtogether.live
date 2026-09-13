@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/nibbles/shell-extension.ts
-//
 // The NIBBLES SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

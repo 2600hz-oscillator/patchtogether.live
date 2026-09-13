@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/score.ts
-//
 // SCORE — sheet-music sequencer module. Renders 1..MAX_PAGES (4) pages of
 // 4 rows × 4 bars each (4/4 fixed) as SVG and emits pitch / gate / env /
 // clock CV. Internal ADSR (Faust adsr.wasm worklet) shapes the env output,

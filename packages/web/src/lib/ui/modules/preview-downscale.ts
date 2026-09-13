@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/preview-downscale.ts
-//
 // THE ONE PLACE A VIDEO PREVIEW SHRINKS A FULL-RES FRAME (#1846).
 //
 // ── THE DEFECT ─────────────────────────────────────────────────────────────

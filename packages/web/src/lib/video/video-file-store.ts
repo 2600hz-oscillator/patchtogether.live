@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-file-store.ts
-//
 // Per-browser persistence for File System Access `FileSystemFileHandle`s.
 //
 // Browsers can't serialize a file path into a patch (sandboxing) — but

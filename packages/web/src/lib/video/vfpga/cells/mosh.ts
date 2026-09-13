@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/mosh.ts
-//
 // CLB cell `mosh(a, b, bprev, mvect, mvectB, block, quant, iframe, seed)` —
 // MPEG/H.264-style DATAMOSH (the macroblock-mosh bend, design §3.5). Models a bent
 // block codec: it MIS-APPLIES motion-compensated block prediction to a reference

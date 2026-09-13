@@ -1,5 +1,3 @@
-// e2e/tests/version-heading.spec.ts
-//
 // Contract gate for the topbar brand heading.
 //
 // The heading renders `patchtogether v<version>`, where <version> is inlined

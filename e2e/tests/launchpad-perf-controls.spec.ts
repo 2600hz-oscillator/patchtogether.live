@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-perf-controls.spec.ts
-//
 // SINGLE-UNIT CONTROL-view PERFORMANCE controls, driven through the SAME
 // decode/dispatch path real hardware uses (installSimulatedLaunchpadSingle +
 // selecting the CONTROL view on the PERMANENT top row — CC 95). These pads write

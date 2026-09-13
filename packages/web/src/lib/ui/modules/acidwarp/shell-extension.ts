@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/acidwarp/shell-extension.ts
-//
 // The ACIDWARP SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512).
 //

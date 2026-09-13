@@ -1,5 +1,3 @@
-// art/scenarios/stereovca/ring-mod-spectrum.test.ts
-//
 // ART-tier check on STEREOVCA's ring-mod behavior. We exercise the pure
 // math helper (stereoVcaMath.render) under the same offline-rendering
 // pattern as art/scenarios/wavefolder/wavefolder-spectrum.test.ts —

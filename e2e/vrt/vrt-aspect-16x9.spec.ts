@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-aspect-16x9.spec.ts
-//
 // Dedicated VRT for the OUTPUT aspect switch at 16:9. The default-4:3 baselines
 // (the main vrt.spec.ts per-card sweep) are unchanged by this PR — 16:9 is
 // opt-in. Here we spawn each canvas-preview card fed a DETERMINISTIC static

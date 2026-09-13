@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/cube-dsp.test.ts
-//
 // Pure-DSP unit tests for CUBE (slice 1) — the 3D wavetable-navigator field +
 // surface-height slice readout. Every novel piece of math in cube-dsp.ts is
 // pinned here so a refactor surfaces as a specific quantitative regression:
@@ -45,10 +43,8 @@ import {
   type Material,
 } from './cube-dsp';
 
-// ───────────────────────────────────────────────────────────────────────────
 // Synthetic wavetable helpers. A wavetable is Float32Array[] (64 × 256), values
 // in [-1,1]. We build constant + ramped tables so the field is hand-predictable.
-// ───────────────────────────────────────────────────────────────────────────
 
 const FRAMES = 64;
 const COLS = WAVETABLE_FRAME_SIZE; // 256
@@ -72,9 +68,7 @@ function rampInXTable(lo: number, hi: number): Float32Array[] {
   return t;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // occ — connection curve / occupancy.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('occ — connector occupancy (circle ↔ V)', () => {
   const bottom = 0.0;
@@ -128,9 +122,7 @@ describe('occ — connector occupancy (circle ↔ V)', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // fieldAt — the cube scalar field + morphFC weighting + material.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('fieldAt — morph floor/ceiling + material', () => {
   // floor flat-low, ceiling flat-high, wall mid. Distinct so we can tell which
@@ -200,9 +192,7 @@ describe('fieldAt — morph floor/ceiling + material', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // CRUSH — amplitude + spatial-grid quantization.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('crush — amplitude bitcrush', () => {
   it('k=0 is the identity', () => {
@@ -277,9 +267,7 @@ describe('crushCoord — spatial-grid quantization', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // wrapFold — triangle-wave mirror fold.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('wrapFold — triangle mirror fold into [0,1]', () => {
   it('matches the canonical examples', () => {
@@ -307,9 +295,7 @@ describe('wrapFold — triangle mirror fold into [0,1]', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // heightAt — sanity for the heightfield read (used by sampleSlice).
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('heightAt — wavetable as a 2D heightfield in [0,1]', () => {
   it('maps a flat table to a flat height', () => {
@@ -326,9 +312,7 @@ describe('heightAt — wavetable as a 2D heightfield in [0,1]', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // sampleSlice — the SURFACE-HEIGHT SCAN readout.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('sampleSlice — surface-height scan readout', () => {
   const floorT = constTable(-1.0); // floorH = 0
@@ -434,9 +418,7 @@ describe('sampleSlice — surface-height scan readout', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // FOLD — West-coast wavefolder (wavefold / applyFold).
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('wavefold — West-coast wavefolder math', () => {
   it('fold=0 is an exact identity for any sample (byte-stable unfolded path)', () => {
@@ -521,11 +503,9 @@ describe('applyFold — in-place fold across a slice waveform', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // SLICE-ACROSS-TABLES — the slice reads ALL THREE tables (not just the wall).
 // (Regression for the user's "the slice only shows the WALL" suspicion — the
 // DSP is correct; floor + ceiling DO influence the readout per the morph rule.)
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('sampleSlice — reads across floor / wall / ceiling', () => {
   const sineInXTable = (): Float32Array[] => {
@@ -592,14 +572,12 @@ describe('sampleSlice — reads across floor / wall / ceiling', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // OFF = EXACT IDENTITY — SPACE CRUSH / SPACE DIFFUSE / CONNECT STRENGTH.
 //
 // The cube ART harness compares at tier B (rms < 1e-4), which canNOT prove
 // byte-identity. These tests are the real proof that all three new controls at
 // their OFF (0) value are bit-identical to the prior behavior — exact `===`,
 // not toBeCloseTo. (See the CUBE design adversarial review, finding G1.)
-// ───────────────────────────────────────────────────────────────────────────
 describe('off = exact identity (new CUBE controls)', () => {
   function legacyOcc(z: number, bottom: number, top: number, connect: number): number {
     const lo = Math.min(bottom, top);
@@ -687,4 +665,3 @@ describe('off = exact identity (new CUBE controls)', () => {
     expect([-1, 1]).toContain(a.dir);
   });
 });
-

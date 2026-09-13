@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/census.test.ts
-//
 // Pure unit tests for the fabric resource census + fit advisory (A2).
 
 import { describe, expect, it } from 'vitest';

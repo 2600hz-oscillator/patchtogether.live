@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/stereo-jack-expansion.test.ts
-//
 // RIGHT-CLICK A STEREO JACK → SEE ITS TWO L/R HOLES.
 //
 // The owner's report (2026-08-10): "i need to know how to patch es-9 stereo l/r
@@ -70,9 +68,7 @@ function rowIds(
 
 beforeEach(() => __resetJackExpansions());
 
-// ---------------------------------------------------------------------------
 // THE FOUR PORT GROUPS THE OWNER NAMED
-// ---------------------------------------------------------------------------
 
 describe('every MIXMSTRS stereo rail expands into its two declared legs', () => {
   // (group, direction, left, right) — every rail the owner enumerated:
@@ -125,9 +121,7 @@ describe('every MIXMSTRS stereo rail expands into its two declared legs', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // EXPANSION IS PER-JACK, NOT A CARD-WIDE MODE
-// ---------------------------------------------------------------------------
 
 describe('expanding one jack leaves every other jack alone', () => {
   it('CH1 expanded, CH2 untouched — on the SAME surface', () => {
@@ -161,9 +155,7 @@ describe('expanding one jack leaves every other jack alone', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE STORE
-// ---------------------------------------------------------------------------
 
 describe('the expansion store', () => {
   it('toggles, reports, and returns the NEW state', () => {
@@ -210,9 +202,7 @@ describe('the expansion store', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE OPT-IN, ANCHORED TO THE LIVE REGISTRY
-// ---------------------------------------------------------------------------
 
 describe('EXPANDABLE_STEREO_JACK_MODULES is anchored to the artifact', () => {
   it('every named module still exists in the live registry', () => {

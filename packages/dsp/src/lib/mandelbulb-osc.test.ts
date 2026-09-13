@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/mandelbulb-osc.test.ts
-//
 // Behavioral test for the MANDELBULB-OSC worklet. The worklet entry NEVER
 // top-level-exports its Processor class (that would leak into the ESM bundle +
 // break ART's classic-script eval), so we capture it via a registerProcessor

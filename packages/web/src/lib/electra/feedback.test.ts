@@ -1,4 +1,3 @@
-// packages/web/src/lib/electra/feedback.test.ts
 import { describe, it, expect } from 'vitest';
 import { FeedbackState, FeedbackPump, ECHO_WINDOW_MS } from './feedback';
 import type { ElectraAllocation } from './types';

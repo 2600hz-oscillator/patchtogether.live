@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/asset-links.test.ts
-//
 // WORKFLOW MODE P3 — the local assetId↔nodeId link map's lifecycle:
 // ordered registration (nodesFor()[0] = the PRIMARY module subsequent
 // drags reuse), additional-module bookkeeping, per-node/per-asset

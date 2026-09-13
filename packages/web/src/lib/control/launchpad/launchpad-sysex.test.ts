@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-sysex.test.ts
-//
 // Golden-vector tests for the PURE Launchpad Mini Mk3 programmer-mode codec.
 // Every byte sequence here is pinned to the Novation Launchpad Mini MK3
 // Programmer's Reference (cross-checked with lpminimk3 / launchpad.py), so a

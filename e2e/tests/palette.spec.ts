@@ -1,5 +1,3 @@
-// e2e/tests/palette.spec.ts
-//
 // Module-add palette: opens via right-click on an empty spot of the canvas
 // pane (the production entry point — the topbar "+ Add module" button was
 // removed by the 1024px topbar-overflow fix), filters by search, spawns the

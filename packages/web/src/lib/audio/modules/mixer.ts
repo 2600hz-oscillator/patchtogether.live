@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/mixer.ts
-//
 // MIXER — 4-channel mono summing mixer with a master level.
 //
 // The utility that turns four mono sources into one bus: one level per

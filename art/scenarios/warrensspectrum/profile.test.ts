@@ -1,5 +1,3 @@
-// art/scenarios/warrensspectrum/profile.test.ts
-//
 // AUDIO PROFILE for WARREN'S SPECTRUM (the audio-profile gate — spec
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md §2.1/§1.2),
 // through the shared capture harness (art/setup/capture.ts).

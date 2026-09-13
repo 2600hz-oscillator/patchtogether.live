@@ -1,5 +1,3 @@
-// e2e/tests/workflow-dock-ux.spec.ts
-//
 // P1 DOCK/EXPAND UX fixes (owner-reported, `?shell=1` preview only):
 //
 //  1. EXPAND ↔ CLOSE toggle — while a module occupies the dock full-view its

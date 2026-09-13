@@ -1,5 +1,3 @@
-// e2e/vrt/workflow-audio-io-composite.spec.ts
-//
 // VRT: the WORKFLOW topbar 🎧 audio-I/O panel, OPEN — the owner-reported
 // breakage class this scene exists to catch ("this should have been caught
 // with vrt analysis"): the panel's two hosted faceplates must render PROPERLY
@@ -71,7 +69,6 @@ test.describe('VRT: workflow 🎧 audio-I/O panel (open)', () => {
         '*,*::before,*::after{animation:none !important;transition:none !important;}',
     });
 
-    // Open the 🎧 panel.
     await page.getByTestId('workflow-topbar-slot-audio-io').click();
     const panel = page.getByTestId('workflow-io-panel');
     await expect(panel).toHaveAttribute('data-open', 'true');

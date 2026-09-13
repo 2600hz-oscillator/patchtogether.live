@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-prob-menu.test.ts
-//
 // The clipplayer card's PER-NOTE PROBABILITY right-click menu — PURE logic
 // (extracted from ClipplayerCard.svelte, cf. clipplayer-keyboard.ts): the level
 // list HIGH→LOW, the percent labels, the default-checked 100%, and the write via
@@ -166,13 +164,11 @@ describe('clipplayer card cell fill — source-aware colour', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // PER-NOTE PITCH PROBABILITY — the THIRD row of the same note menu. The MODEL
 // (weights, distribution, determinism) is tested in
 // $lib/audio/pitch-probability.test.ts; this covers the menu + storage seam
 // only: the level list, the default check, the write, and the delete-at-off
 // round trip that keeps a legacy clip byte-identical.
-// ---------------------------------------------------------------------------
 describe('clipplayer PITCH probability menu', () => {
   const noteAt60 = (extra: Partial<NoteEvent> = {}): NoteEvent => ({ step: 0, midi: 60, ...extra });
 
@@ -274,13 +270,11 @@ describe('clipplayer PITCH probability cell marker (NOT a third colour axis)', (
   });
 });
 
-// ===========================================================================
 // THE CLIP-LEVEL PICKS for the other two categories (2026-08-24). Only
 // `defaultProb` has a clip-level DATA field; pitch probability and skip every
 // are per-note keys, so the clip-level pick is a BULK WRITE over the notes the
 // clip already holds. These tests pin both halves of that decision: the write
 // reaches EVERY note, and the CHECK is honest about a clip whose notes disagree.
-// ===========================================================================
 describe('clipplayer CLIP-level pitch probability / skip every (the launcher-pad menu)', () => {
   // Derived from the model, never typed: the menu's skip-every domain IS
   // 1..PLAY_EVERY_MAX, so a change to the model changes this test's coverage.

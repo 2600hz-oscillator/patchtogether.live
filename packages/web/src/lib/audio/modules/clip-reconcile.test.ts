@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-reconcile.test.ts
-//
 // The per-machine stale-note RECONCILE channel (redesign §3.1) — push (merged
 // per lane) / drain / clear, plus the SHARED removal-detect helper both editors
 // (Launchpad + card) call. Set-difference detection (B2/N4): a poly voice-steal

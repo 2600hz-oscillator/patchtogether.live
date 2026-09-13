@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-tape-codec.test.ts
-//
 // Unit tests for the pure TWOTRACKS tape persistence codec — the
 // encode/decode that lets a recorded reel survive the perf-zip round-trip
 // (FIX 3: TWOTRACKS media never round-tripped because the tape is worklet-owned

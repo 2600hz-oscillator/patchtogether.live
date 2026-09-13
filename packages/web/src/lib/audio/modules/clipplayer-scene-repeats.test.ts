@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clipplayer-scene-repeats.test.ts
-//
 // SCENE REPEATS through the REAL clipplayer engine tick — drives the factory
 // against the fake AudioContext + the live graph store (same harness as
 // clipplayer.test.ts) and asserts the tick-side semantics:

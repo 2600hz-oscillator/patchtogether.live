@@ -1,5 +1,3 @@
-// packages/server/src/capacity.test.ts
-//
 // Unit coverage for the slot tracker. The actual hocuspocus integration
 // is covered by an e2e test (e2e/tests/capacity.spec.ts) that opens 5
 // browser contexts against the same rackspace.

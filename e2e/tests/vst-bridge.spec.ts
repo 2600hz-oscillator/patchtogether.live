@@ -1,5 +1,3 @@
-// e2e/tests/vst-bridge.spec.ts
-//
 // VST BRIDGE cards against a MOCK helper — a real Node-side WebSocket server
 // (../_helpers/mock-vst-bridge) speaking protocol v1 with real codecs, so the
 // ENTIRE browser stack runs unmodified (owner → worker → SAB rings → worklet
@@ -410,7 +408,6 @@ test('same-session LOAD over a live vst instance: swap-mount + loaded state appl
     })
     .toBe('mock:gain');
 
-  // LOAD of the EMPTY patch: the plugin unmounts, the record stays empty.
   await loadEnvelope(envEmpty);
   await expect
     .poll(() => mock.sessionFor('fx')?.mountedId ?? null, {

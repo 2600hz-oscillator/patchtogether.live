@@ -1,5 +1,3 @@
-// e2e/tests/stereo-mono-normal.spec.ts
-//
 // A MONO SOURCE INTO A STEREO MODULE'S LEFT INPUT MUST NOT LEAVE ITS RIGHT
 // OUTPUT AT DIGITAL SILENCE.
 //

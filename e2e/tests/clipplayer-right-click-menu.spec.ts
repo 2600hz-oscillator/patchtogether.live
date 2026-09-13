@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-right-click-menu.spec.ts
-//
 // THE RIGHT-CLICK MENU, on BOTH surfaces a user can right-click (owner,
 // 2026-08-24): "a list with sub lists 'note probability', 'pitch probability',
 // 'skip every' and those expand into sub lists with their options. also on the

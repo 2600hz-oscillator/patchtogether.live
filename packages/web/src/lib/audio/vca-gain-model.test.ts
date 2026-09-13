@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vca-gain-model.test.ts
-//
 // The VCA gain law, its two knob readouts, and the face that consumes them —
 // the model and its ONLY consumer are pinned together on purpose: a formatter
 // nothing imports proves nothing, and a rank nothing pins is one careless
@@ -381,7 +379,6 @@ describe('the curated face — what each tier actually surfaces', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // PF-20 — THE DERIVED HERO READOUT, and the negative controls that are the only
 // thing separating it from a knob relabelled.
 //
@@ -397,7 +394,6 @@ describe('the curated face — what each tier actually surfaces', () => {
 // These are PERMANENT legs, exactly like kickdrum's SUB LEVEL perturbation —
 // the instrument is negative-controlled on every run, not once at authoring
 // time (CLAUDE.md, "VALIDATE THE INSTRUMENT").
-// ─────────────────────────────────────────────────────────────────────────────
 
 
 describe('the face states what the DSP does — anchored to vca.dsp, not to a comment', () => {

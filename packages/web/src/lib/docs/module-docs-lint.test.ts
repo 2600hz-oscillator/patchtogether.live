@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/module-docs-lint.test.ts
-//
 // The AUTHORED-tier linters for the living-docs system (the prose half of the
 // drift gate; the contract half is contract-lock.test.ts). Pure-unit, zero
 // flake — they read the live registry and check the co-located `docs`:

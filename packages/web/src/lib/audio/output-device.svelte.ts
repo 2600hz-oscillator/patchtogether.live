@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/output-device.svelte.ts
-//
 // THE OUTPUT-DEVICE SEAM — one roster, one writer, one applier.
 //
 // ── WHY THIS FILE EXISTS ───────────────────────────────────────────────────

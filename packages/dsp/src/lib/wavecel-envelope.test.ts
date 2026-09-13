@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/wavecel-envelope.test.ts
-//
 // THE FOUR MEASURED WAVECEL DEFECTS, pinned by the numbers that found them,
 // each with a negative control that runs on EVERY invocation.
 //
@@ -158,9 +156,7 @@ function maxStep(a: Float32Array, from: number, to: number): number {
   return m;
 }
 
-// ===========================================================================
 // D5 — THE AMP ADSR ACTUALLY SHAPES A NOTE AT THE SHIPPED DEFAULT
-// ===========================================================================
 describe('D5 · the amp ADSR is audible at the shipped default', () => {
   it('base_vol SHIPS at 0 (pure ADSR) — the descriptor is the thing under test', async () => {
     await loadProcessor();
@@ -238,9 +234,7 @@ describe('D5 · the amp ADSR is audible at the shipped default', () => {
   });
 });
 
-// ===========================================================================
 // D6 — NOTE-OFF NO LONGER CLICKS AT THE SHIPPED DEFAULT
-// ===========================================================================
 describe('D6 · note-off is click-free at the shipped default', () => {
   const GATE = 12800;
 
@@ -278,9 +272,7 @@ describe('D6 · note-off is click-free at the shipped default', () => {
   });
 });
 
-// ===========================================================================
 // D7 — SPREAD IS A WIDTH CONTROL, NOT A VOLUME CONTROL
-// ===========================================================================
 describe('D7 · SPREAD does not move the level', () => {
   it('there is NO cliff just above spread 1 (it was 43 dB)', async () => {
     // Measured: rms −5.99 dB at spread 1.0 → −49.11 dB at spread 1.0001.
@@ -340,9 +332,7 @@ describe('D7 · SPREAD does not move the level', () => {
   });
 });
 
-// ===========================================================================
 // D8 — SPREAD ACTUALLY PRODUCES STEREO, AT THE DEFAULT MORPH
-// ===========================================================================
 describe('D8 · SPREAD produces stereo at the DEFAULT morph', () => {
   it('|L−R| is non-zero and GROWS with spread at morph 0 (it was EXACTLY 0)', async () => {
     // Measured before the fix at the def-default morph of 0:

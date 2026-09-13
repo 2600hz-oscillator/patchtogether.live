@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-screen-layout.test.ts
-//
 // The 960×160 layout, asserted as DRAW OPS — no canvas, no browser.
 //
 // The tests that matter here are the BAR ones. A bar is the only part of the
@@ -63,7 +61,6 @@ import { pushLegendView } from './push-legend-model';
 import type { PushElectraView } from './push-electra-model';
 import type { LaunchpadLegendContext } from '$lib/control/launchpad/launchpad-control.svelte';
 
-// ── fixtures ───────────────────────────────────────────────────────────────
 
 function param(over: Partial<ParamDef> = {}): ParamDef {
   return { id: 'p', label: 'param', defaultValue: 0, min: 0, max: 1, curve: 'linear', ...over };
@@ -334,12 +331,10 @@ describe('pushCardSignature — the repaint dirty check', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // LEGEND MODE — the held overlay. Same op vocabulary, so the same "assert the
 // geometry, not the pixels" discipline applies. The load-bearing claim here is
 // SPATIAL: the bottom row of cells must sit over the physical buttons under the
 // display, and every cell must line up with exactly one 120 px slice.
-// ---------------------------------------------------------------------------
 
 function lctx(over: Partial<LaunchpadLegendContext> = {}): LaunchpadLegendContext {
   return {
@@ -483,14 +478,12 @@ describe('wrapToWidth', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ELECTRA CONTROL MODE — the third display mode's geometry.
 //
 // The claim worth gating is that it REUSES the card's machinery rather than
 // re-implementing it: six strips drawn by the same `renderStrip`, on the same
 // exact-integer 960/8 grid, so encoder n's strip sits over encoder n in both
 // modes. A second strip renderer would be a second chance for the bar to lie.
-// ---------------------------------------------------------------------------
 
 describe('renderPushElectra', () => {
   const knob: ParamDef = {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/exposable-controls.ts
-//
 // WHICH OF A MODULE'S CONTROLS ANOTHER SURFACE MAY OFFER — the one definition,
 // shared by every surface that proxies somebody else's knobs.
 //

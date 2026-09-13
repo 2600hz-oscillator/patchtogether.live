@@ -1,5 +1,3 @@
-// e2e/tests/toybox-cv-section.spec.ts
-//
 // TOYBOX console + the 6-input CV/MOD section UI. Proves:
 //   - the faceplate console structure renders (screen zone | persistent layer
 //     band | tab rail, cv-mod the default pane — the card's 3-COLUMN layout

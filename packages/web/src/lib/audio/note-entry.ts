@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/note-entry.ts
-//
 // Note-name <-> MIDI int conversion + helpers for the Sequencer / Cartesian
 // text-entry pitch input (D5).
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/snapshot.ts
-//
 // B3 — single subscription point for the patch graph.
 //
 // Why this exists: we used to have two independent subscriptions to the

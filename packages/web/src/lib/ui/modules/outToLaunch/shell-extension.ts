@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outToLaunch/shell-extension.ts
-//
 // The OUT TO LAUNCH shell extension — the module-owned end of the extension
 // seam (#1512), on the `fullViewBody` slot.
 //

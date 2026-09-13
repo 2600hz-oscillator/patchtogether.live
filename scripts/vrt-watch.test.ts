@@ -1,5 +1,3 @@
-// scripts/vrt-watch.test.ts
-//
 // The VRT capture watcher (#1821). The API interaction is stubbed — every
 // function under test is pure, which is why the IO shell in `vrt-watch.mjs` is
 // a thin wrapper around them.

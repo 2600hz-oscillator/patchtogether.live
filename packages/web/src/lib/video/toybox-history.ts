@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-history.ts
-//
 // TOYBOX FRAME-HISTORY ops — the PURE model for the STATEFUL batch op nodes that
 // keep frame history (FRAMEDELAY / CHANNELDESYNC / FLOWSMEAR / DREAMMELT /
 // DATAMOSH). Like FEEDBACK these run their OWN program against a per-node buffer,

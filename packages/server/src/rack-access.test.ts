@@ -1,5 +1,3 @@
-// packages/server/src/rack-access.test.ts
-//
 // Coverage for the post-auth WS access gate. Two interesting axes:
 //   - role: member vs anon
 //   - NODE_ENV: production vs (dev|test|undefined)

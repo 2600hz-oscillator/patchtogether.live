@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/workflow-pins-ydoc.test.ts
-//
 // WORKFLOW MODE P2 — the pinned ensure against REAL syncedStore-backed
 // Y.Docs (the same harness shape as singleton-cleanup-ydoc.test.ts).
 //

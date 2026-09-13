@@ -1,5 +1,3 @@
-// e2e/tests/illogic.spec.ts
-//
 // ILLOGIC end-to-end coverage:
 //   1. Spawn the module → 14 handles (4 inputs + 10 outputs) render via the
 //      patch panel; the card mounts without console errors. (the registry card

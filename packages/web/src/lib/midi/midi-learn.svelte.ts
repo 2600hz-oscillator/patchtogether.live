@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-learn.svelte.ts
-//
 // MIDI Learn singleton. One shared `navigator.requestMIDIAccess()` for
 // every Fader / Knob in the rack; right-click → "MIDI Learn" → wiggle a
 // CC on the connected controller → permanent binding. Subsequent CC

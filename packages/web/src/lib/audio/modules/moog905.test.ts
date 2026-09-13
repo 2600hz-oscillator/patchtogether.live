@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog905.test.ts
-//
 // Two test layers for the MOOG 905 SPRING REVERBERATION (moogafakkin System 55/35
 // clone):
 //   1. Module-def shape — pins the 905's I/O surface (single audio in, single

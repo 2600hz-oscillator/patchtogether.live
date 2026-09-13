@@ -1,5 +1,3 @@
-// e2e/tests/gamepad.spec.ts
-//
 // GAMEPAD module E2E. The browser Gamepad API isn't synthesisable
 // from outside the page (Playwright can't dispatch real HID events),
 // but we CAN monkey-patch navigator.getGamepads() to return a fake
@@ -811,7 +809,6 @@ test.describe('GAMEPAD module', () => {
       return (eng.readParam(gp, p) as number | undefined) ?? -99;
     }, port);
 
-    // Load a mapping that binds the `a` output to physical X (button 2).
     const mapping1 = JSON.stringify({ bindings: { a: { kind: 'button', index: 2 } } });
     await card.getByTestId('gamepad-load-mapping-gp').setInputFiles({
       name: 'm1.json',

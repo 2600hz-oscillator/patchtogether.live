@@ -1,5 +1,3 @@
-// e2e/tests/b3ntb0x-hue-claim.spec.ts
-//
 // THE ACCEPTANCE TEST FOR `_helpers/glsl-claim.ts` — the first time a video
 // module's readout claim is checked against DELIVERED PIXELS rather than read
 // off the shader source.

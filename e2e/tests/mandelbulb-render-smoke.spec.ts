@@ -1,5 +1,3 @@
-// e2e/tests/mandelbulb-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for MANDELBULB — a pure-GL ray-marched 3D
 // fractal VIDEO SOURCE (no video input; all inputs are CV). It is DETERMINISTIC
 // under the Phase-0 freeze hooks for the SAME reason ACIDWARP is: every per-frame

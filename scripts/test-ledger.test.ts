@@ -1,5 +1,3 @@
-// scripts/test-ledger.test.ts
-//
 // FRESHNESS GATE for the generated 3-bucket test ledger
 // (docs/testing/test-ledger.generated.md). Pure-unit, zero-flake, in the `unit`
 // lane (runs via `task test` → `task test:scripts`). Mirrors the living-docs

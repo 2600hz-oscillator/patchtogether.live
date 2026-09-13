@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/sixstrum-dsp.ts
-//
 // SIX STRUM — the pure 6-voice guitar/bass/harp engine. SIX independent
 // Extended-Karplus-Strong string voices (karplus-dsp.ts, one makeKarplusState
 // + karplusStep per string, each seeded DISTINCTLY so a simultaneous barre
@@ -67,9 +65,7 @@ const SS_BODY: Record<string, { f: [number, number]; q: number }> = {
 const TWO_PI = Math.PI * 2;
 const FLUSH = 1e-20;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Params (numbers; the worklet feeds these from AudioParams each block)
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface SixStrumParams {
   /** Global transpose, semitones (−24..+24). */
@@ -150,9 +146,7 @@ export interface SixStrumFrame {
   accent: number; // 0..1
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Biquad (RBJ band-pass, DF-I) for the body bank
-// ─────────────────────────────────────────────────────────────────────────
 
 interface Biquad {
   b0: number; b1: number; b2: number; a1: number; a2: number;
@@ -186,9 +180,6 @@ function biquad(bq: Biquad, x: number): number {
   return y;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────
 
 interface BlockCache {
   /** karplus params shared by all voices this block (pitchCv set per voice). */
@@ -254,9 +245,7 @@ export function makeSixStrumState(sr: number): SixStrumState {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-block prep (cheap; recompute derived values from the k-rate params)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Recompute the per-block cache. `chordRootMidi` is the Chord CV root (only
  *  used when p.chordConnected); harmless otherwise. */
@@ -303,9 +292,7 @@ export function prepSixStrumBlock(
   setBandpass(s.bodyB, body.f[1], body.q, sr);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample step
-// ─────────────────────────────────────────────────────────────────────────
 
 /** V/oct (0V = C4 = MIDI 60) → karplus pitchCv (relative to A3 = MIDI 57). */
 function polyVOctToPitchCv(vOct: number): number {

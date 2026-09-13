@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/backdraft/panic.test.ts
-//
 // BACKDRAFT PANIC — the ONE reset implementation (./panic.ts), tested against
 // the REAL seams end to end:
 //

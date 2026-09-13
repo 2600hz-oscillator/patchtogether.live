@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-runner.spec.ts
-//
 // vfpga-runner host module — preset hot-swap. The deterministic render-smoke
 // (the default smpte-bars VFPGA reaches a non-black, structured OUTPUT) now
 // lives in vfpga-runner-render-smoke.spec.ts (frozen clock + paused rAF, frame-

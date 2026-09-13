@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/drummergirl-face-model.test.ts
-//
 // (a) THE SOURCE-GREP PIN. The five preset tables are RE-TYPED in the model
 //     because drummergirl's DSP is FAUST and cannot be imported — and the
 //     module has NO ART baseline either, so no downstream audio pin would

@@ -1,5 +1,3 @@
-// art/scenarios/analog-vco/hard-sync.test.ts
-//
 // ART scenario for the ANALOG VCO HARD-SYNC (feat/analog-vco-sync).
 //
 // Patch under test: masterVco.sync_out → slaveVco.sync_in. The slave

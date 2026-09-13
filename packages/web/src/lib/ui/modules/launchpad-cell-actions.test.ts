@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/launchpad-cell-actions.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL FOR THE TWO HANDSHAKE CELLS' PROBE.
 //
 // ⚠ WHY THIS FILE IS NOT OPTIONAL. `faces-parity` proves an ACTION cell did

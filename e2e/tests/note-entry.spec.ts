@@ -1,5 +1,3 @@
-// e2e/tests/note-entry.spec.ts
-//
 // D5 — Cartesian text-entry note input (the surviving note-entry surface
 // after the legacy sequencers were deleted 2026-08-24; the same NoteEntry
 // component drives every flow below).
@@ -41,7 +39,6 @@ test('note-entry: typing valid notes into Cartesian pads normalizes display + st
   await step0.blur();
   await expect(step0).toHaveValue('a4');
 
-  // Verify the underlying patch state shows midi 69.
   const seqData = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { cells?: Array<{ on: boolean; midi: number | null }> } }> } };
     return w.__patch.nodes['seq']?.data?.cells?.[0] ?? null;

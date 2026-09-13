@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/trails-device.test.ts
-//
 // The Bela Trails DEVICE LAYER, exercised through its own simulated double.
 //
 // The point of every case below is that the double replaces the USB cable and

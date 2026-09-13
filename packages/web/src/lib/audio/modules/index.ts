@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/index.ts
-//
 // Auto-registers EVERY audio module on first import — GLOB-DRIVEN.
 //
 // Adding a module no longer requires editing this file. Drop a new

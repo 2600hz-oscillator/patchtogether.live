@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// packages/web/scripts/measure-worker-bundle.mjs
-//
 // Measure the Cloudflare Pages Worker the way Cloudflare does, and attribute
 // its weight to individual source files.
 //

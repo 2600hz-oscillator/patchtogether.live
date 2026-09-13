@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/lane-readout-fit.ts
-//
 // DOES A PERSISTENT KNOB READOUT FIT THE LANE COLUMN? — in CSS PIXELS, which is
 // the unit the constraint is actually expressed in.
 //

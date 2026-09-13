@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/bridge-client.ts
-//
 // Card-facing wrapper around the ES-9 bridge transport: allocates the two
 // SharedArrayBuffer rings, spawns the transport worker, and exposes a typed
 // event surface. The CARD owns this object's lifecycle (spawn on connect,

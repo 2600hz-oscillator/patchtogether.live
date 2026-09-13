@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/catalog.ts
-//
 // In-browser catalog adapter for Rackspace Carl. Mirrors the shape used by
 // e2e/chaos/lib/catalog.ts (so the personality file can stay structurally
 // identical) but builds itself from the running module registries instead

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/master-limiter-dsp.test.ts
-//
 // Unit gate for the master limiter core — the terminal safety stage that
 // replaced audio-out's full-band DynamicsCompressorNode (DSP audit P0-A1).
 // The system-level proof (no sub pumping in the REAL shipped chain, with the

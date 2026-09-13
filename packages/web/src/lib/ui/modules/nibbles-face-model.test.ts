@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/nibbles-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the NIBBLES faceplate.
 //
 // This face rests on six claims that no shared gate can check, and every one of

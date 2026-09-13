@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/destructor.ts
-//
 // DESTRUCTOR — mangle/glitch effect. video → video.
 //
 // Phase-1 reinterpretation of the §3.3 DESTRUCTOR spec (which originally
@@ -113,7 +111,6 @@ export const destructorDef: VideoModuleDef = {
     { id: 'mangle',    label: 'Mangle',    defaultValue: DEFAULTS.mangle,    min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── FACE (batch 22 · group 4) ─────────────────────────────────────────────
   //
   // WHAT DESTRUCTOR IS FOR: it is a DIGITAL-DECAY stack. Three classic
   // transmission artifacts — chromatic aberration, scanline darkening,

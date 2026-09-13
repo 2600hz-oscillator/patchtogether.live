@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vst/vst-ring.ts
-//
 // Web-side MIRROR of the SharedArrayBuffer SPSC rings in
 // packages/dsp/src/lib/vst-bridge-core.ts (and, for the audio ring,
 // es9-bridge-core.ts — the layout is the same one the es9 seam proved).
@@ -111,9 +109,7 @@ export function createRingSpec(channels: number, capacityFrames: number): RingSp
   };
 }
 
-// ---------------------------------------------------------------------------
 // MIDI event ring — the worker's (consumer) half.
-// ---------------------------------------------------------------------------
 
 export const MIDI_RECORD_BYTES = 16;
 const MIDI_RECORD_WORDS = 4;

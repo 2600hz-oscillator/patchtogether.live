@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/patch-convenience.test.ts
-//
 // Coverage for the workflow-mode "Control from → Clip" / "Send to → MixMaster"
 // eligibility + wiring planner. Three layers:
 //   1. PURE predicate unit tests (synthetic defs) — the tricky rules in isolation.
@@ -32,7 +30,6 @@ import {
 } from './patch-convenience';
 import { listModuleDefs } from '$lib/audio/module-registry';
 
-// ---------------- helpers ----------------
 
 const port = (id: string, type: PortDef['type'], extra: Partial<PortDef> = {}): PortDef =>
   ({ id, type, ...extra });
@@ -49,9 +46,7 @@ function liveDef(type: string): ConvenienceDef | undefined {
     | undefined;
 }
 
-// ================================================================
 // 1. PURE predicate unit tests
-// ================================================================
 
 describe('clip eligibility (pure)', () => {
   it('a poly instrument (poly input) is clip-eligible via the poly path', () => {
@@ -291,9 +286,7 @@ describe('edge plans (pure)', () => {
   });
 });
 
-// ================================================================
 // 1b. UNIFIED "Assign to channel N" wiring per module SHAPE
-// ================================================================
 //
 // The folded action does THREE things for channel N: (a) assign automation lane
 // N — ALWAYS (a synced write, modelled here by the unconditional `automation`
@@ -379,9 +372,7 @@ describe('unified "Assign to channel N" wiring per module shape (pure)', () => {
   });
 });
 
-// ================================================================
 // 1c. DRUM v/oct fix — live registry (kickdrum/snaredrum/tomtom vs clap)
-// ================================================================
 
 describe('drum pitch→v/oct fix — live registry', () => {
   it('kickdrum / snaredrum / tomtom map the clip PITCH to their 1V/oct pitch_cv (monoPitchGate)', () => {
@@ -413,9 +404,7 @@ describe('drum pitch→v/oct fix — live registry', () => {
   });
 });
 
-// ================================================================
 // 2. LIVE-REGISTRY membership — appears / absent (owner hard req)
-// ================================================================
 
 describe('clip eligibility — live registry (appears when it should)', () => {
   // Representative instruments that MUST offer "Control from → Clip".
@@ -472,9 +461,7 @@ describe('mixer eligibility — live registry', () => {
   });
 });
 
-// ================================================================
 // 3. CHANNEL PORT-MAP guard against the live defs
-// ================================================================
 
 describe('clip channel port map matches the live clipplayer def', () => {
   it('clipChannelPorts(n) resolve to real clipplayer output ports for all 8 lanes', () => {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/rack-status.ts
-//
 // PURE state helpers for the /r/[id] durability affordances (persistence-
 // hardening P1 + P2). Kept framework-free + side-effect-free so the timing
 // logic is unit-testable without a browser — the Svelte page owns the
@@ -10,9 +8,7 @@
 //   P2 — computeSaveStatus + shouldPromptUnsaved: the "saving…/all changes
 //        saved" chip + the strict beforeunload guard predicate.
 
-// ---------------------------------------------------------------------------
 // P1 — restoring / offline banner
-// ---------------------------------------------------------------------------
 
 export type RackStatus = 'restoring' | 'ready' | 'offline';
 
@@ -61,9 +57,7 @@ export function computeRackStatus(
   return 'restoring';
 }
 
-// ---------------------------------------------------------------------------
 // P2 — saving indicator + strict unsaved guard
-// ---------------------------------------------------------------------------
 
 export type SaveStatus = 'saving' | 'saved' | 'idle';
 

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog994.test.ts
-//
 // Two test layers for the MOOG 994 DUAL MULTIPLES (passive 1→3 fan-out, twice):
 //   1. Module-def shape — pins the 994's I/O surface (a_in/b_in inputs; the
 //      six a1..a3 / b1..b3 fan-out outputs; the empty param array) so a

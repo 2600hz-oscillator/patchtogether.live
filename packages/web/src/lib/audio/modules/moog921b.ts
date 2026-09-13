@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog921b.ts
-//
 // MOOG 921B OSCILLATOR — Moog System 55/35 clone (batch 1, shipped with the
 // 921A driver). The slaved VCO: driven by a 921A's freq_bus / width_bus
 // CONTROL INPUTS (it has no 1V/oct jack of its own — the 921A is the master

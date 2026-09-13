@@ -1,5 +1,3 @@
-// e2e/tests/seqtris.spec.ts
-//
 // ═══════════ THE REAL-SOURCE-CHAIN GATE FOR SEQTRIS ═══════════
 //
 // The poly/MIDI rule (AGENTS.md boundary 8) demands the REAL default-mode
@@ -235,7 +233,6 @@ function graph(opts: { clocked: boolean; gravity?: number }): {
   return { nodes, edges };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 
 test('the real chain: a clock falls pieces through PIECE into a voice, audibly', async ({
   page,

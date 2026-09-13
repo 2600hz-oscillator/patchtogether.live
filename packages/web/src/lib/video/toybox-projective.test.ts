@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-projective.test.ts
-//
 // TOYBOX Phase-7 PROJECTIVE surface mapping — pure-math unit tests. These pin
 // the geometry the OBJ fragment shader mirrors (projectFragment is the CPU
 // reference of that shader), plus the lookAt VIEW matrix and projector

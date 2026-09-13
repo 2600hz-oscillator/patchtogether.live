@@ -1,5 +1,3 @@
-// e2e/tests/backdraft-panic.spec.ts
-//
 // BACKDRAFT's PANIC — owner request (2026-08): *"backdraft should have a
 // 'panic' button and gate, the button should be above the screen on/off button
 // and therefore visible in all views. the function of panic is to reset all

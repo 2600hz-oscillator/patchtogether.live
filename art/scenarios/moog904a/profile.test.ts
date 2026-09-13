@@ -1,5 +1,3 @@
-// art/scenarios/moog904a/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 904A (voltage controlled low pass filter)
 // (backfill batch 2 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

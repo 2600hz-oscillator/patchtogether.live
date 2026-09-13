@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/selector-model.ts
-//
 // PURE option-list logic for Selector.svelte (the RACKLINE `.selector` /
 // `.preset-pick` dropdown). Handles BOTH the param case (a discrete numeric
 // param whose 0..N options are filter modes / clock sources) and the

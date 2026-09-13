@@ -1,5 +1,3 @@
-// e2e/tests/analog-vco-hard-sync.spec.ts
-//
 // ANALOG VCO hard-sync end-to-end. Two analog VCOs:
 //   master.sync (out) → slave.sync (in)   — hard sync
 //   slave.saw         → scope.ch1          — observe the slave

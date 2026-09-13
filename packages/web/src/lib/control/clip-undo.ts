@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/clip-undo.ts
-//
 // A launchpad-STYLE, origin-scoped undo/redo seam for clip-player PERSISTENT
 // edits, driven from the CARD's control-strip ↶/↷ buttons (control-strip
 // buttons 6/7, computer keys 6/7). It mirrors the single-pad Launchpad's own

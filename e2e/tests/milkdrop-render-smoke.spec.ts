@@ -1,5 +1,3 @@
-// e2e/tests/milkdrop-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for MILKDROP — the butterchurn (Winamp
 // Milkdrop) visualizer. Unlike a pure `frame.time` module, butterchurn keeps its
 // OWN internal clock advanced by the `elapsedTime` we pass each frame, so we make

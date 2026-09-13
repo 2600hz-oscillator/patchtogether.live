@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-cells.test.ts
-//
 // The BROWSER-FREE pre-gate for the INERT-CELL class (P1 batch-2 adversarial
 // render verify). The shell's `param` cells are generic, but a `family` /
 // `static` cell needs a real per-module spec; before this registry every one of

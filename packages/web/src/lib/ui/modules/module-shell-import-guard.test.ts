@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/module-shell-import-guard.test.ts
-//
 // THE MODULE-SHELL IMPORT GUARD (#1512) — deny by default.
 //
 // ModuleShell is the ONE shared renderer every migrated module fills. It

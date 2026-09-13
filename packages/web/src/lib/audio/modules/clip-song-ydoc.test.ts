@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-song-ydoc.test.ts
-//
 // SONG MODE v2 storage over REAL Y.Docs (syncedStore) — the sync-layer
 // contracts ([[yjs-save-load-real-ydoc]]):
 //   - save/load round-trip: a printed song survives an encodeStateAsUpdate →

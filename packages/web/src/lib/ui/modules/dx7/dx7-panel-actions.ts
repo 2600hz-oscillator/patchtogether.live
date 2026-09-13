@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/dx7-panel-actions.ts
-//
 // The WRITES behind the operator map + detail panel (dx7 PR 6).
 //
 // Every one of these is a single `mutateNode` transaction, for the same two

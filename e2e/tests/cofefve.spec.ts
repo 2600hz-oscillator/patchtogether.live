@@ -1,5 +1,3 @@
-// e2e/tests/cofefve.spec.ts
-//
 // End-to-end for COFEFVE DELAY through the REAL source chain:
 //   NOISE → COFEFVE → AUDIOOUT / SCOPE.
 //
@@ -26,9 +24,7 @@ import { readScopePeakOverWindow, setNodeParams } from './_module-coverage-helpe
 
 test.describe.configure({ mode: 'parallel' });
 
-// ────────────────────────────────────────────────────────────────────────
 // 2. AUDIBLE WET ECHO (dry muted → only the delayed path reaches the scope)
-// ────────────────────────────────────────────────────────────────────────
 
 test('COFEFVE wet echo is audible with dry muted (only the delayed path carries signal)', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
@@ -57,9 +53,7 @@ test('COFEFVE wet echo is audible with dry muted (only the delayed path carries 
 
 });
 
-// ────────────────────────────────────────────────────────────────────────
 // 3. FEEDBACK lengthens the wet echo tail
-// ────────────────────────────────────────────────────────────────────────
 
 test('COFEFVE feedback amount audibly lengthens the wet echo tail', async ({ page, rack, errorWatch }) => {
   await spawnPatch(

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/camera-status-registry.test.ts
-//
 // The capture-status seam, driven as a unit — plus the SOURCE-level gate that
 // keeps its state union equal to the card's, which no runtime test can see.
 

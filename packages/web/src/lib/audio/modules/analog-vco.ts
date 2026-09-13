@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-vco.ts
-//
 // ANALOG VCO — classic analog-style voltage-controlled oscillator.
 //
 // One pitched oscillator emitting four simultaneous classic waveforms

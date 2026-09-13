@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/loopback.ts
-//
 // LOOPBACK — the BROWSER VIEWPORT as a video source. Zero inputs, one video
 // output whose contents are what the user currently SEES in this tab (the
 // visible SvelteFlow pane), so you can feed LOOPBACK → RECORDERBOX to record

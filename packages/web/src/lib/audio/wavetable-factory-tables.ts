@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavetable-factory-tables.ts
-//
 // Bundled factory wavetables (E352 format: 64 frames × 256 samples).
 // Synthesized in code so wavetable-based modules are usable
 // out-of-the-box without requiring the user to upload a WAV. Card UIs

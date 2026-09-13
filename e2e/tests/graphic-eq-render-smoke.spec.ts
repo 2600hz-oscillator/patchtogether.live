@@ -1,5 +1,3 @@
-// e2e/tests/graphic-eq-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for GRAPHIC EQ — the Winamp-style VU-meter
 // video OUTPUT. STEREO audio in → 8 log-spaced bands per channel drawn as
 // bars/boxes. No video input.

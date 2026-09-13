@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/cable-leg-groups.ts
-//
 // ONE CABLE PER LEG GROUP — the rendering half of the projection.
 //
 // A stereo cable is TWO `Edge` records (the leg group `planAudioCommit`

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-capture-drain.ts
-//
 // RECORDERBOX audio capture-drain core (PURE — no Web Audio, no mediabunny, no
 // DOM, so it unit-tests headlessly and is CI-safe).
 //

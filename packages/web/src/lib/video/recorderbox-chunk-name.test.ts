@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-chunk-name.test.ts
-//
 // Unit coverage for GoPro-style chunk naming: FILENAME-CHUNK#-DATETIME.mp4,
 // 3-digit chunk from 001, UNIQUE + sequentially SORTABLE in Finder. PURE — the
 // Date is injected so the datetime is deterministic. CI-safe (no encoder).

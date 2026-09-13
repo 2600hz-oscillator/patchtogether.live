@@ -1,5 +1,3 @@
-// scripts/webgl-attest-lib.ts
-//
 // Shared resolver + content-hash for the WebGL local-attestation "semaphore".
 // See .claude/skills/renderer-tests/SKILL.md (hash basis and fixes
 // V3/V4/V6). Imported by BOTH:
@@ -166,9 +164,7 @@ export const STANDALONE_BASIS_FILES = [
   'e2e/webgl-heavy-globs.ts',
 ];
 
-// -------------------------------------------------------------------------
 // File-walk helpers
-// -------------------------------------------------------------------------
 
 /** Recursively list every file under `dir` (relative to REPO_ROOT), POSIX
  *  paths, optionally excluding a predicate. Returns repo-relative paths. */
@@ -193,9 +189,7 @@ function posix(p: string): string {
   return p.split(sep).join('/');
 }
 
-// -------------------------------------------------------------------------
 // Spec-set resolution (from the EXPORTED glob — fix V4)
-// -------------------------------------------------------------------------
 
 /** Resolve the heavy-WebGL spec FILE set by matching e2e/tests against
  *  WEBGL_HEAVY_GLOBS with minimatch (the matcher Playwright uses). Returns
@@ -246,9 +240,7 @@ export function resolveAttestableHeavyWebglSpecs(): string[] {
   );
 }
 
-// -------------------------------------------------------------------------
 // The WEBGL_PATHS basis (mechanical + fail-closed — §3.3)
-// -------------------------------------------------------------------------
 
 /** Returns the FULL, sorted, repo-relative list of files in the WebGL content
  *  hash basis. Every file here, by content, feeds the hash. Mechanical: no
@@ -303,9 +295,7 @@ export function resolveWebglBasis(): string[] {
   return [...files].sort();
 }
 
-// -------------------------------------------------------------------------
 // The hash
-// -------------------------------------------------------------------------
 
 /** Deterministic content-hash over the basis: for each file in sorted order,
  *  feed `<repo-relative-path>\0<CODE>` into one sha256, where CODE is the file
@@ -338,9 +328,7 @@ export function readBasisFile(rel: string): string {
   return readFileSync(join(REPO_ROOT, rel), 'utf8');
 }
 
-// -------------------------------------------------------------------------
 // Coverage-guard support (§12 — fail CLOSED)
-// -------------------------------------------------------------------------
 
 /** Every source file under packages/web/src whose content creates a real WebGL
  *  context. The fail-closed coverage guard asserts ALL of these are in-basis. */

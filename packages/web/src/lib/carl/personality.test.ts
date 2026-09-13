@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/personality.test.ts
-//
 // Unit tests for the in-browser Carl personality. The behavior parity
 // with the chaos Stage-1 personality is implicit (same code), but these
 // tests pin the contract Rackspace Carl needs to honor:

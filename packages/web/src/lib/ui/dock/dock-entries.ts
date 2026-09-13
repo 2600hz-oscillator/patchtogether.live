@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/dock-entries.ts
-//
 // DOCKING P2.5a — the pure per-node dock-entry model. A docked module NEVER leaves
 // patch.nodes/edges; an entry here is a purely LOCAL projection: which
 // zone the card renders in, its slot order, its independent scale, and the

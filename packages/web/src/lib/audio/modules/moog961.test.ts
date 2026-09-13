@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog961.test.ts
-//
 // Two test layers for the MOOG 961 INTERFACE (moogafakkin System 55 clone, batch 5):
 //   1. Module-def shape — pins the 961's I/O surface (audio_in + 3 gate inputs,
 //      4 gate outputs, the sensitivity / switchOnTime param array) so a
@@ -132,13 +130,9 @@ function countHigh(buf: Float32Array): number {
   return n;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 // 1) Module-def shape.
-// ────────────────────────────────────────────────────────────────────────────
 
-// ────────────────────────────────────────────────────────────────────────────
 // 2) DSP behaviour — drive the worklet processor directly.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('MOOG 961 worklet — audio→trigger sensitivity', () => {
   it('fires v_out1 AND v_out2 on a rising rectified crossing of the threshold', async () => {

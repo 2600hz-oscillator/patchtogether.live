@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/illogic.ts
-//
 // ILLOGIC — combined attenuverter / math / logic utility.
 //
 // 4 cv/audio inputs (in1..in4) feed a per-channel bipolar attenuverter
@@ -160,7 +158,6 @@ export const illogicDef: AudioModuleDef = {
     { id: 'att4_amount', label: 'Att4', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS, IN ONE SENTENCE: four bipolar attenuverters that ALSO
   // happen to be sitting in front of a sum/difference mixer and behind nothing

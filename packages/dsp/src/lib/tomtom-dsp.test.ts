@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/tomtom-dsp.test.ts
-//
 // Proving tests for the TOM DRUM core: strike determinism, the frequency /
 // bend laws (bend 0 = stable pitch, full bend = octave-class sweep),
 // FREQUENCY-COMPENSATED decay (same −60 dB time at 60 Hz and 400 Hz, and
@@ -114,9 +112,7 @@ function centroidHz(buf: Float32Array, sr: number, s: number, e: number): number
 
 const SR = 48000;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Frequency / bend / decay LAWS (pure functions)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom: frequency + bend laws', () => {
   it('settles to tune; full 24 st bend starts exactly 4× above (octave-class)', () => {
@@ -166,9 +162,7 @@ describe('tomtom: frequency + bend laws', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // New per-knob CVs (drive_cv / level_cv are consumed; every law no-op at 0)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom: drive_cv / level_cv consumption', () => {
   it('drive_cv sums into DRIVE — a +1 V CV grows the 3rd-harmonic saturation', () => {
@@ -190,9 +184,7 @@ describe('tomtom: drive_cv / level_cv consumption', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Rendered bend behavior (the sonic heart)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom: rendered pitch bend', () => {
   const CLEAN = { tone: 0, noise: 0, drive: 0, bendTime: 300, decay: 1500 };
@@ -239,9 +231,7 @@ describe('tomtom: rendered pitch bend', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Frequency-compensated + sr-calibrated decay
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom: decay compensation + sr calibration', () => {
   /** −60 dB envelope time via the state (samples until ampEnv ≤ 1e-3). */
@@ -285,9 +275,7 @@ describe('tomtom: decay compensation + sr calibration', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // SONIC RANGE — the spectrum claim (808-woody ↔ Simmons/timbale-tight)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom: sonic range proof', () => {
   it('low-tune long-decay vs high-tune short-decay: >2× centroid spread + >4× duration spread', () => {
@@ -349,9 +337,7 @@ describe('tomtom: sonic range proof', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Determinism + hygiene
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom: determinism + hygiene', () => {
   it('two independent states render bit-identical output (pure core)', () => {

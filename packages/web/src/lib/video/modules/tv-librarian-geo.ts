@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tv-librarian-geo.ts
-//
 // PURE geometry for the 2D world-map country picker (v1 — NO three.js; the
 // repo is raw-WebGL2 and we do not add a 3D globe / three-globe dep). The map
 // is a simple EQUIRECTANGULAR projection: longitude → x in [0,1], latitude →

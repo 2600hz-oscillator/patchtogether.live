@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/ptzcam-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for PTZ CAM's faceplate.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-cells`,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/conv3x3.ts
-//
 // DSP cell `conv3x3(a, k00..k22, divisor, bias)` — a 3×3 spatial convolution (the
 // heavier MAC kernel a `dsp` tile runs, design §1.3). Reads the 3×3 neighbourhood
 // of input `a` (one texel step from `uResolution`), multiplies by the nine tap

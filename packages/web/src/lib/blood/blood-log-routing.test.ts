@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-log-routing.test.ts
-//
 // The severity router that fixed "module blood renders … no console errors"
 // failing on a CLEAN CHECKOUT OF MAIN (#1548).
 //

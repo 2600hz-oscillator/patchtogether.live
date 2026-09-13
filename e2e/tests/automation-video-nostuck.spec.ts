@@ -1,5 +1,3 @@
-// e2e/tests/automation-video-nostuck.spec.ts
-//
 // (Named `automation-*`, NOT `video-*`, so it runs in the normal sharded e2e
 // lane — it is LIGHT: a paused engine stepped a few frames, reading the engine
 // PARAM VALUE, never pixels. It deliberately does not match the heavy-WebGL

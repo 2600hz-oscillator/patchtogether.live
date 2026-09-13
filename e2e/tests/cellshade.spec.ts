@@ -1,5 +1,3 @@
-// e2e/tests/cellshade.spec.ts
-//
 // CELLSHADE (cel-shader video processor) functional e2e — the REAL
 // source → module → audible-output chain.
 //

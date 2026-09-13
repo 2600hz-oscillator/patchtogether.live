@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/intent.ts
-//
 // Intent shape — exactly mirrors e2e/chaos/lib/intent.ts. Kept as a separate
 // in-browser copy so packages/web doesn't import from e2e/ (one-way deps).
 // Re-test parity: see carl/personality.test.ts.

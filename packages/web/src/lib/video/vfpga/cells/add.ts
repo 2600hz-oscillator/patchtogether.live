@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/add.ts
-//
 // CLB cell `add(a, b, gain)` — the additive ALU cell: sums two inputs and clamps
 // to [0,1] (an adder / brightener / keyed-fill compositor). `gain` scales the sum
 // (default 1). Two inputs (a, b), one knob (gain). Alpha is summed + clamped too.

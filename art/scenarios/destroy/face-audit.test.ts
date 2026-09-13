@@ -1,5 +1,3 @@
-// art/scenarios/destroy/face-audit.test.ts
-//
 // THE ADVERSARIAL AUDIT FOR DESTROY, and the permanent anchor under its
 // faceplate (queue Q18).
 //

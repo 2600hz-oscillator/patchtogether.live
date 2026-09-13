@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-combine-graph.test.ts
-//
 // Pure-function coverage for the TOYBOX Phase-4 combine GRAPH: the default
 // graph shape, topo-sort (Kahn), cycle detection, and the connect/add/delete
 // validators the editor + Yjs mutators are built on. Mirrors how the linear
@@ -403,7 +401,6 @@ describe('LAYER INPUT (feedback-tap) edges', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The reported defect: a layer-input tap ALREADY in the graph poisoned the
 // cycle walk for every LATER connection.
 //
@@ -417,7 +414,6 @@ describe('LAYER INPUT (feedback-tap) edges', () => {
 // control that a GENUINE same-frame cycle is still refused (the easy wrong fix
 // is to weaken cycle detection into uselessness), and (c) the pre-existing
 // edge-being-added exemption, which must survive.
-// ---------------------------------------------------------------------------
 describe('cycle detection with a LAYER-INPUT tap ALREADY wired', () => {
   /**
    * The reported topology, minimally:
@@ -864,12 +860,10 @@ describe('combineDisplayNames (#56 1-based sources + #58 unique ops)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Batch op nodes (#node-batch): 12 new combine ops. The SHADER itself is
 // e2e/VRT-only (jsdom can't render); these cover the pure DATA MODEL — every op
 // is registered, has params, a unique non-colliding shader index, the right port
 // shape, default params, a unique ordinal name, and topo-sorts into a valid DAG.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /** The 12 batch ops added in this PR + their expected port count + statefulness. */
 const BATCH_OPS: Array<{

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/painter/paint-surface.ts
-//
 // THE PAINTER INTERACTION SEAM — one write path, two mounts.
 //
 // ⚠ WHY THIS FILE EXISTS AT ALL. PAINTER's drawing surface accepts pointer

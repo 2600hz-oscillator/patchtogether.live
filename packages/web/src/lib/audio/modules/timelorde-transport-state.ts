@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde-transport-state.ts
-//
 // TIMELORDE's TRANSPORT STATE — the one place the rack's clock says which of
 // its four states it is in, and the answer to "why is my whole rack stopped".
 //

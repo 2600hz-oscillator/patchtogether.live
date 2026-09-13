@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-engine.ts
-//
 // The real-time record + playback CORES for the clip automation lane (task #183),
 // kept PURE + injectable so they unit-test deterministically (fake clock, fake
 // param driver) — no AudioContext / Yjs needed. The clipplayer tick() adapter
@@ -23,9 +21,7 @@ import {
   type AutomationTrack,
 } from './clip-types';
 
-// ---------------------------------------------------------------------------
 // PLAYBACK — lookahead ramp scheduling (pure)
-// ---------------------------------------------------------------------------
 
 /** One scheduled param write: `value` at audio time `at`. `ramp` true ⇒ a
  *  linear ramp to it (continuous); false ⇒ a hard step (discrete/hold). */
@@ -151,9 +147,7 @@ export function trackInterp(
   return paramCurve === 'discrete' ? 'hold' : 'linear';
 }
 
-// ---------------------------------------------------------------------------
 // RECORD — decimation gate + ring buffer (stateful, injectable)
-// ---------------------------------------------------------------------------
 
 export interface RecordGateOpts {
   /** Min |Δvalue| (normalized 0..1) to emit a new point mid-sweep. */
@@ -218,9 +212,7 @@ export class RecordGate {
   }
 }
 
-// ---------------------------------------------------------------------------
 // RECORD WINDOW — quantized punch-in / punch-out (pure helpers)
-// ---------------------------------------------------------------------------
 
 /**
  * CONTINUOUS-OVERDUB recorder (owner's chosen model, 2026-07-15). Arms, PUNCHES

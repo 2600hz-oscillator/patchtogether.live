@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/wavetable-osc.ts
-//
 // Shared wavetable oscillator engine. WAVESCULPT (4-osc 3D scene engine)
 // is the live consumer; the engine is kept generic enough that future
 // wavetable modules can adopt it. Lives in `lib/` so the dist build

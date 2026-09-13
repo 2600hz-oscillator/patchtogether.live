@@ -1,5 +1,3 @@
-// e2e/tests/behavioral-observation-window.spec.ts
-//
 // THE BEHAVIORAL SWEEP'S OWN OBSERVATION WINDOW AND ITS BUDGET, under a
 // deliberately STARVED MAIN THREAD.
 //

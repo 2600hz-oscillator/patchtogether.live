@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/master-limiter-dsp.ts
-//
 // MASTER LIMITER — the terminal safety stage for `audioOut`, replacing the
 // full-band stereo-linked `DynamicsCompressorNode` that the DSP audit indicted
 // (the decision: docs/adr/010-terminal-sink-and-audio-health.md; the audit:

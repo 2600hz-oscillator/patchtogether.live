@@ -1,5 +1,3 @@
-// e2e/tests/skifree-face.spec.ts
-//
 // SKIFREE'S FACE — the DEFAULT shell, and the two shipping defects it repairs.
 //
 // ── ⚠ WHY THIS FILE EXISTS AND WHY IT BOOTS `/rack` ────────────────────────

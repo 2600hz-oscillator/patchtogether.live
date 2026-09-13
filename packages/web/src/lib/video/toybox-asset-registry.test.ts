@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-asset-registry.test.ts
-//
 // The TOYBOX asset provider seam (#1576, workstream 2).
 //
 // ⚠ SCOPE — what these tests CANNOT see, stated up front:
@@ -69,9 +67,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// ---------------------------------------------------------------------------
 // THE HARD CONSTRAINT: lookups are SYNCHRONOUS.
-// ---------------------------------------------------------------------------
 
 describe('sync lookup contract (the constraint the seam exists to preserve)', () => {
   it('getContentMeta / getModelMeta / getPresetMeta return values, never promises', async () => {
@@ -100,9 +96,7 @@ describe('sync lookup contract (the constraint the seam exists to preserve)', ()
   });
 });
 
-// ---------------------------------------------------------------------------
 // ORDERING: the two directions, one of which a naive cache assignment destroys.
-// ---------------------------------------------------------------------------
 
 describe('registration ordering vs manifest load', () => {
   it('an asset registered AFTER the manifest loaded is visible to the next SYNC lookup', async () => {
@@ -133,9 +127,7 @@ describe('registration ordering vs manifest load', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // PRECEDENCE: the manifest outranks runtime, in BOTH registration orders.
-// ---------------------------------------------------------------------------
 
 describe('id precedence — the static manifest always wins', () => {
   it('a runtime asset CANNOT shadow a manifest id (runtime registered second)', async () => {
@@ -216,9 +208,7 @@ describe('id precedence — the static manifest always wins', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // LISTED vs RESOLVABLE — why this PR adds nothing to any dropdown.
-// ---------------------------------------------------------------------------
 
 describe('listed vs unlisted', () => {
   it('an UNLISTED asset resolves by id but appears in NO listing', async () => {
@@ -255,9 +245,7 @@ describe('listed vs unlisted', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The family partition that replaced the two manifest arrays.
-// ---------------------------------------------------------------------------
 
 describe('listShaders / listGen derive from family', () => {
   it('partition the catalog exactly as the manifest arrays did', async () => {
@@ -283,9 +271,7 @@ describe('listShaders / listGen derive from family', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // NEGATIVE CONTROLS, in both directions, as a permanent leg.
-// ---------------------------------------------------------------------------
 
 describe('negative controls — the index really does recompose', () => {
   it('unregistering makes the id stop resolving (and re-registering brings it back)', async () => {
@@ -332,9 +318,7 @@ describe('negative controls — the index really does recompose', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Provider bookkeeping.
-// ---------------------------------------------------------------------------
 
 describe('provider registration', () => {
   it('orders providers by declared precedence, manifest ahead of runtime', async () => {
@@ -380,9 +364,7 @@ describe('provider registration', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The inline-source guard.
-// ---------------------------------------------------------------------------
 
 describe('inlineSource entries are never fetched', () => {
   it('getContent REFUSES an inline entry instead of requesting its sentinel URL', async () => {

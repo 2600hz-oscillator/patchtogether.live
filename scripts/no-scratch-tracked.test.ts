@@ -1,5 +1,3 @@
-// scripts/no-scratch-tracked.test.ts
-//
 // DENYLIST GATE: agent scratch / generated-report trees must never be TRACKED.
 //
 // Why this exists, measured 2026-08-09: five files under

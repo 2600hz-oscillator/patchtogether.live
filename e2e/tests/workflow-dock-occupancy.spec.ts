@@ -1,5 +1,3 @@
-// e2e/tests/workflow-dock-occupancy.spec.ts
-//
 // DOCK UNIFICATION — ONE bottom-drawer occupant (owner design call): the
 // pinned M/E drawer and the expanded module full-view share a single
 // bottom-drawer slot — pinned XOR full-view, never both stacked.
@@ -204,7 +202,6 @@ test.describe('bottom-drawer occupancy: pinned XOR full-view (?shell=1)', () => 
     // The pinned M/E drawer is NOT what opened (the superseded path).
     await expect(page.getByTestId('dock-zone-bottom')).toHaveCount(0);
 
-    // Open → closed.
     await page.keyboard.press('c');
     await expect(drawer).toHaveCount(0);
 

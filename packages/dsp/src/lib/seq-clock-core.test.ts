@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/seq-clock-core.test.ts
-//
 // Unit tests for the SEQ-CLOCK CORE — the sequencer's internal-clock step engine
 // extracted for the AudioWorklet (so a canvas-drag main-thread stall can't drop
 // steps). Pure + deterministic: every step boundary, gate width, swing offset and

@@ -1,5 +1,3 @@
-// e2e/tests/synesthesia-video-mode.spec.ts
-//
 // SYNESTHESIA — two coverage blocks:
 //
 //   A. RASTER VIDEO-OUT — DETERMINISTIC render-smoke (DRS). The per-band

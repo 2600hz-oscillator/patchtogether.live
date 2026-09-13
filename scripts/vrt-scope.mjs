@@ -1,5 +1,3 @@
-// scripts/vrt-scope.mjs
-//
 // DERIVE THE CAPTURE SCOPE for `task vrt:commit` (#1795).
 //
 // ── Why this exists ────────────────────────────────────────────────────────
@@ -348,7 +346,6 @@ export function selectionFor(token, tests) {
   return { tests: hit, files: [...new Set(hit.map((t) => t.file))].sort() };
 }
 
-// ───────────────────────────── CLI ───────────────────────────────
 //
 //   node scripts/vrt-scope.mjs decide [--branch <b>] [--base <ref>]
 //       → stdout: exactly one line, `SCOPE <token>` or `FULL`

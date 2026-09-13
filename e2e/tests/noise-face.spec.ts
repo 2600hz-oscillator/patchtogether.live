@@ -1,5 +1,3 @@
-// e2e/tests/noise-face.spec.ts
-//
 // THE NOISE FACE, driven for real.
 //
 // `faces-parity` already proves the one cell is present and operable, and
@@ -50,7 +48,6 @@ async function spawnNoise(page: Page): Promise<string> {
   return id;
 }
 
-/** Open the module's dock full-view and return the dock-tier shell. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
   await expect(shell).toBeVisible();

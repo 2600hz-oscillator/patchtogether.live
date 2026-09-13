@@ -1,5 +1,3 @@
-// e2e/tests/auth-routes.spec.ts
-//
 // Shape-of-auth tests. Asserts that auth-touched routes serve sane responses
 // in every deployment configuration — Clerk-configured envs (autotest, dev,
 // PR previews once env is set) AND no-Clerk envs (prod until launch).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog904c.ts
-//
 // MOOG 904C — Voltage Controlled Filter Coupler (slice of the Moog System
 // 55 / 35 clone initiative, docs/adr/018-moog-clone-provenance.md). The
 // 904C couples a 904A-style

@@ -1,5 +1,3 @@
-// e2e/tests/videobox-performance-bundle.spec.ts
-//
 // Portable Performance Bundle (.zip) round-trip — the cross-machine
 // "Export performance" / "Load performance" feature.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/_drivers.ts
-//
 // Per-module "minimum-viable driver" registry for the registry-driven
 // per-module.spec.ts. Each entry describes what extra wiring the
 // module needs to produce a measurable output:

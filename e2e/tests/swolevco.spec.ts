@@ -1,5 +1,3 @@
-// e2e/tests/swolevco.spec.ts
-//
 // SWOLEVCO end-to-end, through the REAL AudioEngine — the seam the ART lane
 // cannot reach, because ART drives `def.factory` directly and never builds an
 // edge.

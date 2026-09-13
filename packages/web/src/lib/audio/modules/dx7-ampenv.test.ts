@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/dx7-ampenv.test.ts
-//
 // Worklet-unit tests for the DX7 per-voice master OUTPUT-VCA ADSR
 // (per-voice-ADSR feature). Captures the registered Dx7Processor class via the
 // registerProcessor shim (the worklet entry never top-level-exports) and drives

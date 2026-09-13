@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/joystick/shell-extension.ts
-//
 // The JOYSTICK SHELL EXTENSION — one slot, `fullViewBody`: the real XY pad at
 // the head of the dock full view.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/export-state-only.spec.ts
-//
 // File → "Export patch (current state only)" — the history-free .ptperf.zip.
 //
 // The menu row drives the REAL export handler (exportPerformanceZipStateOnly →

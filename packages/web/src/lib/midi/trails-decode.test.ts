@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/trails-decode.test.ts
-//
 // GOLDEN BYTE VECTORS for the Bela Trails wire decoder.
 //
 // ⚠ EVERY EXPECTED BYTE IN THIS FILE IS A LITERAL. The decoder's own constants

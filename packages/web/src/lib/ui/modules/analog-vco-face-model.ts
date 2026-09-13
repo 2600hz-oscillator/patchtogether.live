@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/analog-vco-face-model.ts
-//
 // THE PURE MODEL BEHIND ANALOG VCO's FACEPLATE — the readouts and the hero
 // picture's geometry, mirroring `packages/dsp/src/analog-vco.dsp` line for line.
 //

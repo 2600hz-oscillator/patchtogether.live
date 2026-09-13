@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/moog956/Moog956RibbonBody.svelte
-  //
   // THE 956's DOCK SURFACE — the playable ribbon at the head of the dock full
   // view, at the full width of the plate.
   //

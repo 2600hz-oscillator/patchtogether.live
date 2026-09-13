@@ -1,5 +1,3 @@
-// e2e/tests/quadralogical-face-screen.spec.ts
-//
 // THE QUADRALOGICAL FACE SCREEN — the two claims its design rests on that no
 // other gate can see (#2102).
 //
@@ -112,7 +110,6 @@ function buildEdges() {
   return edges;
 }
 
-/** Open the quad's dock full-view and return the dock-tier shell. */
 async function openQuadDock(page: Page) {
   const shell = page.locator('.svelte-flow__node[data-id="quad"] [data-testid="module-shell"]');
   await expect(shell, 'the promoted face renders a ModuleShell tile in the lane').toBeVisible();

@@ -1,5 +1,3 @@
-// e2e/tests/frogger.spec.ts
-//
 // FROGGER module end-to-end. Mirrors modtris.spec.ts:
 //
 //   1. The card mounts cleanly + renders its canvas with no console errors.
@@ -149,7 +147,6 @@ test('frogger: BUGGLES.clock patched into start_gate restarts the game', async (
   expect(later!.isGameInPlay).toBe(true);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE FACE, ON THE DEFAULT SHELL.
 //
 // ⚠ NOTHING IN THIS SUITE HAD EVER OBSERVED FROGGER UNDER THE SHIPPING SHELL.
@@ -158,7 +155,6 @@ test('frogger: BUGGLES.clock patched into start_gate restarts the game', async (
 // unexercised — which is how frogger sat for months rendering a BLANK
 // PLACEHOLDER in the lane while its game ran and pulsed gates underneath.
 // These legs navigate the DEFAULT shell deliberately.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /** Read the game's own tick + timer + a sprite signature, IN THE PAGE.
  *

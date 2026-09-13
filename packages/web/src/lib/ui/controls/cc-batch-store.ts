@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/cc-batch-store.ts
-//
 // The Y.Doc-bound half of the two-lane CC batcher (see cc-commit-batch.ts
 // for the design + why lanes may never mix). Kept SEPARATE from
 // cc-commit.ts so the pump module stays Y-free for unit tests.

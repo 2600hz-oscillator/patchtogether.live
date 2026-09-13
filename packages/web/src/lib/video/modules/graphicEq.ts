@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/graphicEq.ts
-//
 // GRAPHIC EQ — a full-screen Winamp-style graphic-EQ / VU-meter video OUTPUT.
 //
 // STEREO audio in (left + right) → 8 log-spaced frequency bands per channel,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/store.ts
-//
 // SyncedStore over Yjs. There is one logical patch graph at a time, exposed
 // as `patch` / `ydoc` / `undoManager` — but the underlying Y.Doc is REBOUND
 // every time the user enters a rackspace, so each rackspace gets a fresh,

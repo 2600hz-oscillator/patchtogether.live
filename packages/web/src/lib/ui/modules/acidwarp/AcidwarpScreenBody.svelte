@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/acidwarp/AcidwarpScreenBody.svelte
-  //
   // THE ACIDWARP SCREEN — the dock full-view body: the module's 320x240 plasma
   // display plus the SCREEN ON/OFF switch the 2026-08-18 ruling requires of
   // every video module.

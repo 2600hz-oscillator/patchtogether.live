@@ -1,5 +1,3 @@
-// e2e/fixtures/generate-hls-clip.mjs
-//
 // One-time generator for `hls-clip.mp4` — a tiny AVC + AAC MP4 with an audible
 // 440 Hz tone, used by tv-librarian-audio.spec.ts to prove the TV LIBRARIAN
 // audio path end-to-end: a tuned HLS stream's audio_l / audio_r reach the

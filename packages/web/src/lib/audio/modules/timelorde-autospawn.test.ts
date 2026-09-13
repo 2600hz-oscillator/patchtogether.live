@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde-autospawn.test.ts
-//
 // Unit tests for the pure auto-spawn predicates.
 
 import { describe, it, expect } from 'vitest';

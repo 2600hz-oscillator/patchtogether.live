@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/modtris-state.ts
-//
 // Pure deterministic game-state stepper for MODTRIS — a Tetris-clone
 // game module. Kept separate from the AudioModuleDef factory so it's
 // testable without Web Audio + reusable by the cross-peer awareness

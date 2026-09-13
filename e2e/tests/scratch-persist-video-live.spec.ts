@@ -1,5 +1,3 @@
-// e2e/tests/scratch-persist-video-live.spec.ts
-//
 // REGRESSION (fix/video-engine-persist-reconcile) — the owner-reported bug:
 // returning to a persisted rack (e.g. a PR-preview rack loaded from the /rack?seed=none
 // scratch IndexedDB replica) restores the module GRAPH, but the VIDEO CONTENT

@@ -1,9 +1,6 @@
-// packages/web/src/lib/ui/workspace-typecheck-guard.test.ts
-//
 // EVERY TS-BEARING WORKSPACE DEFINES `typecheck` — the --if-present hole
 // cannot silently reopen (#1499).
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE BUG THIS EXISTS FOR
 //
 // Root `package.json` runs `npm run typecheck --workspaces --if-present`.
@@ -19,7 +16,6 @@
 // This guard makes the hole structural: a NEW workspace (or a removed
 // script) reddens here, not six weeks later at runtime.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // WHAT IT CHECKS (and what it structurally cannot see)
 //
 //   1. The workspace list is read off root package.json — DERIVED, never a

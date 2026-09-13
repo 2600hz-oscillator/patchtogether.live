@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/note-binding.test.ts
-//
 // Unit tests for the PURE note-message parsing + binding guards.
 
 import { describe, it, expect } from 'vitest';

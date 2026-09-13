@@ -1,5 +1,3 @@
-// packages/dsp/src/moog911.ts
-//
 // MOOG 911 ENVELOPE GENERATOR — Moog System 55/35 contour generator
 // AudioWorkletProcessor.
 //

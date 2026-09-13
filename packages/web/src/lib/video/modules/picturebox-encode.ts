@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/picturebox-encode.ts
-//
 // Pure helpers for the PICTUREBOX multiplayer-sync pipeline:
 //   1. zoom-fit-crop math (4:3 cover, at the engine VIDEO_RES) — node-testable.
 //   2. Uint8Array <-> base64 (browser + jsdom safe).
@@ -182,9 +180,7 @@ export async function base64ToImageBitmap(
   });
 }
 
-// ---------------------------------------------------------------------------
 // Animated-GIF support
-// ---------------------------------------------------------------------------
 
 /**
  * Count the image frames in a GIF byte stream — PURE, node-testable (no

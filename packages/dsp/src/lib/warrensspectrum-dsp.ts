@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-dsp.ts
-//
 // WARREN'S SPECTRUM — the SPECTRAL RESYNTH engine (phase 1) + the routing
 // into the 8-band FILTERBANK (phase 2; the bank itself is in
 // ./warrensspectrum-filterbank.ts).
@@ -124,9 +122,7 @@ import { wsVoiceWaveform } from './warrensspectrum-voice';
 // re-exported here because that is where every existing importer looks for it.
 export { wsVoiceWaveform };
 
-// ---------------------------------------------------------------------------
 // Fixed algorithm constants.
-// ---------------------------------------------------------------------------
 
 /** Analysis window. 2048 = the VST's hardcoded order-11 FFT
  *  (`PluginProcessor.cpp:55` — `resynth_.prepare(sampleRate, 11)`). */
@@ -172,9 +168,7 @@ const RESIDUAL_ENV_TAU_S = 0.025;
  *  BYTE-REPRODUCIBLE, which is what makes an ART golden possible at all. */
 export const WS_RESIDUAL_NOISE_SEED = 0x9e3779b9;
 
-// ---------------------------------------------------------------------------
 // ENGINE MODE (phase 4) — `engineMode`, `PluginParams.h:119-126`.
-// ---------------------------------------------------------------------------
 
 /**
  * `engineMode` values. The VST declares THREE
@@ -246,9 +240,7 @@ const WET_SMOOTH_TAU_S = 0.005;
  *  no test could see. */
 const WET_OFF_EPSILON = 1e-6;
 
-// ---------------------------------------------------------------------------
 // Precomputed tables (module scope — shared by every instance, read-only).
-// ---------------------------------------------------------------------------
 
 const HANN = new Float32Array(WS_FFT_SIZE);
 for (let n = 0; n < WS_FFT_SIZE; n++) {
@@ -337,10 +329,8 @@ export function wsPeakSalience(
   return peakAmp * bonus;
 }
 
-// ---------------------------------------------------------------------------
 // TPT state-variable filter — a transcription of the VST's `dsp/Svf.h`,
 // used ONLY for the 16 residual band filters (bandpass output).
-// ---------------------------------------------------------------------------
 
 class Svf {
   private ic1 = 0;
@@ -383,9 +373,7 @@ class Svf {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Engine
-// ---------------------------------------------------------------------------
 
 export interface WsTrackSnapshot {
   freqHz: number;
@@ -1190,7 +1178,6 @@ export class WarrensSpectrumEngine {
     this.numActive = n;
   }
 
-  // ---- render ----
 
   /**
    * Advance one sample.

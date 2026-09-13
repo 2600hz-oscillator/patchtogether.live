@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-learn.test.ts
-//
 // Unit tests for the MIDI Learn singleton. Uses the MidiAccessLike /
 // MidiInputLike / MidiEventLike injection seam from midi-cv-buddy so we
 // can drive incoming CC messages without a real Web MIDI device.

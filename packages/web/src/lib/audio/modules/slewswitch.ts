@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/slewswitch.ts
-//
 // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
 // One of the three ATLANTIS-PATCH support modules; useful far beyond
 // the Atlantis demo as a general CV smoother + router.

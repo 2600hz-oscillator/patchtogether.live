@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-surface.ts
-//
 // TOYBOX Phase-6 texmap — PURE helpers for the OBJ "surface texture from another
 // layer" feature. No GL, no DOM, no Yjs: just the dependency-aware render-order
 // resolution + the per-layer "is this surface source SAFE to sample this frame"

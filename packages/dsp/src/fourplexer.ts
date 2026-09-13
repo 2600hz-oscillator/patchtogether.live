@@ -1,5 +1,3 @@
-// packages/dsp/src/fourplexer.ts
-//
 // 4PLEXER — 4-in / 4-out discrete signal router worklet.
 //
 // Each OUTPUT carries EXACTLY ONE of the four signal inputs at a time

@@ -1,5 +1,3 @@
-// e2e/audio-drift/_capture.ts
-//
 // Audio-drift research helper: drives a Page to install a MediaStreamAudioDestinationNode
 // + ScriptProcessor tap on the engine's audioOut module so we can record N seconds of
 // PCM samples from the live AudioContext and pull them back to Node for comparison.

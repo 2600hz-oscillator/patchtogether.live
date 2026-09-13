@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/gatemaiden-dsp.ts
-//
 // Pure per-sample core for GATEMAIDEN — a single-input gate↔trigger converter
 // (the user-facing repackaging of the MOOG 961 converter primitives + the
 // Doepfer A-162 / Maths idiom). ONE generic CV input → BOTH a gate output and

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/warrensspectrum.test.ts
-//
 // Def-level gates for WARREN'S SPECTRUM. The DSP itself is pinned by
 // packages/dsp/src/lib/warrensspectrum-dsp.test.ts (including the permanent
 // SLICE negative control and the RESIDUAL acceptance criterion) and by the

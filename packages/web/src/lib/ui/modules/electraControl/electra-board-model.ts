@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/electraControl/electra-board-model.ts
-//
 // THE BOARD'S ACCESSIBLE NAMES — the sentences `ElectraGridBody.svelte` speaks
 // and never paints.
 //

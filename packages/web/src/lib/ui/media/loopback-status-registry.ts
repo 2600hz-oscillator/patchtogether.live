@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/loopback-status-registry.ts
-//
 // THE LOOPBACK CAPTURE-STATUS SEAM — how the faceplate can show, and drive, a
 // tab capture whose `getDisplayMedia` stream has exactly ONE owner.
 //

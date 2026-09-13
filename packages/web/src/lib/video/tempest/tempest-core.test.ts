@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/tempest/tempest-core.test.ts
-//
 // Pure unit tests for the TEMPEST geometry core (P0) — GL-free, deterministic.
 
 import { describe, expect, it } from 'vitest';

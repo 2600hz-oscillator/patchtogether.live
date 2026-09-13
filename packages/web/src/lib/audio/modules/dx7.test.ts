@@ -1,11 +1,7 @@
-// packages/web/src/lib/audio/modules/dx7.test.ts
-//
 // Unit tests for the DX7 module's HOST-SIDE BRIDGE — what the factory posts to
 // the worklet, and when.
 //
-// ==========================================================================
 // WHY THESE ASSERT MESSAGE TYPES AND `startSample`, NEVER "is it still audible"
-// ==========================================================================
 // `{type:'patch'}` is the DESTRUCTIVE message: applyPatch zeroes `lastGate`,
 // so a still-HIGH gate reads as a fresh rising edge on the very next block and
 // the held note HARD-RETRIGGERS — a click and a new attack, not silence.
@@ -249,9 +245,7 @@ describe('dx7Def: factory + the incremental algorithm / feedback bridge', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE STAMP → POLL PATH: which message a data change becomes
-// ---------------------------------------------------------------------------
 
 describe('dx7Def: voiceRev poll — preset LOAD vs operator EDIT', () => {
   const NID = 'dx7-poll-test';
@@ -563,9 +557,7 @@ describe('dx7VoiceSignature — the poll’s content change test', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE CONTINUITY PROOF — host setParam driven into the REAL worklet
-// ---------------------------------------------------------------------------
 //
 // Everything above discriminates on message TYPE, which is only as good as the
 // claim "the algorithm message is non-destructive". This suite removes the

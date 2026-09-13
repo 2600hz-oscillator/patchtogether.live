@@ -1,5 +1,3 @@
-// e2e/tests/collapse-keeps-playing.spec.ts
-//
 // THE REGRESSION GUARD for the owner P0: "videovarispeed stops playing if its
 // card is collapsed. i put it on scene, expand, load video, play → stops
 // playing as soon as the expanded tray is dismissed."
@@ -277,9 +275,7 @@ async function boot(page: Page): Promise<void> {
   await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE INSTRUMENT: PLAYBACK PROGRESS, NOT A CLOCK READING (#1569)
-// ───────────────────────────────────────────────────────────────────────────
 //
 // WHY THIS EXISTS. The assertion used to be `after.currentTime > tBefore` plus
 // `some(!paused)` — two INSTANTANEOUS samples of `currentTime`. That is only a

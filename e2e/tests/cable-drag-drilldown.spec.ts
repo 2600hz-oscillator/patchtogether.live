@@ -1,5 +1,3 @@
-// e2e/tests/cable-drag-drilldown.spec.ts
-//
 // Cable-drag → drill-down menu (NO hover action, NO auto-patch).
 //
 // Owner report: dragging a cable from a card's OUTPUT onto a PatchPanel card

@@ -1,5 +1,3 @@
-// packages/web/src/lib/build-info.ts
-//
 // The "live build" stamp surfaced on the /docs pages. Answers the "is prod
 // current?" question at a glance — the health endpoint's version alone
 // (1.x.x) doesn't reveal the underlying git SHA or when the build shipped.

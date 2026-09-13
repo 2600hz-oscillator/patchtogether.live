@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/b3ntb0x-dsp.ts
-//
 // B3NTB0X — pure (no-WebGL) DSP helpers for the circuit-level NTSC
 // composite re-architecture. These are the load-bearing math primitives
 // that the four GLSL passes (EncodeComposite → BendCircuit →
@@ -32,9 +30,7 @@
 // filter (~2003) — but NO code is copied from either, and NOTHING is
 // imported from the existing BENTBOX / TOYBOX / QUADRALOGICAL modules.
 
-// ---------------------------------------------------------------------------
 // Colour-space conversion (standard NTSC FCC RS-170A matrices).
-// ---------------------------------------------------------------------------
 
 /** RGB (0..1) → YIQ. Y ≈ luma in [0,1]; I, Q roughly in [-0.6, 0.6]. */
 export function rgbToYiq(r: number, g: number, b: number): { y: number; i: number; q: number } {
@@ -57,7 +53,6 @@ export function yiqToRgb(y: number, i: number, q: number): { r: number; g: numbe
   };
 }
 
-// ---------------------------------------------------------------------------
 // NTSC line geometry + composite voltages.
 //
 // We model ONE active picture region per output row (the upstream image is
@@ -70,7 +65,6 @@ export function yiqToRgb(y: number, i: number, q: number): { r: number; g: numbe
 //   COLOUR BURST    ~0.100 .. 0.140   8-9 cycles, amp ~0.15, phase 180°
 //   BACK PORCH      ~0.140 .. 0.160   voltage  0.0
 //   ACTIVE VIDEO    ~0.160 .. 1.000   the picture (Y + I cos + Q sin)
-// ---------------------------------------------------------------------------
 
 export const SYNC_TIP_END = 0.075;
 export const BLANK_END = 0.10;
@@ -110,9 +104,7 @@ export function syncVoltageForColumn(lineFrac: number): number {
   return BLANK_VOLTAGE; // blanking, porches, and the DC base of burst/active
 }
 
-// ---------------------------------------------------------------------------
 // Subcarrier + composite synthesis.
-// ---------------------------------------------------------------------------
 
 /**
  * Subcarrier phase at oversampled active-column index `colIdx`, given
@@ -136,10 +128,8 @@ export function burstVoltage(phase: number, starve = 0): number {
   return BURST_AMPLITUDE * (1 - Math.max(0, Math.min(1, starve))) * Math.cos(phase + Math.PI);
 }
 
-// ---------------------------------------------------------------------------
 // Bend-circuit signal-chain primitives. All operate on the scalar composite
 // voltage `v`.
-// ---------------------------------------------------------------------------
 
 /**
  * One-pole high-pass / leaky-baseline AC-coupling. Returns BOTH the
@@ -216,9 +206,7 @@ export function asymSat(v: number, driveP: number, driveN: number): number {
   return softClip(v * d) / softClip(d);
 }
 
-// ---------------------------------------------------------------------------
 // Decoder primitives — quadrature synchronous demod + Gaussian horizontal LP.
-// ---------------------------------------------------------------------------
 
 /** Gaussian tap weight for the horizontal LP: exp(−2·k²/N²). */
 export function gaussianWeight(k: number, n: number): number {
@@ -263,10 +251,8 @@ export function quadDemod(
   return { y: ySum / wSum, i: iSum / wSum, q: qSum / wSum };
 }
 
-// ---------------------------------------------------------------------------
 // MIRROR fold (ported clean from the kaleidoscope convention — NOT imported
 // from bentbox). Visual-top = uv.y ≥ 0.5 (BACKDRAFT-verified).
-// ---------------------------------------------------------------------------
 
 /** Pure CPU mirror of the CRT shader's mirrorUv(): MIRROR X keeps u<0.5 and
  *  reflects the right half (1−u); MIRROR Y keeps the visual-top half
@@ -283,9 +269,7 @@ export function b3ntb0xMirrorUv(
   };
 }
 
-// ---------------------------------------------------------------------------
 // BURST STARVE (decode-side colour-burst starvation).
-// ---------------------------------------------------------------------------
 
 /** Strength of the subcarrier-into-luma crawl at full burst starvation. The
  *  DECODE shader (b3ntb0x.ts DECODE_FRAG) keeps an inline copy of this
@@ -312,7 +296,6 @@ export function b3ntb0xBurstStarve(
   return { i: i * colourKill, q: q * colourKill, lumaCrawl: subcarrierEnergy * s * BURST_STARVE_CRAWL };
 }
 
-// ---------------------------------------------------------------------------
 // HUE — receiver tint control (demod-axis rotation).
 //
 // A real TV "Tint/Hue" knob rotates the synchronous-demodulator's reference
@@ -322,7 +305,6 @@ export function b3ntb0xBurstStarve(
 // (it does not cancel against the encoder, unlike a carrier-phase change that
 // the decoder also tracks). hue −1..+1 maps to ±π (one full half-turn each
 // way is plenty of tint swing; ±π would alias).
-// ---------------------------------------------------------------------------
 
 /** Max demod-axis rotation (radians) at hue = ±1. ±0.9π ≈ a strong tint shift
  *  without wrapping all the way around to the same colour. Shared with the
@@ -340,7 +322,6 @@ export function b3ntb0xHueRotate(i: number, q: number, hue: number): { i: number
   return { i: i * c - q * s, q: i * s + q * c };
 }
 
-// ---------------------------------------------------------------------------
 // SUBCARRIER DRIFT — uncorrected colour-subcarrier instability (rainbow swim).
 //
 // The receiver locks its demod phase to the colour BURST at the START of each
@@ -352,7 +333,6 @@ export function b3ntb0xHueRotate(i: number, q: number, hue: number): { i: number
 // phase ERROR added to the encoder carrier but NOT reflected in the burst the
 // decoder locks to (the decoder uses a clean per-line reference), so the
 // mismatch is real and does not cancel.
-// ---------------------------------------------------------------------------
 
 /** Peak drift phase error (radians) per unit of active-line fraction, at
  *  drift = 1. The error at active-fraction f and time t is
@@ -371,7 +351,6 @@ export function b3ntb0xDriftPhase(activeFrac: number, tSec: number, drift: numbe
   return d * DRIFT_PHASE_GAIN * (Math.max(0, Math.min(1, activeFrac)) + tSec * DRIFT_TIME_RATE);
 }
 
-// ---------------------------------------------------------------------------
 // BEND NETWORK A–D — the circuit-bent patch points on the composite VOLTAGE.
 //
 // Each is a distinct, classic circuit-bend / video-mangle artifact applied to
@@ -392,7 +371,6 @@ export function b3ntb0xDriftPhase(activeFrac: number, tSec: number, drift: numbe
 //   D — CHROMA→SYNC BLEED: add a fraction of the raw subcarrier ripple onto
 //       the DC path (cross-coupling) → the picture modulates the baseline,
 //       reading as luma buzz / rolling contamination.
-// ---------------------------------------------------------------------------
 
 /** A — WAVEFOLD. `amt` −1..+1: pre-gains the voltage then reflects any
  *  excursion past ±threshold back inward (a wavefolder); the threshold shrinks
@@ -436,7 +414,6 @@ export function b3ntb0xBendBleed(v: number, ripple: number, amt: number): number
   return v + a * 0.8 * ripple;
 }
 
-// ---------------------------------------------------------------------------
 // AC/DC COUPLING droop — strengthened so it is visible on a STATIC scene.
 //
 // True capacitive (AC) coupling removes the DC level: a large flat bright area
@@ -444,7 +421,6 @@ export function b3ntb0xBendBleed(v: number, ripple: number, amt: number): number
 // original leak was so slow that on a still frame baseline ≈ DC ≈ v, so the
 // HP'd signal ≈ 0 → no visible change. We expose the coupling strength and a
 // FAST-enough leak so flat areas visibly lose their DC pedestal.
-// ---------------------------------------------------------------------------
 
 /** Leak coefficient for the AC-coupling one-pole at full coupling. Larger =
  *  the baseline tracks v faster = more DC removed even within a still frame.

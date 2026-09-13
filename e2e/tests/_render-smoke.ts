@@ -1,5 +1,3 @@
-// e2e/tests/_render-smoke.ts
-//
 // Shared harness for Layer-B DETERMINISTIC render-smoke (DRS) specs — the cure
 // for the wall-clock-sampling flake class (plan §5 Layer B). Instead of
 // `spawn → waitForTimeout(N) → read pixels once and hope enough rAF frames +

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cloudseed-preset-actions.ts
-//
 // THE ONE CLOUDSEED PRESET RECALL — shared by the legacy card's slot footer and
 // the curated face's PRESET cell (via SHELL_PARAM_WRITES).
 //

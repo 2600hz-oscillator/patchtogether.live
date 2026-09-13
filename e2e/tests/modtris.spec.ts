@@ -1,5 +1,3 @@
-// e2e/tests/modtris.spec.ts
-//
 // MODTRIS module end-to-end (research prototype). Mirrors pong.spec.ts:
 //
 //   1. The card mounts cleanly + renders its 16-bit canvas.
@@ -121,7 +119,6 @@ test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolutio
     .toBeGreaterThan(initial.tick);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE FACE, ON THE DEFAULT SHELL.
 //
 // ⚠ NOTHING IN THIS SUITE HAD EVER OBSERVED MODTRIS UNDER THE SHIPPING SHELL.
@@ -136,7 +133,6 @@ test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolutio
 // PROMOTING the module reveals it — a thrown body renders as an empty pane and
 // several of these assertions would fail with a locator message that says
 // nothing about the cause.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /** Read the well signature, the tick and the NEXT queue head, IN THE PAGE.
  *

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/warrensvisions.ts
-//
 // WARREN'S VISIONS — a 2D SPECTRAL VIDEO RESYNTHESIZER.
 //
 // The visual analogue of WARREN'S SPECTRUM (`packages/web/src/lib/audio/
@@ -115,7 +113,6 @@ import {
   WV_TAPER_FLOOR,
 } from '$lib/video/warrensvisions-core';
 
-// ─────────────────────────── params ───────────────────────────
 
 /**
  * Declared ranges live HERE and nowhere else — the card imports them rather
@@ -414,7 +411,6 @@ export const warrensvisionsDef: VideoModuleDef = {
     },
   },
 
-  // ─────────────────────────── face ───────────────────────────
   //
   // THE FACEPLATE. Hash-transparent by construction — `scripts/attest-code-
   // basis.ts` strips a def's own top-level `face` before hashing, so this block

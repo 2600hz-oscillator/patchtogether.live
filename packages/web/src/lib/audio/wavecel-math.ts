@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavecel-math.ts
-//
 // Pure DSP math used by the WAVECEL worklet (packages/dsp/src/wavecel.ts).
 // Mirrored here so unit tests can pin spread→stereo math, wavefolder
 // curve, and frame interpolation without the AudioWorkletGlobalScope.

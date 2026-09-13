@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/bluebox-dsp.test.ts
-//
 // Pure unit tests for the BLUEBOX tone-table core (Bell System DTMF grid +
 // the 2600 Hz blue-box / 1700+2200 Hz red-box phreak tones). Extracted but
 // untested — and a single transposed frequency would route "the wrong digit"

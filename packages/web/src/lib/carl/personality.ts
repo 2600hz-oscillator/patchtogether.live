@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/personality.ts
-//
 // Rackspace Carl personality — in-browser port of chaos Stage-1 / Stage-2
 // Carl (see e2e/chaos/lib/personalities/carl.ts). Plays *music* by trying
 // to assemble full signal chains the way a human patcher would:

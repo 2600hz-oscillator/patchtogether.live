@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-paramtarget-invariant.test.ts
-//
 // Universal CV-input paramTarget invariant.
 //
 // Rationale (audit issue #G.1):

@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-types.ts
-//
 // Shared Launchpad-vocabulary TYPES the Push adapter speaks. The Push binds to
 // the shipped Launchpad control brain by remapping its events into the EXACT
 // Launchpad event vocabulary (decision A, plan §3), so these are re-exports of

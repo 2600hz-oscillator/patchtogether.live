@@ -1,5 +1,3 @@
-// packages/web/src/lib/devices/device-module.test.ts
-//
 // The device handle, driven exactly as the engine drives it: `setParam` for a
 // knob move, `scheduleParam` for clip automation, `holdParam` for a transport
 // seam. Everything is injected (clock, timer, port), so the interesting cases

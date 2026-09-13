@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/patch-convenience-columns.test.ts
-//
 // Coverage for the WORKFLOW CHANNEL-COLUMNS wiring planners (net-new on top of
 // the assign-to-channel patch-convenience seam):
 //   * resolveMainAudioIn + MAIN_IN_IDS      — the input-side mirror of the out.
@@ -54,9 +52,7 @@ function liveDef(type: string): ConvenienceDef | undefined {
     | undefined;
 }
 
-// ================================================================
 // resolveMainAudioIn — mirror of resolveMainAudioOut
-// ================================================================
 
 describe('resolveMainAudioIn (pure)', () => {
   it('a declared stereo input pair resolves (naming-agnostic)', () => {
@@ -90,9 +86,7 @@ describe('resolveMainAudioIn (pure)', () => {
   });
 });
 
-// ================================================================
 // chainWiring override — the "fixable in code" per-module declaration
-// ================================================================
 
 describe('chainWiring override (owner "fixable in code")', () => {
   it('inPorts stereo override wins over the default resolution', () => {
@@ -146,9 +140,7 @@ describe('chainWiring override (owner "fixable in code")', () => {
   });
 });
 
-// ================================================================
 // DECLARATIVE source / dsp / both classification override (Design-D)
-// ================================================================
 
 describe('declarative chain-role classification override', () => {
   // The 8 FM/exciter oscillators that now DECLARE role:'source'. Their only
@@ -265,9 +257,7 @@ describe('declarative chain-role classification override', () => {
   });
 });
 
-// ================================================================
 // sendPorts — against the live mixmstrs def
-// ================================================================
 
 describe('sendPorts matches the live mixmstrs def', () => {
   it('has 2 send slots', () => {
@@ -288,9 +278,7 @@ describe('sendPorts matches the live mixmstrs def', () => {
   });
 });
 
-// ================================================================
 // planPairLink — the 4 stereo↔mono cases, explicit L+R
-// ================================================================
 
 describe('planPairLink (adjacent pair, explicit L+R)', () => {
   const stereoSrc = def([], [port('outL', 'audio'), port('outR', 'audio')], [['outL', 'outR']]);
@@ -379,9 +367,7 @@ describe('planPairLink (adjacent pair, explicit L+R)', () => {
   });
 });
 
-// ================================================================
 // planColumnWiring — the deterministic full-column planner
-// ================================================================
 
 // Synthetic members for a source → filter → reverb → mixer column.
 const VCO: ConvenienceDef = def([port('pitch', 'pitch'), port('gate', 'gate', { edge: 'gate' })], [port('out', 'audio')]);
@@ -579,9 +565,7 @@ describe('planColumnWiring (deterministic full-column planner)', () => {
   });
 });
 
-// ================================================================
 // PART B — additive NOTE TAP + ES-9 RETURN AUDIO (CV Buddy lanes)
-// ================================================================
 
 // Synthetic note-sink defs mirroring the real cvBuddy / midiOutBuddy shapes:
 // cv/gate INPUTS, no audio, a noteSink laneTap. CV Buddy also declares
@@ -599,10 +583,8 @@ const MIDI_OUT: ConvenienceDef = def(
   { role: 'noteSink', laneTap: { pitchIn: 'pitch', gateIn: 'gate', velIn: 'velocity' } },
 );
 
-// ================================================================
 // BUG-B — lane note wiring: poly+gate for instruments, the SHAPE note-tap
 // for pure-CV note consumers (adsr-class), and video members stay unwired.
-// ================================================================
 
 describe('planColumnWiring — BUG-B lane note wiring', () => {
   const laneCtx = (members: ColumnMember[], headNodeId: string | null = null) => ({
@@ -830,9 +812,7 @@ describe('isReturnSource + isNoteSink (Part B classifiers)', () => {
   });
 });
 
-// ================================================================
 // resolveColumnHead — the one-head classifier (tri-state flag)
-// ================================================================
 
 describe('resolveColumnHead (deterministic one-head classifier)', () => {
   const s = (nodeId: string, isHead?: boolean) => ({ nodeId, isHead });
@@ -883,9 +863,7 @@ describe('resolveColumnHead (deterministic one-head classifier)', () => {
   });
 });
 
-// ================================================================
 // planSendWiring — send loop (mixer send → head → tail → return)
-// ================================================================
 
 describe('planSendWiring (aux-send loop)', () => {
   it('mixer send1 → reverb.in ; reverb.out → mixer ret1 (stereo reverb)', () => {
@@ -920,9 +898,7 @@ describe('planSendWiring (aux-send loop)', () => {
   });
 });
 
-// ================================================================
 // isChainAudioParticipant — video/CV exclusion
-// ================================================================
 
 describe('isChainAudioParticipant', () => {
   it('an audio source / DSP participates; a pure-video / pure-CV module does not', () => {

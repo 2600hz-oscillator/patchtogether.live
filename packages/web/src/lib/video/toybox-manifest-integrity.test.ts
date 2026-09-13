@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-manifest-integrity.test.ts
-//
 // DATA-DRIVEN integrity check of the REAL static TOYBOX manifest
 // (packages/web/static/toybox/manifest.json) — the single source of truth the
 // card faders, the factory's GLSL/OBJ fetch, and the preset loader all read.

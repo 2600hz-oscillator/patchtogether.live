@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/phase1.test.ts
-//
 // Phase-1 module def shape sanity. We can't render shaders under
 // vitest's node runner (no WebGL2 / OffscreenCanvas), so the unit
 // layer asserts what's testable without GL: the public def shape +

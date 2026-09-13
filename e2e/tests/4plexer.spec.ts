@@ -1,5 +1,3 @@
-// e2e/tests/4plexer.spec.ts
-//
 // End-to-end coverage for 4PLEXER — 4-in / 4-out discrete signal router
 // with a per-output gate-advanced selector.
 //

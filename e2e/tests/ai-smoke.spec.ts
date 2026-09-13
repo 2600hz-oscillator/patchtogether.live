@@ -1,5 +1,3 @@
-// e2e/tests/ai-smoke.spec.ts
-//
 // AI-friendly smoke check. Designed for an AI agent to run via `task ai:check`
 // and parse the result without ambiguity. Each test does ONE thing and labels
 // it clearly. Failures dump captured console + screenshot path so the agent

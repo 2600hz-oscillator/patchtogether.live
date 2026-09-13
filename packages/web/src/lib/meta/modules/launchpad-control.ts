@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/launchpad-control.ts
-//
 // LAUNCHPAD CONTROL — a CONTROL SURFACE node that binds a PAIR of Novation
 // Launchpad Mini Mk3 units to a focused `clipplayer`. ONE module drives the
 // whole pair through the single launchpad-device + launchpad-control singleton:
@@ -72,7 +70,6 @@ export const launchpadControlDef: MetaModuleDef = {
     { id: 'launchpad-control-pair', label: 'Pair', kind: 'other', testidPrefix: 'launchpad-control-pair' },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: this module is the only thing that puts a physical Novation
   // Launchpad in charge of a clip-player. The verb a player performs on it is

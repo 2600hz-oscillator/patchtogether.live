@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-control.svelte.ts
-//
 // Ableton Push 2 CONTROL — binds a Push 2 to a focused `clipplayer` (Phase 1).
 // The Push drives the FULL Launchpad clip-launch / note-editor / arm / scene /
 // KEYS PARITY surface by INJECTING itself as the control surface of the shipped
@@ -122,9 +120,7 @@ const STORAGE_KEY_CHANNEL = 'pt.push2.selectedChannel';
  *  not — see `toggleElectraMode`. */
 const STORAGE_KEY_ELECTRA_ROW = 'pt.push2.electraRow';
 
-// ---------------------------------------------------------------------------
 // Push-LOCAL surface state (never synced — like the launchpad's activeView).
-// ---------------------------------------------------------------------------
 let selectedChannel = readSelectedChannel(); // 0..7
 /** The SHIFT modifier — the permanent-row button above channel 8 (`PUSH_CC_SHIFT`
  *  = CC 27, which is also the Launchpad-shift route). Consumed by the D-Pad ×8
@@ -170,9 +166,7 @@ function readElectraRow(): number {
   }
 }
 
-// ---------------------------------------------------------------------------
 // The CONTROL-SURFACE ADAPTER — the Push presented in the Launchpad vocabulary.
-// ---------------------------------------------------------------------------
 const pushSurface: ControlSurfacePort = {
   // launchpad-control subscribes handleKey here; we store it and feed it the
   // translated PARITY events. (Additive events never reach it.)
@@ -213,10 +207,8 @@ const pushSurface: ControlSurfacePort = {
   velocitySensitive: true,
 };
 
-// ---------------------------------------------------------------------------
 // Inbound — one handler over the raw Push stream. Parity → launchpad-control;
 // additive → the local handlers.
-// ---------------------------------------------------------------------------
 function onPushEvent(raw: Push2RxEvent): void {
   // Track the SHIFT hold locally for the D-Pad ×8 + the fine-nudge. This is the
   // permanent-row button above channel 8 (CC 27) — the same press classifyPush2
@@ -258,7 +250,6 @@ function onPushEvent(raw: Push2RxEvent): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // ELECTRA CONTROL MODE — latched, entered/left by the lower-right "Shift"
 // button (CC 49). The six leftmost display encoders drive ONE ROW of the rack's
 // ElectraControl 6×6 grid; the scroll encoder picks the row; encoders 7 and 8
@@ -269,7 +260,6 @@ function onPushEvent(raw: Push2RxEvent): void {
 // the channel-select row, Play and Undo route EXACTLY as they do outside the
 // mode — a deliberate choice, so entering it can never strand a transport or a
 // clip launch. The owner's spec is "we're just doing the control part".
-// ---------------------------------------------------------------------------
 
 /** Enter or leave ElectraControl mode. A PLAIN TOGGLE, per the owner's spec
  *  ("we don't need to hold the key, press is a toggle"). */
@@ -439,11 +429,9 @@ function logUnboundPushCc(raw: Push2RxEvent): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // LANE SELECT — the 8 buttons above the display (CC 102..109). Push-LOCAL.
 // Picks which lane's PUSH CARDS the screen shows (and which lane colour the
 // button row mirrors).
-// ---------------------------------------------------------------------------
 /**
  * The lane INDICES the eight above-display buttons select, 0-based.
  *
@@ -477,7 +465,6 @@ export function selectedLane(): number {
   return selectedChannel + 1;
 }
 
-// ---------------------------------------------------------------------------
 // Additive 5a (LED) — the 8 channel-select buttons (CC 102..109) MIRROR each
 // channel's LANE COLOUR (owner decision, replacing the placeholder red/yellow):
 // the SELECTED channel at full brightness, the unselected channels dimmed, so
@@ -485,7 +472,6 @@ export function selectedLane(): number {
 // EFFECTIVE hue (the default fill for un-picked lanes) — matching Launchpad —
 // so NO channel button is ever off. See `channelButtonValue` for why the old
 // "no bound clip → all 8 dark" gate was removed rather than kept.
-// ---------------------------------------------------------------------------
 
 /** Unselected channel-select buttons show their colour at ~30% brightness so the
  *  SELECTED channel (full brightness) reads as the current one — `pushColorIndex`
@@ -552,9 +538,7 @@ export function channelName(nodeId: string | null, channel = selectedChannel): s
   return `${base} · ${name}`;
 }
 
-// ---------------------------------------------------------------------------
 // THE PUSH CARD — which module's card the screen shows, for the selected lane.
-// ---------------------------------------------------------------------------
 
 /** In-memory mirror of the per-lane "last viewed" memory, so the render path
  *  reads localStorage at most once per lane per session. push2-view.svelte.ts
@@ -690,12 +674,10 @@ export function currentPushCardView(): PushCardView {
   });
 }
 
-// ---------------------------------------------------------------------------
 // PARAM EDIT — the 8 display encoders (CC 71..78) drive the current card's 8
 // controls, through the electra streaming-CC pump (transient engine push per
 // tick + a coalesced bare store write — NEVER a MIDI-rate Y.Doc write-storm;
 // memory midi-cc-write-storm-fix).
-// ---------------------------------------------------------------------------
 
 /**
  * IN-FLIGHT values, keyed `${moduleId}:${paramId}`.
@@ -876,9 +858,7 @@ function ccPumpFor(moduleId: string, paramId: string): CcCommit {
   return pump;
 }
 
-// ---------------------------------------------------------------------------
 // THE DISPLAY — draw ops → RGBA → the WebUSB transport, dirty-checked.
-// ---------------------------------------------------------------------------
 
 /** Injectable so a node unit test can observe the exact bytes that reach the
  *  panel (the real painter needs a canvas, which the unit lane has not got). */
@@ -950,9 +930,7 @@ export function setPushCardPainter(fn: PushCardPainter | null): void {
   lastSignature = null;
 }
 
-// ---------------------------------------------------------------------------
 // Connect / bind lifecycle (gesture-gated, like the Launchpad card).
-// ---------------------------------------------------------------------------
 
 /** Is Web MIDI available (Chromium)? */
 export function midiAvailable(): boolean {
@@ -1036,9 +1014,7 @@ export function setLaunchpadView(view: Parameters<typeof setLaunchpadViewRaw>[0]
   bump();
 }
 
-// ---------------------------------------------------------------------------
 // Test seams
-// ---------------------------------------------------------------------------
 
 /** Install a SIMULATED Push, inject the surface, and bind the clip-player — the
  *  e2e/unit entry point (parallel to __launchpadTestInstallSingle). Returns the

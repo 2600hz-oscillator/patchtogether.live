@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/picturebox/PictureboxAssetsBody.svelte
-  //
   // The PICTUREBOX dock full-view body: the live picture, the file pickers, the
   // 7-slot asset bank, and the SCREEN ON/OFF switch the 2026-08-18 owner ruling
   // requires of every video module.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog902-face-model.ts
-//
 // The MOOG 902 VCA's gain law, in the ONE place the faceplate reads it.
 //
 // ⚠ WHY THIS RE-STATES A LAW THAT ALREADY EXISTS IN THE WORKLET, AND WHY THAT

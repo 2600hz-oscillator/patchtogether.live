@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-runtime.test.ts
-//
 // Unit coverage for the Blood data-resolution policy: in-browser INJECTED data
 // (the hosted-preview path, where the owner picks proprietary RFFs in the
 // browser) takes PRIORITY over the /blood/ server fetch (the local

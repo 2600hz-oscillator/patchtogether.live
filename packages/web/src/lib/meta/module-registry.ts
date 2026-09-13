@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/module-registry.ts
-//
 // Registry for "meta" domain modules — cards that live in the patch graph
 // but DO NOT bind to any engine (no audio nodes, no video FBOs). The first
 // inhabitant is STICKY (paper-style sticky note). The reconciler skips
@@ -40,47 +38,12 @@ export interface MetaModuleDef {
    *  would have to be `writer: 'internal'`). See NoUserControlParam. */
   noUserControl?: readonly NoUserControlParam[];
   /**
-   * THE CURATED FACEPLATE. Declared for parity with AudioModuleDef /
-   * VideoModuleDef — AUTHORING ONE **IS** PROMOTION to STRICT_FACES, exactly
-   * as it is for the other two registries.
+   * Declaring a face requires STRICT_FACES promotion, as in the audio/video
+   * registries. module-face-lint tests that meta defs reach the promotion check.
    *
-   * ⚠ WHY THIS ARRIVED LATE, AND WHY NOTHING WAS RED WHILE IT WAS MISSING.
-   * `noUserControl` above was already added "so the face lints can read
-   * `def.noUserControl` uniformly across all three registries" — the meta
-   * registry had been extended for the face system's benefit by somebody
-   * thinking about the face lints, and it stopped one field short of the field
-   * that lets a meta module HAVE a face. `svelte-check` refuses `face:` on a
-   * meta def outright, so no meta module could be promoted however good its
-   * design; and the promotion anchor (module-face-lint.test.ts, "every module
-   * that declares a `face` is in STRICT_FACES") reads
-   * `def.face && !STRICT_FACES.has(def.type)`, which for a meta def is
-   * `undefined && …` — PERMANENTLY FALSE. A whole DOMAIN sat outside the face
-   * system with every gate green: the exact "what is this gate structurally
-   * unable to see, and would its green run look any different if the answer
-   * were 'everything'?" shape.
-   *
-   * THE NEGATIVE CONTROL LIVES WITH THE GATE IT PROTECTS:
-   * `$lib/ui/workflow/module-face-lint.test.ts`, in the describe block
-   * *"meta domain: the `face?` precursor is READ, not merely declarable"*. It
-   * drives a fixture meta def through the anchor's OWN extracted predicate
-   * (`isUnpromotedFace`, not a restated copy of the expression) in three
-   * directions — caught when unpromoted, CLEARS when promoted so the leg
-   * measures promotion rather than domain, and clears for a faceless meta def
-   * so the fix cannot degenerate into "meta defs are always promoted" — plus a
-   * fourth leg asserting the live meta registry really reaches `allDefs()`
-   * carrying `face`. That is what keeps this field from landing as a decorative
-   * type change nothing reads.
-   *
-   * ⚠ THERE IS DELIBERATELY NO `docs?` FIELD BESIDE THIS ONE, and adding one is
-   * a SEPARATE decision with a coupling that must land in the same diff — see
-   * the note in `$lib/docs/strict-docs.ts` above the matrixMix line. In short:
-   * `module-manifest.ts` globs `../audio/modules/*.ts` + `../video/modules/*.ts`
-   * and has NO meta glob, so a meta `docs` field would be authored into a
-   * manifest that never reads it; and `e2e/tests/module-annotate.spec.ts` uses
-   * matrixMix as its "undocumented module" fixture, protected today by the
-   * mechanical impossibility of documenting a meta def rather than by anyone's
-   * restraint. Adding `docs?` removes that protection and must re-point the
-   * fixture in the same commit.
+   * Adding docs to meta defs also requires teaching module-manifest.ts to read
+   * them and replacing module-annotate.spec.ts's undocumented matrixMix fixture;
+   * the manifest currently globs only audio and video defs.
    */
   face?: ModuleFace;
   /**

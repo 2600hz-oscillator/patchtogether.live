@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/rbj-biquad.test.ts
-//
 // Own-code RBJ biquads: measured frequency response at the design points via
 // steady-state sine probes (bin-aligned Goertzel — exact, no FFT dep).
 
@@ -113,7 +111,6 @@ describe('rbj-biquad: response at the design points', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The cache key must contain EVERY parameter the math reads.
 //
 // `updatePeaking` guarded on (fc, dbGain) only, so a Q-ONLY change early-
@@ -121,7 +118,6 @@ describe('rbj-biquad: response at the design points', () => {
 // 1.85 dB response error one octave above fc. The three legs below are a set:
 // leg 1 is the regression, legs 2 and 3 are its negative controls, and leg 1
 // goes vacuous the moment either control stops holding.
-// ---------------------------------------------------------------------------
 describe('rbj-biquad: Q is part of the peaking cache key', () => {
   const COEFFS = ['b0', 'b1', 'b2', 'a1', 'a2'] as const;
   const coeffs = (bq: Biquad) => COEFFS.map((k) => bq[k]);

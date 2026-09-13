@@ -1,5 +1,3 @@
-// e2e/tests/tempest-render-smoke.spec.ts
-//
 // TEMPEST P1 render-smoke — the real source→render chain on the (CI) SwiftShader
 // renderer. Spawn the generator alone (it needs no video input), step the engine
 // a FIXED few frames synchronously, and assert its `out` FBO is non-black,

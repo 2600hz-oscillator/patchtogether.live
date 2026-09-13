@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/picturebox-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the PICTUREBOX faceplate.
 //
 // Everything here is a claim the shipped face MAKES and that no pixel gate can

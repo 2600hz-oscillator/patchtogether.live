@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioOut/shell-extension.ts
-//
 // AUDIO OUT's bespoke surface. `audioOutDef.face.extension = 'audioOut'`
 // resolves to this directory through `shell-extensions.ts`'s non-eager glob.
 //

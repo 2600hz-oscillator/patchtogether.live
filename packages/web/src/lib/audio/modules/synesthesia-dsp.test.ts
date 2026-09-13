@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/synesthesia-dsp.test.ts
-//
 // Pure-math tests for the SYNESTHESIA DSP helpers in
 // packages/dsp/src/lib/synesthesia-dsp.ts. This is the deterministic
 // band-filtering / envelope / gate proof — no AudioWorklet, no browser.

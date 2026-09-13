@@ -1,5 +1,3 @@
-// e2e/vrt/cube-adsr-composite.spec.ts
-//
 // Composite-state VRT for the per-voice ADSR feature: CUBE driven by a MIDI LANE
 // poly chord, with the AMP ADSR dialed to an audible shape. Proves the whole
 // patch (MIDI LANE poly → CUBE.poly → per-voice envelopes) renders, exercising

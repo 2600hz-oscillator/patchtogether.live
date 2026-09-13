@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/resofilter.test.ts
-//
 // Two test layers:
 //   1. Module-def shape (3 inputs / 2 outputs / 4 params, CV targets,
 //      stereo pair, RESOFILTER_MODE_NAMES length matches mode range).
@@ -112,9 +110,7 @@ function rms(buf: Float32Array, start = 0, end = buf.length): number {
   return Math.sqrt(s / n);
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 // 1) Module-def shape.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('resofilterDef — module def shape', () => {
   it('declares 4 params with the documented ranges + defaults', () => {
@@ -135,9 +131,7 @@ describe('resofilterDef — module def shape', () => {
 
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // 2) DSP behavior — drive the worklet processor directly.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('RESOFILTER worklet — per-mode spectral character', () => {
   const FC = 1000; // cutoff for these tests

@@ -1,5 +1,3 @@
-// packages/server/src/boot-id.ts
-//
 // A boot id identifies one relay process lifetime. A fresh boot gets a new id,
 // so a downstream watcher (the /metrics scraper, log-based alerting) can detect
 // "the relay restarted" by an id flip — and, crucially, correlate the structured

@@ -1,5 +1,3 @@
-// packages/web/src/lib/source-guards/strip-source-comments.test.ts
-//
 // The stripper's own gate. Every claim in strip-source-comments.ts is asserted
 // here in BOTH directions, because a stripper that returned '' for everything
 // would silence every source gate in the repo while turning each of them green.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/note-binding.ts
-//
 // PURE note-message parsing + binding model. No Svelte / DOM / Yjs — so it
 // unit-tests headlessly and is the SINGLE source of truth for the CC-vs-NOTE
 // branch in the MIDI-learn singleton.

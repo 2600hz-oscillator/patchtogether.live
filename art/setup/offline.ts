@@ -1,5 +1,3 @@
-// art/setup/offline.ts
-//
 // Shared REAL-DEF-FACTORY capture path for ART audio profiles (backfill
 // batch 5 — the render → capture → pin flow is spec §1.2, and this is
 // rendering path #3 of §1.3:

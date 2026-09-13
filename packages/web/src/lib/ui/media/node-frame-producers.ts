@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-frame-producers.ts
-//
 // The real-DOM singleton for the node-lifetime PER-FRAME producer seam
 // (legacy-removal S1).
 //

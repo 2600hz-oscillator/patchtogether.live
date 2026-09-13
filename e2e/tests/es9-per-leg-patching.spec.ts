@@ -1,5 +1,3 @@
-// e2e/tests/es9-per-leg-patching.spec.ts
-//
 // RECONSTRUCT THE OWNER'S ES-9 SEND/RETURN RACK THROUGH REAL UI GESTURES.
 //
 // He had this patch saved and working. It still LOADS — every port it names

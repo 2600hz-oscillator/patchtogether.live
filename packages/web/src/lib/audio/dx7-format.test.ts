@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-format.test.ts
-
 import { describe, it, expect } from 'vitest';
 import {
   DX7_RATIO_PREFIX,

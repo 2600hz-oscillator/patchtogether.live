@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/rear-direction.ts
-//
 // HOW A REAR HOLE SAYS WHICH WAY IT POINTS — declared, not assumed (#1800).
 //
 // ── WHY THIS FILE EXISTS ────────────────────────────────────────────────────

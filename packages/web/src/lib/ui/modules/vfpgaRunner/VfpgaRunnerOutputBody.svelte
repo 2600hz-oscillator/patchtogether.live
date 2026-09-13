@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/vfpgaRunner/VfpgaRunnerOutputBody.svelte
-  //
   // The VFPGA-RUNNER dock full-view body: the live output picture of whatever
   // bitstream is loaded, the SCREEN ON/OFF switch the 2026-08-18 owner ruling
   // requires of every video module, and the FABRIC floorplan view.

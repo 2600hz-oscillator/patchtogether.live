@@ -1,5 +1,3 @@
-// e2e/tests/waveform-trace-shape.spec.ts
-//
 // Regression for Bug-2 from PR-65: WAVVIZ/SCOPE video outputs (and any
 // other module that goes through the shared waveform-video renderer)
 // were rendering a single thin horizontal line at canvas center instead

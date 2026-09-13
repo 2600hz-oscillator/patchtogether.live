@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog956.test.ts
-//
 // Three test layers for the moogafakkin 956 RIBBON CONTROLLER (System 55
 // clone):
 //   1. ribbonToVOct / clampRibbon — the pure ribbon→pitch math + position

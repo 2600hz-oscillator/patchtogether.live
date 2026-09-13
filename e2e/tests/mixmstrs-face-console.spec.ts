@@ -1,5 +1,3 @@
-// e2e/tests/mixmstrs-face-console.spec.ts
-//
 // MIXMSTRS' FACE AS A CONSOLE (#1825) — the two owner asks, both of which are
 // LOOK changes that no unit test can settle.
 //
@@ -193,9 +191,7 @@ async function domainAccent(page: Page): Promise<string> {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1 · ONE COLUMN GRID
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('every 8-wide row shares ONE column ruler — column N is channel N everywhere', async ({
   page,
@@ -376,9 +372,7 @@ test('NEGATIVE CONTROL: a face with ONE console band gets no face-wide ruler', a
   ).toEqual([]);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2 · CHANNEL N TAKES LANE N'S COLOUR
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('ch1-8 render in their LANE colour, and the BUS controls do not', async ({
   page,

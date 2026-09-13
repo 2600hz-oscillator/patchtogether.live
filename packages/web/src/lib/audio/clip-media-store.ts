@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-media-store.ts
-//
 // THE CLIP MEDIA STORE — where a recorded take's samples actually live.
 //
 // OPFS holds the bytes at `clipmedia/<mediaId>`; IndexedDB holds one manifest
@@ -40,9 +38,7 @@
 
 import { isClipAudioFormat, type ClipAudioFormat } from './clip-media';
 
-// ---------------------------------------------------------------------------
 // Names + shapes
-// ---------------------------------------------------------------------------
 
 /** The OPFS sub-directory. Every clip take is one file directly inside it. */
 export const CLIP_MEDIA_DIR = 'clipmedia';
@@ -120,9 +116,7 @@ export function hasClipMediaStore(): boolean {
   );
 }
 
-// ---------------------------------------------------------------------------
 // IndexedDB — the manifest sidecar
-// ---------------------------------------------------------------------------
 
 function hasIndexedDB(): boolean {
   return typeof indexedDB !== 'undefined';
@@ -221,9 +215,7 @@ export async function listRecoverableClipMedia(nodeId?: string): Promise<ClipMed
   );
 }
 
-// ---------------------------------------------------------------------------
 // OPFS
-// ---------------------------------------------------------------------------
 
 async function resolveFile(path: string, create: boolean): Promise<FileSystemFileHandle | null> {
   try {
@@ -289,9 +281,7 @@ export async function removeClipMedia(mediaId: string): Promise<void> {
   await deleteClipMediaManifest(mediaId);
 }
 
-// ---------------------------------------------------------------------------
 // Recovery arithmetic — PURE, so it is tested without a browser
-// ---------------------------------------------------------------------------
 
 /** Bytes per FRAME (all channels) for a stored format. `opus` has no fixed
  *  frame size, so it reports 0 and the caller must not do frame arithmetic on
@@ -329,9 +319,7 @@ export function recoverableFrames(
   return Math.floor(usable / unit) * unit;
 }
 
-// ---------------------------------------------------------------------------
 // The writer — an inline module Worker owning a FileSystemSyncAccessHandle
-// ---------------------------------------------------------------------------
 
 /** What a take writes through. Deliberately NO `abort()` / `dispose()` beyond
  *  the two below: a take ends by finishing or by being explicitly discarded,
@@ -500,9 +488,7 @@ export function setClipMediaWriterFactory(f: ClipMediaWriterFactory): ClipMediaW
   return prev;
 }
 
-// ---------------------------------------------------------------------------
 // The take lifecycle
-// ---------------------------------------------------------------------------
 
 /** Open a take: **manifest first, then the writer, then any bytes.**
  *
@@ -586,9 +572,7 @@ export async function importClipMediaTake(
   }
 }
 
-// ---------------------------------------------------------------------------
 // The garbage collector
-// ---------------------------------------------------------------------------
 
 export interface ClipMediaGcResult {
   /** How many takes' bytes were freed. */
@@ -669,9 +653,7 @@ export function referencedClipMediaIds(
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // The graph-lifetime sweep
-// ---------------------------------------------------------------------------
 
 let gcInFlight = false;
 let lastLiveKey = '';
@@ -689,40 +671,15 @@ let lastLiveKey = '';
  *  is exactly the defect it exists to find.) */
 const SWEEP_KEY_SEP = '\u0000';
 
-/** The GC as the graph-lifetime `$effect` calls it: fire-and-forget for the
- *  caller, and cheap enough to sit in a pass that re-runs on EVERY graph change.
+/**
+ * Graph-lifetime GC, deduplicated while a sweep is in flight or the live set
+ * is unchanged. Returns the sweep promise for callers that need completion,
+ * or null when skipped; production effects can discard it without blocking.
  *
- *  ⚠ THE OTHER REGISTRY SWEEPS IN THAT PASS ARE `Map` DELETES. This one touches
- *  IndexedDB and enumerates an OPFS directory, so it cannot run unguarded at
- *  the same cadence. Two guards, both cheap: skip while a sweep is already in
- *  flight, and skip when the live set is unchanged since the last one. A graph
- *  edit that does not add or remove an audio clip therefore costs one string
- *  compare.
- *
- *  ⚠ RETURNS THE IN-FLIGHT SWEEP, OR `null` WHEN IT SKIPPED — and that return
- *  value is the difference between a test that observes this function and one
- *  that guesses at it. It used to return `void` and swallow the promise, so the
- *  ONLY way to check a sweep had happened was to wait a tick and look for its
- *  side effect. A sweep is three IndexedDB open/transaction cycles plus a
- *  directory enumeration; one macrotask does not cover that, and the test
- *  MEASURED GREEN LOCALLY AND RED ON CI for exactly that reason. Handing back
- *  the promise removes the race instead of widening a wait, and it makes the
- *  memo DIRECTLY observable (`null` = skipped) rather than inferred from an
- *  absence.
- *
- *  Production callers ignore it — the graph pass must never block on storage —
- *  which is why the `$effect` spells the discard with `void`.
- *
- *  ⚠ AN EMPTY LIVE SET IS REFUSED (fleet-audit 2026-09-06 #1). `gcClipMedia([])`
- *  frees every non-recording take in the ORIGIN-GLOBAL store, and every route
- *  that has ever handed this function an empty set was a snapshot that was not
- *  the truth: the pre-provider-sync empty graph on `/r/[id]`, and a
- *  just-switched rack whose doc has not loaded. A rack that GENUINELY holds no
- *  audio clips loses nothing by this refusal — its takes are freed by the next
- *  sweep that carries a real (non-empty) set — while a false empty set would
- *  destroy unrecoverable recordings. Over-retention is a wasted file;
- *  under-retention is a lost take. The refusal deliberately does NOT touch the
- *  memo, so the first non-empty set after it always sweeps. */
+ * Refuse empty live sets: an unsynced or newly switched rack can appear empty,
+ * and this store is origin-global. Sweeping then could destroy recordings.
+ * Leave the memo unchanged so the next nonempty set still triggers a sweep.
+ */
 export function sweepClipMedia(
   liveMediaIds: Iterable<string>,
 ): Promise<ClipMediaGcResult> | null {

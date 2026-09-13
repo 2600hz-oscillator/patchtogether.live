@@ -1,5 +1,3 @@
-// scripts/attest-code-basis.test.ts
-//
 // THE PROOF that the attest hashes are docs-blind BY DESIGN — and that they are
 // still blind to NOTHING ELSE. Runs in the required `unit` lane (`task test` →
 // `task test:scripts`); pure node, no GPU, no browser, no DB, cannot skip-pass.
@@ -69,9 +67,7 @@ import {
 
 const ts = (src: string) => normalizeForHash('fixture.ts', src);
 
-// ---------------------------------------------------------------------------
 // §string-safety — the cases that break a regex, kept as a permanent leg
-// ---------------------------------------------------------------------------
 
 describe('attest-code-basis §string-safety: `//` that is NOT a comment survives', () => {
   it('keeps `//` inside a plain string literal', () => {
@@ -128,9 +124,7 @@ describe('attest-code-basis §string-safety: `//` that is NOT a comment survives
   });
 });
 
-// ---------------------------------------------------------------------------
 // §documentation — what is removed, paired with §negative below
-// ---------------------------------------------------------------------------
 
 const DEF_WITHOUT_DOCS = [
   `export const fooDef = {`,
@@ -216,9 +210,7 @@ describe('attest-code-basis §documentation: prose is removed from the basis', (
   });
 });
 
-// ---------------------------------------------------------------------------
 // §negative — the instrument must MOVE when the thing it measures moves
-// ---------------------------------------------------------------------------
 
 describe('attest-code-basis §negative: real code is NOT ignored', () => {
   it('a param RANGE change moves the output', () => {
@@ -285,9 +277,7 @@ describe('attest-code-basis §negative: real code is NOT ignored', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // §svelte + §package.json
-// ---------------------------------------------------------------------------
 
 describe('attest-code-basis §svelte: script bodies normalise, markup does not', () => {
   const card = (script: string, markup: string) =>
@@ -356,9 +346,7 @@ describe('attest-code-basis §package.json: deps in, npm scripts out', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // §per-attest — both directions against the REAL hash over the REAL basis
-// ---------------------------------------------------------------------------
 
 /** A reader that serves the real tree except for one file, which is replaced. */
 function readerWith(rel: string, text: string): BasisReader {
@@ -441,9 +429,7 @@ describe.each(ATTESTS)('$name attest: docs-blind, code-sensitive (both direction
   });
 });
 
-// ---------------------------------------------------------------------------
 // §scope — what the normalizer still CANNOT see, named and ratcheted
-// ---------------------------------------------------------------------------
 
 /**
  * Basis files hashed by RAW BYTES: their comment syntax is outside the
@@ -554,9 +540,7 @@ describe('attest-code-basis §scope: the normalizer states what it cannot see', 
   });
 });
 
-// ---------------------------------------------------------------------------
 // §ceremony — the marker is gone and cannot come back
-// ---------------------------------------------------------------------------
 
 describe('attest-code-basis §ceremony: the docs-hash-ignore marker is retired', () => {
   it('no source file carries a docs-hash-ignore marker', () => {

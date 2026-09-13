@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/tick-latency.ts
-//
 // SCHEDULER TICK-LATENCY HISTOGRAM — is the MAIN THREAD starved, or the AUDIO
 // THREAD? Those are different diseases with different fixes, and today they
 // produce the same user report ("it bogs down").

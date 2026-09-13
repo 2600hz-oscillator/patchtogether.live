@@ -1,5 +1,3 @@
-// e2e/tests/workflow-lane-membership-is-positional.spec.ts
-//
 // POSITION DECIDES MEMBERSHIP — the owner bug, verbatim:
 //
 //   "if we spawn a module on the grid outside of our lanes it should not be

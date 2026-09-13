@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/featurecv.ts
-//
 // FEATURECV — an "audio → CV" feature extractor. One audio input → it measures
 // WHOLE-SIGNAL timbre + dynamics and emits them as control voltages plus an
 // onset trigger. Deliberately distinct from SYNESTHESIA (which does PER-BAND
@@ -112,7 +110,6 @@ export const featurecvDef: AudioModuleDef = {
     { id: 'onset_debounce', label: 'Debnce', defaultValue: 80, min: 20, max: 1000, curve: 'log', units: 'ms' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ──────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS FOR, MUSICALLY. FEATURECV is the rack's LISTENER: the
   // only module that turns an arbitrary sound's TIMBRE and DYNAMICS into

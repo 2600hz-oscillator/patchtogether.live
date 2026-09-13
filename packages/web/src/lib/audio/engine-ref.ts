@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-ref.ts
-//
 // A tiny process-wide accessor for the live PatchEngine, for code that runs
 // OUTSIDE the Svelte context tree where provideEngineContext / useEngine apply
 // (e.g. a rackspace-bar button that is a sibling of Canvas, not a descendant).

@@ -1,10 +1,7 @@
-// packages/web/src/lib/ui/vrt-comparator-band.test.ts
-//
 // THE VRT TOLERANCE BAND, DRIVEN THROUGH THE REAL COMPARATOR — the permanent
 // negative-control leg of the 2026-08-29 owner ruling (vrt.config.ts's
 // tolerance block carries the full history and the bar math).
 //
-// ─────────────────────────────────────────────────────────────────────────
 // WHAT THIS EXISTS FOR
 //
 // `vrt.config.ts` moved `threshold` 0 → 0.01 so the gate absorbs the ±2-LSB

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog962-dsp.ts
-//
 // Pure sequential-switch logic for the MOOG 962 (Sequential Switch) — the
 // "SHIFT advances the selected input" core, modeled after the 4PLEXER's
 // gate-advanced selector but trimmed to a SINGLE output that cycles through

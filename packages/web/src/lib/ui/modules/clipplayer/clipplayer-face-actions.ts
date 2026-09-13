@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer/clipplayer-face-actions.ts
-//
 // The clip player's WRITE seam — one plain-TypeScript action per gesture, used
 // by BOTH surfaces (the legacy card and the v2 face's panels).
 //

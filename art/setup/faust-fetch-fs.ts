@@ -1,5 +1,3 @@
-// art/setup/faust-fetch-fs.ts
-//
 // Lets an ART scenario drive a REAL FAUST module factory — `instantiateFaustModule`
 // and all — under node-web-audio-api, which `art/setup/offline.ts` could not do.
 //

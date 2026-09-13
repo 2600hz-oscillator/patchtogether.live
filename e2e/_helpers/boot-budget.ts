@@ -1,5 +1,3 @@
-// e2e/_helpers/boot-budget.ts
-//
 // THE latency bounds for BOOT and FIRST PAINT. One export site, imported by
 // specs — the same argument that gives frame waits exactly one home in
 // `./frames.ts`.

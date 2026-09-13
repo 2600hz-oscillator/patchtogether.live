@@ -1,5 +1,3 @@
-// scripts/e2e-shard-plan.mjs
-//
 // COST-BASED e2e shard assignment (#1538).
 //
 // ── Why Playwright's own --shard is not enough ─────────────────────────────

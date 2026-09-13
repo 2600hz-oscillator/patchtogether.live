@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-edit-launch.spec.ts
-//
 // The clip EDIT view can launch the clip you're editing without going back to
 // the session grid: NOW (immediate, ignores QNT) + QUEUE (next loop boundary,
 // follows QNT). Both target the edited clip's own lane+slot. We assert the

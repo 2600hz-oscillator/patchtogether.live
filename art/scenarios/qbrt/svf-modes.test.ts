@@ -1,5 +1,3 @@
-// art/scenarios/qbrt/svf-modes.test.ts
-//
 // QBRT — the stereo pingable state-variable filter, measured on the SHIPPED
 // wasm. The last of three Faust modules that had NO ART scenario (found by
 // sweeping every .dsp against the scenarios that render it).

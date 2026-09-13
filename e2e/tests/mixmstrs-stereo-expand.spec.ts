@@ -1,5 +1,3 @@
-// e2e/tests/mixmstrs-stereo-expand.spec.ts
-//
 // RIGHT-CLICK A MIXMSTRS STEREO JACK → SEE ITS TWO L/R HOLES.
 //
 // The owner (2026-08-10): "i think what i want (for mixmasters ONLY) is to be

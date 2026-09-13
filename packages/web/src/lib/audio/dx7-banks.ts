@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-banks.ts
-//
 // Hand-crafted DX7 patches inspired by famous ROM 1A factory voices. None of
 // these are literal SYX bytes from a copyright-protected ROM — each is a new
 // patch tuned to evoke the SOUND of its inspiration. The original Yamaha

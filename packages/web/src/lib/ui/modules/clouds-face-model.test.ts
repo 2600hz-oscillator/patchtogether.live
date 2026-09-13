@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clouds-face-model.test.ts
-//
 // THE PERMANENT LEG behind the CLOUDS faceplate.
 //
 // Two kinds of assertion, and the file is worth reading for the split:
@@ -136,9 +134,7 @@ function bitIdentical(a: Float32Array, b: Float32Array): boolean {
   return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // ORACLES — every face claim, re-derived from the DSP mirror on every run
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('clouds face model — ORACLE: the silence at spawn is EXACTLY one grain', () => {
   // ⚠ THE FACE SPEC AUTHORED AGAINST `main` SAID "the first quarter second is
@@ -408,9 +404,7 @@ describe('clouds face model — ORACLE: POSITION is total, and invisible to a le
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // NEGATIVE CONTROLS — each readout, in both directions
-// ═══════════════════════════════════════════════════════════════════════════
 
 /** Perturb every macro EXCEPT the named ones and require the value not to move;
  *  then perturb each named one and require that it does. The shape that a knob

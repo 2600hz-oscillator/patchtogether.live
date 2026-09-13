@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/lfo.ts
-//
 // Module def for the clockable LFO. DSP is a custom JS AudioWorklet
 // (packages/dsp/src/lfo.ts). Four outputs at 0°/90°/180°/270° let one LFO
 // drive multiple voices in stereo / quadrature without needing to re-tune.

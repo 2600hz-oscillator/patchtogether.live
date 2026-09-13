@@ -1,5 +1,3 @@
-// e2e/tests/tidy-vco.spec.ts
-//
 // TIDY VCO — REAL-SOURCE-CHAIN e2e (the CLAUDE.md poly discipline: a
 // per-port "edge materializes" assert does NOT count as poly coverage,
 // and neither does an engine-direct ART/behavioral render). Three tests

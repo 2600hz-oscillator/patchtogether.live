@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/adopted-type.ts
-//
 // ONE upstream walk for TYPE-TRANSPARENT pass-through outputs
 // (`PortDef.adoptsUpstreamFrom`).
 //

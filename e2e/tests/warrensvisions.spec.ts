@@ -1,5 +1,3 @@
-// e2e/tests/warrensvisions.spec.ts
-//
 // WARREN'S VISIONS — DETERMINISTIC render-smoke over the REAL source chain.
 //
 // A real video source → warrensvisions → videoOut, with the engine's rAF loop

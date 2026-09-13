@@ -1,5 +1,3 @@
-// e2e/audio-drift/_collab.ts
-//
 // Multi-context wiring for the audio-drift research harness. Mirrors the
 // pattern in clear-load-multiwindow.spec.ts: bring up the engine on both
 // sides BEFORE attaching the Yjs provider, so the reconciler is awake and

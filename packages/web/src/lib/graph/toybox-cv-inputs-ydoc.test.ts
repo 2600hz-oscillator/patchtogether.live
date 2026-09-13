@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-cv-inputs-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the TOYBOX per-input scale/offset mutator
 // (node.data.cvInputs). Runs against the SAME syncedStore + Y.Doc the live
 // patch uses, so cvInputs entries become real Y.Maps once written — the way to

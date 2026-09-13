@@ -1,5 +1,3 @@
-// scripts/tracked-source-is-greppable.test.ts
-//
 // A SOURCE FILE THAT `grep` CALLS BINARY RETURNS NOTHING — AND NOTHING IS WHAT
 // "THE SYMBOL DOES NOT EXIST" ALSO LOOKS LIKE.
 //

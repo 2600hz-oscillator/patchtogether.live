@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/bitstream.test.ts
-//
 // Pure (GL-free) tests for the VFPGA bitstream codec (hardware-accuracy A3).
 // Pins the two HARD properties — lossless round-trip + byte-identical compiled
 // effect — across every shipped fabric, plus the CRC, header guards, and the
@@ -30,9 +28,7 @@ function fab(config: VfpgaTile['config'], extra?: Partial<VfpgaTile>): VfpgaFabr
 }
 const rt = (f: VfpgaFabric): VfpgaFabric => unpack(pack(f));
 
-// ----------------------------------------------------------------------
 // The two hard properties, over every shipped fabric.
-// ----------------------------------------------------------------------
 describe('round-trip every shipped fabric spec', () => {
   it('there is at least one fabric spec to test', () => {
     expect(FABRIC_SPECS.length).toBeGreaterThan(0);
@@ -54,10 +50,8 @@ describe('byte-identical compiled effect (no VRT/attest rebaseline)', () => {
   );
 });
 
-// ----------------------------------------------------------------------
 // Determinism golden — catches a field added to pack() but not the symbol
 // builder (which still round-trips, but drifts the bytes / CRC).
-// ----------------------------------------------------------------------
 describe('determinism', () => {
   const golden = fab(
     { op: 'mix', consts: { t: 0.5 }, bind: [{ knob: 't', to: 'p', slot: 1, uniform: 'uMixT' }] },
@@ -71,9 +65,7 @@ describe('determinism', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // CRC.
-// ----------------------------------------------------------------------
 describe('CRC', () => {
   it('detects a single-bit flip', () => {
     const bytes = pack(fab({ consts: { a: 0.5 } }));
@@ -98,9 +90,7 @@ describe('CRC', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Header / forward-compat guards.
-// ----------------------------------------------------------------------
 describe('header guards', () => {
   const valid = () => pack(fab({}));
   const restamp = (b: Uint8Array) => {
@@ -126,9 +116,7 @@ describe('header guards', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Empty-vs-absent (toStrictEqual is strict on this).
-// ----------------------------------------------------------------------
 describe('empty-vs-absent', () => {
   it('config {} round-trips to {} (config is always present)', () => {
     const f = fab({});
@@ -187,9 +175,7 @@ describe('empty-vs-absent', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Numeric edge cases (every leaf rides f64 → bit-exact).
-// ----------------------------------------------------------------------
 describe('numeric leaves are bit-exact', () => {
   it('NaN / ±Infinity / -0 / subnormal / inexact / MAX round-trip through consts', () => {
     const f = fab({
@@ -220,10 +206,8 @@ describe('numeric leaves are bit-exact', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Synthetic lutInit / bitPlanes (no shipped spec exercises these — packed vs
 // escape paths must both be lossless). Packed = u16 (shorter), escape = f64.
-// ----------------------------------------------------------------------
 describe('lutInit packed vs escape', () => {
   it('a valid u16 INIT takes the compact (shorter) packed path and round-trips', () => {
     const packed = fab({ lutInit: 0x6996 });
@@ -257,9 +241,7 @@ describe('bitPlanes packed mask vs escape', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // String edge cases via the symbol table (UTF-8 + UTF-16LE fallback + dedup).
-// ----------------------------------------------------------------------
 describe('symbol table', () => {
   it('round-trips empty / NUL / lone-surrogate / emoji string keys', () => {
     const f = fab({ consts: { '': 1, 'a\u0000b': 2, '\uD800': 3, '🎛️': 4 } });

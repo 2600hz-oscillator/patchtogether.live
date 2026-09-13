@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/score-layout.ts
-//
 // WHERE A NOTE IS DRAWN — the staff's pixel geometry, as pure functions.
 //
 // ⚠ THIS EXISTS SO THE TWO RENDERERS CANNOT DISAGREE. `ScoreCard.svelte` and

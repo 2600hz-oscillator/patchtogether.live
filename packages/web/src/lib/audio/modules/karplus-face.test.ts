@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/karplus-face.test.ts
-//
 // The PIN for KARPLUS's curated face — the design decisions, projected through
 // the same PURE selectors the shell renders from (`curatedFace`, `dockFacePlan`,
 // `shellCellFor`, `rearFieldPlan`), so a later edit that undoes one of them

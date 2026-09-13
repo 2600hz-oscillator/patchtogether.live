@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-geom-probe.spec.ts
-//
 // MEASUREMENT TOOL, not a gate. `VRT_PROBE=1` only (see vrt.config.ts), so it
 // costs CI nothing.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog-filterbank-factory.ts
-//
 // Shared PURE Web Audio factory for the Moog FIXED FILTER BANK family
 // (907A + 914). Both modules are identical wiring — a fan GainNode feeding
 // one fixed HIGH-PASS biquad, N fixed BANDPASS biquads, and one fixed

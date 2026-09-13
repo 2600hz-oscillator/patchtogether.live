@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog992.ts
-//
 // MOOG 992 CONTROL VOLTAGE PANEL — a slice of the Moog System 55 / 35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md). The 992 is a
 // passive CV utility: a 4-into-1

@@ -1,5 +1,3 @@
-// e2e/tests/scaler-cv-connect.spec.ts
-//
 // THE GESTURE, THROUGH THE REAL UI: patch a CV into SCALER, then patch SCALER's
 // output into a CV jack.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-viz-surface-registry.test.ts
-//
 // The whole adoption decision table, on fake elements. Pure core + injected
 // ops, so this runs in the web package's `environment: 'node'` vitest with no
 // DOM at all — the same split `node-frame-producer-registry.test.ts` uses.

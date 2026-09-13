@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/curve.ts
-//
 // Curve-aware value ↔ 7-bit CC mapping, shared by the preset generator
 // (control range + formatter selection), the feedback pump (param value → CC),
 // and the inbound dispatch (CC → param value).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/sample-hold.ts
-//
 // SAMPLE & HOLD / quantizer.
 //
 // On a RISING EDGE at gate_in, the module samples cv_in and HOLDS it on

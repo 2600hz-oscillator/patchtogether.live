@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/trails-monitor.ts
-//
 // THE TRAILS MIDI MONITOR — a pure, bounded tally of what the device is
 // actually sending, so a hardware question can be answered in one paste instead
 // of one round trip per guess.

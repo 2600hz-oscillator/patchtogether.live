@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog911-eg-dsp.test.ts
-//
 // Pure-DSP unit tests for the MOOG 911 contour-generator core — the SHIPPED
 // envelope math (the moog911 worklet wires audio I/O straight to Moog911Eg).
 // Pins the three-time-constant contour so a refactor surfaces as a specific

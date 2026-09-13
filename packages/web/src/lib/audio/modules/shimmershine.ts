@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/shimmershine.ts
-//
 // SHIMMERSHINE — stereo shimmer reverb. Pure-TS AudioWorklet wraps a
 // Schroeder reverb tank (4 combs + 2 allpasses per channel) with a
 // pitch-shifted feedback loop (+12 semis via granular fade) for the
@@ -46,13 +44,11 @@ import workletUrl from '@patchtogether.live/dsp/dist/shimmershine.js?url';
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-// ----------------------------------------------------------------------------
 // Pure DSP helpers — reflected from the worklet (packages/dsp/src/shimmershine.ts)
 // so unit tests can exercise the pitch-shifter math + full signal chain in
 // node (the worklet itself can't be imported from node because it references
 // the AudioWorkletGlobalScope-only `AudioWorkletProcessor` base class at
 // module load). Any change here MUST mirror the worklet implementation.
-// ----------------------------------------------------------------------------
 
 const COMB_LENGTHS_44 = [1116, 1188, 1277, 1356];
 const ALLPASS_LENGTHS_44 = [556, 441];

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/dock.test.ts
-//
 // DOCKING — zone model + local store semantics (P2.5a: three zones — top
 // rail, LEFT rail, bottom drawer — per-entry dock state with TOMBSTONE GC,
 // per-card discrete zoom, rackspace-scoped persistence). The store is a

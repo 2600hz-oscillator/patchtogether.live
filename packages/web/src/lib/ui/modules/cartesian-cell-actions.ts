@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cartesian-cell-actions.ts
-//
 // THE ONE WRITE PATH for a cartesian pad — shared by `CartesianCard.svelte` and
 // by the faceplate's shell cells (`shell-cells.ts`).
 //

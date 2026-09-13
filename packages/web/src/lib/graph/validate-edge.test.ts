@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/validate-edge.test.ts
-//
 // Unit tests for the FW3 pure edge/graph validator (Phase 3b). Every branch
 // of validateEdge and validateGraphFragment is exercised with small fake defs
 // and a fake resolveDef — no registry, no Svelte, no Yjs.
@@ -14,7 +12,6 @@ import {
 } from './validate-edge';
 import type { ModuleNode, Edge, CableType } from './types';
 
-// ---- fixtures -------------------------------------------------------------
 
 function n(id: string, type = 'analogVco', data?: Record<string, unknown>): ModuleNode {
   return {

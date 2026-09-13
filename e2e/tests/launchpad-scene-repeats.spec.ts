@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-scene-repeats.spec.ts
-//
 // SCENE REPEATS end-to-end through the REAL chain (the poly/MIDI discipline):
 // the owner's 3-button gesture on a (simulated) single-unit Launchpad sets a
 // scene's repeat count, the card's read-only flair mirrors it, and after N

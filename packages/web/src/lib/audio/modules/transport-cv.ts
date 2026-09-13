@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/transport-cv.ts
-//
 // Engine-side wiring for the shared transport CV inputs (play_cv, reset_cv,
 // queue1_cv..queue4_cv). Each input is a GainNode → AnalyserNode tap that
 // the host module's tick() polls each iteration to scan for rising edges.

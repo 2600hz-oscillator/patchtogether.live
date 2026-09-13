@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/karplus-dsp.sonic-range.test.ts
-//
 // SONIC-RANGE GUARD for KARPLUS — the permanent form of the 2026-07-11
 // adversarial dynamism audit ("all controls are sonically dynamic").
 //
@@ -181,9 +179,7 @@ function zcrRate(buf: Float32Array, sS: number, eS: number): number {
   return c / Math.max(1e-9, (e - s) / SR);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-control 5-point sweeps
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus sonic range / per-control 5-point sweeps', () => {
   it('TUNE: f0 lands on the knob at every fader quartile (log sweep 55 → 1760)', () => {
@@ -293,9 +289,7 @@ describe('karplus sonic range / per-control 5-point sweeps', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // CV inputs actually modulate
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus sonic range / CV inputs', () => {
   it('pitch: exact octaves at −1 / +1 / +2 V', () => {
@@ -336,9 +330,7 @@ describe('karplus sonic range / CV inputs', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // karplusStiffA laws (the retape's own contract)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus sonic range / karplusStiffA laws', () => {
   it('a(0) = 0 exactly (continuous topology — knob 0 renders bit-identically)', () => {

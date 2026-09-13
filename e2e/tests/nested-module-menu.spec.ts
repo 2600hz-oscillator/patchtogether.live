@@ -1,5 +1,3 @@
-// e2e/tests/nested-module-menu.spec.ts
-//
 // Nested "Add module" palette (opened by right-clicking the empty canvas
 // pane) — verifies the 2-level hierarchy renders,
 // drilling into each top category surfaces its sub-categories, and

@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/trails-device.ts
-//
 // THE BELA TRAILS DEVICE LAYER — one Web MIDI binding for the whole app, fanned
 // out to every `trails` module in the rack.
 //

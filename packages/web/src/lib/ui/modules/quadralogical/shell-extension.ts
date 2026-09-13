@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/quadralogical/shell-extension.ts
-//
 // The QUADRALOGICAL SHELL EXTENSION — the module-owned end of the extension
 // seam (#1512), joining the `fullViewBody` cohort.
 //

@@ -1,5 +1,3 @@
-// e2e/vrt/annotate-controls.ts
-//
 // Numbered-control overlay helper for the docs-overhaul "numbered device-face"
 // screenshot pipeline.
 //

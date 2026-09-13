@@ -1,5 +1,3 @@
-// e2e/tests/dx7.spec.ts
-//
 // End-to-end coverage of the DX7 module:
 //   1. Spawn DX7 → Sequencer → AudioOut chain via the polyPitchGate cable;
 //      arm the sequencer, assert the scope-tap reports audible RMS.
@@ -284,9 +282,7 @@ test('dx7: changing preset updates the dropdown value', async ({ page, rack }) =
   expect(stored).toBe('BASS 1');
 });
 
-// ---------------------------------------------------------------------------
 // THE PRESET STAMP — five writes, one transaction, and it has to come BACK
-// ---------------------------------------------------------------------------
 //
 // Loading a voice is no longer `data.preset = name`. It stamps the whole edit
 // buffer (`voice`, `opOn`, `voiceRev`) plus the two authoritative params

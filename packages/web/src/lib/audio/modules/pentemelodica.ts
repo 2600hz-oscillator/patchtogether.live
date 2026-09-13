@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/pentemelodica.ts
-//
 // PENTEMELODICA — 5-voice polyphonic analog-style synth (audio domain).
 //
 // ── Model ────────────────────────────────────────────────────────────────
@@ -83,12 +81,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export { PENTE_VOICES };
 
-// ----------------------------------------------------------------------------
 // Pure-math mirror — re-exported from the shared DSP lib so unit tests + ART
 // can render PENTEMELODICA under node (worklets can't load without an
 // AudioWorkletGlobalScope). This is the SAME source the worklet bundles, so
 // there is no second copy to keep in sync.
-// ----------------------------------------------------------------------------
 
 export interface PentemelodicaRenderInput {
   /** length 2*PENTE_VOICES: [pitchV0, gate0, …, pitchV4, gate4]. */
@@ -119,9 +115,6 @@ export const pentemelodicaMath = {
   },
 };
 
-// ----------------------------------------------------------------------------
-// Module def.
-// ----------------------------------------------------------------------------
 
 type ParamDef = AudioModuleDef['params'][number];
 

@@ -1,5 +1,3 @@
-// art/scenarios/reverb/profile.test.ts
-//
 // AUDIO PROFILE for REVERB (algorithmic mono freeverb) — backfill batch 6,
 // Faust-in-Node harness (spec §3). REVERB is Faust
 // (packages/dsp/src/reverb.dsp): re.mono_freeverb with size/damp macros and a

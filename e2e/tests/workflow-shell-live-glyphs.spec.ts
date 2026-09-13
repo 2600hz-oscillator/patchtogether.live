@@ -1,5 +1,3 @@
-// e2e/tests/workflow-shell-live-glyphs.spec.ts
-//
 // LIVE shell-face glyphs (P1 batch-1 owner feedback: "LIVE, not static") —
 // the tidyVco DOCK HERO glyph proven end to end under `?shell=1`:
 //
@@ -74,7 +72,6 @@ async function gotoWorkflowShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Set the viewport ZOOM and wait for the LOD tier to settle on the shell. */
 async function setZoomTier(page: Page, nodeId: string, zoom: number, tier: string): Promise<void> {
   await page.evaluate((z) => {
     const f = (globalThis as unknown as { __flow: { getViewport: () => { x: number; y: number; zoom: number }; setViewport: (vp: { x: number; y: number; zoom: number }, o?: { duration?: number }) => void } }).__flow;
@@ -169,7 +166,6 @@ test.describe('LIVE shell glyphs (?shell=1)', () => {
       });
     });
 
-    // Open the tidyVco dock full-view from the lane tile's expand pill.
     await setZoomTier(page, 'p-tv', 0.6, 'full');
     const shell = page.locator('.svelte-flow__node[data-id="p-tv"] [data-testid="module-shell"]');
     await shell.getByTestId('shell-open-dock').click();

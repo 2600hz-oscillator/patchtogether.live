@@ -1,5 +1,3 @@
-// e2e/tests/login-smoke.spec.ts
-//
 // REAL SIGN-IN smoke — the guard the 2026-07-11 dev login 500 proved we were
 // missing: /health polling can be green while every authenticated dashboard
 // load 500s (the racks.mode 42703 class). This spec drives the ACTUAL Clerk

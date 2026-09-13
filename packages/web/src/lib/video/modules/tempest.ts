@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tempest.ts
-//
 // TEMPEST (P1) — the vector well + player claw.
 //
 // A faithful Tempest-style tube shooter as a video module (owner-specced; design
@@ -286,7 +284,6 @@ export const tempestDef: VideoModuleDef = {
     },
   },
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['rim', 'shape'],
 

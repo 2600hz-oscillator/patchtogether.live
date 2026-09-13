@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-clipboard.test.ts
-//
 // The clip clipboard is ONE buffer shared by every surface that copies a clip —
 // the Launchpad, Push 2 (which runs through the Launchpad singleton) and the
 // card's note right-click menu. This file pins that it is genuinely ONE, because

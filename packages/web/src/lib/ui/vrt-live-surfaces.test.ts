@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/vrt-live-surfaces.test.ts
-//
 // THE ANTI-VACUITY GUARD for the VRT live-surface masks.
 //
 // A mask is a licence to render nothing. `expect(card).toHaveScreenshot({ mask
@@ -65,7 +63,6 @@ function repoRoot(): string {
 
 const VRT_DIR = resolve(repoRoot(), 'e2e/vrt');
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE LEGACY INLINE-MASK LIST — spec files still allowed to hand-roll a `mask:`
 // array instead of going through e2e/vrt/vrt-capture.ts. Every one of these is a
 // scene whose masked region has NO companion assertion, i.e. coverage that is
@@ -112,7 +109,6 @@ const LEGACY_INLINE_MASK_SPECS = new Set<string>([
   'workflow-shell-zoom.spec.ts',
 ]);
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE PRE-REGISTRY CANVAS-MASK TABLE. An entry here masks a card's canvas with
 // NO companion, so the module is free to render nothing. Entries whose module is
 // EXEMPT_FROM_VRT or has a VRT_SCENES entry are inert (the spec never applies
@@ -439,7 +435,6 @@ describe('VRT live-surface registry: every mask owes a companion', () => {
   );
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE PER-REGION RULE.
 //
 // The hole this closes: the registry used to allow `selector: 'canvas'` with

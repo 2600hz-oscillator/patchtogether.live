@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/crop-render.ts
-//
 // REUSABLE GPU crop pass — the render half of the crop feature (the pure model
 // + math live in crop-core.ts, the editor UI in ui/video/CropOverlay.svelte).
 // Module-agnostic: any video module that wants a "Crop" output creates ONE of

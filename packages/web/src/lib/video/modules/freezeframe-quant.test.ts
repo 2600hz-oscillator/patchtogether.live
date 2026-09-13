@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/freezeframe-quant.test.ts
-//
 // #1861 — THE PASSTHROUGH CLAIM, CHECKED ON BOTH SIDES OF THE CONTRACT.
 //
 // The defect and the reason it shipped are the same fact: `posterizeChannel`'s

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/param-vocabulary.test.ts
-//
 // THE PF-1 / PF-10 SPLIT, ENFORCED RATHER THAN DOCUMENTED.
 //
 // `ParamDef.options` and `ParamDef.landmarks` look interchangeable and are not.

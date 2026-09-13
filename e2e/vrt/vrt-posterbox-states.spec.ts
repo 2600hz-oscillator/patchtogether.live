@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-posterbox-states.spec.ts
-//
 // COMPOSITE-STATE VRTs for POSTERBOX (retro palette-crush video processor).
 //
 // The per-card sweep (vrt.spec.ts) locks the card at its DEFAULT state only

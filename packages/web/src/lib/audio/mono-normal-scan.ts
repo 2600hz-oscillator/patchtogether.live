@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/mono-normal-scan.ts
-//
 // THE ENUMERATOR for mono normals declared in packages/dsp/src worklets.
 // Extracted from the gate (mono-normal-not-defeated.test.ts) so the scan lives
 // in ONE place and can be unit-tested against synthetic source without touching
@@ -160,10 +158,8 @@ export interface ScanResult {
   ambiguous: string[];
 }
 
-// ---------------------------------------------------------------------------
 // Lexical prep: blank out comments and string literals so that prose like
 // "// R normals to L" can never be parsed as code, WITHOUT moving any offset.
-// ---------------------------------------------------------------------------
 
 function blankWith(src: string, alsoStrings: boolean): string {
   const out = src.split('');
@@ -211,10 +207,8 @@ export const blankNonCode = (src: string) => blankWith(src, true);
  */
 export const blankComments = (src: string) => blankWith(src, false);
 
-// ---------------------------------------------------------------------------
 // Operand scanning. An "operand" is a member/subscript chain: identifier chars,
 // `.`, `?.`, `!`, and balanced `[]` / `()`.
-// ---------------------------------------------------------------------------
 
 const IDENT = /[A-Za-z0-9_$]/;
 
@@ -330,10 +324,8 @@ export function resolveOperand(expr: string, env: Env): InputRef | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // The environment: every `const/let/var NAME = <input expr>` in the file, plus
 // array destructuring, resolved to a fixpoint so aliases-of-aliases work.
-// ---------------------------------------------------------------------------
 
 const DECL_RE = /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=;]+?)?=\s*([^;\n]+)/g;
 const DESTRUCTURE_RE = /\b(?:const|let|var)\s*\[([^\]]*)\]\s*(?::\s*[^=;]+?)?=\s*([^;\n]+)/g;
@@ -376,9 +368,7 @@ export function buildEnv(code: string): { env: Env; ambiguous: string[]; destruc
   return { env, ambiguous, destructured };
 }
 
-// ---------------------------------------------------------------------------
 // Classification.
-// ---------------------------------------------------------------------------
 
 /** Right-hand operands that make a fallback a plain DEFAULT, not a normal. */
 const DEFAULT_RHS = /^(null|undefined|0|0\.0|\[\]|''|""|`+`|\{\}|NaN|false|new Float32Array\(.*\)|EMPTY[A-Za-z0-9_$]*|SILENT[A-Za-z0-9_$]*)$/;
@@ -444,9 +434,7 @@ function classify(
   };
 }
 
-// ---------------------------------------------------------------------------
 // The scan.
-// ---------------------------------------------------------------------------
 
 /**
  * Line lookup, precomputed once per file. (Slicing + splitting per candidate is
@@ -577,7 +565,6 @@ export function scanDspTree(dir: string = DSP_DIR): ScanResult {
 /** Stable identity for a normal. Symbolic indices keep their source text. */
 export const normalKey = (n: MonoNormal) => `${n.dspFile}:${n.kind}:${n.normalled}`;
 
-// ---------------------------------------------------------------------------
 // Factory resolution — DERIVED, not hand-maintained.
 //
 // The shipped gate assumed "same basename for every module today". That is
@@ -587,7 +574,6 @@ export const normalKey = (n: MonoNormal) => `${n.dspFile}:${n.kind}:${n.normalle
 //
 // The real link is the PROCESSOR NAME: the DSP registers it, the factory names
 // it when constructing the AudioWorkletNode. Derive from that.
-// ---------------------------------------------------------------------------
 
 export function processorNameOf(src: string): string | null {
   const m = /registerProcessor\(\s*['"]([^'"]+)['"]/.exec(blankComments(src));
@@ -685,7 +671,6 @@ export function moduleTypeOf(factorySrc: string): string | null {
   return /(^|[^A-Za-z0-9_$])type:\s*'([A-Za-z0-9_$]+)'/m.exec(body)?.[2] ?? null;
 }
 
-// ---------------------------------------------------------------------------
 // THE SECOND INSTRUMENT — anchored to the DEF, blind in a DIFFERENT way.
 //
 // The residual audit above catches a spelling whose LEFT operand still resolves.
@@ -701,7 +686,6 @@ export function moduleTypeOf(factorySrc: string): string | null {
 // A normal spelled in a way the text scanner cannot read therefore shows up
 // HERE, as a stereo module with no normal, rather than vanishing. The two
 // instruments fail independently, which is the whole point.
-// ---------------------------------------------------------------------------
 
 export interface StereoModule {
   /** Factory file under modules/, e.g. `stereovca.ts`. */
@@ -799,9 +783,7 @@ export function findStereoModules(
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Defeat detection.
-// ---------------------------------------------------------------------------
 
 /**
  * Does `factorySrc` DEFEAT `normal` at worklet input `concreteIndex`? Returns
@@ -839,9 +821,7 @@ export function defeatReason(
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // SCOPE — stated in the enumerator, asserted in the gate.
-// ---------------------------------------------------------------------------
 
 export const SCOPE = {
   /** Read: the TOP LEVEL of packages/dsp/src only (worklet entries live there). */

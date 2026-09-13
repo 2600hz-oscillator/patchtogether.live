@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-audio-cache.ts
-//
 // LAZY DECODE for audio clips, behind a BYTE-CAPPED LRU.
 //
 // A launcher can hold 64 clips per player; decoding all of them at load would

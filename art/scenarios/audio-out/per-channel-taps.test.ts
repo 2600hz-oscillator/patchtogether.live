@@ -1,5 +1,3 @@
-// art/scenarios/audio-out/per-channel-taps.test.ts
-//
 // THE INSTRUMENT, NOT THE MODULE. audio-out's `read('outputSnapshot')` is the
 // terminal audibility probe ~8 e2e specs assert on — and it is STRUCTURALLY
 // BLIND TO STEREO. An AnalyserNode analyses a MONO DOWNMIX per spec, so on the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/videocube-face-model.test.ts
-//
 // VIDEOCUBE — the permanent gates on the claims this face is built from.
 //
 // ⚠ THIS FACE IS THE OWNER'S CONTROL-HEAVY TABBED CASE (ruling 2026-08-18), and
@@ -58,7 +56,6 @@ const ORDER = videocubeDef.face?.order ?? [];
 const famCell = (key: string) =>
   shellCellFor('videocube', { kind: 'family', key } as never);
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('videocube face — the TABBED case, and why it qualifies', () => {
   it('SEVEN honest bands, and the rail engages on the count — no opt-in', () => {
     const bands = dockFacePlan(videocubeDef) ?? [];
@@ -105,7 +102,6 @@ describe('videocube face — the TABBED case, and why it qualifies', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('videocube face — the TWO switches that said `linear` (the repair)', () => {
   const SWITCHES = ['freeze', 'live'] as const;
 
@@ -146,7 +142,6 @@ describe('videocube face — the TWO switches that said `linear` (the repair)', 
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('videocube face — FIVE rosters, all PROMOTED from shipped names', () => {
   /** (param, the exact labels, in order) — every one read back off the CARD. */
   const ROSTERS: readonly { id: string; labels: readonly string[] }[] = [
@@ -249,7 +244,6 @@ describe('videocube face — FIVE rosters, all PROMOTED from shipped names', () 
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('videocube face — the SIX ingest cells survive promotion', () => {
   const SLOTS = ['a', 'b', 'c'] as const;
 
@@ -323,7 +317,6 @@ describe('videocube face — the SIX ingest cells survive promotion', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('videocube face — the pictures, the pads and the tier ladder', () => {
   it('the picture arrives from the VIDEO seam, never from the glyph literal', () => {
     expect(videocubeDef.face?.glyph, 'the mandatory literal').toBe('none');

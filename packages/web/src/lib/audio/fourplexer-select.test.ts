@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/fourplexer-select.test.ts
-//
 // Unit tests for the pure 4PLEXER selector-advance logic — gate edge →
 // next index, with 3 → 0 wrap. Fast + deterministic; the worklet carries
 // an inlined mirror of fourplexerNextSelector and the unit test pins the

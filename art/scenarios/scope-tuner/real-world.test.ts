@@ -1,5 +1,3 @@
-// art/scenarios/scope-tuner/real-world.test.ts
-//
 // Layer 3 calibration: pitch tuner against real-world-style reference signals.
 //
 // FIXTURE SOURCE / LICENSE

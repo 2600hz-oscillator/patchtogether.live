@@ -1,5 +1,3 @@
-// packages/dsp/src/gatemaiden.ts
-//
 // GATEMAIDEN — single-input gate↔trigger converter worklet. The conversion
 // logic (rising-edge detect → short trigger pulse + minimum-width derived gate)
 // is pure + unit-tested in ./lib/gatemaiden-dsp.ts; this entry just wraps it in

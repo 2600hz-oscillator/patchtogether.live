@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-export-registry.test.ts
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   registerVideoExport,

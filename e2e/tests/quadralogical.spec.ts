@@ -1,5 +1,3 @@
-// e2e/tests/quadralogical.spec.ts
-//
 // QUADRALOGICAL (4-input video mixer) — DETERMINISTIC render-smoke (DRS),
 // converted IN-PLACE from the old wall-clock / animation-diff shape (plan §3/§5
 // Layer B; rebuild plan §3 "DRS for corner-dominance + preview").

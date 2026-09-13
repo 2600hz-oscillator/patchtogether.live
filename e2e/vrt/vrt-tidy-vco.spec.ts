@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-tidy-vco.spec.ts
-//
 // Composite-state VRT for TIDY VCO — the card captured at three
 // SONICALLY-DISTINCT non-default settings (the vrt-clap per-state
 // pattern: pure deterministic fader chrome, no canvas, so a spawn +

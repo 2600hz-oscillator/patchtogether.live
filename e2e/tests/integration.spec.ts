@@ -1,5 +1,3 @@
-// e2e/tests/integration.spec.ts
-//
 // Cross-module integration smoke. Generated patches from
 // _pair-patches.ts each wire a source into a sink, drive any
 // upstream that's needed, and assert the sink receives signal.

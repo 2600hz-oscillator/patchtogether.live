@@ -1,5 +1,3 @@
-// e2e/tests/skifree-node-lifetime.spec.ts
-//
 // SKIFREE'S GAME MUST BELONG TO THE NODE, NOT TO THE CARD.
 //
 // ── THE DEFECT ──────────────────────────────────────────────────────────────
@@ -348,7 +346,6 @@ test.describe('SKIFREE — the game belongs to the NODE', () => {
         + 'no glyph, so the tileBody is the only thing on it',
     ).toBeVisible();
 
-    // Open the dock to LOOK at the game — the ordinary reason a player expands.
     const expand = tile.getByTestId('shell-open-dock');
     await expect(expand).toHaveAttribute('data-expanded', 'false');
     await expand.click();

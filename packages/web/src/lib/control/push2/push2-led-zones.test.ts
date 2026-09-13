@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-led-zones.test.ts
-//
 // THE THREE LIT BUTTON ZONES OF THE PUSH 2, per VIEW — the owner's 2026-08-04
 // hardware report, made into a gate:
 //
@@ -64,10 +62,8 @@ import {
 import { push2FrameToLeds, PUSH_CC_PERMANENT_BASE, PUSH_CC_SCENE_BASE, type Push2LedSpec } from './push2-map';
 import { clamp7, pushColorIndex, PUSH_PALETTE_HUES } from './push2-sysex';
 
-// ---------------------------------------------------------------------------
 // The PRE-FIX quantiser, reproduced verbatim from git history — the negative
 // control. A flat nearest-anchor search over a table that is all-bright + black.
-// ---------------------------------------------------------------------------
 const LEGACY_ANCHORS: readonly { i: number; rgb: readonly [number, number, number] }[] = [
   { i: 0, rgb: [0, 0, 0] },
   { i: 127, rgb: [127, 0, 0] },
@@ -92,9 +88,7 @@ function legacyPushColorIndex(r: number, g: number, b: number): number {
   return best.i;
 }
 
-// ---------------------------------------------------------------------------
 // Frame fixtures — one per SINGLE view, the five the Push can actually be in.
-// ---------------------------------------------------------------------------
 const mkTop = (view: SingleView, partial: Partial<PermanentTopOpts> = {}): PermanentTopOpts => ({
   view,
   keysActive: false,
@@ -172,9 +166,7 @@ function rgbAt(
   return frame.leds.get(index) ?? null;
 }
 
-// ---------------------------------------------------------------------------
 // ZONE 1 — the SCENE / LAUNCH column (Push CC 36..43).
-// ---------------------------------------------------------------------------
 describe('ZONE 1 — the scene / launch column (Push CC 36..43)', () => {
   it('every view paints it, and NO lit scene button is extinguished by the encoder', () => {
     // The owner: "the launch keys are dark except for clip mode". The frame was
@@ -255,9 +247,7 @@ describe('ZONE 1 — the scene / launch column (Push CC 36..43)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ZONE 2 — the TOP FUNCTION row (Push CC 20..27).
-// ---------------------------------------------------------------------------
 describe('ZONE 2 — the top function row (Push CC 20..27)', () => {
   it('all EIGHT buttons are lit in every view, in the default (nothing armed) state', () => {
     // This is the zone with the worst pre-fix behaviour and the one the owner
@@ -312,11 +302,9 @@ describe('ZONE 2 — the top function row (Push CC 20..27)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ZONE 3 — the CHANNEL-SELECT row (Push CC 102..109) is covered end-to-end in
 // push2-control.test.ts (it reads the live graph). What belongs HERE is the pure
 // colour property that made it fail, swept over all eight lanes.
-// ---------------------------------------------------------------------------
 describe('ZONE 3 — the channel-select row colours (Push CC 102..109)', () => {
   const CHANNEL_DIM = 0.3; // must track push2-control.svelte.ts
 
@@ -351,12 +339,10 @@ describe('ZONE 3 — the channel-select row colours (Push CC 102..109)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE FOURTH FACE — the clip PADS. Not in the owner's report, found while
 // measuring, and the same defect: a LOADED-but-not-playing clip is painted at
 // 32% of its lane hue, which the legacy encoder put on black for 3 of the 8
 // default hues. So a clip that exists was invisible until you launched it.
-// ---------------------------------------------------------------------------
 describe('the clip PADS (same defect, not in the report)', () => {
   it('a loaded-but-not-playing clip stays visible and differs from a playing one', () => {
     for (let lane = 0; lane < 8; lane++) {
@@ -378,10 +364,8 @@ describe('the clip PADS (same defect, not in the report)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // SCOPE, stated inside the gate (repo standard: an unstated scope reads as full
 // coverage).
-// ---------------------------------------------------------------------------
 describe('what this file does NOT cover', () => {
   it('states its own blind spots', () => {
     // 1. It cannot verify what COLOUR a palette index actually shows — there is

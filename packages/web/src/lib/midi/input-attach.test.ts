@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/input-attach.test.ts
-//
 // The MIDI input handler-slot seam.
 //
 // ── WHAT THIS FILE IS STRUCTURALLY UNABLE TO SEE ───────────────────────────
@@ -20,11 +18,9 @@ import { describe, it, expect } from 'vitest';
 import { createMidiInputClaim } from './input-attach';
 import type { MidiEventLike, MidiInputLike } from '$lib/audio/modules/midi-cv-buddy';
 
-// ---------------------------------------------------------------------------
 // A fake input whose handler slot behaves exactly like the real single-slot
 // property: assignment replaces, `= null` evicts, and only ONE function is ever
 // reachable. `fire()` is the wire.
-// ---------------------------------------------------------------------------
 function makeInput(id: string): MidiInputLike & { fire(bytes: number[]): void } {
   let handler: ((ev: MidiEventLike) => void) | null = null;
   return {
@@ -207,7 +203,6 @@ describe('hotplug', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE REGRESSION THE PR EXISTS FOR — and its PERMANENT negative control.
 //
 // One shared MIDIAccess (what the e2e/unit doubles hand every caller, and what
@@ -219,7 +214,6 @@ describe('hotplug', () => {
 // routine is reproduced verbatim below and asserted to KILL the bystander on
 // every run. If the destructive shape ever stopped being destructive, this
 // file would go red and tell us the test had stopped testing anything.
-// ---------------------------------------------------------------------------
 describe('a disposing subsystem must not silence its neighbour (shared access)', () => {
   function sharedAccess(): {
     inputs: Map<string, MidiInputLike & { fire(b: number[]): void }>;

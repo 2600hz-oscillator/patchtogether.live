@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/resofilter-dsp.test.ts
-//
 // Pure-DSP unit tests for the RESOFILTER core (Zavalishin/Cytomic TPT
 // state-variable filter, ported from Resonarium). Extracted but untested — so
 // a regression in the SVF coefficient math or the mode pick would pass every
@@ -31,7 +29,6 @@ import {
 
 const SR = 48000;
 
-// ── helpers ──────────────────────────────────────────────────────────────────
 function sine(freqHz: number, n: number, sr = SR, amp = 1): Float32Array {
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) out[i] = amp * Math.sin((2 * Math.PI * freqHz * i) / sr);
@@ -213,7 +210,6 @@ describe('ResofilterChannel dry/wet mix', () => {
 // accessor is needed. Reading the STATE (not the rendered output) is still the
 // point: a Float32Array output underflows below ~1.4e-45 and would read as a
 // clean 0.0 whether or not the floor exists.
-// ---------------------------------------------------------------------------
 
 describe('resofilter-dsp / denormal floor', () => {
   const settled = (s: { ic1: number; ic2: number }): boolean => s.ic1 === 0 && s.ic2 === 0;

@@ -1,5 +1,3 @@
-// e2e/tests/toybox-node-menu.spec.ts
-//
 // TOYBOX combine-graph editor — the CONTEXTUAL right-click (contextmenu) menu.
 //
 // The in-card node-map editor (the bespoke SVG combine graph) has its own menu

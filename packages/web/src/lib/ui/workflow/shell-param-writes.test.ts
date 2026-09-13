@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-param-writes.test.ts
-//
 // PF-13's registry. Small surface, but the WIRING is the whole thing: unhook
 // `cloudseed.preset_index` and the shell silently falls back to writing one
 // number, which is the shipped bug in a different disguise (the graph then

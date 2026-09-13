@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavesculpt-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the WAVESCULPT faceplate.
 //
 // This face rests on claims no shared gate checks, and every one of them reads

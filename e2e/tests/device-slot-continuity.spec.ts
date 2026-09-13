@@ -1,5 +1,3 @@
-// e2e/tests/device-slot-continuity.spec.ts
-//
 // NATIVE-SHELL P1 — THE RECEIVER SIDE OF THE DEVICE-SLOT CONTRACT.
 //
 // `graph/device-slots-ydoc.test.ts` already proves the GRAPH half against the
@@ -90,9 +88,7 @@ const LEVEL_B = 235;
 const BAND_A_MAX = 80; // ~48 expected
 const BAND_B_MIN = 95; // ~120 expected
 
-// ---------------------------------------------------------------------------
 // The fake camera rig
-// ---------------------------------------------------------------------------
 
 /**
  * Replace `enumerateDevices` + `getUserMedia` before boot.
@@ -220,9 +216,7 @@ async function setSourceLevel(page: Page, level: number): Promise<void> {
   }, level);
 }
 
-// ---------------------------------------------------------------------------
 // The media probe — IDENTITY-BOUND, by construction
-// ---------------------------------------------------------------------------
 
 interface CamSample {
   /** Was a <video> found under this node's camera host at watch time? */
@@ -316,9 +310,7 @@ async function sampleCamera(page: Page, nodeId: string): Promise<CamSample> {
   }, nodeId);
 }
 
-// ---------------------------------------------------------------------------
 // Graph + engine reads
-// ---------------------------------------------------------------------------
 
 interface PatchNodeLite {
   id: string;
@@ -450,9 +442,7 @@ async function centreOnCard(page: Page, nodeId: string): Promise<void> {
     .toBe(true);
 }
 
-// ---------------------------------------------------------------------------
 // The camera manager — the REAL user path
-// ---------------------------------------------------------------------------
 
 function camRow(page: Page, nodeId: string): Locator {
   return page.locator(`[data-testid="workflow-camera-row"][data-node-id="${nodeId}"]`);
@@ -490,7 +480,6 @@ async function pickSource(page: Page, nodeId: string, deviceId: string): Promise
   ).toHaveAttribute('data-lamp', 'streaming', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 }
 
-// ---------------------------------------------------------------------------
 
 test.describe('NATIVE-SHELL P1 — a bound device slot survives a patch load', () => {
   // Stop every capture pipeline this test started, on the failing path as well

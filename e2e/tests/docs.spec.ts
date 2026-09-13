@@ -1,5 +1,3 @@
-// e2e/tests/docs.spec.ts
-//
 // In-app docs site (post Astro/gh-pages migration). Three things to prove:
 //   1. /docs/* is reachable unauthenticated and free of the beta gate.
 //   2. The auto-generated catalog actually renders an I/O diagram per module.

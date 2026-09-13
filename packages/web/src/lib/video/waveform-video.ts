@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/waveform-video.ts
-//
 // Audio waveform → mono-video texture renderer. Used by WAVVIZ, SWOLEVCO,
 // and SCOPE to expose their audio output as a video-domain stream that
 // can be patched into video-domain inputs (OUTPUT, MIXER, etc.).
@@ -341,11 +339,9 @@ export function createWaveformRenderer(
   };
 }
 
-// ----------------------------------------------------------------------
 // Pure-CPU helper for tests / non-GL pixel-prediction. Renders the same
 // trace into an Uint8ClampedArray sized (width × height × 4). Used by
 // the unit tests that don't have a WebGL2 context.
-// ----------------------------------------------------------------------
 
 export interface CpuTraceOptions {
   /** Vertical fullscale. Same semantics as WaveformRendererOptions. */

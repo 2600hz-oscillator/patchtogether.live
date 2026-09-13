@@ -1,5 +1,3 @@
-// e2e/tests/acidwarp-face-screen.spec.ts
-//
 // THE ACIDWARP FACE SCREEN (#2111) — the render legs for a module that IS its
 // display, plus the MEASUREMENT that justifies its `FACES_WITHOUT_SCENES` entry.
 //

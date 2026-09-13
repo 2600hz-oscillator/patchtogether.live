@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/archivist-scrub.ts
-//
 // ARCHIVIST pure scrub/seek math for time-based media (audio + video).
 // NO DOM: every function maps numbers→numbers so the card's transport can be
 // unit-tested without a real <audio>/<video> element. The card applies the

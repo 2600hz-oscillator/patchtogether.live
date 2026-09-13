@@ -1,5 +1,3 @@
-// e2e/tests/clouds.spec.ts
-//
 // CLOUDS end-to-end smoke test on the shell the user gets: the tile mounts,
 // and the FREEZE switch drives the param both ways (the card's active-class
 // assertion, re-anchored on the param + aria-checked state).

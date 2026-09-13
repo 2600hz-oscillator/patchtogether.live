@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/rackspaces/[id]/join/+server.ts
-//
 // POST /api/rackspaces/[id]/join — visitor lands on a /r/[id] share URL,
 // they're authenticated, and they click "Join". Adds their userId to the
 // rackspace's member list (capacity-checked at 4).

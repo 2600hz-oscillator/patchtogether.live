@@ -1,5 +1,3 @@
-// packages/dsp/src/clouds.ts
-//
 // CLOUDS — granular texture processor, after Émilie Gillet's "Clouds"
 // (Mutable Instruments). The original C++ lives at:
 //   eurorack/clouds/dsp/granular_processor.{h,cc}

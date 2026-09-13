@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavesculpt/wavetable-actions.ts
-//
 // THE WAVETABLE-SOURCE WRITES, in ONE place because TWO surfaces need them:
 // `WavesculptCard.svelte` (the legacy lane card) and the twelve faceplate shell
 // cells. Both write the same `node.data.osc{N}.*` shape the factory's poll loop

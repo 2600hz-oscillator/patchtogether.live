@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/keyboard-map.ts
-//
 // PURE isomorphic keyboard layout + scale-lighting for the dual-Launchpad KEYS
 // mode (design P1). LinnStrument CHROMATIC "fourths" layout (owner Q3): EVERY
 // pad is playable (all 12 semitones); the clip's root+scale drive only the

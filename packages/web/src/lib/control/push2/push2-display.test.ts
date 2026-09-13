@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-display.test.ts
-//
 // Push 2 DISPLAY transport — lifecycle, pacing and (above all) GRACEFUL
 // DEGRADATION, with no hardware anywhere. Two injection levels are exercised:
 //
@@ -98,9 +96,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ---------------------------------------------------------------------------
 // Capability probe + the no-WebUSB path.
-// ---------------------------------------------------------------------------
 
 describe('usbAvailable + graceful degradation with NO WebUSB', () => {
   it('is false in the test (node) environment — no navigator.usb', () => {
@@ -132,9 +128,7 @@ describe('usbAvailable + graceful degradation with NO WebUSB', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The WebUSB open/claim path, against a fake USBDevice.
-// ---------------------------------------------------------------------------
 
 describe('openPush2Display — the vendor-specific interface claim', () => {
   it('opens, selects configuration 1, then claims interface 0 — in that order', async () => {
@@ -199,9 +193,7 @@ describe('openPush2Display — the vendor-specific interface claim', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // connectDisplay against a stubbed navigator.usb (picker accept / decline).
-// ---------------------------------------------------------------------------
 
 describe('connectDisplay — the picker', () => {
   const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
@@ -276,9 +268,7 @@ describe('connectDisplay — the picker', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The frame pump, through the simulated panel.
-// ---------------------------------------------------------------------------
 
 describe('sendFrame — what actually reaches the panel', () => {
   it('writes a 16-byte header then exactly 20 × 16 KB chunks', async () => {
@@ -331,9 +321,7 @@ describe('sendFrame — what actually reaches the panel', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Pacing: the ~30 Hz gate and the keepalive heartbeat.
-// ---------------------------------------------------------------------------
 
 describe('the ~30 Hz frame gate', () => {
   it('coalesces a burst — the second frame is HELD, not sent', async () => {
@@ -448,9 +436,7 @@ describe('the keepalive heartbeat (the panel blanks after ~2 s of silence)', () 
   });
 });
 
-// ---------------------------------------------------------------------------
 // Double buffering — the tearing hazard a 320 KB transfer creates.
-// ---------------------------------------------------------------------------
 
 describe('double buffering', () => {
   it('a repaint arriving MID-TRANSFER does not tear the frame already in flight', async () => {
@@ -502,9 +488,7 @@ describe('double buffering', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The cable comes out.
-// ---------------------------------------------------------------------------
 
 describe('a device that goes away mid-frame', () => {
   it('tears down to "failed" and keeps every later call a harmless no-op', async () => {

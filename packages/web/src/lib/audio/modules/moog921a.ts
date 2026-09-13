@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog921a.ts
-//
 // MOOG 921A OSCILLATOR DRIVER — Moog System 55/35 clone (batch 1, shipped
 // with the 921B oscillator). A CV PROCESSOR, not a sound source: it
 // generates the two CONTROL VOLTAGES on a bus that drive N slaved 921B's.

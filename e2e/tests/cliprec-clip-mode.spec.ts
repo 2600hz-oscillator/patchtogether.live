@@ -28,7 +28,6 @@ import { test, expect } from './_fixtures';
 import { spawnPatch, MOUNT_CAP_MS } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 
-// ---------------------------------------------------------------------------
 // THE BUDGET IS DERIVED FROM THE STEPS, NOT TYPED OVER THEM
 //
 // ⚠ A flat wall SMALLER than the sum of the caps it contains cannot fail at the
@@ -36,7 +35,6 @@ import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage
 // out, and Playwright reports a bare "Test timeout of N exceeded" against
 // whatever call was in flight — no assertion text, nothing to grep but its
 // absence. So the caps are named ONCE and the wall is their SUM.
-// ---------------------------------------------------------------------------
 
 /** Cold boot: the navigation, then the topbar. Charged TWICE — the goto carries
  *  the cap too, since this suite's config sets no `navigationTimeout`. */

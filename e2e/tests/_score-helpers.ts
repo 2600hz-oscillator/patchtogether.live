@@ -1,5 +1,3 @@
-// e2e/tests/_score-helpers.ts
-//
 // SCORE / sequencer test-setup helpers. Deliberately NOT in _helpers.ts: no
 // multi-context spec uses anything here — this only seeds a SCORE node's music
 // and toggles its transport, which cannot move relay/sync behavior, so it does

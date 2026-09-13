@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/preset-set.test.ts
-//
 // Unit tests for the pure `.set` container (zip-of-zips of preset slots +
 // the MIDI mapping). No DOM / IDB — `fflate` runs in node, so this is a pure
 // round-trip + validation suite.

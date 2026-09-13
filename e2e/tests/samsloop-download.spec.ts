@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-download.spec.ts
-//
 // SAMSLOOP DOWNLOAD button — exports the recorded sample as a standard
 // WAV file with a synthesized 44-byte RIFF/WAVE header on the fly.
 //

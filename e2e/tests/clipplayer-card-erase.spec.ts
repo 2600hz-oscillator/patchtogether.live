@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-card-erase.spec.ts
-//
 // STALE-NOTE FIX — on-screen editor path (redesign §3.1, adversarial-review
 // B2). The note editor must RECONCILE the scheduler when you erase a note on a
 // PLAYING clip, exactly like the Launchpad editor — otherwise the erased voice

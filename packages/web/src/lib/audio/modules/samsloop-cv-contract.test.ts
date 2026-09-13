@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-cv-contract.test.ts
-//
 // THE TWO SIDES OF SAMSLOOP'S CV CONTRACT, ASSERTED AGAINST EACH OTHER.
 //
 // ── THE DEFECT THIS EXISTS FOR, measured on this PR's first CI run ──────────

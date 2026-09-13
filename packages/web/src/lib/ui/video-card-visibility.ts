@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/video-card-visibility.ts
-//
 // Card-viewport visibility feed for the video engine's SINK-DRIVEN PULL
 // EVALUATION ($lib/video/pull-eval).
 //

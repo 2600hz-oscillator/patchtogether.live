@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mandelbulb-face-model.test.ts
-//
 // MANDELBULB — the permanent gates on the claims this face is built from that
 // nothing else covers.
 //

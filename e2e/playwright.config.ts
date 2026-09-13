@@ -1,5 +1,3 @@
-// e2e/playwright.config.ts
-//
 // Playwright config for patchtogether.live E2E tests.
 // Targets Chromium with autoplay-allowed flags so AudioContext can start
 // without a real user gesture (Playwright's button.click() counts as one,
@@ -52,7 +50,6 @@ const REAL_GPU_ARGS =
       ]
     : [];
 const GPU_ARGS = [...SWIFTSHADER_ARGS, ...REAL_GPU_ARGS];
-// --------------------------------------------------------------------------
 // WebGL-HEAVY partition (shard rebalance, #68) — the SINGLE source of truth is
 // now e2e/webgl-heavy-globs.ts (imported as WEBGL_HEAVY_GLOBS above), so the
 // WebGL-attestation hash/coverage tooling can resolve the SAME spec set without

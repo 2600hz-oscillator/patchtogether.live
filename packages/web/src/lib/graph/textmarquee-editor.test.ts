@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/textmarquee-editor.test.ts
-//
 // The PURE half of TEXTMARQUEE's DOM ⇄ model serializer.
 //
 // ⚠ WHAT THIS FILE CAN AND CANNOT SEE, stated first because the split is the

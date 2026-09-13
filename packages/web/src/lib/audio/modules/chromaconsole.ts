@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/chromaconsole.ts
-//
 // CHROMA CONSOLE — a control surface for the Hologram Electronics pedal.
 //
 // The first device module. It sends MIDI CC; it carries no audio. The pedal's
@@ -43,7 +41,6 @@ import {
 
 export const CHROMA_CONSOLE_TYPE = 'chromaconsole';
 
-// ─────────────────────────── THE FACE ───────────────────────────────────────
 //
 // ⚠ THE RANK PUTS TWO GESTURES ABOVE EIGHT KNOBS, and the argument is this
 // module's own rather than a house style. The lane budget is `faceTierCap`: 3

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog902.ts
-//
 // MOOG 902 — Voltage Controlled Amplifier (slice 3 of the Moog System
 // 55 / 35 clone initiative, docs/adr/018-moog-clone-provenance.md).
 // The classic Moog differential
@@ -111,7 +109,6 @@ export const moog902Def: AudioModuleDef = {
     { id: 'mode',     label: 'Resp', defaultValue: 0,   min: 0,  max: 1, curve: 'discrete', options: MOOG902_MODE_OPTIONS },
   ],
 
-  // ── THE FACE ────────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR, MUSICALLY: this is the rack's only DIFFERENTIAL VCA — level
   // as a VOLTAGE, with a phase-inverted twin on a second jack. The verb is

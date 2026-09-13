@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/delay-echo-model.ts
-//
 // The DELAY's echo arithmetic as a pure model — the repeat count a feedback
 // setting buys, the equal-power dry/wet split, and the three knob READOUTS the
 // curated face paints.

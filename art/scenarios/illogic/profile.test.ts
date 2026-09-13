@@ -1,5 +1,3 @@
-// art/scenarios/illogic/profile.test.ts
-//
 // AUDIO PROFILE for ILLOGIC (4-ch attenuverter + sum/diff mixer + digital
 // logic) (backfill batch 5 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

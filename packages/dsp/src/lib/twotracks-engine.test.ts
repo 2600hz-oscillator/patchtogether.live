@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/twotracks-engine.test.ts
-//
 // Unit tests for the TWOTRACKS tape transport — the exact code the worklet runs.
 // These exercise the record/playback DSP that the headless e2e CANNOT (no
 // AudioWorklet audio thread in Playwright), which is why the recording bugs

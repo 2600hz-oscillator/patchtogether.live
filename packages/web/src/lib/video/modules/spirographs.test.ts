@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/spirographs.test.ts
-//
 // SPIROGRAPHS — pure curve + motion math tests (GPU-free). This is the
 // correctness core: the hypotrochoid / epitrochoid point functions, the
 // revolutions-to-close derivation, and the bounding-box center

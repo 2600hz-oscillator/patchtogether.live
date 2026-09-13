@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-roll.test.ts
-//
 // Coverage for GoPro CHUNKING: the recorder rolls to a NEW file every
 // `maxChunkSeconds`, with a 5-SECOND AUDIO OVERLAP (the last 5 s of chunk N
 // prepended as the start of chunk N+1), and chunks are named

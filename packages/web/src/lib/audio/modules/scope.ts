@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/scope.ts
-//
 // Scope — 2-channel passthrough oscilloscope. Plain JS (GainNode passthrough +
 // AnalyserNode for waveform sampling). The card reads the analyser data via
 // the engine's read(node, 'snapshot') interface.
@@ -171,7 +169,6 @@ export const scopeDef: AudioModuleDef = {
     { id: 'intensity', label: 'Inten', defaultValue: 0.5, min: 0,   max: 1,   curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // SCOPE is THE RACK'S PROBE. You patch it INLINE — `ch1_out`/`ch2_out` are
   // the input gains verbatim, nothing touches the signal — and it draws what is

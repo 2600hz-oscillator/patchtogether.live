@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/devices.ts
-//
 // Pure helpers shared by the AUDIO IN + AUDIO OUT cards for working
 // with `navigator.mediaDevices.enumerateDevices()` results.
 //

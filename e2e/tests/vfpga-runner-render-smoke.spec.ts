@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-runner-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for the vfpga-runner HOST module (plan §5
 // Layer B; template = acidwarp-render-smoke.spec.ts + _render-smoke.ts).
 //

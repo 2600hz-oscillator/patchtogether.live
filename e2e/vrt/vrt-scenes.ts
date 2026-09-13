@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-scenes.ts
-//
 // VRT scene registry — per-module recipes for setting up the rack so
 // the module's canvas shows REAL CONTENT instead of an empty / masked
 // region in its baseline.

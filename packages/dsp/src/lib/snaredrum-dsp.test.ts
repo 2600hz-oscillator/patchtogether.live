@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/snaredrum-dsp.test.ts
-//
 // The single-hit snare VOICE + shared wire-bed + shared bus + stereo gate
 // (design §6.1). Proves strike determinism, the frequency law, sr-calibrated
 // decay (44.1k AND 48k — audit A2), per-layer isolation (Goertzel), the
@@ -80,7 +78,6 @@ const rms = (b: Float32Array, s = 0, e = b.length): number => {
   return Math.sqrt(x / Math.max(1, e - s));
 };
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: strike determinism', () => {
   it('two independent states render bit-identical stereo output', () => {
     const a = renderStereo(8192, oneStrike, noGate, P());
@@ -110,7 +107,6 @@ describe('snaredrum: strike determinism', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: frequency law', () => {
   it('places modes at tune·MODE_RATIO[k] (inharmonic Bessel structure)', () => {
     for (let k = 0; k < MODE_RATIO_TEST.length; k++) {
@@ -137,7 +133,6 @@ describe('snaredrum: frequency law', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: sr-calibrated decay (audit A2)', () => {
   function decayMs(knobMs: number, field: 'head' | 'body' | 'wire', sr: number): number {
     // The env multiplier is the SAME per-sample coeff the core applies; count
@@ -160,7 +155,6 @@ describe('snaredrum: sr-calibrated decay (audit A2)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: per-layer isolation (Goertzel)', () => {
   const sr = 48000;
 
@@ -196,7 +190,6 @@ describe('snaredrum: per-layer isolation (Goertzel)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: output invariants', () => {
   const sr = 48000;
 
@@ -235,7 +228,6 @@ describe('snaredrum: output invariants', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: stereo (mono-safe)', () => {
   const sr = 48000;
 
@@ -272,7 +264,6 @@ describe('snaredrum: stereo (mono-safe)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // STEREO PLACEMENT — the sizzle must land on the side of the hand that struck
 // it (#1293). The voices placed themselves with a NEGATED constant-power side
 // term while the shared wire bed ADDED its placement term, so a left-hand
@@ -441,7 +432,6 @@ describe('snaredrum: stereo PLACEMENT — the sizzle follows the hand (#1293)', 
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snaredrum: drumroll continuity (the load-bearing property)', () => {
   const sr = 48000;
 
@@ -480,7 +470,6 @@ describe('snaredrum: drumroll continuity (the load-bearing property)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // PARAM SENSITIVITY — the real guard against a knob going DEAD.
 //
 // For every user-facing knob, render its MIN vs MAX (single TRIGGER for hit

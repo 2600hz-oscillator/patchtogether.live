@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/wavesculpt-luma-bandpass.ts
-//
 // WAVESCULPT luminosity → morphable BANDPASS mapping.
 //
 // Each waveform line passes THROUGH the 3D box and crosses the two walls it

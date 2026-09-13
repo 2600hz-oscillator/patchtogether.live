@@ -1,5 +1,3 @@
-// e2e/_fixtures/toybox-fixture-shaders.ts
-//
 // THE DETERMINISTIC FIXTURE-SHADER PACK (#2070) — trivial, time-INVARIANT
 // GLSL loaded AS DATA through the product's own custom-shader seam, so the
 // layering / locks / randomize / undo / editor-binding e2e can assert EXACT

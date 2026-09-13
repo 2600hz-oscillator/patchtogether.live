@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/karplus-factory-strike.test.ts
-//
 // THE HOST-SIDE AUDIO WIRING FOR THE PLUCK, against the REAL factory.
 //
 // ⚠ WHY THIS FILE EXISTS. karplus has carried a `strikeCs` ConstantSource and a

@@ -1,5 +1,3 @@
-// art/scenarios/moog907a/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 907A (fixed filter bank) (backfill batch 2 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

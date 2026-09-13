@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-buddy/clock-math.test.ts
-//
 // PURE unit coverage for CV Buddy's generated-clock scheduling math.
 // (Flake-check REPEAT=3 pre-MR per CLAUDE.md.)
 //

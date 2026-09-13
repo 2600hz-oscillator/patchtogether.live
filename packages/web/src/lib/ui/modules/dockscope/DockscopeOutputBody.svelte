@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/dockscope/DockscopeOutputBody.svelte
-  //
   // The DOCKSCOPE dock full-view body: the live time-domain trace, carried
   // forward from `DockscopeCard.svelte` onto the faceplate.
   //

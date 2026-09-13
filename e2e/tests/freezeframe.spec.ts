@@ -1,5 +1,3 @@
-// e2e/tests/freezeframe.spec.ts
-//
 // FREEZEFRAME — video sample & hold + per-channel posterize.
 //
 // DETERMINISTIC render-smoke (DRS), converted IN-PLACE from the old wall-clock
@@ -189,7 +187,6 @@ async function setVideoParam(page: Page, nodeId: string, paramId: string, value:
   }, { nodeId, paramId, value });
 }
 
-// ---------------------------------------------------------------------------
 // (e) THE GATE SEMANTICS, read off REAL RENDERED FRAMES.
 //
 // This is the regression test for the owner report of 2026-07-31 ("with the
@@ -228,7 +225,6 @@ async function setVideoParam(page: Page, nodeId: string, paramId: string, value:
 // property of the bridge's replay cadence by construction; the per-frame
 // timestamps are returned so the assertion can locate that window exactly
 // instead of guessing a frame count for it.
-// ---------------------------------------------------------------------------
 
 /** ACIDWARP scene count. 41 is PRIME, so any stride below is automatically
  *  co-prime to it and to the trigger period — captured frames cannot alias onto
@@ -373,7 +369,6 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
-    // Clear any stale force-gate from a previous test in the worker.
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number | undefined }).__freezeframeForceGate = undefined;
     });
@@ -753,7 +748,6 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  // -------------------------------------------------------------------------
   // (f) PHOSPHOR DECAY — the same fade in the same WALL-CLOCK time, whatever
   //     the frame rate.
   //
@@ -780,7 +774,6 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   //   · DECAY on with time elapsed MUST fade            (the probe can move)
   // Without the first two, "the means matched" is satisfied by a probe that
   // reads the same number no matter what the module does.
-  // -------------------------------------------------------------------------
 
   /** Result of one decay arm: the module's own state plus the rendered mean. */
   interface DecayArm {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/smpte-bars.ts
-//
 // smpte-bars — the FIRST bundled VFPGA: a pure pattern GENERATOR that renders
 // SMPTE-style colour bars (0 video in → 1 video out). Generic test-pattern
 // generator; "SMPTE" names the public ANSI/SMPTE EG 1-1990 test-pattern

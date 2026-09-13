@@ -1,5 +1,3 @@
-// scripts/dev-server-ownership.test.ts
-//
 // A SERVER ANSWERING ON THE PORT IS NOT NECESSARILY *THIS WORKTREE'S* SERVER.
 //
 // CLAUDE.md already documents the "green sweep of the WRONG BRANCH" hazard for

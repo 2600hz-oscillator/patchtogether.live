@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/vu-meter-model.ts
-//
 // PURE segment-lighting + color math for VuMeter.svelte. No DOM, no engine —
 // so the "which segments light at level L" and "what color is segment i"
 // decisions are unit-testable in isolation (the render component is a thin

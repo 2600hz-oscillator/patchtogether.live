@@ -111,7 +111,6 @@ describe('probeDatabase', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // THE SHALLOW DEFAULT — and the derived-field traps it sets.
 //
 // `/api/health` is polled every 3 MINUTES by Better Stack on prod and dev

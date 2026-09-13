@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/catalog.ts
-//
 // Mike's curated module palette. He's the meticulous sibling of Carl —
 // favors melodic, tonal, structured modules; avoids destructive /
 // glitchy / chaos-leaning ones.

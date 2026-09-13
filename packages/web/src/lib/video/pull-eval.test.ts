@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/pull-eval.test.ts
-//
 // SINK-DRIVEN PULL EVALUATION — engine-level unit gates (no WebGL needed;
 // stub canvas + spy handles, the engine.test.ts pattern).
 //
@@ -20,9 +18,7 @@ import { registerVideoModule } from '$lib/video/module-registry';
 import type { Edge, ModuleNode } from '$lib/graph/types';
 import { computeActiveSet, isPullEvalOn } from '$lib/video/pull-eval';
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 interface SpyRig {
   engine: VideoEngine;
@@ -134,9 +130,7 @@ afterEach(() => {
   delete (globalThis as unknown as { __videoPullEval?: boolean }).__videoPullEval;
 });
 
-// ---------------------------------------------------------------------------
 // Pure core
-// ---------------------------------------------------------------------------
 
 describe('pull-eval — computeActiveSet (pure reverse reachability)', () => {
   it('includes roots and everything upstream of them, and nothing else', () => {
@@ -179,9 +173,7 @@ describe('pull-eval — runtime flag', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Engine integration
-// ---------------------------------------------------------------------------
 
 describe('pull-eval — engine skips unwatched side-effect-free nodes', () => {
   it('a freshly added node renders during the spawn grace, then decays to zero draws', async () => {

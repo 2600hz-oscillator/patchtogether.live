@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog921a.test.ts
-//
 // Two test layers for the MOOG 921A Oscillator Driver (CV processor):
 //   1. Module-def shape — pins the 921A's I/O surface. It is CV-ONLY: NO
 //      audio inputs, NO audio outputs. Inputs are the summing freq_cv (pitch)

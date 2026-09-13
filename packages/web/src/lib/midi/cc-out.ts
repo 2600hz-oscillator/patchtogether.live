@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/cc-out.ts
-//
 // OUTBOUND CONTROL-CHANGE TRANSMISSION — the seam the repo did not have.
 //
 // Before this file, the ONLY CC any module emitted was All-Notes-Off

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/numpad-plus-writes.ts
-//
 // THE ONE WRITE SEAM for NUMPAD+'s `node.data` — the recorded music
 // (`data.layers`) and the player's own keyboard layout (`data.keymap`).
 //
@@ -9,9 +7,7 @@
 // what makes "the recorded write and the clicked write take the same path" a
 // property of the code rather than a thing to re-verify.
 //
-// ==========================================================================
 // THREE DEFECTS THIS FILE EXISTS TO CLOSE
-// ==========================================================================
 //
 // (1) ⚠ ARM + PLAY ERASED A LAYER AND Cmd-Z COULD NOT BRING IT BACK.
 //     `tick()`'s play-from-start branch calls `clearLayer(activeLayerIndex())`
@@ -42,10 +38,8 @@
 //     of the same node overwrote each other by last-writer-wins, and during
 //     OVERDUB the whole-structure rewrite fired at performance rate.
 //
-// ==========================================================================
 // ⚠ WHAT IS AND IS NOT ASSIGNABLE — MEASURED against the real store, not
 // inherited from kria's note. THE SHAPES DIFFER AND SO DO THE ANSWERS.
-// ==========================================================================
 // kria stores PARALLEL SCALAR LANES (`track.trig` is a Y.Array of booleans),
 // so its granular write is a per-step `splice`. NUMPAD+ stores an ARRAY OF
 // OBJECTS, and a step object is its own Y.Map — which is strictly better:

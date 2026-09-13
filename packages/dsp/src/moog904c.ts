@@ -1,5 +1,3 @@
-// packages/dsp/src/moog904c.ts
-//
 // MOOG 904C — Voltage Controlled Filter Coupler AudioWorkletProcessor.
 //
 // Slice of the Moog System 55 / 35 clone initiative

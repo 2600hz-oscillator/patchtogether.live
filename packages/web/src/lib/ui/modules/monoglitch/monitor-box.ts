@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/monoglitch/monitor-box.ts
-//
 // THE MONOGLITCH MONITOR BOX — the geometry of "hide the controls and watch the
 // picture", in ONE place because TWO surfaces need it: `MonoglitchCard.svelte`
 // (the legacy lane card) and `./MonoglitchOutputBody.svelte` (the faced dock

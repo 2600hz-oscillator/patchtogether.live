@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-vco-scope.test.ts
-//
 // Unit coverage for the ANALOG VCO on-card single-cycle scope's window
 // extraction (findCycleWindow). The draw routine itself is canvas pixels
 // (VRT-covered with the canvas masked), but the cycle-locking logic is pure

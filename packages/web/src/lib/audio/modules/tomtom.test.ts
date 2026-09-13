@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/tomtom.test.ts
-//
 // TOM DRUM module-def shape + worklet-wrapper behavior. The per-sample DSP
 // math (bend/decay laws, frequency compensation, sonic-range proof) is
 // pinned in packages/dsp/src/lib/tomtom-dsp.test.ts and the raw audio
@@ -36,9 +34,7 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Module-def shape (the frozen contract)
-// ───────────────────────────────────────────────────────────────────────
 
 describe('TOMTOM def — frozen contract', () => {
   it('identity: type/label/category/domain (label lowercase per the guard)', () => {
@@ -88,9 +84,7 @@ describe('TOMTOM def — frozen contract', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + wrapper behavior
-// ───────────────────────────────────────────────────────────────────────
 
 const BLOCK = 128;
 

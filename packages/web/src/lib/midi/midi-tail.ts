@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-tail.ts
-//
 // THE MIDI TAIL — a pure ring of decoded MIDI traffic for a debug surface.
 //
 // WHY IT EXISTS (owner report, 2026-09-03: "midiclock may be entirely broken,

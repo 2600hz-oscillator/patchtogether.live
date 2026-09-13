@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-envelope-mirror.test.ts
-//
 // THE ENVELOPE MIRROR GATE.
 //
 // `packages/dsp/src/dx7.ts` (the worklet) and this workspace's
@@ -269,7 +267,6 @@ describe('dx7 envelope law — the packages/dsp/src/dx7.ts worklet MIRROR', () =
     expect(render).not.toMatch(/envSeg\[opIdx\]\s*=\s*seg\s*\+\s*1/);
   });
 
-  // ---------------------------------------------------------------
   // Layer 4 exists because of a REAL defect this PR had to fix.
   //
   // PR 1 added the incremental `opParam` path; PR 0b (this one) renamed the
@@ -287,7 +284,6 @@ describe('dx7 envelope law — the packages/dsp/src/dx7.ts worklet MIRROR', () =
   // `applyOpParam` writes must exist on `OpPatch`, and every helper it calls
   // must be defined in the file. That catches the whole class of rename, not
   // just the two names that happened to break this time.
-  // ---------------------------------------------------------------
   describe('layer 4 — the worklet opParam path addresses fields that EXIST', () => {
     const worklet = readFileSync(WORKLET, 'utf8');
 

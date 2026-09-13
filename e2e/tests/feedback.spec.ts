@@ -1,5 +1,3 @@
-// e2e/tests/feedback.spec.ts
-//
 // Feedback box (in-app suggestion / bug report).
 //
 // What's covered here:

@@ -1,14 +1,10 @@
-// packages/web/src/lib/video/modules/onetonine.ts
-//
 // ONE TO NINE — a fixed 3×3 screen splitter. ONE video input is divided into a
 // 3×3 grid of nine equal sub-rectangles; each grid cell is exposed on its own
 // output (out1..out9), scaled to FILL the output frame. Used ALONGSIDE (but NOT
 // wired to) MAPPY — feed each of nine projectors a different ninth of one
 // source.
 //
-// ──────────────────────────────────────────────────────────────────────────
 // CELL NUMBERING (reading order)
-// ──────────────────────────────────────────────────────────────────────────
 //   1 2 3      1 = top-left     2 = top-center    3 = top-right
 //   4 5 6      4 = mid-left     5 = CENTRE        6 = mid-right
 //   7 8 9      7 = bottom-left  8 = bottom-center 9 = bottom-right
@@ -17,18 +13,14 @@
 // input), magnified to the full output frame — so each output is a low-res crop
 // (expected + fine). The crops are CLEAN: no grid lines / numbers.
 //
-// ──────────────────────────────────────────────────────────────────────────
 // MONITOR (canonical surface + on-card preview)
-// ──────────────────────────────────────────────────────────────────────────
 // The MONITOR fbo (= surface.texture) shows the input with a 3×3 GRID overlaid
 // and a big readable DIGIT 1..9 drawn in each cell, so the operator sees which
 // cell feeds which output. The grid + numbers appear ONLY on the monitor — NOT
 // in the nine outputs. A showGrid toggle hides the overlay on the monitor
 // (the raw input passthrough) when off.
 //
-// ──────────────────────────────────────────────────────────────────────────
 // Y-AXIS (this bit MAPPY hard)
-// ──────────────────────────────────────────────────────────────────────────
 // The engine's shared vertex shader sets vUv = aPos*0.5+0.5, so vUv is y-UP:
 // v == 1 is the canvas TOP. Therefore:
 //   * cell 1 (TOP-left) samples the input where v is HIGH and u is LOW.
@@ -39,9 +31,7 @@
 // single source of truth shared by the crop shader, the monitor digits, and the
 // unit test.
 //
-// ──────────────────────────────────────────────────────────────────────────
 // GL FEEDBACK-LOOP RULE
-// ──────────────────────────────────────────────────────────────────────────
 // We NEVER bind our own output/monitor FBO texture as an input/placeholder
 // (read+write the same texture is a feedback loop, garbage on Chrome — see
 // 4plexvid.ts / mappy.ts). A 1×1 black sentinel covers the nothing-patched
@@ -50,7 +40,6 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 
-// ───────────────────────── constants ─────────────────────────
 
 /** Grid dimension — fixed 3×3. */
 export const GRID = 3;
@@ -282,7 +271,6 @@ export const oneToNineDef: VideoModuleDef = {
     { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'discrete' },
   ],
 
-  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
   face: {
     order: ['showGrid'],
 

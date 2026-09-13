@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-control.test.ts
-//
 // Integration test for the Launchpad-pair ↔ clip-player binding, driven through
 // the REAL launchpad-device (simulated transport) + the REAL graph store. Mocks
 // only the scheduler-clock so the LED render loop can be stepped manually. The
@@ -449,11 +447,9 @@ describe('sanity: editPadToNote octave math used by the editor', () => {
   });
 });
 
-// ===========================================================================
 // BUG REGRESSIONS (fix/launchpad-clip-bugs). Each block reproduces a confirmed
 // hardware bug the owner hit; written FAILING first, then the fix makes them
 // pass. See the PR description for the audit table.
-// ===========================================================================
 
 describe('BUG 1 — L matrix Y-axis matches the on-screen card (lane 0 = TOP row)', () => {
   it('the card top-left clip (lane0,slot0) lights the launchpad TOP-left pad, not the bottom', () => {
@@ -544,13 +540,11 @@ describe('BUG 4 — transport RESTARTS (toggle stop → start → stop again)', 
   });
 });
 
-// ===========================================================================
 // ARRANGER (Phase C) — REC + SES⇄ARR on the R deck write the SAME node.data
 // fields the ClipplayerCard writes, so the engine's clip-arrange records +
 // replays identically. (The end-to-end arrangement CAPTURE — armed REC +
 // launch → an event in node.data.arrangement — needs the real engine factory,
 // so it lives in the e2e real-source-chain spec; here we pin the field writes.)
-// ===========================================================================
 describe('ARRANGER — REC + SES⇄ARR (R deck top row)', () => {
   it('CC 91 (REC) toggles node.data.recording (the arranger record-arm)', () => {
     seedClipPlayer({ clips: {} });
@@ -586,14 +580,12 @@ describe('ARRANGER — REC + SES⇄ARR (R deck top row)', () => {
   });
 });
 
-// ===========================================================================
 // REAL PAIRING HANDSHAKE (the bug the simulated seam HID). installSimulatedLaunchpad
 // binds L→simL, R→simR in order, so it never exercises the L↔R SWAP that
 // finishPairing does when the user picks the provisional-R unit as LEFT. On real
 // hardware that swap nulled the LEFT unit's input handler → LEFT pads dead (no
 // launch / no edit) while RIGHT kept working. This drives the REAL
 // startPairing → press → finishPairing path and asserts the LEFT unit launches.
-// ===========================================================================
 describe('Real L/R pairing handshake — LEFT unit is LIVE after a swap', () => {
   // A fake input whose onmidimessage is a settable property (real-MIDIAccess
   // shape), so the test can "press" by reading the handler back + calling it.
@@ -649,13 +641,11 @@ describe('Real L/R pairing handshake — LEFT unit is LIVE after a swap', () => 
   });
 });
 
-// ===========================================================================
 // KEYS mode (dual-Launchpad note/keyboard + clip-record). Pair-only v1. The
 // launchpad binding is a global singleton with no engine, so the record capture
 // reads the playhead from clip-playhead (which the engine normally publishes);
 // tests set it directly via setLanePlayhead + step the LED render loop manually
 // (hoisted.tick) to drive the arm→record (additive) state machine.
-// ===========================================================================
 describe('KEYS mode — entry (hold REC/OVERDUB on R deck + double-tap a clip on L)', () => {
   const noteRec = () => liveData().noteRec as
     | { lane: number; slot: number; armed: boolean; recording: boolean; overdub: boolean }

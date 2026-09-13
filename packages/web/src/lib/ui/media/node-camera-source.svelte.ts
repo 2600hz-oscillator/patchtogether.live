@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-camera-source.svelte.ts
-//
 // THE REAL-DOM SINGLETON for ./node-camera-source-registry — a thin binding of
 // the pure core to the browser, the graph store, the engine and the multiplayer
 // awareness channel.

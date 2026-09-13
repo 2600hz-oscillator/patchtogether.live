@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/numpadPlus-face-model.test.ts
-//
 // NUMPAD+'s FACE, as pure model: what the plate ranks, what each tier resolves,
 // which primitive each param becomes, and what the two panels are declared to
 // do. No DOM, no Y.Doc, no AudioContext.

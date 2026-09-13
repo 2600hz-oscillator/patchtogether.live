@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/clock-sync.ts
-//
 // NTP-style offset estimator. Each heartbeat carries (tick, server_ts_ms);
 // on receipt we record client_recv_ts and compute a candidate offset.
 // We keep a rolling window of (offset, rtt) candidates and surface the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/rbj-biquad.property.test.ts
-//
 // fast-check property suite for the OWN-CODE RBJ biquads in
 // `packages/dsp/src/lib/rbj-biquad.ts` (#1526) — the shared filter section
 // under the kick voice's EQ, the snare's wire highpass and every own-code
@@ -69,9 +67,7 @@ import {
   type Biquad,
 } from '../../../../dsp/src/lib/rbj-biquad';
 
-// ---------------------------------------------------------------------------
 // Generators — the caller domain.
-// ---------------------------------------------------------------------------
 
 const sampleRate = fc.constantFrom(44100, 48000, 96000);
 /** Up to 3× the sample rate: the top clamp is IN the domain under test, so a
@@ -204,13 +200,11 @@ describe('rbj-biquad properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // L4 — CACHE-KEY COMPLETENESS. The `k3` bug as a law.
   //
   // `sr` is held FIXED per instance: see the ⚠ SCOPE block at the top —
   // sr is in none of the five cache keys (#1659), unreachable today, filed
   // rather than asserted in either direction.
-  // -------------------------------------------------------------------
   it('L4: at fixed sr, changing any argument the math reads changes the coefficients', () => {
     fc.assert(
       fc.property(
@@ -318,9 +312,7 @@ describe('rbj-biquad properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // PERMANENT NEGATIVE CONTROLS.
-  // -------------------------------------------------------------------
 
   it('CONTROL: removing the sr*0.45 clamp VIOLATES L2 (so L2 guards that clamp)', () => {
     // The real updateLowpass with ONE change: `Math.min(fc, sr*0.45)` → `fc`.

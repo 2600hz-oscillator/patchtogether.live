@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/milkdrop/monitor-box.ts
-//
 // THE MILKDROP MONITOR BOX — the geometry of "hide the controls and watch the
 // picture", in ONE place because TWO surfaces need it: `MilkdropCard.svelte`
 // (the legacy lane card) and `./MilkdropOutputBody.svelte` (the faced dock

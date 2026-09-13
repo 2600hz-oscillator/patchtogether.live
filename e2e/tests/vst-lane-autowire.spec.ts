@@ -1,5 +1,3 @@
-// e2e/tests/vst-lane-autowire.spec.ts
-//
 // THE OWNER'S SENTENCE, end to end: "i can drop a card connected to an
 // instrument vst in a lane, drop another card wired to a DSP vst in the
 // lane, and all that stuff wires up and works the same way our internal

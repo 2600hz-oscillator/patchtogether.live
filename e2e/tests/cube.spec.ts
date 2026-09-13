@@ -1,5 +1,3 @@
-// e2e/tests/cube.spec.ts
-//
 // CUBE v4 UI smoke. Covers the v4 fixes (PR feat/cube-v4-reload-perf-render):
 //   - card + all THREE viz canvases (3D cube / slice / waveform) mount.
 //   - RELOAD FIX (item #1): switching a slot's FACTORY dropdown to a different

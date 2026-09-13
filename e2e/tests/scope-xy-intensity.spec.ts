@@ -1,5 +1,3 @@
-// e2e/tests/scope-xy-intensity.spec.ts
-//
 // E2E for SCOPE's X/Y (Lissajous) MODE switch + phosphor INTENSITY
 // (persistence) knob.
 //

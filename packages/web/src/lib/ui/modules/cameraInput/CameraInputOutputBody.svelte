@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/cameraInput/CameraInputOutputBody.svelte
-  //
   // The CAMERA dock full-view body: the live picture and the SCREEN switch.
   //
   // The DEVICE PICKER, the capture LAMP and the ACQUIRE gesture moved to

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/register-swap.test.ts
-//
 // Pure (GL-free) unit tests for the register ping-pong SWAP — the fabric clock
 // edge (P1). Mirrors the factory's real use: the host writes the FRONT buffer
 // each frame and a `:prev` net reads the BACK buffer; after the swap the buffer

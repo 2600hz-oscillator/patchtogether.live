@@ -1,5 +1,3 @@
-// e2e/tests/cloudseed-face.spec.ts
-//
 // The two things about the CLOUDSEED face that only a live graph can prove.
 //
 // 1. PRESET RECALL IS A GRAPH EDIT (the LOSS-1 regression). The shipped bug was

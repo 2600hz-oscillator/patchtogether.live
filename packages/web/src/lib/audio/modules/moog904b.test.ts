@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog904b.test.ts
-//
 // Two test layers for the MOOG 904B VCF (transistor-ladder HPF):
 //   1. Module-def shape — pins the 904B's I/O surface (audio in + cutoff_cv
 //      CONTROL INPUT, the single high-pass output, the param array: cutoff /

@@ -346,14 +346,12 @@ describe('compatibleTargetPorts (input → ?)', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
 // CV-family interchange (cv ↔ pitch ↔ gate ↔ polyPitchGate). canConnect
 // permits any cross-family direction at the type level; the patch-to
 // cascade has to surface every compatible candidate. Earlier the cascade
 // only listed type-equal candidates and a SEQUENCER.gate cable couldn't
 // land on an ADSR.attack (cv) target via the menu even though dragging
 // it worked at the engine level.
-// ----------------------------------------------------------------------------
 
 const sequencerDef: AudioModuleDef = {
   type: 'kria',
@@ -552,10 +550,8 @@ describe('moduleDisplayName', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
 // portConnections — live patched/unpatched + remote-endpoint strings for the
 // on-card patch-menu jack indicator + hover overlay.
-// ----------------------------------------------------------------------------
 
 function edge(
   id: string,

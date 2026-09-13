@@ -1,5 +1,3 @@
-// e2e/tests/param-edit-undo.spec.ts
-//
 // Regression for the standards-refactor Phase 5a "setNodeParam migration":
 //   A card knob/fader edit must be UNDOABLE.
 //

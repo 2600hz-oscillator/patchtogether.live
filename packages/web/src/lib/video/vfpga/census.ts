@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/census.ts
-//
 // Fabric RESOURCE CENSUS + fit advisory (hardware-accuracy A2).
 //
 // The audit flagged two "a feeling" gaps: the fabric's only resource cap is the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-control-kind.ts
-//
 // The PURE render-kind resolver for a ModuleShell control cell: given a curated
 // FaceControl + the def, which PRIMITIVE does the shell paint?
 //

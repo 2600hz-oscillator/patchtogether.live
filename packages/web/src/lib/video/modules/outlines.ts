@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/outlines.ts
-//
 // OUTLINES — stateful particle video generator (LZX-style primitive source).
 //
 // (Was CIRCLES — renamed when the SHAPE selector landed: a spawned shape can
@@ -297,7 +295,6 @@ export const outlinesDef: VideoModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. Most video modules transform the frame you give them.
   // outlines GENERATES one, and it does so as a STATEFUL PARTICLE FIELD: a gate

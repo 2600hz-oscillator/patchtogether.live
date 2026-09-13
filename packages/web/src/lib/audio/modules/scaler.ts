@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/scaler.ts
-//
 // SCALER — a tiny 1-in / 1-out signal multiplier (a VCA-without-CV / fixed-gain
 // utility). The single AMOUNT knob multiplies the input by a factor from 0.1x
 // up to 10x, sample-accurately. out = in * amount.

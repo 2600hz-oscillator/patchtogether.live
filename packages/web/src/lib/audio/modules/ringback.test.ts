@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/ringback.test.ts
-//
 // Unit tests for RINGBACK — the stereo crush effect (the TWOTRACKS record-time
 // artifact, made intentional). Pins the module-def shape (stereo in/out, the 4
 // crush params + ranges) and the re-exported crush core math (so the card + the
@@ -32,7 +30,6 @@ describe('ringback re-exports the crush core (one shared import surface)', () =>
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // STEREO — the module claims two independent outputs. It shipped with one.
 //
 // The worklet is `numberOfOutputs: 1, outputChannelCount: [2]`, i.e. a SINGLE
@@ -48,7 +45,6 @@ describe('ringback re-exports the crush core (one shared import surface)', () =>
 // profile renders ONE channel by design, and every test drove the core class
 // rather than the factory handle. A mono source also gives L === R, which is
 // the state every casual check was in.
-// ─────────────────────────────────────────────────────────────────────────
 describe('ringback factory: OUT L and OUT R are actually two different signals', () => {
   function makeMockCtx() {
     const worklet = {

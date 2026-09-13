@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/edge-detect-guard.test.ts
-//
 // Source-scan regression guard for the overlap-rescan double-count bug class.
 // The main-thread consumers that had the bug (NUMPAD+; ATLANTIS-CATALYST had
 // it too before its deletion) must stay on the shared windowed

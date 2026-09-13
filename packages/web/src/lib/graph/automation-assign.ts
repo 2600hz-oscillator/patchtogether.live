@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/automation-assign.ts
-//
 // MODULE → AUTOMATION-LANE assignment writes (owner-locked final model: "we
 // assign entire modules to a lane, they get the border"). The synced model is
 // `ClipPlayerData.autoAssign` — a sparse map `moduleNodeId → laneIndex` on each

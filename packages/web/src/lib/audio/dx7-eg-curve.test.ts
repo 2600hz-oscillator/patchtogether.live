@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-eg-curve.test.ts
-//
 // Three facts here were WRONG in the first draft of the DX7 program and are
 // each easy to reintroduce, so each gets an assertion that names the wrong
 // answer as well as the right one:

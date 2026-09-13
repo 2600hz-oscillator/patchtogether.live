@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-chromakey-shader.test.ts
-//
 // Regression guard that the in-card chromakey combine shader pins TOYBOX's
 // LEGACY hue+satGate keying (rgbToHsv + hueDistance + the satGate smoothstep)
 // and exposes the keyR/keyG/keyB colour uniforms (the old single `key`

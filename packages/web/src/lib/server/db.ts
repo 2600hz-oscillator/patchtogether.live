@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/db.ts
-//
 // Postgres connection helper. Reads DATABASE_URL via SvelteKit's
 // `$env/dynamic/private` so it works on both runtimes:
 //   - Cloudflare Workers (production):  CF Pages env vars come through

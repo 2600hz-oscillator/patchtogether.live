@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/rack-status-model.test.ts
-//
 // The RACK-GLOBAL STATUS predicate (#2024). Pure, so everything about it is
 // decidable here rather than in a browser.
 //

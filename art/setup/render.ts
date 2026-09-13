@@ -1,5 +1,3 @@
-// art/setup/render.ts
-//
 // Helpers for ART scenarios:
 //   - render({ moduleName, durationS, sampleRate, configure })
 //     instantiates a compiled DSP module under an offline render context

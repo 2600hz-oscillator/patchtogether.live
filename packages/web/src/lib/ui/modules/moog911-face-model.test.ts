@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog911-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for moog911's three derived readouts.
 //
 // A derived readout earns its place only if it is checked against the input a

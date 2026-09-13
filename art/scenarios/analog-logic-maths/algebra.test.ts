@@ -1,5 +1,3 @@
-// art/scenarios/analog-logic-maths/algebra.test.ts
-//
 // ART for ANALOGLOGICMATHS. node-web-audio-api can't host AudioWorkletNodes,
 // so we instantiate the processor class directly (shim base class + globals
 // for sampleRate / registerProcessor / AudioWorkletProcessor) and drive

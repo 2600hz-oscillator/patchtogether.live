@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mixmstrs-face-model.test.ts
-//
 // THE PERMANENT LEGS BEHIND MIXMSTRS' FACEPLATE.
 //
 // Four groups, and none of them is a one-time authoring check:
@@ -44,9 +42,7 @@ const FACE = mixmstrsDef.face!;
 const PARAMS = mixmstrsDef.params ?? [];
 const PARAM_IDS = PARAMS.map((p) => p.id);
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1 · THE RANKING INVARIANT
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () => {
   it('the channel-scoped PREDICATE and the def PARTITION each other, both ways', () => {
@@ -287,9 +283,7 @@ describe('mixmstrs face — the SCOPE ranking, asserted from the live def', () =
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1b · CHANNEL ACCENT — channel N is LANE N (#1825)
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // ⚠ THE THING THAT CAN GO WRONG HERE IS NOT "the colour is ugly", it is that
 // the declaration and the naming rule stop agreeing. `face.channelAccent` is
@@ -376,9 +370,7 @@ describe('mixmstrs face — CHANNEL ACCENT partitions the def by channel', () =>
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2 · THE CAPTIONS
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
   // Owner review 2026-08-17: *"the 1lo 1md 1hi etc labels should also go away
@@ -460,9 +452,7 @@ describe('mixmstrs face — the CAPTIONS, as a partition of the def', () => {
 });
 
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 3 · GLYPH RESOLUTION
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
   it('binds live-audio on masterL, not the static dead-segment shape', () => {
@@ -495,9 +485,7 @@ describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 4 · THE DERIVED READOUTS
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ── THE READOUT SUITES ARE DELETED WITH THEIR SUBJECT ─────────────────────
 //
@@ -515,4 +503,3 @@ describe('mixmstrs face — the glyph RESOLVES, and to the MASTER BUS', () => {
 // `masterL` by name, and the card/def agreement sweep — are untouched, and they
 // are what this file exists for. What is missing is coverage of arithmetic that
 // no longer runs anywhere.
-

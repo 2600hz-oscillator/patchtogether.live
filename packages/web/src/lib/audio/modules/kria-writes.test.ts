@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kria-writes.test.ts
-//
 // The write seam, against the app's REAL graph store.
 //
 // Three properties, each of which was FALSE before this PR and none of which

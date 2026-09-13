@@ -1,5 +1,3 @@
-// art/scenarios/lfo-shared-clock/deterministic-phase.test.ts
-//
 // Phase 1 of the shared-state-sync plan, ART tier: assert that the
 // deterministic LFO phase formula produces identical samples on
 // independent invocations with the same (epoch, params). The render

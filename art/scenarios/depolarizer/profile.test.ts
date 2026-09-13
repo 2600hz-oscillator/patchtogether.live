@@ -1,5 +1,3 @@
-// art/scenarios/depolarizer/profile.test.ts
-//
 // AUDIO PROFILE for DEPOLARIZER (bipolar → unipolar, out = 0.5 + depth·(in/2))
 // (backfill batch 5 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

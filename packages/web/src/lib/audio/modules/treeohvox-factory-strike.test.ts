@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/treeohvox-factory-strike.test.ts
-//
 // THE HOST-SIDE AUDIO WIRING FOR THE MANUAL GATE, against the REAL factory.
 //
 // ⚠ WHY THIS FILE EXISTS — and it is a MEASUREMENT, not a hunch (#1658).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/dock-row-plan.test.ts
-//
 // PF-21 — the gate for the DOCK ROW PLAN (which section bands share a row).
 //
 // Pure unit, zero flake. Three things it has to hold, and one it has to prove
@@ -47,7 +45,6 @@ import {
 } from './dock-row-plan';
 import type { ParamCellKind } from './shell-control-kind';
 
-// ── fixtures ────────────────────────────────────────────────────────────────
 
 const knobParam = (id: string): ParamDef => ({
   id,

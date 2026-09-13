@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapedramps.test.ts
-//
 // Unit tests for SHAPEDRAMPS pure helpers. The GL-side rendering of the
 // linear / shaped / mixer programs is covered by the e2e
 // ruttetra-shapedramps tests; here we just verify the JS reference of

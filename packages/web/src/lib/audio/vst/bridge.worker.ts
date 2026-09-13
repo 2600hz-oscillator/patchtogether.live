@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vst/bridge.worker.ts
-//
 // The VST bridge transport worker — one PER CARD INSTANCE (the helper's
 // session model is one WebSocket = one plugin instance). Owns the socket to
 // the vst-bridge native helper and shuttles blocks between it and the three

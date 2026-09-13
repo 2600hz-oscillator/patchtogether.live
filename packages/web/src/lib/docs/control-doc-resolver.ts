@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/control-doc-resolver.ts
-//
 // Resolve a module's NUMBERED card-face legend (number → stable test id, from
 // e2e/vrt/__annotated__/{type}.legend.json) to per-number AUTHORED content
 // (friendly name + the `docs.controls` "what it does" blob). This is the bridge

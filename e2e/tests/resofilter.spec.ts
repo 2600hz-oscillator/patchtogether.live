@@ -1,5 +1,3 @@
-// e2e/tests/resofilter.spec.ts
-//
 // RESOFILTER behavioral e2e: sweeping the `mode` param 0..4 updates the
 // visible mode-name label on the card (the headline UX feature — not
 // covered by the registry sweeps). The mount/param-roundtrip smoke and

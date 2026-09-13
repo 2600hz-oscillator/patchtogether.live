@@ -1,5 +1,3 @@
-// packages/dsp/src/synesthesia.ts
-//
 // SYNESTHESIA — two independent copies (A/B) of a 4-band audio-analysis
 // circuit. Each copy: mono in → 4 MUSICAL spectral bands (20–200 / 200–1000 /
 // 1000–4000 / 4000+, i.e. SYN_BAND_EDGES = [200, 1000, 4000]) → per-band gain

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer/clipplayer-face-selection.svelte.ts
-//
 // WHICH CLIP the face's piano roll is editing — shared between the LAUNCH
 // panel (where you double-click a pad to open it) and the NOTE panel (which
 // draws it), which are registered as two INDEPENDENT shell cells and therefore

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cameraInput/shell-extension.ts
-//
 // The CAMERA SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

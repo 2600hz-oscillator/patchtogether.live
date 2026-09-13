@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/backdraft-tv.test.ts
-//
 // BACKDRAFT PURE TV + CRITICAL — the bounded-screen (Crutchfield) mode.
 //
 // The whole feature is a GEOMETRIC claim ("each recursing image is shown only

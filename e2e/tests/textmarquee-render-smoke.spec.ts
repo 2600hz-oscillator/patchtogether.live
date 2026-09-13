@@ -1,5 +1,3 @@
-// e2e/tests/textmarquee-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for TEXTMARQUEE — a rich-text marquee video
 // SOURCE (category 'sources'; its only inputs are cv: scrollX/scrollY/posX/posY,
 // no video input). It is DETERMINISTIC under the Phase-0 freeze because every

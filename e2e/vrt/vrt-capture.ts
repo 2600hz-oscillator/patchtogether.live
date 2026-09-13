@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-capture.ts
-//
 // THE ONE CAPTURE SEAM for VRT scenes that carry a live surface.
 //
 // A VRT scene with a masked region is THREE assertions that must travel

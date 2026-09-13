@@ -1,5 +1,3 @@
-// e2e/tests/patch-panel-nested.spec.ts
-//
 // Sectioned mega-modules (MIXMSTRS 49 inputs) in the
 // overlay-replace patch menu.
 //

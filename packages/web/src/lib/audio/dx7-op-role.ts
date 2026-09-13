@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-op-role.ts
-//
 // WHAT JOB DOES THIS OPERATOR DO IN THIS ALGORITHM — carrier, modulator, or
 // both — derived from the same `DX7_ALGORITHMS` table the engine routes with,
 // so a role colour can never disagree with what you hear.

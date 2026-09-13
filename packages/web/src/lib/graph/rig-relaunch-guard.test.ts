@@ -109,7 +109,6 @@ describe('planRelaunchBounce', () => {
     expect(d.reason).toContain('output1');
   });
 
-  // ── HELPERS ────────────────────────────────────────────────────────────
   it('bounces a configured ES-9 whose helper is stopped, but not a running one', () => {
     const b = rig({ es9: { pushPolicy: 'auto' } });
     expect(

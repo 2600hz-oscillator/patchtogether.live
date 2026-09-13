@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/control-surface.ts
-//
 // CONTROL SURFACE — an abstract control panel. Instantiate it and it starts
 // as a small blank square. Right-click any MIDI-assignable knob/fader on any
 // module and choose "Send to <surface>" — a POINTER to that control appears
@@ -69,7 +67,6 @@ export const controlSurfaceDef: MetaModuleDef = {
     },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: a free-form panel of POINTERS to other modules' controls.
   // You fill it by right-clicking any MIDI-assignable knob anywhere in the rack

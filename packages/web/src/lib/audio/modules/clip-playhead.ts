@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-playhead.ts
-//
 // Per-machine, IN-MEMORY playhead positions for the clip player — the step each
 // lane is currently SOUNDING. This is render state (the card editor + the grid
 // LEDs read it to draw the moving playhead), so it lives here, NOT on the synced

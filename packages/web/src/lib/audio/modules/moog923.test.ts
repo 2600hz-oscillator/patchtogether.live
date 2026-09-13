@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog923.test.ts
-//
 // Two test layers for the MOOG 923 FILTERS / NOISE SOURCE (moogafakkin System 35
 // clone):
 //   1. Module-def shape — pins the 923's I/O surface (single audio input;

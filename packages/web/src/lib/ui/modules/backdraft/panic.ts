@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/backdraft/panic.ts
-//
 // BACKDRAFT PANIC — the ONE reset implementation, with two triggers: the
 // faceplate's PANIC button (BackdraftOutputBody.svelte) calls it directly, and
 // a rising edge on the `panic` gate input reaches it through the panic hook

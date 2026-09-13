@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/preview-downscale.test.ts
-//
 // #1846. The claim under test is NOT "the preview looks nicer" — it is the
 // mechanical one the fix rests on: **no single resampling step reduces by more
 // than 2×**, because a 2×2 bilinear tap reads every source pixel at 2× and
@@ -141,9 +139,7 @@ describe('planDownscaleSteps — no step may reduce by more than 2x', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The DOM half, driven through a fake context so the draws are observable.
-// ---------------------------------------------------------------------------
 
 interface RecordedDraw {
   args: number[];
@@ -248,14 +244,12 @@ describe('drawPreviewDownscaled', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE REAL PATH. Everything above watches the fallback, because there is no 2D
 // context in this environment. That is not good enough: the assertion that
 // matters is about the draws the SHIPPING code makes, so stand up a fake
 // `document` whose canvases hand back recording contexts and drive
 // `drawPreviewDownscaled` down its actual branch. The ratios below come out of
 // the function, not out of the planner.
-// ---------------------------------------------------------------------------
 
 interface FakePad {
   width: number;

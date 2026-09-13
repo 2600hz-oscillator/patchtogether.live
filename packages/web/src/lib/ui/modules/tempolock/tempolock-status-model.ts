@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/tempolock/tempolock-status-model.ts
-//
 // The TEMPOLOCK status surface's pure model — every string its two lamps can
 // produce, and the ONE place the tracked tempo is allowed to become words.
 //

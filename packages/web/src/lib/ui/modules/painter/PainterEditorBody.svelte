@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/painter/PainterEditorBody.svelte
-  //
   // PAINTER's `fullViewBody` — the MS-Paint editor itself, at the head of the
   // module's dock faceplate.
   //

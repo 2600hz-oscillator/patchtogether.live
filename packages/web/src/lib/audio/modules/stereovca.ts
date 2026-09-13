@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/stereovca.ts
-//
 // STEREOVCA — stereo VCA + ring modulator with independent stereo
 // normalling on the audio AND strength halves.
 //

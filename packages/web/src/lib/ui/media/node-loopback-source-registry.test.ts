@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-loopback-source-registry.test.ts
-//
 // The node-owned LOOPBACK capture lifecycle (legacy-removal S1), driven against
 // fakes.
 //
@@ -39,9 +37,7 @@ import {
   type LoopbackSourceStatus,
 } from './node-loopback-source-registry';
 
-// ---------------------------------------------------------------------------
 // The fake world
-// ---------------------------------------------------------------------------
 
 function node(id: string, type = 'loopback', params: Record<string, number> = {}): ModuleNode {
   return { id, type, domain: 'video', position: { x: 0, y: 0 }, params } as unknown as ModuleNode;
@@ -219,7 +215,6 @@ function build(h: Harness) {
   return r;
 }
 
-// ---------------------------------------------------------------------------
 
 describe('NODE_LOOPBACK_SOURCE_TYPES', () => {
   it('names loopback and nothing else', () => {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/tempolock/tempolock-status-model.test.ts
-//
 // The status surface's strings, decided in the unit lane — they are UNPAINTED
 // (aria/title only), so no VRT baseline and no human reviewing one can catch
 // a wrong sentence here.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/lines/shell-extension.ts
-//
 // The LINES SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-feedback.test.ts
-//
 // Pure-function coverage for the TOYBOX FEEDBACK node model: the 12-mode
 // catalogue (FEEDBACK_MODES) + the param→uniform mapping (feedbackUniforms,
 // clampFeedbackMode). The shader + ping-pong buffers are exercised by E2E/VRT

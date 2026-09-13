@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/synesthesia-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the SYNESTHESIA faceplate.
 //
 // ⚠ THIS FILE EXISTS BECAUSE NO GATE MAKES THIS FACE'S TWO CENTRAL DECISIONS.

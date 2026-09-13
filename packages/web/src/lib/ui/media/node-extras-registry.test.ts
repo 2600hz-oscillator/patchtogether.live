@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-extras-registry.test.ts
-//
 // The PURE core of the extras-channel producer seam (#1720) — no DOM, no GL, no
 // engine, zero-flake. Everything the registry touches is injected, so this runs
 // under the web package's `environment: 'node'` vitest and drives the real

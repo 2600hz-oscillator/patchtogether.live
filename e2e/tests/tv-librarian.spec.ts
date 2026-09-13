@@ -1,5 +1,3 @@
-// e2e/tests/tv-librarian.spec.ts
-//
 // TV LIBRARIAN — NETWORK-MOCKED flow. We NEVER hit live famelack/streams in CI
 // (flaky + legally cleaner): every famelack request is route-fulfilled with
 // fixture JSON, and the HLS .m3u8 is fulfilled with a tiny stub. This drives

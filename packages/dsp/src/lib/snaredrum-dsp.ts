@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/snaredrum-dsp.ts
-//
 // SNARE DRUM (id `snaredrum`) — the single-hit stereo snare VOICE, the shared
 // re-excitable wire-buzz BED, the shared drive/DC/ceiling BUS, and the stereo
 // stage. Mate to KICK DRUM: it clones that proven template (state-object
@@ -40,9 +38,7 @@ import {
 
 const FLUSH = 1e-20;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Stereo placement — THE ONE SOURCE OF TRUTH FOR THE PAN SIGN
-// ─────────────────────────────────────────────────────────────────────────
 //
 // This module sums in M/S and folds down as `L = mid + side`, `R = mid − side`.
 // `pan = +1` is hard RIGHT, so a right pan needs a NEGATIVE side term. Both
@@ -74,9 +70,7 @@ export function panSideGain(pan: number): number {
   return -Math.SQRT2 * Math.sin((clamp(pan, -1, 1) * Math.PI) / 4);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Physical constants (design §2)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Head modal count. */
 const NHEAD = 4;
@@ -127,9 +121,6 @@ const EPS_ACTIVE = 1e-4;
  *  for the low-Q self-ringing resonators. */
 const SVF_FC_FRAC = 0.153;
 
-// ─────────────────────────────────────────────────────────────────────────
-// Params
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface SnaredrumParams {
   tune: number; // head fundamental Hz (90..400)
@@ -186,9 +177,7 @@ export const SNAREDRUM_DEFAULTS: SnaredrumParams = {
   rollSpeedCv: 0,
 };
 
-// ─────────────────────────────────────────────────────────────────────────
 // Shared primitives (define locally — no cross-module coupling to kickdrum)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** −60 dB decay-time (ms) → per-sample envelope multiplier (sr-calibrated).
  *  ln(1000) ≈ 6.9078: env·a^(ms·sr/1000) = 10^(−60/20). */
@@ -205,9 +194,7 @@ function reflectFold(x: number): number {
   return y < 2 ? y - 1 : 3 - y;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Frequency law (pure — unit-tested directly)
-// ─────────────────────────────────────────────────────────────────────────
 
 /**
  * Head mode `k` frequency (Hz): `tune` (90..400) transposed 1 V/oct by pitchCv
@@ -228,9 +215,7 @@ export function snareHeadFreqHz(
   return base * MODE_RATIO[k]! * dropMul;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Voice state (per pool voice — carries ONLY the overlapping onset layers)
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface SnareVoice {
   idx: number; // fixed pool index (varies the deterministic noise seed)
@@ -315,9 +300,7 @@ export function strikeVoice(
   v.crackBand = 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample voice step — HEAD + BODY + CRACK (a cheap generator)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Chamberlin SVF `f` coefficient for a center freq, clamped for stability. */
 function svfF(fc: number, sr: number): number {
@@ -415,9 +398,7 @@ export function snareVoiceStep(v: SnareVoice, p: SnaredrumParams, sr: number): n
   return out;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Top-level state (voice pool + roll engine + shared bed + shared bus)
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface SnaredrumState {
   voices: SnareVoice[];

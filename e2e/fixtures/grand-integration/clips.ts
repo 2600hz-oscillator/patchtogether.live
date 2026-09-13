@@ -1,5 +1,3 @@
-// e2e/fixtures/grand-integration/clips.ts
-//
 // THE clip + automation fixture for the GRAND-INTEGRATION scenario, replayed by
 // the OFFLINE combined-master ART (art/scenarios/grand-integration/…) via the
 // pure clip driver (art/setup/clip-driver.ts).
@@ -30,9 +28,7 @@
 
 import type { NoteClipRecord, AutoClipRecord } from '../../../packages/web/src/lib/audio/modules/clip-types';
 
-// ---------------------------------------------------------------------------
 // Transport / grid
-// ---------------------------------------------------------------------------
 
 /** Transport tempo. Fast + short so the whole scenario is a few seconds of
  *  audio (deterministic-speed constraint — the plan §5). */
@@ -50,9 +46,7 @@ export const GRAND_BASE_STEP_DUR = 60 / GRAND_BPM / STEP_DIV_SPB[GRAND_STEP_DIV_
 /** Uniform clip length — every lane's clips are 4-step loops (~0.3 s @ 200 bpm). */
 export const GRAND_CLIP_STEPS = 4;
 
-// ---------------------------------------------------------------------------
 // Lane → module + clip-index map (clipIndex(slot, lane) = lane*64 + slot)
-// ---------------------------------------------------------------------------
 
 /** The four instrument lanes, in channel order (ch = lane+1 on the master mixer). */
 export const GRAND_LANES = {
@@ -71,9 +65,7 @@ export const GRAND_CLIP_IDX = {
   sixstrum: [192, 193],
 } as const;
 
-// ---------------------------------------------------------------------------
 // The note clips (keyed by the flat clip-index STRING, the `data.clips` shape)
-// ---------------------------------------------------------------------------
 
 function noteClip(
   steps: { step: number; midi: number; velocity?: number; lengthSteps?: number }[],
@@ -151,7 +143,6 @@ export const GRAND_CLIPS: Record<string, NoteClipRecord> = {
   ]),
 };
 
-// ---------------------------------------------------------------------------
 // The SEEDED automation envelope — tidy-vco CUTOFF on the tidy lane's slot-0
 // clip. Used by BOTH:
 //   - the OFFLINE ART: the pure driver reads this envelope and drives the tidy
@@ -164,7 +155,6 @@ export const GRAND_CLIPS: Record<string, NoteClipRecord> = {
 // The browser's LIVE automation RECORD proof runs on a DIFFERENT lane (sixstrum,
 // which starts with NO automation) so `readAutoEvents(...).length > 1` is a true
 // record signal, not the seed leaking in.
-// ---------------------------------------------------------------------------
 
 /** Node id the browser scenario gives the tidy-vco instrument (see the spec). */
 export const GRAND_TIDY_NODE_ID = 't';

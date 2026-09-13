@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mixmstrs-sections.ts
-//
 // MIXMSTRS' patch-panel SECTION list, extracted from the card so it can be
 // tested.
 //

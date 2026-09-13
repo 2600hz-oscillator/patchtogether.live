@@ -1,5 +1,3 @@
-// packages/server/src/snapshot-store.test.ts
-//
 // The snapshot-blob storage abstraction: backend resolution from env,
 // exact-current-behavior passthrough when R2 is absent, and the R2 mode's
 // fallback semantics (migration reads via 404 → Postgres, durability

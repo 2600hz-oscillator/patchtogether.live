@@ -1,5 +1,3 @@
-// packages/dsp/src/sidecar.ts
-//
 // SIDECAR — stereo sidechain ducker worklet processor.
 //
 // Topology + DSP rationale live in ./lib/compressor-dsp.ts (Giannoulis-

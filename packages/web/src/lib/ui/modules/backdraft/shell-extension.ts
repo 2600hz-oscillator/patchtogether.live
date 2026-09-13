@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/backdraft/shell-extension.ts
-//
 // The backdraft SHELL EXTENSION (#1512) — the module-owned end of the extension
 // seam, and the repo's FIRST adopter of the `fullViewBody` slot (#1732 wired the
 // render site; `WIRED_SHELL_EXTENSION_SLOTS` now carries it).

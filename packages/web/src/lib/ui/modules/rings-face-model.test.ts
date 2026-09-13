@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/rings-face-model.test.ts
-//
 // The PERMANENT negative controls for the RINGS faceplate.
 //
 // Every claim the face makes is either (a) a derived readout, which must be

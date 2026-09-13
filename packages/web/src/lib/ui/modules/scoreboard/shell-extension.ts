@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/scoreboard/shell-extension.ts
-//
 // The SCOREBOARD SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512).
 //

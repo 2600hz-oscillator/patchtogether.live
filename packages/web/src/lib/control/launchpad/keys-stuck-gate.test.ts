@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/keys-stuck-gate.test.ts
-//
 // THE STUCK-GATE SEAM. Owner report: "playing keyboard mode on push into cv,
 // first few notes work but then it hangs with an open gate … a reload of the
 // page fixes it". The stuck value sits on the clipplayer lane's `gateSrc`, and
@@ -399,13 +397,11 @@ describe('KEYS stuck gate — a release must name the note its PRESS emitted', (
   });
 });
 
-// ===========================================================================
 // THE FAILSAFE. keysReconcileSounding() releases any voice that no held pad and
 // no running arp explains. It is only trustworthy if it is negative-controlled
 // in BOTH directions on every run — a counter that cannot increment reads 0
 // whether the failsafe works or is dead code, and a failsafe nobody can see
 // fire is indistinguishable from one that silently masks the next leak.
-// ===========================================================================
 describe('KEYS stuck-gate FAILSAFE — repairs the audio AND reports the bug', () => {
   it('POSITIVE: a manufactured strand is released within one tick, counted and warned', async () => {
     const gate = await openKeys();

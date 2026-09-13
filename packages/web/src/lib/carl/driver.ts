@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/driver.ts
-//
 // In-browser Intent applier. Mirrors e2e/chaos/lib/driver.ts but writes
 // directly against the SyncedStore proxy (`patch`) inside a Y.Doc
 // transaction so the mutation propagates through Yjs to all rack-mates.

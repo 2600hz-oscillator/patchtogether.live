@@ -1,5 +1,3 @@
-// e2e/tests/rings-face.spec.ts
-//
 // THE RINGS FACE, driven for real — and the one assertion that could not be
 // made anywhere else: THAT THE MODULE CAN NOW BE SOUNDED.
 //

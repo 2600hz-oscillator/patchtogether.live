@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/analog-logic-maths-face-model.ts
-//
 // THE DERIVED MODEL behind ANALOGLOGICMATHS' faceplate readouts and its
 // transfer picture. Pure, browser-safe, no Web Audio: it takes the two live
 // attenuverter values and returns the four numbers the module's two knobs

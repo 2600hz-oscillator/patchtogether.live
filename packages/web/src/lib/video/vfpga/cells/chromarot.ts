@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/chromarot.ts
-//
 // CLB cell `chromaRot(a, b, phase, gain, iqmix, crawl, cxfer)` — composite CHROMA /
 // colour-burst corruption (the chroma-rot bend, design §3.2). Models a bent chroma
 // demodulator: it separates input `a` into luma + a YIQ chroma vector, then

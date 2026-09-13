@@ -1,5 +1,3 @@
-// e2e/tests/backdraft-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for BACKDRAFT — a video-feedback EFFECT
 // (input port `in_a`, output `out`). Modeled on spirographs-render-smoke.spec.ts
 // + the shared _render-smoke harness (installRenderSmokeHooks /
@@ -106,7 +104,6 @@ async function readShapeRegions(
   }, { nodeId });
 }
 
-/** Set node params on the live store inside a Y.Doc transaction. */
 async function setNodeParams(page: Page, nodeId: string, params: Record<string, number>): Promise<void> {
   await page.evaluate(({ nodeId, params }) => {
     const w = globalThis as unknown as {

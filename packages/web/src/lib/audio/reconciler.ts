@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/reconciler.ts
-//
 // Auto-reactive reconciler. Subscribes to the shared PatchSnapshot bus
 // (`$lib/graph/snapshot`) and diffs the current snapshot against what the
 // engine currently has materialized. Applies adds/removes/param-changes

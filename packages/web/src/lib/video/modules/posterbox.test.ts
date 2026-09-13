@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/posterbox.test.ts
-//
 // POSTERBOX module-def shape + the pure palette-crush pipeline (no GL):
 //   - DEPTH knob snaps to the 5 bit-allocation steps (1-1-1 / 2-2-2 /
 //     3-3-2 / 4-4-4 / 5-6-5 → 8/64/256/4096/65536 colours);
@@ -51,9 +49,7 @@ function toByte(v: number): number {
   return Math.round(v * 255);
 }
 
-// ---------------------------------------------------------------------------
 // Def shape
-// ---------------------------------------------------------------------------
 describe('posterboxDef shape', () => {
   it('depth is a DISCRETE 0..4 step index (default = 3-3-2 / 256 colours)', () => {
     const d = posterboxDef.params.find((p) => p.id === 'depth');
@@ -92,9 +88,7 @@ describe('posterboxDef shape', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // DEPTH ladder: 5 discrete steps, each a real per-channel allocation.
-// ---------------------------------------------------------------------------
 describe('DEPTH knob snaps to the 5 bit-allocation steps', () => {
   it('the 5 steps are exactly 1-1-1 / 2-2-2 / 3-3-2 / 4-4-4 / 5-6-5', () => {
     expect(POSTERBOX_DEPTH_STEPS.map((s) => s.bits)).toEqual([
@@ -164,9 +158,7 @@ describe('DEPTH knob snaps to the 5 bit-allocation steps', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // LEGACY CONTINUITY: dither 0 == the old CELLSHADE retro quantizer, byte-exact.
-// ---------------------------------------------------------------------------
 describe('legacy continuity — dither 0 is byte-exact the old CELLSHADE retro path', () => {
   it('posterboxQuantizeChannel(v, n, t, 0) === legacy quantizeUnit(v, n) for every level count, densely', () => {
     for (const n of [2, 4, 8, 16, 32, 64]) {
@@ -233,9 +225,7 @@ describe('legacy continuity — dither 0 is byte-exact the old CELLSHADE retro p
   });
 });
 
-// ---------------------------------------------------------------------------
 // Bayer 4×4 matrix + threshold lookup.
-// ---------------------------------------------------------------------------
 describe('POSTERBOX_BAYER4 — the standard ordered-dither index matrix', () => {
   it('is exactly the standard Bayer 4×4 matrix', () => {
     expect([...POSTERBOX_BAYER4]).toEqual([
@@ -277,9 +267,7 @@ describe('POSTERBOX_BAYER4 — the standard ordered-dither index matrix', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // DITHER: ordered dither dissolves bands into cross-hatch.
-// ---------------------------------------------------------------------------
 describe('DITHER — Bayer ordered dither (5-point range proof)', () => {
   /** Fraction of (v, texel) samples whose 1-bit crush flips vs dither 0. */
   function flipFraction(dither: number): number {
@@ -370,9 +358,7 @@ describe('DITHER — Bayer ordered dither (5-point range proof)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // MIX: linear dry/wet.
-// ---------------------------------------------------------------------------
 describe('MIX — dry/wet (5-point range proof)', () => {
   it('5-POINT RANGE PROOF: gray 0.2 at 3-3-2 sweeps linearly from source to (36,36,0)', () => {
     const mixes = [0, 0.25, 0.5, 0.75, 1];

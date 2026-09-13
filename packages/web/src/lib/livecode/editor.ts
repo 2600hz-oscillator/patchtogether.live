@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/editor.ts
-//
 // CodeMirror 6 EditorView factory. Shared between LivecodeCard (full
 // editor with autocomplete + linting) and ClockedRunnerCard (compact
 // editor for the body of a single clocked() callback).

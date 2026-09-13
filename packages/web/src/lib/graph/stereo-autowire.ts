@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/stereo-autowire.ts
-//
 // THE UNIVERSAL AUDIO COMMIT PLANNER — pure, framework-free.
 //
 // Every audio cable the app writes is a LEG GROUP: one or two ordinary `Edge`

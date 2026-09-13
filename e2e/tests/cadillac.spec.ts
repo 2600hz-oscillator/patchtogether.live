@@ -1,5 +1,3 @@
-// e2e/tests/cadillac.spec.ts
-//
 // CADILLAC — singleton meta module that drives across the canvas R→L
 // at 300 px/s and deletes every module its hit-box overlaps. TIMELORDE
 // (and anything else flagged `undeletable: true`) passes through

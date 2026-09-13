@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavecel-spread-parity.test.ts
-//
 // THE SPREAD MATH EXISTS TWICE AND NOTHING JOINED THE TWO COPIES.
 //
 //   packages/dsp/src/lib/wavetable-osc.ts   — what the WORKLET plays

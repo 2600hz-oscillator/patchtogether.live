@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/music-theory.ts
-//
 // Mike's tiny in-house music theory. Just enough to sound "musical not
 // chaotic" — a major scale picker + a clock-finder heuristic. No
 // external library: a couple of constant arrays and a graph walk.

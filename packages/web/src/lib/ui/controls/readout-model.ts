@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/readout-model.ts
-//
 // PURE formatting for Readout.svelte (the RACKLINE `.readout` / `.value-chip`
 // / `.ctl-val` mono display value). Reproduces the Knob/Fader numeric
 // formatter (k-suffix at ≥1000, decimals that tighten as the magnitude grows)

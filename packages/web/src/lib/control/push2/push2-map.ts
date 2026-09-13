@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-map.ts
-//
 // Push 2 PLACEMENT ADAPTER — the one file that knows the Push 2's physical
 // layout AND how it maps onto the shipped Launchpad control brain. Two jobs:
 //
@@ -48,11 +46,9 @@ import {
   SCENE_CCS,
 } from '$lib/control/launchpad/launchpad-sysex';
 
-// ---------------------------------------------------------------------------
 // Push 2 physical control → MIDI CC numbers. These are the OWNER-CONFIRMED map
 // (hardware-tested on the owner's Push 2), except where a `// CONFIRM ON HARDWARE`
 // marker remains (WHICH permanent-row button is which view; the Shift CC).
-// ---------------------------------------------------------------------------
 
 /** Transport Play → START/STOP (moved here from the grid). CONFIRMED. */
 export const PUSH_CC_PLAY = 85;
@@ -180,9 +176,7 @@ export const PUSH_CC_ENCODER_SWING = 15;
  *  the "8 knobs as a mixer" function the owner dropped. */
 export const PUSH_CC_ENCODER_MASTER = 79;
 
-// ---------------------------------------------------------------------------
 // Inbound classification — Push2RxEvent → a typed action.
-// ---------------------------------------------------------------------------
 
 /**
  * What an encoder addresses, in the PUSH CARD world.
@@ -357,9 +351,7 @@ export function classifyPush2(ev: Push2RxEvent): Push2Action | null {
   return null; // out-of-Phase-1: leave unbound
 }
 
-// ---------------------------------------------------------------------------
 // Outbound — a LaunchpadFrame → Push LED specs. The device layer diffs these.
-// ---------------------------------------------------------------------------
 
 /** One Push LED write: a PAD (palette-index colour) or a BUTTON (CC value). */
 export type Push2LedSpec =

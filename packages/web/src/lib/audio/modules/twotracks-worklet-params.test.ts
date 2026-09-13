@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-worklet-params.test.ts
-//
 // EVERY def param TWOTRACKS routes to an AudioParam must EXIST on the worklet.
 //
 // THE BUG THIS PINS. `TwoTracksProcessor.parameterDescriptors` declared

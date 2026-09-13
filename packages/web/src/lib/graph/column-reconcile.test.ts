@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/column-reconcile.test.ts
-//
 // REAL-Y.Doc tests for the workflow channel-columns RECONCILER APPLICATOR. Run
 // against the live syncedStore + Y.Doc (graph/store.ts) + the live audio module
 // registry, so the wcol- edge writes exercise the real ports of mixmstrs /
@@ -440,11 +438,9 @@ describe('PART B — CV Buddy lane note tap + ES-9 return audio (real Y.Doc)', (
   });
 });
 
-// ================================================================
 // BUG-A — a VIDEO module in an AUDIO channel lane: unwired-but-functional,
 // reconcile CONVERGES (no write loop), and the convergence budget makes a
 // hypothetical non-converging heal structurally unable to freeze the UI.
-// ================================================================
 
 describe('BUG-A — video module as a channel member (cellshade-in-a-lane)', () => {
   // Mirror the Canvas defLookup chain shape WITHOUT importing the video

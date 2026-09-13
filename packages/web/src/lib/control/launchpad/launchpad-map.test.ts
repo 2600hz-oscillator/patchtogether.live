@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-map.test.ts
-//
 // PURE placement + colour-language tests for the 2× Launchpad layout over the
 // shared clip-surface core. Golden-vector style: pins WHICH pad/CC is which
 // control on each unit (so a drift fails here before hardware), and that the
@@ -489,9 +487,7 @@ describe('Unit R — length-edit page', () => {
   });
 });
 
-// ===========================================================================
 // KEYS mode (dual-Launchpad note/keyboard + clip-record) placement + frames.
-// ===========================================================================
 describe('KEYS mode — placement classifiers', () => {
   it('keysPad: top row = playhead, mid 6 rows = keyboard (continuous across L|R), bottom = controls (L only)', () => {
     // top row (y=7) on either unit = playhead (display-only).
@@ -613,10 +609,8 @@ describe('KEYS mode — LED frame (keyboard + playhead + controls)', () => {
   });
 });
 
-// ===========================================================================
 // PERFORMANCE CONTROLS (P1 RESET · P4 MONO · P3 MUTE · P2 RATE · P5 tempo · P6
 // editor extras · pair-L MUTE) — placement classifiers + LED-frame painting.
-// ===========================================================================
 describe('Performance controls — placement classifiers', () => {
   it('CC 91 (the reclaimed NEW cell) classifies as the KEYS-arm action', () => {
     expect(clipArmAction(91)).toBe('keys'); // CC_UP
@@ -715,10 +709,8 @@ describe('Performance controls — LED frames', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE-UNIT REWORK (S2a) — transpose helpers, per-view right-column
 // classifiers, the permanent top row, and the per-view frame builders.
-// ===========================================================================
 const emptyLpFrame = () => ({ leds: new Map<number, [number, number, number]>() });
 const mkTop = (view: SingleView, partial: Partial<PermanentTopOpts> = {}): PermanentTopOpts => ({
   view,

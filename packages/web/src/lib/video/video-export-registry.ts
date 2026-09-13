@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-export-registry.ts
-//
 // A tiny per-node registry of "resolve this VIDEOBOX node's loaded video bytes"
 // callbacks, used by the portable Performance Bundle EXPORT path (Canvas.svelte
 // → graph/performance-zip.ts).

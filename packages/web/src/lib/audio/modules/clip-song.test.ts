@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-song.test.ts
-//
 // Pure SONG MODE v2 model: the concrete PRINTED performance the clip player
 // records into and plays back from (clip-song.ts). Covers shape defaults,
 // garbage coercion, the print merge, the half-open playback window, loop-length

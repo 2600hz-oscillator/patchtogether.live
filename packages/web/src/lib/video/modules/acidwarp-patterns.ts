@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/acidwarp-patterns.ts
-//
 // ACIDWARP plasma-pattern engine + palette generators.
 //
 // Algorithm port of Noah Spurrier's ACIDWARP (1992-1993, GPL), with
@@ -393,11 +391,9 @@ export function generatePattern(args: {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 //  Palette generators — port of Spurrier's palinit.c. Each builds 256 × 3
 //  bytes (RGB triples). Color 0 is kept at black. The original wrote 6-bit
 //  VGA values; we scale to full 8-bit by multiplying by 4.
-// ---------------------------------------------------------------------------
 
 const VGA_TO_RGB8 = 4; // 0..63 → 0..252 (close enough to 255)
 

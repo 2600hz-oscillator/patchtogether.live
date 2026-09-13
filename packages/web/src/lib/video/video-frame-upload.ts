@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-frame-upload.ts
-//
 // Shared <video> -> GL-texture upload pump for the file/stream source
 // modules (VIDEOBOX today; CAMERA / VideoVarispeed are candidates to adopt
 // it next). It exists to fix the few-FPS VIDEOBOX output regression whose

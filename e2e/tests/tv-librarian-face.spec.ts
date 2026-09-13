@@ -1,5 +1,3 @@
-// e2e/tests/tv-librarian-face.spec.ts
-//
 // THE TV LIBRARIAN FACE, driven for real on the DEFAULT shell — and specifically
 // the seams no other gate can see.
 //

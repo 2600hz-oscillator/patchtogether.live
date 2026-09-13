@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-syx.ts
-//
 // DX7 SYX (System Exclusive) bank parser.
 //
 // The standard "32-voice cartridge" format the original Yamaha DX7 emits and
@@ -144,7 +142,6 @@ export interface ParseResult {
   warnings: string[];
 }
 
-// ---------------- Constants ----------------
 
 const SYSEX_START = 0xf0;
 const YAMAHA_ID = 0x43;
@@ -360,7 +357,6 @@ export function dx7LevelToAmp(level: number): number {
   return Math.pow(10, dB / 20);
 }
 
-// ==============================================================
 // THE OPERATOR ENVELOPE + FIXED-FREQUENCY LAW.
 //
 // MIRRORED VERBATIM into `packages/dsp/src/dx7.ts` (the worklet bundle cannot
@@ -431,7 +427,6 @@ export function dx7LevelToAmp(level: number): number {
 // differs (74.25 dB here vs ~90 dB in msfa's internal units), which is why
 // the rate calibration below is anchored on hexter's measured seconds rather
 // than on msfa's internal level units.
-// ==============================================================
 
 // dx7-envelope-mirror:start
 

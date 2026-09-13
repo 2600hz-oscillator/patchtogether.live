@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-vco-modulation.test.ts
-//
 // Regression coverage for the ANALOG VCO PHASE/FREQUENCY MODULATION across the
 // FULL saw→sine→square morph (the user-reported "PM/FM don't appear to work,
 // at least in MORPH mode" investigation).

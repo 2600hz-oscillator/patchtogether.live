@@ -1,5 +1,3 @@
-// packages/server/src/r2-sigv4.test.ts
-//
 // Pins the SigV4 signer against AWS's OWN published test vectors
 // ("Examples: Signature Calculations in AWS Signature Version 4",
 // Amazon S3 API reference — the canonical GET-object and PUT-object

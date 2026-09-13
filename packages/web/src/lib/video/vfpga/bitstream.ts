@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/bitstream.ts
-//
 // The VFPGA BITSTREAM codec (hardware-accuracy plan A3). Until now the authored
 // `VfpgaFabric` object was BRANDED "the bitstream" but is structurally a
 // post-synthesis NETLIST — no config frames, no frame addresses, no CRC. This
@@ -89,9 +87,7 @@ function codeToBindTo(n: number): 'p' | 'cv' | 'gate' {
   return v;
 }
 
-// ----------------------------------------------------------------------
 // CRC-32/ISO-HDLC (reflected poly 0xEDB88820, init/xorout 0xFFFFFFFF).
-// ----------------------------------------------------------------------
 const CRC_TABLE: Uint32Array = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -107,9 +103,7 @@ export function crc32(bytes: Uint8Array, start = 0, end = bytes.length): number 
   return (c ^ 0xffffffff) >>> 0;
 }
 
-// ----------------------------------------------------------------------
 // Growable little-endian writer / reader.
-// ----------------------------------------------------------------------
 class ByteWriter {
   private buf = new Uint8Array(256);
   private view = new DataView(this.buf.buffer);
@@ -145,13 +139,11 @@ class ByteReader {
   raw(len: number): Uint8Array { const v = this.bytes.subarray(this.pos, this.pos + len); this.pos += len; return v; }
 }
 
-// ----------------------------------------------------------------------
 // Symbol table — every string (tile id, op, consts key, bind knob/uniform,
 // input name, net endpoint, output id) interned ONCE, referenced by u16 index.
 // Built by a single deterministic first-appearance traversal so pack() is
 // byte-stable (the determinism golden catches a field added to pack but not
 // this walk).
-// ----------------------------------------------------------------------
 function buildSymbolTable(fabric: VfpgaFabric): { symbols: string[]; idOf: (s: string) => number } {
   const symbols: string[] = [];
   const index = new Map<string, number>();
@@ -229,9 +221,7 @@ function checkCount(n: number, what: string): number {
   return n;
 }
 
-// ----------------------------------------------------------------------
 // pack
-// ----------------------------------------------------------------------
 export function pack(fabric: VfpgaFabric): Uint8Array {
   const { symbols, idOf } = buildSymbolTable(fabric);
   const w = new ByteWriter();
@@ -350,9 +340,7 @@ export function pack(fabric: VfpgaFabric): Uint8Array {
   return out;
 }
 
-// ----------------------------------------------------------------------
 // unpack
-// ----------------------------------------------------------------------
 export function unpack(bytes: Uint8Array): VfpgaFabric {
   if (bytes.length < 36) throw new Error('vfpga bitstream: too short');
   // CRC verify FIRST (unsigned compare) over bytes[0 .. len-4].

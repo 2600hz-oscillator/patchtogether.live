@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-control.test.ts
-//
 // Integration test for the Push 2 control layer — the ADDITIVE features (lane
 // select, the PUSH CARD and its encoders, channel name) + the PARITY adapter (a
 // simulated Push pad press flows through the injected control surface into the
@@ -259,7 +257,6 @@ describe('channel-select LEDs mirror the lane colour (selected bright / others d
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE PUSH CARD — the owner's spec, driven through the REAL rx path.
 //
 // WHAT WAS DELETED HERE, and why it is the owner's intent:
@@ -277,7 +274,6 @@ describe('channel-select LEDs mirror the lane colour (selected bright / others d
 //   · 'the Master encoder drives master_volume, clamped' — KEPT. The master
 //     encoder is not one of the eight; dropping it would be a regression the
 //     spec never asked for.
-// ---------------------------------------------------------------------------
 
 /** A workflow rack's pinned mixer: it carries the per-lane member ORDER, and
  *  it is also the `mixmstrs` the master encoder drives. */
@@ -868,7 +864,6 @@ describe('velocity capture — the Push pads ARE velocity-sensitive', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // LEGEND MODE — the held on-device documentation overlay.
 //
 // Every case drives the REAL rx path (raw MIDI bytes → the shipping codec → the
@@ -876,7 +871,6 @@ describe('velocity capture — the Push pads ARE velocity-sensitive', () => {
 // "the hold is wired to the screen" is asserted, not assumed. What is NOT
 // asserted here — and cannot be, anywhere in CI — is that CC 28 is the physical
 // button the owner meant; that needs the device. See push2-map.ts.
-// ---------------------------------------------------------------------------
 
 describe('LEGEND MODE (display only)', () => {
   /** Painter that RECORDS the op list handed to it, so the assertions read the
@@ -1023,7 +1017,6 @@ describe('LEGEND MODE (display only)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ELECTRA CONTROL MODE — the latched third mode, and the SHIFT reassignment
 // that made room for it.
 //
@@ -1033,7 +1026,6 @@ describe('LEGEND MODE (display only)', () => {
 // What is NOT asserted here, and cannot be anywhere in CI: that CC 49 is the
 // physical button labelled "Shift", that CC 27 is the permanent-row button
 // above channel 8, or where CC 15 physically sits. Those need the device.
-// ---------------------------------------------------------------------------
 
 describe('ELECTRA CONTROL MODE', () => {
   const EC = 'ec1';
@@ -1241,7 +1233,6 @@ describe('ELECTRA CONTROL MODE', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE SHIFT REASSIGNMENT — the negative controls, in BOTH directions.
 //
 // CC 49 (the button labelled "Shift") used to be a second route to the SHIFT
@@ -1249,7 +1240,6 @@ describe('ELECTRA CONTROL MODE', () => {
 // above channel 8) was ALWAYS the shift route and is now the only one. These
 // cases assert that each button does its own job and NOT the other's — the
 // direction that catches a half-applied move.
-// ---------------------------------------------------------------------------
 
 describe('SHIFT is CC 27; the button labelled "Shift" (CC 49) is the mode toggle', () => {
   it('CC 27 gives the ×8 D-Pad window; CC 49 does NOT', async () => {

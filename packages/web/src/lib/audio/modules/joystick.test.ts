@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/joystick.test.ts
-//
 // Unit tests for the standalone JOYSTICK module. Pure helpers + module-
 // def shape are covered here; the audio-thread wiring (setParam mirrors
 // into ConstantSource offsets, inverted outputs track raw outputs) is

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dual-mono-engine.test.ts
-//
 // The dual-mono WIRING, pinned against a recording AudioContext.
 //
 // This is the topology instrument. It proves the graph is shaped the way
@@ -26,10 +24,8 @@ import { materializeAudioHandle, legInputsFor } from './dual-mono';
 import { AudioEngine } from './engine';
 import { registerModule } from './module-registry';
 
-// ---------------------------------------------------------------------------
 // A recording fake AudioContext (the engine-cv-scale.test.ts `connectionLog`
 // pattern, extended with the channel properties this design turns on).
-// ---------------------------------------------------------------------------
 
 interface Conn { from: string; to: string; output?: number; input?: number }
 let log: Conn[] = [];
@@ -113,11 +109,9 @@ function recordedNode(tag: string): FakeNode {
   return hit;
 }
 
-// ---------------------------------------------------------------------------
 // Fake instances of the REAL module types, so the wrapper takes the real path.
 // (`filter` is 'dual-mono' with a node-path CV input; `destroy` is 'dual-mono'
 // with AudioParam-path CV inputs; `featurecv` is 'sum'; `vca` is 'deferred'.)
-// ---------------------------------------------------------------------------
 
 let factoryCalls = 0;
 let disposals: string[] = [];
@@ -178,7 +172,6 @@ beforeEach(() => {
   nodeRegistry = new Map();
 });
 
-// ---------------------------------------------------------------------------
 
 describe('dual-mono wrapper — the recorder is not lying (instrument check)', () => {
   it('a fake node round-trips the channel properties the design sets', () => {

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/sample-hold-dsp.test.ts
-//
 // Pure-DSP unit tests for SAMPLE & HOLD / quantizer. Pins every novel piece of
 // behaviour so a refactor surfaces as a specific quantitative regression:
 //   • latch-on-rising-edge holds the value between edges (sample & hold).

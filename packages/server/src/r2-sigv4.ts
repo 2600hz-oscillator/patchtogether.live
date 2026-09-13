@@ -1,5 +1,3 @@
-// packages/server/src/r2-sigv4.ts
-//
 // Minimal AWS Signature V4 signer for Cloudflare R2's S3-compatible API.
 //
 // Why hand-rolled: the relay needs exactly two operations (PUT/GET of one

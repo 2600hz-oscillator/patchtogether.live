@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-monitor.test.ts
-//
 // OUT TO LAUNCH — the Launchpad monitor path. Two halves, both pure/hardware-free:
 //   1. The video→LED surface mapping (launchpad-sysex): lpMonitorIndex,
 //      rgb8ToLp, monitorGridToLeds — the 9×9 grid → programmer-index colour map.

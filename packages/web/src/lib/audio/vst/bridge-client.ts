@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vst/bridge-client.ts
-//
 // Card-facing wrapper around the VST bridge transport: allocates the THREE
 // SharedArrayBuffer rings (audio in, audio out, MIDI out), spawns the
 // transport worker, and exposes a typed event surface. Cloned from

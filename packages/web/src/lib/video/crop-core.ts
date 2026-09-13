@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/crop-core.ts
-//
 // REUSABLE crop-rectangle model + math for video modules. A "crop" is a
 // resizable, aspect-locked rectangle over a module's OUTPUT frame; the module's
 // Crop output re-samples that sub-rectangle at full output resolution (a zoom).

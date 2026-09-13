@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-lane.ts
-//
 // WHICH MODULE'S PUSH CARD is on the Push 2 screen — the lane membership +
 // focus rules behind the owner's spec:
 //

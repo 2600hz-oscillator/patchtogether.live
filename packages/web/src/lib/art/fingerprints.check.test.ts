@@ -1,5 +1,3 @@
-// packages/web/src/lib/art/fingerprints.check.test.ts
-//
 // The ART fingerprint DRIFT GATE — the byte-exact ratchet, mirroring the
 // living-docs contract-lock gate (regenerate from source, string-compare to the
 // committed golden, fail on any diff). Here the "source" is the 48 committed

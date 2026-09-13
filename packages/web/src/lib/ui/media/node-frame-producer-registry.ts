@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-frame-producer-registry.ts
-//
 // THE PER-FRAME PRODUCER SEAM — the node-lifetime owner of the rAF loops that
 // push a module's own engine-visible state, taken off the cards that ran them.
 //

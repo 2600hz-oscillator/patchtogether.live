@@ -1,5 +1,3 @@
-// art/scenarios/dx7/syx-spectra.test.ts
-//
 // Regression: "uploaded SYX patches all sound like the bundled E.PIANO 1".
 // Loads the AAAHGOOD.SYX cartridge fixture (32 named voices, 14 distinct
 // algorithms) and renders four spaced-out patches (1, 8, 16, 24) through

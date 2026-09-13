@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/bentbox-face-model.test.ts
-//
 // BENTBOX — the permanent gates on the three claims this face is built from.
 // Each reads the LIVE def through the SAME pure resolvers the shell renders
 // from, so an assertion here cannot drift from what actually paints.

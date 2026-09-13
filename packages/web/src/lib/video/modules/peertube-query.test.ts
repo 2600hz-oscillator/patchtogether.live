@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/peertube-query.test.ts
-//
 // Pure-core unit tests for the PEERTUBE Sepia-Search query/parse + per-instance
 // stream-resolution logic. NO network: every input is a literal / FIXTURE, every
 // assertion is on a pure transform. (Live Sepia/instance calls live only in the

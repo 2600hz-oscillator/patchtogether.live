@@ -1,5 +1,3 @@
-// e2e/tests/rackspace-persistence.spec.ts
-//
 // End-to-end coverage for the rackspace-persistence audit. The audit's claim is:
 // "every asset stored under node.data already rides the Y.Doc, so the
 // .imp.json export envelope captures everything by construction." This
@@ -144,7 +142,6 @@ test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps surviv
   expect(typeof env.savedAt).toBe('string');
   expect(env.update.length).toBeGreaterThan(1000); // fat: bytes + 32 voices
 
-  // Verify we actually cleared.
   const cleared = await readNodesSnapshot(page);
   expect(Object.keys(cleared)).toHaveLength(0);
 

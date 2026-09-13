@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/video-face-screen-source.test.ts
-//
 // THE #1928 CLOSE — every FACED video module must be able to reach its SCREEN
 // ON/OFF switch from the faceplate that replaced its card.
 //

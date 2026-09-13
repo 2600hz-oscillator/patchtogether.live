@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/mix.ts
-//
 // CLB cell `mix(a, b, t)` — linear blend of two inputs by a scalar `t` (the
 // generic 2-input ALU cell). `t` is a config knob: a static const, OR bound to
 // a host param/CV/gate. Two inputs (a, b), one knob (t, default 0.5).

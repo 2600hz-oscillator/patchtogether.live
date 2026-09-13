@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/continuity-probe.test.ts
-//
 // The graph-continuity probe, tested by EVALUATING THE SHIPPED SOURCE STRING —
 // `CONTINUITY_PROBE_SOURCE` is what `ensureContinuityProbeWorklet` hands to
 // `addModule`, and it is what these tests drive, so the tested code and the

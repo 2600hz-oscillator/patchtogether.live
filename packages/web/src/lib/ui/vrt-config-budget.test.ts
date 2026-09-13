@@ -1,8 +1,5 @@
-// packages/web/src/lib/ui/vrt-config-budget.test.ts
-//
 // THE VRT CONFIG'S KNOBS MUST BE KNOBS PLAYWRIGHT ACTUALLY TURNS.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE BUG THIS EXISTS FOR
 //
 // `e2e/vrt/vrt.config.ts` carried, inside `expect.toHaveScreenshot`:
@@ -42,7 +39,6 @@
 // test stays as the runtime-independent leg: tsc proves the KEYS are real,
 // this proves the VALUES/budgets are the ones Playwright actually turns.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // WHAT IT CHECKS
 //
 //   1. Every key inside `expect.toHaveScreenshot` is one Playwright reads.
@@ -262,7 +258,6 @@ describe('VRT config: every knob is one Playwright turns', () => {
   );
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE PER-SCENE FACE BUDGET (#1949)
 //
 // `vrt.config.ts`'s per-test `timeout` is ONE number for the whole lane, and a
@@ -286,7 +281,6 @@ describe('VRT config: every knob is one Playwright turns', () => {
 //     than inert;
 //   * refuse a declaration missing its evidence, in the type AND at runtime;
 //   * control the arithmetic in both directions against a synthetic weight.
-// ───────────────────────────────────────────────────────────────────────────
 
 /** The body of `defineConfig({ … })`, for reading its TOP-LEVEL keys. The
  *  config declares `timeout` three times — top level, `expect.timeout` and

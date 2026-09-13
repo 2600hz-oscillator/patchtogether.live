@@ -1,5 +1,3 @@
-// e2e/tests/capacity.spec.ts
-//
 // @capacity tests: per-rackspace concurrent-connection cap (Stage B PR B-d).
 // Cap is 4 total; the 5th visitor is rejected at the auth handshake and
 // gets surfaced as `rackspace-full` to the client.

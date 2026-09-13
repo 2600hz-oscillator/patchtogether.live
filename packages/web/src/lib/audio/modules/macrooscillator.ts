@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/macrooscillator.ts
-//
 // MACROOSCILLATOR — Plaits-style macro oscillator (audio domain).
 //
 // Pure-TypeScript AudioWorklet (no Faust, no emscripten vendoring).
@@ -73,13 +71,11 @@ export { MACRO_MAX_MODEL };
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-// ----------------------------------------------------------------------------
 // Pure-math mirror — reflected from packages/dsp/src/macrooscillator.ts so
 // the engines can be driven from node (worklets can't be imported under
 // vitest because the AudioWorkletProcessor base class is only present in
 // AudioWorkletGlobalScope). Any algorithmic change in the worklet MUST be
 // mirrored here.
-// ----------------------------------------------------------------------------
 
 function _polyBlep(t: number, dt: number): number {
   if (t < dt) {
@@ -917,7 +913,6 @@ export const macrooscillatorDef: AudioModuleDef = {
     { id: 'level',     label: 'Level',     defaultValue: 0.8, min: 0,   max: 1,  curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // ⚠ WHAT THIS FACE IS FOR. Six dials over fourteen engines, where three of
   // the six mean something DIFFERENT in each engine and nothing has ever said

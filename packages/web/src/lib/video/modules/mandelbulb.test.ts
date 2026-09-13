@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mandelbulb.test.ts
-//
 // Unit tests for the MANDELBULB module def shape. The GL raymarch pipeline
 // is exercised by E2E (jsdom can't render shaders); the DE algebra is in
 // mandelbulb-math.test.ts.
@@ -25,14 +23,12 @@ describe('mandelbulbDef shape', () => {
 
 });
 
-// ──────────────────────────────────────────────────────────────────────────
 // Factory: SLICE-OFF video identity + SLICE-ON audio wiring.
 //
 // jsdom can't run the GL raymarch, but the factory's CHEAP synchronous work
 // (FBO alloc + the audio-node decision) is testable with stub GL + audio ctx.
 // The backwards-compat guarantee — slice OFF ⇒ NO audio node created — is the
 // load-bearing assertion here.
-// ──────────────────────────────────────────────────────────────────────────
 
 function makeFakeGl(): WebGL2RenderingContext {
   return {

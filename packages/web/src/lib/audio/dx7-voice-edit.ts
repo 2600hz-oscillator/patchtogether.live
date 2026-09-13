@@ -1,14 +1,10 @@
-// packages/web/src/lib/audio/dx7-voice-edit.ts
-//
 // THE EDIT MODEL for a DX7 voice: unwrap it off the Y.Doc, change one field,
 // copy an envelope, ask whether it still matches its preset — all pure, all
 // returning fresh plain-JS objects, none of it touching the store or the
 // engine. The UI layers (PR 5's stamp, PR 6's panels) own the writes; this
 // file owns the arithmetic.
 //
-// ==========================================================================
 // THE MIGRATION THIS FILE EXISTS FOR
-// ==========================================================================
 // `DX7OpData` stored only the DERIVED `ratio` until now — `parsePackedVoice`
 // read the coarse and fine bytes and threw them away. So **every rack already
 // saved has `node.data.userPatches[i].operators[j]` with no `coarse` and no

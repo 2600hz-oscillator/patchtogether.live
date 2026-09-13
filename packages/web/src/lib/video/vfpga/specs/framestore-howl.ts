@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/framestore-howl.ts
-//
 // framestore-howl — the FEEDBACK FLAGSHIP bent VFPGA (design §3.3). Bends a
 // digital FRAME-STORE write/read into video HOWL-AROUND: the buffer-recirculation
 // feedback bend. A register tile IS the frame store; reading it via `:prev`

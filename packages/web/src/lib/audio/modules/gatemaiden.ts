@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/gatemaiden.ts
-//
 // GATEMAIDEN — single-input gate↔trigger converter. ONE generic CV input → a
 // GATE output AND a TRIGGER output, derived from the input's level + rising
 // edges (no mode switch). The convenience utility for the trigger/gate model:
@@ -124,7 +122,6 @@ export const gatemaidenDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: one ragged gate in, two clean things out. GATE is the input
   // re-squared and held for at least LEN; TRIG is one short shaped pulse per

@@ -1,5 +1,3 @@
-// art/scenarios/analog-vco/fm-sync-model.test.ts
-//
 // ART scenario validating the ANALOG VCO FM×SYNC INTERACTION MODEL.
 //
 // Setup (per the validation spec): two Analog VCOs.
@@ -124,7 +122,6 @@ function renderTwoVco(n: number, o: TwoVcoOpts): TwoVcoRender {
   return { a, b, aFreq };
 }
 
-// ── helpers ──
 function rms(buf: Float32Array): number {
   let s = 0;
   for (const v of buf) s += v * v;

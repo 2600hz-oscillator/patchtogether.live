@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clap.ts
-//
 // CLAP — analog-modeled handclap voice, the fourth member of the drum
 // family (KICK DRUM / SNARE DRUM / TOM DRUM), at deliberately CURATED
 // complexity: one synthesis engine, eight voice knobs + level, spanning

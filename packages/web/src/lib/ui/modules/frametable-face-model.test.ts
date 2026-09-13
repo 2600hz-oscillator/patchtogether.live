@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/frametable-face-model.test.ts
-//
 // FRAMETABLE — the permanent gates on the claims this face is built from.
 //
 // ⚠ FIVE OF THE SIX BLOCKS BELOW GUARD A REPAIR, not a preference, and each one
@@ -65,7 +63,6 @@ const NO_CONTROL = (frametableDef.noUserControl ?? []).map((e) => e.param);
 const PLAYABLE = ALL_PARAMS.filter((id) => !NO_CONTROL.includes(id));
 const ORDER = frametableDef.face?.order ?? [];
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('frametable face — the gate params a player CANNOT operate', () => {
   it('every noUserControl entry names a live param and a REAL writing port', () => {
     // ⚠ ANCHORED TO THE DEF'S OWN PORTS. `writer: 'cv-port'` is a CLAIM that
@@ -108,7 +105,6 @@ describe('frametable face — the gate params a player CANNOT operate', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('frametable face — the FOUR switches that said `linear` (the repair)', () => {
   /** Which primitive each switch must resolve to, and why it is not the other. */
   const SWITCHES: readonly { id: string; kind: 'toggle' | 'momentary' }[] = [
@@ -156,7 +152,6 @@ describe('frametable face — the FOUR switches that said `linear` (the repair)'
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('frametable face — the MODE roster is a PROMOTION, not an invention', () => {
   const modeOptions = () => param('mode').options ?? [];
 
@@ -213,7 +208,6 @@ describe('frametable face — the MODE roster is a PROMOTION, not an invention',
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('frametable face — the FILE workflow survives promotion', () => {
   it('both card affordances are declared families, ranked, and resolve to cells', () => {
     // STOP 2, as an assertion. `migrated(type)` stops both surfaces rendering
@@ -313,7 +307,6 @@ describe('frametable face — the FILE workflow survives promotion', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 describe('frametable face — the picture, the pads and the band structure', () => {
   it('the picture arrives from the VIDEO seam, never from the glyph literal', () => {
     // ⚠ ASSERT `hasVideoSurface`, NEVER `glyph: 'none'`. A video def MUST

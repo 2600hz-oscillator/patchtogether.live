@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rasterize-map.test.ts
-//
 // Table-driven unit tests for the RASTERIZE raster-mapping math
 // (rasterize-map.ts). Covers: sample → luminance, cursor normalisation,
 // per-frame mapping (count + raster order), cursor advance + WRAP vs

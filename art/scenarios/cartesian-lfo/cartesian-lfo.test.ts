@@ -1,5 +1,3 @@
-// art/scenarios/cartesian-lfo/cartesian-lfo.test.ts
-//
 // ART for the Cartesian-embedded LFO. Verifies that the LFO division
 // multiplier produces the expected ratio of LFO cycles to clock pulses.
 //

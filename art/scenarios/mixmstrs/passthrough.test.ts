@@ -1,5 +1,3 @@
-// art/scenarios/mixmstrs/passthrough.test.ts
-//
 // Toolchain validation for MIXMSTRS — same shape as the analog-vco
 // scenario. Once the render harness gains stereo + multi-input support,
 // this file expands to scenarios `passthrough`, `eq-bass-boost`,

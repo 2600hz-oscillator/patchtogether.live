@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-arrange.ts
-//
 // SONG MODE / arranger data model + PURE helpers for the `clipplayer` module.
 //
 // Session view launches clips that loop; ARRANGEMENT view plays a recorded
@@ -143,7 +141,6 @@ export function hasArrangement(data: ArrangeData | undefined): boolean {
   return !!data && data.events.length > 0;
 }
 
-// ---------------------------------------------------------------------------
 // SONG VIEW (Phase 2) — block derivation + edit ops, all PURE.
 //
 // The event log is the source of truth; the editor renders + mutates a BLOCK
@@ -153,7 +150,6 @@ export function hasArrangement(data: ArrangeData | undefined): boolean {
 //   move block  → change the launch event's beat
 //   swap clip   → change the event's slot
 //   delete block→ remove the event (the prior clip extends; or insert 'stop')
-// ---------------------------------------------------------------------------
 
 /** A contiguous span in one lane where a single clip plays (for the timeline). */
 export interface ArrangeBlock {

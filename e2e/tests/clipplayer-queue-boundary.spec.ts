@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-queue-boundary.spec.ts
-//
 // Deluge launch quantization end-to-end (the owner-locked fix): with QNT on, a
 // clip launched into an IDLE lane does NOT fire immediately while other clips
 // play — it QUEUES and drops in at the next loop boundary of the LONGEST

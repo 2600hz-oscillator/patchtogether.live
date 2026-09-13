@@ -1,5 +1,3 @@
-// art/scenarios/dx7/envelope.test.ts
-//
 // The DX7 OPERATOR ENVELOPE, at the audio tier.
 //
 // RE-AUTHORED for the authentic envelope law (PR 0b). The previous version of

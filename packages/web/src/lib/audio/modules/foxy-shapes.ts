@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-shapes.ts
-//
 // FOXY — 3dShapeGen path. The shared shape-generation math (feature
 // extraction, SDFs, smooth-min, voxel scan) has been EXTRACTED into
 // `packages/web/src/lib/video/modules/shapegen-math.ts` so the new
@@ -28,7 +26,6 @@ export {
   type Shape,
   type FeatureCell,
   FOXY_SHAPE_TYPES,
-  // Constants
   FOXY_3D_TARGET_SHAPES,
   FOXY_3D_FEATURE_GRID,
   FOXY_3D_NMS_RADIUS,

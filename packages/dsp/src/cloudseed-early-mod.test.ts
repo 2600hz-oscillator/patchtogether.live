@@ -1,5 +1,3 @@
-// packages/dsp/src/cloudseed-early-mod.test.ts
-//
 // EARLY-DIFFUSION MOD AMOUNT: the enable gate and the depth must read the SAME
 // UNIT.
 //

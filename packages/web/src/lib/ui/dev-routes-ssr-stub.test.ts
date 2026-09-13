@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dev-routes-ssr-stub.test.ts
-//
 // THE GATE UNDER THE `/dev/**` SSR STUB (#2094).
 //
 // `vite.config.ts`'s `ssrDropBrowserOnlyGraph()` replaces every `.svelte` file

@@ -1,5 +1,3 @@
-// e2e/tests/toybox-video-projection.spec.ts
-//
 // TOYBOX video/image INPUT layer kinds (#39) + PROJECTIVE surface mode (#45) —
 // end-to-end through the REAL UI + WebGL engine. Three proofs:
 //
@@ -430,7 +428,6 @@ test.describe('TOYBOX projective surface mode (#45)', () => {
 
     await spawnToybox(page);
 
-    // Load the bundled projection-mapping preset via the determinism hook.
     const applied = await page.evaluate(async () => {
       const g = globalThis as unknown as { __toyboxLoadPreset?: (id: string) => Promise<boolean> };
       return g.__toyboxLoadPreset ? g.__toyboxLoadPreset('projection-map') : false;

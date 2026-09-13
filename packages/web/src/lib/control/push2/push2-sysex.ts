@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-sysex.ts
-//
 // Ableton Push 2 "User mode" protocol CODEC — PURE, hardware-free. The Push 2
 // analogue of `launchpad-sysex.ts`: it encodes the SysEx the host sends (enter
 // User mode) + the per-pad / per-button LED messages, and decodes the inbound
@@ -26,9 +24,7 @@
 //     owner-refinable on hardware).
 //   - Encoders (relative 2's-complement CC): right = 1..63, left = 64..127.
 
-// ---------------------------------------------------------------------------
 // Protocol constants
-// ---------------------------------------------------------------------------
 
 /** Ableton SysEx manufacturer id. */
 export const PUSH2_MFR_ID = [0x00, 0x21, 0x1d] as const;
@@ -54,9 +50,7 @@ const NOTE_ON = 0x90; // 0x9n
 const NOTE_OFF = 0x80; // 0x8n
 const CC = 0xb0; // 0xBn
 
-// ---------------------------------------------------------------------------
 // Small helpers
-// ---------------------------------------------------------------------------
 
 /** Clamp a coordinate into [0, max). */
 function clampCoord(v: number, max: number): number {
@@ -105,7 +99,6 @@ export function decodeRelativeCc(value: number): number {
   return v < 64 ? v : v - 128;
 }
 
-// ---------------------------------------------------------------------------
 // Stock-palette colour mapping. The Push pad LED takes a VELOCITY (0..127) that
 // indexes a 128-entry palette; arbitrary per-pad RGB needs palette reprogramming
 // (deferred). We map an RGB colour to a STOCK palette entry, so the STATE
@@ -150,7 +143,6 @@ export function decodeRelativeCc(value: number): number {
 // collapsed mono-engaged onto poly and lost the state. `pushColorTiers` in
 // push2-sysex.test.ts sweeps every RGB_* constant launchpad-map exports and
 // fails if any semantic pair collides, so this is enforced rather than asserted.
-// ---------------------------------------------------------------------------
 
 /** One hue row of the stock palette: a reference full-brightness colour plus the
  *  palette entry to use for it at each of three brightness levels. */
@@ -273,9 +265,7 @@ export function pushColorIndex(r: number, g: number, b: number): number {
   return tier === 'bright' ? hue.bright : tier === 'mid' ? hue.mid : hue.dim;
 }
 
-// ---------------------------------------------------------------------------
 // TX — encode commands (host → Push). Golden-vector tested.
-// ---------------------------------------------------------------------------
 
 /** Wrap a SysEx body in a full Push 2 frame (mfr id + device/model header). */
 function sysex(...body: number[]): Uint8Array {
@@ -325,12 +315,10 @@ export function encodeButtonLed(cc: number, value: number): Uint8Array {
   return new Uint8Array([CC, cc & 0x7f, clamp7(value)]);
 }
 
-// ---------------------------------------------------------------------------
 // RX — decode the inbound MIDI stream (Push → host). User mode sends pad presses
 // as Note-On/Off, encoder turns + button presses as CC. A single MIDI message is
 // 3 bytes; a Note-On with velocity 0 is a Note-Off (running convention). Decode
 // ONE message and classify it.
-// ---------------------------------------------------------------------------
 
 export type Push2RxEvent =
   | { type: 'pad'; x: number; y: number; s: 0 | 1; velocity: number } // 8×8 grid

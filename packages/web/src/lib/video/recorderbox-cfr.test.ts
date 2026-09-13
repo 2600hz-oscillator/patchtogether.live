@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-cfr.test.ts
-//
 // Unit coverage for the CONSTANT-FRAME-RATE clock — the OSX slow-mo fix. The bug
 // was VARIABLE video frame timing (PTS off wall clock + drop-on-backpressure
 // cadence), which a player reads as slow-motion. The fix synthesizes an even grid

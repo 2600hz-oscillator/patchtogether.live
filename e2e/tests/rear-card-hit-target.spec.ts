@@ -1,5 +1,3 @@
-// e2e/tests/rear-card-hit-target.spec.ts
-//
 // REAR CARD — the WHOLE CELL is the patch control, not the hole.
 //
 // Owner 2026-08-11: "the whole text area should be clickable, no reason to

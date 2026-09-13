@@ -1,5 +1,3 @@
-// e2e/tests/cartesian-face.spec.ts
-//
 // THE TYPED-ENTRY PROOF (#1509) — cartesian's faceplate, driven by TYPING.
 //
 // ⚠ WHY THIS SPEC EXISTS RATHER THAN A faces-parity ROW. cartesian reaches the

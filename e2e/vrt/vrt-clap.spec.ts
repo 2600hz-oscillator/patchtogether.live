@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-clap.spec.ts
-//
 // Composite-state VRT for CLAP — the card captured at three
 // SONICALLY-DISTINCT non-default settings (the vrt-quadralogical per-state
 // pattern, minus the WebGL freeze machinery: the clap card is pure

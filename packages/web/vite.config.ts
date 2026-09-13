@@ -69,7 +69,6 @@ function ensureModuleDocs(): Plugin {
   };
 }
 
-// ---------------------------------------------------------------------------
 // ⚠ THE FIRST OCCUPANT — THE CARD GLOB — IS GONE WITH THE CARDS (#2088's sibling).
 //
 // `modules-card-components.ts` held `import.meta.glob('./modules/*Card.svelte',
@@ -82,7 +81,6 @@ function ensureModuleDocs(): Plugin {
 // `measure-worker-bundle.mjs --check` ratchet that catches the next
 // server-reachable import.
 
-// ---------------------------------------------------------------------------
 // …AND THE SECOND OCCUPANT: `<Canvas>` ITSELF (#2088).
 //
 // Dropping the ~210 card components was never going to be enough, because the
@@ -128,7 +126,6 @@ export const SSR_CANVAS_STUB =
   '  void _props;\n' +
   '</script>\n';
 
-// ---------------------------------------------------------------------------
 // …AND THE THIRD OCCUPANT: THE `/dev/**` PLAYGROUND PAGES (#2094).
 //
 // After the two stubs above, the single largest ROUTE input left in the Worker
@@ -173,7 +170,6 @@ function ssrDropBrowserOnlyGraph(): Plugin {
   };
 }
 
-// ---------------------------------------------------------------------------
 // WORKTREE IDENTITY ENDPOINT (`GET /__worktree`) — dev + preview servers only.
 //
 // #1597: Playwright's `reuseExistingServer` (and any warm-server dev loop)

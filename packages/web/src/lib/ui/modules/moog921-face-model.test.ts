@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog921-face-model.test.ts
-//
 // THE PERMANENT GATE BEHIND BOTH MOOG 921 FACEPLATES.
 //
 // It does three jobs, and the first is the one that makes the other two worth
@@ -614,7 +612,6 @@ describe('moog921 face model — TOTALITY (a readout runs on every render)', () 
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
 // THE MONOLITH — moog921Vco, the family's third member.
 //
 // Same three jobs as above, against a DIFFERENT worklet: validate the mirrored
@@ -630,7 +627,6 @@ describe('moog921 face model — TOTALITY (a readout runs on every render)', () 
 // two renders that converge after 5 ms look identical to one that never diverged
 // if you average over 2 s. The last index at which two renders differ is
 // window-independent by construction — the whole buffer IS the window.
-// ════════════════════════════════════════════════════════════════════════════
 
 /** Render the REAL 921 VCO. Returns every tap SETTLED, plus the raw unsettled
  *  buffers the bit-comparisons need — a settle window would hide an early

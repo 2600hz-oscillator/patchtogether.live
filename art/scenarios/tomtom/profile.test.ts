@@ -1,5 +1,3 @@
-// art/scenarios/tomtom/profile.test.ts
-//
 // AUDIO PROFILE for TOM DRUM (id `tomtom` — the analog-modeled tom voice:
 // membrane fundamental + 1.593× overtone on one exponential bend law,
 // band-passed breath noise, 2×-oversampled warm-tanh drive). Ships with the

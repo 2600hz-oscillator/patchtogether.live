@@ -1,5 +1,3 @@
-// e2e/tests/xy-pad-cell.spec.ts
-//
 // DOM gate for the `xy` PARAM CELL — the 2-D pad, and the substitute
 // `param-cell-coverage.test.ts` names for it.
 //

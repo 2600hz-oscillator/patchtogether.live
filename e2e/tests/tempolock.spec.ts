@@ -1,5 +1,3 @@
-// e2e/tests/tempolock.spec.ts
-//
 // TEMPOLOCK end-to-end — the owner's chain through the REAL patch seams:
 //
 //   deterministic onset source → TEMPOLOCK.in → TEMPOLOCK.clock →

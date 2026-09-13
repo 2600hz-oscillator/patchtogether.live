@@ -1,5 +1,3 @@
-// e2e/tests/present-second-display.spec.ts
-//
 // "Present an OUTPUT on a second display" — a SEPARATE popup window placed on
 // display 2, into which the OPENER blits the OUTPUT card's live canvas every
 // frame (a direct same-origin canvas → canvas drawImage; no MediaStream, no

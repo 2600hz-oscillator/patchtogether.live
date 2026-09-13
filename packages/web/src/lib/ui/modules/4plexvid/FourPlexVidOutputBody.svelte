@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/4plexvid/FourPlexVidOutputBody.svelte
-  //
   // The 4PLEXVID dock full-view body: its live OUT 1 picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rasterize.ts
-//
 // RASTERIZE — audio → video raster mapper (slice 1 of "crossing the
 // streams";, "Locked
 // decisions").
@@ -117,7 +115,6 @@ export const rasterizeDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────
   //
   // WHAT IT IS FOR: this is the audio→picture bridge. You patch a signal in
   // and the module PAINTS it — sample as brightness, in raster scan order —

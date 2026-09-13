@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/stereo-jack-expansion.svelte.ts
-//
 // WHICH COLLAPSED STEREO JACKS THE USER HAS UN-COLLAPSED — the state half of
 // the right-click "expand to L / R jacks" gesture.
 //

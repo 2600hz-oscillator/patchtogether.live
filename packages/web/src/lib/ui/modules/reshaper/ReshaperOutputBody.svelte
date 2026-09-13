@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/reshaper/ReshaperOutputBody.svelte
-  //
   // The RESHAPER dock full-view body: the live remapped picture and the
   // affordances that live only on `ReshaperCard.svelte`, which promotion
   // would otherwise delete (`migrated('reshaper')` stops BOTH surfaces

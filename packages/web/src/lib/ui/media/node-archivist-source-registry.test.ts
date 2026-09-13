@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-archivist-source-registry.test.ts
-//
 // The node-owned ARCHIVIST source lifecycle (legacy-removal S1), driven against
 // fakes. Every leg runs with NO card anywhere — there is no component in this
 // file — because "the source exists only because a card is mounted" is the
@@ -36,9 +34,7 @@ import {
   type ArchivistSourceStatus,
 } from './node-archivist-source-registry';
 
-// ---------------------------------------------------------------------------
 // The fake world
-// ---------------------------------------------------------------------------
 
 function node(id: string, type = 'archivist'): ModuleNode {
   return { id, type, domain: 'video', position: { x: 0, y: 0 }, params: {} } as unknown as ModuleNode;
@@ -198,7 +194,6 @@ function makeHarness() {
 type Harness = ReturnType<typeof makeHarness>;
 const build = (h: Harness) => createNodeArchivistSourceRegistry(h.deps);
 
-// ---------------------------------------------------------------------------
 
 describe('NODE_ARCHIVIST_SOURCE_TYPES', () => {
   it('names archivist and nothing else, and is non-empty', () => {

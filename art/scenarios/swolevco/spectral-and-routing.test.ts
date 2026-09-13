@@ -1,5 +1,3 @@
-// art/scenarios/swolevco/spectral-and-routing.test.ts
-//
 // ART for SWOLEVCO. Drives the actual `swolevcoDef.factory(ctx, node)`
 // under node-web-audio-api's OfflineAudioContext (pure JS Web Audio —
 // no Faust DSP — same harness pattern as illogic + vca-invert).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog902-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for moog902's two derived readouts, plus the
 // leg that stops the face model drifting from the DSP it describes.
 //

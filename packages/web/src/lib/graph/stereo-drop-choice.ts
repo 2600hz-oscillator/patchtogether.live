@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/stereo-drop-choice.ts
-//
 // THE WIDTH-MISMATCH CHOOSER — "you dropped a mono source on a stereo jack;
 // which hole did you mean?" — pure, framework-free.
 //

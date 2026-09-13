@@ -1,11 +1,8 @@
-// scripts/ci-db-schema.test.ts
-//
 // Gate for the CI DATABASE SCHEMA APPLY (scripts/apply-db-schema.sh + every
 // workflow step that calls it). Pure-unit, zero-flake, runs in the `unit` lane
 // via `task test` → `task test:scripts`. No database required.
 //
 // THE BUG THIS EXISTS TO PREVENT
-// ------------------------------
 // Fourteen workflow steps each hand-spelled their schema apply as
 // `psql "$URL" -f db/schema/001_init.sql -f db/schema/005_rackspace_mode.sql`.
 // Migrations 002/003/004 appeared in NO list, so every CI lane ran against a
@@ -23,7 +20,6 @@
 // and the green run looks identical to a real one.
 //
 // WHAT THIS GATE ASSERTS
-// ----------------------
 //  1. COMPLETENESS BY CONSTRUCTION — the applier reads the DIRECTORY, so it is
 //     not possible to add a migration and forget a lane. Asserted against the
 //     real db/schema/ contents, not a list mirrored here.
@@ -53,10 +49,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW_DIR = join(ROOT, '.github/workflows');
 const APPLIER = 'scripts/apply-db-schema.sh';
 
-// ---------------------------------------------------------------------------
 // Helpers — deliberately operate on raw text so they cannot be fooled by a
 // YAML library normalising away the thing under test (quoting, anchors, etc).
-// ---------------------------------------------------------------------------
 
 /** Every `<n>_<name>.sql` in db/schema/, in the order the applier's glob
  *  yields them. Ground truth: the ARTIFACT, never a list restated here. */
@@ -224,9 +218,7 @@ export function isEphemeralTestUrl(url: string): boolean {
   return localHost && testDb;
 }
 
-// ---------------------------------------------------------------------------
 // 1. The applier is complete BY CONSTRUCTION.
-// ---------------------------------------------------------------------------
 
 describe('apply-db-schema.sh applies the whole directory', () => {
   const src = readFileSync(join(ROOT, APPLIER), 'utf8');
@@ -275,9 +267,7 @@ describe('apply-db-schema.sh applies the whole directory', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 2 + 3. Deny by default, and prove the scan actually found something.
-// ---------------------------------------------------------------------------
 
 describe('every workflow applies the schema through the shared applier', () => {
   const steps = applySteps();
@@ -388,9 +378,7 @@ describe('every workflow applies the schema through the shared applier', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 4. The precondition that makes shipping a DESTRUCTIVE migration safe.
-// ---------------------------------------------------------------------------
 
 describe('every apply target is a throwaway local test database', () => {
   it('002_feedback.sql really is destructive (the reason this check exists)', () => {
@@ -418,11 +406,9 @@ describe('every apply target is a throwaway local test database', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 5. NEGATIVE CONTROLS — perturb what each checker claims to measure and
 //    confirm the number moves. A checker blind to its own subject returns a
 //    clean result no matter what the code does.
-// ---------------------------------------------------------------------------
 
 describe('negative controls: the checkers can actually fail', () => {
   it('rawPsqlApplies() FLAGS a hand-rolled apply', () => {

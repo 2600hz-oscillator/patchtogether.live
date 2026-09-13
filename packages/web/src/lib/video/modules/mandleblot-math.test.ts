@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mandleblot-math.test.ts
-//
 // Pure-TS math tests for the Mandelbrot escape-time + smooth-coloring
 // helpers. Keeps the iteration algorithm correct outside of GL (which
 // jsdom can't render anyway). The shader uses the same algebra, so a

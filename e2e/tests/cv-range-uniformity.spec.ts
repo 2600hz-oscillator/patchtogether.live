@@ -1,5 +1,3 @@
-// e2e/tests/cv-range-uniformity.spec.ts
-//
 // End-to-end regression for docs/adr/004-cv-range-convention.md: an LFO
 // connected to ANY module's `cv`-typed input must drive the modulated
 // param through (close to) its full range of motion. Pre-this-PR an LFO

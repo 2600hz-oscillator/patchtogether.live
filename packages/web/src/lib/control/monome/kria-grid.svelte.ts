@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/kria-grid.svelte.ts
-//
 // Binds the monome grid (lib/control/monome/monome-device) to ONE focused KRIA node. This
 // is KRIA's OWN binding (the clip-launcher has its own grid-clip-binding) —
 // last-bound module owns the singleton grid (fine for v1, like ClipplayerCard).

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/kickdrum-dsp.ts
-//
 // KICK DRUM (id `kickdrum`) — pure DSP core, Phase 1 of the build plan
 //: the SUB + BODY generator
 // layers and the strike machinery. Later phases add CLICK, the oversampled
@@ -60,9 +58,7 @@ function reflectFold(x: number): number {
   return y < 2 ? y - 1 : 3 - y;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Params (Phase-1 subset of the full plan table; ids match the def's params)
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface KickdrumP1Params {
   /** Sub fundamental, Hz (plan: 20–120, default 50). */
@@ -167,9 +163,6 @@ export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
   width: 0.2,
 };
 
-// ─────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface KickdrumState {
   subPhase: number;
@@ -294,9 +287,7 @@ export function makeKickdrumState(): KickdrumState {
   return s;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Frequency laws (pure — unit-tested directly)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** −60 dB decay-time (ms) → per-sample envelope multiplier. ln(1000) ≈ 6.908:
  *  env·a^(ms·sr/1000) = 10^(−60/20). */
@@ -329,9 +320,7 @@ export function kickBodyFreqHz(
   return settled * sweepMult * (1 + clamp(tensionTerm, 0, 0.6));
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample step
-// ─────────────────────────────────────────────────────────────────────────
 
 const FLUSH = 1e-20;
 

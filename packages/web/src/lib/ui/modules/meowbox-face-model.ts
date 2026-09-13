@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/meowbox-face-model.ts
-//
 // THE PURE MODEL BEHIND MEOWBOX's FACEPLATE — and the whole point of the face:
 // UNBUNDLE `morph`.
 //

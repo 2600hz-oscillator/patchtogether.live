@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/swolevco-face-model.ts
-//
 // The PURE model behind the SWOLEVCO faceplate — the arithmetic for its three
 // derived readouts.
 //

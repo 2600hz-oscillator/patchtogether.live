@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/scheduler-clock.ts
-//
 // SchedulerClock — a singleton main-thread tick source that drives the
 // per-module step schedulers (sequencer, drumseqz, polyseqz, score,
 // cartesian, …). Two delivery shapes:

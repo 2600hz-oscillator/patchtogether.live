@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/rack-status.test.ts
-//
 // Pure-unit coverage for the persistence-hardening P1 + P2 state helpers.
 // No browser: these are the timing/precedence decisions the /r/[id] page
 // delegates to, proven deterministically here.

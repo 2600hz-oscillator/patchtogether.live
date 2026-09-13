@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-schema.ts
-//
 // WHICH eight controls a module's PUSH CARD shows — the resolver behind
 // push-card-config.ts. PURE: it reads only the passed def (its `face`,
 // `params`, `controlFamilies`), so it is node-testable with no DOM, no

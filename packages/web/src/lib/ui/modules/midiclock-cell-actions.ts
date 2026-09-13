@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midiclock-cell-actions.ts
-//
 // THE CONNECT GESTURE, as a face cell — and the reason it is a cell rather than
 // a body control.
 //

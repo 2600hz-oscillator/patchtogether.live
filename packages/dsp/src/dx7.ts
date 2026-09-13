@@ -1,5 +1,3 @@
-// packages/dsp/src/dx7.ts
-//
 // Pure-TypeScript 6-operator DX7-style FM voice processor.
 //
 // SYNC PARTNER: packages/web/src/lib/audio/dx7-render.ts mirrors this
@@ -56,7 +54,6 @@ const NUM_VOICES = 5;
 const NUM_OPS = 6;
 const C4_HZ = 261.625565;
 
-// --------------------------------------------------------------
 // Algorithm table — 32 DX7 algorithms.
 //
 // Each algorithm is described by:
@@ -98,7 +95,6 @@ const C4_HZ = 261.625565;
 // non-empty subset of [0..5]; feedback.from / feedback.to are in [0..5]. The
 // authoritative golden lives in the web mirror's
 // `dx7-algorithms.test.ts`, which also asserts all 32 rows are DISTINCT.
-// --------------------------------------------------------------
 
 interface Feedback {
   /** Operator index (0..5) whose output feeds the loop's 1-sample memory. */
@@ -212,9 +208,7 @@ function buildAlgorithms(): Algorithm[] {
   return algos;
 }
 
-// --------------------------------------------------------------
 // Patch struct (mirror of dx7-syx.ts shape, but flat for hot-path access).
-// --------------------------------------------------------------
 
 interface OpPatch {
   // Envelope, in the DX7's own dB domain: rates 0..99 → dB per second (linear
@@ -272,9 +266,7 @@ function defaultPatch(): VoicePatch {
   };
 }
 
-// --------------------------------------------------------------
 // Voice state — per-voice envelope phases, op phases, etc.
-// --------------------------------------------------------------
 
 interface Voice {
   active: boolean;
@@ -327,9 +319,7 @@ function makeVoice(): Voice {
   };
 }
 
-// --------------------------------------------------------------
 // The processor.
-// --------------------------------------------------------------
 
 interface PatchMessage {
   type: 'patch';
@@ -347,7 +337,6 @@ interface PatchMessage {
   };
 }
 
-// --------------------------------------------------------------
 // INCREMENTAL, NON-DESTRUCTIVE MESSAGES
 //
 // `{type:'patch'}` is a preset LOAD: it rebuilds the whole patch AND resets
@@ -399,7 +388,6 @@ interface PatchMessage {
 // already-resolved FLOAT for ratio (host dx7Ratio(coarse,fine)), detuneFactor
 // (host dx7DetuneFactor) and fixedHz (host dx7FixedHz(coarse,fine)), which are
 // stored verbatim.
-// --------------------------------------------------------------
 
 /** The operator fields an `opParam` message may address. */
 type Dx7OpField =
@@ -749,7 +737,6 @@ class Dx7Processor extends AudioWorkletProcessor {
       this.lastGate[lane] = gateVal;
     }
 
-    // Render.
     const blockLen = out.length;
     for (let i = 0; i < blockLen; i++) {
       let sum = 0;
@@ -838,10 +825,8 @@ class Dx7Processor extends AudioWorkletProcessor {
   }
 }
 
-// --------------------------------------------------------------
 // Helpers (must match dx7-syx.ts dx7LevelToAmp; duplicated inline because the
 // worklet bundle can't import from packages/web).
-// --------------------------------------------------------------
 
 function levelToAmp(level: number): number {
   const l = clampInt(level, 0, 99);
@@ -857,7 +842,6 @@ function clampInt(v: number, lo: number, hi: number): number {
   return i;
 }
 
-// ==============================================================
 // THE OPERATOR ENVELOPE + FIXED-FREQUENCY LAW.
 //
 // MIRRORED VERBATIM from `packages/web/src/lib/audio/dx7-syx.ts`, which
@@ -869,7 +853,6 @@ function clampInt(v: number, lo: number, hi: number): number {
 // cross-check it numerically against the web one. Do NOT edit this block
 // alone; edit the pair. Do NOT paraphrase the comments either — they are part
 // of the compared text.
-// ==============================================================
 
 // dx7-envelope-mirror:start
 

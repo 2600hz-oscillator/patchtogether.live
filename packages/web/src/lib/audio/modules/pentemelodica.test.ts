@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/pentemelodica.test.ts
-//
 // Unit tests for PENTEMELODICA:
 //   - module-def shape (6 inputs, 7 outputs, 60 params, stereoPairs, palette)
 //   - pentemelodicaMath render mirror sanity (poly → 5 voices; a chord differs

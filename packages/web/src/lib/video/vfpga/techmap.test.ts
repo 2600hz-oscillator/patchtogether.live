@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/techmap.test.ts
-//
 // Pure unit tests for the LUT technology-mapper (A5).
 
 import { describe, expect, it } from 'vitest';

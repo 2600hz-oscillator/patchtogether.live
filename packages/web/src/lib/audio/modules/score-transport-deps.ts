@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/score-transport-deps.ts
-//
 // SCORE's quicksave wiring, as ONE object both surfaces build.
 //
 // ⚠ WHY THIS IS EXTRACTED RATHER THAN COPIED. This is 70 lines of live-read

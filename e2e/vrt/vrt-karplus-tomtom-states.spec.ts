@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-karplus-tomtom-states.spec.ts
-//
 // COMPOSITE-STATE VRTs for KARPLUS + TOM DRUM (2026-07-11 coverage audit).
 //
 // The default sweep locks each module at its DEFAULT state only; these scenes

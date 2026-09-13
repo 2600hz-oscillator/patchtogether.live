@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/gatemaiden-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the GATEMAIDEN faceplate.
 //
 // WHAT MAKES THIS FILE NECESSARY: this face exists because BOTH of its controls

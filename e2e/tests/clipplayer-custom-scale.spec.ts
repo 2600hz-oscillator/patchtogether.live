@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-custom-scale.spec.ts
-//
 // CUSTOM SCALE — the per-lane note-ROW FILTER for the clip editor (owner spec,
 // 2026-08-06). The rig it exists for: a device listening on MIDI ch 10 for FOUR
 // notes, converted to drum triggers in the modular rack — so the sequencer must
@@ -65,7 +63,6 @@ async function clipNotes(page: Page, id: string, slot = '0'): Promise<number[]> 
   return (d?.clips?.[slot]?.steps ?? []).map((s) => s.midi).sort((a, b) => a - b);
 }
 
-/** Open the clip player's dock full view (grid + roll + deck in one surface). */
 /** Bind a clip by double-clicking its PAD, returning to the grid band first.
  *
  *  The pad dblclick is what moves the railed face to `editor`, so a second bind
@@ -140,7 +137,6 @@ test.fixme('custom scale: pick rows → APPLY hides the rest → hidden notes SU
     .toBe(FULL_ROWS);
   expect(await rowCount(page), 'picking does not filter — every row is offered').toBe(FULL_ROWS);
 
-  // Check four rows spread through the list (the owner's 4 drum rows).
   const allMidis = await pickerRowMidis(page);
   const chosen = [allMidis[8], allMidis[12], allMidis[20], allMidis[33]];
   expect(new Set(chosen).size, 'four distinct rows').toBe(4);

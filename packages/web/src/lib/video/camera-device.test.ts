@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/camera-device.test.ts
-//
 // Regression guard for the CAMERA device-recovery decision logic — the bug
 // where loading a patch whose saved camera is gone left the card STUCK in
 // 'no-cameras-found': you could SEE the available cameras in the dropdown but

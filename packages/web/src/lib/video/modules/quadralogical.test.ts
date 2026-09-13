@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/quadralogical.test.ts
-//
 // QUADRALOGICAL unit spec. Pure (no GL).
 //
 // Covers:
@@ -579,7 +577,6 @@ describe('pure scalar helpers', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // FREEZE (deterministic-capture hook) — downgraded from quadralogical.spec.ts
 // test 3 ("FREEZE holds the MIX still"), webgl-suite-optimization §1/§2/§7-3.
 // The e2e booted a 120s WebGL mixer + sampled the OUTPUT canvas twice 200ms
@@ -590,7 +587,6 @@ describe('pure scalar helpers', () => {
 // frozen frame does no draws while the live frame does — no GPU, no pixel read,
 // but the same hold-the-frame property the e2e proved. (The per-effect PIXEL
 // determinism is owned by vrt-quadralogical's 8 baselines.)
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   return new Proxy(

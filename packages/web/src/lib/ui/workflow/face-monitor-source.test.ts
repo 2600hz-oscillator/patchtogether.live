@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/face-monitor-source.test.ts
-//
 // THE #2009 / #1865 CLOSE — MONITOR MODE, the "hide the controls and watch the
 // picture" affordance, cannot be silently deleted by a promotion again.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/_pair-patches.ts
-//
 // Pair-patch generators for the integration test slice. Each generator
 // returns a `{ nodes, edges }` patch spec that wires a source module
 // into a canonical sink module — the integration.spec.ts loops over

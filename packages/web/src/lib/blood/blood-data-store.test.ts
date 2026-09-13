@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-data-store.test.ts
-//
 // Unit tests for the in-browser Blood DATA IndexedDB cache (the hosted-preview
 // loader: the owner picks proprietary RFFs in the browser; we persist the raw
 // bytes so they only pick once). Vitest runs in node (no real IndexedDB), so we

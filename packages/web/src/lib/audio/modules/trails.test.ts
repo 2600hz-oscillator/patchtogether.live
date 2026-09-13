@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/trails.test.ts
-//
 // Def shape + FACTORY WIRING for the Bela Trails source module.
 //
 // The wire format is pinned by trails-decode.test.ts and the binding layer by

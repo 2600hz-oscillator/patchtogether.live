@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/push2Control/push2-binder-status-model.ts
-//
 // EVERY STRING THE PUSH 2 FACEPLATE BODY CAN PRODUCE, decided here.
 //
 // ── WHY A MODEL AND NOT `{#if}` IN THE COMPONENT ────────────────────────────

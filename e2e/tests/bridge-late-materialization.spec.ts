@@ -1,5 +1,3 @@
-// e2e/tests/bridge-late-materialization.spec.ts
-//
 // Live-engine regression for the Codex audit finding (2026-05-30):
 // cross-domain bridges that couldn't be wired at addEdge time (because
 // the target/source node wasn't materialized yet) were silently

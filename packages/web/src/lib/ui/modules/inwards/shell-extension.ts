@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/inwards/shell-extension.ts
-//
 // The INWARDS SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

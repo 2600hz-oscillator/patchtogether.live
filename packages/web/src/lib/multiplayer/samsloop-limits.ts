@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/samsloop-limits.ts
-//
 // SAMSLOOP has both a per-user and per-rackspace cap to keep the rack's
 // memory footprint bounded. Mirrors the picturebox-limits.ts pattern so
 // the spawn-time enforcement plumbing in Canvas.svelte can reuse the

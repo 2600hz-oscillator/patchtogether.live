@@ -1,5 +1,3 @@
-// art/scenarios/scope-tuner/internal-references.test.ts
-//
 // Layer 2 calibration: pitch tuner against project-internal reference
 // instruments. The detector under test is YIN (packages/web/src/lib/audio/
 // pitch-detect.ts). The signals here exercise harmonic content beyond the

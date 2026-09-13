@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/poly-osc-sum.test.ts
-//
 // Unit tests for the pure per-lane ENVELOPE + SUM + NORMALIZATION helper shared
 // by CUBE and WAVECEL (per-voice-ADSR feature). This is the real signal-coverage
 // gate for the poly envelope math (the ART render harness can't render the
@@ -254,7 +252,6 @@ describe('poly-osc-sum / monoEnvSample (gated mono path)', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
 // Held-pitch through ADSR release (the user-reported release-tail pitch bug).
 //
 // A poly VCO lane gated at pitch P, then released, must keep advancing its phase
@@ -267,7 +264,6 @@ describe('poly-osc-sum / monoEnvSample (gated mono path)', () => {
 // FAILS before the fix / passes after: the `BUGGY_*` baselines below reproduce
 // the old block-local "laneVOct reset to 0, assigned only when gated" array, and
 // the assertions show the fixed helpers diverge from it on the release tail.
-// ----------------------------------------------------------------------------
 describe('poly-osc-sum / held pitch through release (release-tail pitch fix)', () => {
   const C4_HZ = 261.626;
 

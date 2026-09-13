@@ -1,5 +1,3 @@
-// e2e/tests/editor-edit-survives-collapse.spec.ts
-//
 // #1583 — collapsing a code editor's faceplate must not discard the edit it is holding.
 //
 // LIVECODE and CLOCKED RUNNER debounce their commit by 250 ms, and `scheduleCommit` is the

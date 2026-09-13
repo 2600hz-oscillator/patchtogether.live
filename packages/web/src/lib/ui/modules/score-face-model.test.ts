@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/score-face-model.test.ts
-//
 // SCORE's FACE, as pure model: what the plate ranks, what each band cell reads
 // and writes, and where the removed numbers went. No DOM, no Y.Doc, no
 // AudioContext.

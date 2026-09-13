@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/param-override-badges.test.ts
-//
 // The live-override badge registry (param-override-badges.ts): every entry is
 // anchored to the ARTIFACT — a live def and a real ParamDef — so a module or
 // param rename reddens here instead of orphaning the badge silently. The

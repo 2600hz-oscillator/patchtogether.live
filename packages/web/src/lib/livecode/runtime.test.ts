@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/runtime.test.ts
-//
 // Unit tests for the JS-runtime sandbox. Covers spawn / patch /
 // unpatch / set / clock.* / clocked() / log and the per-spawn
 // idempotency story for clocked() runners.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-video-source-registry.test.ts
-//
 // The node-owned video source lifecycle (LEG-02, #1511), driven against fakes.
 //
 // WHAT THIS GATE IS FOR. The defect class is "the source exists only because a
@@ -34,9 +32,7 @@ import {
   type VideoSourceHandleHooks,
 } from './node-video-source-registry';
 
-// ---------------------------------------------------------------------------
 // The fake world
-// ---------------------------------------------------------------------------
 
 interface FakeEl {
   src: string | null;
@@ -173,7 +169,6 @@ function fakeFile(name: string, type = 'video/mp4'): File {
   return { name, type, size: 1234 } as unknown as File;
 }
 
-// ---------------------------------------------------------------------------
 
 describe('NODE_VIDEO_SOURCE_TYPES — the ownership declaration', () => {
   it('every declared type is a REGISTERED module def', () => {
@@ -507,7 +502,6 @@ describe('SCOPE — what this gate structurally cannot see', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ⚠ SAME-SESSION LOAD AT A REUSED ID (fleet audit 2026-09-06, finding #3)
 //
 // `loadEnvelopeIntoStore` deletes and re-inserts every node at its SAME id in
@@ -518,7 +512,6 @@ describe('SCOPE — what this gate structurally cannot see', () => {
 // bytes", so v1 kept PLAYING while every surface reported v2's file. These
 // legs pin the archivist shape ported here: re-attach on a CHANGE of handle
 // id, once per distinct id, never on the load's own write.
-// ---------------------------------------------------------------------------
 
 describe('⚠ SAME-SESSION LOAD AT A REUSED ID — re-attach on a CHANGE of handle id', () => {
   type StoredHandle = { perm: 'granted' | 'prompt' | 'denied'; file: File };

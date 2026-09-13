@@ -1,5 +1,3 @@
-// e2e/tests/face-nibbles.spec.ts
-//
 // THE NIBBLES FACE, driven for real on the DEFAULT shell — the seams no other
 // gate can see.
 //

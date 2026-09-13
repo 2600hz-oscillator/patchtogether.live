@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/archivist.ts
-//
 // ARCHIVIST — universal Internet Archive (archive.org) media source.
 //
 // Searches archive.org and streams a RANDOM matching item — image, audio,

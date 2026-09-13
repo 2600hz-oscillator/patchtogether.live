@@ -1,5 +1,3 @@
-// art/scenarios/_meta/baseline-uniqueness.test.ts
-//
 // HONESTY GUARD for the ART baseline corpus.
 //
 // An ART scenario "passes" by rendering a buffer and comparing it (RMS tier)

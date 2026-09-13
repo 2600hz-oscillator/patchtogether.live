@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outlines-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for outlines' four readouts.
 //
 // Each readout exists because its knob's mapping is DISCONTINUOUS where the

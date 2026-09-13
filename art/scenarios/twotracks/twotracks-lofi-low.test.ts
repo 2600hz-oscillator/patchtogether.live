@@ -1,5 +1,3 @@
-// art/scenarios/twotracks/twotracks-lofi-low.test.ts
-//
 // ART scenario: TWOTRACKS Lofi mode LOW (lofi=1).
 //
 // Drives the same pure-math lofi chain used in twotracks-lofi-off.test.ts

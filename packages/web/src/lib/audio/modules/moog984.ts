@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog984.ts
-//
 // MOOG 984 4-CHANNEL MATRIX MIXER — a slice of the Moog System 55 / 35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md). The 984 is a
 // passive routing/mixing module: a
@@ -76,7 +74,6 @@ export const moog984Def: AudioModuleDef = {
   ],
   params: CROSS_PARAMS,
 
-  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. Every other panel in this family DOES something to a
   // signal. The 984 does nothing to one — it decides HOW MUCH OF IT GOES WHERE,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/midi-cv-buddy-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for MIDI-CV-BUDDY's faceplate, plus the
 // regression cover for the CHANNEL-KEY COLLISION its promotion found.
 //
@@ -194,7 +192,6 @@ describe('midiCvBuddy face — the dock plan is two honest bands', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE INVERSE ASSERTION — the deleted readout is DELETED, not merely moved.
 //
 // ⚠ RELOCATION AND DELETION LOOK IDENTICAL FROM A GREEN RUN, which is why this
@@ -209,7 +206,6 @@ describe('midiCvBuddy face — the dock plan is two honest bands', () => {
 // exactly this blind spot. So the body's source is the subject. Like every
 // source gate in this tree it cannot tell code from a comment — which is why
 // the strings below are built rather than written out.
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('midiCvBuddy — the card\'s NOTE/VEL readout rows are GONE from the plate', () => {
   const bodySource = (): string =>
@@ -258,7 +254,6 @@ describe('midiCvBuddy face — the DEVICE BODY is declared and is the only bespo
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE CHANNEL-KEY COLLISION (#1168's other half) — the regression cover.
 //
 // `channel-columns.ts` declares `data.channel: 1..8` to be workflow COLUMN
@@ -271,7 +266,6 @@ describe('midiCvBuddy face — the DEVICE BODY is declared and is the only bespo
 // params and this module has none, `module-docs-lint` reads the def, and
 // `faces-parity` would happily watch a write land in `data.channel` and call
 // the cell live. The bug was a WORKING control writing the WRONG key.
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('midiCvBuddy — the MIDI filter does not touch the lane membership key', () => {
   it('the stored key is `midiInChannel`, and `channel` is not read as a filter', () => {

@@ -1,5 +1,3 @@
-// e2e/tests/multi-output.spec.ts
-//
 // Regression: multiple OUTPUT cards in the same rack must each render
 // the video stream that's actually patched into them, not the
 // engine's shared default framebuffer.

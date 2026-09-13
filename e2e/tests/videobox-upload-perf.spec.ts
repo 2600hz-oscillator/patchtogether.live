@@ -1,5 +1,3 @@
-// e2e/tests/videobox-upload-perf.spec.ts
-//
 // Perf regression guard + measurement for the VIDEOBOX few-FPS output fix.
 //
 // Root cause (pre-fix): the engine sampled the card-owned <video> into the

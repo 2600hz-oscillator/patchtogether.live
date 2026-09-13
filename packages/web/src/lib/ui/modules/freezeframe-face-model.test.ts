@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/freezeframe-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for freezeframe's two derived readouts.
 //
 // freezeframe has TWO ENGINES that share one faceplate — a colour-depth

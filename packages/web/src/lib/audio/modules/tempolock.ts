@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/tempolock.ts
-//
 // TEMPOLOCK — beat-tracking clock: a raw onset train in, a STEADY tracked
 // quarter-note clock out.
 //
@@ -191,7 +189,6 @@ export const tempolockDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // One ranked control (the band selector) over a status body carrying the
   // LOCK and BEAT lamps — the smallest honest surface for a module whose
@@ -260,7 +257,6 @@ export const tempolockDef: AudioModuleDef = {
     lockedSrc.offset.value = 0;
     lockedSrc.start();
 
-    // ── params ──────────────────────────────────────────────────────────────
     const rangeParam = tempolockDef.params[0]!;
     function snapRange(v: number): number {
       // The point of use, not a point of arrival (the midiclock snapDivisor

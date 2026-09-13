@@ -1,5 +1,3 @@
-// scripts/e2e-timings-accept.mjs
-//
 // Refresh `e2e/e2e-timings.generated.json` from a REAL CI run (#1600).
 //
 // The artifact's own header has promised "Regenerate with `task

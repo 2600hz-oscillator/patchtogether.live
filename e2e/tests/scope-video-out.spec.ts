@@ -1,5 +1,3 @@
-// e2e/tests/scope-video-out.spec.ts
-//
 // SCOPE's mono-video output, DETERMINISTIC render-smoke (DRS).
 //
 // SCOPE is an AUDIO module whose `out` (mono-video) port is produced by a

@@ -1,5 +1,3 @@
-// e2e/vrt/interactions.spec.ts
-//
 // Interaction-state VRT. Complements vrt.spec.ts (per-module-card idle
 // shots) and playhead.spec.ts (per-step sequencer playhead) by capturing
 // the visual surfaces that come up only after user input:
@@ -63,9 +61,7 @@ async function bootCanvas(page: Page): Promise<void> {
 
 test.describe.configure({ mode: 'default' });
 
-// ----------------------------------------------------------------------
 // 1. Module palette — default view (nested categories).
-// ----------------------------------------------------------------------
 test('module-palette: default nested view', async ({ page }) => {
   await bootCanvas(page);
 
@@ -81,11 +77,9 @@ test('module-palette: default nested view', async ({ page }) => {
   await expect(palette).toHaveScreenshot('module-palette.png');
 });
 
-// ----------------------------------------------------------------------
 // 2. Module palette → Audio modules → VCOs. Catches palette categorisation
 //    regressions. Testid is `palette-sub-{slug-of-name}` — VCOs slugifies
 //    to "vcos".
-// ----------------------------------------------------------------------
 test('palette-vcos: nested drill-down (Audio → VCOs)', async ({ page }) => {
   await bootCanvas(page);
 
@@ -106,11 +100,9 @@ test('palette-vcos: nested drill-down (Audio → VCOs)', async ({ page }) => {
   await expect(palette).toHaveScreenshot('palette-vcos.png');
 });
 
-// ----------------------------------------------------------------------
 // 3. Patch panel open. Click the trigger on an analogVco card (the task
 //    spec explicitly calls out analogVco — and it's the canonical card so
 //    panel-layout regressions show up first here).
-// ----------------------------------------------------------------------
 test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
   await bootCanvas(page);
   await spawnPatch(page, [
@@ -139,10 +131,8 @@ test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
   await expect(chrome).toHaveScreenshot('patch-panel-open.png');
 });
 
-// ----------------------------------------------------------------------
 // 4. Node context menu (right-click a module). Use VCA — small card, the
 //    menu is the dominant visual surface.
-// ----------------------------------------------------------------------
 test('node-context-menu: right-click on VCA', async ({ page }) => {
   await bootCanvas(page);
   await spawnPatch(page, [
@@ -164,11 +154,9 @@ test('node-context-menu: right-click on VCA', async ({ page }) => {
   await expect(menu).toHaveScreenshot('node-context-menu.png');
 });
 
-// ----------------------------------------------------------------------
 // 5. Port context menu (right-click a port handle). Open the LFO patch
 //    panel first so the Handle is positioned in row-form rather than
 //    stacked at 8,8 with opacity:0.
-// ----------------------------------------------------------------------
 test('port-context-menu: right-click on LFO output', async ({ page }) => {
   await bootCanvas(page);
   // Need a SECOND module so the "Patch to..." submenu has entries; otherwise
@@ -201,11 +189,9 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
   await expect(menu).toHaveScreenshot('port-context-menu.png');
 });
 
-// ----------------------------------------------------------------------
 // ⚠ SCENE 6 IS GONE: `saved-groups-picker` captured the SavedGroupsPicker
 // modal over a stubbed `/api/saved-groups` library, driven through the
 // dev-only `__openSavedGroupsPicker` hook. The modal, the hook, the route and
 // the whole saved-group library went with the GROUP! module (owner ruling:
 // group and sticky are deleted entirely), so the scene has no subject left to
 // capture. Its baseline is deleted in the same commit.
-// ----------------------------------------------------------------------

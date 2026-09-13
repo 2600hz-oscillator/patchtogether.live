@@ -1,5 +1,3 @@
-// art/scenarios/charlottes-echos/face-law.test.ts
-//
 // THE FACEPLATE'S CLAIMS, RE-DERIVED FROM THE SHIPPING WORKLET ON EVERY RUN.
 //
 // `charlottes-echos-face-model.ts` RE-TYPES four constants from the DSP

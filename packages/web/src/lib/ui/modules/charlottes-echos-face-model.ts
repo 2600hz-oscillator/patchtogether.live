@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/charlottes-echos-face-model.ts
-//
 // The PURE model behind the CHARLOTTE'S ECHOS faceplate — five derived values
 // and the arithmetic that makes none of them a knob relabelled.
 //

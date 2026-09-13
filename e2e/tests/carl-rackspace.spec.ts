@@ -1,5 +1,3 @@
-// e2e/tests/carl-rackspace.spec.ts
-//
 // @collab tests for Rackspace Carl — approach B (Leader-Elected).
 //
 // Covers:

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/buggles.ts
-//
 // BUGGLES — chaotic random voltage source. Functional clean-room
 // implementation of the Buchla / Make Noise wogglebug archetype:
 // an internal "woggle clock" emits triggers at a knob-set rate (with

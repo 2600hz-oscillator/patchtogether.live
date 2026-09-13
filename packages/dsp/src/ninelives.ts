@@ -1,5 +1,3 @@
-// packages/dsp/src/ninelives.ts
-//
 // NINE LIVES — the AudioWorklet processor: a low-frequency oscillator fanned
 // out to NINE CV outputs on a geometric ⅓ rate ladder, all sharing one
 // waveform shape, with a RESET trigger that re-syncs the whole ladder.

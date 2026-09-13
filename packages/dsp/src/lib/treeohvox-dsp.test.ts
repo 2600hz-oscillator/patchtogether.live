@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/treeohvox-dsp.test.ts
-//
 // Pure-DSP unit tests for the TREE.oh.VOX TB-303 voice core (Open303 port:
 // diode-feedback ladder + decay/amp envelopes + saw↔square polyBLEP osc +
 // env-mod scaler). Extracted but untested — the file even exports test helpers

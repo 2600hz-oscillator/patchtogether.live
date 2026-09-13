@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vstBridge/vst-status-model.ts
-//
 // Every STRING the VST bridge body can produce, decided here rather than inline
 // in the component — including the ones that are never painted.
 //

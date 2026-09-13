@@ -1,5 +1,3 @@
-// e2e/tests/livecode.spec.ts
-//
 // LIVECODE module — JS-runtime coverage (v2):
 //   1. Basic: spawn LIVECODE, run a script, assert nodes appear with
 //      correct auto-names.

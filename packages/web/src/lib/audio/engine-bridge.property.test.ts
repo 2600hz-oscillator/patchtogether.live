@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-bridge.property.test.ts
-//
 // fast-check property suite for PatchEngine cross-domain bridge lifecycle.
 // Pairs with engine-pending-bridges.test.ts (the targeted regression file)
 // — the regression file pins specific bug shapes; this file pins the

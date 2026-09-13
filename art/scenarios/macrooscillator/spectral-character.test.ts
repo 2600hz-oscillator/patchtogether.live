@@ -1,5 +1,3 @@
-// art/scenarios/macrooscillator/spectral-character.test.ts
-//
 // Audio Regression Test scenarios for MACROOSCILLATOR. The unit tests in
 // packages/web/src/lib/audio/modules/macrooscillator.test.ts pin shape
 // and basic non-silence + pitch tracking; this file adds longer-render
@@ -187,7 +185,6 @@ describe('ART macrooscillator / FM 2-OP model spectral character', () => {
     for (let h = 1; h <= 12; h++) {
       if (powerAt(dirty, 440 * h, SR) > threshold) aboveCount++;
     }
-    // Expect at least 4 harmonics above the 5%-of-peak threshold.
     expect(aboveCount, `audible harmonics above 5% of peak: ${aboveCount}`).toBeGreaterThanOrEqual(4);
   });
 

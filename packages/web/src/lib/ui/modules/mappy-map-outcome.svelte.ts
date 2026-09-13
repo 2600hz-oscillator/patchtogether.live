@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mappy-map-outcome.svelte.ts
-//
 // THE LAST MAP I/O OUTCOME, per node — a tiny reactive record so the venue
 // map's EXPORT can say what happened.
 //

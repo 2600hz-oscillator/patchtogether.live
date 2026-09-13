@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/settle-commit.ts
-//
 // PF-13's storm guard — a PURE, timer-injectable coalescer for a MACRO param
 // write: one gesture-shaped stream of values in, ONE durable commit out.
 //

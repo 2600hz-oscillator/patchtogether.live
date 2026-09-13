@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavesculpt/shell-extension.ts
-//
 // The wavesculpt SHELL EXTENSION — the module-owned end of the extension seam.
 //
 // `wavesculptDef.face.extension: 'wavesculpt'` declares this file — the id IS

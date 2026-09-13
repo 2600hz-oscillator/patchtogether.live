@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/doc-index-from-def.test.ts
-//
 // Contract for buildDocIndexFromDef — the LIVE-registry adapter that the
 // on-canvas "Annotate" mode uses to resolve a hovered control/port to its
 // authored doc straight from the live AudioModuleDef. It must produce the SAME

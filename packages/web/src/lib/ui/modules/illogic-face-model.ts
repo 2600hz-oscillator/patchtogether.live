@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/illogic-face-model.ts
-//
 // THE DERIVED MODEL behind ILLOGIC's faceplate readouts and its routing
 // picture. Pure, browser-safe, no Web Audio: it takes the four live
 // attenuverter values and returns the four BUS GAINS the module's four knobs

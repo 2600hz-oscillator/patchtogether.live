@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-map.test.ts
-//
 // Unit tests for FOXY's deterministic bridge math: the simplified RUTTETRA
 // field + the XYZ→wavetable conversion. Pure functions — no canvas, no GL,
 // no AudioContext.

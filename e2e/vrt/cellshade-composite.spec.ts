@@ -1,5 +1,3 @@
-// e2e/vrt/cellshade-composite.spec.ts
-//
 // Deterministic composite VRT for the CELLSHADE rebuild (4-pass cel
 // engine). Each scene feeds a
 // deterministic pure-UV source chain into CELLSHADE dialed to a visually

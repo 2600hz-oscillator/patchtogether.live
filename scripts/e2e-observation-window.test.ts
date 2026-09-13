@@ -1,5 +1,3 @@
-// scripts/e2e-observation-window.test.ts
-//
 // SOURCE-LEVEL GATE: a shared e2e OBSERVATION WINDOW must accumulate INSIDE THE
 // PAGE, never by polling from Playwright.
 //

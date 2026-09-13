@@ -1,5 +1,3 @@
-// e2e/tests/wavecel-video-outs.spec.ts
-//
 // E2E for WAVECEL's two video output ports:
 //   - scope_out (mono-video): waveform-trace view of the active frame.
 //   - wave3d_out (video):     3D wavetable view with orange polylines +

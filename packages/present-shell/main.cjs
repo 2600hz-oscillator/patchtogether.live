@@ -1,5 +1,3 @@
-// packages/present-shell/main.cjs
-//
 // patchtogether.live PRESENT SHELL — an Electron kiosk wrapper for live
 // multi-projector presentation. It loads the SAME hosted web app (no runtime
 // bridge, no forked logic — see the no-native-helper-bridge ethos) in a normal

@@ -1,5 +1,3 @@
-// packages/server/src/auth.test.ts
-//
 // Unit coverage for token verification. Clerk's verifyToken is mocked —
 // we want to exercise our own dispatch + HMAC code, not the network
 // call to Clerk's JWKS endpoint.

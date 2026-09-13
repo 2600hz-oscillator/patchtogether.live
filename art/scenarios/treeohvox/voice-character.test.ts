@@ -1,5 +1,3 @@
-// art/scenarios/treeohvox/voice-character.test.ts
-//
 // Audio Regression Tests for TREE.oh.VOX. The unit tests in
 // packages/web/src/lib/audio/modules/treeohvox-dsp.test.ts pin per-helper
 // behaviour (filter coefficient stability, envelope decay shape,
@@ -44,13 +42,11 @@ import { join } from 'node:path';
 
 const SR = 48000;
 
-// ---------------------------------------------------------------------------
 // Baseline SHA — we depend on the lib file `treeohvox-dsp.ts`, NOT only
 // the worklet entry `treeohvox.ts`. A coefficient tweak in the lib must
 // invalidate baselines; the worklet itself is a thin wrapper. moduleSource-
 // Sha() reads packages/dsp/src/<name>.{dsp,ts}; we'd need to ALSO hash the
 // lib so the baseline-SHA-mismatch guard catches lib-level changes.
-// ---------------------------------------------------------------------------
 async function combinedSourceSha(): Promise<string> {
   const workletPath = join(
     new URL('../../../packages/dsp/src/', import.meta.url).pathname,
@@ -65,9 +61,7 @@ async function combinedSourceSha(): Promise<string> {
   return createHash('sha256').update(w).update(l).digest('hex').slice(0, 16);
 }
 
-// ---------------------------------------------------------------------------
 // Goertzel single-bin DFT for spectral assertions.
-// ---------------------------------------------------------------------------
 function powerAt(buf: Float32Array, freq: number, sr: number): number {
   const w = (2 * Math.PI * freq) / sr;
   let re = 0;
@@ -85,11 +79,9 @@ function rms(buf: Float32Array): number {
   return Math.sqrt(s / Math.max(1, buf.length));
 }
 
-// ---------------------------------------------------------------------------
 // Canonical pattern: C-D-Eb-F-Eb-D-C, 1/16 notes at 130 BPM (the brief's
 // reference). C is V/oct = -1 (C3), root note. The 7 notes are placed
 // back-to-back so each is exactly one 16th in length.
-// ---------------------------------------------------------------------------
 const BPM = 130;
 const SAMPLES_PER_16TH = Math.round((SR * 60) / (BPM * 4)); // ≈ 5538 at 48k
 
@@ -114,9 +106,7 @@ const CANONICAL_PARAMS: VoiceParams = {
   accentAmount01: 0.5,
 };
 
-// ---------------------------------------------------------------------------
 // Scenario 1 — canonical C-D-Eb-F-Eb-D-C pattern. Baseline-pinned.
-// ---------------------------------------------------------------------------
 describe('ART treeohvox / canonical 303 pattern', () => {
   const scenarioId = 'treeohvox/c-d-eb-f-eb-d-c';
   const totalSamples = SAMPLES_PER_16TH * PATTERN_SEMITONES.length;
@@ -164,11 +154,9 @@ describe('ART treeohvox / canonical 303 pattern', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Scenario 2 — cutoff sweep on a held C3 (no envelope mod). Pin the energy
 // distribution: at low cutoff the high band is suppressed; at high cutoff
 // the high band ascends. This is the AUDIBLE 303 brightness sweep.
-// ---------------------------------------------------------------------------
 describe('ART treeohvox / cutoff sweep brightness', () => {
   function renderHeldNote(cutoffHz: number): Float32Array {
     const params: VoiceParams = {
@@ -234,11 +222,9 @@ describe('ART treeohvox / cutoff sweep brightness', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Scenario 3 — accent contrast. Render two notes with the same patch,
 // one accented, one not. The accented note should be (a) LOUDER and (b)
 // BRIGHTER (more high-frequency energy from the extra cutoff env).
-// ---------------------------------------------------------------------------
 describe('ART treeohvox / accent contrast', () => {
   function renderOne(accented: boolean): Float32Array {
     const params: VoiceParams = {

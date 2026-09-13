@@ -1,5 +1,3 @@
-// packages/dsp/src/sample-hold.ts
-//
 // SAMPLE & HOLD / quantizer — the AudioWorklet processor.
 //
 // Two CV outputs from two inputs:

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/scoreboard.test.ts
-//
 // Module-def shape + factory plumbing for SCOREBOARD. Uses a fake GL
 // context (no real WebGL) — mirrors 4plexvid.test.ts.
 //
@@ -60,9 +58,7 @@ describe('scoreboardWrap — wrap-at-10000 modulo policy', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Factory gate -> counter increment / reset behaviour (fake GL — no WebGL).
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   const stub = (): unknown => ({});

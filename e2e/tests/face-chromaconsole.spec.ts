@@ -1,5 +1,3 @@
-// e2e/tests/face-chromaconsole.spec.ts
-//
 // THE CHROMA CONSOLE FACE, driven on the DEFAULT shell, all the way to BYTES ON
 // A MIDI PORT.
 //

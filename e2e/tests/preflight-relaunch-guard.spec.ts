@@ -1,5 +1,3 @@
-// e2e/tests/preflight-relaunch-guard.spec.ts
-//
 // NATIVE-SHELL PRE-FLIGHT — THE RELAUNCH BOUNCE + the bind→enter→LIVE leg.
 //
 // Owner rule: force setup only on FIRST RUN (the shell main-process decides) or

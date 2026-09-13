@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapegen-math.ts
-//
 // SHAPEGEN — shared 3D-shape-generation math, extracted from FOXY's
 // `foxy-shapes.ts` so both:
 //   • FOXY (audio-domain) — re-exports these symbols + adds its own

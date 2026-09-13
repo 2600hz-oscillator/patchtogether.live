@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/invites.test.ts
-//
 // Vitest covers HMAC invite codes: deterministic per rackspace id,
 // constant length, and constant-time verify rejects bad codes.
 

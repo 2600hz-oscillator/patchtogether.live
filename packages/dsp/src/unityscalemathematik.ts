@@ -1,5 +1,3 @@
-// packages/dsp/src/unityscalemathematik.ts
-//
 // UNITYSCALEMATHEMATIK worklet processor.
 //
 // Three independent CV-shaping channels:

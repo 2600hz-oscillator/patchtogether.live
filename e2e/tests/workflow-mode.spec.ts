@@ -1,5 +1,3 @@
-// e2e/tests/workflow-mode.spec.ts
-//
 // THE SHELL, exercised on the /rack scratch canvas: WorkflowTopbar (File..
 // menu) + the left rail + the pinned M/E/C trio auto-spawned (drawer-only —
 // never canvas cards) + the bottom dock drawer toggles.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/fourplexer-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the 4PLEXER faceplate's three derived
 // readouts, plus the two audit findings this face is built on.
 //

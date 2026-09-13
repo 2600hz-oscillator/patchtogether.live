@@ -1,5 +1,3 @@
-// e2e/tests/workflow-rear-card.spec.ts
-//
 // REAR CARD — the RACKLINE flip-side patch field in the dock full-view
 // (RearCard.svelte). What this pins:
 //

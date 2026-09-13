@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/kria-face-model.test.ts
-//
 // kria's FACE, as pure model: what the plate ranks, what each band cell reads,
 // and what the grid paints. No DOM, no Y.Doc, no AudioContext.
 //

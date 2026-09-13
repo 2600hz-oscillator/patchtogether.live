@@ -1,5 +1,3 @@
-// e2e/tests/toybox-presets-io.spec.ts
-//
 // TOYBOX user-preset SAVE + zip EXPORT/IMPORT UI (#61) — DOM/data-only proofs.
 //
 //   - SAVE: name a patch → it persists to the localStorage registry, appears in
@@ -117,7 +115,6 @@ async function readLayers(page: Page): Promise<Layer[]> {
   return ((await readData(page))?.layers as Layer[] | undefined) ?? [];
 }
 
-/** Clear the localStorage user-preset registry so each test starts clean. */
 async function clearRegistry(page: Page): Promise<void> {
   await page.evaluate(() => {
     try { localStorage.removeItem('toybox.userPresets.v1'); } catch { /* */ }
@@ -172,7 +169,6 @@ test.describe('TOYBOX preset SAVE + zip EXPORT/IMPORT', () => {
     await clearRegistry(page);
     await seedData(page, SAMPLE_DATA);
 
-    // Open the inline SAVE input, name it, confirm.
     await clickEd(page, 'toybox-preset-save');
     const nameInput = page.locator('[data-testid="toybox-preset-name-input"]');
     await expect(nameInput).toHaveCount(1, { timeout: 10_000 });
@@ -225,7 +221,6 @@ test.describe('TOYBOX preset SAVE + zip EXPORT/IMPORT', () => {
     const opt = page.locator('[data-testid="toybox-preset-select"] option', { hasText: 'Trash Me' });
     await expect(opt).toHaveCount(1, { timeout: 10_000 });
 
-    // Delete via the manage list (one saved entry → one delete button).
     await page.locator('[data-testid="toybox-preset-saved-list"] [data-testid^="toybox-preset-delete-"]').first().dispatchEvent('click');
     await expect(opt).toHaveCount(0, { timeout: 10_000 });
     await expect(page.locator('[data-testid="toybox-preset-saved-list"]')).toHaveCount(0);

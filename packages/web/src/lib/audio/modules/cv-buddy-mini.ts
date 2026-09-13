@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cv-buddy-mini.ts
-//
 // CV BUDDY MINI — pitch + gate only, so it costs TWO ES-9 output jacks instead
 // of three.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/electra-reconnect.spec.ts
-//
 // ELECTRA AUTO-RECONNECT (#2248) — "on patch load or F5 the Electra must be
 // re-flashed by hand" is fixed by an automatic flash on the (load,
 // device-connect) edge. These specs drive the REAL pipeline end to end —

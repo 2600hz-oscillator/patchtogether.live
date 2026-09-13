@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vst-cell-actions.ts
-//
 // The VST BRIDGE faceplates' two ACTION seams — CONNECT and DISCONNECT — kept
 // out of `shell-cells.ts` so the shared registry imports one file per module
 // rather than the module's whole world. ONE file serves BOTH `vstInstrument`

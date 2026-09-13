@@ -1,5 +1,3 @@
-// packages/dsp/src/charlottes-echos.ts
-//
 // CHARLOTTE'S ECHOS — FOUR clean-room ANALOG DELAY engines chained in series
 // (out of stage N → in of stage N+1). Each stage IS an AnalogDelayCore (the
 // GPL-free own-code core from ./lib/analog-delay-core.ts that also powers

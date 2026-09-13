@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-stop.test.ts
-//
 // Coverage for the RECORDERBOX recorder's SAVE-DISPATCH at stop() + the
 // destination wiring at start(), now CHUNK-aware (GoPro chunking + folder model).
 // We mock the store module so these run under node (no real OPFS / IndexedDB) and

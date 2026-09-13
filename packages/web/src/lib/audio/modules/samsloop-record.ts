@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-record.ts
-//
 // SAMSLOOP recording helpers — pure functions extracted so unit tests can
 // pin the byte-budget math, the quantization, the resampling, and the WAV
 // header encoding without spinning up Web Audio.

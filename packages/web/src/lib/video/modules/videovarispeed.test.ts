@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videovarispeed.test.ts
-//
 // Locks down VIDEOVARISPEED's module-def shape. Mirrors videobox.test.ts —
 // no factory/runtime execution (those need WebGL + a real <video> element;
 // covered in e2e).

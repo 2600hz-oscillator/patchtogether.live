@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/karplus-dsp.test.ts
-//
 // Pure-core tests for the KARPLUS extended Karplus-Strong voice.
 //
 // THE tuning gate: 1 V/oct tracking must stay under 3 CENTS of error across
@@ -30,9 +28,7 @@ import {
 const SR = 48000;
 const C4 = 261.6256;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Harness
-// ─────────────────────────────────────────────────────────────────────────
 
 interface RenderOpts {
   sr?: number;
@@ -153,9 +149,7 @@ function measureT60(buf: Float32Array, w1: [number, number], w2: [number, number
   return (60 * dt) / Math.max(1e-6, dB);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 1 V/oct tuning — THE gate
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus-dsp / 1V/oct tuning', () => {
   it('tracks under 3 cents across 5 octaves (C2 → C7) at default knobs', () => {
@@ -193,9 +187,7 @@ describe('karplus-dsp / 1V/oct tuning', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Frequency-compensated decay
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus-dsp / decay calibration', () => {
   it('t60 ≈ the DECAY knob in seconds, at both A2 and A5 (no pitch coupling)', () => {
@@ -217,9 +209,7 @@ describe('karplus-dsp / decay calibration', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Trigger / accent / damp semantics
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus-dsp / strike + damp semantics', () => {
   it('a held-high trigger fires EXACTLY once (bit-identical to a 5 ms pulse)', () => {
@@ -265,9 +255,7 @@ describe('karplus-dsp / strike + damp semantics', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // The EKS timbre controls do their physics
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus-dsp / timbre controls', () => {
   it('position β = 0.5 cancels even harmonics (vs β = 0.12)', () => {
@@ -334,9 +322,7 @@ describe('karplus-dsp / timbre controls', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Stability + determinism
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus-dsp / stability + determinism', () => {
   it('never grows at the hostile extremes (max decay/brightness/stiffness, hi + lo pitch)', () => {
@@ -369,9 +355,7 @@ describe('karplus-dsp / stability + determinism', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Pure laws
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('karplus-dsp / pure laws', () => {
   it('allpass phase delay is exactly 1 sample at a = 0 (continuous topology)', () => {

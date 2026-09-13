@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-memory-bench.spec.ts
-//
 // Empirical memory measurement for SAMSLOOP, used to justify the
 // per-rackspace + per-user instance caps documented in
 // packages/web/src/lib/multiplayer/samsloop-limits.ts.

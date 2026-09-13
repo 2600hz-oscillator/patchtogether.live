@@ -1,5 +1,3 @@
-// packages/web/src/routes/r/[id]/page-server.test.ts
-//
 // Regression for the 2026-07-28 incident: the Neon account exceeded its
 // compute-time quota, every query returned HTTP 402, and this loader — which
 // had no error handling at all — let the raw error bubble into an opaque

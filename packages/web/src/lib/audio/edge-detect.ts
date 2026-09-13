@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/edge-detect.ts
-//
 // The single seam for MAIN-THREAD rising-edge detection on a gate/trigger CV
 // input. A module taps its input port (GainNode → AnalyserNode) and calls
 // `poll(ctx.currentTime)` once per scheduler tick; the counter returns how many

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/freezeframe/FreezeframeOutputBody.svelte
-  //
   // The FREEZEFRAME dock full-view body: its live picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

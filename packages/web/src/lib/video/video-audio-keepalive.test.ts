@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-audio-keepalive.test.ts
-//
 // Deterministic bridge-unit (DBU) coverage for createVideoAudioKeepAlive — the
 // shared silent keep-alive that makes Chromium pull a <video>-source module's
 // audio so its decode doesn't throttle to ~1 fps (the "only one video plays at

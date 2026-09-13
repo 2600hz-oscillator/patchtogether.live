@@ -1,5 +1,3 @@
-// e2e/tests/video-aspect-switch.spec.ts
-//
 // LEAN smoke for the OUTPUT aspect switch (4:3 ↔ 16:9), per
 //. Drives the switch via the dev
 // `window.__videoAspectStore` hook (UI-independent), then asserts the property

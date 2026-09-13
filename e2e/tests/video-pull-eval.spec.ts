@@ -1,5 +1,3 @@
-// e2e/tests/video-pull-eval.spec.ts
-//
 // SINK-DRIVEN PULL EVALUATION (stack-study adoption item 1) — the real-app
 // gate: a heavy UNWATCHED generator chain must cost ZERO render work while a
 // watched OUTPUT chain keeps its cadence.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/webgl-attest-coverage.test.ts
-//
 // FAIL-CLOSED coverage guard for the WebGL local-attestation "semaphore"
 // (.claude/skills/renderer-tests/SKILL.md; fixes V3/V6/V10).
 //
@@ -577,7 +575,6 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Living-docs is HASH-TRANSPARENT (owner directive 2026-06-24: "docs must not
 // change attest hashes"; 2026-08-09: "docs should not need explicit ignore,
 // they should be ignored by design").
@@ -593,7 +590,6 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
 // carry co-located docs really are docs-transparent, measured on the REAL files
 // rather than a fixture — so a def whose docs the normalizer somehow failed to
 // reach shows up here, named.
-// ---------------------------------------------------------------------------
 describe('webgl-attest: docs on REAL basis files are hash-transparent', () => {
   const basis = resolveWebglBasis();
 

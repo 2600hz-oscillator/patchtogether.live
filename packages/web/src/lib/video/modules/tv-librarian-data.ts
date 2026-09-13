@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tv-librarian-data.ts
-//
 // PURE data layer for the TV LIBRARIAN module. No DOM, no network calls here —
 // just the dataset URLs, a TOLERANT parser (the famelack README warns the JSON
 // schema "may change without notice", so we validate the shape we need and

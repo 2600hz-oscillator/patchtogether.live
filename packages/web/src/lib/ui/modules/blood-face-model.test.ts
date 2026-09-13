@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/blood-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the BLOOD faceplate (2026-08-31).
 //
 // Everything here is a claim the shipped face MAKES and that no pixel gate can

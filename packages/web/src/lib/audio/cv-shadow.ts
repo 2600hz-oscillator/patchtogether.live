@@ -1,12 +1,8 @@
-// packages/web/src/lib/audio/cv-shadow.ts
-//
 // THE LANDING PAD where a knob and a CV cable meet, for a param whose consumer
 // is JAVASCRIPT — a card's draw code, a per-frame painter — rather than a Web
 // Audio node.
 //
-// ---------------------------------------------------------------------------
 // WHY THIS EXISTS
-// ---------------------------------------------------------------------------
 //
 // `AudioEngine.addEdge` has exactly one way to deliver a same-domain CV cable
 // to a `paramTarget` port: it connects the source to the AudioParam the module
@@ -29,9 +25,7 @@
 // Note the shape of the second one: a naive "did patching a cable change the
 // audio?" check calls it a PASS. Only the KNOB leg reading 0.0000e+0 exposes it.
 //
-// ---------------------------------------------------------------------------
 // WHAT A LANDING PAD IS — AND WHY IT READS NOTHING ITSELF
-// ---------------------------------------------------------------------------
 //
 //     GainNode  ← `.gain` is published as the port's param, and is reachable
 //                 from NOTHING. The knob lives in its intrinsic; the engine
@@ -66,9 +60,7 @@
 // `RasterizeCard`. Nothing patched ⇒ no tap ⇒ `readParam` returns the knob, so
 // the pushed value and the knob agree and no render moves.
 
-// ---------------------------------------------------------------------------
 // THE JS-CONSUMED REGISTER — how a STRUCTURAL gate tells this apart from #1661
-// ---------------------------------------------------------------------------
 //
 // ⚠ A landing pad and the #1661 DEFECT have the SAME GRAPH SIGNATURE: both are
 // an AudioParam on a node that reaches no declared output. `swolevco` published

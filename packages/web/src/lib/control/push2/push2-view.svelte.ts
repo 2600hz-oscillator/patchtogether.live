@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-view.svelte.ts
-//
 // "…or the most recent module VIEWED on the push if we've viewed the lane
 // previously IN THIS RACK" — the memory half of the push-card focus rule.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/multi-video-playback.spec.ts
-//
 // MULTI-VIDEO playback — the load-bearing regression guard for "only ONE
 // video plays at a time" (operator report; PR #301 fixed it for VIDEOBOX but
 // VIDEOVARISPEED / CAMERA never got the keep-alive).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/unityscalemathematik.ts
-//
 // UNITYSCALEMATHEMATIK — bipolar CV-shaping utility. Three independent
 // channels, each transforming a single signal through an attenuvert and
 // (for sections A/B) a curve morph from linear to exponential.

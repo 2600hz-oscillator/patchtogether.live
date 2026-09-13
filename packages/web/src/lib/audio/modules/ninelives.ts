@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/ninelives.ts
-//
 // NINE LIVES — a low-frequency oscillator fanned out to NINE CV outputs on a
 // geometric ⅓ rate ladder, all sharing one waveform, with a RESET trigger.
 // DSP is a custom JS AudioWorklet (packages/dsp/src/ninelives.ts → the pure

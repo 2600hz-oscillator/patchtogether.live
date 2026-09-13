@@ -1,5 +1,3 @@
-// art/scenarios/samsloop/varispeed-spectrum.test.ts
-//
 // Audio Regression Tests for SAMSLOOP. Drives the pure-math mirror
 // (samsloopMath.render — same playback logic as the worklet) over a
 // synthesised sine and asserts:

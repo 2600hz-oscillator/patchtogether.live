@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/camera-input.test.ts
-//
 // Unit-level checks for the CAMERA module def. Vitest runs under node
 // (see vitest.config.ts) — it can't instantiate the factory (no WebGL2
 // in node) but it CAN verify:

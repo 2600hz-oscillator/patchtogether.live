@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/primitives.ts
-//
 // Procedural mesh generators for TOYBOX's built-in OBJ "models" — no asset
 // files, zero license surface. Each returns the same interleaved-mesh shape
 // (mesh.ts: [px,py,pz, nx,ny,nz, u,v] + Uint32 indices) the OBJ parser emits,

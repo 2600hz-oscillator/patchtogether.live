@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/worker-bridge.ts
-//
 // Fix E Phase 1 — the MAIN-THREAD side of the render worker.
 //
 // Owns the Worker, the RPC send path, the inbound frame queue (latest-bitmap-

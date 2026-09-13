@@ -1,5 +1,3 @@
-// art/scenarios/moog921-vco/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 921 VCO (backfill batch 3 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (capture.ts + worklet.ts).

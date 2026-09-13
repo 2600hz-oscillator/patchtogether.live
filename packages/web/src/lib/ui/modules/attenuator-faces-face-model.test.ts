@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/attenuator-faces-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the ATTENUATOR faceplates — the two
 // passive Moog level panels faced in batch 18.
 //

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/ringback-core.test.ts
-//
 // Unit tests for the RINGBACK crush core — the exact mechanism extracted from
 // the TWOTRACKS record-time artifact (integer-cell write + fractional interp
 // read-back at a varispeed cursor + feedback). Pure DSP, deterministic.

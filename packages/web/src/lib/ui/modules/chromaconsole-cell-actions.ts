@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/chromaconsole-cell-actions.ts
-//
 // THE CHROMA CONSOLE'S NON-PARAM GESTURES, as one plain-TypeScript seam called
 // by every surface that offers them — the ranked `chromaconsole-connect-{n}`
 // and `chromaconsole-pushall-{n}` action cells, and the shell extension's

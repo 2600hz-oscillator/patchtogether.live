@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/quadralogical-cv-nopersist-ydoc.test.ts
-//
 // Regression net for the QUADRALOGICAL gamepad → X/Y OFFSET bug.
 //
 // The bug: a physical gamepad patched into QUADRALOGICAL's pos_x/pos_y, saved

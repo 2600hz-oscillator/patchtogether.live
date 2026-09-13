@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/interactive/interactive-doc-modules.ts
-//
 // Allowlist of module types whose /docs/modules/[id] page renders the live
 // INTERACTIVE virtual module (real card + hover pane) as the PRIMARY view. Every
 // other module keeps the static numbered-face view (the live card is the

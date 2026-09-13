@@ -1,44 +1,3 @@
-// packages/web/src/lib/ui/workflow/dom-source-modules.test.ts
-//
-// The DOM-SOURCE drift GATE — pure-unit, zero-flake, no GL / no DOM.
-//
-// The owner P0 it pins: under `?shell=1` the lane renders a tile INSTEAD of a
-// module's legacy card, and for the minority of video modules whose pixels come
-// from a CARD-OWNED `<video>`/`<img>` handed to the engine via
-// `attachExternalSource`, that silently killed the SOURCE — camera → OUTPUT (and
-// videobox / archivist / … → OUTPUT) was patched-but-black while the engine node
-// itself existed. The fix keeps those cards mounted off-screen
-// (<HeadlessSourceHost>) or, for cameraInput, keeps the real card in the lane
-// (NON_SHELL_LANE_TYPES).
-//
-// Both fixes are driven off DOM_SOURCE_LANE_TYPES, so the ONE way this can
-// regress is a NEW (or renamed) DOM-source module missing from the set. Test 1
-// closes that hole MECHANICALLY: it greps every card component for a real
-// `attachExternalSource(` call and asserts the derived type set is EXACTLY the
-// declared set — a new source module cannot ship dark under the shell.
-//
-// ── #1587: THE SAME HOLE, A DIFFERENT SEAM ────────────────────────────────────
-// `attachExternalSource` turned out to be one of THREE ways a card can be the
-// only reason a module's engine state exists. WAVESCULPT installs a frame
-// DRAWER; TIMELORDE and SYNESTHESIA `write()` state straight into the node. All
-// three shipped black/frozen under the shell, and this gate — which read one
-// seam — was structurally unable to see any of them.
-//
-// ⚠ THE LESSON, stated so the next widening is done the same way: the predicate
-// is now a NAMED, TYPED list of seams (PRODUCER_SEAMS), each carrying its own
-// `why`, and BOTH sets are re-derived from the card sources and asserted
-// EXACTLY. Adding a seam re-derives membership — you do not hand-add a type.
-//
-// WHAT THIS GATE STILL CANNOT SEE, stated inside the gate (see the SCOPE test):
-//   * a card that produces engine state through a seam not in PRODUCER_SEAMS —
-//     a genuinely new fourth mechanism. Nothing here can invent that name; the
-//     e2e (e2e/tests/card-producer-lifetime.spec.ts) is the behavioural net.
-//   * a MENTION of a seam inside a comment or a string literal. These are
-//     regexes, not a parser. The NEGATIVE CONTROL below pins the prose forms
-//     that actually occur in these cards.
-//   * whether the mounted card's producer WORKS. That is pixels, and it is the
-//     e2e's job.
-
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -363,116 +322,10 @@ const PRODUCER_SEAMS: readonly ProducerSeam[] = [
   },
 ];
 
-// ⚠ THE CARD-WALK MACHINERY WENT WITH THE THREE DESCRIBES BELOW: the
-// basename→type resolver, the recursive `CARD_DIR` subtree reader, the seam
-// matcher and the two derivers built on them. Every one of them started from
-// `readdirSync` over `*Card.svelte`, and that directory holds no cards.
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ⚠ THREE DESCRIBES RETIRED WITH THE CARDS THEY WALKED (legacy-removal S4)
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// `THE WALK (#1724) — the gate reads what a card MOUNTS, not one file`,
-// `DOM_SOURCE_LANE_TYPES — the grep gate (a new source module cannot ship dark)`
-// and `CARD_PRODUCER_LANE_TYPES — the second seam (#1587: the card IS the
-// producer)` all began by reading `*Card.svelte` off disk and resolving each
-// basename back to a module type through the card map. Both are deleted, so all
-// three walks resolve NOTHING — and an empty walk makes every set-equality below
-// it agree about nothing and PASS. That is the vacuous-`all()` shape, and
-// re-pointing the walk at the surviving surfaces would not have saved them:
-// their SUBJECT is "does a CARD own this seam", and there is no card to own one.
-//
-// ⚠ WHAT IS NOT LOST, because it never depended on the walk. `DOM_SOURCE_LANE_TYPES`
-// and `CARD_PRODUCER_LANE_TYPES` are still exported, still EMPTY, and still
-// imported by ten face-model tests plus `node-frame-producer-registry.test.ts`,
-// which asserts they are DISJOINT from `NODE_FRAME_PRODUCER_TYPES` — the gate
-// that stops a producer being owned twice. That is the live half of #1724/#1587
-// and it reads the live registries, not the filesystem.
-//
-// The rule this file encodes — the ENGINE-VISIBLE state of a rack must not
-// depend on which UI renders a module — is not retired. It is satisfied
-// STRUCTURALLY now: there is one UI.
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ⚠ THREE DESCRIBES RETIRED WITH THE DECISION THEY DROVE (legacy-removal S1.5)
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// `needsHeadlessSourceMount — the pure headless-mount decision`,
-// `laneOmitsNode — a COLLAPSED GROUP's child, in BOTH shells (#1721)` and
-// `FACE_MOUNTS_PRODUCER — the dock-open exemption, anchored both ways` all
-// exercised the pure decision behind `<HeadlessSourceHost>`. Their own anchors
-// wrote the retirement condition down before it arrived:
-//
-//   * the decision anchor: "if the extractions have emptied the union, this
-//     decision has no population and the legs that read it should be retired
-//     with the host itself, not re-pointed at a synthetic type";
-//   * the fifth re-point note: "when the union finally empties, the leg really
-//     does go with it, because a decision with no population left is not a
-//     decision";
-//   * the FACE_MOUNTS vacuity leg had already lost its population twice and
-//     survived on a synthetic subject borrowed from a real member — which no
-//     longer exists to borrow from.
-//
-// The union emptied when cube's renderer moved to `NodeVizSurfaceHost`
-// (rasterize's loop had moved to `RASTERIZE_FRAME_PRODUCER` one commit
-// earlier), the host and the decision are DELETED, and what the three
-// describes protected is now structural: NO module gets an off-screen card on
-// ANY lane kind, in ANY shell, because there is nothing that mounts one. The
-// surviving, red-able statements are:
-//
-//   * both populations EMPTY — the leg above in the CARD_PRODUCER describe;
-//   * every former member owned by exactly ONE node registry — the
-//     disjointness gate over the eight owner sets;
-//   * the derivation still CLASSIFIES a producer card — the synthetic-seams
-//     leg — so a card regrowing a seam re-enrols and reds the empty toEqual.
-//
-// What #1721 measured (a collapsed group's child producing in BOTH shells) is
-// covered at the product level by card-producer-lifetime.spec.ts's collapsed-
-// group legs, which survived the extractions by re-derivation.
 
-// ⚠ THIS BLOCK USED TO ASSERT THE OPPOSITE, DELIBERATELY, AND THE REVERSAL IS
-// THE POINT — so the old assertions are quoted rather than deleted.
-//
-// It was titled "cameraInput — the CAPTURE-SOURCE carve-out (source + device
-// picker live on the card)" and pinned three things:
-//   `expect(NON_SHELL_LANE_TYPES.has('cameraInput')).toBe(true)`,
-//   that `laneRenderKind` returns 'legacy' for it whatever `migrated()` says,
-//   and that it is "therefore never headless-hosted (no double getUserMedia)".
-//
-// THE LINEAGE MATTERS, because that carve-out was created in response to an
-// owner P0 — "no video at all" under `?shell=1` — on a module CI cannot
-// exercise. It is not a preference being overturned; it is a fix whose
-// mechanism was superseded.
-//
-// WHY THE EXIT IS SAFE, in the order the chain actually runs:
-//   1. cameraInput ∈ DOM_SOURCE_LANE_TYPES ⊂ HEADLESS_MOUNT_LANE_TYPES — the
-//      first two legs below assert exactly that, so this is read off the sets
-//      rather than remembered;
-//   2. with the carve-out gone `isShellSwappable` is true, so `laneRenderKind`
-//      returns 'shell' for a promoted module;
-//   3. `needsHeadlessSourceMount` returns true for 'shell', so
-//      <HeadlessSourceHost> mounts the REAL card off-screen and getUserMedia,
-//      the MediaStream and the permission machine all keep running. The
-//      `<video>` is node-owned ($lib/ui/media/node-media-registry), so the move
-//      is a re-parent, not a teardown.
-// The mechanism did not exist when the carve-out was written — that is the
-// whole reason the carve-out was written.
-//
-// ⚠ WHAT THIS UNIT CANNOT SEE, and where the real proof is. Everything here is
-// pure set membership plus two pure functions; NOTHING in this file proves that
-// Canvas wires them, that the host mounts, or that a frame ever arrives. That is
-// `e2e/tests/camerainput-shell-source.spec.ts`, which drives the DEFAULT shell,
-// asserts the lane paints a faceplate (not a card), asserts the headless host
-// holds the card, and reads real non-black pixels out of CAMERA → VIDEO OUT
-// through the module's deterministic injected-frame seam.
-//
-// ⚠ AND THE CARD'S AFFORDANCES ARE A SEPARATE QUESTION FROM ITS SOURCE. An
-// off-screen host is `pointer-events: none`, so the card's "Request access"
-// gesture is unreachable in the default shell. Keeping the SOURCE alive does not
-// keep the ACQUIRE alive, and conflating the two is how this promotion could
-// have shipped a first-run dead end. `$lib/ui/media/camera-status-registry` is
-// the answer and has its own unit coverage.
+
 describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-hosted', () => {
   // ⚠ THIS BLOCK ASSERTED THE OPPOSITE UNTIL 2026-09-03, and the inversion is
   // the legacy-removal S1 extraction rather than a relaxation. cameraInput was
@@ -506,26 +359,5 @@ describe('cameraInput — PROMOTED, and now NODE-OWNED rather than headless-host
     expect(NODE_CAMERA_SOURCE_TYPES.has('cameraInput')).toBe(true);
   });
 
-  // ⚠ A THIRD LEG IS GONE WITH ITS SUBJECT. It asserted this module "still
-  // keeps its real pre-promotion surface, where nothing changed" — the
-  // reassurance that made the promotion above safe to land. There is no second
-  // renderer and no arm to return it. What the leg guarded is now guarded by
-  // there being one surface: the faceplate assertion above, plus
-  // `camerainput-shell-source.spec.ts`, which asserts the picture survives with
-  // no module component mounted anywhere.
 
-  // ⚠ Two legs retired with the decision (S1.5): "a DOCKED camera is not
-  // hosted either" and "EVERY headless-hosted module is now uniform" both read
-  // `needsHeadlessSourceMount` over a population that is empty — the second
-  // one's loop body had already stopped executing. Their claims are structural
-  // now: no lane kind, dock state or membership produces an off-screen card.
 });
-
-// ⚠ THE `DOCK FULL VIEW hosts the real card only for an UN-MIGRATED module`
-// DESCRIBE STOOD HERE and retired with the decision (legacy-removal S1.5). Its
-// ANCHOR leg said, verbatim, that when the union emptied it "says retire the
-// host, do not re-point at a synthetic type" — the union emptied, the host and
-// `needsHeadlessSourceMount` are deleted, and `fullViewShowsFaceInstead` went
-// with them from Canvas. What the pair pinned (a dock faceplate is not a card
-// mount) is now vacuous in the strongest sense: no module has a card whose
-// mount is engine-visible, so there is nothing for a dock state to orphan.

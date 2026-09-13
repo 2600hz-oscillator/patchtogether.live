@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/library.test.ts
-//
 // Unit coverage for the centralized media library: add/duplicate-skip,
 // object-URL lifecycle (revoke-on-remove/clear — leaks here pin whole files
 // in memory), and the probe status machine ('probing' → 'ready' | 'failed',

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-loopback-source-registry.ts
-//
 // THE NODE-SCOPED OWNER OF THE LOOPBACK VIEWPORT CAPTURE — the capture state
 // machine, the engine attach and the crop pump's start/stop, on GRAPH lifetime
 // instead of card lifetime.

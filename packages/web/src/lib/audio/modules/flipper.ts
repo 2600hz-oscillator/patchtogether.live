@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/flipper.ts
-//
 // FLIPPER — a gate flip-flop. Two gate inputs; a gate on EITHER input
 // alternately fires the FLIP output, then the FLOP output, then back. The
 // toggle logic lives in the worklet (packages/dsp/src/flipper.ts →

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clip-media-recovery.ts
-//
 // CRASH RECOVERY for clip takes — the seam between the store's manifests and
 // the launcher's pads.
 //

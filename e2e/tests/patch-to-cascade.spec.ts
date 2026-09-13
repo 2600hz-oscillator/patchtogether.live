@@ -1,5 +1,3 @@
-// e2e/tests/patch-to-cascade.spec.ts
-//
 // "Patch to..." picker on every port, after the no-drag / overlay-replace
 // redesign. The cascade is reached via the carry flow:
 //   open menu → drill INPUT/OUTPUT → click a port ROW (jack-click, picks up

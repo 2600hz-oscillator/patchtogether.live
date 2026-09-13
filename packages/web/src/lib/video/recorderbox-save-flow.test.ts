@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-save-flow.test.ts
-//
 // Coverage for the RECORDERBOX save-FLOW glue (recorderbox-save-flow.ts) the
 // card uses: prompt-for-destination-at-START + stream-to-chosen-handle. Browser
 // APIs are injected so these run under node with no real picker / OPFS.

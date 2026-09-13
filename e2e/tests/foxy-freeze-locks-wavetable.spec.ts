@@ -1,5 +1,3 @@
-// e2e/tests/foxy-freeze-locks-wavetable.spec.ts
-//
 // E2E regression for FOXY's FREEZE TABLE button. Pins the snapshot-vs-live
 // root cause discovered after PR #411 + #420 chased the wrong layer:
 //

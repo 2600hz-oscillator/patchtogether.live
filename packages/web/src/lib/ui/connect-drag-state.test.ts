@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/connect-drag-state.test.ts
-//
 // Regression coverage for the cable-drop highlight bug: while a connect
 // gesture is in flight, the document-level pointermove tracker has to
 // publish whichever svelte-flow node is under the cursor so PatchPanel

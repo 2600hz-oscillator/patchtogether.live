@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-buddy-node-lifetime.test.ts
-//
 // ES-9 I/O HAS **NODE** LIFETIME, NOT **CARD** LIFETIME — pinned.
 //
 // ── Why this file exists ────────────────────────────────────────────────────
@@ -151,7 +149,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('cv buddy — the handle is materialized and BOUND (non-vacuity)', () => {
   it('exposes the ES-9-facing ports, and the passthrough is ONE node per signal', async () => {

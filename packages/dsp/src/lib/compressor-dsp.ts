@@ -1,17 +1,13 @@
-// packages/dsp/src/lib/compressor-dsp.ts
-//
 // SIDECAR — pure DSP helpers for the stereo sidechain compressor. Lives in
 // `lib/` so esbuild inlines it into packages/dsp/src/sidecar.ts at build
 // time (top-level .ts files in packages/dsp/src/ are the worklet entries;
 // their helpers go under lib/ and can `export` freely).
 //
-// ─────────────────────────────────────────────────────────────────────────
 // Canonical reference: Giannoulis, Massberg & Reiss, "Digital Dynamic Range
 // Compressor Design — A Tutorial and Analysis", J. Audio Eng. Soc., Vol. 60,
 // No. 6, June 2012 (hereafter "GMR 2012"). Cross-checked against Faust's
 // stdfaust `co.compressor_stereo` (Faust libraries/compressors.lib) which
 // uses the same log-domain gain-computer + one-pole smoother topology.
-// ─────────────────────────────────────────────────────────────────────────
 //
 // Topology — DUCKER (sidechain compressor as a single box):
 //
@@ -76,9 +72,6 @@
 // All functions are deterministic + state-only-via-explicit-state-object,
 // so the unit tests can pin per-sample math without touching the worklet.
 
-// ─────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────
 
 /** 20*log10(2). Conversion: dB = 20*log10(lin); since log2 = log10/log10(2),
  *  dB = (20*log10(2)) * log2(lin) = 6.0205... * log2(lin). Equivalently
@@ -94,7 +87,6 @@ export const LOG2_FLOOR = -20;
  *  when envMag=1. Spec choice (NOT a knob; documented constant). */
 export const ENV_SCALE_DB = 24;
 
-// ─────────────────────────────────────────────────────────────────────────
 // One-pole HPF on the sidechain detector input (NOT the audio path).
 //
 // Standard one-pole HPF from RBJ cookbook / pirkle's "Designing Audio
@@ -104,7 +96,6 @@ export const ENV_SCALE_DB = 24;
 // Steady-state: blocks DC + low frequencies; passes high frequencies.
 // Cheap (3 mults + 1 add per sample) and click-free under fc modulation
 // because the coefficient varies smoothly with fc.
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface HpfState {
   /** Last-sample input (x[n-1]). */
@@ -136,7 +127,6 @@ export function hpfStep(x: number, a: number, state: HpfState): number {
   return y;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Soft-knee gain computer in log2 domain (GMR 2012 eq 4).
 //
 // Inputs:
@@ -152,7 +142,6 @@ export function hpfStep(x: number, a: number, state: HpfState): number {
 //
 // Working in log2 internally rather than dB just to skip a constant
 // multiply per sample; we still report gainDb in dB units.
-// ─────────────────────────────────────────────────────────────────────────
 
 export function computeGainDb(
   xLog2: number,
@@ -179,7 +168,6 @@ export function computeGainDb(
   return -slope * (t * t) / (2 * knDb);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Asymmetric one-pole smoother — separate attack + release time constants.
 //
 // Standard envelope-follower trick (GMR eq 7, also Faust co.compressor's
@@ -196,7 +184,6 @@ export function computeGainDb(
 //
 // Coefficient: a = exp(-1 / (tau_sec * sr)) where tau is the 1-pole
 // time-constant in seconds. tau = msTime / 1000.
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface SmootherState {
   /** Current smoothed gain (in dB; ≤ 0 for compression). */
@@ -223,13 +210,11 @@ export function smootherStep(
   return state.y;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample param smoother — kills clicks on step changes to threshold
 // and envMag (per PR #435's smoother pattern). 50 Hz one-pole; ≈ 3.2 ms
 // time constant which is faster than the audible click duration but slow
 // enough to smear an instantaneous jump across enough samples that the
 // derivative stays bounded.
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface ParamSmoother {
   /** Last smoothed value. */
@@ -250,10 +235,8 @@ export function paramSmootherStep(target: number, s: ParamSmoother): number {
   return s.y;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Convenience: compute env_out + env_inv_out from a gainDb. Centralizing
 // here so the worklet AND the tests agree on the semantics (no hard clamp).
-// ─────────────────────────────────────────────────────────────────────────
 
 /** env_out = (-gainDb / ENV_SCALE_DB) * envMag. NO clamp; can exceed 1.0
  *  when envMag > 1 and reduction is at or beyond ENV_SCALE_DB. */
@@ -266,7 +249,6 @@ export function envInvOut(envOutValue: number): number {
   return 1 - envOutValue;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Ducker channel: the full per-sample pipeline as a single function.
 // State lives in the caller-owned `SidecarState`. The worklet wraps this
 // in its sample loop; the tests drive it directly.
@@ -276,7 +258,6 @@ export function envInvOut(envOutValue: number): number {
 // |aL|+|aR| MAIN/trigger detector signal. The same gain factor is then
 // applied to BOTH sidechain channels (which are summed with the main pass-
 // through to form the output).
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface SidecarState {
   hpfL: HpfState;

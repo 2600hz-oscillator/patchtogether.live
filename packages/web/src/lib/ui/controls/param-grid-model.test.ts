@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/param-grid-model.test.ts
-//
 // Pure-unit gate for the ParamGrid resolvers (PF-15). Zero-flake, node-env: no
 // DOM, no registry, no timers.
 

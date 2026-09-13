@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/qbrt.ts
-//
 // QBRT — stereo resonant multimode filter with a PING excitation jack.
 // The project's "big-knob" stereo VCF, and — when triggered — a pluck /
 // drum resonator that needs no oscillator. Faust DSP: packages/dsp/src/

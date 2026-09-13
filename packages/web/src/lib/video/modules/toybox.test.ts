@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/toybox.test.ts
-//
 // Def-shape coverage for the TOYBOX module (the 6-input modulation section).
 // The GL render pipeline is exercised by E2E/VRT (jsdom can't render shaders);
 // here we pin the port surface — that the 6 generic modulation input ports exist
@@ -31,7 +29,6 @@ describe('toyboxDef shape', () => {
 
 });
 
-// ---------------------------------------------------------------------------
 // REGRESSION GUARD — CV modulation must NOT write through to the synced Y.Doc.
 //
 // Root cause of the progressive-slowdown / memory leak (perf PR): the TOYBOX
@@ -50,7 +47,6 @@ describe('toyboxDef shape', () => {
 // update events — i.e. live modulation stays transient runtime state, exactly
 // like #147 paramTaps. GL-free: a fake WebGL2 context (the factory only needs
 // non-null handles; jsdom can't render shaders anyway).
-// ---------------------------------------------------------------------------
 
 const RTID = 'toybox-cv-leak-guard';
 
@@ -166,7 +162,6 @@ describe('TOYBOX CV modulation does NOT write through to the synced Y.Doc (leak 
   });
 });
 
-// ---------------------------------------------------------------------------
 // BATCH-OP CV TARGETING — a cv route into a batch-op param drives the live
 // (render-local) combine param. Downgraded here from e2e/toybox-node-batch.spec
 // ('TOYBOX batch op nodes — CV targeting'): the old e2e read node.data.combine
@@ -177,7 +172,6 @@ describe('TOYBOX CV modulation does NOT write through to the synced Y.Doc (leak 
 // post-modulation param off read('liveModulated').combine — the same engine-
 // internal read the toybox-cv-routing e2e asserts on — so a broken cv route /
 // resolveRoute / effectiveCvValue wiring fails this fast unit test (no render).
-// ---------------------------------------------------------------------------
 
 const CVID = 'toybox-cv-targeting';
 
@@ -274,7 +268,6 @@ describe('TOYBOX batch-op CV targeting drives the render-local combine param', (
   }
 });
 
-// ---------------------------------------------------------------------------
 // CV/MODULATION SECTION — the full setParam → applyCvRoute → kindFor →
 // resolveRoute → effectiveCvValue → apply wiring, plus applyUnpatchedOffsets.
 //
@@ -294,7 +287,6 @@ describe('TOYBOX batch-op CV targeting drives the render-local combine param', (
 // and its resolveRoute branch is owned by toybox-cv-routes' unit tests; the
 // WIRING this guard covers is target-type-agnostic, exercised via combine + obj
 // targets whose ranges are static in code.)
-// ---------------------------------------------------------------------------
 
 const ROUTEID = 'toybox-cv-routing-dg';
 
@@ -535,7 +527,6 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // TRANSIENT KNOB/CC setParam — the MIDI-CC render-starvation fix.
 //
 // TOYBOX layer/material/combine params have NO reconciler push path (they live
@@ -548,7 +539,6 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
 // like applyCvRoute (the #719 invariant: per-message writes never touch the
 // Y.Doc). The settled store commit then flips the liveLayers change key and
 // re-syncs the clone — so the store re-apply is idempotent with the transient.
-// ---------------------------------------------------------------------------
 
 const TRID = 'toybox-transient-param';
 
@@ -657,7 +647,6 @@ describe('TOYBOX transient knob/CC setParam (layer-qualified) — render-local o
   });
 });
 
-// ---------------------------------------------------------------------------
 // OBSERVER REV-KEYS (phase-2 MIDI-CC perf fix) — liveLayers()/liveCombineRaw()
 // change detection now rides an engine-transient observeDeep rev counter on
 // the node's Y.Map instead of stringifying the whole layers blob per call
@@ -670,7 +659,6 @@ describe('TOYBOX transient knob/CC setParam (layer-qualified) — render-local o
 //     cover Y.applyUpdate) and UNDO (inverse ops never re-run the setters)
 //   - structural layer edits degrade to the padded full re-clone
 //   - a NON-store-backed node keeps the legacy stringify fallback
-// ---------------------------------------------------------------------------
 
 const REVID = 'toybox-rev-keys';
 

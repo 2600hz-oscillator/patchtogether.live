@@ -1,5 +1,3 @@
-// e2e/tests/marbles-face.spec.ts
-//
 // THE MARBLES FACE, driven for real.
 //
 // `faces-parity` already proves every cell is present and operable, and

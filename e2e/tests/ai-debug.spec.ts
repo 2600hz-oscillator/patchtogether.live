@@ -1,5 +1,3 @@
-// e2e/tests/ai-debug.spec.ts
-//
 // AI-friendly diagnostic. Designed for the AI agent to run via `task ai:debug`
 // when something is broken and structured info is needed. Boots the page,
 // loads the voice demo, dumps a structured snapshot to stdout that the agent
@@ -97,7 +95,6 @@ test('AI debug snapshot — voice-demo flow', async ({ page }) => {
   section('DOM (post-click)', JSON.stringify(postDom, null, 2));
   if (clickError) section('CLICK ERROR', clickError);
 
-  // ---------- STATE ----------
   const state = await page.evaluate(() => ({
     crossOriginIsolated: globalThis.crossOriginIsolated,
     audioContextStateFromDom:

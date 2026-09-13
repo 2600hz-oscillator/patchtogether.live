@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/recorderbox-transport.test.ts
-//
 // THE TRANSPORT SEAM, in the pure lane.
 //
 // What this file is FOR: the extraction that made a promoted recorderbox

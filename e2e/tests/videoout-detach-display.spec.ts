@@ -1,5 +1,3 @@
-// e2e/tests/videoout-detach-display.spec.ts
-//
 // videoOut: RIGHT-CLICK → DETACH DISPLAY, and BRIDGE-ON-DELETE (#1821).
 //
 // Raw `@playwright/test` + `__spawnAtFlowPos`, the `card-drop-patch.spec.ts`
@@ -118,7 +116,6 @@ async function wire(page: Page, from: string, fromPort: string, to: string, toPo
   await expect.poll(() => edgeList(page)).toContain(`${from}.${fromPort}→${to}.${toPort}`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Close the Yjs undo CAPTURE WINDOW so the act under test lands in its own stack
@@ -152,7 +149,6 @@ const undoDepth = (page: Page): Promise<number> =>
     return w.__undoManager?.undoStack.length ?? -1;
   });
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', () => {
   // ⚠ WHY THIS DESCRIBE IS THE ONE THAT MATTERS. It drives the shipping path —
@@ -484,7 +480,6 @@ test.describe('videoOut — detach on the DEFAULT shell (the promoted face)', ()
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('videoOut — bridge on delete', () => {
   test('source ▸ OUTPUT ▸ sink: deleting the OUTPUT patches source straight into the sink, in ONE undo', async ({ page }) => {

@@ -1,5 +1,3 @@
-// e2e/tests/push2-face.spec.ts
-//
 // PUSH 2 CONTROL's FACEPLATE — the coverage the promotion would otherwise have
 // lost, and the reason it is a SEPARATE file rather than a re-point.
 //

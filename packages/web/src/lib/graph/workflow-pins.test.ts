@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/workflow-pins.test.ts
-//
 // WORKFLOW MODE P1 — pinned-singleton planning + drawer keymap + the
 // keyboard typing guard. P2 — the always-on topbar SURFACE pins
 // (timelorde / midiclock / audioIn / audioOut) and their presence rules.

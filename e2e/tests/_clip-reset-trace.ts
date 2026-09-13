@@ -1,5 +1,3 @@
-// e2e/tests/_clip-reset-trace.ts
-//
 // THE SHARED RESET INSTRUMENT for the clip player's playheads.
 //
 // WHY IT IS SHARED, and why that is the point rather than tidiness: TWO specs
@@ -20,7 +18,6 @@
 // A `_`-prefixed file registers no tests, so importing it from a spec is safe;
 // importing the sibling SPEC would register its tests twice.
 //
-// ---------------------------------------------------------------------------
 
 import type { Page } from '@playwright/test';
 

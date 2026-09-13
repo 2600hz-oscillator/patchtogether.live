@@ -1,5 +1,3 @@
-// e2e/tests/frametable.spec.ts
-//
 // FRAMETABLE (video WAVETABLE oscillator, 3-mode rework) — DETERMINISTIC
 // render-smoke over the REAL source chain. The standard's "real source chain"
 // gate for a video PROCESSOR: wire a real source → FRAMETABLE → assert a

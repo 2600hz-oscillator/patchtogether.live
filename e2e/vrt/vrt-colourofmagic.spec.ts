@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-colourofmagic.spec.ts
-//
 // Deterministic per-block composite VRT for COLOUR OF MAGIC. Each scene feeds a
 // colourful STRUCTURED source (LINES horizontal stripes → CHROMA tint) into the
 // module and captures the on-card preview of a chosen output. Determinism: we

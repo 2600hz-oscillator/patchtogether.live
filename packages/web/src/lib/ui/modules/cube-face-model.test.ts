@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cube-face-model.test.ts
-//
 // The PERMANENT negative controls behind cube's faceplate.
 //
 // Every number this face prints is DERIVED, and a derived readout is only worth

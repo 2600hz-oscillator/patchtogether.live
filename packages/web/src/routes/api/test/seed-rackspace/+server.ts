@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/test/seed-rackspace/+server.ts
-//
 // POST /api/test/seed-rackspace — create a fresh rackspace with a synthetic
 // owner (no Clerk session required) so e2e specs can navigate to /r/[id]
 // without going through the sign-in flow.

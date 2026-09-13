@@ -1,5 +1,3 @@
-// e2e/tests/_samsloop-helpers.ts
-//
 // Shared reads for the SAMSLOOP record specs. Not a spec file (leading `_`,
 // same convention as _helpers.ts) so Playwright does not collect it.
 //

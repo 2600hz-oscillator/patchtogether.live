@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/automation-touch.ts
-//
 // TOUCH-SUSPEND CROSS-WIRE for the clip-launcher automation lane (task #183).
 //
 // A live grab of an AUTOMATED control (screen drag / MIDI CC / Electra twist)

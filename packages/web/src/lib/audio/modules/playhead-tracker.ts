@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/playhead-tracker.ts
-//
 // Bridge between a sequencer's lookahead-scheduled step events and the visual
 // "sounding now" highlight. Sequencers schedule emit events up to 200 ms in
 // the future (LOOKAHEAD_S); naively setting `currentStep = stepIndex` after

@@ -1,4 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-types.test.ts
 import { describe, it, expect } from 'vitest';
 import { syncedStore } from '@syncedstore/core';
 import { mulberry32 } from '$lib/sync/prng';
@@ -356,9 +355,7 @@ describe('clampStepCount', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // AUTOMATION lane (task #183) — the fork-independent record layer
-// ---------------------------------------------------------------------------
 
 const tgt = (nodeId: string, paramId: string) => ({ nodeId, paramId });
 
@@ -1578,9 +1575,7 @@ describe('VELOCITY-hold velocity cycle (6 levels)', () => {
   });
 });
 
-// ===========================================================================
 // PER-NOTE PROBABILITY — pure model
-// ===========================================================================
 describe('per-note probability: level ↔ value helpers', () => {
   it('probLevelToValue: level 1 = 2.5%, level 40 = exactly 1.0', () => {
     expect(probLevelToValue(1)).toBeCloseTo(0.025, 10);
@@ -1670,12 +1665,10 @@ describe('save-compat: a legacy clip with no `prob` reads back at 1', () => {
   });
 });
 
-// ===========================================================================
 // CLIP-DEFAULT PROBABILITY — the model (setClipDefaultProb / noteEffProb /
 // probSource / probColorBucket / clipDefaultProbEff). The permutation TABLE
 // (clip-prob-permutations.test.ts) covers the cross-product; this pins the
 // individual helpers' edge cases.
-// ===========================================================================
 describe('clipDefaultProbEff (the clip default reader)', () => {
   it('absent/invalid default reads as 1 (every un-overridden note fires)', () => {
     expect(clipDefaultProbEff(undefined)).toBe(1);
@@ -1790,9 +1783,7 @@ describe('save-compat: a legacy clip with no `defaultProb` (byte-identical)', ()
   });
 });
 
-// ===========================================================================
 // PER-NOTE PROBABILITY — playback dice-roll (notesFiringAt), seeded-deterministic
-// ===========================================================================
 describe('notesFiringAt (per-trigger dice-roll)', () => {
   const chord = (probs: (number | undefined)[]): NoteClipRecord => ({
     ...defaultNoteClip(),
@@ -2068,10 +2059,8 @@ describe('readNoteRec — KEYS note-record state normalization', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // SCENE copy/paste — the typed clipboard PURE core (pasteApplies + readScene +
 // sceneWritePlan) used by the Launchpad scene copy/paste. See launchpad-control.
-// ---------------------------------------------------------------------------
 function clipWithNoteHelper(step: number, midi: number): NoteClipRecord {
   return { ...defaultNoteClip(), steps: [{ step, midi, velocity: 100, lengthSteps: 1 }] };
 }
@@ -2274,7 +2263,6 @@ describe('assignPolyLanes — scheduled poly voice allocation', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // AUDIO CLIPS — the data model that lets a recorded loop live in a slot.
 //
 // ⚠ NOTHING CAN CONSTRUCT ONE YET. The recorder lands in a later slice; these
@@ -2283,7 +2271,6 @@ describe('assignPolyLanes — scheduled poly voice allocation', () => {
 // `AudioClipRecord` was a forward declaration with `fileBytesB64` and a
 // pass-through in `coerceClipRecord`; it had zero constructors and zero
 // readers, so this replaces it with NO migration.
-// ---------------------------------------------------------------------------
 
 /** A minimal VALID audio clip — the accept baseline every reject case mutates. */
 function audioClipFixture(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -2485,7 +2472,6 @@ describe('audioRec is TRANSIENT — a duplicate is never born recording', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE ARM PROJECTION — the half `persistence.test.ts` structurally cannot see.
 //
 // The loader's test iterates CLIP_PLAYER_ARM_DATA_FIELDS, so it proves every
@@ -2494,7 +2480,6 @@ describe('audioRec is TRANSIENT — a duplicate is never born recording', () => 
 // purpose: adding a `data` key without classifying it is a type error (the
 // kinds record is `satisfies Record<string, 'arm' | 'live'>` and the field type
 // is `keyof` it), and MIS-classifying one goes red right here.
-// ---------------------------------------------------------------------------
 describe('the ARM subset is DERIVED from the transient list, not restated beside it', () => {
   it('is a STRICT subset — every arm field is also a transient field', () => {
     expect(CLIP_PLAYER_ARM_DATA_FIELDS.length).toBeGreaterThan(0);

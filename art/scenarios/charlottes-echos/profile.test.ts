@@ -1,5 +1,3 @@
-// art/scenarios/charlottes-echos/profile.test.ts
-//
 // AUDIO PROFILE for CHARLOTTE'S ECHOS (4-stage cascaded tape echo)
 // (backfill batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

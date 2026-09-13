@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cv-buddy.test.ts
-//
 // CV Buddy def contract + the ADVERSARIAL guards that keep it a note SINK.
 // PURE (no AudioContext): asserts ports/params/docs shape + the two invariants
 // that break silently if a later edit gets them wrong:

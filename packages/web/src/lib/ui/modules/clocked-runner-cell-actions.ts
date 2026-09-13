@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clocked-runner-cell-actions.ts
-//
 // The CLOCKED RUNNER faceplate's cell seam — the module-owned end of its one
 // ranked cell, kept out of `shell-cells.ts` so the shared registry imports one
 // file per module rather than the module's whole world (the

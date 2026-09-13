@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/timelorde-clock-core.ts
-//
 // TIMELORDE CLOCK CORE — the pure, sample-accurate clock engine extracted
 // VERBATIM from the TIMELORDE AudioWorklet (../timelorde.ts) so it can be
 // unit-tested without an AudioWorkletGlobalScope. The worklet is now a thin

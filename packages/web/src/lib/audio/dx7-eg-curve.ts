@@ -1,13 +1,9 @@
-// packages/web/src/lib/audio/dx7-eg-curve.ts
-//
 // THE OPERATOR ENVELOPE, AS A DRAWABLE CURVE. One function feeds the 20x12
 // thumbnails on the operator map, the ghosted comparison curves and the big
 // draggable editor, so all three draw the same envelope the engine plays.
 //
-// ==========================================================================
 // THE MODEL — the CORRECTED one. Three facts here were wrong in the first
 // draft of this program and are easy to reintroduce; each is load-bearing.
-// ==========================================================================
 //
 // 1. **The envelope IDLES AT L4.** L4 is both where it starts and where the
 //    release lands, so the curve opens at L4 and closes at L4. It does not
@@ -28,9 +24,7 @@
 //    derives every duration from `dx7RateToDbPerSec`, never from its own
 //    constant, so the two cannot drift.
 //
-// ==========================================================================
 // THE AXES — and why X is NOT seconds.
-// ==========================================================================
 //
 //   Y = LEVEL, the raw 0..99 byte. Linear in LEVEL, not in dB and not in
 //       amplitude, because LEVEL is what the drag writes back.

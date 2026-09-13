@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/reshaper/shell-extension.ts
-//
 // The RESHAPER SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), joining `backdraft`, `videoOut`, `spirographs`, `mirrorpool`,
 // `freezeframe`, `outlines`, `b3ntb0x`, `4plexvid`, `grainsOfVision`,

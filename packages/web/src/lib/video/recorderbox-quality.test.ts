@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-quality.test.ts
-//
 // Pure-logic coverage for the RECORDERBOX quality/size tiers + codec selection.
 // All deterministic + browser-API-free: pickEncodeProfile takes an injectable
 // canEncodeVideo probe so no real codec is needed (CI-safe).

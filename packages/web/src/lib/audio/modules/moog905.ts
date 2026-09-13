@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog905.ts
-//
 // MOOG 905 SPRING REVERBERATION — a slice of the Moog System 55 / 35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md). The 905 is the
 // classic Moog spring-reverb

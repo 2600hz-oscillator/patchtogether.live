@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-clip-view-grid.spec.ts
-//
 // CLIP PLAYER note-editor FULL-GRID rendering — the surviving half of the owner
 // requirement: "we just always show the whole editable grid" (no Launchpad
 // manipulation to reach a note/step). The dock full view's piano roll renders

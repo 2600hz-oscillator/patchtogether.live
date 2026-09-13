@@ -1,5 +1,3 @@
-// scripts/vrt-changeset-gallery.test.ts
-//
 // Covers the `--from-results` mode of the VRT diff gallery (the "fail → see what
 // changed" path used by the ci.yml `vrt` job on failure). A code change that
 // SHIFTS a render fails the VRT lane with the diff in Playwright's test-results

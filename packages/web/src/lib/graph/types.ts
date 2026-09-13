@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/types.ts
-//
 // Patch graph data model. Per D8 the patch graph lives in a Yjs doc accessed
 // through SyncedStore. Per D18 the type system is registry-based, not closed,
 // so future visual modules can register new domains and cable types without
@@ -698,54 +696,14 @@ export interface ModuleFacePage {
 }
 
 /**
- * PER-MODULE UI CURATION — the priority ranking that drives the workflow-mode
- * ModuleShell's semantic-zoom (STRATA) tiers and its sectioned dock faceplate.
- * Co-located on the def like `docs` so a control change and its curation edit
- * land in the SAME PR diff (the ranking model:
- * .claude/skills/module-surfaces/references/bespoke-surface-lessons.md).
+ * Module face curation shares the docs system's control keys: param ids,
+ * control-family templates (<familyId>-{n}), and static control keys.
+ * curatedFace and faceTierCap derive each tier's controls from the ranking.
  *
- * This is UI METADATA, not I/O, so MOST of `face` is deliberately kept out of
- * contract-signature.ts / contract-lock.txt — a re-ranking is not a contract
- * change. It has its own drift gate, module-face-lint.test.ts, mirroring the
- * living-docs ratchet (consistency for every faced module, completeness for
- * the STRICT_FACES set).
- *
- * ⚠ WHICH FIELDS PROJECT IS DECIDED FIELD BY FIELD, NOT BY THIS PARAGRAPH.
- * `sidebar` used to be the one projected field, for a reason worth keeping now
- * that the field itself is gone: #1468 deleted a whole sidebar block from
- * twelve modules and `task docs:accept` produced an EMPTY DIFF — because "is it
- * I/O?" was the wrong question. The right one is "if this vanished, is there
- * any review surface on which a human would see it?" Ask that of every new
- * field.
- *
- * So the decision is made field by field and enforced:
- * `FACE_FIELDS_NOT_IN_LOCK` (contract-signature.ts) names every unprojected
- * field with a `why` and the gate that DOES cover it, and contract-lock.test.ts
- * walks the keys live defs actually declare — a key that is neither projected
- * nor named is RED, and a name with no field behind it is red too. Adding a
- * field here means writing that decision down.
- *
- * KEYS use the SAME unified control-key space the docs system defines
- * (control-doc-resolver.ts): each entry is one of
- *   - a `ParamDef.id`                    (a Knob/Fader-backed param), or
- *   - a control-family TEMPLATE `<familyId>-{n}`  (one entry per declared
- *     ControlFamily — the step grid / transport cluster as a whole), or
- *   - a STATIC control key (a card-only `<select>`/`<button>`, keyed by the
- *     numbered-legend staticKey — the nodeId-stripped test id).
- *
- * The pure `curatedFace(def, tier)` selector ($lib/ui/workflow/curated-face)
- * resolves each key to a control descriptor and returns the top-N for a tier
- * (mini=1 / compact=2 with a glyph or 3 without / full-in-lane=8 / dock=all +
- * pages). The compact number comes from `faceTierCap`, which reconciles the
- * ladder with laneBodyPlan's whole-cell fit so the SELECTED and the RENDERED
- * counts are the same number.
- *
- * HASH-TRANSPARENCY (video defs): VIDEO module defs live in the WebGL attest
- * basis, but `face` is hash-transparent BY CONSTRUCTION — the shared attest
- * normalizer (scripts/attest-code-basis.ts) strips `docs`/`controlFamilies`/
- * `face` off a module-scope def object before hashing, so authoring curation is
- * a no-op for the GPU attest with nothing to remember. (P1 authoring note; no
- * video def carries a `face` yet.)
+ * For every new face field, decide whether contract-signature projects it or
+ * FACE_FIELDS_NOT_IN_LOCK names its exclusion and covering gate.
+ * contract-lock.test.ts checks that choice; module-face-lint checks curation.
+ * The WebGL attest normalizer excludes face metadata from module-def hashes.
  */
 /**
  * ONE declared 2-D pad: the two params its axes drive (see
@@ -763,56 +721,14 @@ export interface FaceXyPad {
   /** Caption under the pad. Omitted = the two params' own labels. */
   label?: string;
   /**
-   * WHICH SURFACE paints this pad's ONE cell at the DOCK.
+   * Where the dock paints this pad: a generic band cell at the x key's rank,
+   * or the module's fullViewBody. Both axes are omitted from dock bands for
+   * body-owned pads. Pads never occupy lane cells, so the face still needs
+   * other lane controls.
    *
-   *   'band' (default) — the shell's generic `XyPad` renders in a band, at the
-   *                      `x` key's rank. Every pad shipped before this field.
-   *   'body'           — the module's OWN `fullViewBody` paints it, and the
-   *                      dock bands render NO cell for either axis.
-   *
-   * ⚠ IT IS A DOCK-ONLY DISTINCTION, AND THE REASON IS NOT THE ONE THE FIRST
-   * DRAFT OF THIS COMMENT GAVE. It said the lane must keep the generic pad or a
-   * pad-only module would resolve to zero controls; that premise is FALSE, and
-   * `quadralogical-face-model.test.ts` corrected it. `laneOrder`
-   * (`curated-face.ts:131-143`) ALREADY makes every declared pad's anchor
-   * dock-only, for a measured reason that predates this field: a pad is square
-   * and a lane knob column is 46 px, so squeezing it there keeps the gesture
-   * and loses the precision. So NO lane tier has ever painted a pad, and this
-   * field cannot change that.
-   *
-   * What it changes is WHICH DOCK SURFACE paints it — a band cell, or the
-   * module's own body. `extBody` is gated to the dock by
-   * `dockFullViewHeadPlan`, so 'body' is only meaningful there, and the lane is
-   * untouched because the pad was never in it.
-   *
-   * ⚠ THE #1974 REFUSAL IS A SEPARATE QUESTION AND THIS FIELD DOES NOT ANSWER
-   * IT. A pad-only face resolves to ZERO lane controls whatever any face
-   * declares, and module-face-lint denies it. A module adopting `'body'` must
-   * still have something else to show in the lane. (`joystick` — the refusal's
-   * own module — shipped 2026-09-01 WITHOUT this field: the owner's
-   * two-ordinary-cells fallback ranks its axes as plain knob cells and its
-   * `fullViewBody` pad is a redundant module-owned surface, NOT a declared
-   * body pad. The denied SHAPE survives as the lint's synthetic fixture.)
-   *
-   * ⚠ AND IT IS A CLAIM THE GATES CHECK IN BOTH DIRECTIONS, not a hint.
-   * `module-face-lint` INVERTS its render-parity assertion for a `'body'`
-   * pad's two axes — they must render EXACTLY ZERO dock cells where every
-   * other param must render exactly one — the same falsifiable shape
-   * `noUserControl` uses. And `face-xy-body-source.test.ts` requires the
-   * declaring face to own a `fullViewBody` whose source really emits
-   * `data-control-params` naming both axes, so "the body paints it" cannot be
-   * satisfied by a body that does not.
-   *
-   * WHY A PER-PAD ENUM rather than a general "these params live in the body"
-   * list: a 2-D pad is the only control the shell paints that a module could
-   * plausibly need to own — it is the one primitive whose picture and whose
-   * gesture can be the SAME surface as a module's own render (QUADRALOGICAL's
-   * joystick sits over live previews of the four inputs it is mixing). A
-   * general escape hatch would be reached for by the next module that merely
-   * wants a bigger knob.
-   *
-   * UI metadata like the rest of `face`: OUT of contract-signature /
-   * contract-lock (choosing a surface is not an I/O change).
+   * module-face-lint checks the zero-cell contract for body-owned axes;
+   * face-xy-body-source.test.ts checks that the body emits data-control-params
+   * for both axes. This per-pad choice is not a general escape for body controls.
    */
   surface?: 'band' | 'body';
 }
@@ -1090,47 +1006,12 @@ export interface ModuleFace {
    */
   tabbed?: true;
   /**
-   * MONITOR MODE — this face's own surface may be watched WITHOUT its control
-   * bands, and `node.data.hideControls` is what does it (#2009).
+   * Allow node.data.hideControls to hide control bands while keeping the
+   * module's picture. SCREEN ON/OFF separately controls picture visibility.
    *
-   * ⚠ IT IS THE EXACT INVERSE OF SCREEN ON/OFF, NOT A DUPLICATE OF IT, and
-   * #1865 proposed the opposite. SCREEN OFF hides the PICTURE and keeps the
-   * controls; MONITOR MODE hides the CONTROLS and keeps the picture. Neither
-   * can subsume the other — they are the two directions of one question ("which
-   * half am I looking at right now?"), and a video face wants both.
-   *
-   * ⚠ WHY THIS IS A SHELL CAPABILITY AND NOT A `ShellExtension` SLOT. The gap
-   * #2009 filed is that `fullViewBody` paints ABOVE the bands and CANNOT
-   * suppress them — its own contract says so, deliberately (the
-   * `warrensspectrum` failure, where a body that ate the faceplate would have
-   * deleted every control). `editorSurface` is not the home either: it is
-   * specced for "controls that are not cell-shaped at all" — a clip arranger, a
-   * pad matrix — and it is a STATIC structural choice. Hiding the bands is a
-   * TOGGLE over a face whose controls are perfectly cell-shaped. Different
-   * axis, so wiring `editorSurface` for it would have made ruttetra a fake
-   * first adopter of a slot it does not need, and left the real blocker
-   * standing.
-   *
-   * WHAT PROMOTION WOULD OTHERWISE DELETE: five modules mounted `hideControls`
-   * on their pre-promotion surface (`ruttetra`, `monoglitch`, `milkdrop`,
-   * `reshaper`, `graphicEq`), and `migrated(type)` stops that surface
-   * rendering.
-   * On ruttetra the def's own `docs` advertise the gesture in the user's words
-   * — "hiding the controls turns it into a resizable monitor" — so promoting
-   * without this makes the shipped documentation describe a control that no
-   * longer exists, and no def-reading gate can see that.
-   *
-   * ⚠ IT CANNOT ENGAGE WITHOUT A SURFACE TO BE A MONITOR OF.
-   * `faceMonitorPlan` requires `dockFullViewHeadPlan().extBody` — the module's
-   * own `fullViewBody` actually painting — because a faceplate with its bands
-   * hidden and no picture is a BLANK PLATE, which is a worse outcome than the
-   * one this fixes. That precondition is asserted directly rather than left to
-   * an author's care.
-   *
-   * Gate: `face-monitor-source.test.ts`, deny-by-default in BOTH directions —
-   * a face declaring this must own a `fullViewBody` that reads and writes
-   * `hideControls` and exposes a button, and a FACED module that carried
-   * `hideControls` before must declare this or carry a named exemption.
+   * faceMonitorPlan requires a rendered fullViewBody before hiding bands,
+   * otherwise the result would be an empty faceplate.
+   * face-monitor-source.test.ts checks the body's hideControls state and button.
    */
   monitor?: FaceMonitor;
   /**
@@ -1162,46 +1043,15 @@ export interface ModuleFace {
    */
   bandFocus?: FaceBandFocus;
   /**
-   * RACK-GLOBAL STATUS — this face shows state that belongs to THE RACK rather
-   * than to this node (#2024 item 3; owner ruling 2026-08-21, *"close the
-   * gap"*).
+   * Hide bands according to rack-wide ownership. For cvBuddy/cvBuddyMini,
+   * the id-smallest peer owns the shared RUN/CLOCK hardware outputs;
+   * primaryOnlyBands suppresses controls that do nothing on other peers.
+   * Owner ruling, 2026-08-21: "close the gap" (#2024 item 3).
    *
-   * ⚠ IT IS A THIRD AXIS, not a spelling of the two above. `monitor` is a
-   * per-node RUNTIME TOGGLE; `bandFocus` is a per-node PARAM VALUE. This one is
-   * a property of the PATCH — which other nodes exist — and no param-reading
-   * resolver can see it, because there is no `ParamDef` whose value is "am I
-   * the instance that owns the shared hardware", and there cannot be: the
-   * answer changes when a DIFFERENT node is added or deleted.
-   *
-   * The worked case is `cvBuddy`/`cvBuddyMini`. RUN and CLOCK are single-source
-   * — the id-smallest instance of either kind drives ES-9 jacks 7 and 8 — so on
-   * every other instance the PPQN and OFFSET controls are dials wired to
-   * nothing, and they have always been hidden. `primaryOnlyBands` carries that
-   * forward; without it, promotion turns two hidden controls into two
-   * live-looking ones that change nothing, which is a worse surface than the
-   * one it replaced.
-   *
-   * ⚠ IT IS STRUCTURE, NOT TEXT — free under the resting-text rulings for the
-   * same reason `bandFocus` is: it decides which bands RENDER and paints
-   * nothing at all. The rack-global state a player actually READS (which jacks
-   * this instance owns, whether the clock is dropping pulses) is painted by the
-   * module's own `fullViewBody` through the `StatusLed` primitive, where a
-   * caption is static, a state is a lamp, and the measurement reaches
-   * `aria-label`/`title` and never a text node.
-   *
-   * ⚠ IT CANNOT BLANK A PLATE. `rackStatusPlan` refuses to hide anything unless
-   * the module's own body is painting — the `faceMonitorPlan` precondition, and
-   * sharper here, since `cvBuddy`'s only two params are BOTH in the suppressed
-   * band. The lane tile is the named blind spot: no status body fits there, so
-   * nothing is suppressed there either.
-   *
-   * Gate: `face-rack-status-source.test.ts`, deny-by-default in both
-   * directions — a declaring face must own a `fullViewBody` that reads the
-   * patch and paints through `StatusLed`, its `primaryOnlyBands` must name real
-   * bands and its `peers` real registered types; and every extension body in
-   * the tree must declare what its own canvas paints, which is what converts
-   * `face-resting-text-source`'s largest named blind spot into a
-   * deny-by-default roster.
+   * rackStatusPlan only suppresses bands when the module's fullViewBody is
+   * rendered; lane controls remain visible. The body reports status through
+   * StatusLed, with measurements in accessible labels rather than resting text.
+   * face-rack-status-source.test.ts checks the body, band ids, and peer types.
    */
   rackStatus?: FaceRackStatus;
 }

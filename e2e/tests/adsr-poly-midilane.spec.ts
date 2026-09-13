@@ -1,5 +1,3 @@
-// e2e/tests/adsr-poly-midilane.spec.ts
-//
 // Bespoke E2E for the per-voice ADSR feature on CUBE / WAVECEL / DX7.
 // Validates in the REAL worklet (the pure-fn + worklet-unit tests cover the
 // envelope math; this proves the end-to-end audio path):

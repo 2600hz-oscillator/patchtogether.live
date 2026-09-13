@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videocube.test.ts
-//
 // VIDEOCUBE def-shape + factory smoke. The GL COMBINE pipeline is exercised by
 // E2E (jsdom can't render shaders) + the pure math in videocube-core.test.ts;
 // here we pin the I/O contract and the cheap synchronous factory work — the

@@ -1,5 +1,3 @@
-// packages/dsp/src/cube.ts
-//
 // CUBE — 3D wavetable-navigator oscillator (slice 2 of ~8): the AudioWorklet
 // V/oct oscillator. for the design + the pure
 // field/slice DSP in ./lib/cube-dsp.ts (slice 1, already merged).

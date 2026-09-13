@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog903a.ts
-//
 // MOOG 903A RANDOM SIGNAL GENERATOR — a slice of the Moog System 55/35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md). The 903A is a
 // passive noise SOURCE: it puts

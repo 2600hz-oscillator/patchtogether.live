@@ -1,5 +1,3 @@
-// e2e/tests/clip-prob-default.spec.ts
-//
 // CLIP-DEFAULT PROBABILITY end-to-end (the clip-level sibling of the per-note
 // prob feature). Two real-chain proofs:
 //
@@ -153,10 +151,8 @@ async function seedClip(
   }, { id: nodeId, steps, defaultProb });
 }
 
-// ===========================================================================
 // 1) GESTURE — SHIFT + a Grid clip pad → clip-PROB page → level tap writes
 //    node.data.defaultProb; the card recolours source-aware.
-// ===========================================================================
 // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
 // NONDETERMINISM: 6 recovered-on-retry observation(s) across 6 SHA(s) / 6 branch(es) in the
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.
@@ -214,10 +210,8 @@ test.fixme('@launchpad clip-default prob: SHIFT+clip → PROB page → level tap
   await expect.poll(() => cellHues().then((h) => h.orange), { timeout: 5000 }).toBeGreaterThan(0);
 });
 
-// ===========================================================================
 // 2) PLAYBACK — the clip default gates firing through the REAL chain; a per-note
 //    override BEATS it. Deterministic 0 / 1 edges (no RNG flake).
-// ===========================================================================
 // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
 // NONDETERMINISM: 7 recovered-on-retry observation(s) across 7 SHA(s) / 6 branch(es) in the
 // 96 h CI census to 2026-08-18 — never a hard failure, so every one of those jobs reported SUCCESS.

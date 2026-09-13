@@ -1,5 +1,3 @@
-// e2e/tests/loopback-shell-source.spec.ts
-//
 // LOOPBACK UNDER THE DEFAULT SHELL — the spec that had to exist before the
 // promotion could ship.
 //

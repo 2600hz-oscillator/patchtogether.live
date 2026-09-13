@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/warped-fader-source.test.ts
-//
 // THE WARPED-FADER CELL'S ONE-SOURCE RULE, AT THE SOURCE LEVEL — because no
 // runtime gate can see the defect.
 //

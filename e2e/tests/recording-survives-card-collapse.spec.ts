@@ -1,5 +1,3 @@
-// e2e/tests/recording-survives-card-collapse.spec.ts
-//
 // #1574 — collapsing RECORDERBOX must not destroy an in-progress recording.
 //
 // Owner, on dev: "when recorderbox is un-expanded, it stops the recording."

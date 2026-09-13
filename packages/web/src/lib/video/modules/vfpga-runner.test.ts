@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/vfpga-runner.test.ts
-//
 // Unit tests for the vfpga-runner host module def + factory plumbing (fake GL —
 // jsdom can't render shaders; the real GL pipeline is covered by the e2e). We
 // assert: the def declares the full I/O superset; the factory edge-detects gates
@@ -71,9 +69,7 @@ describe('vfpgaRunnerDef — module def shape', () => {
 
 });
 
-// ---------------------------------------------------------------------------
 // Factory plumbing (fake GL — no real WebGL).
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   const stub = (): unknown => ({});
@@ -220,11 +216,9 @@ describe('vfpgaRunnerDef.factory — preset + snapshot + outputs', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // P3 composite-era bent VFPGAs — hot-swap + draw through the factory (fake GL).
 // Verifies the new const/bind plumbing + the framestore-howl register swap drive
 // the GL pipeline without crashing (the actual bent pixels are the e2e's job).
-// ---------------------------------------------------------------------------
 
 describe('vfpgaRunnerDef.factory — P3 bent VFPGAs hot-swap + draw', () => {
   // framestore-howl + chroma-rot are now 2-OUTPUT specs (the frame-store send / the

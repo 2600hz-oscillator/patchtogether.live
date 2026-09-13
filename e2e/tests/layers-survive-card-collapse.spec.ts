@@ -1,5 +1,3 @@
-// e2e/tests/layers-survive-card-collapse.spec.ts
-//
 // #1589 — collapsing TOYBOX must not drop its video layers, and Export must
 // never write a preset it knows is incomplete.
 //

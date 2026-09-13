@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog962.ts
-//
 // MOOG 962 SEQUENTIAL SWITCH — Moog System 55 clone (batch 5 utility
 // cluster). A gate-advanced signal selector: up to three signal inputs
 // (in1..in3) feed a single output (out), and a rising edge on the SHIFT gate

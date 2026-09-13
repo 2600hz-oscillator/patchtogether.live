@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-face-audio-probe.spec.ts
-//
 // MEASUREMENT PROBE (VRT_PROBE=1 only — not in FULL_MATCH, costs CI nothing).
 //
 // THE QUESTION: does a curated face's compact lane tile SETTLE, and is the

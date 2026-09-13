@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/b3ntb0x/shell-extension.ts
-//
 // The b3ntb0x SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), and the sixth adopter of the `fullViewBody` slot alongside
 // `backdraft`, `videoOut`, `spirographs`, `mirrorpool` and `freezeframe`.

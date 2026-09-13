@@ -1,5 +1,3 @@
-// e2e/tests/foxy-face-surface.spec.ts
-//
 // THE FOXY FACEPLATE — the surface promotion actually ships, and the three
 // affordances that reach it only through the `fullViewBody` shell extension.
 //

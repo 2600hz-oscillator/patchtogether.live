@@ -1,5 +1,3 @@
-// art/scenarios/clouds/size-travel.test.ts
-//
 // THE SIZE DIAL, MEASURED THROUGH THE SHIPPING WORKLET.
 //
 // `packages/dsp/src/clouds.ts` is captured via the `registerProcessor` shim and

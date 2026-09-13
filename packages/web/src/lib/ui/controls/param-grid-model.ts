@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/param-grid-model.ts
-//
 // PURE cell/navigation logic for ParamGrid.svelte — the RACKLINE param picker
 // for a discrete param with MANY states whose states are PICTURES rather than
 // words (PF-15). Segmented lays ≤6 named states out inline; Selector shows a

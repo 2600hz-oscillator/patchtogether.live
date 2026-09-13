@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-gate.test.ts
-//
 // Bug 2 (B5): the audio gate is the load-bearing fix for "post-F5 audio
 // doesn't play". This test exercises the rune-state store in isolation
 // using a fake AudioContext (Node has no real one). The Playwright suite

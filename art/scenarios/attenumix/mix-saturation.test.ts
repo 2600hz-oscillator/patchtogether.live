@@ -1,5 +1,3 @@
-// art/scenarios/attenumix/mix-saturation.test.ts
-//
 // ART-tier check on ATTENUMIX — sweeps the pure-math helper across the
 // attenuator + master ranges to pin the per-channel attenuation linearity,
 // the 0..1 clamp at the channel level, and the tanh saturation curve on

@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/picturebox-limits.test.ts
-//
 // Pure unit tests for the count helpers + spawn decision logic. The
 // integration with Canvas.svelte's spawn handler is covered by the
 // e2e/picturebox-limits.spec.ts.

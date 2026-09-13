@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/cellshade.ts
-//
 // CELLSHADE — real cel-shader (toon) video PROCESSOR. Total rebuild.
 //
 // The canonical live-video cel pipeline (Winnemöller, Olsen & Gooch,
@@ -78,9 +76,7 @@ import {
   EDGES_SOBEL_NORM,
 } from './edges';
 
-// ----------------------------------------------------------------------
 // Band model — exported for unit tests + the card readout (no GL).
-// ----------------------------------------------------------------------
 
 /** The 5 luminance band counts the BANDS knob snaps to. Index into this
  *  array == the `bits` param value (a discrete 0..4 fader — the id is the
@@ -106,9 +102,7 @@ export function cellshadeBandCount(rawBits: number): number {
   return CELLSHADE_BAND_STEPS[cellshadeBandsIndex(rawBits)]!;
 }
 
-// ----------------------------------------------------------------------
 // Shared scalar helpers — transliterated 1:1 into the GLSL below.
-// ----------------------------------------------------------------------
 
 /** Rec. 601 luminance of a normalized RGB triple (each 0..1) — the SAME
  *  weights the EDGES Sobel uses, so P3's bands and P4's ink agree on what
@@ -134,9 +128,7 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
-// ----------------------------------------------------------------------
 // P1/P2 — separable bilateral (edge-preserving smoothing) mirror.
-// ----------------------------------------------------------------------
 
 /** Fixed spatial sigma of the bilateral kernel (texels). */
 export const CELLSHADE_SIGMA_D = 2.0;
@@ -229,9 +221,7 @@ export function cellshadeSmoothGrid(
   return v;
 }
 
-// ----------------------------------------------------------------------
 // P3 — soft luminance quantization mirror.
-// ----------------------------------------------------------------------
 
 /** Soft band-transition half-width (in BAND units) from the SOFTNESS knob:
  *  w = mix(1e-3, 0.5, softness). w is CAPPED at 0.5 by construction —
@@ -279,9 +269,7 @@ export function cellshadeQuantizeY(
   return [clamp01(r + d), clamp01(g + d), clamp01(b + d)];
 }
 
-// ----------------------------------------------------------------------
 // P4 — ink (EDGES Sobel + dilation + strength composite) mirror.
-// ----------------------------------------------------------------------
 
 /** Ink composite: mix(quantized, black, edge · ink) per channel. */
 export function cellshadeInkComposite(
@@ -366,10 +354,8 @@ export function cellshadePixel(
   return cellshadeInkComposite(quant, edge, p.ink);
 }
 
-// ----------------------------------------------------------------------
 // GLSL — the 4 passes. Each fragment is the transliteration of the CPU
 // mirror above (shared constants interpolated in).
-// ----------------------------------------------------------------------
 
 const GLSL_HEADER = `#version 300 es
 precision highp float;
@@ -555,7 +541,6 @@ export const cellshadeDef: VideoModuleDef = {
     { id: 'ink',       label: 'Ink',    defaultValue: CELLSHADE_DEFAULTS.ink,       min: 0, max: 1,                  curve: 'linear' },
   ],
 
-  // ── FACE (batch-21, rebuilt against current main) ─────────────────────────
   face: {
     order: ['bits', 'ink', 'threshold', 'thickness', 'softness', 'smooth'],
 

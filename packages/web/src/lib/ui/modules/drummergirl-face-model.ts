@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/drummergirl-face-model.ts
-//
 // THE PURE MODEL BEHIND DRUMMERGIRL's FACEPLATE — and the whole point of the
 // face: UNBUNDLE `shape`.
 //

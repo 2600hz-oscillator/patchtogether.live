@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/cube-envelope.test.ts
-//
 // CUBE's amp ADSR did NOTHING at the shipped default — the identical defect
 // #1350 fixed in WAVECEL, flagged in that PR's blast-radius section and
 // deliberately scoped out because CUBE is a second module, not one fix. Pinned
@@ -165,9 +163,7 @@ function maxStep(a: Float32Array, from: number, to: number): number {
   return m;
 }
 
-// ===========================================================================
 // THE AMP ADSR ACTUALLY SHAPES A NOTE AT THE SHIPPED DEFAULT
-// ===========================================================================
 describe('CUBE · the amp ADSR is audible at the shipped default', () => {
   it('base_vol SHIPS at 0 (pure ADSR) — the descriptor is the thing under test', async () => {
     await loadProcessor();
@@ -274,9 +270,7 @@ describe('CUBE · the amp ADSR is audible at the shipped default', () => {
   });
 });
 
-// ===========================================================================
 // NOTE-OFF NO LONGER CLICKS AT THE SHIPPED DEFAULT
-// ===========================================================================
 describe('CUBE · note-off is click-free at the shipped default', () => {
   const GATE = 12800;
 

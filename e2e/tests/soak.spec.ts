@@ -1,5 +1,3 @@
-// e2e/tests/soak.spec.ts
-//
 // Phase 1 done-gate item: "no NaN/Inf in audio output across a 10-minute soak".
 //
 // We run the canonical voice patch for 30 seconds (not 10 min — CI budget) and

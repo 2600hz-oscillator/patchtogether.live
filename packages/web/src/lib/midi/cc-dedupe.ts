@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/cc-dedupe.ts
-//
 // REDUNDANT-CC SUPPRESSION — the pure delta + echo-window state machine.
 //
 // PROVENANCE: this is `FeedbackState`, lifted VERBATIM out of

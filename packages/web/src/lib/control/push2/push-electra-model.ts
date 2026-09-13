@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-electra-model.ts
-//
 // ELECTRA CONTROL MODE — the pure view model behind the Push 2's third display
 // mode. Enter it with the lower-right "Shift" button (CC 49, a plain press
 // TOGGLE) and the six leftmost display encoders become ONE ROW of the rack's

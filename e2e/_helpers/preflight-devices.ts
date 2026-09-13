@@ -1,5 +1,3 @@
-// e2e/_helpers/preflight-devices.ts
-//
 // The fake device rig for the Stage-1 pre-flight spec set. Each installer is an
 // addInitScript (runs BEFORE the app boots, and RE-RUNS on every navigation, so
 // a fake survives a reload/relaunch — the persistence leg depends on that). All
