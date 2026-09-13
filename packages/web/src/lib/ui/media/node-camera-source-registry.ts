@@ -67,7 +67,8 @@
 // `environment: 'node'` lane. The browser binding is `./node-camera-source.svelte.ts`.
 
 import type { ModuleNode } from '$lib/graph/types';
-import { shouldReacquireOnPick, type CameraState } from '$lib/video/camera-device';
+import type { CameraState } from '$lib/video/camera-device';
+import { shouldReacquireOnPick } from '$lib/video/camera-device';
 import { resolveDevice, shouldRewriteSavedId } from '$lib/graph/device-rebind';
 import { isDeviceSlotId } from '$lib/graph/device-slots';
 
