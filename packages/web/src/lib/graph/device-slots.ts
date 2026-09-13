@@ -500,8 +500,7 @@ export function isAlwaysLiveSlot(id: string): boolean {
  * nothing to run, so the reconciler gives them no engine node.
  *
  * A slot is inert when BOTH hold:
- *   - nothing is BOUND to it (no `DEVICE_SLOT_RIG_KEYS` value — no camera
- *     chosen, so there is nothing to acquire); and
+ *   - nothing is BOUND to it in the per-machine rig store; and
  *   - nothing is ROUTED through it (no edge touches it in either direction).
  *
  * The edge half is what makes "first use" include PATCHING, not only binding:
@@ -514,14 +513,13 @@ export function isAlwaysLiveSlot(id: string): boolean {
 export function planInertSlots(
   nodes: ReadonlyArray<DeviceSlotNodeLike | null | undefined>,
   edges: ReadonlyArray<SlotEdgeLike | null | undefined>,
+  boundSlotIds: ReadonlySet<string> = new Set(),
 ): Set<string> {
   const inert = new Set<string>();
   for (const n of nodes) {
     if (!n || typeof n.id !== 'string') continue;
     if (!RESERVED_DEVICE_SLOT_IDS.has(n.id) || isAlwaysLiveSlot(n.id)) continue;
-    const data = n.data;
-    const bound = !!data && DEVICE_SLOT_RIG_KEYS.some((k) => data[k] !== undefined);
-    if (!bound) inert.add(n.id);
+    if (!boundSlotIds.has(n.id)) inert.add(n.id);
   }
   // Checked only when something is actually inert, so a fully-bound rig never
   // walks the edge list.

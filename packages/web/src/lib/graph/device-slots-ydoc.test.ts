@@ -25,6 +25,7 @@ import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import type { ModuleNode, Edge } from './types';
 import { PatchEngine, type DomainEngine } from '$lib/audio/engine';
 import { attachReconciler } from '$lib/audio/reconciler';
+import { RigBindingStore, emptyRigBindings } from './device-slot-bindings';
 import { createSnapshotBus } from './snapshot';
 import {
   DEVICE_SLOTS,
@@ -198,13 +199,19 @@ async function flushReconciler(engine: SessionEngine): Promise<void> {
 }
 
 /** Attach the real reconciler to a peer with a recording video engine. */
-function attach(peer: Peer): { eng: SessionEngine; detach: () => void } {
+async function attach(peer: Peer): Promise<{ eng: SessionEngine; rig: RigBindingStore; detach: () => void }> {
+  const rig = new RigBindingStore({
+    load: emptyRigBindings,
+    save: () => {},
+    subscribe: () => () => {},
+  });
+  await rig.whenReady();
   const bus = createSnapshotBus({ patch: peer.patch as never, ydoc: peer.doc });
   const pe = new PatchEngine();
   const eng = new SessionEngine();
   pe.registerDomain(eng);
-  const handle = attachReconciler(pe, { bus });
-  return { eng, detach: () => handle.dispose() };
+  const handle = attachReconciler(pe, { bus, rig });
+  return { eng, rig, detach: () => { handle.dispose(); rig.dispose(); bus.dispose(); } };
 }
 
 const slotIds = () => DEVICE_SLOTS.map((s) => s.id).sort();
@@ -252,16 +259,14 @@ describe('the slot ensure on real Y.Docs', () => {
 describe('hostile peer vs. a reserved slot', () => {
   it('A PEER CANNOT DROP A CAMERA SESSION: it comes back, at the SAME id', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, rig, detach } = await attach(a);
     try {
       runSlotEnsure(a);
       // BIND IT FIRST — the row is about a DEVICE SESSION, and an unused slot
       // has none. Since lazy engines landed, an unbound slot holds no engine
       // at all, so attacking one would prove nothing about sessions; binding
       // makes the subject real and the assertion sharper than it was before.
-      a.doc.transact(() => {
-        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
-      });
+      rig.setCamera('cam1', { deviceId: 'MY-CAMERA' });
       await flushReconciler(eng);
       expect(eng.live.has('slot:cam1')).toBe(true);
 
@@ -387,16 +392,14 @@ describe('patch load — the device-slot survival contract', () => {
 
   it('THE RECONCILER NEVER TEARS DOWN A SLOT ACROSS A LOAD', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, rig, detach } = await attach(a);
     try {
       runSlotEnsure(a);
       // A slot IN USE is the subject: bind one camera, and rely on output1
       // being always-live. An unused slot holds no engine (lazy engines), so
       // "it was never torn down" would be trivially true of it — the claim is
       // about slots that have something to lose.
-      a.doc.transact(() => {
-        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
-      });
+      rig.setCamera('cam1', { deviceId: 'MY-CAMERA' });
       await flushReconciler(eng);
       expect(eng.live.has('slot:cam1')).toBe(true);
       expect(eng.live.has(DEFAULT_VIDEO_OUT_ID)).toBe(true);
@@ -429,7 +432,7 @@ describe('patch load — the device-slot survival contract', () => {
 
   it('POSITIVE CONTROL: an UNRESERVED id in the same rack IS torn down by the load', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, detach } = await attach(a);
     try {
       // A camera at an ordinary id — today's dynamic workflow camera. Same
       // type, same registries, same everything except the reservation.
@@ -485,7 +488,7 @@ describe('patch load — the device-slot survival contract', () => {
 
   it('COERCES a foreign type at a slot id rather than letting it retype the node', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, detach } = await attach(a);
     try {
       runSlotEnsure(a);
       await flushReconciler(eng);
@@ -546,7 +549,7 @@ describe('patch load — the device-slot survival contract', () => {
 describe('lazy engines: an unused slot holds none', () => {
   it('a fresh rack stands up ONE slot engine — and the control proves the rig works', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, detach } = await attach(a);
     try {
       runSlotEnsure(a);
       // POSITIVE CONTROL, added in the same rack and the same pass: ordinary
@@ -577,9 +580,9 @@ describe('lazy engines: an unused slot holds none', () => {
     }
   });
 
-  it('BINDING a camera brings its slot up — on the next snapshot, no special casing', async () => {
+  it('BINDING a camera brings its slot up without a graph update', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, rig, detach } = await attach(a);
     try {
       runSlotEnsure(a);
       await flushReconciler(eng);
@@ -587,9 +590,7 @@ describe('lazy engines: an unused slot holds none', () => {
 
       // The operator picks a camera. This is the whole trigger.
       const before = eng.ops.length;
-      a.doc.transact(() => {
-        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
-      });
+      rig.setCamera('cam1', { deviceId: 'MY-CAMERA' });
       await flushReconciler(eng);
 
       expect(eng.live.has('slot:cam1'), 'binding mounts the slot').toBe(true);
@@ -601,7 +602,7 @@ describe('lazy engines: an unused slot holds none', () => {
 
   it('PATCHING into an output slot brings it up too — first use is not only binding', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, detach } = await attach(a);
     try {
       runSlotEnsure(a);
       a.doc.transact(() => {
@@ -637,19 +638,15 @@ describe('lazy engines: an unused slot holds none', () => {
   // than silently leaking a camera nobody can see.
   it('UNBINDING releases it again — the filter is per-pass, not latched', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, rig, detach } = await attach(a);
     try {
       runSlotEnsure(a);
-      a.doc.transact(() => {
-        (a.patch.nodes['slot:cam2']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
-      });
+      rig.setCamera('cam2', { deviceId: 'MY-CAMERA' });
       await flushReconciler(eng);
       expect(eng.live.has('slot:cam2')).toBe(true);
 
       const before = eng.ops.length;
-      a.doc.transact(() => {
-        delete (a.patch.nodes['slot:cam2']!.data as Record<string, unknown>).deviceId;
-      });
+      rig.setCamera('cam2', null);
       await flushReconciler(eng);
 
       expect(eng.ops.slice(before)).toContain('removeNode slot:cam2');
@@ -663,12 +660,10 @@ describe('lazy engines: an unused slot holds none', () => {
   // point. A slot that is IN USE keeps the load guarantee it had before.
   it('a BOUND slot still survives a patch load untorn', async () => {
     const a = makePeer();
-    const { eng, detach } = attach(a);
+    const { eng, rig, detach } = await attach(a);
     try {
       runSlotEnsure(a);
-      a.doc.transact(() => {
-        (a.patch.nodes['slot:cam1']!.data as Record<string, unknown>).deviceId = 'MY-CAMERA';
-      });
+      rig.setCamera('cam1', { deviceId: 'MY-CAMERA' });
       await flushReconciler(eng);
       expect(eng.live.has('slot:cam1')).toBe(true);
 

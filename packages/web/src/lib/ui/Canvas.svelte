@@ -8401,7 +8401,15 @@
           console.warn('[canvas] video engine unavailable:', videoErr);
           trace(`video engine unavailable: ${videoErr instanceof Error ? videoErr.message : videoErr}`);
         }
-        reconciler = attachReconciler(e);
+        reconciler = attachReconciler(e, {
+          // A camera can already be streaming before an async factory is ready.
+          // Offer its element on readiness even after the startup retry expires.
+          onReconciled: () => nodeCameraSource.sync(snapshot.nodes, e, () => {
+            if (provider) return provider;
+            const g = globalThis as unknown as { __provider?: HocuspocusProvider | null };
+            return g.__provider ?? null;
+          }),
+        });
         engine = e;
         setActiveEngine(e); // expose to non-context consumers (Electra bar button)
         trace(`engine + reconciler attached (sr=${audioCtx.sampleRate}, latency=${chosenLatencyMode})`);

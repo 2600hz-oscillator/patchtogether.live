@@ -38,8 +38,8 @@
 // That effect moves here as a `sync`-time comparison, and the SKIP-FIRST rule
 // moves with it verbatim. `enabled` defaults to 1, so acting on the first
 // observation would fire getUserMedia for every camera node the moment it
-// appears, with none of the mount guards above. The first `sync` RECORDS the
-// value; every later one acts on a CHANGE.
+// appears, with none of the mount guards above. Controller creation RECORDS
+// the value; every later sync acts on a CHANGE.
 //
 // ── 3. THE AWARENESS BADGE NOW TRACKS THE STREAM, NOT A MOUNT ───────────────
 //
@@ -219,12 +219,15 @@ interface Controller<E> {
   status: CameraSourceStatus;
   retry: unknown | null;
   offEnded: (() => void) | null;
-  /** Last `enabled` this controller ACTED on. `null` until the first sync — the
-   *  SKIP-FIRST rule (header note 2). */
-  actedEnabled: boolean | null;
+  /** Initial value is recorded without acting; later changes control capture. */
+  actedEnabled: boolean;
   /** Has the mount-time acquire decision been made for this node yet? */
   bootstrapped: boolean;
   disposed: boolean;
+  /** Invalidates outstanding acquisition / bootstrap work on stop or repick. */
+  generation: number;
+  acquiring: boolean;
+  reacquirePending: boolean;
   dispose(): void;
 }
 
@@ -311,6 +314,9 @@ export function createNodeCameraSourceRegistry<E>(
    * revoked, or the node is leaving. A content event; never a view teardown.
    */
   function stopStream(c: Controller<E>): void {
+    c.generation++;
+    c.reacquirePending = false;
+    stopAttachRetry(c);
     const nodeId = c.node.id;
     c.offEnded?.();
     c.offEnded = null;
@@ -337,87 +343,112 @@ export function createNodeCameraSourceRegistry<E>(
    * because "in use" alone sends people hunting for an app that may not exist.
    */
   async function acquire(c: Controller<E>): Promise<void> {
+    if (c.acquiring) {
+      queueReplacement(c);
+      publish(c, { state: 'requesting', errorMsg: null });
+      return;
+    }
     const nodeId = c.node.id;
     if (!deps.capture.supported()) {
       publish(c, { state: 'unsupported', errorMsg: 'Browser does not support getUserMedia' });
       return;
     }
-    publish(c, { state: 'requesting', errorMsg: null });
-    stopStream(c);
+    c.acquiring = true;
+    try {
+      publish(c, { state: 'requesting', errorMsg: null });
+      stopStream(c);
+      const generation = c.generation;
 
-    const target = c.status.selectedDeviceId;
-    const result = await deps.capture.acquire(target ?? null);
-    if (c.disposed) {
-      result.stream?.getTracks().forEach((t) => t.stop());
-      return;
-    }
-    if (!result.stream) {
-      const e = result.error;
-      if (!e) {
-        publish(c, { state: 'error', errorMsg: 'Camera acquisition failed.' });
+      const target = c.status.selectedDeviceId;
+      const result = await deps.capture.acquire(target ?? null);
+      if (c.disposed || generation !== c.generation) {
+        result.stream?.getTracks().forEach((t) => t.stop());
         return;
       }
-      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-        publish(c, {
-          state: 'permission-denied',
-          errorMsg: 'Camera permission blocked. Grant in browser site settings.',
-        });
-      } else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
-        publish(c, {
-          state: 'no-cameras-found',
-          errorMsg: 'No camera matches the selected constraints.',
-        });
-      } else if (e.name === 'NotReadableError') {
-        publish(c, {
-          state: 'device-in-use',
-          errorMsg:
-            'Camera is busy or failed to start. Close other capture apps ' +
-            '(OBS, Desktop Video Setup), and check the device has a live input signal.',
-        });
-      } else {
-        publish(c, { state: 'error', errorMsg: `${e.name}: ${e.message}` });
+      if (!result.stream) {
+        const e = result.error;
+        if (!e) {
+          publish(c, { state: 'error', errorMsg: 'Camera acquisition failed.' });
+          return;
+        }
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          publish(c, {
+            state: 'permission-denied',
+            errorMsg: 'Camera permission blocked. Grant in browser site settings.',
+          });
+        } else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
+          publish(c, {
+            state: 'no-cameras-found',
+            errorMsg: 'No camera matches the selected constraints.',
+          });
+        } else if (e.name === 'NotReadableError') {
+          publish(c, {
+            state: 'device-in-use',
+            errorMsg:
+              'Camera is busy or failed to start. Close other capture apps ' +
+              '(OBS, Desktop Video Setup), and check the device has a live input signal.',
+          });
+        } else {
+          publish(c, { state: 'error', errorMsg: `${e.name}: ${e.message}` });
+        }
+        return;
       }
-      return;
-    }
 
-    const stream = result.stream;
-    deps.media.setStream(nodeId, CAMERA_SOURCE_SLOT, stream);
-    // Permission granted — re-enumerate to pick up the real device labels.
-    await refreshDevices(c);
-    if (c.disposed) return;
+      const stream = result.stream;
+      deps.media.setStream(nodeId, CAMERA_SOURCE_SLOT, stream);
+      // Permission granted — re-enumerate to pick up the real device labels.
+      await refreshDevices(c);
+      if (c.disposed || generation !== c.generation) return;
 
-    deps.el.setStream(c.el, stream);
-    deps.el.play(c.el);
-    try {
-      deps.engine?.attach(nodeId, c.el);
-    } catch {
-      /* the retry keeps offering */
-    }
+      deps.el.setStream(c.el, stream);
+      deps.el.play(c.el);
+      startAttachRetry(c);
+      try {
+        deps.engine?.attach(nodeId, c.el);
+      } catch {
+        /* the retry keeps offering */
+      }
 
-    // Record which camera the browser actually gave us.
-    const realId = deps.capture.chosenDeviceId(stream);
-    if (realId && realId !== c.status.selectedDeviceId) {
-      saveDevice(c, realId);
-    } else if (c.status.selectedDeviceId) {
-      saveDevice(c, c.status.selectedDeviceId);
-    }
+      // Record which camera the browser actually gave us.
+      const realId = deps.capture.chosenDeviceId(stream);
+      if (realId && realId !== c.status.selectedDeviceId) {
+        saveDevice(c, realId);
+      } else if (c.status.selectedDeviceId) {
+        saveDevice(c, c.status.selectedDeviceId);
+      }
 
-    c.offEnded = deps.capture.onEnded(stream, () => {
-      if (c.disposed) return;
-      if (c.status.state !== 'streaming') return;
-      stopStream(c);
-      publish(c, {
-        state: 'error',
-        errorMsg: 'Camera stream ended (disconnected or revoked).',
+      c.offEnded = deps.capture.onEnded(stream, () => {
+        if (c.disposed) return;
+        if (c.status.state !== 'streaming') return;
+        stopStream(c);
+        publish(c, {
+          state: 'error',
+          errorMsg: 'Camera stream ended (disconnected or revoked).',
+        });
       });
-    });
 
-    publish(c, {
-      state: 'streaming',
-      errorMsg: null,
-      attached: deps.engine?.hasElement(nodeId) ?? false,
-    });
-    deps.presence.add(nodeId);
+      publish(c, {
+        state: 'streaming',
+        errorMsg: null,
+        attached: deps.engine?.hasElement(nodeId) ?? false,
+      });
+      deps.presence.add(nodeId);
+    } finally {
+      c.acquiring = false;
+      // getUserMedia cannot be aborted. Wait for the superseded request to
+      // settle and release its result before asking the driver for the new pick.
+      if (c.reacquirePending && !c.disposed) {
+        c.reacquirePending = false;
+        publish(c, { state: 'idle', errorMsg: null });
+        void acquire(c);
+      }
+    }
+  }
+
+  function queueReplacement(c: Controller<E>): void {
+    if (!c.acquiring) return;
+    stopStream(c);
+    c.reacquirePending = true;
   }
 
   function pick(c: Controller<E>, deviceId: string): void {
@@ -425,7 +456,10 @@ export function createNodeCameraSourceRegistry<E>(
     // A pick ANSWERS any "I reconnected this by name" notice, so it must not
     // linger over a choice the player has now made explicitly.
     publish(c, { rebindNotice: null });
-    if (shouldReacquireOnPick(c.status.state)) void acquire(c);
+    if (deps.doc.enabled(c.node.id)) {
+      queueReplacement(c);
+      if (shouldReacquireOnPick(c.status.state)) void acquire(c);
+    }
   }
 
   /**
@@ -443,8 +477,9 @@ export function createNodeCameraSourceRegistry<E>(
    * `no-cameras-found` having never called getUserMedia at all.
    */
   async function bootstrap(c: Controller<E>): Promise<void> {
+    const generation = c.generation;
     const hasLabels = await refreshDevices(c);
-    if (c.disposed) return;
+    if (c.disposed || generation !== c.generation) return;
     if (c.status.devices.length === 0) {
       publish(c, { state: 'no-cameras-found', errorMsg: 'No cameras detected.' });
       return;
@@ -514,9 +549,12 @@ export function createNodeCameraSourceRegistry<E>(
       },
       retry: null,
       offEnded: null,
-      actedEnabled: null,
+      actedEnabled: deps.doc.enabled(node.id),
       bootstrapped: false,
       disposed: false,
+      generation: 0,
+      acquiring: false,
+      reacquirePending: false,
       dispose(): void {
         c.disposed = true;
         stopAttachRetry(c);
@@ -569,43 +607,39 @@ export function createNodeCameraSourceRegistry<E>(
         }
         existing.node = n;
 
-        // ── THE `enabled` PARAM OWNS THE HARDWARE (header note 2) ───────────
-        //
-        // ⚠ SKIP-FIRST. `enabled` defaults to 1, so acting on the first
-        // observation would fire getUserMedia for every camera node the moment
-        // it appears, bypassing every guard in `bootstrap`. The first sync
-        // RECORDS; later syncs act on a CHANGE.
         const on = deps.doc.enabled(n.id);
-        if (existing.actedEnabled === null) {
-          existing.actedEnabled = on;
-        } else if (on !== existing.actedEnabled) {
-          existing.actedEnabled = on;
-          if (!on) {
-            // Pause means the hardware is FREED, not that a shader branch
-            // changed — the param's own docs say so, and honouring it here is
-            // what makes a collaborator's toggle and the faceplate's ON cell
-            // behave like the card's button always did.
+        const saved = deps.doc.savedDeviceId(n.id);
+        const bindingChanged = saved !== existing.status.selectedDeviceId;
+        const enabledChanged = on !== existing.actedEnabled;
+        existing.actedEnabled = on;
+
+        // Reserved slots survive unbind. Stop the capture explicitly, including
+        // an in-flight request, because the graph/media sweep cannot remove it.
+        if (isDeviceSlotId(n.id) && saved === null) {
+          if (bindingChanged) {
             stopStream(existing);
-            publish(existing, { state: 'paused', errorMsg: null });
-          } else if (shouldReacquireOnPick(existing.status.state)) {
-            void acquire(existing);
+            publish(existing, { state: 'idle', selectedDeviceId: null, errorMsg: null, rebindNotice: null });
           }
+          continue;
+        }
+        if (bindingChanged && saved) {
+          publish(existing, { selectedDeviceId: saved, rebindNotice: null });
+          if (on) queueReplacement(existing);
+        }
+        if (!on && (enabledChanged || bindingChanged)) {
+          stopStream(existing);
+          publish(existing, { state: 'paused', errorMsg: null });
+        } else if (on && (enabledChanged || (bindingChanged && saved))) {
+          if (shouldReacquireOnPick(existing.status.state)) void acquire(existing);
         }
 
-        // ── AN EXTERNAL DEVICE PICK ─────────────────────────────────────────
-        //
-        // ⚠ THE CARD HYDRATED THIS ONCE ON MOUNT AND NEVER LOOKED AGAIN, so a
-        // device chosen anywhere other than that card's own `<select>` was saved
-        // and never acted on. The live case is COLLABORATION: `deviceId` is in
-        // Yjs, so a rack-mate's pick already arrived and sat in the document
-        // doing nothing. Running it off the graph snapshot is what makes it
-        // land — and it is guarded three ways so it cannot loop or fight the
-        // user: only on a real difference, only for a non-null id, and only
-        // from a state that would accept a local pick.
-        const saved = deps.doc.savedDeviceId(n.id);
-        if (saved && saved !== existing.status.selectedDeviceId) {
-          publish(existing, { selectedDeviceId: saved });
-          if (shouldReacquireOnPick(existing.status.state)) void acquire(existing);
+        // The engine's async add may finish after the bounded startup retry.
+        // Reconciliation offers the existing stream again; no recapture needed.
+        if (existing.status.state === 'streaming' && engine && !engine.hasElement(n.id)) {
+          try {
+            engine.attach(n.id, existing.el);
+            publish(existing, { attached: engine.hasElement(n.id) });
+          } catch { /* engine still unavailable */ }
         }
       }
       for (const [id, c] of [...controllers]) {

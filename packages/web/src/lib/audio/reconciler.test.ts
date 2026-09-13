@@ -843,3 +843,46 @@ describe('reconciler — a type/domain change at a REUSED node id', () => {
     handle.dispose();
   });
 });
+
+
+describe('source notification follows engine readiness', () => {
+  it.each([false, true])('waits for the async factory and respects disposal (%s)', async (disposeBeforeReady) => {
+    const { patch, ydoc } = freshPatch();
+    patch.nodes['a'] = n('a');
+    const bus = createSnapshotBus({ patch: patch as never, ydoc });
+    const { pe, rec } = makePatchEngine();
+    let start!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => { start = resolve; });
+    const ready = new Promise<void>((resolve) => { release = resolve; });
+    let materialized = false;
+    rec.addNode = async () => {
+      start();
+      await ready;
+      materialized = true;
+    };
+    const notifications: boolean[] = [];
+    const handle = attachReconciler(pe, {
+      bus,
+      onReconciled: () => { notifications.push(materialized); },
+    });
+    try {
+      await started;
+      expect(notifications).toEqual([]);
+      if (disposeBeforeReady) handle.dispose();
+      release();
+      await handle.reconcile();
+      expect(materialized).toBe(true);
+      if (disposeBeforeReady) expect(notifications).toEqual([]);
+      else {
+        expect(notifications.length).toBeGreaterThan(0);
+        expect(notifications.every(Boolean)).toBe(true);
+      }
+    } finally {
+      release();
+      handle.dispose();
+      bus.dispose();
+      ydoc.destroy();
+    }
+  });
+});

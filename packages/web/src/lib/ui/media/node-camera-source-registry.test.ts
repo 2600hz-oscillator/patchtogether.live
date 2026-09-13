@@ -784,3 +784,125 @@ describe('the slot is the one the surfaces adopt', () => {
     expect(CAMERA_SOURCE_SLOT).toBe('main');
   });
 });
+
+
+describe('reserved camera binding lifecycle', () => {
+  it('unbind releases the live track, engine attachment and presence without deleting the slot', async () => {
+    const h = makeHarness();
+    h.setDevices([CAM_A]);
+    h.savedId.set('slot:cam1', CAM_A.deviceId);
+    const capture = makeStream(CAM_A.deviceId);
+    h.setResult({ stream: capture.stream, error: null });
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    expect(capture.track.live).toBe(true);
+    expect(r.view('slot:cam1').state).toBe('streaming');
+
+    h.savedId.set('slot:cam1', null);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    expect(r.has('slot:cam1')).toBe(true);
+    expect(capture.track.live).toBe(false);
+    expect(h.attached.has('slot:cam1')).toBe(false);
+    expect(h.presence.has('slot:cam1')).toBe(false);
+    expect(r.view('slot:cam1')).toMatchObject({ state: 'idle', selectedDeviceId: null });
+    h.clock.tick(RETRY_INTERVAL_MS, RETRY_ATTEMPTS + 1);
+    expect(h.attached.has('slot:cam1')).toBe(false);
+  });
+
+  it.each([false, true])('unbind rejects the late stream and any queued pick (queued: %s)', async (queued) => {
+    const h = makeHarness();
+    h.setDevices([CAM_A]);
+    h.savedId.set('slot:cam1', CAM_A.deviceId);
+    const capture = makeStream(CAM_A.deviceId);
+    let finish!: (result: Awaited<ReturnType<typeof h.deps.capture.acquire>>) => void;
+    let calls = 0;
+    h.deps.capture.acquire = () => {
+      calls++;
+      return new Promise((resolve) => { finish = resolve; });
+    };
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    expect(r.view('slot:cam1').state).toBe('requesting');
+    if (queued) r.request('slot:cam1', { kind: 'pick', deviceId: CAM_B.deviceId });
+    h.savedId.set('slot:cam1', null);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    finish({ stream: capture.stream, error: null, usedBareRetry: false });
+    await h.settle();
+    expect(capture.track.live).toBe(false);
+    expect(h.savedId.get('slot:cam1')).toBeNull();
+    expect(r.view('slot:cam1').state).toBe('idle');
+    expect(calls, 'unbind also cancels a queued replacement').toBe(1);
+  });
+
+  it('reconciled engine readiness attaches an existing stream after the retry budget expired', async () => {
+    const h = makeHarness();
+    h.setDevices([CAM_A]);
+    h.savedId.set('slot:cam1', CAM_A.deviceId);
+    h.setResult({ stream: makeStream(CAM_A.deviceId).stream, error: null });
+    h.setEngineMaterialized(false);
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    h.clock.tick(RETRY_INTERVAL_MS, RETRY_ATTEMPTS + 1);
+    expect(h.clock.live()).toBe(0);
+    expect(h.attached.has('slot:cam1')).toBe(false);
+    const acquisitions = h.acquireCalls();
+    h.setEngineMaterialized(true);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    expect(h.attached.has('slot:cam1')).toBe(true);
+    expect(r.view('slot:cam1').attached).toBe(true);
+    expect(h.acquireCalls()).toBe(acquisitions);
+  });
+});
+
+
+describe('camera acquisition cancellation', () => {
+  it.each(['local', 'external'])('a newer %s pick waits for the superseded request and wins', async (source) => {
+    const h = makeHarness();
+    h.setDevices([CAM_A, CAM_B]);
+    h.savedId.set('slot:cam1', CAM_A.deviceId);
+    const pending = new Map<string | null, (result: Awaited<ReturnType<typeof h.deps.capture.acquire>>) => void>();
+    h.deps.capture.acquire = (id) => new Promise((resolve) => { pending.set(id, resolve); });
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    if (source === 'local') r.request('slot:cam1', { kind: 'pick', deviceId: CAM_B.deviceId });
+    else {
+      h.savedId.set('slot:cam1', CAM_B.deviceId);
+      r.sync([node('slot:cam1')], h.deps.engine);
+    }
+    expect([...pending.keys()], 'never overlap driver requests').toEqual([CAM_A.deviceId]);
+    const older = makeStream(CAM_A.deviceId);
+    pending.get(CAM_A.deviceId)!({ stream: older.stream, error: null, usedBareRetry: false });
+    await h.settle();
+    expect(older.track.live).toBe(false);
+    expect([...pending.keys()]).toEqual([CAM_A.deviceId, CAM_B.deviceId]);
+    const newer = makeStream(CAM_B.deviceId);
+    pending.get(CAM_B.deviceId)!({ stream: newer.stream, error: null, usedBareRetry: false });
+    await h.settle();
+    expect(newer.track.live).toBe(true);
+    expect(h.streams.get('slot:cam1')).toBe(newer.stream);
+    expect(h.savedId.get('slot:cam1')).toBe(CAM_B.deviceId);
+  });
+
+  it('a paused slot records a new binding without acquiring until enabled', async () => {
+    const h = makeHarness();
+    h.setDevices([CAM_A, CAM_B]);
+    h.enabled.set('slot:cam1', false);
+    const r = build(h);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    h.savedId.set('slot:cam1', CAM_B.deviceId);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    expect(h.acquireCalls()).toBe(0);
+    expect(r.view('slot:cam1').selectedDeviceId).toBe(CAM_B.deviceId);
+    h.setResult({ stream: makeStream(CAM_B.deviceId).stream, error: null });
+    h.enabled.set('slot:cam1', true);
+    r.sync([node('slot:cam1')], h.deps.engine);
+    await h.settle();
+    expect(h.acquireTargets()).toEqual([CAM_B.deviceId]);
+    expect(r.view('slot:cam1').state).toBe('streaming');
+  });
+});

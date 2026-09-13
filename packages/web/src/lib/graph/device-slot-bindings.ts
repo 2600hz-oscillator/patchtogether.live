@@ -36,6 +36,7 @@
 
 import type { ScreenDescriptor } from '$lib/ui/modules/screen-identity';
 import {
+  DEVICE_SLOTS,
   CAMERA_SLOT_NAMES,
   OUTPUT_SLOT_NAMES,
   type CameraSlotName,
@@ -106,6 +107,14 @@ export interface RigBindings {
   launchpad?: LaunchpadBinding;
   ptz?: PtzBinding;
   gamepad?: GamepadBinding;
+}
+
+/** Engine liveness follows local hardware bindings, never stale node.data. */
+export function boundDeviceSlotIds(bindings: RigBindings): Set<string> {
+  return new Set(DEVICE_SLOTS.filter((spec) => spec.kind === 'camera'
+    ? bindings.cameras[spec.slot as CameraSlotName] != null
+    : bindings.outputs[spec.slot as OutputSlotName] != null,
+  ).map((spec) => spec.id));
 }
 
 /** A fresh, fully-unbound rig. */
