@@ -25,32 +25,44 @@ export interface DisplayLike {
   bounds: Rect;
   /** Bounds minus dock/menubar — where a window can actually sit. */
   workArea?: Rect;
+  label?: string;
+  scaleFactor?: number;
+  detected?: boolean;
 }
 
 // ── Display math ────────────────────────────────────────────────────────────
 
-/** The display the popup must land on: the first display that is NOT the
- *  primary. Null when the machine has no second display — the caller decides
- *  whether that is a refusal (real mode) or a degrade (dry-run). */
-export function pickTargetDisplay(all: readonly DisplayLike[], primaryId: number): DisplayLike | null {
-  return all.find((d) => d.id !== primaryId) ?? null;
+/** Reject mirrored/overlapping desktop rectangles and known invalid/virtual IDs.
+ * Electron can still describe remote displays: the operator confirms physical output. */
+export function pickTargetDisplay(
+  all: readonly DisplayLike[], primaryId: number, requestedId?: number,
+): DisplayLike | null {
+  const primary = all.find((d) => d.id === primaryId);
+  if (!primary || !validRect(primary.bounds)) return null;
+  return all.find((d) => d.id !== primaryId && d.id !== -1 && d.id !== -10
+    && d.detected !== false && validRect(d.bounds)
+    && (requestedId === undefined || d.id === requestedId)
+    && intersectionArea(primary.bounds, d.bounds) === 0) ?? null;
 }
 
-/** Popup bounds: centered in the target display's work area (falling back to
- *  raw bounds), at 60% of each dimension with a floor — big enough that a
- *  mis-placed window visibly straddles displays instead of hiding in a
- *  corner, small enough that the titlebar stays reachable if placement is
- *  wrong and a human has to drag it. */
+function validRect(r: Rect): boolean {
+  return [r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0;
+}
+
+/** Stay inside the work area even on small displays. */
 export function popupBoundsOn(display: DisplayLike): Rect {
-  const area = display.workArea ?? display.bounds;
-  const width = Math.max(320, Math.round(area.width * 0.6));
-  const height = Math.max(240, Math.round(area.height * 0.6));
-  return {
-    x: area.x + Math.round((area.width - width) / 2),
-    y: area.y + Math.round((area.height - height) / 2),
-    width,
-    height,
-  };
+  const area = display.workArea && validRect(display.workArea) ? display.workArea : display.bounds;
+  if (!validRect(area)) throw new Error('Display has no usable bounds');
+  const width = Math.min(area.width, Math.max(320, Math.round(area.width * 0.6)));
+  const height = Math.min(area.height, Math.max(240, Math.round(area.height * 0.6)));
+  return { x: area.x + Math.round((area.width - width) / 2),
+    y: area.y + Math.round((area.height - height) / 2), width, height };
+}
+
+/** A majority match alone can accept a mostly off-screen window. */
+export function isOnDisplay(rect: Rect, display: DisplayLike): boolean {
+  return validRect(rect) && validRect(display.bounds)
+    && intersectionArea(rect, display.bounds) / (rect.width * rect.height) >= 0.99;
 }
 
 /** window.open features for those bounds — the same `popup,left/top/width/
@@ -83,12 +95,8 @@ export function displayContaining(all: readonly DisplayLike[], rect: Rect): Disp
   return best;
 }
 
-// ── The pattern contract ────────────────────────────────────────────────────
-// One definition shared by the opener-side draw and the popup-side readback,
-// so the two halves cannot drift apart and silently pass. The background is
-// MAGENTA — a color no black screen, no cleared canvas, and no letterboxed
-// bar ever emits, which is what makes step 4 the captureStream-went-black
-// test for the real path.
+// Shared draw/readback coordinates. These prove canvas content; page capture
+// and operator confirmation separately cover composition and physical output.
 
 export const PATTERN = {
   /** Full-canvas fill. */
@@ -113,28 +121,49 @@ export function counterColor(frame: number): [number, number, number] {
 
 export type Rgba = readonly number[]; // [r, g, b, a] from getImageData().data
 
-export function isNonBlack(px: Rgba, minChannel = 24): boolean {
-  return (px[0] ?? 0) >= minChannel || (px[1] ?? 0) >= minChannel || (px[2] ?? 0) >= minChannel;
-}
-
 /** RGB within tolerance of an expected color (alpha ignored — the sink canvas
  *  is alpha:false). Tolerance absorbs color-management rounding, nothing more:
  *  a black pixel is ~255 away from magenta on two channels. */
 export function approxColor(px: Rgba, expected: readonly number[], tolerance = 24): boolean {
+  if (px.length < 3 || expected.length < 3 || !Number.isFinite(tolerance) || tolerance < 0) return false;
   for (let i = 0; i < 3; i++) {
-    if (Math.abs((px[i] ?? 0) - (expected[i] ?? 0)) > tolerance) return false;
+    if (!Number.isFinite(px[i]) || !Number.isFinite(expected[i]) || Math.abs(px[i]! - expected[i]!) > tolerance) return false;
   }
   return true;
 }
 
-/** Two point samples of the counter square differ enough to prove the frame
- *  counter moved. minDelta stays small (the counter walks 1/frame) but above
- *  any conceivable readback jitter on an alpha:false 2D canvas. */
-export function pixelsDiffer(a: Rgba, b: Rgba, minDelta = 3): boolean {
-  for (let i = 0; i < 3; i++) {
-    if (Math.abs((a[i] ?? 0) - (b[i] ?? 0)) >= minDelta) return true;
+export interface PixelSample {
+  counter: number[];
+  background: number[];
+  painted: number;
+  w: number;
+  h: number;
+}
+
+/** Each count and pixel sample is read together in the popup renderer. */
+export function validSample(sample: PixelSample): boolean {
+  return Number.isSafeInteger(sample.painted) && sample.painted >= 1
+    && sample.w > PATTERN.backgroundProbe.x && sample.h > PATTERN.backgroundProbe.y
+    && approxColor(sample.background, PATTERN.background)
+    && approxColor(sample.counter, counterColor(sample.painted), 0);
+}
+
+export function motionAdvanced(samples: readonly PixelSample[]): boolean {
+  if (samples.length < 2 || !samples.every(validSample)) return false;
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i]!.painted < samples[i - 1]!.painted) return false;
   }
-  return false;
+  return samples[samples.length - 1]!.painted - samples[0]!.painted >= 3;
+}
+
+/** The page-capture counter must advance as an encoded frame, not change to
+ * an unrelated color. The observation is far shorter than half the 16-bit cycle. */
+export function compositeAdvanced(a: readonly number[], b: readonly number[]): boolean {
+  const valid = (px: readonly number[]) => px.length >= 3 && px.slice(0, 3).every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
+    && Math.abs(px[2]! - 128) <= 1;
+  if (!valid(a) || !valid(b)) return false;
+  const delta = (b[0]! + 256 * b[1]! - a[0]! - 256 * a[1]! + 65536) % 65536;
+  return delta >= 3 && delta < 32768;
 }
 
 // ── Verdict shaping ─────────────────────────────────────────────────────────
@@ -144,9 +173,11 @@ export type StepId =
   | 'placement' // 2. popup landed on the SECOND display
   | 'domAccess' // 3. opener reached the popup's DOM + canvas context
   | 'blitPixels' // 4. opener-driven blit read back NON-BLACK, correct color, in the popup
-  | 'motion'; // 5. the pattern advances — two samples differ
+  | 'motion' // advancing counts match the sampled pixels
+  | 'composited' // visible page capture agrees with the canvas
+  | 'operator'; // physical display and visible motion confirmed by the owner
 
-export const STEP_ORDER: readonly StepId[] = ['displays', 'placement', 'domAccess', 'blitPixels', 'motion'];
+export const STEP_ORDER: readonly StepId[] = ['displays', 'placement', 'domAccess', 'blitPixels', 'motion', 'composited', 'operator'];
 
 export type StepStatus =
   | 'PASS'
@@ -174,23 +205,25 @@ export const HARDWARE_REFUSAL =
   '(or `task desktop:spike -- --dry-run` to exercise the wiring on this one).';
 
 /**
- * Fold the five step results into one verdict.
+ * Fold the step results into one verdict.
  *
- * Real mode: all five must PASS — a DRY or NOT-RUN step is a failure, so a
+ * Real mode: all steps must PASS — a DRY or NOT-RUN step is a failure, so a
  * single-display run can never masquerade as the spike result.
  *
- * Dry-run: `displays`/`placement` may be DRY (there is no second display to
- * land on), but the wiring steps — domAccess, blitPixels, motion — must
+ * Dry-run: `displays`/`placement`/`operator` may be DRY (there is no second display to
+ * land on), but the wiring steps — domAccess, blitPixels, motion, composited — must
  * actually PASS for the dry-run to be green. Exit 0 then means "the harness
  * itself works"; it explicitly does NOT unblock P4.
  */
-export function verdict(steps: readonly StepResult[], opts: { dryRun: boolean }): SpikeVerdict {
+export function verdict(steps: readonly StepResult[], opts: { dryRun: boolean; error?: string }): SpikeVerdict {
   const byId = new Map(steps.map((s) => [s.id, s]));
   const lines: string[] = [];
-  let ok = true;
+  let ok = !opts.error && byId.size === steps.length;
+  if (opts.error) lines.push(`HARNESS ERROR: ${opts.error}`);
+  if (byId.size !== steps.length) lines.push('INVALID RESULT: duplicate step IDs');
   for (const id of STEP_ORDER) {
     const step = byId.get(id) ?? { id, status: 'NOT-RUN' as const, detail: 'never reached' };
-    const acceptable = step.status === 'PASS' || (opts.dryRun && step.status === 'DRY' && (id === 'displays' || id === 'placement'));
+    const acceptable = step.status === 'PASS' || (opts.dryRun && step.status === 'DRY' && (id === 'displays' || id === 'placement' || id === 'operator'));
     if (!acceptable) ok = false;
     lines.push(`${step.status.padEnd(7)} ${id.padEnd(10)} ${step.detail}`);
   }
@@ -203,8 +236,8 @@ export function verdict(steps: readonly StepResult[], opts: { dryRun: boolean })
   } else {
     lines.push(
       ok
-        ? 'SPIKE PASS — opener→popup DOM access AND the cross-display blit hold on this hardware. P4 may proceed on the window.open + setWindowOpenHandler architecture.'
-        : 'SPIKE FAIL — if domAccess, blitPixels, or motion failed on real dual-monitor hardware, the P4 premise is dead: re-plan output windows (main-process BrowserWindows + a push transport) BEFORE any window-manager code. A placement-only failure is survivable — P4’s display map positions from MAIN anyway — but record it.',
+        ? 'SPIKE PASS — automated checks passed and the operator confirmed visible motion on the target physical display. P4 may proceed on the window.open + setWindowOpenHandler architecture.'
+        : 'SPIKE FAIL — inspect the failed steps and saved evidence before P4. Canvas readback and page capture alone cannot establish physical output; a confirmed cross-display failure requires reviewing the output architecture.',
     );
   }
   return { ok, exitCode: ok ? 0 : 1, lines };

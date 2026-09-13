@@ -1615,6 +1615,8 @@ tasks:
       apps/desktop/spike-results/. Read apps/desktop/SPIKE-OPENER-DISPLAY.md
       for what each result means. Needs desktop:install + desktop:build:web
       once first. Wiring check on any machine: task desktop:spike -- --dry-run
+      Target selection: -- --display-id=<printed ID>. Saves JSON + page PNGs;
+      real mode asks the owner to confirm visible physical output.
       Optional row-1 observation: task desktop:spike -- --crash-probe
       NOT a test lane and NOT wired to CI (owner ruling: no new gates) — the
       unit-test leg below just proves the harness's own pure logic first.
@@ -1622,3 +1624,10 @@ tasks:
     cmds:
       - npm run spike:unit
       - npm run spike -- {{.CLI_ARGS}}
+
+  desktop:spike:check:
+    desc: "Verify the display spike with real Electron failure controls (REPEAT=3 for repetition)."
+    dir: apps/desktop
+    cmds:
+      - npm run spike:unit
+      - npm run spike:self-test

@@ -54,11 +54,13 @@ with two physical displays connected and mirroring off:
 flox activate -- task desktop:spike
 ```
 
-The [spike guide](../apps/desktop/SPIKE-OPENER-DISPLAY.md) explains the five
-checks and where to record the hardware verdict. `task desktop:spike -- --dry-run`
+The [spike guide](../apps/desktop/SPIKE-OPENER-DISPLAY.md) explains the automatic
+checks, the required physical-output confirmation, and where to record the verdict. `task desktop:spike -- --dry-run`
 checks the harness wiring on one display; that result does not validate
 cross-display output. The optional `--crash-probe` records the popup's fate after
-an opener renderer crash. Hardware validation remains a manual review step.
+an opener renderer crash. Use `--display-id=<printed ID>` to select a target. `task desktop:spike:check`
+verifies the instrument with real Electron failure controls; `REPEAT=3` repeats
+those cases. Hardware validation remains a manual review step.
 
 ## Native helpers
 

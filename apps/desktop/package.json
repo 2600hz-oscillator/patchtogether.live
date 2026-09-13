@@ -2,7 +2,7 @@
   "name": "@patchtogether/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "patchtogether native shell — Electron main + preload + loopback static server. STANDALONE package (own lockfile, NOT in the root workspaces) so web CI installs and the shared root lockfile stay untouched; revisit if the program later needs shared deps.",
+  "description": "patchtogether native shell \u2014 Electron main + preload + loopback static server. STANDALONE package (own lockfile, NOT in the root workspaces) so web CI installs and the shared root lockfile stay untouched; revisit if the program later needs shared deps.",
   "license": "AGPL-3.0-or-later",
   "main": "dist/main.js",
   "scripts": {
@@ -12,7 +12,8 @@
     "e2e": "npm run build && playwright test",
     "spike": "npm run build && electron dist/spike/opener-display-spike.js",
     "spike:unit": "npm run build && node --test dist/spike/opener-display-logic.test.js",
-    "dist": "npm run build && electron-builder --mac"
+    "dist": "npm run build && electron-builder --mac",
+    "spike:self-test": "npm run build && node dist/spike/opener-display-self-test.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
@@ -40,7 +41,7 @@
     "mac": {
       "category": "public.app-category.music",
       "extendInfo": {
-        "NSCameraUsageDescription": "patchtogether uses cameras as live video sources for the cam1–cam4 modules.",
+        "NSCameraUsageDescription": "patchtogether uses cameras as live video sources for the cam1\u2013cam4 modules.",
         "NSMicrophoneUsageDescription": "patchtogether uses audio inputs (microphones and audio interfaces) as live signal sources.",
         "NSAudioCaptureUsageDescription": "patchtogether captures system/loopback audio for recording and monitoring workflows."
       }

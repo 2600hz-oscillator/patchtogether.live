@@ -1,111 +1,115 @@
-# SPIKE — opener→popup DOM access + cross-display blit (the P4 gate)
+# Opener→popup display spike — hardware review before P4
 
-**Status: awaiting one run on the owner's dual-monitor rig.** This is the
-"spike result recorded" that the [active plan](../../evidence/active/2026-09-04-native-shell-plan/plan.md)
-§1.2 ("main ↔ output windows" — the HIGHEST-RISK display assumption) and the
-P2/P4 phase table require before any P4 window-manager code.
+**Status: awaiting the owner's two-monitor review.** This harness tests the
+output-window premise in the [active native-shell plan](../../evidence/active/2026-09-04-native-shell-plan/plan.md).
+It uses the shipped loopback server, security policy, preload and `/present`
+sink. The opener installs the drawing callback; the sink's own animation frames
+call it. Helpers and the native menu/command bridge are outside this experiment.
 
-## The question
+The [earlier P2 probe](../../evidence/archive/2026/2026-09-04-native-shell-plan/p2-notes.md)
+established single-display DOM access. Its archived record is unchanged.
 
-P4's whole output design is: the MAIN window's renderer `window.open`s a
-same-origin `/present` popup onto a SECOND physical display (through
-`security.ts`'s `setWindowOpenHandler`), keeps opener→popup DOM access, and
-the popup's own rAF pulls an opener-realm blit closure into the popup's canvas
-(#2235 — the sink owns the clock). The fallback design (`captureStream`)
-rendered **BLACK on real dual-monitor hardware**, and the 2026-09-03 hour-one
-probe ([archived P2 notes](../../evidence/archive/2026/2026-09-04-native-shell-plan/p2-notes.md)) validated opener DOM access on **one** display only — so
-the cross-display half of the assumption has never been tested. This harness
-tests it, end to end, on the shell's real wiring: `server.ts` (loopback +
-COOP/COEP), `security.ts` (the shipped window-open/permission policy),
-`HARDENED_WEB_PREFERENCES` + the built preload, and the real `/present` sink
-page from the web bundle. No product code is modified.
-
-## Run it (owner, dual-monitor rig)
+## Run on the hardware
 
 ```sh
-# once per checkout:
 flox activate -- task desktop:install
 flox activate -- task desktop:build:web
-
-# the spike (two physical displays connected, mirroring OFF):
 flox activate -- task desktop:spike
 ```
 
-Two windows appear for ~15 s: the rack on the primary display, a magenta
-`/present` popup with a small flickering counter square on display 2. The
-verdict prints to stdout and a JSON record lands in
-`apps/desktop/spike-results/` (gitignored — paste the verdict below).
-
-Optional extras:
+Connect two physical displays and disable mirroring. The harness prints display
+IDs, labels, bounds and scale factors, and chooses the first eligible extended
+display. To choose a particular target from that listing:
 
 ```sh
-flox activate -- task desktop:spike -- --crash-probe   # + row-1 observation (see below)
-flox activate -- task desktop:spike -- --dry-run       # wiring check on ANY machine — NOT the spike result
+flox activate -- task desktop:spike -- --display-id=2
 ```
 
-## The five steps and what each result means
+Use the actual printed ID; it is not a one-based display index. Missing, invalid,
+known unified-virtual, mirrored and overlapping targets cannot establish a pass.
+Electron's display list can still include remote or virtual displays, so the
+operator confirms the physical target.
 
-| # | step | PASS means | FAIL means |
-|---|---|---|---|
-| 1 | `displays` | Electron sees ≥2 displays (count + bounds printed) | Not the spike's hardware — connect the second display, disable mirroring, rerun. The harness refuses (exit 1) rather than degrade silently |
-| 2 | `placement` | The renderer-opened popup sits on display 2 (the harness records whether the `window.open` features string alone landed it there, or MAIN had to `setBounds` — both are fine and P4 wants to know which) | Survivable alone: P4's display map positions from MAIN anyway. Record it; steps 3–5 still ran and their answers still count |
-| 3 | `domAccess` | The MAIN window's renderer reached `popup.document`, found the real `[data-testid="present-canvas"]`, got its 2D context, and installed `__presentFrame` opener-realm | **The P4 premise is dead.** Re-plan output windows (main-process `BrowserWindow`s + a push transport, interruption-matrix §2 option (a)) BEFORE any window-manager code |
-| 4 | `blitPixels` | A pixel read back **inside the popup** (`getImageData`, in the popup's own renderer, on display 2) is the magenta the opener blitted — non-black, correct color | **The captureStream failure mode reproduced on the DOM path** — cross-display compositing is eating the blit. Same re-plan as step 3 |
-| 5 | `motion` | Two samples ≥3 sink-pulls apart show the counter square advancing — a live blit, not one frozen frame | A stale-single-frame link: the sink pulled once and stalled. Treat as step 4 failing (a frozen projector is the owner-P0 failure shape) |
+The popup shows magenta, a moving white marker, and an advancing frame number.
+After the automatic checks, a dialog on the main window asks you to confirm that
+these are visible on the target physical monitor. Check the mirroring-off box and
+choose **Confirm visible motion** only after looking at that monitor. Cancel,
+closing the dialog, or leaving the box unchecked fails the operator step. The
+machine watchdog pauses for this human review, so the pattern stays available.
+The harness samples frames and checks placement again after your confirmation.
 
-**PASS on all five → P4 is unblocked on the `window.open` +
-`setWindowOpenHandler` architecture.** FAIL on 3, 4, or 5 on real
-dual-monitor hardware → P4 re-plans first. A dry-run result never unblocks
-anything, and the harness says so itself.
+## What each check establishes
 
-### `--crash-probe` (optional, observation only — never a step)
+| Step | Evidence |
+|---|---|
+| `displays` | An eligible extended target exists. The operator separately confirms physical hardware. |
+| `placement` | The popup is visible, not minimized, and contained on the target after rendering and page captures. Checked again after review. The initial features-string placement and any main-process correction are recorded. |
+| `domAccess` | The opener reached the real sink canvas and installed the same-origin frame callback. |
+| `blitPixels` | Every sampled canvas background is magenta and its encoded counter matches the frame count read in the same popup-renderer turn. |
+| `motion` | A window of real sink frames advances. Blank, corrupt or frozen samples cannot pass by merely differing from the first image. |
+| `composited` | Two saved page captures show magenta and advancing encoded counters, separated by another observed frame window. This catches hidden canvases and a frozen composited image even when the canvas buffer is updating. |
+| `operator` | You saw the moving picture on the target physical display with mirroring off. Required for a real-mode pass. |
 
-Interruption-matrix §2's free add-on: after the five steps, the harness
-force-crashes the OPENER's renderer and records what happens to the popup
-under the shipped bare `{action:'allow'}` (no `outlivesOpener`). On the
-dev machine the popup died with the opener (`render-process-gone: killed`,
-window closed) — consistent with §2's same-renderer-process analysis. The
-owner-hardware record feeds row 1's pending output-window-fate decision; the
-`outlivesOpener:true` variant is a P4-re-plan experiment, deliberately not
-wired here (it would mean overriding the shipped handler).
+Canvas `getImageData()` measures the backing store. Electron's
+[`capturePage()`](https://www.electronjs.org/docs/latest/api/web-contents#contentscapturepagerect-opts)
+measures the web page. Neither establishes what a physical projector or monitor
+actually shows. The operator check covers that remaining gap. Display IDs also
+have [documented virtual/headless limitations](https://www.electronjs.org/docs/latest/api/structures/display).
 
-## Why you can trust the harness on the machine it refuses to run on
+Readiness and sampling run in renderer animation frames. Main-process timeouts
+bound failures; they never supply a passing sample. Fullscreen/DPR geometry
+changes restart the sampling window, and a zero-sample run fails with tick and
+elapsed-time diagnostics.
 
-- The display-bounds math, placement matcher, pixel predicates, pattern
-  contract, and verdict rules are pure (`src/spike/opener-display-logic.ts`)
-  and unit-tested (`npm run spike:unit`, 12 tests, run automatically at the
-  start of `task desktop:spike`). The draw code injected into the opener is
-  generated from the same `counterColor` the readback asserts against, so the
-  two halves cannot drift.
-- The verdict cannot go vacuously green: a missing/NOT-RUN/DRY step fails real
-  mode, and a dry-run still requires steps 3–5 to actually pass.
-- Verified on a single-display dev machine 2026-09-06 (Electron 44.1.1):
-  dry-run green ×3 (domAccess/blitPixels/motion all PASS, magenta
-  `[255,0,255,255]`, counter advancing, exit 0), real mode refuses with the
-  dual-monitor message and exit 1, zero leaked Electron processes.
+All steps must pass in real mode. A failure needs diagnosis from its recorded
+step and images; a confirmed cross-display failure returns the output design to
+review before P4. A dry-run never certifies hardware or unblocks P4.
 
-## Results (filled in by the owner)
+## Records and optional crash observation
 
-```
-date:                 ____________          electron: 44.1.1 (from the JSON record)
-displays (count + bounds line from step 1):
-  __________________________________________________________________
+Each run writes a JSON record and up to two page-capture PNGs in
+`apps/desktop/spike-results/`. Failure to save the record fails the run. The JSON
+contains the actual observations, sampled frames, placement before/after review,
+operator response, and the final exit code. Keep the PNGs with the JSON.
 
-1 displays    PASS / FAIL   detail: ______________________________________
-2 placement   PASS / FAIL   features-string landed on display 2: YES / NO
-                            corrected from MAIN via setBounds:   YES / NO
-3 domAccess   PASS / FAIL   detail: ______________________________________
-4 blitPixels  PASS / FAIL   background pixel readback: [ ___, ___, ___, ___ ]
-                            (expected ≈ [255, 0, 255, 255]; black = the failure)
-5 motion      PASS / FAIL   counter pixel A → B: [ ___,___,___ ] → [ ___,___,___ ]
-                            painted A → B: ____ → ____
-
-crash probe run: YES / NO   popup outcome: ______________________________
-
-VERDICT:  P4 UNBLOCKED on window.open architecture   /   P4 RE-PLANS
-JSON record path: ________________________________________________________
+```sh
+flox activate -- task desktop:spike -- --crash-probe
 ```
 
-Record the verdict here and attach the JSON to the
+After verification, this optional probe crashes the opener renderer and records
+the popup's fate under the shipped window handler. It is an observation for the
+[interruption matrix](../../evidence/active/2026-09-04-native-shell-plan/interruption-matrix.md),
+not an extra architecture verdict or a test of a different window policy.
+
+## Check the instrument without hardware
+
+```sh
+flox activate -- task desktop:spike -- --dry-run
+flox activate -- task desktop:spike:check
+flox activate -- env REPEAT=3 task desktop:spike:check
+```
+
+`spike:check` runs the pure unit tests and the actual Electron harness against the
+built sink. A healthy run must pass. Hidden output, a frozen composited image,
+a later blank frame, frozen drawing, zero samples and an unwritable result
+directory must fail. It also proves fault injection is refused in real mode.
+These are local checks; this PR adds no required CI job. The self-test prints
+its temporary result directory, containing each case's logs and records.
+
+## Hardware result
+
+Record the verdict here and attach the JSON and PNGs to the
 [active planning package](../../evidence/active/2026-09-04-native-shell-plan/).
-Update the active plan’s §1.2 "main ↔ output windows" row with the recorded result.
+Update the active plan's output-window row with the recorded result.
+
+```text
+date / Electron version:
+physical target / printed display ID:
+mirroring off:
+visible moving marker and advancing frame number:
+automatic verdict / operator verdict:
+placement or fullscreen problems:
+optional crash observation:
+JSON and PNG paths:
+P4 decision after reviewing the evidence:
+```

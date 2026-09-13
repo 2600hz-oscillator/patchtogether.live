@@ -11,13 +11,16 @@ import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import {
   approxColor,
+  compositeAdvanced,
+  isOnDisplay,
+  motionAdvanced,
+  validSample,
+  type PixelSample,
   counterColor,
   displayContaining,
   intersectionArea,
-  isNonBlack,
   PATTERN,
   pickTargetDisplay,
-  pixelsDiffer,
   popupBoundsOn,
   popupFeatures,
   STEP_ORDER,
@@ -45,7 +48,7 @@ test('pickTargetDisplay: the non-primary display, wherever it sits in the list',
   assert.equal(pickTargetDisplay([], PRIMARY.id), null);
 });
 
-test('popupBoundsOn: centered inside the target work area, floored size', () => {
+test('popupBoundsOn: centered inside the target work area, including small displays', () => {
   const b = popupBoundsOn(EXTERNAL);
   const area = EXTERNAL.workArea!;
   assert.ok(b.x >= area.x && b.y >= area.y);
@@ -54,10 +57,10 @@ test('popupBoundsOn: centered inside the target work area, floored size', () => 
   // 60% of each dimension.
   assert.equal(b.width, Math.round(area.width * 0.6));
   assert.equal(b.height, Math.round(area.height * 0.6));
-  // Floors hold on an absurdly small display.
+  // A small display must not produce an off-screen window.
   const tiny = popupBoundsOn({ id: 9, bounds: { x: 0, y: 0, width: 100, height: 80 } });
-  assert.equal(tiny.width, 320);
-  assert.equal(tiny.height, 240);
+  assert.equal(tiny.width, 100);
+  assert.equal(tiny.height, 80);
 });
 
 test('popupFeatures: the present-window popup shape, exact', () => {
@@ -87,30 +90,18 @@ test('displayContaining: majority display wins; fully off-screen is null', () =>
 });
 
 test('pixel predicates: black stays black, magenta reads magenta', () => {
-  assert.equal(isNonBlack([0, 0, 0, 255]), false);
-  assert.equal(isNonBlack([10, 10, 10, 255]), false); // near-black noise is still black
-  assert.equal(isNonBlack([0, 0, 200, 255]), true);
   assert.equal(approxColor([255, 0, 255, 255], PATTERN.background), true);
   assert.equal(approxColor([240, 12, 246, 255], PATTERN.background), true); // rounding absorbed
   assert.equal(approxColor([0, 0, 0, 255], PATTERN.background), false); // the captureStream failure mode
   assert.equal(approxColor([255, 255, 255, 255], PATTERN.background), false); // white ≠ magenta
 });
 
-test('counterColor + pixelsDiffer: any two samples ≥1 frame apart differ, wrap included', () => {
-  // The exact pairs the harness will compare: painted f vs f+k, small k.
-  for (const [f, k] of [
-    [1, 3],
-    [42, 7],
-    [254, 3], // red wraps 254→1; green picks up the carry
-    [255, 1],
-    [511, 2],
-  ] as const) {
-    const a = [...counterColor(f), 255];
-    const b = [...counterColor(f + k), 255];
-    assert.ok(pixelsDiffer(a, b), `frames ${f} vs ${f + k} must differ`);
-  }
-  const same = [...counterColor(7), 255];
-  assert.equal(pixelsDiffer(same, [...counterColor(7), 255]), false);
+test('counterColor encodes byte boundaries and wraps only after 65536 frames', () => {
+  assert.deepEqual(counterColor(1), [1, 0, 128]);
+  assert.deepEqual(counterColor(255), [255, 0, 128]);
+  assert.deepEqual(counterColor(256), [0, 1, 128]);
+  assert.deepEqual(counterColor(65535), [255, 255, 128]);
+  assert.deepEqual(counterColor(65536), [0, 0, 128]);
 });
 
 // ── verdict ────────────────────────────────────────────────────────────────
@@ -119,7 +110,7 @@ function steps(status: (id: string) => StepResult['status']): StepResult[] {
   return STEP_ORDER.map((id) => ({ id, status: status(id), detail: id }));
 }
 
-test('verdict real mode: all five PASS → exit 0', () => {
+test('verdict real mode: all steps PASS → exit 0', () => {
   const v = verdict(steps(() => 'PASS'), { dryRun: false });
   assert.equal(v.ok, true);
   assert.equal(v.exitCode, 0);
@@ -144,9 +135,9 @@ test('verdict real mode: a missing step counts as NOT-RUN and fails', () => {
   assert.equal(v.lines.length, STEP_ORDER.length + 1);
 });
 
-test('verdict dry-run: DRY displays/placement acceptable, wiring must PASS', () => {
+test('verdict dry-run: DRY displays/placement/operator acceptable, wiring must PASS', () => {
   const good = verdict(
-    steps((id) => (id === 'displays' || id === 'placement' ? 'DRY' : 'PASS')),
+    steps((id) => (id === 'displays' || id === 'placement' || id === 'operator' ? 'DRY' : 'PASS')),
     { dryRun: true },
   );
   assert.equal(good.ok, true);
@@ -163,4 +154,75 @@ test('verdict dry-run: DRY displays/placement acceptable, wiring must PASS', () 
 test('verdict dry-run: DRY on a WIRING step still fails — no vacuous green', () => {
   const v = verdict(steps(() => 'DRY'), { dryRun: true });
   assert.equal(v.ok, false);
+});
+
+
+test('target selection rejects mirror rectangles, invalid IDs, and absent requested targets', () => {
+  const mirror = { ...EXTERNAL, bounds: { ...PRIMARY.bounds } };
+  assert.equal(pickTargetDisplay([PRIMARY, mirror], PRIMARY.id), null);
+  assert.equal(pickTargetDisplay([PRIMARY, { ...EXTERNAL, id: -10 }], PRIMARY.id), null);
+  assert.equal(pickTargetDisplay([PRIMARY, { ...EXTERNAL, id: -1 }], PRIMARY.id), null);
+  assert.equal(pickTargetDisplay([PRIMARY, { ...EXTERNAL, detected: false }], PRIMARY.id), null);
+  const left = { ...EXTERNAL, id: 3, bounds: { x: -1920, y: -200, width: 1920, height: 1080 } };
+  assert.equal(pickTargetDisplay([PRIMARY, EXTERNAL, left], PRIMARY.id, 3)?.id, 3);
+  assert.equal(pickTargetDisplay([PRIMARY, EXTERNAL], PRIMARY.id, 3), null);
+});
+
+test('placement rejects majority-only matches and mostly off-screen rectangles', () => {
+  assert.equal(isOnDisplay(popupBoundsOn(EXTERNAL), EXTERNAL), true);
+  assert.equal(isOnDisplay({ x: 1720, y: 100, width: 100, height: 100 }, EXTERNAL), false);
+  assert.equal(isOnDisplay({ x: 3630, y: 100, width: 100, height: 100 }, EXTERNAL), false);
+});
+
+function sample(painted: number): PixelSample {
+  return { painted, counter: [...counterColor(painted), 255], background: [255, 0, 255, 255], w: 1000, h: 800 };
+}
+
+test('motion requires advancing pixels tied to the exact same-turn count', () => {
+  assert.equal(motionAdvanced([sample(5), sample(9)]), true);
+  assert.equal(motionAdvanced([sample(65534), sample(65540)]), true);
+  assert.equal(motionAdvanced([]), false);
+  assert.equal(motionAdvanced([sample(5)]), false);
+  assert.equal(motionAdvanced([sample(5), sample(5)]), false);
+  assert.equal(motionAdvanced([sample(9), sample(5)]), false);
+  assert.equal(motionAdvanced([sample(5), { ...sample(9), counter: sample(8).counter }]), false);
+});
+
+test('blank, wrong-color and corrupted later samples cannot count as motion', () => {
+  for (const invalid of [
+    { ...sample(9), background: [0, 0, 0, 255], counter: [0, 0, 0, 255] },
+    { ...sample(9), background: [255, 255, 255, 255] },
+    { ...sample(9), counter: [255, 255, 255, 255] },
+    { ...sample(9), counter: [NaN, 0, 128, 255] },
+  ]) {
+    assert.equal(validSample(invalid), false);
+    assert.equal(motionAdvanced([sample(5), invalid]), false);
+  }
+  assert.equal(approxColor([NaN, 0, NaN], PATTERN.background), false);
+  assert.equal(approxColor([], []), false);
+});
+
+test('real verdict requires physical confirmation, even when all automatic steps pass', () => {
+  for (const missing of ['operator', 'composited']) {
+    assert.equal(verdict(steps(() => 'PASS').filter((s) => s.id !== missing), { dryRun: false }).ok, false);
+  }
+  assert.equal(verdict(steps((id) => id === 'operator' ? 'DRY' : 'PASS'), { dryRun: false }).ok, false);
+});
+
+test('harness errors and ambiguous duplicate results cannot emit a passing verdict', () => {
+  const good = steps(() => 'PASS');
+  const error = verdict(good, { dryRun: true, error: 'capture failed' });
+  assert.equal(error.exitCode, 1);
+  assert.ok(error.lines.every((line) => !line.includes('DRY-RUN OK')));
+  assert.equal(verdict([...good, good[0]!], { dryRun: false }).ok, false);
+});
+
+
+test('page captures must show advancing encoded frames, including counter wrap', () => {
+  assert.equal(compositeAdvanced(counterColor(9), counterColor(20)), true);
+  assert.equal(compositeAdvanced(counterColor(65530), counterColor(65540)), true);
+  assert.equal(compositeAdvanced(counterColor(9), counterColor(9)), false);
+  assert.equal(compositeAdvanced(counterColor(20), counterColor(9)), false);
+  assert.equal(compositeAdvanced(counterColor(9), [0, 0, 0]), false);
+  assert.equal(compositeAdvanced(counterColor(9), [255, 255, 255]), false);
 });

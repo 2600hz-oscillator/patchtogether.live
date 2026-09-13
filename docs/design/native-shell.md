@@ -148,6 +148,8 @@ Stated so a reader does not infer them from the sections above:
   [`task desktop:spike`](../../apps/desktop/SPIKE-OPENER-DISPLAY.md). The harness
   exercises the shipped server, security policy, and `/present` sink; a local
   dry-run verifies its wiring but does not settle the two-display assumption.
+  A real pass now includes page captures, placement checks after rendering,
+  and the operator’s confirmation of visible motion on the physical target.
 - **Click-free crossfade on patch swap** — mandatory by owner answer, with no
   design and no owning phase. `packages/web/src/lib/audio/continuity-probe.ts`
   records the blocker: there is no app-lifetime master bus today.

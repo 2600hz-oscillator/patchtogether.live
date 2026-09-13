@@ -1,559 +1,264 @@
-// The P2→P4 opener→popup DOM-access + cross-display blit SPIKE.
-//
-// Run: `task desktop:spike` (owner's dual-monitor rig) — see
-// apps/desktop/SPIKE-OPENER-DISPLAY.md for what each result means.
-//
-// WHAT THIS ANSWERS (plan.md §1.2 "main ↔ output windows", the HIGHEST-RISK
-// display assumption): with the shell's real loopback server, real security
-// policy (setWindowOpenHandler et al.), and the real /present sink page, does
-// a same-origin popup OPENED BY THE MAIN WINDOW'S RENDERER onto a SECOND
-// physical display (a) keep opener→popup DOM access, and (b) actually SHOW
-// the opener-driven blit — non-black, correct color, advancing — when read
-// back from the popup itself? The fallback (captureStream) rendered BLACK on
-// exactly this hardware shape, which is why "worked on one display" (the
-// 2026-09-03 hour-one probe) does not close the question.
-//
-// WHAT THIS IS NOT: a test, a gate, or P4. It is a one-command harness the
-// owner runs once; it prints PASS/FAIL per step and writes a JSON record to
-// apps/desktop/spike-results/. It deliberately reuses the SHELL'S OWN modules
-// — server.ts, security.ts, HARDENED_WEB_PREFERENCES, the built preload — so
-// the path exercised is the path P4 would ship, minus supervisors/menus/
-// bridge, which have no bearing on windows or displays.
-//
-// HONEST DEGRADE: headless / single-display machines cannot answer the
-// question. Real mode refuses loudly and exits non-zero; `--dry-run`
-// exercises the full wiring on whatever display exists (verdict() then says
-// so and unblocks nothing). The pure display/pixel logic is unit-tested
-// separately (`npm run spike:unit`), so the harness is proven correct on the
-// machines the spike itself refuses to run on.
-
-import { app, BrowserWindow, screen, session, type WebContents } from 'electron';
+// Owner-hardware opener→popup spike. The real /present page owns the drawing
+// clock. Canvas pixels, a page capture, and the owner's physical observation
+// answer different questions; none is silently substituted for another.
+import { app, BrowserWindow, dialog, screen, session, type WebContents } from 'electron';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { startStaticServer } from '../server';
 import { HARDENED_WEB_PREFERENCES, installSecurity, installWindowGuards } from '../security';
-import {
-  counterColor,
-  displayContaining,
-  HARDWARE_REFUSAL,
-  PATTERN,
-  approxColor,
-  isNonBlack,
-  pickTargetDisplay,
-  pixelsDiffer,
-  popupBoundsOn,
-  popupFeatures,
-  verdict,
-  type DisplayLike,
-  type Rect,
-  type Rgba,
-  type StepResult,
-} from './opener-display-logic';
+import { approxColor, compositeAdvanced, counterColor, displayContaining, HARDWARE_REFUSAL, isOnDisplay,
+  motionAdvanced, PATTERN, pickTargetDisplay, popupBoundsOn, popupFeatures, STEP_ORDER,
+  validSample, verdict, type DisplayLike, type StepResult } from './opener-display-logic';
+import { canvasCapturePoint, installPattern, observeFrames, type FrameObservation,
+  type SpikeFault } from './opener-display-renderer';
 
-// Same Chromium flag set as main.ts (which applies them at module top level —
-// importing it would boot the whole shell). MidiMacUmp is irrelevant to
-// displays but kept so the spike's Chromium is configured EXACTLY like the
-// shell it speaks for.
 app.commandLine.appendSwitch('disable-features', 'MidiMacUmp');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.PT_SPIKE_DRY_RUN === '1';
 const CRASH_PROBE = process.argv.includes('--crash-probe') || process.env.PT_SPIKE_CRASH_PROBE === '1';
-/** Whole-spike watchdog — a hung step must end in a written FAIL, not a hang. */
+const FAULT = process.env.PT_SPIKE_TEST_FAULT as SpikeFault | undefined;
 const SPIKE_DEADLINE_MS = 150_000;
-
-// Own userData: never collide with a running shell's profile (the spike also
-// binds port 0, so the fixed-port single-instance story is not in play).
+const FRAME_DEADLINE_MS = 20_000;
+const startedAt = new Date().toISOString();
+const resultDir = process.env.PT_SPIKE_RESULTS_DIR
+  ? path.resolve(process.env.PT_SPIKE_RESULTS_DIR) : path.resolve(__dirname, '../../spike-results');
+const resultStem = `opener-display-${startedAt.replace(/[:.]/g, '-')}-${process.pid}`;
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'pt-spike-')));
-
-function resolveWebRoot(): string {
-  const fromEnv = process.env.PT_DESKTOP_WEB_ROOT;
-  if (fromEnv) return path.resolve(fromEnv);
-  // __dirname = apps/desktop/dist/spike → repo root is four up.
-  return path.resolve(__dirname, '../../../../packages/web/build');
-}
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-/** Poll a renderer with executeJavaScript until `done` or timeout. The code
- *  string must be an expression (or IIFE) returning a JSON-cloneable value. */
-async function pollJs<T>(
-  wc: WebContents,
-  code: string,
-  done: (v: T) => boolean,
-  timeoutMs: number,
-  label: string,
-): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  let last: T | undefined;
-  for (;;) {
-    last = (await wc.executeJavaScript(code)) as T;
-    if (done(last)) return last;
-    if (Date.now() > deadline) {
-      throw new Error(`${label} — timed out after ${timeoutMs}ms; last: ${JSON.stringify(last)}`);
-    }
-    await sleep(250);
-  }
-}
-
-interface PixelSample {
-  counter: Rgba;
-  background: Rgba;
-  painted: number;
-  w: number;
-  h: number;
-}
-
-interface SpikeRecord {
-  spike: 'opener-display';
-  date: string;
-  mode: 'real' | 'dry-run';
-  electron: string;
-  platform: string;
-  displays: DisplayLike[];
-  primaryDisplayId: number | null;
-  steps: StepResult[];
-  observations: Record<string, unknown>;
-  crashProbe: Record<string, unknown> | null;
-  verdictLines: string[];
-  exitCode: number;
-}
 
 const steps: StepResult[] = [];
 const observations: Record<string, unknown> = {};
-let crashProbe: Record<string, unknown> | null = null;
 let displays: DisplayLike[] = [];
 let primaryDisplayId: number | null = null;
-
+let crashProbe: Record<string, unknown> | null = null;
+let watchdog: NodeJS.Timeout | undefined;
+let finished = false;
+function setStep(step: StepResult): void {
+  const at = steps.findIndex((s) => s.id === step.id);
+  if (at < 0) steps.push(step); else steps[at] = step;
+}
 function stripDisplay(d: Electron.Display): DisplayLike {
-  return { id: d.id, bounds: d.bounds, workArea: d.workArea };
+  return { id: d.id, bounds: d.bounds, workArea: d.workArea,
+    label: d.label, scaleFactor: d.scaleFactor, detected: d.detected };
 }
-
-function finish(exitCode: number, lines: string[]): never {
-  const record: SpikeRecord = {
-    spike: 'opener-display',
-    date: new Date().toISOString(),
-    mode: DRY_RUN ? 'dry-run' : 'real',
-    electron: process.versions.electron ?? 'unknown',
-    platform: `${process.platform} ${os.release()}`,
-    displays,
-    primaryDisplayId,
-    steps,
-    observations,
-    crashProbe,
-    verdictLines: lines,
-    exitCode,
-  };
-  const outDir = path.resolve(__dirname, '../../spike-results');
-  let outFile = '(unwritten)';
+function finish(error?: string): never {
+  if (finished) throw new Error('spike-finished');
+  finished = true; clearTimeout(watchdog);
+  const v = verdict(steps, { dryRun: DRY_RUN, error });
+  const record = { schemaVersion: 2, spike: 'opener-display', date: startedAt,
+    mode: DRY_RUN ? 'dry-run' : 'real', electron: process.versions.electron,
+    platform: `${process.platform} ${os.release()}`, displays, primaryDisplayId,
+    steps, observations, crashProbe, verdictLines: v.lines, exitCode: v.exitCode };
+  const outFile = path.join(resultDir, resultStem + '.json');
   try {
-    fs.mkdirSync(outDir, { recursive: true });
-    outFile = path.join(outDir, `opener-display-${record.date.replace(/[:.]/g, '-')}.json`);
-    fs.writeFileSync(outFile, JSON.stringify(record, null, 2) + '\n');
-  } catch (err) {
-    console.error(`[spike] could not write the JSON record: ${String(err)}`);
+    fs.mkdirSync(resultDir, { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
+  } catch (writeError) {
+    // A recorded hardware result is the deliverable. No file means no PASS.
+    console.error(`RESULT WRITE FAILED: ${String(writeError)}`);
+    console.error(JSON.stringify({ ...record, exitCode: 1, verdictLines: ['RESULT WRITE FAILED'] }));
+    app.exit(1); throw new Error('spike-finished');
   }
-  console.log('');
-  console.log('── opener→popup cross-display spike ──────────────────────────');
-  for (const line of lines) console.log(line);
+  console.log('\n── opener→popup cross-display spike ──');
+  for (const line of v.lines) console.log(line);
   console.log(`JSON record: ${outFile}`);
-  console.log('──────────────────────────────────────────────────────────────');
-  app.exit(exitCode);
-  // app.exit does not return control to the caller's await chain synchronously.
-  throw new Error('unreachable');
+  app.exit(v.exitCode); throw new Error('spike-finished');
+}
+function fail(id: StepResult['id'], detail: string): never {
+  setStep({ id, status: 'FAIL', detail }); return finish();
+}
+function armWatchdog(): void {
+  clearTimeout(watchdog);
+  watchdog = setTimeout(() => {
+    try { finish(`WATCHDOG TIMEOUT after ${SPIKE_DEADLINE_MS}ms`); } catch { /* exit requested */ }
+  }, SPIKE_DEADLINE_MS);
+  watchdog.unref();
+}
+async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
-function fail(step: StepResult['id'], detail: string): never {
-  steps.push({ id: step, status: 'FAIL', detail });
-  const v = verdict(steps, { dryRun: DRY_RUN });
-  finish(v.exitCode, v.lines);
+/** One IPC call. Readiness advances in the renderer's frames, not main-process polls. */
+async function waitForRenderer<T>(wc: WebContents, expression: string,
+  done: (v: T) => boolean, ms: number, label: string): Promise<T> {
+  const script = `new Promise((resolve, reject) => {
+    const start = performance.now(); let ticks = 0, raf = 0, last;
+    const timer = setTimeout(() => { cancelAnimationFrame(raf);
+      reject(new Error(${JSON.stringify(label)} + ': ticks=' + ticks + ', elapsedMs='
+        + (performance.now() - start) + ', last=' + JSON.stringify(last))); }, ${ms});
+    const done = ${done.toString()};
+    const tick = () => { ticks++; try { last = (${expression});
+      if (done(last)) { clearTimeout(timer); resolve(last); return; }
+    } catch (e) { clearTimeout(timer); reject(e); return; }
+    raf = requestAnimationFrame(tick); }; tick();
+  })`;
+  return bounded(wc.executeJavaScript(script) as Promise<T>, ms + 1000, label);
 }
 
 async function run(): Promise<void> {
-  const webRoot = resolveWebRoot();
-  if (!fs.existsSync(path.join(webRoot, 'fallback.html'))) {
-    console.error(
-      `[spike] no desktop web bundle at ${webRoot} — run \`task desktop:build:web\` first (or set PT_DESKTOP_WEB_ROOT).`,
-    );
-    app.exit(2);
-    return;
+  if (FAULT && (!DRY_RUN || !['hidden', 'blank-after-first', 'frozen', 'no-pulls', 'frozen-composite'].includes(FAULT))) {
+    finish('Test faults require --dry-run and a known fault name');
   }
-
+  const webRoot = process.env.PT_DESKTOP_WEB_ROOT
+    ? path.resolve(process.env.PT_DESKTOP_WEB_ROOT) : path.resolve(__dirname, '../../../../packages/web/build');
+  if (!fs.existsSync(path.join(webRoot, 'fallback.html'))) finish(`No desktop web bundle at ${webRoot}; run task desktop:build:web`);
+  const displayArg = process.argv.find((s) => s.startsWith('--display-id='));
+  const requestedId = displayArg === undefined ? undefined : Number(displayArg.slice('--display-id='.length));
+  if (requestedId !== undefined && (!Number.isSafeInteger(requestedId) || displayArg?.endsWith('='))) finish('Invalid --display-id');
   await app.whenReady();
-
-  // ── STEP 1: two displays ─────────────────────────────────────────────────
   displays = screen.getAllDisplays().map(stripDisplay);
   primaryDisplayId = screen.getPrimaryDisplay().id;
-  const boundsStr = displays
-    .map((d) => `#${d.id}${d.id === primaryDisplayId ? ' (primary)' : ''} ${d.bounds.width}×${d.bounds.height}@${d.bounds.x},${d.bounds.y}`)
-    .join(' · ');
-  const target = pickTargetDisplay(displays, primaryDisplayId);
-
-  if (!DRY_RUN && !target) {
-    console.error(`\n${HARDWARE_REFUSAL}\n`);
-    steps.push({ id: 'displays', status: 'FAIL', detail: `only ${displays.length} display(s): ${boundsStr}` });
-    for (const id of ['placement', 'domAccess', 'blitPixels', 'motion'] as const) {
-      steps.push({ id, status: 'NOT-RUN', detail: 'no second display' });
-    }
-    const v = verdict(steps, { dryRun: false });
-    finish(v.exitCode, [HARDWARE_REFUSAL, ...v.lines]);
+  console.log('Displays:', JSON.stringify(displays));
+  const target = pickTargetDisplay(displays, primaryDisplayId, requestedId);
+  if ((!DRY_RUN || requestedId !== undefined) && !target) {
+    setStep({ id: 'displays', status: 'FAIL', detail: HARDWARE_REFUSAL + ' No eligible extended target display.' });
+    for (const id of STEP_ORDER.filter((id) => id !== 'displays')) setStep({ id, status: 'NOT-RUN', detail: 'no eligible target' });
+    finish();
   }
-  if (target) {
-    steps.push({ id: 'displays', status: 'PASS', detail: `${displays.length} displays: ${boundsStr}` });
-  } else {
-    steps.push({ id: 'displays', status: 'DRY', detail: `single display (${boundsStr}) — wiring only` });
-  }
-  // Dry-run with one display: exercise the wiring on the primary.
-  const primary = displays.find((d) => d.id === primaryDisplayId) ?? displays[0];
-  if (!primary) {
-    fail('displays', 'Electron reports ZERO displays — nowhere to open a window at all');
-  }
+  const primary = displays.find((d) => d.id === primaryDisplayId);
+  if (!primary) fail('displays', 'No primary display');
+  const primaryId = primary.id;
   const effectiveTarget = target ?? primary;
-
-  // ── The shell's own serving + security wiring ────────────────────────────
-  const server = await startStaticServer(webRoot, 0); // ephemeral: never fight a live shell for 9409
-  const shellOrigin = `http://127.0.0.1:${server.port}`;
-  installSecurity(session.defaultSession, shellOrigin);
-
-  const openerBounds = popupBoundsOn(primary);
-  const opener = new BrowserWindow({
-    ...openerBounds,
-    backgroundColor: '#000000',
-    webPreferences: {
-      ...HARDENED_WEB_PREFERENCES,
-      preload: path.join(__dirname, '..', 'preload.js'),
-      backgroundThrottling: false,
-    },
-  });
-  installWindowGuards(opener.webContents, shellOrigin);
-
-  // Capture the popup BrowserWindow the moment window.open materializes it.
-  const popupWindowPromise = new Promise<BrowserWindow>((resolve) => {
-    opener.webContents.once('did-create-window', (win) => resolve(win));
-  });
-
-  await opener.loadURL(`${shellOrigin}/rack`);
-
-  // The rack painting is context, not a spike step — record it, never gate on
-  // it (the window.open path needs a live same-origin document, which loadURL
-  // resolving already proves).
+  setStep({ id: 'displays', status: target ? 'PASS' : 'DRY',
+    detail: target ? `extended target #${target.id} (${target.label ?? ''}); operator will confirm physical output`
+      : 'single display; wiring only' });
+  const server = await startStaticServer(webRoot, 0);
+  const origin = `http://127.0.0.1:${server.port}`;
+  installSecurity(session.defaultSession, origin);
+  const opener = new BrowserWindow({ ...popupBoundsOn(primary), backgroundColor: '#000000',
+    webPreferences: { ...HARDENED_WEB_PREFERENCES, preload: path.join(__dirname, '..', 'preload.js'), backgroundThrottling: false } });
+  installWindowGuards(opener.webContents, origin);
+  await opener.loadURL(`${origin}/rack`);
   try {
-    const painted = await pollJs<boolean>(
-      opener.webContents,
+    observations.rackPainted = await waitForRenderer(opener.webContents,
       `document.readyState === 'complete' && !!document.querySelector('.svelte-flow')`,
-      (v) => v === true,
-      45_000,
-      'rack paint',
-    );
-    observations.rackPainted = painted;
-  } catch {
-    observations.rackPainted = false;
-  }
+      (v: boolean) => v === true, 45_000, 'rack paint');
+  } catch { observations.rackPainted = false; }
 
-  // ── STEP 2: popup opens on the SECOND display ────────────────────────────
-  // The OPENER'S RENDERER calls window.open — the product path through
-  // security.ts's setWindowOpenHandler — with the present-window features
-  // shape carrying the target display's bounds. userGesture=true mirrors the
-  // real click that opens a projector.
+  const popupPromise = new Promise<BrowserWindow>((resolve) => opener.webContents.once('did-create-window', resolve));
   const targetBounds = popupBoundsOn(effectiveTarget);
-  const openCode = `
-    (() => {
-      window.__spikeReady = false;
-      window.addEventListener('message', (ev) => {
-        if (ev.data && ev.data.type === 'present:ready') window.__spikeReady = true;
-      });
-      const popup = window.open('/present?slot=spike-opener-display', 'pt-spike-output', '${popupFeatures(targetBounds)}');
-      window.__spikePopup = popup;
-      return { opened: popup !== null };
-    })()
-  `;
-  const opened = (await opener.webContents.executeJavaScript(openCode, true)) as { opened: boolean };
-  if (!opened.opened) {
-    fail('placement', 'window.open returned null — setWindowOpenHandler denied the shell-origin popup (security regression, not a display result)');
-  }
-
-  const popupWin = await Promise.race([
-    popupWindowPromise,
-    sleep(15_000).then(() => null),
-  ]);
-  if (!popupWin) {
-    fail('placement', 'no did-create-window within 15s of window.open — the popup never materialized as a BrowserWindow');
-  }
-
-  // Where did the features string alone put it? (P4 wants to know how much
-  // the display map must do.)
-  const initialBounds = popupWin.getBounds() as Rect;
-  const initialDisplay = displayContaining(displays, initialBounds);
-  const featureStringLanded = initialDisplay?.id === effectiveTarget.id;
+  const opened = await opener.webContents.executeJavaScript(`(() => {
+    window.__spikePopup = window.open('/present?slot=spike-opener-display', 'pt-spike-output', ${JSON.stringify(popupFeatures(targetBounds))});
+    return window.__spikePopup !== null;
+  })()`, true);
+  if (!opened) fail('placement', 'window.open returned null');
+  const popup = await bounded(popupPromise, 15_000, 'popup creation');
+  const initialBounds = popup.getBounds();
+  const initiallyOnTarget = isOnDisplay(initialBounds, effectiveTarget);
   observations.popupInitialBounds = initialBounds;
-  observations.featureStringLandedOnTarget = featureStringLanded;
+  observations.featureStringLandedOnTarget = initiallyOnTarget;
+  if (!initiallyOnTarget) popup.setBounds(targetBounds);
 
-  // MAIN owns final placement — exactly the split P4's display map ships
-  // (renderer opens; main places). Correct only if needed, then verify.
-  if (!featureStringLanded) {
-    popupWin.setBounds(targetBounds);
-  }
-  let finalDisplay = displayContaining(displays, popupWin.getBounds() as Rect);
-  const placeDeadline = Date.now() + 5_000;
-  while (finalDisplay?.id !== effectiveTarget.id && Date.now() < placeDeadline) {
-    await sleep(250);
-    finalDisplay = displayContaining(displays, popupWin.getBounds() as Rect);
-  }
-  observations.popupFinalBounds = popupWin.getBounds();
-  const placementDetail =
-    `target display #${effectiveTarget.id}; features-string landed=${featureStringLanded}` +
-    `${featureStringLanded ? '' : '; corrected from MAIN via setBounds'}; final display #${finalDisplay?.id ?? 'none'}`;
-  if (!target) {
-    steps.push({ id: 'placement', status: 'DRY', detail: `single display — ${placementDetail}` });
-  } else if (finalDisplay?.id === effectiveTarget.id) {
-    steps.push({ id: 'placement', status: 'PASS', detail: placementDetail });
-  } else {
-    steps.push({ id: 'placement', status: 'FAIL', detail: placementDetail });
-    // Keep going: DOM access + blit answers are MORE valuable than placement,
-    // and a placement failure alone does not moot them.
-  }
-
-  // ── STEP 3: opener→popup DOM access ──────────────────────────────────────
-  // From the MAIN window's renderer: reach into the popup document, find the
-  // real /present sink canvas, take its 2D context — THE assumption P4 rests
-  // on — then install `popup.__presentFrame` as an opener-realm closure, the
-  // same shape present-window.ts installs (#2235: the SINK owns the clock and
-  // pulls; the closure and the pixels live in the OPENER's realm).
-  // `counterColor` is injected from its compiled source so the draw and the
-  // unit-tested readback contract cannot drift apart.
-  const reachCode = `
-    (() => {
-      const popup = window.__spikePopup;
-      if (!popup) return { state: 'no-popup-handle' };
-      if (popup.closed) return { state: 'popup-closed' };
-      let doc;
-      try {
-        doc = popup.document;
-      } catch (err) {
-        return { state: 'dom-access-threw', error: String(err) };
-      }
-      if (!doc) return { state: 'no-document' };
-      const canvas = doc.querySelector('[data-testid="present-canvas"]');
-      if (!canvas) return { state: 'waiting-for-canvas', readyState: doc.readyState };
-      const ctx = canvas.getContext('2d', { alpha: false });
-      if (!ctx) return { state: 'no-2d-context' };
-      const counterColor = ${counterColor.toString()};
-      let frame = 0;
-      window.__spikePainted = 0;
-      popup.__presentFrame = () => {
-        frame++;
-        window.__spikePainted = frame;
-        const w = canvas.width, h = canvas.height;
-        ctx.fillStyle = 'rgb(${PATTERN.background[0]},${PATTERN.background[1]},${PATTERN.background[2]})';
-        ctx.fillRect(0, 0, w, h);
-        const c = counterColor(frame);
-        ctx.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
-        ctx.fillRect(0, 0, ${PATTERN.counterSize}, ${PATTERN.counterSize});
-        return { protocol: 1, outcome: 'painted', painted: frame, errors: 0, slot: 'spike-opener-display' };
-      };
-      return {
-        state: 'installed',
-        sameOrigin: popup.location.origin === window.location.origin,
-        canvasW: canvas.width,
-        canvasH: canvas.height,
-        readyMessageSeen: window.__spikeReady === true,
-      };
-    })()
-  `;
-  type Reach = {
-    state: string;
-    error?: string;
-    sameOrigin?: boolean;
-    canvasW?: number;
-    canvasH?: number;
-    readyMessageSeen?: boolean;
-  };
-  let reach: Reach;
-  try {
-    reach = await pollJs<Reach>(
-      opener.webContents,
-      reachCode,
-      (v) => v.state === 'installed' || v.state === 'dom-access-threw' || v.state === 'popup-closed',
-      20_000,
-      'opener→popup DOM reach',
-    );
-  } catch (err) {
-    fail('domAccess', String(err));
-  }
+  const reach = await waitForRenderer(opener.webContents,
+    `(${installPattern.toString()})(${JSON.stringify({ fault: FAULT, pattern: PATTERN })}, ${counterColor.toString()})`,
+    (v: { state: string }) => ['installed', 'popup-closed', 'dom-access-threw', 'no-2d-context'].includes(v.state),
+    FRAME_DEADLINE_MS, 'opener DOM access') as { state: string; sameOrigin?: boolean };
   observations.reach = reach;
-  if (reach.state !== 'installed') {
-    fail(
-      'domAccess',
-      `opener could NOT use the popup DOM (${reach.state}${reach.error ? `: ${reach.error}` : ''}) — the P4 premise fails; re-plan before any window-manager code`,
-    );
-  }
-  if (reach.sameOrigin !== true) {
-    fail('domAccess', 'popup reachable but NOT same-origin with the opener — COOP/handler regression');
-  }
-  steps.push({
-    id: 'domAccess',
-    status: 'PASS',
-    detail: `opener reached [data-testid=present-canvas] (${reach.canvasW}×${reach.canvasH}) + 2D ctx; __presentFrame installed opener-realm; present:ready seen=${reach.readyMessageSeen}`,
-  });
+  if (reach.state !== 'installed' || !reach.sameOrigin) fail('domAccess', JSON.stringify(reach));
+  setStep({ id: 'domAccess', status: 'PASS', detail: 'same-origin opener installed the real /present frame callback' });
 
-  // ── STEPS 4+5: the blit renders on display 2 — non-black, and MOVING ─────
-  // The sink's own rAF pulls the opener's closure; we wait for real pulls
-  // (frames, not wall-clock guesses), then read pixels back IN THE POPUP'S
-  // RENDERER with getImageData — the captureStream-went-black test, done for
-  // the real path, on the display that matters.
-  const paintedCode = `window.__spikePainted ?? 0`;
-  try {
-    await pollJs<number>(opener.webContents, paintedCode, (n) => n >= 5, 20_000, 'sink pulling the opener blit');
-  } catch (err) {
-    fail('blitPixels', `sink never pulled the opener frame function: ${String(err)}`);
+  async function observe(label: string): Promise<FrameObservation> {
+    return bounded(popup.webContents.executeJavaScript(
+      `(${observeFrames.toString()})(${JSON.stringify({ fault: FAULT, timeoutMs: FRAME_DEADLINE_MS, pattern: PATTERN })})`),
+    FRAME_DEADLINE_MS + 1000, label) as Promise<FrameObservation>;
+  }
+  function checkFrames(frames: FrameObservation): void {
+    const counts = `samples=${frames.samples.length}, ticks=${frames.ticks}, elapsedMs=${Math.round(frames.elapsedMs)}`;
+    if (frames.samples.length < 2 || !frames.samples.every(validSample)) fail('blitPixels', `invalid background/counter pixels; ${counts}`);
+    setStep({ id: 'blitPixels', status: 'PASS', detail: `every background is magenta and every counter matches its count; ${counts}` });
+    if (!motionAdvanced(frames.samples)) fail('motion', `pixels/counts did not advance together; ${counts}`);
+    setStep({ id: 'motion', status: 'PASS', detail: `painted ${frames.samples[0]!.painted}→${frames.samples[frames.samples.length - 1]!.painted}; ${counts}` });
+  }
+  const frames = await observe('frame observation'); observations.frames = frames; checkFrames(frames);
+
+  function checkPlacement(label: string): void {
+    const current = screen.getAllDisplays().map(stripDisplay);
+    const currentTarget = target ? pickTargetDisplay(current, screen.getPrimaryDisplay().id, target.id)
+      : current.find((d) => d.id === primaryId);
+    const bounds = popup.getBounds();
+    observations[label] = { displays: current, bounds, nativeFullscreen: popup.isFullScreen(),
+      matchedDisplay: displayContaining(current, bounds)?.id, visible: popup.isVisible(), minimized: popup.isMinimized() };
+    if (!currentTarget || !isOnDisplay(bounds, currentTarget) || !popup.isVisible() || popup.isMinimized()) {
+      fail('placement', `${label}: popup is not visibly contained on target #${effectiveTarget.id}`);
+    }
+    setStep({ id: 'placement', status: target ? 'PASS' : 'DRY', detail: `${label}: popup contained on #${effectiveTarget.id}; features-string landed=${initiallyOnTarget}` });
+  }
+  checkPlacement('placementAfterFrames');
+
+  // capturePage measures the composited web page, not the physical monitor.
+  // That distinction is why a successful real run also needs operator confirmation.
+  async function capturePage(suffix: string) {
+    const point = await popup.webContents.executeJavaScript(`(${canvasCapturePoint.toString()})(${JSON.stringify(PATTERN)})`) as ReturnType<typeof canvasCapturePoint>;
+    const capture = await bounded(popup.webContents.capturePage(), FRAME_DEADLINE_MS, 'page capture');
+    if (capture.isEmpty()) fail('composited', 'Page capture is empty');
+    const size = capture.getSize();
+    const read = (probe: { x: number; y: number }) => {
+      const x = Math.floor(probe.x * size.width / point.viewport.width);
+      const y = Math.floor(probe.y * size.height / point.viewport.height);
+      if (x < 0 || y < 0 || x >= size.width || y >= size.height) fail('composited', 'Canvas probe is outside the captured page');
+      const pixel = capture.crop({ x, y, width: 1, height: 1 }).resize({ width: 1, height: 1 }).toBitmap();
+      return [pixel[2] ?? -1, pixel[1] ?? -1, pixel[0] ?? -1, pixel[3] ?? -1];
+    };
+    const result = { background: read(point), counter: read(point.counter), size, point, png: resultStem + suffix + '.png' };
+    observations['pageCapture' + suffix] = result;
+    fs.mkdirSync(resultDir, { recursive: true });
+    fs.writeFileSync(path.join(resultDir, result.png), capture.toPNG(), { flag: 'wx' });
+    if (!approxColor(result.background, PATTERN.background)) fail('composited', `Page pixel [${result.background}] is not magenta despite readable canvas pixels`);
+    return result;
+  }
+  const captureA = await capturePage('-a');
+  const betweenCaptures = await observe('frames between page captures');
+  observations.framesBetweenCaptures = betweenCaptures; checkFrames(betweenCaptures);
+  const captureB = await capturePage('-b');
+  if (!compositeAdvanced(captureA.counter, captureB.counter)) fail('composited', `Page counter did not advance: [${captureA.counter}]→[${captureB.counter}]`);
+  setStep({ id: 'composited', status: 'PASS', detail: `both page captures match magenta and their encoded counters advance; PNGs saved` });
+  checkPlacement('placementAfterCapture');
+
+  if (DRY_RUN) {
+    setStep({ id: 'operator', status: 'DRY', detail: 'physical display confirmation was not requested in dry-run mode' });
+  } else {
+    // Keep the live pattern available for inspection without a machine-test timer
+    // racing the human. Cancel/close is never interpreted as confirmation.
+    clearTimeout(watchdog);
+    opener.show(); opener.focus();
+    const answer = await dialog.showMessageBox(opener, { type: 'question', title: 'Verify physical display output',
+      message: `Inspect target display #${target!.id} (${target!.label ?? 'external display'})`,
+      detail: 'Confirm that this physical display shows a magenta background, a moving white marker, and an advancing frame number. A screenshot alone cannot prove what the monitor shows.',
+      checkboxLabel: 'I am observing a second physical display with mirroring off', checkboxChecked: false,
+      buttons: ['Confirm visible motion', 'Fail / cancel'], defaultId: 1, cancelId: 1 });
+    armWatchdog();
+    observations.operator = answer;
+    if (answer.response !== 0 || !answer.checkboxChecked) fail('operator', 'Physical output was not confirmed');
+    setStep({ id: 'operator', status: 'PASS', detail: 'owner confirmed visible motion on the target physical display with mirroring off' });
+    // Recheck after the human pause: unplugging/moving/freezing during review
+    // cannot leave a green result based only on the earlier samples.
+    const afterReview = await observe('post-review frames'); observations.framesAfterReview = afterReview; checkFrames(afterReview);
+    checkPlacement('placementAfterReview');
   }
 
-  const sampleCode = `
-    (() => {
-      const canvas = document.querySelector('[data-testid="present-canvas"]');
-      if (!canvas) return { state: 'no-canvas' };
-      const ctx = canvas.getContext('2d', { alpha: false });
-      if (!ctx) return { state: 'no-context' };
-      const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data);
-      return {
-        state: 'ok',
-        counter: px(${PATTERN.counterProbe.x}, ${PATTERN.counterProbe.y}),
-        background: px(${PATTERN.backgroundProbe.x}, ${PATTERN.backgroundProbe.y}),
-        w: canvas.width,
-        h: canvas.height,
-      };
-    })()
-  `;
-  const takeSample = async (): Promise<PixelSample> => {
-    const s = (await popupWin.webContents.executeJavaScript(sampleCode)) as
-      | { state: 'ok'; counter: number[]; background: number[]; w: number; h: number }
-      | { state: string };
-    if (s.state !== 'ok') throw new Error(`popup-side readback failed: ${s.state}`);
-    const ok = s as { counter: number[]; background: number[]; w: number; h: number };
-    const painted = (await opener.webContents.executeJavaScript(paintedCode)) as number;
-    return { counter: ok.counter, background: ok.background, painted, w: ok.w, h: ok.h };
-  };
-
-  let sampleA: PixelSample;
-  try {
-    sampleA = await takeSample();
-  } catch (err) {
-    fail('blitPixels', String(err));
-  }
-  observations.sampleA = sampleA;
-
-  const bgOk = isNonBlack(sampleA.background) && approxColor(sampleA.background, PATTERN.background);
-  const where = target ? `on display #${effectiveTarget.id}` : 'single-display (dry-run)';
-  if (!bgOk) {
-    fail(
-      'blitPixels',
-      `popup read back [${sampleA.background.join(',')}] where magenta was blitted ${where} — ` +
-        (isNonBlack(sampleA.background)
-          ? 'non-black but the WRONG color; the pipeline is altering pixels'
-          : 'BLACK: the captureStream failure mode reproduced on the DOM path — P4 re-plans'),
-    );
-  }
-  steps.push({
-    id: 'blitPixels',
-    status: 'PASS',
-    detail: `background pixel [${sampleA.background.join(',')}] ≈ magenta ${where} (canvas ${sampleA.w}×${sampleA.h}, painted=${sampleA.painted})`,
-  });
-
-  // Motion: the counter square must CHANGE across ≥3 more sink pulls — a
-  // frozen first frame (stale-single-frame) cannot pass this.
-  try {
-    await pollJs<number>(
-      opener.webContents,
-      paintedCode,
-      (n) => n >= sampleA.painted + 3,
-      15_000,
-      'painted counter advancing',
-    );
-  } catch (err) {
-    fail('motion', `blit painted one frame then stalled: ${String(err)}`);
-  }
-  let sampleB: PixelSample;
-  try {
-    sampleB = await takeSample();
-  } catch (err) {
-    fail('motion', String(err));
-  }
-  observations.sampleB = sampleB;
-  if (!pixelsDiffer(sampleA.counter, sampleB.counter)) {
-    fail(
-      'motion',
-      `counter pixel FROZE: [${sampleA.counter.join(',')}] → [${sampleB.counter.join(',')}] across painted ${sampleA.painted}→${sampleB.painted} — one stale frame, not a live blit`,
-    );
-  }
-  steps.push({
-    id: 'motion',
-    status: 'PASS',
-    detail: `counter pixel [${sampleA.counter.join(',')}] → [${sampleB.counter.join(',')}], painted ${sampleA.painted}→${sampleB.painted}`,
-  });
-
-  // ── OPTIONAL crash probe (interruption-matrix §2's free add-on) ──────────
-  // Observation ONLY, never a step: what does render-process-gone in the
-  // OPENER do to the popup under the shipped bare `{action:'allow'}` (no
-  // outlivesOpener)? Recorded for row 1's pending decision. The 3s window is
-  // an observation period for a recorded note, not a readiness wait — nothing
-  // green/red hangs on it.
   if (CRASH_PROBE) {
     const events: string[] = [];
-    popupWin.webContents.on('render-process-gone', (_e, d) => events.push(`popup render-process-gone: ${d.reason}`));
-    popupWin.on('closed', () => events.push('popup window closed'));
+    popup.webContents.on('render-process-gone', (_e, d) => events.push(`popup render-process-gone: ${d.reason}`));
+    popup.on('closed', () => events.push('popup window closed'));
     opener.webContents.forcefullyCrashRenderer();
-    await sleep(3_000);
-    let popupRealmAlive = false;
-    let popupPainted: unknown = null;
-    if (!popupWin.isDestroyed()) {
-      try {
-        popupPainted = await popupWin.webContents.executeJavaScript(
-          `(() => { try { return typeof window.__presentFrame; } catch (e) { return 'threw: ' + e; } })()`,
-        );
-        popupRealmAlive = true;
-      } catch (err) {
-        popupPainted = `executeJavaScript failed: ${String(err)}`;
-      }
+    // An observation period for this optional note, never renderer readiness.
+    await new Promise<void>((resolve) => setTimeout(resolve, 3_000));
+    crashProbe = { events, popupWindowDestroyed: popup.isDestroyed() };
+    if (!popup.isDestroyed()) {
+      try { crashProbe.popupPresentFrameTypeof = await bounded(popup.webContents.executeJavaScript('typeof window.__presentFrame'), 5_000, 'crash observation'); }
+      catch (error) { crashProbe.popupReadError = String(error); }
     }
-    crashProbe = {
-      note: 'opener renderer forcefully crashed AFTER the five steps; shipped handler = bare allow, no outlivesOpener',
-      events,
-      popupWindowDestroyed: popupWin.isDestroyed(),
-      popupRealmAlive,
-      popupPresentFrameTypeof: popupPainted,
-    };
   }
-
-  const v = verdict(steps, { dryRun: DRY_RUN });
-  finish(v.exitCode, v.lines);
+  finish();
 }
-
-// Never let a closed window race our explicit exit into a default quit.
-app.on('window-all-closed', () => {
-  /* the spike exits itself via finish() */
-});
-
-const watchdog = setTimeout(() => {
-  console.error(`[spike] watchdog: still running after ${SPIKE_DEADLINE_MS}ms — failing loudly`);
-  const v = verdict(steps, { dryRun: DRY_RUN });
-  try {
-    finish(1, [`WATCHDOG TIMEOUT after ${SPIKE_DEADLINE_MS}ms`, ...v.lines]);
-  } catch {
-    app.exit(1);
-  }
-}, SPIKE_DEADLINE_MS);
-watchdog.unref();
-
-run().catch((err: unknown) => {
-  // finish() exits via a thrown 'unreachable' after app.exit — let that
-  // through without double-reporting.
-  if (err instanceof Error && err.message === 'unreachable') return;
-  console.error(`[spike] harness error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
-  try {
-    const v = verdict(steps, { dryRun: DRY_RUN });
-    finish(1, [`HARNESS ERROR: ${String(err)}`, ...v.lines]);
-  } catch {
-    app.exit(1);
-  }
+app.on('window-all-closed', () => { /* finish() owns the result and exit */ });
+armWatchdog();
+run().catch((error: unknown) => {
+  if (finished) return;
+  try { finish(error instanceof Error ? error.message : String(error)); } catch { /* exit requested */ }
 });
