@@ -1,7 +1,7 @@
 # SPIKE — opener→popup DOM access + cross-display blit (the P4 gate)
 
 **Status: awaiting one run on the owner's dual-monitor rig.** This is the
-"spike result recorded" that `.myrobots/2026-09-04-native-shell-plan/plan.md`
+"spike result recorded" that the [active plan](../../evidence/active/2026-09-04-native-shell-plan/plan.md)
 §1.2 ("main ↔ output windows" — the HIGHEST-RISK display assumption) and the
 P2/P4 phase table require before any P4 window-manager code.
 
@@ -13,7 +13,7 @@ same-origin `/present` popup onto a SECOND physical display (through
 the popup's own rAF pulls an opener-realm blit closure into the popup's canvas
 (#2235 — the sink owns the clock). The fallback design (`captureStream`)
 rendered **BLACK on real dual-monitor hardware**, and the 2026-09-03 hour-one
-probe (p2-notes.md) validated opener DOM access on **one** display only — so
+probe ([archived P2 notes](../../evidence/archive/2026/2026-09-04-native-shell-plan/p2-notes.md)) validated opener DOM access on **one** display only — so
 the cross-display half of the assumption has never been tested. This harness
 tests it, end to end, on the shell's real wiring: `server.ts` (loopback +
 COOP/COEP), `security.ts` (the shipped window-open/permission policy),
@@ -106,6 +106,6 @@ VERDICT:  P4 UNBLOCKED on window.open architecture   /   P4 RE-PLANS
 JSON record path: ________________________________________________________
 ```
 
-Paste the filled block (or the JSON) into the plan package alongside
-`p2-notes.md`, and update plan.md §1.2's "main ↔ output windows" row from
-"scheduled" to the recorded result.
+Record the verdict here and attach the JSON to the
+[active planning package](../../evidence/active/2026-09-04-native-shell-plan/).
+Update the active plan’s §1.2 "main ↔ output windows" row with the recorded result.

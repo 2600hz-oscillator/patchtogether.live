@@ -45,6 +45,21 @@ used by the harness), `PT_DESKTOP_WEB_ROOT`, `PT_DESKTOP_WINDOWED=1` (plain wind
 instead of fullscreen), `PT_HELPERS=off`, and `PT_HELPER_<ID>_BIN|_ARGS|_PORT` for
 injecting stub helper binaries.
 
+## Display-spike hardware review
+
+After `desktop:install` and `desktop:build:web`, run the opener→popup harness
+with two physical displays connected and mirroring off:
+
+```sh
+flox activate -- task desktop:spike
+```
+
+The [spike guide](../apps/desktop/SPIKE-OPENER-DISPLAY.md) explains the five
+checks and where to record the hardware verdict. `task desktop:spike -- --dry-run`
+checks the harness wiring on one display; that result does not validate
+cross-display output. The optional `--crash-probe` records the popup's fate after
+an opener renderer crash. Hardware validation remains a manual review step.
+
 ## Native helpers
 
 ```sh
