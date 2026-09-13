@@ -67,7 +67,7 @@
 // `environment: 'node'` lane. The browser binding is `./node-camera-source.svelte.ts`.
 
 import type { ModuleNode } from '$lib/graph/types';
-import type { CameraState } from '$lib/video/camera-device';
+import { shouldReacquireOnPick, type CameraState } from '$lib/video/camera-device';
 import { resolveDevice, shouldRewriteSavedId } from '$lib/graph/device-rebind';
 import { isDeviceSlotId } from '$lib/graph/device-slots';
 
@@ -225,6 +225,8 @@ interface Controller<E> {
   disposed: boolean;
   /** Invalidates outstanding acquisition / bootstrap work on stop or repick. */
   generation: number;
+  acquiring: boolean;
+  reacquirePending: boolean;
   dispose(): void;
 }
 
@@ -312,6 +314,7 @@ export function createNodeCameraSourceRegistry<E>(
    */
   function stopStream(c: Controller<E>): void {
     c.generation++;
+    c.reacquirePending = false;
     stopAttachRetry(c);
     const nodeId = c.node.id;
     c.offEnded?.();
@@ -339,89 +342,112 @@ export function createNodeCameraSourceRegistry<E>(
    * because "in use" alone sends people hunting for an app that may not exist.
    */
   async function acquire(c: Controller<E>): Promise<void> {
+    if (c.acquiring) {
+      queueReplacement(c);
+      publish(c, { state: 'requesting', errorMsg: null });
+      return;
+    }
     const nodeId = c.node.id;
     if (!deps.capture.supported()) {
       publish(c, { state: 'unsupported', errorMsg: 'Browser does not support getUserMedia' });
       return;
     }
-    publish(c, { state: 'requesting', errorMsg: null });
-    stopStream(c);
-    const generation = c.generation;
+    c.acquiring = true;
+    try {
+      publish(c, { state: 'requesting', errorMsg: null });
+      stopStream(c);
+      const generation = c.generation;
 
-    const target = c.status.selectedDeviceId;
-    const result = await deps.capture.acquire(target ?? null);
-    if (c.disposed || generation !== c.generation) {
-      result.stream?.getTracks().forEach((t) => t.stop());
-      return;
-    }
-    if (!result.stream) {
-      const e = result.error;
-      if (!e) {
-        publish(c, { state: 'error', errorMsg: 'Camera acquisition failed.' });
+      const target = c.status.selectedDeviceId;
+      const result = await deps.capture.acquire(target ?? null);
+      if (c.disposed || generation !== c.generation) {
+        result.stream?.getTracks().forEach((t) => t.stop());
         return;
       }
-      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-        publish(c, {
-          state: 'permission-denied',
-          errorMsg: 'Camera permission blocked. Grant in browser site settings.',
-        });
-      } else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
-        publish(c, {
-          state: 'no-cameras-found',
-          errorMsg: 'No camera matches the selected constraints.',
-        });
-      } else if (e.name === 'NotReadableError') {
-        publish(c, {
-          state: 'device-in-use',
-          errorMsg:
-            'Camera is busy or failed to start. Close other capture apps ' +
-            '(OBS, Desktop Video Setup), and check the device has a live input signal.',
-        });
-      } else {
-        publish(c, { state: 'error', errorMsg: `${e.name}: ${e.message}` });
+      if (!result.stream) {
+        const e = result.error;
+        if (!e) {
+          publish(c, { state: 'error', errorMsg: 'Camera acquisition failed.' });
+          return;
+        }
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          publish(c, {
+            state: 'permission-denied',
+            errorMsg: 'Camera permission blocked. Grant in browser site settings.',
+          });
+        } else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
+          publish(c, {
+            state: 'no-cameras-found',
+            errorMsg: 'No camera matches the selected constraints.',
+          });
+        } else if (e.name === 'NotReadableError') {
+          publish(c, {
+            state: 'device-in-use',
+            errorMsg:
+              'Camera is busy or failed to start. Close other capture apps ' +
+              '(OBS, Desktop Video Setup), and check the device has a live input signal.',
+          });
+        } else {
+          publish(c, { state: 'error', errorMsg: `${e.name}: ${e.message}` });
+        }
+        return;
       }
-      return;
-    }
 
-    const stream = result.stream;
-    deps.media.setStream(nodeId, CAMERA_SOURCE_SLOT, stream);
-    // Permission granted — re-enumerate to pick up the real device labels.
-    await refreshDevices(c);
-    if (c.disposed || generation !== c.generation) return;
+      const stream = result.stream;
+      deps.media.setStream(nodeId, CAMERA_SOURCE_SLOT, stream);
+      // Permission granted — re-enumerate to pick up the real device labels.
+      await refreshDevices(c);
+      if (c.disposed || generation !== c.generation) return;
 
-    deps.el.setStream(c.el, stream);
-    deps.el.play(c.el);
-    startAttachRetry(c);
-    try {
-      deps.engine?.attach(nodeId, c.el);
-    } catch {
-      /* the retry keeps offering */
-    }
+      deps.el.setStream(c.el, stream);
+      deps.el.play(c.el);
+      startAttachRetry(c);
+      try {
+        deps.engine?.attach(nodeId, c.el);
+      } catch {
+        /* the retry keeps offering */
+      }
 
-    // Record which camera the browser actually gave us.
-    const realId = deps.capture.chosenDeviceId(stream);
-    if (realId && realId !== c.status.selectedDeviceId) {
-      saveDevice(c, realId);
-    } else if (c.status.selectedDeviceId) {
-      saveDevice(c, c.status.selectedDeviceId);
-    }
+      // Record which camera the browser actually gave us.
+      const realId = deps.capture.chosenDeviceId(stream);
+      if (realId && realId !== c.status.selectedDeviceId) {
+        saveDevice(c, realId);
+      } else if (c.status.selectedDeviceId) {
+        saveDevice(c, c.status.selectedDeviceId);
+      }
 
-    c.offEnded = deps.capture.onEnded(stream, () => {
-      if (c.disposed) return;
-      if (c.status.state !== 'streaming') return;
-      stopStream(c);
-      publish(c, {
-        state: 'error',
-        errorMsg: 'Camera stream ended (disconnected or revoked).',
+      c.offEnded = deps.capture.onEnded(stream, () => {
+        if (c.disposed) return;
+        if (c.status.state !== 'streaming') return;
+        stopStream(c);
+        publish(c, {
+          state: 'error',
+          errorMsg: 'Camera stream ended (disconnected or revoked).',
+        });
       });
-    });
 
-    publish(c, {
-      state: 'streaming',
-      errorMsg: null,
-      attached: deps.engine?.hasElement(nodeId) ?? false,
-    });
-    deps.presence.add(nodeId);
+      publish(c, {
+        state: 'streaming',
+        errorMsg: null,
+        attached: deps.engine?.hasElement(nodeId) ?? false,
+      });
+      deps.presence.add(nodeId);
+    } finally {
+      c.acquiring = false;
+      // getUserMedia cannot be aborted. Wait for the superseded request to
+      // settle and release its result before asking the driver for the new pick.
+      if (c.reacquirePending && !c.disposed) {
+        c.reacquirePending = false;
+        publish(c, { state: 'idle', errorMsg: null });
+        void acquire(c);
+      }
+    }
+  }
+
+  function queueReplacement(c: Controller<E>): void {
+    if (!c.acquiring) return;
+    stopStream(c);
+    c.reacquirePending = true;
   }
 
   function pick(c: Controller<E>, deviceId: string): void {
@@ -429,7 +455,10 @@ export function createNodeCameraSourceRegistry<E>(
     // A pick ANSWERS any "I reconnected this by name" notice, so it must not
     // linger over a choice the player has now made explicitly.
     publish(c, { rebindNotice: null });
-    if (deps.doc.enabled(c.node.id) && c.status.state !== 'unsupported') void acquire(c);
+    if (deps.doc.enabled(c.node.id)) {
+      queueReplacement(c);
+      if (shouldReacquireOnPick(c.status.state)) void acquire(c);
+    }
   }
 
   /**
@@ -523,6 +552,8 @@ export function createNodeCameraSourceRegistry<E>(
       bootstrapped: false,
       disposed: false,
       generation: 0,
+      acquiring: false,
+      reacquirePending: false,
       dispose(): void {
         c.disposed = true;
         stopAttachRetry(c);
@@ -592,13 +623,13 @@ export function createNodeCameraSourceRegistry<E>(
         }
         if (bindingChanged && saved) {
           publish(existing, { selectedDeviceId: saved, rebindNotice: null });
+          if (on) queueReplacement(existing);
         }
         if (!on && (enabledChanged || bindingChanged)) {
           stopStream(existing);
           publish(existing, { state: 'paused', errorMsg: null });
         } else if (on && (enabledChanged || (bindingChanged && saved))) {
-          // A newer choice supersedes even a pending getUserMedia request.
-          void acquire(existing);
+          if (shouldReacquireOnPick(existing.status.state)) void acquire(existing);
         }
 
         // The engine's async add may finish after the bounded startup retry.
