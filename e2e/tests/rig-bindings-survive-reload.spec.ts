@@ -445,6 +445,43 @@ test.describe('NATIVE-SHELL PART-3 — rig bindings survive a reload / File→Ne
       .catch(() => {});
   });
 
+  for (const engineFirst of [true, false]) {
+    test(`camera binding attaches without a cable and unbind releases capture (engine first: ${engineFirst})`, async ({ page, errorWatch }) => {
+      test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 3);
+      await installFakeDevices(page, LEVEL_A);
+      await bootWorkflowRack(page);
+      if (engineFirst) await bootEngine(page);
+      await bindCameraSlot(page, CAM_SLOT, CAM_DEVICE_B);
+      if (!engineFirst) await bootEngine(page);
+
+      // Read the engine, not just the preview: capture could previously be LIVE
+      // while an unpatched slot had no engine handle at all.
+      const attached = () => page.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __engine: () => { getDomain(domain: string): { read(id: string, key: string): unknown } };
+        };
+        return w.__engine()?.getDomain('video')?.read(id, 'hasVideoElement') === true;
+      }, CAM_SLOT);
+      await expect.poll(attached, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS }).toBe(true);
+      expect((await readNodes(page)).find((n) => n.id === CAM_SLOT)?.data?.deviceId).toBeUndefined();
+      const track = await page.evaluateHandle((id) => {
+        const el = document.querySelector(`video[data-testid="camera-preview"][data-node-id="${id}"]`) as HTMLVideoElement;
+        return (el.srcObject as MediaStream).getVideoTracks()[0];
+      }, CAM_SLOT);
+      expect(await track.evaluate((t) => t.readyState)).toBe('live');
+
+      await openCamerasMenu(page);
+      await page.locator(`[data-testid="workflow-camera-row"][data-node-id="${CAM_SLOT}"]`)
+        .getByTestId('workflow-camera-unmap').click();
+      await expect.poll(async () => (await slotCameraBinding(page, CAM_SLOT_NAME)).deviceId).toBeNull();
+      await expect.poll(() => track.evaluate((t) => t.readyState)).toBe('ended');
+      await expect.poll(attached).toBe(false);
+      expect(await nodeIds(page), 'unbind preserves the reserved slot').toContain(CAM_SLOT);
+      await track.dispose();
+      errorWatch.assertClean();
+    });
+  }
+
   test('a bound CAMERA slot re-acquires a LIVE session after a reload', async ({
     page,
     errorWatch,

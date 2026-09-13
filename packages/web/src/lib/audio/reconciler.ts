@@ -22,6 +22,7 @@ import {
   type PatchSnapshot,
 } from '$lib/graph/snapshot';
 import { planInertSlots } from '$lib/graph/device-slots';
+import { boundDeviceSlotIds, rigBindings, type RigBindingStore } from '$lib/graph/device-slot-bindings';
 
 interface ReconcilerHandle {
   /** Run a reconcile pass immediately against the current snapshot. */
@@ -33,6 +34,10 @@ interface ReconcilerHandle {
 interface AttachOpts {
   /** Override the default snapshot bus. Tests use this to pass a doc-scoped bus. */
   bus?: ReturnType<typeof getDefaultSnapshotBus>;
+  /** Machine-local bindings also change engine liveness without a Y.Doc update. */
+  rig?: Pick<RigBindingStore, 'snapshot' | 'subscribe'>;
+  /** Notify node-owned sources once asynchronous engine materialization finishes. */
+  onReconciled?(): void;
 }
 
 export function attachReconciler(
@@ -40,6 +45,8 @@ export function attachReconciler(
   opts: AttachOpts = {},
 ): ReconcilerHandle {
   const bus = opts.bus ?? getDefaultSnapshotBus();
+  const rig = opts.rig ?? rigBindings();
+  let disposed = false;
 
   const appliedNodes = new Map<string, ModuleNode>();
   const appliedEdges = new Map<string, Edge>();
@@ -73,7 +80,11 @@ export function attachReconciler(
   let inFlight: Promise<void> = Promise.resolve();
 
   function enqueue(): Promise<void> {
-    const next = inFlight.then(() => doReconcile(latest));
+    const next = inFlight.then(async () => {
+      if (disposed) return;
+      await doReconcile(latest);
+      if (!disposed) opts.onReconciled?.();
+    });
     inFlight = next.catch((err) => {
       console.error('[reconciler] reconcile failed:', err);
     });
@@ -106,15 +117,15 @@ export function attachReconciler(
     // operator has something to bind; but a slot with nothing bound and nothing
     // patched has nothing to RUN, and eight idle video engines per rack is a
     // measured main-thread cost. Filtering it here means it mounts on first use
-    // — bind a camera or cable something in and the very next snapshot carries
-    // it through this filter as an ordinary new node, so the existing add path
+    // — bind a camera or cable something in and the next graph or rig-store pass
+    // carries it through this filter as an ordinary new node, so the existing add path
     // brings it up with no special casing anywhere else.
     //
     // ⚠ AND THE REVERSE IS DELIBERATE TOO: unbinding makes a slot inert again,
     // which reaches the engine as a `removeNode` — i.e. the device is released.
     // That is exactly what unbind means, and it is why this filter is recomputed
     // per pass rather than latched.
-    const inertSlots = planInertSlots(snap.nodes, snap.edges);
+    const inertSlots = planInertSlots(snap.nodes, snap.edges, boundDeviceSlotIds(rig.snapshot()));
     const currentNodes = new Map<string, ModuleNode>();
     for (const n of snap.nodes) {
       if (isMeta(n) || inertSlots.has(n.id)) continue;
@@ -329,11 +340,14 @@ export function attachReconciler(
   // immediately, then again on each Yjs update. We schedule a microtask
   // reconcile each time; the inFlight chain serializes them.
   const unsubscribe = bus.subscribe((snap) => schedule(snap));
+  const unsubscribeRig = rig.subscribe(() => schedule(latest));
 
   return {
     reconcile: enqueue,
     dispose() {
+      disposed = true;
       unsubscribe();
+      unsubscribeRig();
     },
   };
 }

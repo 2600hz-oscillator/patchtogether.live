@@ -407,17 +407,18 @@ describe('lazy engines — an unused slot costs nothing', () => {
 
   it('a BOUND camera slot is live', () => {
     const inert = planInertSlots(
-      [slotNode('slot:cam1', { deviceId: 'abc' }), slotNode('slot:cam2')],
+      [slotNode('slot:cam1'), slotNode('slot:cam2')],
       [],
+      new Set(['slot:cam1']),
     );
     expect(inert.has('slot:cam1')).toBe(false);
     expect(inert.has('slot:cam2')).toBe(true);
   });
 
-  it('a deviceLabel alone counts as bound (the pair travels together)', () => {
+  it('stale device data from a shared patch cannot activate local hardware', () => {
     expect(
-      planInertSlots([slotNode('slot:cam1', { deviceLabel: 'FaceTime HD' })], []).has('slot:cam1'),
-    ).toBe(false);
+      planInertSlots([slotNode('slot:cam1', { deviceId: 'foreign-id', deviceLabel: 'FaceTime HD' })], []).has('slot:cam1'),
+    ).toBe(true);
   });
 
   // The edge half is what makes "first use" include PATCHING, and it is also
