@@ -1,5 +1,3 @@
-// art/scenarios/sixstrum/profile.test.ts
-//
 // AUDIO PROFILE for SIX STRUM (id `sixstrum` — the 6-voice guitar/bass/harp
 // instrument: six karplus string voices + per-voice ADSR + strum scheduler +
 // resonant body, summed mono). Ships with the module per the audio-profile

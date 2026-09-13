@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/workflow-cameras.test.ts
-//
 // WORKFLOW MODE P4 — the camera manager's bookkeeping, against the REAL
 // syncedStore + Y.Doc (graph/store.ts — never a mock,
 // [[yjs-save-load-real-ydoc]]; media/asset-spawn.test.ts harness shape):

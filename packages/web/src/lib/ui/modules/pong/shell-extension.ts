@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/pong/shell-extension.ts
-//
 // The PONG SHELL EXTENSION — the module-owned end of the extension seam (#1512),
 // on the `fullViewBody` slot.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/samsloop-limits.test.ts
-//
 // Pure unit tests for the SAMSLOOP cap helpers. The integration with
 // Canvas.svelte's spawn handler is covered by e2e/tests/samsloop.spec.ts.
 

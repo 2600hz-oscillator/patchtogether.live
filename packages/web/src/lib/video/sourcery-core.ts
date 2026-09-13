@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/sourcery-core.ts
-//
 // SOURCERY — pure-TS "region shape-match recolor" CORE. NO WebGL here: this is
 // the deterministic correctness gate the unit suite pins bit-for-bit (the house
 // pattern shared by colourofmagic-colorspace.ts / shapegen-math.ts /

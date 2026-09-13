@@ -1,5 +1,3 @@
-// art/scenarios/featurecv/feature-extract.test.ts
-//
 // ART scenario for FEATURECV (audio→CV feature extractor). Two layers, mirroring
 // synesthesia/band-filtering:
 //

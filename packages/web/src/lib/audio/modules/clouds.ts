@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clouds.ts
-//
 // CLOUDS — granular texture processor. Audio-domain module + pure-math
 // mirror of the worklet engine. Worklet at packages/dsp/src/clouds.ts.
 // Algorithm after Émilie Gillet's Mutable Instruments Clouds (MIT-licensed);
@@ -40,9 +38,7 @@ import workletUrl from '@patchtogether.live/dsp/dist/clouds.js?url';
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-// ----------------------------------------------------------------------------
 // Pure-math mirror — keep numerically identical to the worklet.
-// ----------------------------------------------------------------------------
 
 // ── THE WORKLET'S CONSTANTS, EXPORTED ───────────────────────────────────────
 //
@@ -367,7 +363,6 @@ export const cloudsDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // Authored from what this module IS: a granular TEXTURE processor — a
   // two-second ring buffer sprayed back out as up to 24 overlapping grains.

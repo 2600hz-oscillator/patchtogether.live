@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde.test.ts
-//
 // Tests for TIMELORDE's start_in / stop_in transport gates.
 // Pattern follows dx7.test.ts: mock AudioContext + AudioWorkletNode so the
 // factory can be driven from node without spinning up Web Audio. The

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/treeohvox-dsp.ts
-//
 // TREE.oh.VOX — TB-303 voice slice ported from Open303 (Robin Schmidt,
 // MIT, https://github.com/RobinSchmidt/Open303). MIT → AGPL is a one-way
 // compatible relicense.
@@ -59,13 +57,11 @@
 // matching reference. The constants block-by-block matches the C++
 // constructor defaults.
 
-// ---------------------------------------------------------------------------
 // One-pole highpass — direct port of rosic::OnePoleFilter::HIGHPASS path.
 // Upstream's coefficient calc: tan-prewarped, b0 = b1 = 0.5, a1 derived from
 // the half-bandwidth. For the feedback HP we only need a single fixed
 // cutoff (150 Hz) so we can store a1, b0=0.5 statically; recompute only
 // when sampleRate changes (constructor + setSampleRate).
-// ---------------------------------------------------------------------------
 export class TbVoxFeedbackHp {
   private a1 = 0;
   private b0 = 0.5;
@@ -99,7 +95,6 @@ export class TbVoxFeedbackHp {
   }
 }
 
-// ---------------------------------------------------------------------------
 // TbVoxFilter — verbatim port of rosic::TeeBeeFilter in TB_303 mode.
 // The maths come straight from rosic_TeeBeeFilter.{h,cpp}:
 //
@@ -126,11 +121,9 @@ export class TbVoxFeedbackHp {
 // `r` (resonanceSkewed) maps from the user-facing 0..1 raw resonance via:
 //     resonanceSkewed = (1 - exp(-3*resRaw)) / (1 - exp(-3))
 // which is the same exponential skew rosic uses in setResonance().
-// ---------------------------------------------------------------------------
 
 const SKEW_DENOM = 1 - Math.exp(-3); // matches rosic literal
 
-// ---------------------------------------------------------------------------
 // THE CUTOFF RANGE LIVES HERE, ONCE.
 //
 // `treeohvoxDef.params.cutoff` (min/max) and the `cutoff` AudioParam descriptor
@@ -140,7 +133,6 @@ const SKEW_DENOM = 1 - Math.exp(-3); // matches rosic literal
 // (the def offered 40 Hz; the filter clamped at 200; the bottom ~25 % of the
 // knob was bit-exactly dead). `treeohvox-range-source.test.ts` asserts the def
 // and the descriptor still match these — the numbers are never re-typed.
-// ---------------------------------------------------------------------------
 /** Lowest cutoff the TB_303 ladder will honour (Hz). Also the def's knob min. */
 export const TB303_CUTOFF_FLOOR_HZ = 40;
 /** Highest cutoff the def exposes (Hz). The ladder itself runs to 20 kHz; the
@@ -251,7 +243,6 @@ export class TbVoxFilter {
   }
 }
 
-// ---------------------------------------------------------------------------
 // TbVoxDecayEnv — single-decay envelope on the filter cutoff.
 // Direct port of rosic::DecayEnvelope: the entire per-sample step is
 //     y *= c
@@ -260,7 +251,6 @@ export class TbVoxFilter {
 // LeakyIntegrator convention). trigger() resets y to 1.0, so the next
 // step() returns c (or 1.0 if you read state before stepping — we do
 // neither, the canonical use is trigger → step → step → ...).
-// ---------------------------------------------------------------------------
 export class TbVoxDecayEnv {
   private y = 0;
   private c = 0;
@@ -295,7 +285,6 @@ export class TbVoxDecayEnv {
   }
 }
 
-// ---------------------------------------------------------------------------
 // TbVoxAmpEnv — Attack-Decay-Release envelope. This is a simplification of
 // rosic::AnalogEnvelope (which is AHDSR-with-RC). The 303 voice doesn't
 // expose A/H/D/S/R individually — it has a fast fixed attack
@@ -314,7 +303,6 @@ export class TbVoxDecayEnv {
 // All the constants match the rosic per-sample form:
 //
 //     y[n+1] = y[n] + coeff * (target[n] - y[n])
-// ---------------------------------------------------------------------------
 
 /** Upstream's `ampEnv.setRelease(1.0)` — the 303's note-off is near-instant
  *  but still an exponential, so it de-clicks. rosic::Open303 constructor. */
@@ -422,7 +410,6 @@ export class TbVoxAmpEnv {
   }
 }
 
-// ---------------------------------------------------------------------------
 // polyBlepSaw — per-sample anti-aliased saw oscillator. Open303 uses a
 // mip-mapped wavetable (BlendOscillator + MipMappedWaveTable::SAW303), but
 // for the voice slice an audio-rate polyBLEP saw produces an indistinguish-
@@ -433,7 +420,6 @@ export class TbVoxAmpEnv {
 //
 // State is a single phase accumulator in [0, 1). step() advances it by
 // freqHz / sr and returns the corrected saw value in [-1, 1).
-// ---------------------------------------------------------------------------
 export class PolyBlepSaw {
   private phase = 0;
   private sr: number;
@@ -467,7 +453,6 @@ export class PolyBlepSaw {
   }
 }
 
-// ---------------------------------------------------------------------------
 // PolyBlepBlendOsc — saw↔square morph oscillator (Open303 BlendOscillator
 // archetype: BlendOscillator crossfades the SAW303 + SQR303 wavetables via a
 // "waveform" control). One shared phase accumulator; `blend` morphs saw (0) →
@@ -491,7 +476,6 @@ export class PolyBlepSaw {
 // `0.5 × saw(φ+180°)`. Measured DFT at 100 Hz, blend 1/3: h1 = 0.00000 AND
 // h3 = 0.00000. With the polarities aligned the odd amplitude is
 // (2/(πk))·(1 + w), monotone over the whole travel, and nothing cancels.
-// ---------------------------------------------------------------------------
 export class PolyBlepBlendOsc {
   private phase = 0;
   constructor(private sr: number) {}
@@ -549,7 +533,6 @@ export class PolyBlepBlendOsc {
   }
 }
 
-// ---------------------------------------------------------------------------
 // envModScalerOffset — verbatim port of Open303's
 // rosic::Open303::calculateEnvModScalerAndOffset() with
 // `useMeasuredMapping == true` (which is the only branch ever taken in
@@ -560,7 +543,6 @@ export class PolyBlepBlendOsc {
 // (cutoff, envMod%) → (scaler, offset) such that
 //     instCutoff = cutoff * pow(2, scaler*(mainEnvOut - offset))
 // gives a credible match to a hardware 303's filter sweep range.
-// ---------------------------------------------------------------------------
 export interface EnvModMap {
   scaler: number;
   offset: number;
@@ -595,25 +577,21 @@ export function envModScalerOffset(cutoffHz: number, envModPercent: number): Env
   };
 }
 
-// ---------------------------------------------------------------------------
 // pitchCvToFreq — convert a V/oct CV value to Hz. The rack convention is
 // 0 V = C4 (261.626 Hz). The voice's TUNE knob (in semitones) is summed
 // on top of the V/oct CV before the conversion. This matches how
 // analog-vco.dsp and macrooscillator.ts do it.
-// ---------------------------------------------------------------------------
 export const C4_HZ = 261.6255653005986;
 
 export function pitchCvToFreq(voltCv: number, tuneSemitones: number): number {
   return C4_HZ * Math.pow(2, voltCv + tuneSemitones / 12);
 }
 
-// ---------------------------------------------------------------------------
 // TreeohvoxVoice — the assembled voice. Mirrors the structure of
 // rosic::Open303 minus the things listed in the file-header OMITTED block.
 // One-shot constructor + per-sample step(); the worklet and the
 // reference renderer both consume this class so any algorithm change here
 // is a single source of truth.
-// ---------------------------------------------------------------------------
 
 export interface VoiceParams {
   /** TUNE knob — semitones offset from V/oct input. */
@@ -763,13 +741,11 @@ export class TreeohvoxVoice {
   }
 }
 
-// ---------------------------------------------------------------------------
 // renderVoiceSequence — offline render helper. Used by ART scenarios and
 // by the parity test. Given a sequence of notes (each { atSample,
 // pitchCv, accented, gateDurationSamples }), render `totalSamples` of
 // audio with the given params held constant. NOT used at runtime — the
 // worklet has its own loop with per-sample param smoothing.
-// ---------------------------------------------------------------------------
 
 export interface ScheduledNote {
   atSample: number;
@@ -818,11 +794,9 @@ export function renderVoiceSequence(
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // crossCorrelation — Pearson correlation between two equal-length signals.
 // Used by the parity test to compare TREE.oh.VOX output against a
 // reference. Returns a value in [-1, 1] (1 = identical shape).
-// ---------------------------------------------------------------------------
 export function crossCorrelation(a: Float32Array, b: Float32Array): number {
   if (a.length !== b.length) {
     throw new Error(`crossCorrelation: length mismatch ${a.length} vs ${b.length}`);
@@ -852,10 +826,8 @@ export function crossCorrelation(a: Float32Array, b: Float32Array): number {
   return num / denom;
 }
 
-// ---------------------------------------------------------------------------
 // rmsWindow — windowed RMS for envelope-shape comparison. Used by the
 // parity test to compare amplitude trajectories independently of phase.
-// ---------------------------------------------------------------------------
 export function rmsWindow(buf: Float32Array, windowSamples: number): Float32Array {
   const n = buf.length;
   const w = Math.max(1, windowSamples);

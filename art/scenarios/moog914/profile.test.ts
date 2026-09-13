@@ -1,5 +1,3 @@
-// art/scenarios/moog914/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 914 (extended fixed filter bank) (backfill
 // batch 2 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

@@ -1,5 +1,3 @@
-// e2e/tests/4plexvid.spec.ts
-//
 // 4PLEXVID — 4-in / 4-out video router. DETERMINISTIC render-smoke (DRS),
 // converted IN-PLACE from the old wall-clock / animation-diff shape (plan §3 +
 // §5 Layer B). The old test routed each router output into a VIDEO-OUT sink and

@@ -1,5 +1,3 @@
-// e2e/tests/aut-patch-panel.spec.ts
-//
 // @aut Acceptance flow for the redesigned (no-drag / overlay-replace) patch
 // menu:
 //

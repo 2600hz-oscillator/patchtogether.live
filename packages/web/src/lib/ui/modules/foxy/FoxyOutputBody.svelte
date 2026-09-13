@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/foxy/FoxyOutputBody.svelte
-  //
   // The FOXY dock full-view body: the module's whole internal world as five
   // live pictures, plus the three affordances that are not ParamDefs (the
   // SCOPE/3D view flip, SCREEN ON/OFF, and EXPORT TABLE).

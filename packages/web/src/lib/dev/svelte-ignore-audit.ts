@@ -1,5 +1,4 @@
 // packages/web/src/lib/dev/svelte-ignore-audit.ts
-//
 // `svelte-check --fail-on-warnings` (packages/web/package.json `typecheck`) makes
 // every compiler warning a hard failure, so `<!-- svelte-ignore … -->` is now the
 // ONLY way a warning survives. That makes the comment an exemption record, and an

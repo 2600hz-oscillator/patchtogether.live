@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/console-grid.ts
-//
 // THE CONSOLE GRID — when a band's clusters are COLUMNS OF ONE TABLE rather
 // than four independent rows.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/node-source-hls.spec.ts
-//
 // ⚠ THE FILENAME IS LOAD-BEARING — DO NOT RENAME THIS TO `peertube-*.spec.ts`,
 // `tv-librarian-*.spec.ts`, `video-*.spec.ts` OR ANYTHING ENDING
 // `-render-smoke.spec.ts`. `e2e/webgl-heavy-globs.ts` classifies by BASENAME

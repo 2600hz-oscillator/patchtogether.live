@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/lane-colors.ts
-//
 // THE RACK'S LANE COLOURS — one derivation, read by every surface that paints
 // "channel N" in channel N's colour.
 //

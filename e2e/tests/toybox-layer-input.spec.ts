@@ -1,5 +1,3 @@
-// e2e/tests/toybox-layer-input.spec.ts
-//
 // TOYBOX LAYER INPUT (feedback-tap source) — Phase 1. Proves the END-TO-END path
 // through the real UI + engine for the new "sample a NODE OUTPUT (incl. the
 // post-feedback OUT) as a layer's texture source" feature:

@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-transport-no-controller.spec.ts
-//
 // P0 REGRESSION GUARD (#1165, PR feat/push2-control-phase1): the clip player's
 // OWN on-screen transport (the ▶/■ button → TIMELORDE.running) must START and
 // STOP with NO Push / controller involved — and the Push 2 control integration

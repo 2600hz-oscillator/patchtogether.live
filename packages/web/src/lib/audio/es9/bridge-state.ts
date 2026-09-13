@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/bridge-state.ts
-//
 // The ONE pure decision the transport worker makes at socket close: what
 // connection state the card should show. Extracted from bridge.worker.ts so
 // the unit lane can pin it — the worker itself is a module worker with

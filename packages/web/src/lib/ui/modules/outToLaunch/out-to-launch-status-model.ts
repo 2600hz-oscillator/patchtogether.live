@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outToLaunch/out-to-launch-status-model.ts
-//
 // THE PURE HALF of the OUT TO LAUNCH faceplate body: every string and every
 // visibility condition the plate needs, as functions of one view object, so the
 // unit lane can drive all of them with no browser, no Web MIDI and no hardware.

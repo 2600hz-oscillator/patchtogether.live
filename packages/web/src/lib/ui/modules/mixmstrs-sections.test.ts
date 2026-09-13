@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mixmstrs-sections.test.ts
-//
 // THE MIXMSTRS ROW COUNT.
 //
 // MIXMSTRS is the one card that names every patch-panel row by hand, and the

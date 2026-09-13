@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-transport.test.ts
-//
 // Unit tests for the TWOTRACKS pure transport state machine.
 // No AudioContext deps — pure logic only.
 
@@ -21,9 +19,7 @@ import {
 } from './twotracks-transport';
 
 describe('twotracks-transport', () => {
-  // ─────────────────────────────────────────────────────────────────────────
   // Initial state
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('creates fresh idle transport', () => {
     const t = createTransport();
@@ -39,9 +35,7 @@ describe('twotracks-transport', () => {
     expect(t.state).toBe('idle');
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // play / stop
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('idle → play', () => {
     const t = transportPlay(createTransport());
@@ -65,9 +59,7 @@ describe('twotracks-transport', () => {
     }
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // arm → rec / overdub
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('idle → armed via arm()', () => {
     const t = transportArm(createTransport());
@@ -97,9 +89,7 @@ describe('twotracks-transport', () => {
     expect(t.state).toBe('rec');
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // beginRec (immediate, no arm wait)
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('beginRec enters rec (destructive)', () => {
     const t = transportBeginRec(createTransport());
@@ -114,9 +104,7 @@ describe('twotracks-transport', () => {
     expect(t.pendingDecay).toBe(true);
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // Axis 2: loop vs one-shot — cursorCrossedStart vs reachedEnd
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('loop+rec: reachedEnd is no-op (wraps instead)', () => {
     const rec = { ...createTransport('loop'), state: 'rec' as const };
@@ -149,9 +137,7 @@ describe('twotracks-transport', () => {
     expect(t.state).toBe('play');
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // overdub toggle
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('toggleOverdub flips the flag from idle', () => {
     const t = transportToggleOverdub(createTransport());
@@ -180,9 +166,7 @@ describe('twotracks-transport', () => {
     expect(t.state).toBe('idle');
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // All 4 axis combinations
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('loop + destructive: rec wraps at start without stopping', () => {
     // Armed in loop mode, destructive.
@@ -226,9 +210,7 @@ describe('twotracks-transport', () => {
     expect(idle.state).toBe('idle');
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // pendingDecay flag
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('consumePendingDecay returns true and clears flag', () => {
     const t = { ...createTransport(), pendingDecay: true };
@@ -244,9 +226,7 @@ describe('twotracks-transport', () => {
     expect(t2.pendingDecay).toBe(false);
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // loopMode change
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('setLoopMode changes mode without touching state', () => {
     const t = { ...createTransport('loop'), state: 'play' as const };
@@ -255,9 +235,7 @@ describe('twotracks-transport', () => {
     expect(t2.state).toBe('play'); // state unchanged
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // computeDecayFactor
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('decay=0 → 0.90', () => {
     expect(computeDecayFactor(0)).toBeCloseTo(0.90);
@@ -276,9 +254,7 @@ describe('twotracks-transport', () => {
     expect(computeDecayFactor(5)).toBeCloseTo(0.50);
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // isRecording / isActive helpers
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('isRecording: true only for rec/overdub', () => {
     expect(isRecording({ ...createTransport(), state: 'rec' })).toBe(true);
@@ -295,9 +271,7 @@ describe('twotracks-transport', () => {
     expect(isActive(createTransport())).toBe(false);
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // Immutability: all transitions return NEW objects
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('transitions do not mutate the original', () => {
     const orig = createTransport();
@@ -312,9 +286,7 @@ describe('twotracks-transport', () => {
     expect(orig.pendingDecay).toBe(false);
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // Edge: reachedEnd from idle/armed (no-op)
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('reachedEnd from idle is no-op', () => {
     const t = createTransport('oneshot');
@@ -328,9 +300,7 @@ describe('twotracks-transport', () => {
     expect(t.state).toBe('armed'); // still waiting for cursor cross
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   // Full walk-through: arm → armed → loop-start → rec → stop
-  // ─────────────────────────────────────────────────────────────────────────
 
   it('full walk-through: idle → arm → rec (loop) → stop → idle', () => {
     let t = createTransport('loop');

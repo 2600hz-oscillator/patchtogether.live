@@ -1,5 +1,3 @@
-// e2e/vrt/_fonts.ts
-//
 // Deterministic text rendering for the VRT suite.
 //
 // ── The flake this kills ─────────────────────────────────────────────

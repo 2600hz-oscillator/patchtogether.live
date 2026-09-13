@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog903a.test.ts
-//
 // Two test layers for the MOOG 903A RANDOM SIGNAL GENERATOR (moogafakkin System 55/35
 // clone):
 //   1. Module-def shape — pins the 903A's I/O surface (NO inputs, the two

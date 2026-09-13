@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/karplus.test.ts
-//
 // KARPLUS module-def shape + worklet-wrapper behavior. The per-sample DSP
 // math (tuning < 3 cents, ρ-compensated decay, stability at the extremes)
 // is pinned in packages/dsp/src/lib/karplus-dsp.test.ts and the raw audio
@@ -38,9 +36,7 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Module-def shape (the frozen contract)
-// ───────────────────────────────────────────────────────────────────────
 
 describe('KARPLUS def — frozen contract', () => {
   it('declares the voice I/O: trigger strike, 1V/oct pitch, damp gate, CV set, mono out', () => {
@@ -102,9 +98,7 @@ describe('KARPLUS def — frozen contract', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + behavior the wrapper owns
-// ───────────────────────────────────────────────────────────────────────
 
 const BLOCK = 128;
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// scripts/legacy-removal-manifest.mjs
-//
 // THE DELETION MANIFEST for the legacy-card removal branch — the review surface
 // the PR body links to.
 //

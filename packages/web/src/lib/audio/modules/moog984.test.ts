@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog984.test.ts
-//
 // Two test layers for the MOOG 984 4-CHANNEL MATRIX MIXER:
 //   1. Module-def shape — pins the 984's I/O surface (in1..in4 inputs;
 //      out1..out4 outputs; the 16 cross-point params m11..m44, all linear

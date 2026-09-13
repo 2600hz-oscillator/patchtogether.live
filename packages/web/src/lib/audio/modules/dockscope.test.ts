@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/dockscope.test.ts
-//
 // DOCKSCOPE (workflow P2.5b) — def-contract + factory-seam + draw-math
 // unit tests. Mirrors scope.test.ts's fake-AudioContext pattern (no Faust
 // assets, def imports directly).

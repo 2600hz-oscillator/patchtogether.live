@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-res.test.ts
-//
 // Unit coverage for the pure aspect → resolution math (no GL). Covers the
 // LOCKED spec: 4:3 = 1024×768, 16:9 = 1366×768 (even-rounded), the fitRect
 // letterbox-vs-pillarbox math, the per-source fill/letterbox scale, and the

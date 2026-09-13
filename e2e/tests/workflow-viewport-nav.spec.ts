@@ -1,5 +1,3 @@
-// e2e/tests/workflow-viewport-nav.spec.ts
-//
 // WORKFLOW VIEWPORT NAVIGATION — the keyboard pan keys. Proves the real
 // window-keydown handler (Canvas.svelte, workflow-mode only) drives xyflow's
 // setViewport:

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/frametable-file-actions.ts
-//
 // The FRAMETABLE `.frametable.png` FILE actions, shared by the LEGACY CARD and
 // the FACED shell cells so the two surfaces cannot drift.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-sysex.test.ts
-//
 // Golden-vector tests for the PURE Ableton Push 2 User-mode codec. Every byte
 // sequence is pinned to the Push 2 MIDI/Display interface spec + ffont/push2-
 // python, so a drift in the protocol numbers fails here before it reaches

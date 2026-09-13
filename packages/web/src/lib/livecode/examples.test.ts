@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/examples.test.ts
-//
 // Keeps the "Load example" snippets HONEST: every example must parse +
 // run cleanly against the real runtime, and the owner's flagship
 // re-quantizer must actually produce CHANGING, QUANTIZED notes when its

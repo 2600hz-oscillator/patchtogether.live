@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7-patch-actions.ts
-//
 // The DX7's two NON-PARAM controls — the PRESET/voice selector and the .syx
 // cartridge import — as ONE shared implementation.
 //
@@ -17,9 +15,7 @@
 // `nodeVersion(id)` or a SyncedStore-tracked `$derived`); writes take a nodeId
 // and mutate the live `patch` store.
 //
-// ==========================================================================
 // THE VOICE EDIT BUFFER, AND WHY LOADING A PRESET IS A *STAMP*
-// ==========================================================================
 // Loading a voice used to be one write — `node.data.preset = name` — and the
 // factory re-derived everything else from that name on its next poll. That is
 // no longer enough, because the DX7 now has an EDIT BUFFER: the 78 operator

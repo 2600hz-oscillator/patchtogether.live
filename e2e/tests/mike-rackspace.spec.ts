@@ -1,5 +1,3 @@
-// e2e/tests/mike-rackspace.spec.ts
-//
 // @collab tests for Meticulous Mike. Mirror of Carl's E2E suite, with
 // added mutual-exclusion assertions: spawning Mike disables Carl's spawn
 // (and vice-versa); 86ing the active bot re-enables the other's spawn.

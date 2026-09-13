@@ -1,5 +1,3 @@
-// art/scenarios/vca/profile.test.ts
-//
 // AUDIO PROFILE for VCA (voltage-controlled amplifier, mono) — backfill
 // batch 6, the FAUST-IN-NODE harness's first pinned module (spec §3,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).

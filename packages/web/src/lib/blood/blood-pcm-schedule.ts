@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-pcm-schedule.ts
-//
 // HOW MANY FRAMES THE BLOOD PCM PUMP OWES THE WORKLET ON THIS TICK.
 //
 // ⚠ WHY THIS IS NOT `Math.round(44100 / 60)`, WHICH IS WHAT IT USED TO BE.

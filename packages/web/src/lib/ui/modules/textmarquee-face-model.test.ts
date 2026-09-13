@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/textmarquee-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the TEXTMARQUEE faceplate (2026-08-31).
 //
 // Everything here is a claim the shipped face MAKES and that no pixel gate can
@@ -167,9 +165,7 @@ describe('textmarquee face — four knobs, one band, no rail', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // THE PARITY DIFF, AS A GATE
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('⚠ textmarquee — the STOP-2 surface, pinned on the face', () => {
   /**
@@ -245,9 +241,7 @@ describe('⚠ textmarquee — the STOP-2 surface, pinned on the face', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // THE SERIALIZER — one copy, explicit styles
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('⚠ textmarquee — the editor cascade is DATA, and the surface says so', () => {
   it('the surface stamps the explicit style contract on the element', () => {
@@ -287,9 +281,7 @@ describe('⚠ textmarquee — the editor cascade is DATA, and the surface says s
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // SCREEN ON / OFF
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('⚠ textmarquee — SCREEN OFF stops the COPY, never the producer', () => {
   it('the body reads, writes and exposes a button for `previewCollapsed`', () => {
@@ -339,9 +331,7 @@ describe('⚠ textmarquee — SCREEN OFF stops the COPY, never the producer', ()
   // picture back. One surface cannot disagree with itself.
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // RANGES
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('textmarquee — no surface re-types a bound', () => {
   // ⚠ 'the card binds every knob through paramSpec, not a literal' STOOD HERE.

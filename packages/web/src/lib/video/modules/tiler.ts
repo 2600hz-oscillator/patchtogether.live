@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tiler.ts
-//
 // TILER — video multiscreen / TILE effect PROCESSOR.
 //
 // Repeats the input frame in a cols×rows grid: each cell shows the FULL input
@@ -63,9 +61,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 
-// ----------------------------------------------------------------------
 // Grid-size model — exported for unit tests + the card readout (no GL).
-// ----------------------------------------------------------------------
 
 /** A single TILE step: the TOTAL tile count and its landscape cols×rows
  *  realization (cols >= rows so each cell keeps the source's wide aspect). */
@@ -260,7 +256,6 @@ export const tilerDef: VideoModuleDef = {
     },
   ],
 
-  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
   face: {
     order: ['tile'],
 

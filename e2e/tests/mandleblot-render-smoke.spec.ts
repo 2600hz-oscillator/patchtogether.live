@@ -1,5 +1,3 @@
-// e2e/tests/mandleblot-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for MANDLEBLOT — a pure-GL Mandelbrot
 // fractal VIDEO SOURCE (no video input; its only input is `zoom_cv`). Modeled
 // EXACTLY on spirographs-render-smoke.spec.ts + the shared _render-smoke harness

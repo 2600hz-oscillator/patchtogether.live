@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/compressor-dsp.test.ts
-//
 // Pure-DSP unit tests for the SIDECAR ducker core (GMR-2012 log-domain
 // compressor: HPF detector → soft-knee gain computer → asymmetric att/rel
 // smoother → linear duck). Extracted but untested. These pin the dynamics

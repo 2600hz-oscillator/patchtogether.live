@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde-wizard.test.ts
-//
 // Unit tests for the pure TIMELORDE helpers: the beat-pulse math, the
 // colour-targeted beat boost (the owl's YELLOW EYES + BLUE BORDER pulse, the
 // brown body does NOT), the gate → on/off interpretation, and the big-display
@@ -207,9 +205,7 @@ describe('timelorde-wizard: applyBeatBoost (whole-frame, in place)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // The boost as an OVERLAY — parity with the per-pixel reference
-// ─────────────────────────────────────────────────────────────────────────
 //
 // `applyBeatBoost`/`boostBeatColor` are the REFERENCE ORACLE here: the producer
 // no longer runs them per frame, it draws a baked white-with-alpha overlay at

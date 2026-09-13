@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-cv-routes.ts
-//
 // TOYBOX CV/modulation routing model + resolution (PURE: no Yjs, no GL).
 //
 // A TOYBOX layer's shader (and thus its float uniforms) is chosen at RUNTIME,
@@ -473,4 +471,3 @@ export function resolveRoute(
     apply: (v) => { params[route.param] = v; },
   };
 }
-

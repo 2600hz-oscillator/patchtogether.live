@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/lfo-face-model.test.ts
-//
 // The LFO face's arithmetic, pinned. Three jobs, in order of how much they
 // would cost to get wrong:
 //

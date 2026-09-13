@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/unityscalemathematik-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the four UNITYSCALEMATHEMATIK hero
 // readouts, plus the face's own structural claims.
 //

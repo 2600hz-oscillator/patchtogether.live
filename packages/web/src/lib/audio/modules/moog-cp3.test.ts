@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog-cp3.test.ts
-//
 // Two test layers for the MOOG CP3 console mixer:
 //   1. Module-def shape — pins the CP3's I/O surface (in1..in4 + ext4 inputs;
 //      the (+)/(−) outputs, the 1→3 MULTIPLE outs, the ±reference outs; the

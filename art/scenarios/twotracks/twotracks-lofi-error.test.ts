@@ -1,5 +1,3 @@
-// art/scenarios/twotracks/twotracks-lofi-error.test.ts
-//
 // ART scenario: TWOTRACKS Lofi mode ERROR (lofi=3).
 //
 // Drives the pure-math lofi chain with lofi=3 and lofiSeed=42 (fixed for

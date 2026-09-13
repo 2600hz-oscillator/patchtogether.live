@@ -1,5 +1,3 @@
-// e2e/tests/load-staleness-reused-id.spec.ts
-//
 // THE HYDRATE-ONCE FAMILY, END TO END — fleet audit 2026-09-06, findings #4
 // (midi-cv-buddy, midi-lane, midi-out-buddy, midiclock) and #8 (audio-out).
 //

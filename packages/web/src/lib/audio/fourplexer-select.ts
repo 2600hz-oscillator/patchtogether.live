@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/fourplexer-select.ts
-//
 // Pure selector-advance logic for 4PLEXER, shared between the UI (gate-
 // advance preview, direct knob clicks) and the unit test. The DSP worklet
 // (packages/dsp/src/fourplexer.ts) carries an inlined mirror of

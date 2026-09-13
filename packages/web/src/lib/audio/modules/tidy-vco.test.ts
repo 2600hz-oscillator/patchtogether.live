@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/tidy-vco.test.ts
-//
 // TIDY VCO module-def shape + worklet-wrapper behavior. The per-sample DSP
 // math (diode-ladder tuning gate, RC-ADSR curves, OTA VCA bloom, the
 // sonic-range proofs) is pinned in packages/dsp/src/lib/tidy-vco-dsp.test.ts
@@ -48,9 +46,7 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Module-def shape (the frozen contract)
-// ───────────────────────────────────────────────────────────────────────
 
 describe('TIDY VCO def — frozen contract', () => {
   it('identity: type/label/category/domain (label lowercase per the guard)', () => {
@@ -125,9 +121,7 @@ describe('TIDY VCO def — frozen contract', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + wrapper behavior
-// ───────────────────────────────────────────────────────────────────────
 
 const BLOCK = 128;
 

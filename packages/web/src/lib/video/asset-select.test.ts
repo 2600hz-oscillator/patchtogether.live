@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/asset-select.test.ts
-//
 // Pure mapping tests for the 7-slot asset selector shared by PICTUREBOX +
 // VIDEOVARISPEED. This is the CORE of the feature: note/V-oct → slot. White
 // keys (C-major degrees) map across ALL octaves; black keys map to null.

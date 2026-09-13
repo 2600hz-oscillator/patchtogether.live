@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/pentemelodica-dsp.ts
-//
 // PENTEMELODICA — shared DSP math for the 5-voice polyphonic analog-style
 // synth. Lives in `lib/` so esbuild inlines it into the worklet entry
 // (packages/dsp/src/pentemelodica.ts) at build time; top-level src/*.ts files
@@ -66,11 +64,9 @@ export type { AdsrParams };
 
 export const PENTE_VOICES = 5;
 
-// ----------------------------------------------------------------------------
 // Envelope — copied verbatim from the Helm synth (mopo/envelope.cpp
 // algorithm port): linear attack ramp, single-pole exponential decay/release,
 // times in SECONDS, sustain 0..1, gate edge via trigger(on).
-// ----------------------------------------------------------------------------
 
 export enum EnvState {
   Idle = 0,
@@ -126,11 +122,9 @@ export class Envelope {
   }
 }
 
-// ----------------------------------------------------------------------------
 // Per-voice frequency map. Mirrors moogFreqHz's exponential V/oct math but
 // folds in fine cents + exponential FM (the fmN audio input scaled by the FM
 // depth) directly in the exponent. 0 V = C4 = 261.626 Hz everywhere.
-// ----------------------------------------------------------------------------
 
 /** V/oct + coarse semitones + fine cents + exponential FM → Hz, clamped to a
  *  safe sub-Nyquist span. `fmExp` is the exponential-domain FM term already
@@ -150,13 +144,11 @@ export function voiceFreqHz(
   return f;
 }
 
-// ----------------------------------------------------------------------------
 // WAVE morph — continuous triangle → saw → square crossfade over the
 // band-limited taps from moogWaves (so the morph stays anti-aliased).
 //   wave = 0.0 → triangle
 //   wave = 0.5 → sawtooth
 //   wave = 1.0 → square (rectangular at the voice's pulse width)
-// ----------------------------------------------------------------------------
 
 export function waveMorph(waves: MoogWaveSet, wave: number): number {
   const w = wave < 0 ? 0 : wave > 1 ? 1 : wave;
@@ -171,7 +163,6 @@ export function waveMorph(waves: MoogWaveSet, wave: number): number {
   return saw * (1 - t) + sqr * t;
 }
 
-// ----------------------------------------------------------------------------
 // MODE morph — continuous LP → BP → HP → Notch dial over the SVF taps.
 //   notch = lp + hp = x - k*bp   (THE SVF identity — k is the damping term)
 //   mode = 0.000 → LP
@@ -192,7 +183,6 @@ export function waveMorph(waves: MoogWaveSet, wave: number): number {
 // (pickModeOutput case 3, `lp + hp`) has always had this right; this is the
 // same identity written the same way, and it is cross-checked against that
 // sibling in the unit test.
-// ----------------------------------------------------------------------------
 
 export function modeMorph(
   taps: { lp: number; bp: number; hp: number },
@@ -210,11 +200,9 @@ export function modeMorph(
   return taps.hp * (1 - t) + notch * t;
 }
 
-// ----------------------------------------------------------------------------
 // Render — the shared inner loop. Used by both the worklet and the web/ART/unit
 // mirror. State is held by the caller in a PenteState so successive blocks /
 // successive render() calls stay phase- and envelope-coherent.
-// ----------------------------------------------------------------------------
 
 /** Per-voice parameter set for one render. The amplitude envelope's A/D/S/R is
  *  NOT per-voice — it lives in the shared PenteParams.adsr (poly-adsr alignment

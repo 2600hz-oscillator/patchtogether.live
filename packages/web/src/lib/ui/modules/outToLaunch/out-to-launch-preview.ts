@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outToLaunch/out-to-launch-preview.ts
-//
 // THE 9×9 MONITOR PREVIEW, drawn once and imported twice.
 //
 // This is the picture OUT TO LAUNCH is FOR: the def's own docs call it "the 9x9

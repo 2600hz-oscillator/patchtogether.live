@@ -1,5 +1,3 @@
-// e2e/tests/face-trails.spec.ts
-//
 // THE TRAILS FACE, driven for real on the DEFAULT shell — the seams no other
 // gate can see.
 //

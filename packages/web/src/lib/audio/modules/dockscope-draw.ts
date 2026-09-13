@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/dockscope-draw.ts
-//
 // DOCKSCOPE's slim single-channel trace renderer — SHARES scope-draw's
 // sample→pixel math (pixelFromSample + the ±1/±5V display-range
 // conventions) instead of forking it, per the P2.5b "import/share, don't

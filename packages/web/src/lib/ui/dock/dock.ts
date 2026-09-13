@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/dock.ts
-//
 // DOCKING — pure zone model (P1: the workflow M/E/C bottom drawer).
 //
 // The workflow-mode bottom drawer was the FIRST INSTANCE of a general

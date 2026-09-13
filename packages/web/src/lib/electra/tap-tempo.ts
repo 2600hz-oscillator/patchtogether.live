@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/tap-tempo.ts
-//
 // TAP-TEMPO — a pure ring-buffer → BPM helper.
 //
 // The Electra (or any pad/note source) sends a momentary press on each tap.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/sidecar.ts
-//
 // SIDECAR — stereo sidechain ducker. The MAIN audio pair is the trigger
 // (e.g. a kick); the SIDECHAIN pair is the signal that gets ducked and
 // summed into the output (e.g. a pad/bass). The sidechain is ALWAYS
@@ -145,7 +143,6 @@ export const sidecarDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
   // WHAT SIDECAR IS FOR, musically: it is the rack's PUMP — the one module that
   // makes one signal breathe in time with another. It is not an insert

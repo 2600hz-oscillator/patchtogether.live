@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog993-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for moog993's one derived readout.
 //
 // The bar (module-faceplates.md): a derived readout is negative-controlled on

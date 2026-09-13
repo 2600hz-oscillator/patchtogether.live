@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/patch-convenience.ts
-//
 // PURE, framework-free eligibility + wiring planner for the workflow-mode
 // right-click convenience wiring, now folded into a single channel-indexed
 // action ("Assign to channel N"):

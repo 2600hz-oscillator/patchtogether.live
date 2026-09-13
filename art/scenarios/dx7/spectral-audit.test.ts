@@ -1,5 +1,3 @@
-// art/scenarios/dx7/spectral-audit.test.ts
-//
 // Diagnostic — for each bundled preset, print the top 8 spectral peaks
 // at C4 (or its register-appropriate note). Useful for hand-tuning the
 // bank during development; passes as long as each preset has a

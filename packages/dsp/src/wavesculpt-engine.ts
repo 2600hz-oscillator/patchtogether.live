@@ -1,5 +1,3 @@
-// packages/dsp/src/wavesculpt-engine.ts
-//
 // WAVESCULPT engine — 4 wavetable oscillators summed into a stereo bus.
 // Each oscillator is the shared WavetableOsc class at
 // packages/dsp/src/lib/wavetable-osc.ts.

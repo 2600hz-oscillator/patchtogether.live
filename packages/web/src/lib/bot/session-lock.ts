@@ -1,5 +1,3 @@
-// packages/web/src/lib/bot/session-lock.ts
-//
 // Generalized "one bot per rackspace" lock. Used by both Rackspace Carl and
 // Meticulous Mike (and any future patch-monkey bot) to enforce mutual
 // exclusion: at most ONE bot of any kind may be active in a rackspace at a

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/preview-gate.test.ts
-//
 // The decision's own gate. Every leg drives an explicit clock, so there is no
 // wall-clock sleep and no flake surface.
 //

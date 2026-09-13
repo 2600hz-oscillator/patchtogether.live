@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/picturebox.ts
-//
 // PICTUREBOX — image-file source. The player picks a file; a still is
 // zoom-fit-cropped to the ENGINE RESOLUTION (TARGET_W×TARGET_H = VIDEO_RES =
 // 1024×768, 4:3 — see video-res.ts), JPEG-encoded q=0.85, base64-stored in
@@ -230,7 +228,6 @@ export const pictureboxDef: VideoModuleDef = {
     { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
-  // ─────────────────────────────────────────────────────────────────────────
   // #1726 — THE TWO SYNTHETIC PARAMS ARE NOT CONTROLS, AND SAYING SO IS
   // MANDATORY RATHER THAN TIDY.
   //
@@ -281,8 +278,6 @@ export const pictureboxDef: VideoModuleDef = {
     },
   ],
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // THE FACEPLATE
   //
   // WHAT IT IS FOR. A picture, in the video graph, that you chose. picturebox is
   // the simplest possible video SOURCE — no camera, no stream, no network — and

@@ -1,5 +1,3 @@
-// e2e/tests/video-fullscreen.spec.ts
-//
 // True-fullscreen mode for VIDEO OUT + BENTBOX. Right-click the live video
 // canvas -> "Fullscreen" puts the card's canvas wrapper into real browser
 // fullscreen via element.requestFullscreen(); double-click anywhere (and

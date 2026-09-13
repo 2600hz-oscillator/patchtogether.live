@@ -1,5 +1,3 @@
-// art/scenarios/analog-vco/mirror-fidelity.test.ts
-//
 // THE GATE THAT CANNOT BE SILENCED BY A RE-PIN.
 //
 // The analog-vco `.f32` baselines are rendered from a TS mirror of

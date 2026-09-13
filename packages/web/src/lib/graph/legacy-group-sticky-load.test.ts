@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/legacy-group-sticky-load.test.ts
-//
 // THE SAFETY GATE for retiring the `group` and `sticky` module types.
 //
 // The owner's ruling deletes both types outright ("we may rebuild these later

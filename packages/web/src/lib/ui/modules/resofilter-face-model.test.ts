@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/resofilter-face-model.test.ts
-//
 // The PERMANENT gate behind resofilter's three derived readouts and its
 // sidebar curve. Three jobs, and the middle one is the one that matters:
 //
@@ -106,7 +104,6 @@ const params = (over: Partial<ResofilterFaceParams> = {}): ResofilterFaceParams 
   ...over,
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 describe('resofilter face model — ORACLE: every printed number comes from the shipping DSP', () => {
   // ── the PEAK ──────────────────────────────────────────────────────────────
   it('the PEAK readout is the measured gain at cutoff, in LP, HP and BP alike', () => {
@@ -301,7 +298,6 @@ describe('resofilter face model — ORACLE: every printed number comes from the 
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 describe('resofilter face model — NEGATIVE CONTROLS (the blindness each readout exists for)', () => {
   it('THE BLINDNESS: a `paramId: resonance` readout prints the SAME string in all five modes', () => {
     // The declaration this face rejected, stated as the assertion that
@@ -394,7 +390,6 @@ describe('resofilter face model — NEGATIVE CONTROLS (the blindness each readou
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 describe('resofilter face model — the WORKLET’s own rounding, and the def wiring', () => {
   it('MODE rounds at EXACTLY 0.5 and clamps — the same arithmetic resofilter.ts:117 runs', () => {
     expect(svfModeIndex(0.4)).toBe(0);

@@ -1,5 +1,3 @@
-// art/scenarios/_meta/audio-profile-gate.test.ts
-//
 // THE AUDIO-PROFILE GATE (owner decision §4 item 1 — "gate"; spec:
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md; what to do
 // when this gate reddens: runbooks/testing.md, "ART audio profiles — the

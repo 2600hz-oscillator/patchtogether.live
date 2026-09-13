@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/databend-cvbs.ts
-//
 // databend-cvbs — COMPOSITE-as-DATA bent VFPGA (design §3.4). Bends the composite
 // signal the way databending corrupts a FILE: a real 4-input bitwise LUT (the
 // literal FPGA LUT16 — the ratified authenticity anchor) mangles the picture's

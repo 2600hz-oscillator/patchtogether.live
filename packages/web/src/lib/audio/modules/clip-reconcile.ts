@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-reconcile.ts
-//
 // Per-machine, IN-MEMORY SCHEDULER-RECONCILE channel for the clip player — the
 // STALE-NOTE FIX seam (redesign §3.1). Mirrors clip-audition.ts: an editor (the
 // Launchpad binding OR the on-screen card, both global singletons with no

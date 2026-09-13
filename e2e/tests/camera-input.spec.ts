@@ -1,5 +1,3 @@
-// e2e/tests/camera-input.spec.ts
-//
 // CAMERA module e2e — TWO describes, ONE file, split by load profile:
 //
 //   1. "deterministic render smoke" (UNTAGGED) — the GPU render path. This is
@@ -296,7 +294,6 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       { timeout: 5_000 },
     );
 
-    // Stop failing requests — the device is "available" again from here on.
     await page.evaluate(() => {
       (window as unknown as { __camFailRequest?: boolean }).__camFailRequest = false;
     });

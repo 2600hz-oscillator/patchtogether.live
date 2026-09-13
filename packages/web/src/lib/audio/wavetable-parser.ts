@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavetable-parser.ts
-//
 // Parses an E352 Cloud Terrarium-format wavetable WAV.
 //
 // Format reference (Synthesis Technology E352, MakeNoise/Befaco/etc. share

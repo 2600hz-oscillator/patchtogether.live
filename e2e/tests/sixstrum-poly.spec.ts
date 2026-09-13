@@ -1,5 +1,3 @@
-// e2e/tests/sixstrum-poly.spec.ts
-//
 // Bespoke E2E for SIX STRUM — proves the end-to-end audio path in the REAL
 // worklet (the pure-fn core + worklet-unit tests cover the DSP; this is the
 // mandatory poly-module real-source-chain coverage per CLAUDE.md: a real graph

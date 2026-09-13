@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/pitch-probability.test.ts
-//
 // The WEIGHT FUNCTION, asserted directly and deterministically.
 //
 // A test that draws N samples and asserts a mean passes on a badly broken
@@ -64,7 +62,6 @@ const bySemi = (cands: readonly PitchCandidate[], st: number): PitchCandidate =>
 /** Every level 0..40 as its instability value. */
 const LEVELS = Array.from({ length: PITCH_PROB_LEVELS + 1 }, (_v, i) => pitchProbLevelToValue(i));
 
-// ---------------------------------------------------------------------------
 describe('the 40-increment level domain', () => {
   it('is the SAME 2.5% grid as the existing per-note PROBABILITY control', () => {
     // The owner's stated reason for 40: parity with the other % controls for
@@ -108,7 +105,6 @@ describe('the 40-increment level domain', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 describe('x = 0 is EXACT, not almost', () => {
   it('the authored pitch has ALL the mass; every other candidate is exactly 0', () => {
     const c = at(0);
@@ -153,7 +149,6 @@ describe('x = 0 is EXACT, not almost', () => {
 });
 const MIN_TEST_MIDI = 36;
 
-// ---------------------------------------------------------------------------
 describe('the distance term is LAPLACIAN, in SCALE DEGREES', () => {
   it('weight(offset) = exp(-|offset| / spread) on the in-scale candidates', () => {
     const x = 0.6;
@@ -225,7 +220,6 @@ describe('the distance term is LAPLACIAN, in SCALE DEGREES', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 describe('the single parameter moves all three curves, at different rates', () => {
   it('centre mass is monotonically NON-INCREASING across all 40 steps', () => {
     let prev = Infinity;
@@ -362,7 +356,6 @@ describe('the single parameter moves all three curves, at different rates', () =
   });
 });
 
-// ---------------------------------------------------------------------------
 describe('privileged intervals — the secondary peaks', () => {
   it('the bonus is applied at exactly ±12 and ±7 semitones, nowhere else', () => {
     for (let st = -19; st <= 19; st++) {
@@ -484,7 +477,6 @@ describe('privileged intervals — the secondary peaks', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 describe('the weight is the documented PRODUCT, and the window is bounded', () => {
   it('weight = distance × privilege × scale × original, for every candidate', () => {
     for (const x of [0, 0.2, 0.5, 0.8, 1]) {
@@ -526,7 +518,6 @@ describe('the weight is the documented PRODUCT, and the window is bounded', () =
   });
 });
 
-// ---------------------------------------------------------------------------
 describe('sampling integration (the ONLY block that uses an RNG)', () => {
   it('draws from the weights by inverse CDF — the boundaries are exact', () => {
     const opts = { midi: C4, instability: 0.6, root: ROOT, scale: 'major' as const };
@@ -570,7 +561,6 @@ describe('sampling integration (the ONLY block that uses an RNG)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 describe('MULTIPLAYER DETERMINISM', () => {
   const parts = { nodeId: 'clip-1', lane: 2, slot: 3, step: 5, midi: C4, loopCount: 7 };
 

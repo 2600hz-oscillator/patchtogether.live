@@ -1,5 +1,3 @@
-// e2e/tests/illogic-face.spec.ts
-//
 // THE ILLOGIC FACE, driven for real — and specifically the two seams the other
 // gates cannot see.
 //

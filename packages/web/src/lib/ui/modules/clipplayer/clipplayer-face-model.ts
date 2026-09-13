@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer/clipplayer-face-model.ts
-//
 // The PURE view model behind the clip player's v2 face — one projection of
 // `node.data` per surface the faceplate paints, and nothing else.
 //

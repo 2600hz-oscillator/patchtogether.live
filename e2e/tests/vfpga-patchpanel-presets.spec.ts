@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-patchpanel-presets.spec.ts
-//
 // vfpga-runner — two user-reported regressions (review-gated PR), re-pointed at
 // the default shell by the S2 legacy-removal inversion:
 //

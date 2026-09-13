@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/codebuffer-face-model.test.ts
-//
 // The CODE-BUFFER pair's faces — LIVECODE and the CLOCKED RUNNER it spawns —
 // pinned where no pixel gate can see them, plus the permanent negative controls
 // for the claims these two promotions rest on that are true by MECHANISM rather

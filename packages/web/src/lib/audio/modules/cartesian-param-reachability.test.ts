@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cartesian-param-reachability.test.ts
-//
 // CARTESIAN MUST NOT DECLARE A CONTROL NOTHING CONSUMES, AND ITS CARD MUST NOT
 // WRITE A CONTROL THE DEF DOES NOT DECLARE.
 //

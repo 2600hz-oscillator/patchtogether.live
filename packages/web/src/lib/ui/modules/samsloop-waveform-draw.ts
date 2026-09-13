@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/samsloop-waveform-draw.ts
-//
 // THE ONE SAMSLOOP WAVEFORM DRAW — shared by `SamsloopCard.svelte` (the legacy
 // card) and `samsloop/SamsloopOutputBody.svelte` (the faceplate's dock body).
 //

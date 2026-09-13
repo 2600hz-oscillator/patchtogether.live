@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-masspass.ts
-//
 // WARREN'S SPECTRUM — the MASSPASS engine (phase 4).
 //
 // A transcription of the VST's `dsp/MassPass.cpp` (326 lines, plugin phases

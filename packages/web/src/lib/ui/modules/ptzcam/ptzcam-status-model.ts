@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ptzcam/ptzcam-status-model.ts
-//
 // EVERY STRING THE PTZ DEVICE BODY CAN PRODUCE, as pure functions — including
 // the ones that are never painted.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-map.ts
-//
 // FOXY — pure, table-testable bridge math for the
 //   SWOLEVCO → RASTERIZE → RUTTETRA(XYZ) → realtime-wavetable → WAVECEL
 // signal chain. This file owns the two deterministic transforms that turn

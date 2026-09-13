@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clap-face-model.ts
-//
 // THE PURE MODEL BEHIND CLAP's FACEPLATE — every number the faceplate prints or
 // draws, derived here and nowhere else, through the WORKLET'S OWN control laws
 // (`clapSpreadMs` / `clapPulseCount` / `clapTailMs` / `clapToneHz` /

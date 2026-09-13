@@ -1,5 +1,3 @@
-// e2e/tests/perf-midi-cc-coalesce.spec.ts
-//
 // Regression gate for the MIDI-CC → video-render starvation fix (the owner's
 // "twisting Electra knobs murders video rendering" report, birds1 patch).
 //

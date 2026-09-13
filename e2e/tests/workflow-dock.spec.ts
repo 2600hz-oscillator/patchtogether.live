@@ -1,5 +1,3 @@
-// e2e/tests/workflow-dock.spec.ts
-//
 // WORKFLOW MODE P2.5a — the DOCKING CORE on /rack:
 //
 //   * THE SPIKE (gated PatchPanel): a REAL module card renders in a dock

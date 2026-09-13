@@ -1,5 +1,3 @@
-// e2e/tests/outlines.spec.ts
-//
 // OUTLINES — end-to-end coverage for the stateful particle video generator.
 // Proves the real source → module → audible-output chain for all four
 // outputs:

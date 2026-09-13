@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/push2-control.ts
-//
 // PUSH 2 CONTROL — a CONTROL SURFACE node that binds an Ableton Push 2 to a
 // focused `clipplayer` (Phase 1). The Push drives the FULL Launchpad clip-launch
 // / note-editor / arm / scene / KEYS parity surface by injecting itself as the
@@ -128,7 +126,6 @@ export const push2ControlDef: MetaModuleDef = {
     },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: this is the only thing that puts an Ableton Push 2 in
   // charge of a rack — the clip grid, the note editor, and the eight display

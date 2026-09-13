@@ -1,5 +1,3 @@
-// art/scenarios/drummergirl/gate-voice.test.ts
-//
 // DRUMMERGIRL — the gated drum voice, measured on the SHIPPED wasm.
 //
 // One of three Faust modules that had NO ART scenario (found by sweeping every

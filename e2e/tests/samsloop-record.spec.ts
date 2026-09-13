@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-record.spec.ts
-//
 // SAMSLOOP audio-input record path, on the DEFAULT shell (S2 re-point —
 // the dock REC cell + the __samsloopRecording registry probe replace the
 // card's REC/STOP label flip):

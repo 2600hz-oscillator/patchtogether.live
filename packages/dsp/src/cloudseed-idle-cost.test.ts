@@ -1,5 +1,3 @@
-// packages/dsp/src/cloudseed-idle-cost.test.ts
-//
 // AUDIO-THREAD COST for CLOUDSEED: an idle reverb must not re-derive itself.
 //
 // THE BUG THIS PINS. `CloudseedProcessor.process` pushes all seven k-rate

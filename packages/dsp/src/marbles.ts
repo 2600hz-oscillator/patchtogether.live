@@ -1,5 +1,3 @@
-// packages/dsp/src/marbles.ts
-//
 // MARBLES — random sampler / clock generator (Mutable Instruments archetype).
 // AudioWorklet processor. DSP core in marbles-core.ts (clean-room TS port of
 // eurorack/marbles/, MIT-licensed, Copyright 2015 Émilie Gillet).

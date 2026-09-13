@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/one-knob-faces-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the ONE-KNOB faceplates — audio
 // utilities whose entire control surface is a single param.
 //

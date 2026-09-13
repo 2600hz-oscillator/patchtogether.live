@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/worker-engine.ts
-//
 // Fix E Phase 1 — the WORKER-SIDE mini render engine (a "texture co-processor").
 //
 // This is NOT a replacement for the main VideoEngine. It owns its OWN

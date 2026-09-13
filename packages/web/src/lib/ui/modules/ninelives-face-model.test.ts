@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ninelives-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS FOR THE NINE LIVES FACEPLATE.
 //
 // A derived readout earns its place by being negative-controlled on the input a

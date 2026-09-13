@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-audio-ring.ts
-//
 // Rolling planar-stereo-f32 ring buffer that retains the trailing N seconds of
 // already-emitted capture audio — the 5-SECOND AUDIO OVERLAP for GoPro-style
 // chunking. When the recorder rolls to chunk N+1, it PREPENDS this ring's

@@ -1,5 +1,3 @@
-// packages/server/src/journal.test.ts
-//
 // The append-journal durability protocol, exercised with REAL Y.Docs (no
 // mocked Yjs — house rule): write → journal → crash → recover must lose
 // nothing, and compaction must never delete a row the stored snapshot

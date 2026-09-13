@@ -1,5 +1,3 @@
-// e2e/tests/es9-shell-lifetime.spec.ts
-//
 // THE ES-9 HARDWARE CONNECTION MUST OUTLIVE ITS CARD.
 //
 // Owner report 2026-08-05: under `?mode=workflow&shell=1` the ES-9 stopped

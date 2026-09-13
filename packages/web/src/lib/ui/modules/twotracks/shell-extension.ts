@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/twotracks/shell-extension.ts
-//
 // TWOTRACKS' faceplate surface: the two reel pictures, carried forward from the
 // legacy card.
 //

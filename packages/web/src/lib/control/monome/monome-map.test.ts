@@ -1,4 +1,3 @@
-// packages/web/src/lib/control/monome/monome-map.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   padToClipIndex,

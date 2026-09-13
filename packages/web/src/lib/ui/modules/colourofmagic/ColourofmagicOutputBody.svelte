@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/colourofmagic/ColourofmagicOutputBody.svelte
-  //
   // The COLOUROFMAGIC dock full-view body: its live picture plus the SCREEN
   // ON/OFF switch the owner ruling requires.
   //

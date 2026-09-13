@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/featurecv-face-model.ts
-//
 // FEATURECV's FACEPLATE MODEL — the pure arithmetic behind the face's derived
 // readouts and its sidebar picture, and the ONE place any of it is written.
 //

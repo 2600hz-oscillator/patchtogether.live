@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-xyz-parity.test.ts
-//
 // THE XYZ-PARITY GATE. In GEN=XYZ, FOXY's two on-card pictures — the "xyz
 // field" window and the "live wavetable" — must show THE SAME DATA, because
 // the second is built from the first. Owner report, 2026-08-24: "the xyz field

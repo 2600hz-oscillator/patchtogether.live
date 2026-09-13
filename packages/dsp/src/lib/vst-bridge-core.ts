@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/vst-bridge-core.ts
-//
 // Pure core for the VST-bridge worklet (both cards: vstInstrument + vstFx):
 // the poly-CV → MIDI voice state machine and the SharedArrayBuffer MIDI
 // event ring. Unit-tested here (no Web Audio); the worklet in
@@ -27,9 +25,7 @@
 
 export { RingIO, createRingSpec, UnderrunFiller, FADE_FRAMES, type RingSpec } from './es9-bridge-core';
 
-// ---------------------------------------------------------------------------
 // Note / gate / velocity conversion (duplicates — see header)
-// ---------------------------------------------------------------------------
 
 /** Gate is "high" at/above this level (duplicate of midi-out-buddy.ts
  *  GATE_THRESHOLD; same value the sequencer transport edge-detectors use). */
@@ -66,9 +62,7 @@ export function velocityCvToMidi(cv: number): number {
   return Math.max(1, Math.min(127, scaled));
 }
 
-// ---------------------------------------------------------------------------
 // Voice state machine — per-sample, allocation-free
-// ---------------------------------------------------------------------------
 
 /** Allocation-free event sink: `len` is 2 or 3; trailing bytes are 0 when
  *  unused. `sampleTime` is the worklet's OUTGOING-stream frame counter — the
@@ -159,7 +153,6 @@ export class PolyMidiVoice {
   }
 }
 
-// ---------------------------------------------------------------------------
 // SharedArrayBuffer SPSC MIDI event ring — fixed 16-byte records, one
 // producer (the worklet), one consumer (the bridge Worker). Mirrored
 // web-side in $lib/audio/vst/vst-ring.ts; the layouts must match
@@ -175,7 +168,6 @@ export class PolyMidiVoice {
 // header: SharedArrayBuffer(8) as Int32Array → [0]=head, [1]=tail,
 //   monotonically increasing RECORD counters (int32 wrap;
 //   occupancy = (head - tail) | 0). capacity is a power of two.
-// ---------------------------------------------------------------------------
 
 export const MIDI_RECORD_BYTES = 16;
 const MIDI_RECORD_WORDS = 4; // Int32 words per record

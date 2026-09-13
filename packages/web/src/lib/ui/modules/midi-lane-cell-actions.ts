@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midi-lane-cell-actions.ts
-//
 // The MIDI LANE faceplate's cell seams — the module-owned end of every ranked
 // cell, kept out of `shell-cells.ts` so the shared registry imports one file
 // per module rather than the module's whole world.

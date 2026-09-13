@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/live-node-data.ts
-//
 // THE HYDRATE-ONCE SEAM — re-read what a factory captured at spawn.
 //
 // ── WHY A FACTORY'S `node.data` READ GOES STALE ─────────────────────────────

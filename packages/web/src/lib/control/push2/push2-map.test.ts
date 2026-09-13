@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-map.test.ts
-//
 // The Push 2 PLACEMENT ADAPTER — the translation between Push MIDI and the shipped
 // Launchpad control vocabulary. PURE, so fully unit-testable: classify inbound
 // Push events (parity → LaunchpadRxEvent; additive → channel/encoder/dpad) and

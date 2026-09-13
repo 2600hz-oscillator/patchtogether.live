@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/timelorde-clock-core.test.ts
-//
 // P0 BLIND-SPOT coverage for the TIMELORDE clock engine (extracted pure core).
 //
 // TIMELORDE is behavioral-EXEMPT: a clock emits short gate pulses whose RMS is
@@ -330,9 +328,7 @@ describe('TIMELORDE swingSource reaches every declared source (defect 6)', () =>
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // THE MULTIPLIER "DEFICIT" — WHAT IT ACTUALLY IS
-// ═══════════════════════════════════════════════════════════════════════════
 //
 // A face spec measured 8 / 15 / 29 / 57 rising edges on 1x / 2x / 4x / 8x over
 // a 4 s render at 120 bpm — short of 8x / 16 / 32 / 64 by exactly 1 / 3 / 7,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-combine-graph.ts
-//
 // TOYBOX Phase 4 — the user-EDITABLE combine GRAPH (a DAG of nodes + edges).
 //
 // Phases 1-3 reduced the 4 layers with a FIXED linear chain (ToyboxCombine =

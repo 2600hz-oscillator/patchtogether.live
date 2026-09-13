@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/peertube.ts
-//
 // PEERTUBE — federated-video SOURCE. Search the PeerTube fediverse (via Sepia
 // Search) → pick a video → its per-instance HLS master playlist (.m3u8) is
 // attached (via hls.js) to a NODE-OWNED <video crossorigin=anonymous>

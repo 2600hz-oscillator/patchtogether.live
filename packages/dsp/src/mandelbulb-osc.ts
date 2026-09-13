@@ -1,5 +1,3 @@
-// packages/dsp/src/mandelbulb-osc.ts
-//
 // MANDELBULB-OSC — the SLIM wavetable oscillator that plays the MANDELBULB
 // bulb-slice readout as audio. A trimmed-down clone of cube.ts's oscillator
 // pipeline: it drops CUBE's three-table / morph / connect / spread / fold / wrap

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-record-capture.ts
-//
 // DETERMINISTIC live-record CAPTURE math for the dual-Launchpad KEYS recorder
 // (redesign: docs/adr/013-clip-owned-state-per-clip.md).
 // PURE + engine-free: given a pad event's own timestamp + the recording

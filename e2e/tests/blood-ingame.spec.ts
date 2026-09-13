@@ -1,5 +1,3 @@
-// e2e/tests/blood-ingame.spec.ts
-//
 // REAL-BROWSER reproduction of the BLOOD "no game content / black screen once a
 // game starts" bug (#965). The existing blood-keyboard spec proves keys reach the
 // engine; the committed node harness only validates the MENU renders. NEITHER

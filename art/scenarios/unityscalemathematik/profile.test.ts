@@ -1,5 +1,3 @@
-// art/scenarios/unityscalemathematik/profile.test.ts
-//
 // AUDIO PROFILE for UNITYSCALEMATHEMATIK (triple CV shaper) (backfill
 // batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

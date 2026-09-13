@@ -1,5 +1,3 @@
-// packages/dsp/scripts/watch.mjs
-//
 // Watches src/ for changes and rebuilds individual modules. Per D17:
 // hot-swap from day 1 — when a module rebuilds, dist/<name>.{js,wasm,sha}
 // updates and the web app's Vite plugin picks it up.

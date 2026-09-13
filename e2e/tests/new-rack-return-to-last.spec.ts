@@ -1,5 +1,3 @@
-// e2e/tests/new-rack-return-to-last.spec.ts
-//
 // FILE → NEW RACK + the landing "Return to last rack" card.
 //
 //   * New rack (File menu, LOGGED-OUT scratch path here): a FRESH empty rack of

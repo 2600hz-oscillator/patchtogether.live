@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/doc-index.test.ts
-//
 // Contract for buildDocIndex — the flat, client-resolvable doc payload the
 // interactive virtual-module page indexes by control key / port id. The core
 // guarantee the interactive page leans on is the CV→param DUAL link: a CV input

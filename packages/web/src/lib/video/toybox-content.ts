@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-content.ts
-//
 // TOYBOX content-bank registry. Mirrors the wavetable-presets.ts pattern:
 // the catalog (id / label / family / param schema) is described by a STATIC
 // manifest served from packages/web/static/toybox/manifest.json at

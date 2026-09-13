@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/performance-bundle.ts
-//
 // "Performance Bundle" — the portable manifest half of the Save/Load Local
 // Performance feature.
 //

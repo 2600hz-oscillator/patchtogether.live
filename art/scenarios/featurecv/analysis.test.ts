@@ -1,5 +1,3 @@
-// art/scenarios/featurecv/analysis.test.ts
-//
 // THE FEATURECV AUDIT, as a permanent scenario — every claim the faceplate and
 // the docs make about this module's BEHAVIOUR, re-derived on every run from the
 // SHIPPING worklet through the def's OWN factory, plus the trigger-capture

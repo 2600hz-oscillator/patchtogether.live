@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/curated-face.ts
-//
 // The PURE top-N selector for the workflow-mode ModuleShell's semantic-zoom
 // (STRATA) tiers. Given a module def's co-located `face` (see ModuleFace in
 // $lib/graph/types) and a curation TIER, it resolves each ranked control key to

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/trigger-convert-dsp.ts
-//
 // Pure trigger-format-conversion logic for the MOOG 961 INTERFACE. The 961 is
 // a trigger/gate format converter — in the real hardware it bridges S-trigger
 // (switch-trigger, normally-closed to ground) and V-trigger (voltage-trigger,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/bluebox-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for BLUEBOX's faceplate, plus the pin that
 // anchors the model to the ARTIFACT rather than to a comment.
 //

@@ -1,5 +1,3 @@
-// art/scenarios/twotracks/twotracks-lofi-high.test.ts
-//
 // ART scenario: TWOTRACKS Lofi mode HIGH (lofi=2).
 //
 // Drives the pure-math lofi chain with lofi=2 and asserts:

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clipplayer-record-reconcile.test.ts
-//
 // ENGINE behavior for the live-record redesign's stale-note fix (§3) + the
 // shrunk record-lane lookahead (§3.3), driven through the REAL clipplayer
 // factory + tick loop against a fake (advanceable) AudioContext — same harness

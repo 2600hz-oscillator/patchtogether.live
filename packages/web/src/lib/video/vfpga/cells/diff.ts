@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/diff.ts
-//
 // CLB cell `diff(a, b, gain)` — the absolute-difference ALU cell: per-channel
 // |a - b|, scaled by `gain` and clamped. The keying / motion-detect / edge
 // primitive (difference of two frames or two sources highlights what changed).

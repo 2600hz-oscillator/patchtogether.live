@@ -1,5 +1,3 @@
-// packages/server/src/journal.ts
-//
 // Append-style PER-UPDATE journal beside the debounced snapshot store.
 //
 // Why: Hocuspocus persists full snapshots on a 2s/5s debounce

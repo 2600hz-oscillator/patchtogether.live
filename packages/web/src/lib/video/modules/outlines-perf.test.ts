@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/outlines-perf.test.ts
-//
 // PERF + behaviour-equivalence coverage for the OUTLINES per-pixel output
 // derivation, guarding the #699 regression fix.
 //
@@ -42,11 +40,9 @@ import {
   type Circle,
 } from './outlines-sim';
 
-// ---------------------------------------------------------------------------
 // A deterministic worst-case field: several large OCTAGONS (8 sides → the most
 // per-pixel edge-normal projections) plus a circle, spread across the field at
 // big diameters so they overlap heavily — the densest derivation cost.
-// ---------------------------------------------------------------------------
 
 function octagonField(): Circle[] {
   const cs: Circle[] = [];
@@ -67,12 +63,10 @@ function octagonField(): Circle[] {
   return cs;
 }
 
-// ---------------------------------------------------------------------------
 // OLD-STYLE reference derivation: a faithful re-implementation of the pre-fix
 // hot path — full-field scan, per-pixel polygon trig (Math.cos/Math.sin per edge
 // normal per pixel per shape), no cache, no pre-reject, no AABB. Used ONLY by
 // the benchmark to represent the #699 cost; it is NOT the production path.
-// ---------------------------------------------------------------------------
 
 function oldPolyRadius(lx: number, ly: number, sides: number, angle: number): number {
   let maxProj = -Infinity;
@@ -119,12 +113,10 @@ function oldDeriveField(circles: readonly Circle[], grid: number, rot: number): 
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Behaviour equivalence — the derive-once field must be byte-identical to the
 // per-point derivation (overlapCountAt / overlapAlphaAt / overlapValueAt /
 // combineRgbAt) at every cell center, for circles AND polygons, spun AND
 // unspun. A pure speedup changes NO pixels.
-// ---------------------------------------------------------------------------
 
 describe('OUTLINES derive-once field — byte-identical to the per-point derivation', () => {
   const grid = 160;
@@ -209,13 +201,11 @@ describe('OUTLINES derive-once field — byte-identical to the per-point derivat
   });
 });
 
-// ---------------------------------------------------------------------------
 // COMMITTED micro-benchmark — deterministic timing of the per-frame derivation
 // BEFORE (old per-pixel-trig full-field scan) vs AFTER (the derive-once field) at
 // a representative field size (160 grid) + several octagons (worst case). Asserts
 // a meaningful speedup so a future regression that re-introduces per-pixel trig
 // fails CI, and prints the factor for the PR body.
-// ---------------------------------------------------------------------------
 
 describe('OUTLINES per-frame derivation micro-benchmark (#699 hot path)', () => {
   // Explicit generous timeout: the OLD reference path is ~20+ ms/frame, so a

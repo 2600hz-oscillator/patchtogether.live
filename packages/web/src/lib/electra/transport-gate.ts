@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/transport-gate.ts
-//
 // THE TRANSPORT GATE for the Chromium-152 macOS SysEx regression (2026-08-29).
 //
 // Chromium 152 enabled the new UMP-based CoreMIDI backend (`MidiMacUmp`) on

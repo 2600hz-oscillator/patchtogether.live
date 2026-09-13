@@ -1,4 +1,3 @@
-// packages/web/src/lib/video/primitives.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   cube,

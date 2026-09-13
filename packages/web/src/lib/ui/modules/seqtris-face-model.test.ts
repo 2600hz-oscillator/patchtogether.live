@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/seqtris-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the SEQTRIS faceplate.
 //
 // ⚠ SEVEN OF THE CARD'S ELEVEN TESTIDS HAVE ZERO CONSUMERS — measured over the
@@ -610,7 +608,6 @@ function pulseTimes(from: SeqtrisState, n: number): SeqtrisState {
   return s;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 
 const STATUS_LED = readFileSync(
   new URL('../controls/StatusLed.svelte', import.meta.url),

@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/cc-out.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL for outbound CC.
 //
 // Read the two suppression tests as a PAIR. Together they pin the suppressor

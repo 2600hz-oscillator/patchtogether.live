@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/gibribbon-liveness.test.ts
-//
 // GIBRIBBON — the SOURCE-CORPUS LIVENESS PROPERTY TEST (the F1/F5 gate),
 // AUDIO edition: the corpus is AUDIO, pushed through the module's REAL
 // spectral fold (gibribbon-spectral.ts — the same pure code the factory runs

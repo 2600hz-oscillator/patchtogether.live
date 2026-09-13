@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/videobox-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the VIDEOBOX faceplate.
 //
 // Everything here is a claim the shipped face MAKES and that no other gate can

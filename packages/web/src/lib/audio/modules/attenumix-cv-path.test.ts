@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/attenumix-cv-path.test.ts
-//
 // THE CV PATH IS REAL — the two-sided check nothing else in the tree makes.
 //
 // The defect class this exists for is #1661 (swolevco): a module DECLARED four

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-faces-roster.test.ts
-//
 // THE JOIN BETWEEN THE VRT FACE ROSTER AND THE LIVE DEFS.
 //
 // `e2e/vrt/_shell-faces.ts` declares, per face, facts the VRT scenes branch on:

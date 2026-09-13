@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/shapedramps.ts
-//
 // SHAPEDRAMPS — sync-locked ramp generator.
 //
 // Emits four mono-video outputs:

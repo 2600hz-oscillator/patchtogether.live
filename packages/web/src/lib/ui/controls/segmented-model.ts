@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/segmented-model.ts
-//
 // PURE index/value logic for Segmented.svelte (the RACKLINE `.segmented` /
 // `.seg` / `.seg.on` discrete N-way — filter type, wave shape, mode banks).
 // A segmented control is a selector rendered inline as a button row; it shares

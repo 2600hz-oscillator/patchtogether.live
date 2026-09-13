@@ -1,5 +1,3 @@
-// e2e/tests/warrensspectrum-stereo.spec.ts
-//
 // WARREN'S SPECTRUM phase 2 — the STEREO claim, in a REAL AudioWorkletNode.
 //
 // ── WHY THIS SPEC HAS TO EXIST ────────────────────────────────────────────

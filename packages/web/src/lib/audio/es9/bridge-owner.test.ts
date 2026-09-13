@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/bridge-owner.test.ts
-//
 // THE INVARIANT: the ES-9 hardware connection's lifetime is the NODE's, not a
 // Svelte component's. Owner report 2026-08-05 — under ?shell=1 the stream died
 // whenever the card wasn't expanded, because Es9Card constructed the client on

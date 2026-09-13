@@ -1,5 +1,3 @@
-// e2e/tests/_flip-key.ts
-//
 // THE RACK-FLIP SHORTCUT, for specs.
 //
 // The flip gesture is BARE TAB, by owner ruling (#1629): the flip outranks

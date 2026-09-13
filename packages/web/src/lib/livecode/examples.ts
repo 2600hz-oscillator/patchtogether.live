@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/examples.ts
-//
 // Ready-to-run LIVECODE scripts surfaced by the "Load example" picker on
 // the LIVECODE card (LivecodeCard.svelte) and rendered on the docs page.
 //

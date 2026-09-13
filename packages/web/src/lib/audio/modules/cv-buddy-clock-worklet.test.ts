@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cv-buddy-clock-worklet.test.ts
-//
 // THE STALL-SIMULATION SUITE for the cv-clock worklet wiring — the structural
 // fix for the SPEEDERR-001 dropped pulse (ledger item 10: one pulse lost to a
 // 200–360 ms main-thread stall against a 200 ms lookahead; both Pam's re-locked

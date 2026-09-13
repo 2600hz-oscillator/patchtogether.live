@@ -1,5 +1,3 @@
-// scripts/exemption-coverage-anchors.test.ts
-//
 // EVERY COVERAGE EXEMPTION NAMES ITS REPLACEMENT — AND THE REPLACEMENT MUST EXIST.
 //
 // The 370 entries in Bucket 2 of the test ledger all make the same argument:

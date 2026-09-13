@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/face-width-source.test.ts
-//
 // THE GATE FOR "A FACEPLATE IS AS WIDE AS ITS CONTENT".
 //
 // ── THE RULING, AND THE DEFECT BEHIND IT ───────────────────────────────────

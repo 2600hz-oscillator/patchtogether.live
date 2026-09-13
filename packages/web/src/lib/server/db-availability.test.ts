@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/db-availability.test.ts
-//
 // The classifier has ONE job: separate "the database is unreachable" (503,
 // degrade) from "our SQL is wrong" (500, stay loud). Both halves are asserted,
 // because getting the SECOND half wrong is the dangerous failure — it would

@@ -1,5 +1,3 @@
-// e2e/audio-drift/_metrics.ts
-//
 // Comparison metrics for two PCM audio buffers captured from two browser
 // contexts running the same Yjs-synced patch. Implementations are kept
 // dependency-free (no FFT lib) — for STFT we use a simple radix-2 FFT

@@ -1,5 +1,3 @@
-// art/scenarios/dx7/algorithm-spectra.test.ts
-//
 // Regression test for "algorithm switching is a no-op" — when the user
 // changes the DX7 algorithm knob from e.g. 1 → 32 the rendered audio MUST
 // have a different spectral signature. Prior to the fix in this PR, the

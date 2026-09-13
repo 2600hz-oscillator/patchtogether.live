@@ -1,5 +1,3 @@
-// packages/dsp/src/shimmershine.ts
-//
 // SHIMMERSHINE — pure-TS stereo shimmer reverb.
 //
 // Architecture (single worklet, no Faust):

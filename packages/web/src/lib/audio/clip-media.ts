@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-media.ts
-//
 // The CLIP MEDIA interfaces — one take, from arm to commit, expressed so that
 // the audio implementation and the (later) video one are the SAME lifecycle.
 //

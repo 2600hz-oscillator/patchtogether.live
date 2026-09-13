@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/grains-of-vision-face-model.ts
-//
 // The PURE model behind the GRAINS OF VISION faceplate — the three quantities
 // this module's dials are individually blind to.
 //

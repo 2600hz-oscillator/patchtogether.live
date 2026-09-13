@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/es9-bridge-core.ts
-//
 // Pure core for the ES-9 native-bridge worklet: SharedArrayBuffer ring I/O,
 // per-jack signal-class scaling, and the underrun policies. Unit-tested here
 // (no Web Audio); the worklet in ../es9-bridge.ts is a thin block-mover over
@@ -146,7 +144,6 @@ export class UnderrunFiller {
   }
 }
 
-// ---------------------------------------------------------------------------
 // SharedArrayBuffer SPSC ring — planar Float32 frames, one producer thread,
 // one consumer thread, Atomics head/tail. Byte layout (MUST match the web
 // mirror in $lib/audio/es9/es9-ring.ts):
@@ -156,7 +153,6 @@ export class UnderrunFiller {
 //   data:   SharedArrayBuffer(channels * capacity * 4) as Float32Array,
 //           plane-per-channel: sample(ch, i) = data[ch * capacity + i],
 //           i = counter & (capacity - 1). capacity is a power of two.
-// ---------------------------------------------------------------------------
 
 export interface RingSpec {
   header: SharedArrayBuffer;

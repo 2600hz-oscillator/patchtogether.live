@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog921-face-model.ts
-//
 // THE PURE MODEL BEHIND THE MOOG 921 OSCILLATOR FAMILY — the 921A driver, the
 // 921B slave, and the standalone 921 VCO that packs both into one module. The
 // driver and the slave share a file because they are ONE INSTRUMENT split

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cube.test.ts
-//
 // Two test layers for CUBE:
 //   1. Module-def shape — pitch + CV inputs, single stereo audio_out, the
 //      literal param array (ranges/defaults), per-slot wavetable defaults.
@@ -105,9 +103,7 @@ function runProc(
 function peak(b: Float32Array): number { let m = 0; for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i] ?? 0)); return m; }
 function rms(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length; i++) s += (b[i] ?? 0) ** 2; return Math.sqrt(s / b.length); }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 1) Module-def shape.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('resolveSlotFrames — per-slot wavetable defaults', () => {
   it('resolves each slot to its default factory table when no data', () => {
@@ -136,7 +132,6 @@ describe('resolveSlotFrames — per-slot wavetable defaults', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 1b) DEF ↔ AudioParam DESCRIPTOR parity — the two-sided contract.
 //
 // The def's `defaultValue` is what the knob shows and what the factory writes;
@@ -150,7 +145,6 @@ describe('resolveSlotFrames — per-slot wavetable defaults', () => {
 //
 // DENY BY DEFAULT: every param present on BOTH sides must agree, with a NAMED
 // per-param exemption (not a filename) for the ones that legitimately differ.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('CUBE def ↔ worklet descriptor parity', () => {
   /** Params whose def default deliberately differs from the descriptor default.
@@ -219,9 +213,7 @@ describe('CUBE def ↔ worklet descriptor parity', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 2) Worklet DSP behavior.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('CUBE worklet — capture + audible output', () => {
   it('a 65 Hz input through loaded tables yields nonzero stereo output', async () => {
@@ -606,7 +598,6 @@ describe('CUBE worklet — capture + audible output', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 2b) POLYPHONY — the `poly` input (10-channel polyPitchGate bus).
 //
 // Drives process() with a hand-built inputs[1] poly bus (5 lanes × pitch+gate
@@ -616,7 +607,6 @@ describe('CUBE worklet — capture + audible output', () => {
 // gated lane (the chord is genuinely additive, not just lane 0); (c) all gates
 // closed → silent on the poly path (mono fallback owns the sound); (d) the mono
 // path is BYTE-IDENTICAL whether inputs[1] is absent or present-but-all-zero.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('CUBE worklet — poly input (polyPitchGate)', () => {
   const POLY_CH = 10;
@@ -760,7 +750,6 @@ describe('CUBE worklet — poly input (polyPitchGate)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 2c) no-stray-drone gating (Bug 1) + BASE VOL per-voice VCA floor (Bug-fix 2).
 //
 // Connectedness is a k-rate param (poly_connected / trigger_connected) pushed by
@@ -772,7 +761,6 @@ describe('CUBE worklet — poly input (polyPitchGate)', () => {
 // ships at 0 (pure ADSR) — see the base_vol descriptor in packages/dsp/src/cube.ts
 // for why the old default of 1 made the whole amp envelope inert, and
 // packages/dsp/src/lib/cube-envelope.test.ts for the measurements.
-// ─────────────────────────────────────────────────────────────────────────
 describe('CUBE worklet — no-stray-drone gating + BASE VOL floor', () => {
   const C2 = Math.log2(65.41 / 261.626);
 
@@ -918,7 +906,6 @@ describe('CUBE worklet — no-stray-drone gating + BASE VOL floor', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 3) Wavetable RELOAD (issue: loading a DIFFERENT table after one is loaded).
 //
 // Drives cubeDef.factory() against a mock Web Audio env that records every
@@ -926,7 +913,6 @@ describe('CUBE worklet — no-stray-drone gating + BASE VOL floor', () => {
 // selectFactory/selectPreset/onSlotFileChange do) and advances the poll timer.
 // The factory MUST re-post a fresh {type:'loadWavetable'} for the changed slot
 // — proving a second/different table replaces the first (the v4 reload fix).
-// ─────────────────────────────────────────────────────────────────────────
 
 interface CubeMockNode {
   __type: string;

@@ -1,5 +1,3 @@
-// packages/web/src/hooks.server.test.ts
-//
 // Targeted tests for the beta-gate carve-out. Importing hooks.server.ts
 // pulls in $env/dynamic/* which is a SvelteKit virtual module — vitest
 // doesn't have it in its module graph by default. To keep this test

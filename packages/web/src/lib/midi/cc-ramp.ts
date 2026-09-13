@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/cc-ramp.ts
-//
 // RAMP RASTERIZATION — turning a scheduled param ENDPOINT into a CC train.
 //
 // THE PROBLEM, precisely. `AudioEngine.scheduleParam(nodeId, paramId, value,

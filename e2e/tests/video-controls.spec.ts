@@ -1,5 +1,3 @@
-// e2e/tests/video-controls.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) conversion of the video-controls regression
 // suite — plan §3 (this spec is the worst wall-clock offender: 22 waitForTimeout
 // + 10 animation-diff samples) and §5 Layer B. Converted IN-PLACE from the old
@@ -637,12 +635,10 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // Legacy wall-clock helpers — used ONLY by the DEFERRED FEEDBACK test above
 // (an unbounded accumulator that can't be frozen into a deterministic frame).
 // Kept verbatim from the pre-DRS spec so the deferred test's mechanism is
 // unchanged; do NOT use these in the converted tests.
-// ---------------------------------------------------------------------------
 
 interface LegacyPixelStats {
   mean: number;

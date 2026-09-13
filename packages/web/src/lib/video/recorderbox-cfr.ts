@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-cfr.ts
-//
 // CONSTANT-FRAME-RATE (CFR) clock for the RECORDERBOX video track — the OSX
 // "slow-motion in Preview/QuickTime" fix.
 //

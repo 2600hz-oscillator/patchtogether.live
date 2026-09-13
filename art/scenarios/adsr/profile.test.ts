@@ -1,5 +1,3 @@
-// art/scenarios/adsr/profile.test.ts
-//
 // AUDIO PROFILE for ADSR (backfill Phase-0 pilot — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts + drivers.ts).

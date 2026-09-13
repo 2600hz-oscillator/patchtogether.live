@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/kria-cell-actions.ts
-//
 // The read/write halves of kria's faceplate BAND cells.
 //
 // Nine controls that the engine implements, the docs describe, and the card
@@ -191,4 +189,3 @@ export function kriaRootValue(node: ModuleNode | undefined): string {
 export function kriaSetRoot(nodeId: string, v: string): void {
   setKriaRoot(nodeId, Number(v));
 }
-

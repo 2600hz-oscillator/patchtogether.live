@@ -1,5 +1,3 @@
-// art/scenarios/swolevco/mode-gating-and-face-readouts.test.ts
-//
 // THE FACEPLATE'S CENTRAL CLAIM, PINNED TO THE REAL DSP.
 //
 // `swolevco-face-model.test.ts` holds the readouts' negative controls as PURE

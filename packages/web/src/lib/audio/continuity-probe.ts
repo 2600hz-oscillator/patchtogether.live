@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/continuity-probe.ts
-//
 // THE GRAPH-CONTINUITY PROBE — an audio-thread instrument for "did the output
 // break?", and an honest statement of what it can and cannot see.
 //

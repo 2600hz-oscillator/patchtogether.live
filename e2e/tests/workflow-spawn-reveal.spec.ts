@@ -1,5 +1,3 @@
-// e2e/tests/workflow-spawn-reveal.spec.ts
-//
 // SPAWN-CAMERA REVEAL — regression for the "adding a module to a lane makes the
 // whole viewport SCROLL WILDLY" bug. The original P0.3b add-pan re-framed the
 // target lane on EVERY add (laneCenterViewport → revealMemberViewport judged

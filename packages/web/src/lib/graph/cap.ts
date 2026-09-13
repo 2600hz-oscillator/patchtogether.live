@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/cap.ts
-//
 // SINGLE SOURCE OF TRUTH for type-level module instance counting.
 //
 // Every spawn route in Canvas.svelte (palette / drag-drop / keyboard,

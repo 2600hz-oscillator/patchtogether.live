@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vst-face-model.test.ts
-//
 // The VST BRIDGE faces' module-local pins — the half of the promotion that no
 // registry-driven sweep can see.
 //

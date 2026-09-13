@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/graph-param-dispatch.ts
-//
 // #1727 — THE GRAPH-RESOLVED DELIVERY PATH FOR AN INBOUND MIDI MESSAGE.
 //
 // ── THE DEFECT THIS EXISTS FOR ──────────────────────────────────────────────

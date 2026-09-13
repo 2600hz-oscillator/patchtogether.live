@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/score-data.ts
-//
 // Pure data helpers for the SCORE module. Kept separate from score.ts so the
 // vitest suite (node env) can exercise the math without pulling Faust runtime
 // imports.

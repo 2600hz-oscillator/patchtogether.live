@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/push2Control/shell-extension.ts
-//
 // The PUSH 2 CONTROL shell extension — the module-owned end of the extension
 // seam (#1512), on the `fullViewBody` slot.
 //

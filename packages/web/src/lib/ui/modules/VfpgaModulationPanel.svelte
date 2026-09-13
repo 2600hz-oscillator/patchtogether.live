@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/VfpgaModulationPanel.svelte
-  //
   // The VFPGA-RUNNER MODULATION RACK — the PF-14 panel cell that carries the
   // half of this module's control surface the generic shell cells cannot
   // express: one SCALE attenuverter + OFFSET + live trace per CV role the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/humanize.test.ts
-//
 // Unit tests for the humanize delay distribution. Pure JS; no Web Audio.
 
 import { describe, it, expect } from 'vitest';

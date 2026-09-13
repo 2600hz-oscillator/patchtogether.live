@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/tidy-vco-dsp.ts
-//
 // TIDY VCO (id `tidyVco`) — flagship virtual-analog SUBTRACTIVE SYNTH VOICE:
 // 2 morphable oscillators + sub → nonlinear ZDF DIODE LADDER → dual RC-curve
 // ADSR (filter + amp) → OTA-flavored VCA → stereo. 5-voice poly (the house
@@ -159,9 +157,7 @@ import { createOversampler, type Oversampler } from './oversample';
 
 const FLUSH = 1e-20;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Physical / voicing constants
-// ─────────────────────────────────────────────────────────────────────────
 
 /** V/oct anchor: 0 V = C4 (house convention). */
 export const TIDY_C4_HZ = 261.626;
@@ -280,9 +276,6 @@ const OSC_NORM = 0.5;
 /** Sub-oscillator level trim at SUB = 1. */
 const SUB_GAIN = 0.9;
 
-// ─────────────────────────────────────────────────────────────────────────
-// Params
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface TidyVcoParams {
   shape1: number; // OSC1 saw→pulse morph (0..1)
@@ -338,9 +331,7 @@ export const TIDY_VCO_DEFAULTS: TidyVcoParams = {
   level: 0,
 };
 
-// ─────────────────────────────────────────────────────────────────────────
 // Control laws (pure — unit-tested directly)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** V/oct → Hz (0 V = C4 = 261.626 Hz, house convention). */
 export function tidyFreqHz(voct: number): number {
@@ -414,9 +405,7 @@ export function tidyFoldSpread(foldEff: number, width: number): number {
   return FOLD_SPREAD_MAX * clamp(foldEff, 0, 1) * clamp(width, 0, 1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // polyBLEP oscillator (clean-room; Välimäki/Huovilainen 2-sample residual)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** 2-sample polyBLEP residual at phase t (0..1), increment dt. */
 export function tidyPolyBlep(t: number, dt: number): number {
@@ -457,9 +446,7 @@ export function tidyOscSample(t: number, dt: number, shape: number, pw: number):
   return (1 - s) * saw + s * pul;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // RC-punch ADSR (CEM3310-lineage; see header)
-// ─────────────────────────────────────────────────────────────────────────
 
 export const RC_IDLE = 0;
 export const RC_ATTACK = 1;
@@ -521,9 +508,7 @@ export function rcAdsrTick(
   return s.v;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // OTA-flavored VCA (see header; even-harmonic bloom measured in tests)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** One VCA sample at envelope level gEnv (0..1). Exactly 0 at gEnv = 0. */
 export function tidyOtaVca(x: number, gEnv: number): number {
@@ -532,13 +517,11 @@ export function tidyOtaVca(x: number, gEnv: number): number {
   return (Math.tanh(VCA_W * gEnv * x + b) - Math.tanh(b)) / VCA_W;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Stereo wavefolder — the ideal reflecting TRIANGLE folder (Serge/Buchla
 // 259/296 lineage) with 1st-order ADAA (see header). The triangle wave is
 // the IDENTITY on [−1, 1] and reflects off the ±1 rails beyond it, so the
 // fold's LINEAR core makes FOLD = 0 an exact bypass; its antiderivative is
 // closed-form piecewise-quadratic, which the antialiasing needs.
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Ideal reflecting triangle folder: period-4 triangle, tri(u) = u on
  *  [−1, 1], reflecting beyond — range [−1, 1] for any input. */
@@ -592,9 +575,7 @@ export function foldAdaaStep(
   return (triFoldInt(u) - triFoldInt(uPrev)) / du;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Nonlinear ZDF diode ladder (see header for the model + solve)
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface DiodeLadderState {
   y1: number;
@@ -700,9 +681,7 @@ export function diodeLadderStep(s: DiodeLadderState, x: number, g: number, k: nu
   return y4;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Voice + device state
-// ─────────────────────────────────────────────────────────────────────────
 
 interface TidyVoiceState {
   ph1: number; // OSC1 phase (0..1)
@@ -810,9 +789,7 @@ export function makeTidyVcoState(): TidyVcoState {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-block render
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface TidyVcoBus {
   /** polyPitchGate lane snapshot: length 10, (p0,g0,…,p4,g4), block-rate. */

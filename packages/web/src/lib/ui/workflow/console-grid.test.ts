@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/console-grid.test.ts
-//
 // The pure half of the console grid, plus the clause that actually matters: the
 // LIVE ROSTER membership. `consoleGridCols` changes the layout of any band it
 // answers for, so "which bands does it answer for" IS the blast radius — and it

@@ -1,5 +1,3 @@
-// e2e/tests/reshaper-shapedramps.spec.ts
-//
 // Integration tests for the real RESHAPER raster-scan-coordinate
 // processor + SHAPEDRAMPS sync-locked ramp generator.
 //

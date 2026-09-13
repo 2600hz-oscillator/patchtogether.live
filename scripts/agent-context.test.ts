@@ -1,5 +1,3 @@
-// scripts/agent-context.test.ts
-//
 // The agent-facing context files must describe the tree that actually exists.
 //
 // Claude Code discovers packaged skills under `.claude/skills/`; Codex

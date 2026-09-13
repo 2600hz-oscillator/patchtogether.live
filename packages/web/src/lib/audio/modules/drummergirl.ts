@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/drummergirl.ts
-//
 // DRUMMERGIRL — gate-triggered all-in-one synth drum voice. One module,
 // one voice — fire a gate, hear a drum hit shaped by pitch / tone /
 // shape / volume / decay. Stands alone in the palette for plain

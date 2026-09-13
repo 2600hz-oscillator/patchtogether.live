@@ -1,5 +1,3 @@
-// e2e/tests/organize-modules.spec.ts
-//
 // End-to-end coverage for the right-click → "Organize modules" + anchored-spawn
 // feature added in PR #36. This suite is intentionally extensive:
 //
@@ -29,7 +27,6 @@ import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
-// ---------- helpers ----------
 
 interface NodePos { x: number; y: number }
 interface PatchNode { id: string; type: string; position: NodePos }
@@ -96,9 +93,7 @@ async function ready(page: Page) {
   });
 }
 
-// ============================================================================
 // A. Right-click context menu basics
-// ============================================================================
 
 test('rclick on empty pane opens the Add-Module palette', async ({ page }) => {
   await ready(page);
@@ -154,9 +149,7 @@ test('rclick while palette open re-anchors at new click position', async ({ page
   expect(secondStyle).not.toEqual(firstStyle);
 });
 
-// ============================================================================
 // B. Add-Module sub-menu
-// ============================================================================
 
 test('palette renders the 3 top-level categories (audio / video / hybrid)', async ({ page }) => {
   await ready(page);
@@ -280,9 +273,7 @@ test('palette spawned via pane right-click goes through screenToFlowPosition', a
   expect(Math.abs(nodes[0].position.y - expected.y)).toBeLessThan(4);
 });
 
-// ============================================================================
 // C. Organize modules action
-// ============================================================================
 
 test('organize: 2 fully-stacked modules become disjoint', async ({ page }) => {
   await ready(page);
@@ -501,9 +492,7 @@ test('organize on a realistic example patch leaves no overlapping cards', async 
   }
 });
 
-// ============================================================================
 // D. Multi-user / collab safety
-// ============================================================================
 
 test.describe('@collab', () => {
   // De-flake (consolidated #837+#841): the cross-context waits use the 20s
@@ -614,9 +603,7 @@ test.describe('@collab', () => {
   });
 });
 
-// ============================================================================
 // E. Edge cases
-// ============================================================================
 
 test('rclick-and-spawn respects maxInstances (timelorde singleton stays at 1)', async ({ page }) => {
   await ready(page);

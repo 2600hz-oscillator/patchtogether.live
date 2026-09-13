@@ -156,11 +156,9 @@ const keyOf = (message) => message.ruleId ?? UNUSED_DISABLE_DIRECTIVE;
 async function main() {
   const eslint = new ESLint({ cwd: ROOT });
 
-  // ---------------------------------------------------------------------
   // 4. CONTROLS FIRST. If the instrument is dead there is no point reporting
   //    a clean tree, and running them first means the failure that gets
   //    printed is "the linter stopped working", not "no problems found".
-  // ---------------------------------------------------------------------
   for (const control of CONTROLS) {
     let results;
     try {
@@ -192,9 +190,7 @@ async function main() {
     }
   }
 
-  // ---------------------------------------------------------------------
   // 3. IGNORE ANCHORS. Every NOT_LINTED entry must still describe reality.
-  // ---------------------------------------------------------------------
   for (const entry of NOT_LINTED) {
     const { pattern, anchor, why } = entry;
     if (!why || why.length < 40) {
@@ -231,9 +227,7 @@ async function main() {
     }
   }
 
-  // ---------------------------------------------------------------------
   // 1 + 2. THE TREE.
-  // ---------------------------------------------------------------------
   const results = await eslint.lintFiles(['.']);
 
   const staged = new Set(STAGED_RULES.map(({ rule }) => rule));
@@ -304,7 +298,6 @@ async function main() {
     }
   }
 
-  // ---------------------------------------------------------------------
   // 5. THE #1523 WAIT LEDGER IS ANCHORED TO THE TREE.
   //
   //    The rule above suppresses a site whose key is in the ledger. That makes
@@ -316,7 +309,6 @@ async function main() {
   //    This is a WHOLE-RUN question a per-file rule cannot answer on its own,
   //    which is why it is asked here, after `lintFiles`, rather than inside the
   //    rule.
-  // ---------------------------------------------------------------------
   const ledger = readLedger(ROOT);
   if (ledger.size > 0 && MATCHED.size === 0) {
     fail(

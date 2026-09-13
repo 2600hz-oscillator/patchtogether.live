@@ -1,5 +1,3 @@
-// e2e/tests/scoreboard-face-screen.spec.ts
-//
 // THE SCOREBOARD FACE SCREEN (#2089) — the render legs for the SCREEN toggle,
 // which the module's two VRT scenes cannot cover.
 //

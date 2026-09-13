@@ -1,5 +1,3 @@
-// e2e/tests/_band-focus.ts
-//
 // BAND FOCUS, for the specs that SWEEP FACES — one export site for "drive this
 // face into the state where all of its bands are on the plate".
 //

@@ -39,9 +39,7 @@ import type { MixmstrsRecTaps, MixmstrsTapLeg } from './mixmstrs';
 import { ClipMediaDrain } from '../clip-media-drain';
 import { clipMediaBytesPerFrame, type ClipMediaWriter } from '../clip-media-store';
 
-// ---------------------------------------------------------------------------
 // Fakes
-// ---------------------------------------------------------------------------
 
 interface Connect {
   to: unknown;
@@ -135,9 +133,7 @@ function makeTaps(): { taps: MixmstrsRecTaps; board: FakeNode[]; splitter: FakeN
   return { taps, board, splitter };
 }
 
-// ---------------------------------------------------------------------------
 // Module registration
-// ---------------------------------------------------------------------------
 
 describe('ensureClipRecorderWorklet', () => {
   it('adds the module ONCE per context — concurrent callers share the registration', async () => {
@@ -162,9 +158,7 @@ describe('ensureClipRecorderWorklet', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Graph wiring
-// ---------------------------------------------------------------------------
 
 describe('wireClipRecorder — topology by value', () => {
   it('creates ONE eight-stereo-input node under the registered name', () => {
@@ -244,9 +238,7 @@ describe('wireClipRecorder — topology by value', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Port protocol — senders (the ONE spelling on the web side)
-// ---------------------------------------------------------------------------
 
 describe('protocol senders', () => {
   it('arm / stopAt / cancel post the exact message shapes the worklet pins on its side', () => {
@@ -265,9 +257,7 @@ describe('protocol senders', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Chunk conversion
-// ---------------------------------------------------------------------------
 
 describe('coerceClipRecorderMsg', () => {
   const chunk = (over: Record<string, unknown> = {}) => ({
@@ -353,9 +343,7 @@ describe('interleave + bytes', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The pump — chunks flow to the REAL drain (stall-never-skip)
-// ---------------------------------------------------------------------------
 
 interface Write {
   position: number;

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/lfo-state.ts
-//
 // Pure deterministic phase computation for the LFO module — extracted
 // here so unit + ART tests can import it without dragging in the worklet
 // `?url` asset that lfo.ts also imports (Node can't resolve `?url`).

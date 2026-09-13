@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/fader-transitions.ts
-//
 // FADER — the pure transition core (no DOM, no GL). A "transition" blends two
 // video frames A→B by a parameter t ∈ [0,1] with a SHAPE (fade / wipe / dissolve
 // / star / checkerboard). The card's two faders (A↔B and dry/wet) each pick a

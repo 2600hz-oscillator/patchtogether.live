@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioIn/audio-in-actions.ts
-//
 // AUDIO IN's ACTION SEAM — the one plain-TypeScript home for every gesture the
 // module has, called by all three of its surfaces.
 //
@@ -151,4 +149,3 @@ export async function bindAudioInputSurface(
   if (!inputDevicesHaveLabels()) return;
   await acquireAudioInput(nodeId);
 }
-

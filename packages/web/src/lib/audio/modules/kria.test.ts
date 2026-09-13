@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kria.test.ts
-//
 // Drives the REAL kria factory + tick loop against a fake AudioContext
 // (advanceable currentTime) + the live graph store, asserting per-track
 // pitch/gate emit, TIMELORDE clock lock, external-clock advance, reset

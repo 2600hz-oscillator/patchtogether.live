@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/attenumix.ts
-//
 // ATTENUMIX — the simple mixer. 4-channel attenuating mixer with per-
 // channel direct outs, per-channel CV-summed attenuator, and a master
 // gain knob with tanh soft-clip on the summed mix.
@@ -225,7 +223,6 @@ export const attenumixDef: AudioModuleDef = {
     { id: 'master', label: 'Master', defaultValue: 1.0, min: 0, max: 2, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS FOR. ATTENUMIX is the rack's SUM. Four things go in,
   // one comes out, and the only decision a player makes is how much of each.

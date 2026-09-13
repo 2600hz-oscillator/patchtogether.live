@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/tmdsbend.ts
-//
 // CLB cell `tmdsbend(a, disparity, slip, leak, seed)` — HDMI/DVI TMDS link
 // corruption (the tmds-sparkle bend, design §3.6). Models a marginal HDMI cable on
 // the early-HD digital link: the per-pixel BIT-FLIP "sparkle" half lives UPSTREAM

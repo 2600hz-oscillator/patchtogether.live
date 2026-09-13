@@ -1,5 +1,3 @@
-// e2e/tests/es9-card-shows-state.spec.ts
-//
 // THE VISIBLE SURFACE MUST SHOW THE BRIDGE'S REAL STATE — on the default
 // shell that surface is the dock face's BRIDGE StatusLed, whose aria-label
 // carries the owner-snapshot detail sentence (the readout ruling's home for

@@ -1,5 +1,3 @@
-// art/scenarios/mixmstrs/face-premises.test.ts
-//
 // THE FOUR CLAIMS MIXMSTRS' FACEPLATE MAKES, ASSERTED AGAINST THE SHIPPED DSP.
 //
 // The face publishes three derived readouts and DECLINES to publish a fourth

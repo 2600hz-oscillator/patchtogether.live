@@ -1,5 +1,3 @@
-// e2e/tests/workflow-lane-add-safety.spec.ts
-//
 // LANE-ADD SAFETY — the two P0 regressions from the owner's ?shell=1 preview
 // pass (fix/shell-lane-cellshade-and-gate):
 //

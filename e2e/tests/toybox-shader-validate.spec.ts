@@ -1,5 +1,3 @@
-// e2e/tests/toybox-shader-validate.spec.ts
-//
 // THE COMPILE PROBE, AGAINST A REAL GLSL COMPILER (#1576, workstream 3).
 //
 // ── Why this spec exists in this lane, and not as a unit test ───────────────
@@ -75,9 +73,7 @@ test.describe('TOYBOX shader validation — real GLSL compiler', () => {
       .toBe('function');
   });
 
-  // ------------------------------------------------------------------
   // The positive leg: a real, valid shader compiles.
-  // ------------------------------------------------------------------
   test('a VALID Shadertoy source compiles clean @webgl-smoke', async ({ page }) => {
     const res = await validate(
       page,
@@ -135,9 +131,7 @@ void main() { outColor = vec4(vUv, 0.0, 1.0); }`,
     expect(without.errors.length).toBeGreaterThan(0);
   });
 
-  // ------------------------------------------------------------------
   // The negative leg: broken shaders are REJECTED, with usable positions.
-  // ------------------------------------------------------------------
   test('a BROKEN source is rejected with structured errors @webgl-smoke', async ({ page }) => {
     const res = await validate(
       page,
@@ -199,9 +193,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     expect(res.errors.length).toBeGreaterThan(0);
   });
 
-  // ------------------------------------------------------------------
   // #1708 — the premise the engine's declaration filter rests on.
-  // ------------------------------------------------------------------
   //
   // A USER shader declares its own `uniform float`s (that declaration is what
   // param extraction reads). A BUNDLED one uses bare identifiers and lets the

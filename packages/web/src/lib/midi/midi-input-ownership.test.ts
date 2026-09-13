@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-input-ownership.test.ts
-//
 // WHO MAY TOUCH `MIDIInput.onmidimessage`, AND WHAT EACH SUBSCRIBER FILTERS ON.
 //
 // Supersedes the source-shape half of `push-midi-conflict.test.ts`'s
@@ -173,7 +171,6 @@ which writes slots the file never installed:\n${sweepers.join('\n')}`,
   });
 });
 
-// ---------------------------------------------------------------------------
 // 3 — THE SUBSCRIBER LEDGER.
 //
 // Every subsystem that takes a claim, and what it filters on. This is the
@@ -181,7 +178,6 @@ which writes slots the file never installed:\n${sweepers.join('\n')}`,
 // device collisions: with the slot no longer contested, EVERY subscriber
 // receives everything on the ports it holds, so "which ports" and "which
 // messages" are the whole story.
-// ---------------------------------------------------------------------------
 
 interface SubscriberRow {
   /** Which ports of its access the subscriber listens on. */

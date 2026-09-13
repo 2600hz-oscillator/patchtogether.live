@@ -1,5 +1,3 @@
-// e2e/tests/edges.spec.ts
-//
 // EDGES (Sobel edge-detection video processor) functional e2e.
 //
 // Graph:

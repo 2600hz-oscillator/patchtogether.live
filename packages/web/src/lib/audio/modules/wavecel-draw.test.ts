@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavecel-draw.test.ts
-//
 // Unit tests for the shared WAVECEL draw helpers (scope + 3D). The web
 // package's vitest config runs in `node` (no DOM canvas), so we stub
 // the 2D context with a recorder that captures every call. The tests

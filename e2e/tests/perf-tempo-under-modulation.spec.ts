@@ -1,5 +1,3 @@
-// e2e/tests/perf-tempo-under-modulation.spec.ts
-//
 // Regression spec for the "tempo / audio glitching when faders are
 // hand-modulated" user report. Complement to `tempo-stability.spec.ts`
 // (PR #90):
@@ -31,7 +29,6 @@
 // frame (~60 Hz) regardless of how fast pointermove fires.
 //
 // What we assert
-// --------------
 // The load-bearing invariant of the fix is: under a high-rate fader
 // drag, the number of Y.Doc updates fired stays comfortably below
 // the number of pointermove events the fader sees. We measure:

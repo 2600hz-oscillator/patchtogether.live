@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-hls-source-registry.ts
-//
 // NODE-OWNED HLS TUNER (LEG-02 P3, #1511) — the controller that makes PEERTUBE's
 // and TV LIBRARIAN's stream exist, tune and keep playing because the NODE
 // exists, not because a card is mounted.
@@ -215,9 +213,7 @@ export const UNAVAILABLE_SKIP_MS = 1_800;
  *  `$lib/audio/gate-trigger` for why 0.5 is the canonical gate level. */
 const GATE_RISING_EDGE = 0.5;
 
-// ---------------------------------------------------------------------------
 // Published shape
-// ---------------------------------------------------------------------------
 
 export type HlsStreamState = 'idle' | 'loading' | 'playing' | 'unavailable';
 
@@ -298,9 +294,7 @@ export type HlsSourceCommand =
   /** Clear the error after the surface has shown it. */
   | { kind: 'clearError' };
 
-// ---------------------------------------------------------------------------
 // Injected seams
-// ---------------------------------------------------------------------------
 
 /** The engine surface this controller uses. Every method maps 1:1 onto an
  *  EXISTING public call, so nothing here implies an engine-side change. */
@@ -437,9 +431,7 @@ export interface HlsSourceDeps<E> {
   onStatus?(nodeId: string, status: HlsSourceStatus): void;
 }
 
-// ---------------------------------------------------------------------------
 // The per-module profile
-// ---------------------------------------------------------------------------
 
 export type ResolvedHlsStream = { readonly url: string; readonly kind: 'hls' | 'mp4' };
 
@@ -753,9 +745,7 @@ export function hlsTunerProfile(type: string): HlsTunerProfile | null {
   return HLS_TUNER_PROFILES.find((p) => p.type === type) ?? null;
 }
 
-// ---------------------------------------------------------------------------
 // The registry
-// ---------------------------------------------------------------------------
 
 export interface NodeHlsSourceRegistry<E> {
   /** Reconcile controllers against the graph. Called from Canvas's graph effect,

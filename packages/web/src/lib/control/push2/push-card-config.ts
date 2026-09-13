@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-config.ts
-//
 // ┌──────────────────────────────────────────────────────────────────────────┐
 // │  THE PUSH CARD CONFIG — EDIT THIS FILE TO CHANGE WHAT THE PUSH SHOWS.     │
 // └──────────────────────────────────────────────────────────────────────────┘

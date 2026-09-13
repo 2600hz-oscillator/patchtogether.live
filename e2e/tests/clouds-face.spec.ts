@@ -1,5 +1,3 @@
-// e2e/tests/clouds-face.spec.ts
-//
 // Two things about the CLOUDS faceplate that NO other gate in the repo can see.
 //
 //   1. LABEL CLIPPING IS INVISIBLE TO faces-parity. It asserts with

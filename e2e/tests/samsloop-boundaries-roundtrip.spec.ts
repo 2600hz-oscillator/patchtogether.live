@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-boundaries-roundtrip.spec.ts
-//
 // SAMSLOOP loop BOUNDARIES (start/stop) must survive a perf-zip round-trip.
 //
 // The owner reported SAMSLOOP "tries to save boundaries but load doesn't
@@ -100,7 +98,6 @@ test.describe('SAMSLOOP loop boundaries round-trip', () => {
     expect(before.start).toBe(wantStart);
     expect(before.end).toBe(wantEnd);
 
-    // Export → clear → load.
     const zipB64 = await page.evaluate(async () => {
       const w = globalThis as unknown as { __perfZip: { export: () => Promise<Uint8Array> } };
       const bytes = await w.__perfZip.export();

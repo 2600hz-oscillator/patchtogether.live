@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-recorder.test.ts
-//
 // Pure-logic coverage for the RECORDERBOX recorder + store helpers. The live
 // Mediabunny pipeline + the OPFS Worker are exercised by the bespoke e2e
 // (real encoder on this Mac); here we cover the deterministic, browser-API-
@@ -157,9 +155,7 @@ describe('opfsScratchPath', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // streamOpfsToWritable — chunked OPFS → destination copy (no full read)
-// ---------------------------------------------------------------------------
 
 /** A fake streamable OPFS file backed by an in-memory byte array. Supports the
  *  .stream() path (preferred) OR sliced reads (fallback) per `mode`. */
@@ -244,9 +240,7 @@ describe('streamOpfsToWritable — chunked copy (never a full read)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ensureHandleWritePermission — re-acquire write on a persisted dest handle
-// ---------------------------------------------------------------------------
 
 describe('ensureHandleWritePermission', () => {
   it('returns false for a missing handle (no re-pick possible)', async () => {
@@ -288,7 +282,6 @@ describe('ensureHandleWritePermission', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Sample-accurate audio capture path (the clicks/pops fix): the recorder feeds
 // worklet-posted planar f32 chunks through a BACKPRESSURED AudioSampleSource so
 // NO sample is dropped (the old MediaStreamAudioTrackSource hard-drops under
@@ -297,7 +290,6 @@ describe('ensureHandleWritePermission', () => {
 // assert: (a) EVERY posted chunk is add()'d (none closed/dropped), and (b) the
 // emitted timestamps are exactly contiguous (audio-clock authoritative), EVEN
 // when add() is slow (simulated encoder backpressure).
-// ---------------------------------------------------------------------------
 
 /** A stub of the worklet's MessagePort. Captures arm/disarm posts; lets the
  *  test inject chunks via the recorder-installed `onmessage`. */
@@ -475,12 +467,10 @@ describe('sample-accurate capture path — lossless drain through backpressured 
   });
 });
 
-// ---------------------------------------------------------------------------
 // CFR frame() — the OSX slow-mo fix. frame() must emit video PTS on an EVEN grid
 // (index/fps) regardless of jittery rAF cadence: no wall-clock PTS, no dup PTS,
 // no sparse stretch. We drive the REAL frame() with a fake CanvasSource capturing
 // (ts, dur) + a stubbed performance.now sequence (fast / slow / hitch).
-// ---------------------------------------------------------------------------
 
 /** Force a recorder into the 'recording' state with a fake CanvasSource that
  *  captures every add(ts, dur), bypassing start() (no real encoder). */

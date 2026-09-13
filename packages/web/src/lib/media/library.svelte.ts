@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/library.svelte.ts
-//
 // The CENTRALIZED media library — the single place every loaded media file
 // lands, and THE SEAM future consumers read. The media-loader view's output
 // panel lists `mediaLibrary.items`; later consumers (e.g. rack modules that

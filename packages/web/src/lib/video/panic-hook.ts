@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/panic-hook.ts
-//
 // The PANIC seam between a video module factory and the graph layer.
 //
 // A module's `edge: 'trigger'` PANIC input is detected in its factory's

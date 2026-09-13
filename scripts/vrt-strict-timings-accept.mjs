@@ -1,5 +1,3 @@
-// scripts/vrt-strict-timings-accept.mjs
-//
 // Refresh `e2e/vrt-strict-timings.generated.json` from a REAL CI run (#1595).
 //
 // WHY THIS EXISTS AS A SCRIPT RATHER THAN A COMMENT. `e2e/e2e-timings.generated

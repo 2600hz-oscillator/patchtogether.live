@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/mandelbulb-de.test.ts
-//
 // Pure unit tests for the MANDELBULB distance-estimate core — the single source
 // of truth shared by the GLSL shader, the bulb-slice readout, and the
 // mandelbulb-osc worklet. Extracted but untested. It's pure + deterministic

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/poly-alloc.test.ts
-//
 // Unit tests for the STABLE per-voice allocator (Phase 2a of the gate/held-note
 // plan §3.2). Pure — no Web Audio, no engine. Pins the contract the clipplayer
 // audition wiring relies on: stable lane retention, lowest-free reuse, LRU-steal

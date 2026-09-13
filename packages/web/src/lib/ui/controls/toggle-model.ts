@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/toggle-model.ts
-//
 // PURE 0/1 logic for Toggle.svelte (the RACKLINE `.switch` / `.toggle-ctl`).
 // A toggle is a discrete param with min=0 max=1 (kickdrum HARD, and the
 // checkbox cards). `looksLikeToggle` — the detector a card uses to pick Toggle

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/peertube/shell-extension.ts
-//
 // The PEERTUBE shell extension — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

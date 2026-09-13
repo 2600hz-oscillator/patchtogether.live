@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/archivist-status-registry.test.ts
-//
 // The ARCHIVE-BROWSE STATUS SEAM's own behaviour, and the source gate that
 // keeps its media-type roster honest.
 //

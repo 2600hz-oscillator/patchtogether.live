@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/electra-control.ts
-//
 // ELECTRA CONTROL — a specialized CONTROL SURFACE variant laid out EXACTLY for
 // the Electra One physical control scheme. Where CONTROL SURFACE is a dynamic,
 // first-seen, auto-grouped panel, ElectraControl is a FIXED positional 6×6 grid
@@ -109,7 +107,6 @@ export const electraControlDef: MetaModuleDef = {
     },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: this is the only module in the fleet whose subject is OTHER
   // MODULES. It is a 6×6 board of thirty-six named holes; you fill a hole by

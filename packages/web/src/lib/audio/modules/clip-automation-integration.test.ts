@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-integration.test.ts
-//
 // INTEGRATION test for the clipplayer ↔ PER-CLIP automation WIRING under the
 // owner-locked FINAL model (MODULE-level assignment + PER-LANE arm). The pure
 // record/playback cores + the AutomationController are unit-tested elsewhere
@@ -243,7 +241,6 @@ function autoSnapshot(h: ReturnType<typeof makeHarness>): string {
 
 const T = { nodeId: TARGET, paramId: PARAM };
 
-// ── tests ─────────────────────────────────────────────────────────────────
 
 describe('clipplayer ↔ per-clip automation integration (real Y.Doc + fake engine)', () => {
   it('RECORD: a moving store value across a loop commits ONE transaction, writing ONLY auto[k].tracks[key]', () => {

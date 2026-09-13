@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-display-frame.test.ts
-//
 // GOLDEN VECTORS for the Push 2 display framebuffer. This file is the gate that
 // stops a subtly-wrong picture shipping: a channel swap or a line-stride error
 // still renders *something*, so "it looked fine" is not evidence. Every claim
@@ -68,9 +66,7 @@ function rgbaImage(
 /** The mask byte that applies at a given byte offset in the frame. */
 const maskAt = (off: number): number => PUSH_DISPLAY_XOR_MASK[off & 3];
 
-// ---------------------------------------------------------------------------
 // Geometry — the numbers everything else is derived from.
-// ---------------------------------------------------------------------------
 
 describe('display geometry', () => {
   it('is 960×160 at 2 bytes/px with a 2048-byte line stride', () => {
@@ -104,9 +100,7 @@ describe('display geometry', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The pixel word — BGR565, and the swap that would look almost right.
-// ---------------------------------------------------------------------------
 
 describe('packBgr565 — the golden vectors', () => {
   it('packs the primaries to their exact BGR565 words', () => {
@@ -160,9 +154,7 @@ describe('packBgr565 — the golden vectors', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The frame — header, size, shaping, stride.
-// ---------------------------------------------------------------------------
 
 describe('the frame header', () => {
   it('is exactly FF CC AA 88 followed by twelve 00', () => {
@@ -339,9 +331,7 @@ describe('pushFrameChunks', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Pacing decisions (pure — the timers live in the transport).
-// ---------------------------------------------------------------------------
 
 describe('frameGateDelayMs — the ~30 Hz floor', () => {
   it('sends immediately when nothing has been sent yet', () => {

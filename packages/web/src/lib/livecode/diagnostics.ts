@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/diagnostics.ts
-//
 // CodeMirror linter for LIVECODE source. Scans the document for
 // patch() / unpatch() calls and validates each:
 //

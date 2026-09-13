@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-monitor-survives-card-collapse.spec.ts
-//
 // OUT TO LAUNCH must keep driving its Launchpad when the surface that bound it
 // goes away (#1728, from the #1583 audit's `pumps-leases` lens).
 //

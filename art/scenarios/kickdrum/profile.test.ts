@@ -1,5 +1,3 @@
-// art/scenarios/kickdrum/profile.test.ts
-//
 // AUDIO PROFILE for KICK DRUM (id `kickdrum` — the layered stereo kick
 // voice, build plan). Ships
 // with the module per the audio-profile gate (#999): every new audio def

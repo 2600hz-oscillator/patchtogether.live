@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/spirographs.ts
-//
 // SPIROGRAPHS — a classic-spirograph video GENERATOR (a pure synth source: no
 // video input). It renders 1–3 INDEPENDENT spirographs — hypotrochoid (rolling
 // circle INSIDE the fixed one) or epitrochoid (OUTSIDE) — each with its OWN full
@@ -375,7 +373,6 @@ void main() {
   outColor = vec4(rgb, 1.0);
 }`;
 
-// ── Module def ──────────────────────────────────────────────────────────────
 
 export const spirographsDef: VideoModuleDef = {
   type: 'spirographs',
@@ -411,7 +408,6 @@ export const spirographsDef: VideoModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. Three independent classic spirographs on one frame. The
   // verb is DIAL A FIGURE — pick a ratio, watch the petals fall out of it — and

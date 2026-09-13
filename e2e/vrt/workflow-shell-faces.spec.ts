@@ -1,5 +1,3 @@
-// e2e/vrt/workflow-shell-faces.spec.ts
-//
 // VRT: the P1 CURATED FACES — the pixel gate for every migrated module under
 // `?shell=1`. Batch 1: adsr / cloudseed / kickdrum / lfo / tidyVco / vca.
 // Batch 2: dx7 / qbrt / shimmershine / sixstrum / snaredrum / tomtom.

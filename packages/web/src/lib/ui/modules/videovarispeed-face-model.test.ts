@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/videovarispeed-face-model.test.ts
-//
 // VIDEOVARISPEED's face, pinned where the argument is made.
 //
 // Three kinds of assertion, deliberately mixed:

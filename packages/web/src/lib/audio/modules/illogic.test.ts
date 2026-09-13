@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/illogic.test.ts
-//
 // Unit tests for ILLOGIC's pure-data math + module-def shape.
 // Web Audio wiring is exercised by the ART scenarios (offline render).
 

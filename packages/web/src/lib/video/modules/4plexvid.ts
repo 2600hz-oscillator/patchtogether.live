@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/4plexvid.ts
-//
 // 4PLEXVID — 4-in / 4-out video router. The video sibling of the audio
 // 4Plexer.
 //

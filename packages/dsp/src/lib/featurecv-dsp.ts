@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/featurecv-dsp.ts
-//
 // FEATURECV — pure DSP core for the audio→CV feature extractor. Lives under
 // lib/ so esbuild inlines it into the worklet entry (packages/dsp/src/
 // featurecv.ts); lib/ files MAY export freely. Also imported directly by the

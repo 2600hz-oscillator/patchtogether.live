@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/chromaconsole/shell-extension.ts
-//
 // The CHROMA CONSOLE shell extension — the module-owned end of the extension
 // seam (#1512), on the `fullViewBody` slot.
 //

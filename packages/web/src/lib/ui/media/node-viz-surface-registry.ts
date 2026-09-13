@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-viz-surface-registry.ts
-//
 // THE NODE-LIFETIME VIZ SURFACE — a producer that is not a CALLBACK but a
 // MOUNTED COMPONENT, and the adoption seam that lets any number of views show
 // the one element it renders.

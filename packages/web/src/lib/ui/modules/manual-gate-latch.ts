@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/manual-gate-latch.ts
-//
 // THE HELD-GATE LATCH — a PURE state machine over "which nodes have a HELD
 // AUDITION gate open right now".
 //

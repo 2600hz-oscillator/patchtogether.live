@@ -1,5 +1,3 @@
-// e2e/tests/karplus.spec.ts
-//
 // KARPLUS — REAL-SOURCE-CHAIN e2e (the CLAUDE.md discipline: a per-port
 // "edge materializes" assert does NOT count as chain coverage). One test
 // drives the full default-mode chain:

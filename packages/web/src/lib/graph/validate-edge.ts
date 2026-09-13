@@ -1,10 +1,7 @@
-// packages/web/src/lib/graph/validate-edge.ts
-//
 // FW3 foundational seam (Phase 3b) — a PURE, framework-free edge/graph
 // validator for the patch data model.
 //
 // WHY THIS EXISTS
-// ---------------
 // Three edge-write paths feed the reconciler (handleConnect drag,
 // loadEnvelopeIntoStore import, resurrectSavedGroup). The reconciler's
 // engine.addEdge THROWS on a missing/mismatched port, and that throw is
@@ -14,7 +11,6 @@
 // the engine, instead of letting it poison the batch.
 //
 // SCOPE — STRUCTURAL CHECKS ONLY
-// ------------------------------
 // We check that an edge is *structurally* materializable:
 //   * both endpoint nodes exist,
 //   * the source handle is a declared OUTPUT and the target a declared INPUT

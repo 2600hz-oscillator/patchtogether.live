@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-encoder.test.ts
-//
 // Turning a push-card encoder: value in, value out. The three movement modes
 // exist because ONE rule is provably wrong for real shipped params, so each
 // mode's test is written to fail if the code fell back to fraction stepping.

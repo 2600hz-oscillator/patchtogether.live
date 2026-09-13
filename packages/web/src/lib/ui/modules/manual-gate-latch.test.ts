@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/manual-gate-latch.test.ts
-//
 // The held-gate latch, proved as a state machine. The claim under test is not
 // "the functions return plausible objects" — it is THE INVARIANT: after any
 // sequence of opens, closes and panics, a node is either open in the state or

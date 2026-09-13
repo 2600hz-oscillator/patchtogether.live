@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/tomtom-dsp.ts
-//
 // TOM DRUM (id `tomtom`) — analog-modeled tom-tom voice, the third member of
 // the drum-voice family (KICK DRUM / SNARE DRUM). One curated synthesis
 // engine spans the classic analog tom lineage:
@@ -57,9 +55,7 @@ import { createOversampler, type Oversampler } from './oversample';
 
 const FLUSH = 1e-20;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Physical / voicing constants
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Second membrane mode ratio — the (1,1)/(0,1) Bessel-zero pair, the same
  *  1.593 SNARE DRUM's modal bank uses. TONE mixes this partial in. */
@@ -133,9 +129,6 @@ const NOISE_SEED_BASE = 0x7c3a9d51;
 /** Chamberlin SVF center clamp (fraction of sr) — stability guard. */
 const SVF_FC_FRAC = 0.153;
 
-// ─────────────────────────────────────────────────────────────────────────
-// Params
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface TomtomParams {
   tune: number; // fundamental Hz (60..400) — floor tom .. high rack/timbale
@@ -179,9 +172,7 @@ export const TOMTOM_DEFAULTS: TomtomParams = {
   levelCv: 0,
 };
 
-// ─────────────────────────────────────────────────────────────────────────
 // Shared primitives (defined locally — no cross-module coupling)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** −60 dB decay-time (ms) → per-sample envelope multiplier (sr-calibrated).
  *  ln(1000) ≈ 6.9078: env·a^(ms·sr/1000) = 10^(−60/20). */
@@ -198,9 +189,7 @@ export function xorshift32(x: number): number {
   return x >>> 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Frequency law (pure — unit-tested directly)
-// ─────────────────────────────────────────────────────────────────────────
 
 /**
  * Instantaneous fundamental (Hz): `tune` (60..400) transposed 1 V/oct by
@@ -258,9 +247,6 @@ export function tomBendTimeMs(bendTime: number, bendTimeCv: number): number {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface TomtomState {
   // MEMBRANE oscillators (phase 0..1) + envelopes.
@@ -329,9 +315,7 @@ export function strikeTom(s: TomtomState, accent: number): void {
   s.nzBand = 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-sample step
-// ─────────────────────────────────────────────────────────────────────────
 
 const TWO_PI = Math.PI * 2;
 

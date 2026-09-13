@@ -1,5 +1,3 @@
-// scripts/vrt-shard-coverage.test.ts
-//
 // PERMANENT NEGATIVE-CONTROL LEGS for the one vrt-strict check that is anchored
 // to the RUN rather than to the plan (#1595).
 //

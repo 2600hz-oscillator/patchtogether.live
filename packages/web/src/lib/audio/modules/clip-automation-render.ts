@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-render.ts
-//
 // Per-machine, IN-MEMORY automation RENDER STATE for the clip player — while
 // record-armed, ONE ENTRY PER LANE that is recording (a playing note clip with
 // ≥1 assigned param): that clip's (lane, slot) + a beat countdown to ITS OWN
@@ -75,9 +73,7 @@ export function soonestAutomationLane(
   return best;
 }
 
-// ---------------------------------------------------------------------------
 // PURE countdown helpers (shared by the launchpad LED paint + the card mirror)
-// ---------------------------------------------------------------------------
 
 /** How many beats back from the clip wrap the countdown starts flashing. */
 export const AUTOMATION_COUNTDOWN_BEATS = 4;

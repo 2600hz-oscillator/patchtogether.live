@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-preset-io.ts
-//
 // TOYBOX user-preset EXPORT / IMPORT — a self-contained `.zip` bundle of a
 // TOYBOX node's full state PLUS its loaded media, so a patch can be shared or
 // re-loaded on another machine.

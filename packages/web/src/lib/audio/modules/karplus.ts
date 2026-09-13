@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/karplus.ts
-//
 // KARPLUS — an extended Karplus-Strong string / percussive-harp VOICE, built
 // on the COFEFVE DELAY fundamentals (owner directive): the string loop is
 // cofefve's own DelayChannel (packages/dsp/src/lib/analog-delay-core.ts —

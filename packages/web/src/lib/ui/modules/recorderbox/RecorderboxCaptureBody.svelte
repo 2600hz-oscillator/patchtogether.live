@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/recorderbox/RecorderboxCaptureBody.svelte
-  //
   // THE RECORDERBOX dock full-view body — the whole faceplate, because
   // `recorderboxDef` declares `params: []` and `face.order: []`: there is
   // nothing for the generic control bands to render (the `videoOut` / `flipper`

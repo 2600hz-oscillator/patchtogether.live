@@ -1,4 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-render.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   automationCountdownColor,

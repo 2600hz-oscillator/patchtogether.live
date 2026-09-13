@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/twotracks-waveform-draw.test.ts
-//
 // The twotracks reel picture is the COORDINATE SYSTEM for two of the module's
 // params — START and END are positions in it — so the arithmetic that PAINTS a
 // marker and the arithmetic that decides you GRABBED it have to be the same

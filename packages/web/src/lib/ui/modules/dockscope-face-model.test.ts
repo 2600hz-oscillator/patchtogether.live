@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dockscope-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the DOCKSCOPE faceplate (cut A, batch 2).
 //
 // ⚠ THE CENTRAL CLAIM OF THIS FACE IS A REFUSAL, and it is the one thing here

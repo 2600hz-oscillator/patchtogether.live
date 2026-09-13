@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/gibribbon-spectral.test.ts
-//
 // The pure spectral front-end under test: musical band ranges are total and
 // ordered, the fold maps energy to the RIGHT band identity (band identity IS
 // event identity), and the onset detector is relative to its own baseline

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/lane-colors.test.ts
-//
 // THE ONE LANE-COLOUR DERIVATION (#1825) — the seam the node menu, the workflow
 // column badges and the mixmstrs faceplate all read.
 //

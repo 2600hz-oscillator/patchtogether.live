@@ -1,5 +1,3 @@
-// art/scenarios/dx7/preset-spectra.test.ts
-//
 // Spectral validation of the bundled DX7 patches. For each preset we:
 //   1. Render 1 second of a held middle-C (or its register-appropriate note).
 //   2. Hann-window + Goertzel-detect the fundamental + a handful of partials.
@@ -154,7 +152,6 @@ describe('DX7 ART: CALLIOPE — additive (algorithm 32)', () => {
     const fund = a.probeAt(a.fund);
     const noise = a.noiseAt(a.fund);
     expect(fund / noise).toBeGreaterThan(3);
-    // Check that at least 3 of the harmonics 2..6 are present.
     let presentCount = 0;
     for (let h = 2; h <= 6; h++) {
       const p = a.probeAt(a.fund * h);

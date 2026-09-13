@@ -1,5 +1,3 @@
-// e2e/tests/meowbox.spec.ts
-//
 // E2E for MEOWBOX V/oct tracking (PR fix/meowbox-voct).
 //
 // What was broken: meowbox's `pitch` input was declared `type: 'cv'` with

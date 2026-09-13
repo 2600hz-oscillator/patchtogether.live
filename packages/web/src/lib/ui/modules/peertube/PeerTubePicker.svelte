@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/peertube/PeerTubePicker.svelte
-  //
   // THE BROWSE SURFACE — the search box with its rate limiter, the transport,
   // the attribution anchor, the results roster and the legal disclaimer.
   //

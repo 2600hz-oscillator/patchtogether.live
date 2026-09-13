@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-capture-drain.test.ts
-//
 // Unit coverage for the PURE capture-drain core — the load-bearing logic of the
 // recorderbox click/pop fix. The old MediaStreamAudioTrackSource path DROPPED
 // samples under load (then mediabunny silence-padded the gap = the click); this

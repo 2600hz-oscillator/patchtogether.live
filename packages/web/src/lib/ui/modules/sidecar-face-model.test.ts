@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/sidecar-face-model.test.ts
-//
 // THE ORACLE + THE PERMANENT NEGATIVE CONTROLS for the SIDECAR faceplate.
 //
 // Two jobs, and the second is the one that makes this file worth having:
@@ -565,14 +563,12 @@ describe('sidecar face model — TOTALITY (it runs on every render of every fram
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE TRANSFER-CURVE PANEL (queue Q1b).
 //
 // The readouts above each answer ONE question at ONE operating point, because
 // `FaceReadoutValue` is `(read) => string`. The panel exists for the three
 // findings that are SHAPE rather than value, and every leg below is the
 // permanent control on one of them.
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('sidecar transfer curve — the PANEL is the SAME answer as the readouts', () => {
   it('the panel\'s reference and the readouts\' reference are ONE point', () => {

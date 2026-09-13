@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mandleblot.test.ts
-//
 // Unit tests for the MANDLEBLOT module def + the pure JS-side
 // log-zoom mapping. The actual GL pipeline is exercised by E2E
 // (jsdom can't render shaders).
@@ -63,7 +61,6 @@ describe('jsZoomFromKnob — log-mapped 1×..1e6×', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // PARAM-MUTATION WIRING — downgraded from mandleblot.spec.ts test 2 ("zoom
 // param mutation propagates to the engine without errors"), webgl-suite-
 // optimization §2/§7-3. The e2e only wrote node.params.zoom into the store and
@@ -75,7 +72,6 @@ describe('jsZoomFromKnob — log-mapped 1×..1e6×', () => {
 // this fast unit test. (The GL PIXEL backstop for this VRT-exempt module is the
 // deterministic mandleblot-render-smoke.spec.ts — non-black + structured +
 // frame-stable on the COLOUR output — per plan §6.)
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   return new Proxy(

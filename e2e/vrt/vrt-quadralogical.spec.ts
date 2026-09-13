@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-quadralogical.spec.ts
-//
 // Composite-state VRT for QUADRALOGICAL's Phase-2 per-edge effects.
 //
 // One representative scene PER EFFECT (8 effects → 8 baselines). Each scene:

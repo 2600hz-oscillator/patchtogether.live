@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-persistence.spec.ts
-//
 // SAMSLOOP recorded samples MUST survive a save → reload round-trip
 // through the patch-envelope format — same trick PICTUREBOX uses for
 // imageBytes (see PR #441 / GGR demo). The byte payload lives on

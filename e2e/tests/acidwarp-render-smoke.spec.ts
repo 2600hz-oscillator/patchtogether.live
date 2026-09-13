@@ -1,5 +1,3 @@
-// e2e/tests/acidwarp-render-smoke.spec.ts
-//
 // PHASE-0 PROOF of the deterministic render-smoke (DRS) pattern (plan §6 Phase 0
 // + §5 Layer B). ACIDWARP is a pure-GL `frame.time`-animated SOURCE: it reads
 // the engine clock directly (`tNow = frame.time`; `dt = tNow - lastTime`), so

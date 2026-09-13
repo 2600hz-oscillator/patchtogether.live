@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer/shell-extension.ts
-//
 // The CLIP PLAYER shell extension — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` AND `tileBody` slots.
 //

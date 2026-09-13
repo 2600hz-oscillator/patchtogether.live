@@ -1,5 +1,3 @@
-// packages/dsp/src/wavetable-vco.ts
-//
 // Wavetable VCO worklet processor. Custom JS (table lookup is data-driven, not
 // a great fit for Faust). The factory generates a synthetic table at runtime
 // and posts it via port.postMessage. This processor handles:

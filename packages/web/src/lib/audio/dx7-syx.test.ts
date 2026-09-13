@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-syx.test.ts
-//
 // Unit tests for the DX7 SYX parser, ratio math, and envelope helpers.
 // We synthesize a known-good SYX bank in-memory (rather than ship a
 // copyrighted ROM dump as a fixture) and roundtrip it through the parser.
@@ -104,7 +102,6 @@ function buildFixtureSyx(): Uint8Array {
   return out;
 }
 
-// ---------------- Tests ----------------
 
 describe('dx7Ratio', () => {
   it('coarse=0 returns 0.5 (special slot)', () => {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog956/ribbon-actions.test.ts
-//
 // THE ORDERING PROOF, and the persistence split — the two things about the 956
 // gesture that are invisible to every other gate in the tree.
 //

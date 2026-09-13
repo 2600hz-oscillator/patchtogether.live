@@ -1,5 +1,3 @@
-// packages/web/src/lib/storage/local-scratch.ts
-//
 // STABLE per-device id for the SCRATCH canvas's local IndexedDB replica.
 //
 // Lives under lib/storage (NOT lib/multiplayer) on purpose: this is a

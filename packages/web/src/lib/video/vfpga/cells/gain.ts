@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/gain.ts
-//
 // CLB cell `gain(a, gain, bias)` — the scale+offset ALU cell (the per-pixel VCA /
 // brightness-contrast cell): c * gain + bias, clamped. One input (a), two knobs
 // (gain default 1, bias default 0). The simplest amplitude-modulation primitive a

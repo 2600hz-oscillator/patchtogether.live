@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/test/seed-rackspace/server.test.ts
-//
 // Route-level tests for POST /api/test/seed-rackspace. The endpoint MUST
 // be 404 in any environment where neither RACKSPACE_SEED_ENABLED='1' nor
 // NODE_ENV='development' is set — the rest of the contract (envelope

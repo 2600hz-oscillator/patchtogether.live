@@ -1,5 +1,3 @@
-// e2e/tests/backdraft-pure-tv.spec.ts
-//
 // BACKDRAFT PURE TV / CRITICAL — proves the GPU really renders the bounded
 // screen. The GEOMETRY itself is proven in the GL-free CPU mirror
 // (backdraft-tv.test.ts, N/C/R series); this spec only has to show that the

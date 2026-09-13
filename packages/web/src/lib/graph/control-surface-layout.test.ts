@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface-layout.test.ts
-//
 // CONTROL SURFACE — layout geometry coverage (the resize-clip bug fix).
 //
 // The bug: the card was fixed-width (360px) with a fixed-height (~150px),

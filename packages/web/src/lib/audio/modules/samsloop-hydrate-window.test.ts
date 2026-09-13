@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-hydrate-window.test.ts
-//
 // THE WINDOW MIGRATION MUST RUN FOR EVERY SOURCE KIND — the unit half of the
 // owner's "load the patch and samsloop doesn't play" (2026-09-06).
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/channel-columns.test.ts
-//
 // PURE tests for the workflow channel-columns geometry + ordered-membership
 // helpers. The membership reconcilers (reconcileColumnOrder / reconcileSendOrder)
 // are the COLLAB-CRITICAL heal: a lost concurrent append self-heals at the

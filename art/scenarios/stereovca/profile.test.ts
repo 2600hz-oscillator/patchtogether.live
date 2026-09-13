@@ -1,5 +1,3 @@
-// art/scenarios/stereovca/profile.test.ts
-//
 // AUDIO PROFILE for STEREOVCA (stereo VCA + ring modulator) — backfill batch 6.
 // STEREOVCA is a SELF-CONTAINED pure-math TS worklet
 // (packages/dsp/src/stereovca.ts: out = in * (strength + offset) * level, no

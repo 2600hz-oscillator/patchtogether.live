@@ -1,5 +1,3 @@
-// e2e/tests/peertube.spec.ts
-//
 // PEERTUBE — NETWORK-MOCKED source chain. We NEVER hit live Sepia Search / a
 // PeerTube instance / a remote HLS stream in CI (flaky + legally cleaner): every
 // Sepia request is route-fulfilled with fixture JSON, the per-instance video-

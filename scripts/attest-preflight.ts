@@ -1,5 +1,3 @@
-// scripts/attest-preflight.ts
-//
 // THE QUIET-MACHINE GUARD — ONE implementation, sampled over TIME (#1331).
 //
 // ── WHAT WAS WRONG ─────────────────────────────────────────────────────────

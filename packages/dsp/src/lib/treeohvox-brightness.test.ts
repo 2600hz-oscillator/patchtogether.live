@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/treeohvox-brightness.test.ts
-//
 // P0 BLIND-SPOT coverage for the TREE.oh.VOX (TB-303) voice — the DIRECTION of
 // its filter-envelope brightness sweep.
 //

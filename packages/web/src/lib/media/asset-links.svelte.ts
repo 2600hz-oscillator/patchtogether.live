@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/asset-links.svelte.ts
-//
 // WORKFLOW MODE P3 — the assetId ↔ nodeId[] link map behind the Loaded
 // Assets Picker behaviors: patched-row highlight, drag-from-existing
 // (a new wire from the EXISTING module, not a second module), "add

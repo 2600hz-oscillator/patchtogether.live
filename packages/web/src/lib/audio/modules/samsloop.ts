@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop.ts
-//
 // SAMSLOOP — loop-based sample player. User uploads an audio file
 // (≤2 MB) — anything the browser's AudioContext.decodeAudioData accepts:
 // wav, mp3, m4a/aac, ogg, flac, opus, weba — OR records from the
@@ -1244,7 +1242,6 @@ export const samsloopDef: AudioModuleDef = {
     { id: 'samsloop-rate-select', label: 'Record sample rate', kind: 'other', testidPrefix: 'samsloop-rate' },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT SAMSLOOP IS FOR, in one sentence, because every rank below descends
   // from it: it is the module that turns a RECORDING into an INSTRUMENT — you

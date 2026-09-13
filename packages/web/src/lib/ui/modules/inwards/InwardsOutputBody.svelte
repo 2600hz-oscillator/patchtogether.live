@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/inwards/InwardsOutputBody.svelte
-  //
   // The INWARDS dock full-view body: the live ring picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

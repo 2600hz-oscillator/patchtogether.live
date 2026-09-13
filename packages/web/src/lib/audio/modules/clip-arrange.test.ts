@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-arrange.test.ts
-//
 // Pure SONG-MODE arranger model: the event log the clip player records launches
 // into and replays from. Covers shape defaults, garbage coercion, ordered
 // recording, the half-open playback window, and loop-length derivation.

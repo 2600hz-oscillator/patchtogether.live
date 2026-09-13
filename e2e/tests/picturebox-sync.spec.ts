@@ -1,5 +1,3 @@
-// e2e/tests/picturebox-sync.spec.ts
-//
 // @collab — verifies image content syncs across rack-mates via the
 // Y.Doc. Two browser contexts attach to the same Hocuspocus rackspace,
 // user A spawns a PICTUREBOX and loads an image into it, and user B's

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog904a-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for moog904a's two derived readouts.
 //
 // A derived readout earns its place only if it is checked against the input a

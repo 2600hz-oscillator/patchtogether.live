@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog960.test.ts
-//
 // Two test layers for the MOOG 960 SEQUENTIAL CONTROLLER:
 //   1. Module-def shape — pins the 960's full I/O + param surface (24 step
 //      pots, 3 ranges, 8 column modes, rate; the 3 row CV outputs + clock_out;

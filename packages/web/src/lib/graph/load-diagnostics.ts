@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/load-diagnostics.ts
-//
 // THE USER-FACING HALF OF "degrades gracefully".
 //
 // `loadEnvelopeIntoStore` has skipped unknown module types with a

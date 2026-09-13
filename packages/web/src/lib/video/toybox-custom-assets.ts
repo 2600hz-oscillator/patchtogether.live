@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-custom-assets.ts
-//
 // THE BRIDGE from a user-supplied SOURCE to a registered ASSET (#1576).
 //
 // This is where workstream 1 (param extraction) meets workstream 2 (the provider

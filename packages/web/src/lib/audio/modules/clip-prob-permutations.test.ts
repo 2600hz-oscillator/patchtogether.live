@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-prob-permutations.test.ts
-//
 // The HEART of the clip-default probability coverage (owner-requested EXTENSIVE
 // permutation table). Iterates every combination of a note's own `prob` × the
 // clip's `defaultProb` and, for EACH cell, pins the full contract:
@@ -102,9 +100,7 @@ function cardBucket(fill: string): { bucket: ProbColorBucket; lightness: number 
   throw new Error(`unexpected card hue ${hue} in "${fill}"`);
 }
 
-// ===========================================================================
 // THE TABLE — one describe per cell, asserting eff/source/buckets together.
-// ===========================================================================
 describe('clip-default probability — the full note.prob × clip.defaultProb table', () => {
   for (const noteProb of NOTE_PROBS) {
     for (const clipDefault of CLIP_DEFAULTS) {
@@ -131,10 +127,8 @@ describe('clip-default probability — the full note.prob × clip.defaultProb ta
   }
 });
 
-// ===========================================================================
 // COLOUR — a note's OWN prob (purple) vs following the clip default (orange), and
 // the WHITE fallout (effective 100%, either source).
-// ===========================================================================
 describe('colour source: own prob → purple, clip default → orange, 100% → white', () => {
   it('same effective prob, DIFFERENT source → different hue (own prob vs clip default)', () => {
     // A note that OWNS prob 0.5 under a clip default of 0.5 → purple (source note).
@@ -177,11 +171,9 @@ describe('colour source: own prob → purple, clip default → orange, 100% → 
   });
 });
 
-// ===========================================================================
 // BRIGHTNESS MONOTONICITY — within EACH ramp (purple = the note's own prob,
 // orange = following the clip default), a higher probability is brighter, on
 // BOTH surfaces.
-// ===========================================================================
 describe('brightness monotonicity within each source ramp', () => {
   const ramp = [0.025, 0.25, 0.5, 0.75, 0.975];
   it("LAUNCHPAD purple ramp (note's own prob) brightens with probability", () => {
@@ -226,11 +218,9 @@ describe('brightness monotonicity within each source ramp', () => {
   });
 });
 
-// ===========================================================================
 // PLAYBACK — the dice-roll (notesFiringAt) honours the EFFECTIVE prob for every
 // cell, seeded-deterministic. p≥1 always, p=0 never, mid-p in-band; a note's own
 // prob is used as-is (a stored 1 pins over a lower clip default).
-// ===========================================================================
 describe('playback firing under a seeded mulberry32 — the whole table', () => {
   const TRIALS = 400;
   /** Fraction of TRIALS where the single note fired, seeded so the count is

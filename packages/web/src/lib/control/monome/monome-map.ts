@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/monome-map.ts
-//
 // MONOME PLACEMENT adapter — the monome grid's 16×8 surface laid over the
 // controller-agnostic clip-surface core (`$lib/control/clip-surface-map`). This
 // file supplies ONLY the monome-specific PLACEMENT (where every control pad
@@ -99,9 +97,7 @@ export {
   type LengthEditAction,
 } from '../clip-surface-map';
 
-// ---------------------------------------------------------------------------
 // Edit-mode geometry: 7 note rows (0..6) + a bottom FUNCTION ROW (7).
-// ---------------------------------------------------------------------------
 export const NOTE_ROWS = GRID_HEIGHT - 1; // 7 pitch rows (= 1 in-key octave)
 export const FUNC_ROW = GRID_HEIGHT - 1; // row 7 = controls
 // Function-row layout with spacer gaps for legibility:
@@ -119,9 +115,7 @@ export const PAGE_RIGHT_PAD = { x: 13, y: FUNC_ROW } as const; // page right (on
 export const DOUBLE_PAD = { x: 14, y: FUNC_ROW } as const; // double the clip length
 export const LENGTH_EDIT_PAD = { x: 15, y: FUNC_ROW } as const; // open the LENGTH-EDIT page
 
-// ---------------------------------------------------------------------------
 // Session-mode control-pad coordinates.
-// ---------------------------------------------------------------------------
 export const CTRL_STOP_COL = CLIP_SLOTS; // 8 — per-lane stop
 export const CTRL_SCENE_COL = CLIP_SLOTS + 1; // 9 — scene launch
 export const EDIT_PAD = { x: GRID_WIDTH - 1, y: 0 } as const; // (15,0) — hold to enter edit
@@ -137,9 +131,7 @@ function frameIndex(x: number, y: number): number {
   return y * GRID_WIDTH + x;
 }
 
-// ---------------------------------------------------------------------------
 // SESSION pad classifiers (PURE) — placement → the shared brain.
-// ---------------------------------------------------------------------------
 
 /** Left-quadrant pad (x=slot, y=lane) → flat clip index, or null. */
 export function padToClipIndex(x: number, y: number): number | null {
@@ -170,10 +162,8 @@ export function isTransportPad(x: number, y: number): boolean {
   return x === TRANSPORT_PAD.x && y === TRANSPORT_PAD.y;
 }
 
-// ---------------------------------------------------------------------------
 // EDIT-mode mapping (PURE) — note grid = rows 0..NOTE_ROWS-1 × all 16 steps;
 // row NOTE_ROWS (= FUNC_ROW) is the function row, never a note cell.
-// ---------------------------------------------------------------------------
 
 /** Display row y (0 = top, NOTE_ROWS-1 = bottom note row) → MIDI for a clip.
  *  Converts the monome's top-down physical row to the core's logical row.
@@ -255,11 +245,9 @@ export function isPasteRevPad(x: number, y: number): boolean {
   return x === PASTE_REV_PAD.x && y === PASTE_REV_PAD.y;
 }
 
-// ---------------------------------------------------------------------------
 // LENGTH-EDIT page mapping (PURE) — the monome's 2-row placement over the core
 // classifier. ROW 0 pads 0..7 = the end BLOCK; ROW 0 pad 15 = EXIT; ROW 1 pads
 // 0..15 = the end STEP.
-// ---------------------------------------------------------------------------
 export function isLengthEditExitPad(x: number, y: number): boolean {
   return y === 0 && x === GRID_WIDTH - 1;
 }
@@ -268,9 +256,7 @@ export function lengthEditPad(x: number, y: number): LengthEditAction | null {
   return lengthEditAction(y, x, isLengthEditExitPad(x, y));
 }
 
-// ---------------------------------------------------------------------------
 // LED frames (PURE) — the 16×8 monome placement painted from the shared brain.
-// ---------------------------------------------------------------------------
 
 export interface SessionLedOpts {
   transportRunning?: boolean;

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/ringback.ts
-//
 // RINGBACK — stereo crush effect extracted from the TWOTRACKS record-time
 // artifact. Stereo in (L/R) → stereo out (L/R). Wraps the `ringback` worklet
 // (packages/dsp/src/ringback.ts), which runs the shared RingChannel crush core

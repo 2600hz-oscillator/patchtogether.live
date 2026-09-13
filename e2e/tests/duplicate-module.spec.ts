@@ -1,5 +1,3 @@
-// e2e/tests/duplicate-module.spec.ts
-//
 // Right-click → Duplicate clones a module with all its data + params into a
 // fresh node id offset from the source. Edges are NOT copied (the duplicate
 // starts unpatched).

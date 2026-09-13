@@ -1,5 +1,3 @@
-// packages/web/src/lib/dev/registry-manifest.ts
-//
 // NODE-ONLY builder + writer for `e2e/.generated/registry-manifest.json` — the
 // registry projection every registry-driven Playwright sweep iterates
 // (`e2e/tests/_registry.ts`). Sibling of `$lib/docs/emit-module-docs.ts`, and

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/kickdrum-dsp.test.ts
-//
 // Phase-1 proving tests for the KICK DRUM core (plan §5 Phase 1): strike
 // determinism, the frequency laws, sr-CALIBRATED decay (identical at 44 100
 // and 48 000 — audit A2), DC cleanliness, accent latching, and the Phase-1
@@ -197,9 +195,7 @@ describe('kickdrum P1: output invariants', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Phase 2 — click layer + oversampled drive (`hard` switch)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Exact single-bin magnitude (rectangular window). */
 function goertzelMag(buf: Float32Array, bin: number): number {
@@ -319,9 +315,7 @@ describe('kickdrum P2: oversampled drive + the `hard` switch', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Phase 3 — EQ (own-code RBJ) + harmonic exciter (translate)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('kickdrum P3: EQ + translate', () => {
   const N = 4800;
@@ -402,9 +396,7 @@ describe('kickdrum P3: EQ + translate', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Phase 4 — dynamics (transient shaper, SC-HPF'd glue, true-peak ceiling)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('kickdrum P4: dynamics', () => {
   const sr = 48000;
@@ -523,9 +515,7 @@ describe('kickdrum P4: dynamics', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Phase 5 — stereo (mono-safe sub, decorrelated >120 Hz width)
-// ─────────────────────────────────────────────────────────────────────────
 
 import { kickdrumStepStereo } from './kickdrum-dsp';
 

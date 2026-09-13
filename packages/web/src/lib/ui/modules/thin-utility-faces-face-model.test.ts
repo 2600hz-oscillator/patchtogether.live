@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/thin-utility-faces-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the THIN AUDIO TAIL faceplates —
 // utilities whose entire control surface is ONE knob or NOTHING at all.
 //

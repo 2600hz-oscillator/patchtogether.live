@@ -1,12 +1,9 @@
-// packages/web/src/lib/audio/tempolock/tempolock-tracker.ts
-//
 // PURE tempo-tracking math for TEMPOLOCK — gate onsets in, a steady tracked
 // quarter-note clock out. The cv-buddy `clock-math.ts` shape: no AudioContext,
 // no timers, no Math.random / Date.now — every quantity arrives as an argument
 // and every decision is unit-testable against plain numbers
 // (tempolock-tracker.test.ts).
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // ⚠ WHY THIS IS NOT A LAST-INTERVAL FOLLOWER (the owner's report, 2026-08-29)
 //
 // The rack's existing clock consumers — TIMELORDE's CLOCK IN and backdraft's

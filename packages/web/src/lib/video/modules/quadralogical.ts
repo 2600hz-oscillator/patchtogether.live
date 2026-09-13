@@ -1,13 +1,9 @@
-// packages/web/src/lib/video/modules/quadralogical.ts
-//
 // QUADRALOGICAL — 4-input video MIXER / processor driven by an XY joystick.
 //
-// ──────────────────────────────────────────────────────────────────────────
 // HARD CONSTRAINT: this module is fully self-contained. It MUST NOT import or
 // reference any TOYBOX code, nor chromakey.ts / lumakey.ts. Any shared
 // algorithm (chroma / luma keying) is RE-IMPLEMENTED as GLSL text inside this
 // file's shader source — never imported.
-// ──────────────────────────────────────────────────────────────────────────
 //
 // PHASE 2 — the headline change: there is no longer a single global transition.
 // Each of the FOUR edges of the joystick cycle (1↔2, 2↔3, 3↔4, 4↔1) carries its
@@ -831,7 +827,6 @@ export const quadralogicalDef: VideoModuleDef = {
     },
   ],
 
-  // ─────────────────────────────────────────────────────────────────────────
   // THE FACEPLATE — and the thing that makes it unlike every other video face
   // in the fleet is that THE PICTURE IS THE CONTROL.
   //

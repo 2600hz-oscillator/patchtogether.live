@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/mesh.ts
-//
 // Shared interleaved-mesh shape used by TOYBOX's OBJ layer. Both the OBJ
 // parser (obj-parse.ts) and the procedural generators (primitives.ts) emit
 // this so the render pass uploads them through one code path. PURE type +

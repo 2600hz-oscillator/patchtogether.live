@@ -1,5 +1,3 @@
-// art/scenarios/analog-vco/pw-pm-morph.test.ts
-//
 // ART scenarios PROVING THE PM/PW MORPH BUG IS FIXED.
 //
 // THE BUG: the saw→sine→square MORPH output used a hardcoded 50%-duty square

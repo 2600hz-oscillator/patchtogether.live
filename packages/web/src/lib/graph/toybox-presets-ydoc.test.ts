@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-presets-ydoc.test.ts
-//
 // REAL-Y.Doc regression for the TOYBOX Phase-6 preset loader. Runs against the
 // SAME syncedStore + Y.Doc the live patch uses, so a node's layers/combine/
 // cvRoutes become real Y types after the first write — the only way to catch

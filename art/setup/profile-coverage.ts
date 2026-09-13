@@ -1,5 +1,3 @@
-// art/setup/profile-coverage.ts
-//
 // Coverage lists for THE AUDIO-PROFILE GATE (owner decision §4 item 1 —
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md): every
 // audio-domain module def must have ≥1 committed ART audio-profile baseline

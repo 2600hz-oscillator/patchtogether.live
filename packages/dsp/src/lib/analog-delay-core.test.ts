@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/analog-delay-core.test.ts
-//
 // Behavioral proof for the OWN-CODE AnalogDelayCore (the COFEFVE DELAY
 // engine). These assert the SPEC'd effect — echo at the delay time, a decaying
 // feedback train, tempo sync, wow/flutter modulation, wet/dry split, ducking,

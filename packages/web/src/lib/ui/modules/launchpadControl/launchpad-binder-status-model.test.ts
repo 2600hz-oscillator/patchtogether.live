@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/launchpadControl/launchpad-binder-status-model.test.ts
-//
 // THE PERMANENT LEGS FOR THE LAUNCHPAD BINDER'S STRINGS.
 //
 // ⚠ MOST OF WHAT THIS FILE ASSERTS IS NEVER PAINTED, and that is the reason it

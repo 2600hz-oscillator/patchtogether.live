@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface.test.ts
-//
 // Pure model + helper coverage for the CONTROL SURFACE (the side-effecting
 // ydoc mutators are exercised by the e2e spec against a real patch). We pin:
 //   - listControlSurfaces enumerates type==='controlSurface' with names

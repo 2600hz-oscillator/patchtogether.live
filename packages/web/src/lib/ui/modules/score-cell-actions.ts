@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/score-cell-actions.ts
-//
 // The read/write halves of SCORE's faceplate BAND cells.
 //
 // ⚠ THE CARD IS MODAL; THE FACE IS NOT, AND THAT IS THE DESIGN RATHER THAN A

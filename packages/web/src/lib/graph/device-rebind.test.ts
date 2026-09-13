@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/device-rebind.test.ts
-//
 // The rebind resolver, driven in both directions.
 //
 // Everything here is pure, which is the point: camera and gamepad rebinding

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clap.test.ts
-//
 // CLAP module-def shape + worklet-wrapper behavior. The per-sample DSP
 // math (burst scheduler, control laws, the sonic-range proofs) is pinned
 // in packages/dsp/src/lib/clap-dsp.test.ts and the raw audio profile in
@@ -36,9 +34,7 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Module-def shape (the frozen contract)
-// ───────────────────────────────────────────────────────────────────────
 
 describe('CLAP def — frozen contract', () => {
   it('identity: type/label/category/domain (label lowercase per the guard)', () => {
@@ -84,9 +80,7 @@ describe('CLAP def — frozen contract', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + wrapper behavior
-// ───────────────────────────────────────────────────────────────────────
 
 const BLOCK = 128;
 

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/edge-detect.property.test.ts
-//
 // fast-check property suite for `createEdgeCounter` (#1526) — the single seam
 // for MAIN-THREAD rising-edge detection, and the one CLAUDE.md names by hand:
 // "NEVER re-scan a whole AnalyserNode buffer — the 2048-sample ring (~42 ms)
@@ -44,9 +42,7 @@ import { createRisingEdgeDetector } from './modules/transport-helpers';
 const SAMPLE_RATE = 48000;
 const FFT_SIZE = 2048;
 
-// ---------------------------------------------------------------------------
 // The fake AnalyserNode + BaseAudioContext.
-// ---------------------------------------------------------------------------
 
 interface Harness {
   ctx: BaseAudioContext;
@@ -122,9 +118,7 @@ function countWithEdgeCounter(h: Harness, times: readonly number[]): number {
   return total;
 }
 
-// ---------------------------------------------------------------------------
 // Generators.
-// ---------------------------------------------------------------------------
 
 /**
  * A pulse train: gate-high runs separated by gate-low runs, in SAMPLES.
@@ -255,7 +249,6 @@ describe('createEdgeCounter properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // PERMANENT NEGATIVE CONTROL.
   //
   // P1 asserts equality. The failure it exists to catch is the whole-buffer
@@ -263,7 +256,6 @@ describe('createEdgeCounter properties', () => {
   // generated inputs, `start = 0` instead of the window. If this ever finds
   // no over-count, the harness has stopped producing overlapping ring reads
   // and P1 is no longer testing the thing it is named after.
-  // -------------------------------------------------------------------
   it('CONTROL: the whole-buffer rescan OVER-counts on the same inputs (P1 can fail)', () => {
     let checked = 0;
     let overCounted = 0;

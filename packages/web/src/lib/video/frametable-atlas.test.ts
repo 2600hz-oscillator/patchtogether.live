@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/frametable-atlas.test.ts
-//
 // FRAMETABLE — the `.frametable.png` sprite-sheet ATLAS layout math. Pure (no
 // WebGL / no DOM), so it pins the ONE source of truth the SAVE tiler + LOAD
 // detiler share. The certifications:

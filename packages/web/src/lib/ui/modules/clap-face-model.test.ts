@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clap-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind CLAP's derived readouts.
 //
 // The headline leg: perturb SNAP and `clap-voice-ms` must move 170 → 40 ms

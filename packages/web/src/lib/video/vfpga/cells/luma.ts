@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/luma.ts
-//
 // CLB cell `luma(a)` — the RGB→luma reducer (the comparator/key FEEDER): collapses
 // input `a` to its Rec.601 luma replicated across RGB (a greyscale key signal the
 // threshold/select cells then act on). One input (a), no knobs. Alpha preserved.

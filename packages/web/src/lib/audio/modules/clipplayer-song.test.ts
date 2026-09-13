@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clipplayer-song.test.ts
-//
 // Drives the REAL clipplayer factory + tick loop (SONG MODE v2 — the printed
 // performance) against a fake AudioContext + the live graph store:
 //   - RECORD (PRINT): perform a launched clip in SESSION under a SONG-REC arm →

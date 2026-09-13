@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-take-survives-card-collapse.spec.ts
-//
 // #1588 — collapsing SAMSLOOP must not destroy an in-progress recording.
 //
 // ⚠ SAMSLOOP IS PROMOTED NOW, and the subject survived the promotion unchanged — which

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/frametable-ring.ts
-//
 // SHARED GPU frame-ring plumbing — the GL resource helpers a video WAVETABLE
 // module needs to record N input frames into a TEXTURE_2D_ARRAY ring and detile
 // a saved .frametable.png atlas back into it. Extracted from FRAMETABLE's factory

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/lut16.ts
-//
 // LUT16 cell `lut(a, b, c, d, init, level)` — a literal 4-input bitwise truth
 // table (the FPGA LUT4, design §1.3 + the ratified OWNER DECISION "LUT16 tile
 // yes"). Each of the four inputs is thresholded at `level` into a bit; the four

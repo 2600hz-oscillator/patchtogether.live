@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-pitch-probability.spec.ts
-//
 // PER-NOTE PITCH PROBABILITY end-to-end (card path) — the sibling of
 // clipplayer-play-every.spec.ts. The MODEL (weights, distribution, privileged
 // intervals, multiplayer determinism) is pinned by the pure unit tests in

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/modtris/ModtrisWellBody.svelte
-  //
   // The MODTRIS dock full-view body: the live well + NEXT strip + LN/LV counts,
   // plus its SCREEN ON/OFF switch. This is the module's identity — the thing you
   // look at — and before promotion it existed ONLY on a legacy card the shipping

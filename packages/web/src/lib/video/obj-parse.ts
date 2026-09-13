@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/obj-parse.ts
-//
 // In-house ASCII Wavefront OBJ parser for TOYBOX's OBJ mesh layer. PURE: no
 // GL, no DOM, no asset loading — it takes OBJ source text and returns an
 // interleaved, indexed, auto-framed mesh ready to upload to a VBO/IBO. Lives

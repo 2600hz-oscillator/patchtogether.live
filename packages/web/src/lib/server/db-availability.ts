@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/db-availability.ts
-//
 // Distinguishes "the database is UNAVAILABLE" (infrastructure) from "the query
 // or schema is WRONG" (a bug in our code), and degrades the former to a 503.
 //

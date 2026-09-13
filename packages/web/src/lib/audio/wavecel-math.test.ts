@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavecel-math.test.ts
-//
 // Pure tests for WAVECEL DSP math: wavefolder, frame interpolation,
 // spread→stereo panning. The worklet (packages/dsp/src/wavecel.ts)
 // inlines its own copies of these functions; equivalence is asserted
@@ -169,4 +167,3 @@ describe('spreadTaps', () => {
     expect(spreadTaps(99, 5)).toHaveLength(5);
   });
 });
-

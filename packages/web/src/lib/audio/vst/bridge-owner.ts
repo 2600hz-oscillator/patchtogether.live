@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vst/bridge-owner.ts
-//
 // WHO OWNS A VST BRIDGE CONNECTION — a per-NODE registry that outlives every
 // view, cloned from es9/bridge-owner.ts (whose header carries the full case
 // history: card-owned connections died on dock collapse; listeners keyed off

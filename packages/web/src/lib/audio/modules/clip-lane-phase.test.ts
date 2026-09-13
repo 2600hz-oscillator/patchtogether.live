@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-lane-phase.test.ts
-//
 // The per-machine lane-phase channel (redesign §4.1) — publish/read/clear,
 // keyed by nodeId + lane, mirroring clip-playhead.ts.
 

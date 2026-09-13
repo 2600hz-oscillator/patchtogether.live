@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/mandelbulb-slice.test.ts
-//
 // Tests for the MANDELBULB slice → waveform readout. The slice math is the
 // audio analogue of cube-dsp's sampleSlice: it marches the bulb DISTANCE
 // ESTIMATOR through a rotatable, FIXED-SIZE plane and reads a 256-sample

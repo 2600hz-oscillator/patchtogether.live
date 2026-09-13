@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midi-cv-buddy.ts
-//
 // MIDI-CV-BUDDY — bridges a hardware MIDI controller into the patch as
 // pitch + gate + velocity CV. Monophonic; user-selectable voice priority
 // (LAST / LOW / HIGH); user-selectable retrigger behavior; pitch-bend
@@ -228,41 +226,12 @@ export function priorityForChoice(choice: string): VoicePriority {
 }
 
 /**
- * The MIDI channel FILTER stored on a node, or `null` for ALL.
+ * Read the MIDI input filter, or null for all channels. Use midiInChannel:
+ * data.channel belongs to workflow lane membership.
  *
- * ⚠ THE KEY IS `midiInChannel`, NOT `channel`, AND THE RENAME IS A BUG FIX
- * (#1168's other half, found on this module's promotion 2026-08-25).
- *
- * `channel-columns.ts` declares `data.channel: 1..8` to be COLUMN MEMBERSHIP
- * TRUTH — the workflow reconciler DROPS a node from a lane whose order array
- * lists it while `data.channel !== ch`, and ADOPTS any node whose
- * `data.channel === ch`. `MidiOutBuddyCard.svelte` has carried a header about
- * this since #1168 (*"this card must NEVER write it, or the column reconciler
- * moves the module to another lane and drops its clip assignment"*) and gained
- * its own `midiOutChannel` key for exactly that reason. **The sibling was never
- * checked, and it collided on the same key in BOTH directions:**
- *
- *   * WRITE — picking a MIDI channel wrote `data.channel = 0..15`. Lane columns
- *     are 1..8, so channel 1 (stored 0), or anything above 8, ejected the module
- *     from its lane entirely, and channels 2..9 TELEPORTED it into another
- *     lane's stack. One dropdown change, silently, with no undo entry.
- *   * READ — the factory read `savedData.channel` as the filter, and lane
- *     membership is POSITIONAL (drop position decides, not port shape), so
- *     dropping a fresh MIDI-CV-BUDDY into channel column 5 made the workflow
- *     write `channel: 5` and the module then listened to MIDI channel 6 ONLY.
- *     That one needs no user action at all: the module simply goes deaf on
- *     fifteen of sixteen channels for no visible reason.
- *
- * ⚠ AND THE LEGACY KEY IS NOT READ AS A FALLBACK, WHICH IS A DECISION RATHER
- * THAN AN OMISSION. A stored `3` is the same bytes whether the card wrote a
- * filter or the reconciler wrote a lane, so there is no discriminator to write.
- * Reading it would mean choosing to be wrong on the case that happens with NO
- * user action (the deafness above) in order to be right on the case that
- * requires one — and the case that requires one ALSO ejected the module from
- * its lane, so it was never a working configuration either. A rack saved with a
- * filter therefore re-opens on ALL, which is the recoverable direction: too many
- * notes is audible and one click from correct, where selective deafness is
- * neither.
+ * Do not fall back to the old channel key; saved values cannot distinguish
+ * a MIDI filter from a lane assignment. Old filters reopen on all channels
+ * rather than silently filtering notes according to the node's lane. (#1168)
  */
 export function midiInChannelOf(data: Partial<MidiCvBuddyData> | undefined | null): number | null {
   const raw = data?.midiInChannel;
@@ -326,7 +295,6 @@ export function removeHeld(stack: readonly number[], note: number): number[] {
   return stack.filter((n) => n !== note);
 }
 
-// ---------------- Module def ----------------
 
 /** Lookahead added to event.timeStamp when scheduling AudioParam updates
  *  (shared by MIDI-CV-BUDDY + MIDI LANE; MIDICLOCK has its own larger
@@ -476,7 +444,6 @@ export function webMidiAvailable(): boolean {
   );
 }
 
-// ---------------- The FACEPLATE ----------------
 //
 // WHAT THIS MODULE IS FOR, MUSICALLY. It is the mono workhorse that lets you
 // PLAY the rack from a keyboard: one winning note out of whatever you are

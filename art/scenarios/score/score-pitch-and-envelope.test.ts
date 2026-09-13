@@ -1,5 +1,3 @@
-// art/scenarios/score/score-pitch-and-envelope.test.ts
-//
 // Audio Regression Tests for the SCORE module.
 //
 // 1. Pitch correctness: parse a staff position via staffStepToMidi (the same
@@ -350,7 +348,6 @@ describe('SCORE / tied-note envelope (single sustained span)', () => {
     // fully decayed. Sample at ~0.95s.
     const tailIdx = Math.floor(SAMPLE_RATE * 0.95);
     const tailValue = Math.abs(oneNote[tailIdx]);
-    // Should be near zero — well below sustain.
     expect(tailValue).toBeLessThan(0.05 * DYNAMIC_SCALE.mf);
     // (In contrast, the tied-span test above stays at 0.7 * dynScale through
     // the entire mid-span — proving the held-gate behavior.)

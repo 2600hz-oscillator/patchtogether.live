@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midiCvBuddy/midi-cv-buddy-status-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL for the MIDI-CV-BUDDY device body's prose.
 //
 // ⚠ EVERY STRING THIS FILE CHECKS IS UNPAINTED. `StatusLed`'s `detail` reaches

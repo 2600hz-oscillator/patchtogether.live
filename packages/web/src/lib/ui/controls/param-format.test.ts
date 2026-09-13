@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/param-format.test.ts
-//
 // The ONE readout ladder + the SOURCE-LEVEL guard that keeps it one.
 //
 // The ladder itself is trivially testable. The interesting half is the second

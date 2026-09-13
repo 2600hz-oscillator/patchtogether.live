@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/cv-clock-core.ts
-//
 // CV-CLOCK CORE — CV Buddy's hardware RUN + CLOCK generator, as a pure,
 // sample-accurate engine that runs inside the seq-clock AudioWorklet module
 // (../seq-clock.ts, processor 'cv-clock').

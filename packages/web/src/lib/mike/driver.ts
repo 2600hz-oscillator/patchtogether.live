@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/driver.ts
-//
 // Mike's driver. Re-uses Carl's `applyIntent` for the actual Yjs writes —
 // the only Mike-specific behavior is that after every `addNode` we run a
 // pure `organizeLayout` pass over the patch and write back the new

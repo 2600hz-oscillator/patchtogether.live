@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavecel-table-actions.ts
-//
 // THE ONE IMPLEMENTATION of WAVECEL's three wavetable-acquisition actions —
 // pick a factory table, load a built-in preset, import a WAV — shared by the
 // legacy card and by the faceplate's shell cells.

@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-annotated.spec.ts
-//
 // NUMBERED card-FACE generator for the docs site (/docs/modules/[id]).
 //
 // Reuses the VRT card harness (spawn / settle / font-pin from vrt.spec.ts) to

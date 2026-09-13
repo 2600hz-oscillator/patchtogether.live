@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cube/cube-table-actions.ts
-//
 // The three WAVETABLE SLOT writes, shared by the legacy card and the
 // faceplate's `cube-table-stack` panel — the `dx7-patch-actions` precedent.
 //

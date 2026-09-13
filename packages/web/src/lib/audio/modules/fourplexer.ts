@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/fourplexer.ts
-//
 // 4PLEXER — 4-in / 4-out discrete signal router.
 //
 // Four signal inputs (in1..in4) and four signal outputs (out1..out4). Each
@@ -103,7 +101,6 @@ export const fourplexerDef: AudioModuleDef = {
     options: FOURPLEXER_INPUT_OPTIONS,
   })),
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. A hard 4x4 switch. Four sources in, four destinations out,
   // and each destination picks exactly ONE source — never a blend, which is the

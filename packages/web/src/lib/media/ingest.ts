@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/ingest.ts
-//
 // Drop-ingestion core for the media-loader view (/media). PURE + unit-testable:
 // no DOM side effects, no globals — it takes a structural DataTransfer-like
 // object (the real one from a drop event, or a mock in tests) and resolves it
@@ -21,9 +19,7 @@
 // FileSystemEntry — unit tests build mock entry trees against these shapes,
 // and the real browser objects satisfy them structurally.
 
-// ---------------------------------------------------------------------------
 // Kinds + sniffing
-// ---------------------------------------------------------------------------
 
 export type MediaKind = 'video' | 'image' | 'audio';
 
@@ -71,9 +67,7 @@ export function sniffKind(name: string, mimeType?: string): MediaKind | null {
   return EXT_TO_KIND[name.slice(dot + 1).toLowerCase()] ?? null;
 }
 
-// ---------------------------------------------------------------------------
 // Structural types (real DOM objects satisfy these; tests mock them)
-// ---------------------------------------------------------------------------
 
 export interface FileSystemDirectoryReaderLike {
   readEntries(
@@ -103,9 +97,7 @@ export interface DataTransferLike {
   files?: ArrayLike<File>;
 }
 
-// ---------------------------------------------------------------------------
 // Result shape
-// ---------------------------------------------------------------------------
 
 export interface AcceptedMedia {
   file: File;
@@ -127,9 +119,7 @@ export interface IngestResult {
   rejected: RejectedMedia[];
 }
 
-// ---------------------------------------------------------------------------
 // Internals
-// ---------------------------------------------------------------------------
 
 function errMsg(err: unknown): string {
   if (err && typeof err === 'object') {
@@ -240,9 +230,7 @@ async function ingestEntry(
   });
 }
 
-// ---------------------------------------------------------------------------
 // Public API
-// ---------------------------------------------------------------------------
 
 /**
  * Ingest a FileList (the hidden <input type="file"> / webkitdirectory browse

@@ -1,5 +1,3 @@
-// e2e/tests/reconciler-node-type-swap.spec.ts
-//
 // A MODULE RESPAWNED AT A REUSED NODE ID IS THE MODULE THE OPERATOR NOW SEES.
 //
 // ── THE DEFECT THIS PINS ───────────────────────────────────────────────────

@@ -1,5 +1,3 @@
-// e2e/tests/rings.spec.ts
-//
 // RINGS end-to-end coverage: instantiate the module in a real browser
 // AudioContext, drive it with a noise exciter + STRUM gate, and verify
 // the resonator produces audio at OUT — no crashes, no NaN/Inf in the

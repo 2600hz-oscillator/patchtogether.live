@@ -1,5 +1,3 @@
-// e2e/tests/midi-binding-node-lifetime.spec.ts
-//
 // #1727 — "a MIDI CC bound to a module with no control on screen is silently
 // INERT." THE REPRODUCTION, and then the regression guard.
 //

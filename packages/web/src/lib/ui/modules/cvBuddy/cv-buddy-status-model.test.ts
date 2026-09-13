@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cvBuddy/cv-buddy-status-model.test.ts
-//
 // Every string the CV BUDDY status surface can produce.
 //
 // ⚠ MOST OF THESE ARE NEVER PAINTED — they are `aria-label` and `title` — and

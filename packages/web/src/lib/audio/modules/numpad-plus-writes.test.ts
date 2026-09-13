@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/numpad-plus-writes.test.ts
-//
 // The NUMPAD+ write seam, against the app's REAL graph store.
 //
 // Four properties, every one of which was FALSE before this PR and none of

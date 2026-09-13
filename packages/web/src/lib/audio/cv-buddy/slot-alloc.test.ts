@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-buddy/slot-alloc.test.ts
-//
 // PURE unit coverage for the CV Buddy ES-9 slot allocator. No AudioContext,
 // no Yjs — plain fixtures. (Flake-check REPEAT=3 pre-MR per CLAUDE.md.)
 

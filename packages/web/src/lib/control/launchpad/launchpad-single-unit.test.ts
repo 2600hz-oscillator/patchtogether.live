@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-single-unit.test.ts
-//
 // SINGLE-UNIT (S2b) mode for the Launchpad clip-launcher — the 4-VIEW surface
 // (Grid / Clip / Arranger / Control) over a PERMANENT top-CC nav row, with KEYS
 // as a Clip sub-view + a built-in arp, hybrid shift latch/hold, Grid-shift
@@ -193,11 +191,9 @@ beforeEach(() => {
   clearAudition(NODE_ID);
 });
 
-// ===========================================================================
 // PAIR-MODE REGRESSION GUARD — the locked invariant must NOT shift. With a real
 // PAIR installed the deployment is 'pair', the matrix is always L, and none of
 // the single-mode 4-view surface applies.
-// ===========================================================================
 describe('PAIR regression — the single 4-view surface does not change pair behaviour', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -280,9 +276,7 @@ describe('PAIR regression — the single 4-view surface does not change pair beh
   });
 });
 
-// ===========================================================================
 // SINGLE — bind + the transposed GRID view (channel-per-column).
-// ===========================================================================
 describe('SINGLE — Grid view (transposed clip matrix + scene/row launch)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -368,13 +362,11 @@ describe('SINGLE — Grid view (transposed clip matrix + scene/row launch)', () 
   });
 });
 
-// ===========================================================================
 // SINGLE — GRID(held) + clip pad = ENTER the clip's editor WITHOUT launching it.
 // Owner bug: entering a clip (to view/edit its notes) used to change the clip's
 // play/stop status. The fix DECOUPLES the two — a plain tap still launches/stops;
 // a GRID-held tap opens Clip view on that clip and leaves play/stop untouched.
 // GRID = the permanent grid-view button (CC_VIEW_GRID) held as a modifier.
-// ===========================================================================
 describe('SINGLE — GRID(held)+clip ENTERs a clip without changing its play/stop', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -455,9 +447,7 @@ describe('SINGLE — GRID(held)+clip ENTERs a clip without changing its play/sto
   });
 });
 
-// ===========================================================================
 // SINGLE — the PERMANENT TOP ROW is intercepted first in every view.
-// ===========================================================================
 describe('SINGLE — permanent top row (transport / views / undo / redo)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -517,10 +507,8 @@ describe('SINGLE — permanent top row (transport / views / undo / redo)', () =>
   });
 });
 
-// ===========================================================================
 // SINGLE — SHIFT is MOMENTARY HOLD-only (owner: "shift functions … should be a
 // hold"). No tap-to-latch: effective shift = shiftHeldSingle (physically down).
-// ===========================================================================
 describe('SINGLE — shift momentary hold (no latch)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -567,11 +555,9 @@ describe('SINGLE — shift momentary hold (no latch)', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — GRID-shift tap-to-ARM (copy / paste / clip-div / len) + swing nudge.
 // (PASTE-REV + NOW were repurposed to the scene-window UP/DOWN — see the
 // scene-scroll describe below.)
-// ===========================================================================
 describe('SINGLE — Grid-shift tap-to-arm + swing', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -706,14 +692,12 @@ describe('SINGLE — Grid-shift tap-to-arm + swing', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — GRID scene-scroll window (reach scenes beyond the 8 rows). The two
 // side buttons repurposed from PASTE-REV (→ UP) and NOW (→ DOWN) slide the
 // window; the 8 scene-launch buttons stay POSITION-RELATIVE (top = topmost
 // visible scene); a scene beyond the 8 stored slots is DARK / a launch no-op.
 // UP/DOWN live in the grid-shift palette (reached under shift); the scene launch
 // itself is no-shift. Driven through the REAL device→map→binding→Y.Doc chain.
-// ===========================================================================
 describe('SINGLE — Grid scene-scroll (>8 scenes; UP/DOWN from PASTE-REV/NOW)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -848,9 +832,7 @@ describe('SINGLE — Grid scene-scroll (>8 scenes; UP/DOWN from PASTE-REV/NOW)',
   });
 });
 
-// ===========================================================================
 // SINGLE — CLIP view (note editor on selectedClipIndex + right column).
-// ===========================================================================
 describe('SINGLE — Clip view', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -990,9 +972,7 @@ describe('SINGLE — Clip view', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — KEYS sub-view (scale-select + arp); the top row still works.
-// ===========================================================================
 describe('SINGLE — KEYS sub-view (scale + arp)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -1114,9 +1094,7 @@ describe('SINGLE — KEYS sub-view (scale + arp)', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — CONTROL view (performance deck + re-homed transport/arranger pads).
-// ===========================================================================
 describe('SINGLE — Control view', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -1185,14 +1163,12 @@ describe('SINGLE — Control view', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — PER-LANE AUTOMATION ARM on the permanent top row (owner gesture):
 // HOLD SHIFT + the lane's top-row button toggles that lane's arm from EVERY
 // view; lane 8 = HOLD SHIFT + the pad DIRECTLY BELOW SHFT (topmost 8×8 row,
 // rightmost column) — its top button IS the shift button. The press is
 // CONSUMED under shift — the button's normal function must not fire. SHIFT is
 // MOMENTARY HOLD-only (no latch, no double-tap).
-// ===========================================================================
 describe('SINGLE — per-lane automation ARM (HOLD SHIFT + top row / pad below SHFT)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -1328,9 +1304,7 @@ describe('SINGLE — per-lane automation ARM (HOLD SHIFT + top row / pad below S
   });
 });
 
-// ===========================================================================
 // SINGLE — ARRANGER view is inert (no pad/scene handlers), still paints.
-// ===========================================================================
 describe('SINGLE — Arranger view is inert', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -1354,9 +1328,7 @@ describe('SINGLE — Arranger view is inert', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — unbind tears down the lone device.
-// ===========================================================================
 describe('SINGLE — unbind', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -1374,14 +1346,12 @@ describe('SINGLE — unbind', () => {
   });
 });
 
-// ===========================================================================
 // SINGLE — SCENE copy/paste (Part 3). While a COPY/PASTE arm is active it is
 // STICKY across shift release, so the NO-SHIFT matrix hosts the target: a clip
 // pad (single clip) OR a scene-launch button (a whole scene = all 8 lanes at a
 // slot). The typed buffer + the 4-combo type gate (scene→scene / clip→clip apply;
 // scene→clip / clip→scene NO-OP), one-step undo, scroll-mapped copy+paste, and an
 // empty-scene clear. Driven through the REAL device→map→binding→Y.Doc chain.
-// ===========================================================================
 describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () => {
   let sim: SimulatedLaunchpad;
   beforeEach(async () => {
@@ -1634,9 +1604,7 @@ describe('SINGLE — SCENE copy/paste (typed buffer + 4-combo type gate)', () =>
   });
 });
 
-// ===========================================================================
 // THE RESTORE GUARD — a load-time restore must never run over a LIVE binding.
-// ===========================================================================
 //
 // ⚠ FOUND WHILE PROMOTING launchpadControlLeft TO A FACEPLATE, and it is a
 // defect the LEGACY CARD already had. `restoreLaunchpadDeployment()` documented

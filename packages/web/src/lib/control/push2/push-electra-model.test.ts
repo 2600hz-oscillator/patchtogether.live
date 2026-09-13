@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-electra-model.test.ts
-//
 // The PURE half of ELECTRA CONTROL MODE: what a row is, which encoder does what,
 // how the row scrolls, and what the six strips say.
 //

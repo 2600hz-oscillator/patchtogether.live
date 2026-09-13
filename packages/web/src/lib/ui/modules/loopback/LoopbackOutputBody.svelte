@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/loopback/LoopbackOutputBody.svelte
-  //
   // The LOOPBACK dock full-view body: the live picture, the SCREEN switch, a
   // capture lamp, the card's recovery text, and the two CAPTURE GESTURES.
   //

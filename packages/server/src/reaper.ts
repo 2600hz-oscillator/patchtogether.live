@@ -1,5 +1,3 @@
-// packages/server/src/reaper.ts
-//
 // Slot-leak recovery sweep. Slots are acquired in onAuthenticate and
 // released in onDisconnect (index.ts), but onDisconnect is NOT guaranteed
 // to fire: a socket that dies without a clean WS close (crashed tab,

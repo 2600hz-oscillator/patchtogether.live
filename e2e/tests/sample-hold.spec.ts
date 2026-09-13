@@ -1,5 +1,3 @@
-// e2e/tests/sample-hold.spec.ts
-//
 // Smoke + behavior for SAMPLE & HOLD / quantizer. Modelled on
 // e2e/tests/resofilter.spec.ts.
 //

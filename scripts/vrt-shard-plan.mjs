@@ -1,5 +1,3 @@
-// scripts/vrt-shard-plan.mjs
-//
 // COST-BASED shard assignment for the REQUIRED `vrt-strict` lane (#1595).
 //
 // ── Why this exists ────────────────────────────────────────────────────────
@@ -233,7 +231,6 @@ export function planVrtShards(tests, timings, shards, opts = {}) {
   return { groups, loads, unknown };
 }
 
-// ───────────────────────────── CLI ─────────────────────────────
 //
 //   node scripts/vrt-shard-plan.mjs <shardIndex 1-based> <shardCount> --list <playwright-list.json> [--out <file>]
 //       → prints the shard's --grep pattern on stdout; --out writes its

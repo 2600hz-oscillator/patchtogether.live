@@ -1,5 +1,3 @@
-// art/scenarios/ninelives/ladder.test.ts
-//
 // WHICH DECLARED OUTPUT PORT IS WHICH RUNG OF THE ⅓ LADDER?
 //
 // The audit gate owed by the `noise` lane-meter class. NINE LIVES publishes

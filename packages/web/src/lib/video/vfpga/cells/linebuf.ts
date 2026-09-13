@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/linebuf.ts
-//
 // BRAM cell `linebuf(a, deint, scale, tap, stuck, seed)` — early-HD scaler /
 // deinterlacer corruption (the scaler-glitch bend, design §3.7). The BRAM
 // LINE-BUFFER tile is the star: a cheap set-top-box scaler chip / deinterlacer

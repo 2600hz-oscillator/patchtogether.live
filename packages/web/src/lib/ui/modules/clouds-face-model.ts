@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clouds-face-model.ts
-//
 // The PURE MODEL behind the CLOUDS faceplate — every number the hero, the
 // readouts and the ring picture print, derived from the live params through the
 // worklet's OWN control laws.

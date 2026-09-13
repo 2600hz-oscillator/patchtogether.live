@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-clip-launch.spec.ts
-//
 // LAUNCHPAD real-source-chain proof (the poly/MIDI discipline, CLAUDE.md): a
 // pad press on a (simulated) Novation Launchpad must LAUNCH a clip on the bound
 // clip-player and drive a downstream VOICE to AUDIBLE output through the REAL
@@ -266,7 +264,6 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
 
 });
 
-// ===========================================================================
 // SINGLE-UNIT mode — ONE Launchpad does everything the two-device pair does over
 // a 4-VIEW surface (Grid · Clip · Arranger · Control) driven by the PERMANENT
 // top-CC nav row, identical in every view: 91 transport · 92 Grid · 93 Clip ·
@@ -279,7 +276,6 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
 // real TIMELORDE→clipplayer→VCO→VCA→SCOPE chain), the transpose lands the tap on
 // the right CHANNEL (column), a row/scene launch fires a slot across channels,
 // and a stop→relaunch round-trip returns the RMS (the green-but-silent guard).
-// ===========================================================================
 
 // Permanent top-row CCs (topRowAction in launchpad-map.ts) — a CC on the lone
 // device routes through the SAME decode/dispatch path real hardware uses.

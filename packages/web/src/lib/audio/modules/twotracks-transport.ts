@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-transport.ts
-//
 // TWOTRACKS transport state machine — pure (no AudioContext deps), unit-testable.
 //
 // Two ORTHOGONAL axes:

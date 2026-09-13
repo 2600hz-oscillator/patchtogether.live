@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/vca.ts
-//
 // VCA — voltage-controlled amplifier (mono).
 //
 // The standard Eurorack utility module: a single audio input multiplied by

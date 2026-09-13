@@ -1,5 +1,3 @@
-// packages/dsp/src/moog961.ts
-//
 // MOOG 961 INTERFACE — trigger/gate format converter (Moog System 55 clone,
 // batch 5). The conversion logic (audio→trigger threshold, S/V passthroughs,
 // column-A width-match, column-B fixed-width one-shot) is pure + unit-tested in

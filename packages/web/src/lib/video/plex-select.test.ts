@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/plex-select.test.ts
-//
 // Unit tests for the pure 4PLEXVID selector-advance + gate-edge logic.
 // The GL-side per-output passthrough render is covered by
 // e2e/tests/4plexvid.spec.ts; here we verify the JS reference for the

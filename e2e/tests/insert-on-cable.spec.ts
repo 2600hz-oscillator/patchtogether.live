@@ -1,5 +1,3 @@
-// e2e/tests/insert-on-cable.spec.ts
-//
 // Proposal B2 — releasing a palette-spawned card within ~12px of an
 // existing cable's midpoint splices the new card into the cable:
 //   - Removes the original edge.

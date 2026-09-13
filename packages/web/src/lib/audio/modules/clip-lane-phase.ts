@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-lane-phase.ts
-//
 // Per-machine, IN-MEMORY per-lane audio-clock PHASE for the clip player — the
 // data the KEYS recorder needs to project a pad event's own timestamp onto a
 // fractional step (clip-record-capture.ts). Mirrors clip-playhead.ts /

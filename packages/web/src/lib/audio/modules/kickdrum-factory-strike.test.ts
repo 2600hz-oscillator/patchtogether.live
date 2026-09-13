@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kickdrum-factory-strike.test.ts
-//
 // THE HOST-SIDE AUDIO WIRING FOR THE AUDITION, against the REAL factory.
 //
 // ⚠ WHY THIS FILE EXISTS. Before it, the entire host side of the STRIKE feature

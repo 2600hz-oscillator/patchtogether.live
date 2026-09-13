@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/sample-hold.test.ts
-//
 // Two test layers for SAMPLE & HOLD:
 //   1. Module-def shape — cv_in/gate_in inputs, cv_out/cv_quant outputs, the
 //      scale param (range/default), the re-exported scale names.

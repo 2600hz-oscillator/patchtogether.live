@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/contract-lock.test.ts
-//
 // The living-docs DRIFT GATE.
 // Pure-unit, zero-flake: regenerate the canonical contract golden from the LIVE
 // registry and string-compare to the committed `contract-lock.txt`. Any module

@@ -1,5 +1,3 @@
-// art/scenarios/equal-power-pan/pan-law.test.ts
-//
 // EQUAL-POWER PAN — the pan law, measured on the SHIPPED wasm.
 //
 // This module had NO ART scenario at all: one of three Faust modules with zero

@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/auto-reconnect.ts
-//
 // AUTO-RECONNECT (#2248) — re-flash the Electra One on patch load / F5 without
 // a click, when (and only when) it is safe and wanted.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-data-store.ts
-//
 // Per-browser persistence for USER-SUPPLIED Blood game data.
 //
 // This store is for the FULL-GAME OVERRIDE only. The 1997 shareware subset

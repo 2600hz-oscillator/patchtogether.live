@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/meowbox-face-model.test.ts
-//
 // (a) THE SOURCE-GREP PIN. All THIRTEEN anchor tables are RE-TYPED in the model
 //     because meowbox's DSP is FAUST and cannot be imported — and unlike
 //     kickdrum or ringback there is no TS core either. meowbox ALSO has no

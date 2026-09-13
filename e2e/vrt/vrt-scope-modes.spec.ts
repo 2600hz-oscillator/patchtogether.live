@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-scope-modes.spec.ts
-//
 // VRT baselines for SCOPE's X/Y (Lissajous) MODE switch + phosphor
 // INTENSITY (persistence) knob — the two features added in this PR. The
 // per-module scope.png baseline (vrt.spec.ts) already covers NORMAL mode at

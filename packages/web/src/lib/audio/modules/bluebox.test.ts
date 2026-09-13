@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/bluebox.test.ts
-//
 // Two test layers:
 //   1. Pure-math helpers — dtmfFreqs, BLUEBOX_TONES, REDBOX_TONES,
 //      tonesForButton. The 10-row × 2-col DTMF table is pinned exactly

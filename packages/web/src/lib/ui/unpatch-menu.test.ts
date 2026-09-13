@@ -23,10 +23,8 @@ import { createPatch, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { AnyDef } from './port-patch-helpers';
 import type { Edge, ModuleNode } from '$lib/graph/types';
 
-// ---------------------------------------------------------------------------
 // Fixtures for the pure half — a minimal def registry (label only; that is all
 // moduleDisplayName reads).
-// ---------------------------------------------------------------------------
 
 const DEFS: Record<string, { label: string }> = {
   clipplayer: { label: 'CLIP PLAYER' },
@@ -228,13 +226,11 @@ describe('buildUnpatchPlan — the patch-point menu model', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // LEG-GROUP awareness (PR-3). A stereo cable is TWO edges; the menu must offer
 // ONE row that removes both, and must say "(L only)" when a lone leg is seated.
 //
 // The fixtures above deliberately carry only a `label`, so nothing there pairs
 // — which is exactly why these need their own def set WITH real ports.
-// ---------------------------------------------------------------------------
 
 const PORTED_DEFS: Record<string, unknown> = {
   clouds: {
@@ -441,9 +437,7 @@ describe('buildUnpatchPlan — leg groups', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The removal seam — real Y.Doc peers + the app's UndoManager.
-// ---------------------------------------------------------------------------
 
 const WCOL_ID = 'wcol-e-pinned-clipplayer-pitch1-strum-1-poly';
 
@@ -554,7 +548,6 @@ describe('unpatch removal seam — real syncedStore peers + UndoManager', () => 
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // THE MENU LABEL vs THE JACK LABEL — the drift gate.
 //
 // THE BUG this exists for (owner, on #1409): right-clicking a patched stereo
@@ -566,7 +559,6 @@ describe('unpatch removal seam — real syncedStore peers + UndoManager', () => 
 // So the gate is not "the string is right", it is "the two surfaces AGREE",
 // over the LIVE registry rather than a fixture. A future change to either
 // naming rule fails here instead of shipping a contradiction.
-// ────────────────────────────────────────────────────────────────────────────
 
 import '$lib/audio/modules';
 import '$lib/video/modules';

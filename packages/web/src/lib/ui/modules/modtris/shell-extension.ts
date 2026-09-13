@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/modtris/shell-extension.ts
-//
 // The MODTRIS shell extension — the module-owned end of the extension seam
 // (#1512), and an adopter of the `fullViewBody` slot alongside `frogger`,
 // `backdraft`, `videoOut`, `spirographs`, `cameraInput` and `rasterize`.

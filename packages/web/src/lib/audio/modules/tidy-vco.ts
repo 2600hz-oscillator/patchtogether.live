@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/tidy-vco.ts
-//
 // TIDY VCO — flagship virtual-analog SUBTRACTIVE SYNTH VOICE (audio domain).
 //
 // ── Model ────────────────────────────────────────────────────────────────
@@ -49,12 +47,10 @@ const PROCESSOR_NAME = 'tidy-vco';
 
 export { TIDY_VOICES };
 
-// ----------------------------------------------------------------------------
 // Pure-math mirror — re-exported from the shared DSP lib so unit tests + ART
 // can render TIDY VCO under node (worklets can't load without an
 // AudioWorkletGlobalScope). This is the SAME source the worklet bundles, so
 // there is no second copy to keep in sync.
-// ----------------------------------------------------------------------------
 
 export const tidyVcoMath = {
   TIDY_VOICES,
@@ -66,9 +62,6 @@ export const tidyVcoMath = {
 };
 export type { TidyVcoBus, TidyVcoParams };
 
-// ----------------------------------------------------------------------------
-// Module def.
-// ----------------------------------------------------------------------------
 
 export const tidyVcoDef: AudioModuleDef = {
   type: 'tidyVco',

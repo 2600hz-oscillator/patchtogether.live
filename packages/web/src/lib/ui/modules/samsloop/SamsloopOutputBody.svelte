@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/samsloop/SamsloopOutputBody.svelte
-  //
   // The SAMSLOOP dock full-view body: the waveform, its START..END window wash
   // and the live playhead, carried forward from `SamsloopCard.svelte` onto the
   // faceplate.

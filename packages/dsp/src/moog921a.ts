@@ -1,5 +1,3 @@
-// packages/dsp/src/moog921a.ts
-//
 // MOOG 921A OSCILLATOR DRIVER — control-voltage processor (NOT a sound
 // source) AudioWorkletProcessor.
 //

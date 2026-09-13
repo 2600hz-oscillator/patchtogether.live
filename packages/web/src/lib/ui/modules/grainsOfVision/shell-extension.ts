@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/grainsOfVision/shell-extension.ts
-//
 // The GRAINS OF VISION shell extension — the module-owned end of the extension
 // seam (#1512), and the fourth adopter of the `fullViewBody` slot after
 // `backdraft`, `videoOut` and `spirographs`.

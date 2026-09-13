@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/cc-commit.ts
-//
 // Coalescing pump for STREAMING MIDI-CC → param writes (the CC-storm
 // render-starvation fix). Sibling of `createDragCommit` (drag-commit.ts) —
 // same problem class, different event source and cadence:

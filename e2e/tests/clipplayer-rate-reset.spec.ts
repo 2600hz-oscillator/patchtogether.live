@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-rate-reset.spec.ts
-//
 // CLIP PLAYER per-lane clock RATE (mult/div) + RESET, through the REAL chain:
 // TIMELORDE (the rack transport) drives the engine's tick loop; the CARD's
 // per-lane rate dropdowns + RST button write the synced node state the engine

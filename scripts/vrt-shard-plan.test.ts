@@ -1,5 +1,3 @@
-// scripts/vrt-shard-plan.test.ts
-//
 // Guards the cost-based `vrt-strict` shard planner (#1595).
 //
 // THE PROPERTY THAT MATTERS, and why it is stricter here than for e2e: once the

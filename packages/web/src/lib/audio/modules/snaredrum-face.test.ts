@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/snaredrum-face.test.ts
-//
 // The PIN for SNARE DRUM's curated face — the design decisions, projected
 // through the same PURE selectors the shell renders from (`curatedFace`,
 // `dockFacePlan`, `laneBodyPlan`, `paramCellKind`, `shellCellFor`,

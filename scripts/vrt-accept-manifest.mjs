@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// scripts/vrt-accept-manifest.mjs
-//
 // EMIT THE ACCEPT-CANDIDATES MANIFEST from a failed vrt-strict shard.
 //
 // Why this exists: under zero tolerance, a strict shard's `<scene>-actual.png`
@@ -67,7 +65,6 @@ const NEVER_SETTLED = 'Failed to take two consecutive stable screenshots';
 
 export const SCHEMA = 'vrt-accept-candidates/v1';
 
-// ---- helpers ---------------------------------------------------------------
 
 export function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -349,7 +346,6 @@ export function dedupeInPlace(candidates, problems) {
   }
 }
 
-// ---- CLI -------------------------------------------------------------------
 
 function parseArgs(argv) {
   const args = { report: null, results: null, out: null, shard: null, repoRoot: ROOT, fromResultsTree: false };

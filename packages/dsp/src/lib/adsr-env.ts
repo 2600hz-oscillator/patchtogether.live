@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/adsr-env.ts
-//
 // Shared ADSR Envelope for the per-voice amplitude envelopes on CUBE / WAVECEL
 // / DX7 (the per-voice-ADSR feature). Lives in lib/ so esbuild inlines it into
 // each worklet entry at build time; lib/ files may `export` freely (the worklet

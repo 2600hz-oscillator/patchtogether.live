@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/buggles-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS FOR THE BUGGLES FACEPLATE.
 //
 // A derived readout earns its slot by being negative-controlled on the input a

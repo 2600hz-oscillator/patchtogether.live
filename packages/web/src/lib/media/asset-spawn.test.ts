@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/asset-spawn.test.ts
-//
 // WORKFLOW MODE P3 — the asset↔module lifecycle against the REAL
 // syncedStore + Y.Doc (graph/store.ts — never a mock,
 // [[yjs-save-load-real-ydoc]]) and the real library/link singletons:

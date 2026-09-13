@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog-cp3.ts
-//
 // MOOG CP3 / CP3A CONSOLE PANEL (mixer) — a slice of the Moog System 55 / 35
 // clone initiative (docs/adr/018-moog-clone-provenance.md). The CP3 is
 // the console's multi-function
@@ -83,7 +81,6 @@ export const moogCp3Def: AudioModuleDef = {
     { id: 'attenuator4', label: 'Att 4', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
   //
   // WHAT THE CP3 IS FOR. It is the console: four things in, one bus out, plus
   // the same bus inverted, plus a splitter, plus two fixed reference voltages.

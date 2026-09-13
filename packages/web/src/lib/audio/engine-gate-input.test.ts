@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-gate-input.test.ts
-//
 // Coverage for PatchEngine.setGateInput / pulseGateInput — the MIDI-assign
 // gate-input injection path (WORKSTREAM B). A MIDI NOTE-on/off on a gate input
 // resolves the port's paramTarget and drives setParam(target, 1|0) on the owning

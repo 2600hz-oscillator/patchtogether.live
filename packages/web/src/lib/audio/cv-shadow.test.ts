@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-shadow.test.ts
-//
 // The landing pad's own contract, at the level ART cannot reach: ART measures a
 // real render, this pins the JS-side value semantics that decide what a card
 // draws before, during and after a cable.

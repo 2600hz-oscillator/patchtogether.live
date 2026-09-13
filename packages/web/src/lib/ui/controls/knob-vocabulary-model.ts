@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/knob-vocabulary-model.ts
-//
 // PURE resolvers for the KnobConic PARAM VOCABULARY (PF-1 / PF-3 / PF-10):
 // given a live value plus whatever a ParamDef declared about what its numbers
 // MEAN, what text does the dial print and where do its detent ticks sit?

@@ -1,5 +1,3 @@
-// packages/web/src/routes/dashboard/+page.server.ts
-//
 // Lists the signed-in user's rackspaces. Anyone hitting this route without a
 // session gets redirected to /sign-in. If the rackspace load fails we let
 // SvelteKit show its 500 page — the dashboard is unusable without the rack list.

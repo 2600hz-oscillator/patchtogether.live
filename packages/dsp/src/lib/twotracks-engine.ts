@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/twotracks-engine.ts
-//
 // Pure, unit-testable tape-transport core for the TWOTRACKS worklet.
 //
 // The AudioWorkletProcessor (../twotracks.ts) imports and RUNS this code, so the

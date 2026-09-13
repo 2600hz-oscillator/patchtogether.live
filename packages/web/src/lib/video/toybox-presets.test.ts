@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-presets.test.ts
-//
 // Phase-6 manifest-PRESET validation. Reads the REAL static manifest
 // (packages/web/static/toybox/manifest.json) and asserts every bundled preset
 // is structurally sound + self-contained:

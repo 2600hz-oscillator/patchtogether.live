@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/tempolock/tempolock-owner-fixture.ts
-//
 // THE OWNER'S REAL ONSET TRAIN — the recording this module exists for,
 // checked in as a canonical fixture (tempolock-tracker.test.ts).
 //

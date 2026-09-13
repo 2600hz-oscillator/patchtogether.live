@@ -1,5 +1,3 @@
-// e2e/tests/workflow-video-zone-defaults.spec.ts
-//
 // WORKFLOW VIDEO ZONE DEFAULTS — a fresh workflow rack auto-spawns the video
 // zone's default trio and auto-wires it to the MASTER buses:
 //

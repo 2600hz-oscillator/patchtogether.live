@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavecel-draw.ts
-//
 // Shared 2D-canvas draw logic for WAVECEL. Used by:
 //   1. WavecelCard.svelte's on-card visualization (HTMLCanvasElement,
 //      hot-loop driven by rAF; user toggles between '3d' and 'scope' modes).

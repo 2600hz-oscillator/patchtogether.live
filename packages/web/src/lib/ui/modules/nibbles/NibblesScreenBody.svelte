@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/nibbles/NibblesScreenBody.svelte
-  //
   // The NIBBLES dock full-view body: the live 320x200 game screen, its SCREEN
   // and SCALE overlay switches, and the module's PLAYING INTERFACE — the arrow
   // keys.

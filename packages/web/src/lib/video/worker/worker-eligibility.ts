@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/worker-eligibility.ts
-//
 // WHICH VIDEO MODULES CAN RENDER OFF THE MAIN THREAD — DERIVED, never typed.
 //
 // #1811 asks for a per-module disposition: moved / cannot move + the structural

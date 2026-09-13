@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/devices.test.ts
-//
 // Unit tests for the device-picker pure helpers shared between AUDIO IN
 // and AUDIO OUT. No DOM / MediaDevices required.
 

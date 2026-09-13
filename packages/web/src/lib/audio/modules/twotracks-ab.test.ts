@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-ab.test.ts
-//
 // Unit tests for the TWOTRACKS Phase-2 A/B mix law.
 // Pure logic — no AudioContext deps.
 //

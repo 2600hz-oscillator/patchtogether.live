@@ -1,5 +1,3 @@
-// e2e/tests/video-audio-output.spec.ts
-//
 // VIDEO-SOURCE AUDIBILITY — the load-bearing regression guard for "video
 // modules produce NO audio downstream" (operator report).
 //

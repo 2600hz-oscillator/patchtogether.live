@@ -1,5 +1,3 @@
-// e2e/_helpers/mock-vst-bridge.ts
-//
 // A Node-side MOCK of the vst-bridge native helper, speaking REAL protocol
 // v1 over a REAL WebSocket on an ephemeral 127.0.0.1 port — only the PLUGIN
 // is faked. The specs point the app at it through the page-injected

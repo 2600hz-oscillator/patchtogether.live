@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/joystick-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for JOYSTICK's faceplate — the file
 // `joystick-persist-model.test.ts` spent two header revisions promising.
 //

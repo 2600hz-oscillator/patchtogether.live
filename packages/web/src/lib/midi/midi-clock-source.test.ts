@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/midi-clock-source.test.ts
-//
 // REGRESSION: Web-MIDI access must be requested STRICTLY ON DEMAND.
 //
 // The bug this guards: the app popped the browser "Control and reprogram your

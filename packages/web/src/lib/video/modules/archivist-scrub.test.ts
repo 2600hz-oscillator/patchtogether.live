@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/archivist-scrub.test.ts
-//
 // Pure-core unit tests for ARCHIVIST scrub/seek math. NO DOM.
 
 import { describe, it, expect } from 'vitest';

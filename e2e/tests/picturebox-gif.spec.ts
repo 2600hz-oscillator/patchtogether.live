@@ -1,5 +1,3 @@
-// e2e/tests/picturebox-gif.spec.ts
-//
 // PICTUREBOX animated-GIF support — the REAL chain:
 //   setInputFiles(<the committed fixture gif>) → onFileChange → encodePickedFile
 //   (byte-preserving) → Y.Doc → applyBytesToEngine → decodeAnimatedGif

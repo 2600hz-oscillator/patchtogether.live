@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/picturebox-encode.test.ts
-//
 // Pure helper tests. The full image-decode/encode round-trip needs an
 // OffscreenCanvas (browser-only); that's covered by the e2e specs.
 // Here we just verify the math + the base64 codec.

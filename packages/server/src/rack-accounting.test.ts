@@ -1,5 +1,3 @@
-// packages/server/src/rack-accounting.test.ts
-//
 // Per-rack memory accounting: threshold parsing, classification, the
 // accounting model (snapshot base + churn, reset on snapshot), the
 // level-latched alert-line emission (once per upward crossing, re-armed on

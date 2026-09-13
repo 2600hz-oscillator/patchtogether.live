@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/state-only-envelope.test.ts
-//
 // makeStateOnlyEnvelope: the history-free export. Three contracts:
 //   1. It round-trips through loadEnvelopeIntoStore exactly like the portable
 //      envelope — same nodes/edges/settings, positions baked, layouts dropped.

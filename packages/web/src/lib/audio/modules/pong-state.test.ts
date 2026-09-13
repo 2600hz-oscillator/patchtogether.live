@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/pong-state.test.ts
-//
 // Unit tests for the pure PONG state stepper. No Web Audio, no DOM.
 
 import { describe, it, expect } from 'vitest';

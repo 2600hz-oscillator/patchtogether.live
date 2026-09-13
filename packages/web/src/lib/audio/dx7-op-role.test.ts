@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-op-role.test.ts
-
 import { describe, it, expect } from 'vitest';
 import { DX7_ALGORITHMS } from './dx7-algorithms';
 import { dx7OpRole, dx7OpRoles, dx7RoleFallbackColor } from './dx7-op-role';

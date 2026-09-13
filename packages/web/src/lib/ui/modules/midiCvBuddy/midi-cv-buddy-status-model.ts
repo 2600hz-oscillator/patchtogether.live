@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midiCvBuddy/midi-cv-buddy-status-model.ts
-//
 // Every STRING the MIDI-CV-BUDDY device body can produce, decided where a unit
 // test can read it.
 //

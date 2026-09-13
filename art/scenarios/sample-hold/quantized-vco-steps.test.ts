@@ -1,5 +1,3 @@
-// art/scenarios/sample-hold/quantized-vco-steps.test.ts
-//
 // COMPOSITE ART scenario for SAMPLE & HOLD / quantizer driving a VCO into a
 // scope, modelled on art/scenarios/meowbox/voct-tracking.test.ts (node-web-
 // audio-api can't host the custom AudioWorklet directly, so we drive the SAME

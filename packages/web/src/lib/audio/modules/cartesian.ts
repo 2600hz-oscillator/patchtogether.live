@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cartesian.ts
-//
 // 4×4 grid sequencer. The X and Y CV inputs select
 // column/row when patched (each split into four 25% bands across -1..+1).
 // Per-axis behavior depends on what's patched into `clock`, `x_cv`, `y_cv`:

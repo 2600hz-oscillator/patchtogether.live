@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-scene-repeats.ts
-//
 // PURE model + helpers for SCENE REPEATS on the `clipplayer` module — a
 // Deluge-style "play this scene N times, then move on" for the clip launcher.
 // Kept out of clipplayer.ts so the count math, the next-scene selection, the
@@ -107,9 +105,7 @@ export function sceneRepeatProgressFlair(done: number, total: number): string {
   return `${p}/${t}`;
 }
 
-// ---------------------------------------------------------------------------
 // Scene-launch INTENT marker + the shared launch-plan/write seam.
-// ---------------------------------------------------------------------------
 
 /** Read + coerce the scene-launch intent marker `{slot, n}`, or null. PURE. */
 export function readSceneLaunch(
@@ -197,9 +193,7 @@ export function applySceneLaunchWrite(
   return true;
 }
 
-// ---------------------------------------------------------------------------
 // The FROZEN repeat unit (beats) — computed ONCE when tracking (re)anchors.
-// ---------------------------------------------------------------------------
 
 /**
  * The scene's repeat ANCHOR at launch: the lane holding the scene's LONGEST
@@ -236,11 +230,9 @@ export function sceneRepeatAnchor(
   return best;
 }
 
-// ---------------------------------------------------------------------------
 // The repeat TRACKER — pure state + transitions the engine tick drives. All of
 // this is PER-PEER runtime state (never synced); peers converge through the
 // `sceneLaunch` marker + the idempotent advance write.
-// ---------------------------------------------------------------------------
 
 /** Per-peer runtime tracking of the ACTIVE scene's repeat count. */
 export interface SceneRepeatTrack {

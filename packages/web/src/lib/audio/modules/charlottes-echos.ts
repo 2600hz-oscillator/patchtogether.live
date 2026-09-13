@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/charlottes-echos.ts
-//
 // CHARLOTTE'S ECHOS — destructive multi-head stereo delay.
 //
 // A stereo delay with a thicker, more abused character than the basic
@@ -112,7 +110,6 @@ export const charlottesEchosDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS, IN ONE SENTENCE: four analog delays in SERIES, each
   // with its own feedback loop and its own in-loop tanh drive, with a grain

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ptzcam/ptzcam-status-model.test.ts
-//
 // The strings the PTZ device body speaks but does not paint.
 //
 // ⚠ THIS FILE IS THE ONLY INSTRUMENT IN THE TREE THAT CAN SEE MOST OF THEM.

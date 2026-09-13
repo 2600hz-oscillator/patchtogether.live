@@ -1,5 +1,3 @@
-// e2e/tests/videoout-drop-patch.spec.ts
-//
 // PER-MODULE DROP-GESTURE COVERAGE for `videoOut` (#1819, alongside its face in
 // #1821). The generic gesture is covered by `card-drop-patch.spec.ts`; this is
 // the module the owner named — *"i want to get our Video Output"* — because it
@@ -136,7 +134,6 @@ const wiredPairs = (page: Page) =>
   );
 const scrim = (page: Page) => page.locator('[data-testid="patch-drop-scrim"]');
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('videoOut — the card-drop patch gesture', () => {
   test('ACCEPTED: dropping OUTPUT onto a source commits a REAL edge, and ONE ⌘Z removes the session', async ({ page }) => {

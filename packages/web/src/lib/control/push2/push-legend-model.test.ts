@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-legend-model.test.ts
-//
 // LEGEND MODE — the pure model, and THE FRESHNESS GATE.
 //
 // The gate is the reason the feature exists: on-device documentation is worse
@@ -65,9 +63,7 @@ import {
   type PushLegendCell,
 } from './push-legend-model';
 
-// ---------------------------------------------------------------------------
 // Context helper
-// ---------------------------------------------------------------------------
 
 function ctx(over: Partial<LaunchpadLegendContext> = {}): LaunchpadLegendContext {
   return {
@@ -84,11 +80,9 @@ function ctx(over: Partial<LaunchpadLegendContext> = {}): LaunchpadLegendContext
 
 const labels = (cells: readonly PushLegendCell[]): string[] => cells.map((c) => c.label);
 
-// ---------------------------------------------------------------------------
 // THE INDEPENDENT SIDE — "would a press here dispatch anything?", asked of the
 // router's own classifiers, in the router's own branch order (handleSingleKey:
 // length-edit takes over, then KEYS, then the active view).
-// ---------------------------------------------------------------------------
 
 function sceneDispatches(c: LaunchpadLegendContext, i: number): boolean {
   if (c.mode === 'lengthEdit') return isEditExitSceneRow(LP_HEIGHT - 1 - i);
@@ -117,10 +111,8 @@ function functionDispatches(c: LaunchpadLegendContext, i: number): boolean {
   return c.shift ? armTopLane(cc) !== null : topRowAction(cc) !== null;
 }
 
-// ---------------------------------------------------------------------------
 // THE AUDITOR — a pure checker, so the negative controls can drive it with
 // fabricated inputs and watch it go red.
-// ---------------------------------------------------------------------------
 
 type Violation =
   | { kind: 'missing-legend'; where: string }
@@ -200,9 +192,7 @@ function auditAll(contexts: readonly LaunchpadLegendContext[]): Violation[] {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // THE GATE
-// ---------------------------------------------------------------------------
 
 describe('LEGEND freshness gate — deny-missing AND deny-orphan', () => {
   it('every dispatching position is named, and every named position dispatches', () => {
@@ -283,9 +273,7 @@ describe('LEGEND freshness gate — deny-missing AND deny-orphan', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // NEGATIVE CONTROLS — permanent, so the instrument is re-proven every run.
-// ---------------------------------------------------------------------------
 
 describe('LEGEND gate NEGATIVE CONTROLS (the gate must be able to fail)', () => {
   it('SYNTHETIC: a bound-but-unnamed cell is reported as missing-legend', () => {
@@ -362,12 +350,10 @@ describe('LEGEND gate NEGATIVE CONTROLS (the gate must be able to fail)', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // SOURCE-LEVEL GATE: the SHIFT layer the legend PROMISES must be the SHIFT layer
 // the handler actually branches on. No runtime gate can see this (the shift
 // magnitude lives inside a switch), so it is checked at the source level — the
 // same discipline as the `controlFamilies`→card-testid grep in module-docs-lint.
-// ---------------------------------------------------------------------------
 
 const CONTROL_SRC_PATH = fileURLToPath(
   new URL('../launchpad/launchpad-control.svelte.ts', import.meta.url),
@@ -452,9 +438,7 @@ describe('LEGEND ↔ DISPATCH shift layer (source-level)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE MODEL — what each view actually says.
-// ---------------------------------------------------------------------------
 
 describe('scene row (the 8 buttons right of the grid; cell 0 = TOP button)', () => {
   it('GRID base = scene launch, numbered from the SCROLLED window', () => {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-audio-rec-machine.test.ts
-//
 // The PURE half of the clip recorder: the frame maths and the §4.4 arm state
 // machine, held down with no audio context at all.
 //
@@ -38,9 +36,7 @@ import { RATE_MULTS } from './modules/clip-clock';
 
 const SR = 48_000;
 
-// ---------------------------------------------------------------------------
 // Frame maths
-// ---------------------------------------------------------------------------
 
 describe('clipRecBpm — the TIMELORDE-else-120 rule', () => {
   it('passes a finite positive tempo through', () => {
@@ -153,9 +149,7 @@ describe('clipRecWholeUnits — the truncation count', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The transition matrix — TOTAL over (phase × event)
-// ---------------------------------------------------------------------------
 
 const START = 96_000;
 const UNIT = 48_000;

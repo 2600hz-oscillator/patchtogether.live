@@ -1,5 +1,3 @@
-// scripts/ci-flake-gate.test.ts
-//
 // SOURCE-LEVEL GATE: every CI job that RUNS Playwright must also run the FLAKE
 // GATE. Deny-by-default, so a lane added later cannot escape silently.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/midi-assignable.svelte.ts
-//
 // SHARED reactive factory behind every MIDI-assignable control — the single
 // place the CC-vs-NOTE branch lives. Knob.svelte + Fader.svelte (kind:'cc') and
 // MidiAssignButton.svelte / the gate-input row (kind:'note') all consume it, so

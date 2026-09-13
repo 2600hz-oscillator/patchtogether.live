@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-banks.test.ts
-//
 // Sanity checks on the bundled bank: every patch is valid (6 ops, algorithm
 // in 1..32, ratios > 0, etc.) and the documented "famous" patches all exist.
 

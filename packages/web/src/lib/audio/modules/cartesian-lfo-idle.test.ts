@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cartesian-lfo-idle.test.ts
-//
 // AN IDLE CARTESIAN MUST NOT SCHEDULE AUDIOPARAM EVENTS FOR A SIGNAL NOBODY
 // CAN HEAR.
 //

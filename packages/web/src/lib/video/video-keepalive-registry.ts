@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-keepalive-registry.ts
-//
 // Identity-guarded PERSISTENT per-element audio keep-alive registry for the
 // multi-slot video source modules (VIDEOVARISPEED's 7-slot asset selector).
 //

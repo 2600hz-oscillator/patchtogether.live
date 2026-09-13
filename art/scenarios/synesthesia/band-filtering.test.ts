@@ -1,5 +1,3 @@
-// art/scenarios/synesthesia/band-filtering.test.ts
-//
 // ART scenario for SYNESTHESIA. Two layers:
 //
 //   1. Repo-standard checks (like analog-vco/saw-c4): the compiled worklet

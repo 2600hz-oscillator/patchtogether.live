@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outtolaunch-face-model.test.ts
-//
 // OUT TO LAUNCH's face, pinned where no pixel gate can see it — plus the
 // permanent negative controls for the two claims this promotion rests on that
 // are true by MECHANISM rather than by inspection.

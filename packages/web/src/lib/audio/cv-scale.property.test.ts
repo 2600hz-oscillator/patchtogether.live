@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-scale.property.test.ts
-//
 // fast-check property suite for the CV → AudioParam scaling math (#1526).
 // Pairs with cv-scale.test.ts (the example-based file): the example file pins
 // the cases someone thought of; this file pins the laws that must hold for
@@ -51,9 +49,7 @@ import {
 } from './cv-scale';
 import type { CvScaleHint } from '$lib/graph/types';
 
-// ---------------------------------------------------------------------------
 // Generators — shaped like the REAL registry, not like the number line.
-// ---------------------------------------------------------------------------
 
 /** Param ranges the registry actually declares: bipolar, unipolar, wide
  *  positive (log-friendly), and tiny. `min < max` always. */
@@ -109,9 +105,7 @@ function ctx(
 }
 
 describe('cv-scale properties', () => {
-  // -------------------------------------------------------------------
   // P1 — RANGE
-  // -------------------------------------------------------------------
   it('P1: linear/log/discrete never escape [paramMin, paramMax]', () => {
     fc.assert(
       fc.property(
@@ -137,9 +131,7 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // P2 — FINITE
-  // -------------------------------------------------------------------
   it('P2: no NaN and no Infinity escapes, for any mode and any finite input', () => {
     fc.assert(
       fc.property(
@@ -166,9 +158,7 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // P3 — CV DOMAIN SATURATION
-  // -------------------------------------------------------------------
   it('P3: the cv domain saturates — |cv| > 1 behaves exactly as ±1', () => {
     fc.assert(
       fc.property(
@@ -193,9 +183,7 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // P4 — MONOTONICITY
-  // -------------------------------------------------------------------
   it('P4: the effective value is non-decreasing in cv (linear/log/discrete)', () => {
     fc.assert(
       fc.property(
@@ -222,9 +210,7 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // P5 — cv = 0 IS THE UNMODULATED VALUE
-  // -------------------------------------------------------------------
   it('P5: cv=0 returns the knob EXACTLY for linear + log (a patched idle cable must not detune)', () => {
     fc.assert(
       fc.property(
@@ -259,9 +245,7 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // P6 — ODD SYMMETRY OF THE LINEAR DELTA
-  // -------------------------------------------------------------------
   it('P6: the linear delta is odd about cv=0 wherever neither side clamps', () => {
     fc.assert(
       fc.property(positiveRange, cv, depth, (range, c, d) => {
@@ -284,9 +268,7 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // P7 — THE LUT, READ THE WAY THE AUDIO THREAD READS IT
-  // -------------------------------------------------------------------
 
   /** The LUT is a Float32Array (WaveShaperNode.curve's required type), so the
    *  guarantee is "reproduces the math to FLOAT32 precision", not to double
@@ -360,7 +342,6 @@ describe('cv-scale properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // PERMANENT NEGATIVE CONTROL for P7.
   //
   // A property that cannot fail is worse than none. P7 asserts the odd-length
@@ -368,7 +349,6 @@ describe('cv-scale properties', () => {
   // the SAME predicate with an even table and requiring counterexamples. If
   // this ever goes green (i.e. finds none), P7 has stopped measuring the
   // centre sample and is certifying nothing.
-  // -------------------------------------------------------------------
   it('CONTROL: the SAME predicate FAILS on an even-length table (P7 can fail)', () => {
     const evenLen = CURVE_LEN - 1; // 4096 — the power-of-two someone would "fix" it to
     expect(evenLen % 2, 'the control table must be even-length').toBe(0);

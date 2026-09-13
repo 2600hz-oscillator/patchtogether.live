@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/__fixtures__/opfs-fake.ts
-//
 // A minimal in-memory OPFS, sufficient for the clip media store: nested
 // directory handles, positioned file writes, `getFile()`, `removeEntry`, and
 // `values()` enumeration.

@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-frame-stability.spec.ts
-//
 // MEASUREMENT TOOL, not a gate — the instrument that decides whether a card
 // belongs in e2e/vrt/vrt-live-surfaces.ts. Opt-in via `VRT_PROBE=1` (see the
 // testMatch switch in vrt.config.ts), so it never costs CI a second.
@@ -7,7 +5,6 @@
 //   VRT_PROBE=1 STAB_MODULES=scope,toybox \
 //     npx --workspace e2e playwright test --config=vrt/vrt.config.ts vrt-frame-stability
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE QUESTION IT ANSWERS, AND WHY THE OBVIOUS ONE IS WRONG
 //
 // `toHaveScreenshot` does not screenshot once and compare. It screenshots

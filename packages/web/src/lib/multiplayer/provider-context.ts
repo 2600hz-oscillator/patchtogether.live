@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/provider-context.ts
-//
 // Module cards may need access to the live HocuspocusProvider — for
 // example, to write per-module presence into Y.Awareness (CAMERA card
 // publishes its active node ids so rack-mates know "user X has CAMERA up

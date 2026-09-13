@@ -1,5 +1,3 @@
-// e2e/tests/patch-panel.spec.ts
-//
 // Core invariants of the redesigned (no-drag / overlay-replace / portaled)
 // patch menu, on the DEFAULT shell (the lane tile's jack-rail variant):
 //

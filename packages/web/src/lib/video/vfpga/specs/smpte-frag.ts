@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/smpte-frag.ts
-//
 // The SMPTE-bars generator fragment — the SINGLE source of truth for the
 // pattern GLSL, shared by BOTH authoring surfaces of the smpte-bars VFPGA:
 //   - the legacy hand-authored `effect` (the escape-hatch reference), and

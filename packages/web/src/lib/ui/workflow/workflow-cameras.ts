@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/workflow-cameras.ts
-//
 // WORKFLOW MODE P4 — the camera manager behind the topbar 📷 slot.
 //
 // A "mapped camera" is a FULL cameraInput module in the graph that renders
@@ -178,9 +176,7 @@ export function workflowCameraAtCap(nodes: NodeRecord | ReadonlyArray<CameraNode
   return wouldExceedCap(record, cameraInputDef);
 }
 
-// ---------------------------------------------------------------------------
 // Store-bound drivers (media/asset-spawn.ts pattern)
-// ---------------------------------------------------------------------------
 
 export interface CameraAddOptions {
   /** Surface a user-facing refusal (cap hit). Optional. */

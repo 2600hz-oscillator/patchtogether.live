@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog904a.test.ts
-//
 // Two test layers for the MOOG 904A VCF (transistor-ladder LPF):
 //   1. Module-def shape — pins the 904A's I/O surface (audio in + cutoff_cv +
 //      reso_cv CONTROL INPUTS, the single low-pass output, the literal param

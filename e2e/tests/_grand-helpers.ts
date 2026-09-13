@@ -1,5 +1,3 @@
-// e2e/tests/_grand-helpers.ts
-//
 // Helpers for the GRAND-INTEGRATION heavy attest spec
 // (grand-integration.attest.spec.ts). Kept in a SEPARATE file (NOT _helpers.ts)
 // on purpose: _helpers.ts + playwright.config.ts sit in the @collab AND WebGL

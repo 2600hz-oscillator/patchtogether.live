@@ -1,5 +1,3 @@
-// e2e/tests/clear-patch-undo.spec.ts
-//
 // Regression for Phase 2e of the standards-refactor program:
 //   "Clear patch" must be UNDOABLE.
 //

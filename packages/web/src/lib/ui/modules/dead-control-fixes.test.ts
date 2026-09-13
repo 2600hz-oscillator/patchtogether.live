@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dead-control-fixes.test.ts
-//
 // TWO CONTROLS THAT WERE ON THE PANEL AND DID NOT WORK, and the assertions that
 // would have caught each. Both are the same shape — a CARD disagreeing with the
 // rest of the system, on a dimension no def-reading gate can see — and neither

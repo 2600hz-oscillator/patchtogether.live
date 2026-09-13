@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog904a.ts
-//
 // MOOG 904A — Voltage Controlled Low Pass Filter (slice 2 of the Moog
 // System 55 / 35 clone initiative, docs/adr/018-moog-clone-provenance.md).
 // The classic Moog
@@ -116,7 +114,6 @@ export const moog904aDef: AudioModuleDef = {
     { id: 'regeneration', label: 'Regen', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACE ────────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR, MUSICALLY: the rack's transistor-ladder 24 dB/oct low-pass —
   // the one filter that stops being a filter and becomes an oscillator. The verb

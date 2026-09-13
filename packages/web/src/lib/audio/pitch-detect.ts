@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/pitch-detect.ts
-//
 // YIN pitch detector (de Cheveigné & Kawahara 2002).
 //
 // Why YIN over plain autocorrelation: real instrument tones (and the project's

@@ -1,5 +1,3 @@
-// scripts/alert-issues.mjs
-//
 // The issue-reconciler behind `.github/workflows/live-smoke-alert.yml`.
 //
 // ── The flood this exists to stop ──────────────────────────────────────────
@@ -66,9 +64,6 @@
 // That is the guard that stops it from ever commenting on, editing or closing a
 // human-filed issue (or the 45 pre-existing markerless duplicates).
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 /** Labels applied to every alert issue we open. */
 export const ALERT_LABELS = ['observability', 'alert'];
@@ -137,9 +132,7 @@ export function closableCheckIds() {
   return new Set([...KNOWN_CHECK_IDS, HARNESS_CHECK_ID]);
 }
 
-// ---------------------------------------------------------------------------
 // Keys + markers (pure)
-// ---------------------------------------------------------------------------
 
 /**
  * Environment label for a probed URL — the bare hostname, lowercased.
@@ -195,9 +188,7 @@ export function parseAlertKey(key) {
   return { prefix: m[1], env: m[2], checkId: m[3] };
 }
 
-// ---------------------------------------------------------------------------
 // Issue body rendering (pure)
-// ---------------------------------------------------------------------------
 
 /** Collapse a probe detail to one safe, bounded line for embedding in Markdown. */
 export function sanitizeDetail(detail, max = 500) {
@@ -341,9 +332,7 @@ export function renderDuplicateComment({ key, canonical, runUrl }) {
     .join('\n');
 }
 
-// ---------------------------------------------------------------------------
 // The plan (pure) — the whole decision, testable without a network
-// ---------------------------------------------------------------------------
 
 /**
  * Reconcile the open alert issues against the CURRENT failing set.
@@ -511,9 +500,7 @@ export function planAlertActions({
   return { creates, updates, closes, duplicates, orphans, notes };
 }
 
-// ---------------------------------------------------------------------------
 // Probe-log interpretation (pure)
-// ---------------------------------------------------------------------------
 
 export const SMOKE_BEGIN = '<<SMOKE_RESULT>>';
 export const SMOKE_END = '<<END_SMOKE_RESULT>>';
@@ -598,9 +585,7 @@ export function interpretSmokeLog(log) {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Applying the plan (the only impure part — the client is injected)
-// ---------------------------------------------------------------------------
 
 /**
  * Execute a plan against a GitHub client.
@@ -641,9 +626,7 @@ export async function applyPlan(plan, gh, { log = () => {} } = {}) {
   return applied;
 }
 
-// ---------------------------------------------------------------------------
 // Real GitHub client (fetch-based; no extra dependency)
-// ---------------------------------------------------------------------------
 
 /** Build a REST client bound to a repo. Only used by the CLI below. */
 export function githubClient({ token, repo, apiUrl = 'https://api.github.com', fetchImpl }) {
@@ -734,9 +717,7 @@ export function dryRunClient(log = console.log) {
   };
 }
 
-// ---------------------------------------------------------------------------
 // CLI — `node scripts/alert-issues.mjs reconcile`
-// ---------------------------------------------------------------------------
 
 /** @internal exported for the test; assembles CLI inputs from the environment. */
 export function inputFromEnv(env) {

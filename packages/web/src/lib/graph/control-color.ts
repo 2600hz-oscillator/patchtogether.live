@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-color.ts
-//
 // CONTROL COLOR — the pure resolver that answers "what colour is this module's
 // control?". It is the SINGLE SOURCE OF TRUTH read LIVE everywhere a control is
 // proxied: the Control Surface stripe, the ElectraControl stripe, and the

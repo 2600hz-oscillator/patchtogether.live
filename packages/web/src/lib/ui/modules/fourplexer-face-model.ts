@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/fourplexer-face-model.ts
-//
 // The PURE model behind the 4PLEXER faceplate — the arithmetic for its three
 // derived readouts.
 //

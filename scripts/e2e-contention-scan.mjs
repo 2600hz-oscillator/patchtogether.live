@@ -1,5 +1,3 @@
-// scripts/e2e-contention-scan.mjs
-//
 // CONTENTION CLASSES, DERIVED AT PLAN TIME — never committed (#1600).
 //
 // The e2e shard planner spreads each contention class across shards before

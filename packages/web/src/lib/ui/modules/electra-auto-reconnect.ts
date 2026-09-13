@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/electra-auto-reconnect.ts
-//
 // THE LIVE WIRING for the Electra auto-reconnect machine (#2248).
 //
 // The state machine itself — the (load, device-connect) edge logic, the

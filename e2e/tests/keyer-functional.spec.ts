@@ -1,5 +1,3 @@
-// e2e/tests/keyer-functional.spec.ts
-//
 // FUNCTIONAL validation of the keyer/compositor family (LUMA / LUMAKEY /
 // CHROMA / CHROMAKEY) — phase 1 of the keyer-framework program.
 //
@@ -148,7 +146,6 @@ function fmt(px: readonly number[]): string {
   return `(${px[0]},${px[1]},${px[2]})`;
 }
 
-/** assert channel ~= expected within ±TOL. */
 function expectNear(actual: number, expected: number, label: string): void {
   expect(Math.abs(actual - expected), `${label}: got ${actual}, want ${expected}±${TOL}`).toBeLessThanOrEqual(TOL);
 }

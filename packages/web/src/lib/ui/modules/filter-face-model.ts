@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/filter-face-model.ts
-//
 // THE PURE MODEL BEHIND FILTER's FACEPLATE — the magnitude response the sidebar
 // draws, the peak gain the hero strip prints, and the two CV REACH windows.
 //

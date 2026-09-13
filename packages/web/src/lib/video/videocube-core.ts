@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/videocube-core.ts
-//
 // VIDEOCUBE — pure math CORE. Every function here is the CPU MIRROR of the GLSL
 // ray-march COMBINE shader in ./modules/videocube.ts (the FRAMETABLE / cube-dsp
 // source-of-truth discipline): unit-testing them pins the semantics the shader
@@ -188,7 +186,6 @@ export function readerCentreLayer(
   return (((newest - lag) % ringFrames) + ringFrames) % ringFrames;
 }
 
-// ----------------------------------------------------------------------
 // SPREAD temporal window (FrameTable-style). The reader picks the window CENTRE
 // (readerLagFor); SPREAD sets its WIDTH; a Hann kernel weights the taps. These
 // pure functions are the CPU MIRROR of the SMOOTH/MORPH window the shaders run —
@@ -197,7 +194,6 @@ export function readerCentreLayer(
 // shaders early-return a single per-pixel frame for CHAOS while the audio reduce
 // reads the window MEAN — see readerLagFor's CHAOS note. Both collapse to one frame
 // at spread=0.) Unit-testing pins the "oozing through time" semantics.
-// ----------------------------------------------------------------------
 
 /**
  * Half-width (in ring frames) of the SPREAD temporal window. SPREAD is a
@@ -295,9 +291,7 @@ export interface RGB {
   b: number;
 }
 
-// ----------------------------------------------------------------------
 // Scalar helpers (transliterated 1:1 into GLSL).
-// ----------------------------------------------------------------------
 
 /** Rec.601 luma of an RGB in [0,1] → [0,1]. The occupancy "height" the field
  *  reads out of a surface colour (the video meaning of a wavetable height). */
@@ -331,14 +325,12 @@ export function posterize(c: RGB, crushK: number): RGB {
   return { r: q(c.r), g: q(c.g), b: q(c.b) };
 }
 
-// ----------------------------------------------------------------------
 // SPACE CRUSH (voxelize) + CRUSH (spatial coord-snap) + WRAP — applied to each
 // (x,y,z) field-lookup coordinate BEFORE the surface reads, EXACTLY as cube-dsp
 // voxelizes the field-lookup coords along a slice ray (rayDepth composes
 // crushCoord(spaceCrushCoord(coord, sc), crush)). SPACE DIFFUSE is per-AXIS
 // (toward the field's lowestInfoFace) so it is applied by the caller, not here.
 // WRAP mirror-folds an out-of-range coord; otherwise the coord clamps.
-// ----------------------------------------------------------------------
 
 /** Warp one FIELD-lookup coordinate (the DEPTH axis z, and the audio slice ray):
  *  SPACE CRUSH voxelize, then CRUSH spatial snap, then WRAP mirror-fold (or
@@ -356,14 +348,12 @@ export function warpCoord(
   return wrap ? wrapFold(c) : clamp01(c);
 }
 
-// ----------------------------------------------------------------------
 // The per-voxel FIELD SAMPLE — the heart of the volumetric ray-march. Given the
 // three SURFACE colours read at a field (x,y) and the depth z, return the field
 // DENSITY (occupancy → alpha) and the occupancy-weighted source COLOUR (→ the
 // solid's texture). This is the video isomorph of cube-dsp's field: the density
 // is byte-for-byte `fieldFromHeights`; the colour is the analog CUBE's audio has
 // no need for.
-// ----------------------------------------------------------------------
 
 export interface VoxelParams {
   /** MORPH FC m ∈ [0,1]: cross-fade the FLOOR-fill (A) toward the CEILING-fill (C)
@@ -453,12 +443,10 @@ export function voxelSample(
   return { density, color: posterize(color, p.crush) };
 }
 
-// ----------------------------------------------------------------------
 // SPACE DIFFUSE target — the field's lowest-information face the cloud is pulled
 // toward. Computed on the reduced heightfields (the SAME field the audio reads),
 // so the picture's diffuse gravity and the sound's agree. Thin wrapper over
 // cube-dsp.lowestInfoFace, latched on the field (not the diffuse amount).
-// ----------------------------------------------------------------------
 
 /** The default gravity face when the field has no clear emptiest wall (re-export
  *  of cube-dsp's default target: the top / z-high). */
@@ -485,12 +473,10 @@ export function diffuseTargetFor(
   });
 }
 
-// ----------------------------------------------------------------------
 // Audio derivation — reduce ONE reader-selected ring frame to a luma HEIGHTFIELD
 // (image-row × phase) for cube-dsp.sampleSlice. The three surfaces stacked in z
 // are the SAME field the ray-march textures, so slice Y / ROT drive ONE plane
 // through BOTH the picture volume and the derived sound.
-// ----------------------------------------------------------------------
 
 /**
  * Reduce a ring's single-frame REDUCE-pass readback — a `rows`×`cols` RGBA8 strip
@@ -552,7 +538,6 @@ export function stripToHeightfieldInto(
 // without reaching into cube-dsp.
 export { HARD_THRESHOLD };
 
-// ══════════════════════════════════════════════════════════════════════════
 // CHROMASTACK — dynamic CHROMA → timbre derivation (owner 2026-07-20).
 //
 // VIDEOCUBE's audio was too static: the luma cube carrier (Ws) barely moved with
@@ -586,7 +571,6 @@ export { HARD_THRESHOLD };
 // basis (resolveWebglBasis sweeps the whole tree minus *.test.ts) — these pure
 // additions fold into the SAME one-time WebGL re-attest REDUCE_FRAG already forces;
 // they are NOT shaders and add no GPU cost.
-// ══════════════════════════════════════════════════════════════════════════
 
 /** Hue bins == harmonic archetypes per bank (one archetype per hue sextant-ish). */
 export const CHROMA_HUE_BINS = 8;

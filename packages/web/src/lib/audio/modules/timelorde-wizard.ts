@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde-wizard.ts
-//
 // Pure, unit-tested helpers for TIMELORDE's beat-pulsing card art (the owner's
 // folk-art OWL PAINTING). Everything that has real logic lives here so
 // TimelordeCard.svelte stays a thin renderer:
@@ -22,9 +20,7 @@
 
 import { GATE_HI } from '$lib/audio/gate-trigger';
 
-// ─────────────────────────────────────────────────────────────────────────
 // 1. Beat-pulse math
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface BeatPulseArgs {
   /** Master tempo in BPM (the SAME value TIMELORDE's worklet uses — when an
@@ -76,9 +72,7 @@ export function beatPulse(args: BeatPulseArgs): number {
   return 1 - phase / decayFraction;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 2. Colour-targeted beat boost (the EYES + BORDER pulse, the body doesn't)
-// ─────────────────────────────────────────────────────────────────────────
 //
 // The faithful "only the yellow eyes + the blue border light up" effect is a
 // per-pixel colour key on the drawn ImageData: for each pixel decide how much
@@ -248,9 +242,7 @@ export function applyBeatBoost(
   return data;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 2b. The same boost as an OVERLAY — the per-frame form the producer draws
-// ─────────────────────────────────────────────────────────────────────────
 //
 // `boostBeatColor` is `out = c + (255 − c)·k` per channel with
 // `k = pulse·amount·membership`. That is a lerp toward WHITE — and a lerp
@@ -335,9 +327,7 @@ export function beatBoostOverlayAlpha(
   return clamp01(p * amount);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 3. Gate → on/off interpretation
-// ─────────────────────────────────────────────────────────────────────────
 //
 // GATE SEMANTICS (chosen — documented so the owner can correct it):
 //
@@ -361,9 +351,7 @@ export function gateLevelToWizardOn(level: number): boolean {
   return level >= GATE_HI;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 4. Big display: OWL vs LIVE VIDEO
-// ─────────────────────────────────────────────────────────────────────────
 //
 // TIMELORDE's big square display normally shows the beat-pulsing owl. With
 // something patched into the `video_in` jack it shows that LIVE VIDEO FEED

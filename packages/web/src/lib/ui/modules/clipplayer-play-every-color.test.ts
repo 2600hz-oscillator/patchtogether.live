@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-play-every-color.test.ts
-//
 // The card cell fill combines PROBABILITY with PLAY EVERY (mirroring the
 // Launchpad `noteRgb`): a play-every-1 note keeps the EXACT prob-only hsl (so the
 // probability permutation table stays pinned); play-every>1 tints red (dimmer

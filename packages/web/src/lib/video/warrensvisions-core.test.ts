@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/warrensvisions-core.test.ts
-//
 // Gates for the WARREN'S VISIONS spectral core. The load-bearing ones are the
 // COHERENCE legs: the whole module is a claim about what phase does, and a
 // test that only asserted "the output is not black" would pass with the

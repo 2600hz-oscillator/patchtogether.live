@@ -1,5 +1,3 @@
-// packages/web/src/lib/dev/behavioral-smoke-subset.test.ts
-//
 // Pins the `behavioral smoke (required subset)` CI job's `--grep` to the LIVE
 // registry. Pure-unit, zero-flake, ~0 added CI wall-time; runs in the `unit`
 // lane next to the manifest emitter it borrows its module enumeration from.

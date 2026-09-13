@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/ninelives-dsp.test.ts
-//
 // Deterministic unit tests for the NINE LIVES pure DSP core. No AudioContext —
 // we drive NineLivesCore.step() directly and assert the load-bearing contract:
 //   * the geometric ⅓ rate ladder (out2 = out1/3, … out9 = out1/6561),

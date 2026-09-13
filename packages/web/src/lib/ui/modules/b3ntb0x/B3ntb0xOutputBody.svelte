@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/b3ntb0x/B3ntb0xOutputBody.svelte
-  //
   // The B3NTB0X dock full-view body: the live CRT picture, the SCREEN ON/OFF
   // switch the 2026-08-18 owner ruling requires of every video module, and the
   // FOUR affordances that live only on `B3ntb0xCard.svelte` and would otherwise

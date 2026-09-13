@@ -1,5 +1,3 @@
-// e2e/tests/toybox-node-batch.spec.ts
-//
 // TOYBOX batch op nodes (12 new combine ops) — COMPREHENSIVE end-to-end:
 //   OVER · TILE · MIRROR · DISPLACE · BITBEND · BIOCELLS · EXQUISITE ·
 //   FRAMEDELAY · CHANNELDESYNC · FLOWSMEAR · DREAMMELT · DATAMOSH
@@ -587,7 +585,6 @@ test.describe('TOYBOX batch op nodes — multi-input exercise @webgl-serial', ()
     await freezeUntilLit(page, 2.0);
     const two = await average(page);
 
-    // add a 3rd, distinct input → band assignment changes → composite changes.
     await seed(page, [...sources(), op, out], [
       { id: 'e0', from: 'src0', to: 'op', toPort: 'in0' },
       { id: 'e1', from: 'src1', to: 'op', toPort: 'in1' },

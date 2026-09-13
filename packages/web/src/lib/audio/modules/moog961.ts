@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog961.ts
-//
 // MOOG 961 INTERFACE — trigger/gate format converter (Moog System 55 clone,
 // batch 5). The 961 bridges S-trigger (switch) and V-trigger (voltage) formats
 // between a Moog modular and the outside world. In OUR graph every trigger is a

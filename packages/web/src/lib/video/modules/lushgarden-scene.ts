@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/lushgarden-scene.ts
-//
 // LUSH GARDEN — pure scene / spawn / layout math for the lushgarden video
 // generator. Everything here is deterministic + GL-free so the unit suite
 // can pin the whole placement model without a WebGL context (same split as
@@ -38,9 +36,7 @@
 //     stops entirely and exactly ONE plant spawns per rising edge (the
 //     factory's gateEdge detector feeds spawns through here).
 
-// ---------------------------------------------------------------------------
 // Manifest contract
-// ---------------------------------------------------------------------------
 
 export type PlantKind = 'flower' | 'bush' | 'tree';
 
@@ -105,9 +101,7 @@ export function parseLushgardenManifest(json: unknown): LushgardenManifestEntry[
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Tuning constants (single source of truth — the def + card import these)
-// ---------------------------------------------------------------------------
 
 /** Atlas canonical sprite heights per kind, in pixels of the 768-tall engine
  *  frame at the NEAR plane (depth 0, fully grown). The atlas encodes the
@@ -171,10 +165,8 @@ export const MAX_SPAWNS_PER_FRAME = 4;
 /** dt clamp (seconds) — same stall guard for the accumulator itself. */
 export const MAX_FRAME_DT_S = 0.5;
 
-// ---------------------------------------------------------------------------
 // Deterministic RNG (mulberry32) — VRT/tests seed it; the factory uses a
 // fixed seed so a frozen-time engine renders a reproducible garden.
-// ---------------------------------------------------------------------------
 
 export function createRng(seed: number): () => number {
   let a = seed >>> 0;
@@ -195,9 +187,7 @@ export function pickKind(r: number): PlantKind {
   return 'tree';
 }
 
-// ---------------------------------------------------------------------------
 // Scene state
-// ---------------------------------------------------------------------------
 
 export interface Plant {
   /** Monotonic spawn serial — the replacement policy evicts the LOWEST. */
@@ -291,9 +281,7 @@ export function resetScene(state: SceneState): void {
   state.plants.length = 0;
 }
 
-// ---------------------------------------------------------------------------
 // Spawn scheduler (continuous mode)
-// ---------------------------------------------------------------------------
 
 export interface SpawnScheduler {
   /** Fractional spawn accumulator. */
@@ -336,9 +324,7 @@ export function stepSpawner(
   return n;
 }
 
-// ---------------------------------------------------------------------------
 // Grow-in + layout
-// ---------------------------------------------------------------------------
 
 /** Ease-out-cubic grow-in factor for a plant age (seconds). 0 → 0, ≥GROW_IN_S → 1. */
 export function growFactor(ageSec: number): number {

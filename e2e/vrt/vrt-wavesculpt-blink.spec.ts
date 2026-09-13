@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-wavesculpt-blink.spec.ts
-//
 // Per-mode VRT baselines for WAVESCULPT's BLINK render modes. The main
 // vrt.spec.ts captures one baseline per module type (the default
 // wavesculpt scene = mode 0 + the ALPHA-rotate regression lock from #361).

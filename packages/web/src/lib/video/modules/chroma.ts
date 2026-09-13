@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/chroma.ts
-//
 // CHROMA — single-input HUE-SHIFTER / COLORIZER.
 //
 // History: prior versions of this module conflated "key-mask extraction"
@@ -167,7 +165,6 @@ export const chromaDef: VideoModuleDef = {
     { id: 'tintMix',    label: 'Mix',  defaultValue: DEFAULTS.tintMix,    min: 0,    max: 1,   curve: 'linear' },
   ],
 
-  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
   //
   // CHROMA is a single-input COLOUR GRADE: rotate the hue wheel, push or pull
   // saturation, then blend a flat tint over the result. (It is NOT a keyer — the

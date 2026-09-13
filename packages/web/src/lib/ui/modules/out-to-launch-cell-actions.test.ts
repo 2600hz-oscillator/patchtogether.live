@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/out-to-launch-cell-actions.test.ts
-//
 // THE CONNECT CELL'S AUDITION PROBE, AND ITS PERMANENT NEGATIVE CONTROL.
 //
 // `out-to-launch-connect-{n}` declares

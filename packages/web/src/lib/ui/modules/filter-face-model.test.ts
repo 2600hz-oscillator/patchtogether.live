@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/filter-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for FILTER's three derived readouts.
 //
 // The bar `face-readout-values.ts` sets: a derived readout must be

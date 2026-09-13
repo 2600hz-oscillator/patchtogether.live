@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/gamepad-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for GAMEPAD's faceplate.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-cells`,

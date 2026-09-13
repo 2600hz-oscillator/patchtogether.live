@@ -1,5 +1,3 @@
-// e2e/tests/toybox-fixture-behavior.spec.ts
-//
 // APP-BEHAVIOR legs on the FIXTURE pack (#2070 migration phase, the
 // coordinator-approved split): locks, revert, and graph-structure all
 // asserted as EXACT PIXELS instead of perceptual floors or data-only

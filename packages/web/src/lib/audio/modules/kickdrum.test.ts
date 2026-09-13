@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kickdrum.test.ts
-//
 // KICK DRUM module-def shape + worklet behavior. The per-sample DSP math is
 // pinned in packages/dsp/src/lib/kickdrum-dsp.test.ts (the pure core) and the
 // raw audio profile in art/scenarios/kickdrum/profile.test.ts. This file
@@ -35,13 +33,9 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Module-def shape (the frozen contract)
-// ───────────────────────────────────────────────────────────────────────
 
-// ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + behavior the wrapper owns
-// ───────────────────────────────────────────────────────────────────────
 
 const BLOCK = 128;
 

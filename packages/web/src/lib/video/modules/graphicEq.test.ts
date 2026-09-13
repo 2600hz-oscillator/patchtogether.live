@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/graphicEq.test.ts
-//
 // Factory-level guard for GRAPHIC EQ's audio→video bridge (the cross-domain
 // audio-input tap). graphic-eq-core.test.ts covers only the pure math, and the
 // render-smoke e2e runs with NOTHING patched into audio_l/audio_r (silent by

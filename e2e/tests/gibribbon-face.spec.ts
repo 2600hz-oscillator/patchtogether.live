@@ -1,5 +1,3 @@
-// e2e/tests/gibribbon-face.spec.ts
-//
 // GIBRIBBON, against the FACEPLATE — the DEFAULT renderer.
 //
 // `gibribbon.spec.ts` rides the `rack` fixture, which was written against the
@@ -40,7 +38,6 @@ function laneShell(page: Page, nodeId: string): Locator {
   return page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
 }
 
-/** Open the node's dock faceplate, SCOPED BY NODE. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = laneShell(page, nodeId);
   await expect(shell).toBeVisible();

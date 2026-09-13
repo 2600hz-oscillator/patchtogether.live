@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/index.ts
-//
 // Auto-registers EVERY meta-domain module on first import — GLOB-DRIVEN.
 // Symmetric with the audio + video barrels.
 //

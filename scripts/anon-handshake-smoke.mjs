@@ -4,7 +4,6 @@
 // drift between the deployed web app and the deployed Hocuspocus relay.
 //
 // THE DRIFT THIS CATCHES
-// ----------------------
 // Anonymous invites are HMAC-SHA256(INVITE_SECRET, rackspaceId)[0:16]. The web
 // app MINTS them with its INVITE_SECRET (CF Pages env); the relay VERIFIES them
 // with its INVITE_SECRET (Fly secret) at the WS handshake (onAuthenticate in

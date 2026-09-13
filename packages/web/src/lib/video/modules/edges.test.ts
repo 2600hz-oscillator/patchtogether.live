@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/edges.test.ts
-//
 // EDGES module-def shape + the pure Sobel/threshold/thickness algorithm
 // (no GL). The pure functions (edgesLuma / edgesSobelMagnitude / edgesPixel)
 // are the EXACT CPU mirror of the GLSL shader's math — testing them here is
@@ -79,11 +77,9 @@ describe('edgesSobelMagnitude — normalised gradient', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Full per-texel decision: a synthetic input with a KNOWN edge → the output
 // has the edge; THRESHOLD gates it; THICKNESS widens it. (The headline spec
 // assertions.)
-// ---------------------------------------------------------------------------
 describe('edgesPixel — Sobel + threshold + thickness on a known edge', () => {
   // A 9×9 luma grid: left half black, right half white, with a vertical
   // black→white boundary between columns 3 and 4. Column 4 is the first

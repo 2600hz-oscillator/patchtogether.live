@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-play-every.test.ts
-//
 // PER-NOTE PLAY EVERY — the count-divider that STACKS with per-note PROBABILITY.
 // Pins the pure model (coerce / effective / write seam), the DETERMINISTIC
 // loop-gate (notePlaysThisLoop — collab-safe: no dice, driven by the shared

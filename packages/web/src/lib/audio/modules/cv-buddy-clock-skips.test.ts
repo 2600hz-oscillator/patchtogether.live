@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cv-buddy-clock-skips.test.ts
-//
 // The LATE-TICK COUNTER as the card actually consumes it.
 //
 // `clock-math.test.ts` already proves `advanceClock` RETURNS the right
@@ -250,7 +248,6 @@ describe('CV Buddy — the late-tick counter reaches the card', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE ANTI-BURST INVARIANT — what a dropped pulse must never turn into.
 //
 // Provenance: a live performance (SPEEDERR-001, 2026-09-02) where the CV clock

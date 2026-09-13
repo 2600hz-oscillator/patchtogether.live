@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog993.test.ts
-//
 // Two test layers for the MOOG 993 TRIGGER & ENVELOPE VOLTAGES PANEL:
 //   1. Module-def shape — pins the 993's I/O surface (the two trigger SOURCE
 //      inputs + two envelope-CV inputs; the three routed trigger outs + two

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-launch-quantize.ts
-//
 // PURE launch-quantization helper for the `clipplayer` session scheduler — the
 // Deluge "quantize a queued launch to the LONGEST currently-playing clip's next
 // loop boundary" model. Kept out of clipplayer.ts so the boundary math is

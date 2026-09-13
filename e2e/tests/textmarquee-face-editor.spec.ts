@@ -1,5 +1,3 @@
-// e2e/tests/textmarquee-face-editor.spec.ts
-//
 // THE TEXTMARQUEE FACE (2026-08-31) — the DEFAULT-shell legs for a promotion
 // whose failure mode is a document that silently changes meaning.
 //
@@ -92,7 +90,6 @@ async function bootRack(page: Page, errors: string[]) {
   await spawnPatch(page, NODES, []);
 }
 
-/** Open textmarquee's dock faceplate and return the dock shell locator. */
 async function openDock(page: Page) {
   const shell = page.locator(`.svelte-flow__node[data-id="${TM_ID}"] [data-testid="module-shell"]`);
   await expect(shell, 'the promoted face renders a ModuleShell tile in the lane')

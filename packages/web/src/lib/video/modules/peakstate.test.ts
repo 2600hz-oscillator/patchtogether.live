@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/peakstate.test.ts
-//
 // PEAKSTATE's PER-PORT RENDER GATE — the factory-level suite. (The pure pen /
 // mandala math lives in peakstate-draw.test.ts; this file owns the draw()
 // scheduling decision.)
@@ -32,9 +30,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { peakstateDef } from './peakstate';
 import type { VideoEngineContext, VideoFrameContext, VideoNodeHandle } from '$lib/video/engine';
 
-// ---------------------------------------------------------------------------
 // Recording 2D context + a fake OffscreenCanvas so the real factory runs.
-// ---------------------------------------------------------------------------
 
 interface Rec {
   /** stroke() calls — the direct measure of rasterization work. */
@@ -179,7 +175,6 @@ afterEach(() => {
   delete (globalThis as unknown as { __peakstateVrtSeed?: boolean }).__peakstateVrtSeed;
 });
 
-// ---------------------------------------------------------------------------
 
 describe('peakstate — per-port render gate', () => {
   it('renders ONLY the consumed outputs; rgb_out is never gated (negative control across 3 states)', () => {

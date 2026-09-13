@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/electra-control.ts
-//
 // ELECTRA CONTROL — data model + geometry + helpers.
 //
 // A sibling of control-surface.ts. Where a Control Surface stores a flat,

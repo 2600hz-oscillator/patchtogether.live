@@ -1,5 +1,3 @@
-// packages/web/src/lib/dev/module-specs.ts
-//
 // Source-of-truth helper that exposes every registered AudioModuleDef's
 // declared input/output port surface. Powers the I/O-spec consistency
 // checks (def <-> published manifest <-> rendered card UI handles).

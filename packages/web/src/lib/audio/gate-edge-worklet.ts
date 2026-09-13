@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/gate-edge-worklet.ts
-//
 // GATE-EDGE ACCUMULATOR — an AUDIO-THREAD rising-edge counter for the
 // cross-domain audio → video gate bridge.
 //

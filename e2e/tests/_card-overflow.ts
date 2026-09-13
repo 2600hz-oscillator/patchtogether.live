@@ -1,5 +1,3 @@
-// e2e/tests/_card-overflow.ts
-//
 // The card-bounds overflow instrument, extracted VERBATIM from
 // card-control-overflow.spec.ts (#1861) so it can be shared by the two callers
 // that now exist:

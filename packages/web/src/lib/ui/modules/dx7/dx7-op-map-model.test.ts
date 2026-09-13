@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/dx7-op-map-model.test.ts
-
 import { describe, expect, it } from 'vitest';
 import { dx7MapGeometry, dx7FreqLabel, MAP_BLOCK_H } from './dx7-op-map-model';
 

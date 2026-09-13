@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/warrensspectrum-face-model.test.ts
-//
 // THE ORACLE + THE PERMANENT NEGATIVE CONTROLS for the WARREN'S SPECTRUM
 // faceplate.
 //

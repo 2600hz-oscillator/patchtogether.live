@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/warrensvisions-face-model.test.ts
-//
 // WARREN'S VISIONS — the permanent gate on the ONE thing this face exists for.
 //
 // The merit argument for promoting this module is not a layout: it is that the

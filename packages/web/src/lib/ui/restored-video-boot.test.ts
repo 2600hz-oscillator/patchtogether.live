@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/restored-video-boot.test.ts
-//
 // Unit gate on the persisted-rack VIDEO boot predicate. This is the extractable
 // core of the Canvas.svelte `$effect` that fixes "restored video is dead until
 // you add/delete a node" (fix/video-engine-persist-reconcile).

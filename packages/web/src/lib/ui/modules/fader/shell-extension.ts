@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/fader/shell-extension.ts
-//
 // The FADER SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

@@ -1,5 +1,3 @@
-// packages/dsp/src/slewswitch.ts
-//
 // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch worklet.
 //
 // Per-channel one-pole lowpass smooths each cv input; outputs are the

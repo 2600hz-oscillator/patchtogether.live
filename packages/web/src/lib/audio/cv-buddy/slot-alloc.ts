@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-buddy/slot-alloc.ts
-//
 // PURE, framework-free ES-9 SLOT ALLOCATOR for CV Buddy (Part A).
 //
 // CV Buddy instances hand their note CV out to the ES-9's physical DC-coupled

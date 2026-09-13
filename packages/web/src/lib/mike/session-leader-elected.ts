@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/session-leader-elected.ts
-//
 // Mike's session API. The leader-election infrastructure (awareness
 // candidacy + lowest-clientID-wins) is reused from Carl's session
 // module — election picks ONE tab to tick the bot, independent of

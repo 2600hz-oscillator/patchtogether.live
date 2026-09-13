@@ -1,5 +1,3 @@
-// art/scenarios/unityscalemathematik/cv-path.test.ts
-//
 // DOES A CV CABLE ON A `paramTarget` INPUT CHANGE THE AUDIO? — plus the two
 // laws the FACEPLATE prints, measured against the same renders.
 //

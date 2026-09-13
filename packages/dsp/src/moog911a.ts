@@ -1,5 +1,3 @@
-// packages/dsp/src/moog911a.ts
-//
 // MOOG 911A DUAL TRIGGER DELAY — two independent trigger delays with a
 // coupling MODE. A gate on an input is detected on its RISING edge; after a
 // programmed delay the corresponding output emits a short (~1 ms) pulse.

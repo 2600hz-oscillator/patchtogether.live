@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mappy-map-actions.ts
-//
 // THE VENUE-MAP ACTIONS — export and import MAPPY's projector alignment, as ONE
 // action seam called by the legacy card, the faceplate's ranked cells and the
 // MAP body alike.

@@ -1,5 +1,3 @@
-// e2e/tests/support/cell-coverage.ts
-//
 // THE `control-<paramId>` CONVENTION, GENERALISED TO N-TO-1 CONTROLS.
 //
 // `faces-parity` asserts EXACT MULTISET EQUALITY between a dock's `control-*`

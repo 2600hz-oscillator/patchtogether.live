@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/chroma-rot.ts
-//
 // chroma-rot — COMPOSITE/ANALOG-era bent VFPGA (design §3.2), the Y/C TRANSPLANT
 // flagship (design research 2026-06-30 §4). Corrupts the composite COLOUR
 // subsystem: the chroma demodulator / colour-burst phase — rainbowing, hue

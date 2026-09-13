@@ -1,11 +1,8 @@
-// scripts/vrt-capture-needs-no-db.test.ts
-//
 // THE VRT CAPTURE VISITS NO DATABASE-BACKED ROUTE. Pure-unit, zero-flake, runs
 // in the `unit` lane via `task test` → `task test:scripts`. No browser, no
 // database, no Docker.
 //
 // WHY THIS IS A GATE AND NOT A COMMENT (#1828)
-// -------------------------------------------
 // vrt-update.yml's capture — the repo's ONLY baseline author — used to declare
 // `services: postgres:17` plus an `Apply DB schema` step. Both were copied when
 // the workflow was written (#549: "mirrors the ci.yml `vrt` job (postgres
@@ -68,9 +65,7 @@ const DB_MODULE = join(WEB_SRC, 'lib/server/db.ts');
 /** Route prefixes whose server side can reach Postgres. Deny by default. */
 const DB_BACKED_PREFIXES = ['/r/', '/dashboard', '/api/', '/sign-in', '/sign-up'];
 
-// ---------------------------------------------------------------------------
 // Scanners
-// ---------------------------------------------------------------------------
 
 function vrtSources(dir = VRT_DIR): Array<[string, string]> {
   return readdirSync(dir)
@@ -150,9 +145,7 @@ export function serverEntryPoints(pathname: string): string[] {
   return files;
 }
 
-// ---------------------------------------------------------------------------
 // 1 + 2. What the capture navigates to.
-// ---------------------------------------------------------------------------
 
 describe('the VRT capture navigates only to DB-free routes', () => {
   const navs = navigations();
@@ -194,9 +187,7 @@ describe('the VRT capture navigates only to DB-free routes', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 3 + 4. The real question: can serving those routes reach a database?
-// ---------------------------------------------------------------------------
 
 describe('serving the visited routes cannot reach Postgres', () => {
   const visited = visitedPaths();
@@ -235,9 +226,7 @@ describe('serving the visited routes cannot reach Postgres', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 5. Anchor the workflow side, so the two halves cannot drift apart.
-// ---------------------------------------------------------------------------
 
 describe('vrt-update.yml declares no database', () => {
   const src = readFileSync(join(ROOT, '.github/workflows/vrt-update.yml'), 'utf8');
@@ -266,9 +255,7 @@ describe('vrt-update.yml declares no database', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Negative controls for the scanners themselves.
-// ---------------------------------------------------------------------------
 
 describe('negative controls: the scanners can actually fail', () => {
   it('navigations() FLAGS a DB-backed literal', () => {

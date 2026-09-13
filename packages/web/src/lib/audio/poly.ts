@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/poly.ts
-//
 // The polyphony architecture. The
 // single concept here is the `polyPitchGate` cable: POLY_CHANNEL_PAIRS voice-pairs
 // of (pitch_v_oct, gate) packed into one POLY_CHANNELS-channel audio-rate
@@ -31,7 +29,6 @@
 
 import { midiToVOct, MAX_MIDI, MIN_MIDI } from '$lib/audio/note-entry';
 
-// ---------------- Constants ----------------
 
 export const POLY_CHANNEL_PAIRS = 16;
 export const POLY_CHANNELS = POLY_CHANNEL_PAIRS * 2;

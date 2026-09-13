@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/status-led-model.test.ts
-//
 // The STATUS LED's pure model. Small surface, but the two properties it has to
 // hold are the whole reason the primitive exists:
 //

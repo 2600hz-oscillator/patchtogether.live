@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-encoder.ts
-//
 // TURNING a push-card encoder — the WRITE half of the card, where
 // push-card-model.ts is the READ half (pixels ← value). Two directions of the
 // same contract, kept in two files so neither grows a dependency on the other.

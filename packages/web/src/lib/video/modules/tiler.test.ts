@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tiler.test.ts
-//
 // Unit tests for TILER's pure helpers + def shape. The GL-side draw is
 // covered by the e2e + VRT suites; here we pin:
 //   * the knob INDEX → grid { total, cols, rows } mapping (0..5 → TILER_STEPS),

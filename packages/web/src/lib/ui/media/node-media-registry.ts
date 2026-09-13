@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-media-registry.ts
-//
 // NODE-OWNED MEDIA LIFETIME — the registry that makes a DOM-source video
 // module's <video>/<img>, its object URL and its MediaStream outlive the CARD
 // that displays them.
@@ -427,9 +425,7 @@ export function createNodeMediaRegistry<E, H>(
   };
 }
 
-// ---------------------------------------------------------------------------
 // The real-DOM singleton the cards use.
-// ---------------------------------------------------------------------------
 
 const PARKING_ID = 'pt-node-media-parking';
 

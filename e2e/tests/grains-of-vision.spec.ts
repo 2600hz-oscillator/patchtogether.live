@@ -1,5 +1,3 @@
-// e2e/tests/grains-of-vision.spec.ts
-//
 // GRAINS OF VISION (granular VIDEO synthesizer) — DETERMINISTIC render-smoke
 // over the REAL source chain. The standard's "real source chain" gate for a
 // video PROCESSOR: wire a real source → GRAINS OF VISION → assert a non-black,

@@ -1,5 +1,3 @@
-// art/scenarios/tempo-stability/tempo-stability.test.ts
-//
 // Audio Regression Tests for the tempo-stability fix
 // (PR fix/tempo-stability). Three concerns:
 //

@@ -1,5 +1,3 @@
-// e2e/tests/menu-viewport-clamp.spec.ts
-//
 // CONTEXT MENUS MUST OPEN FULLY IN VIEW — horizontally AND vertically, in ALL
 // views (owner requirement; screenshot evidence: right-clicking the clip
 // editor grid inside the dock opened a probability menu clipped at the right
@@ -51,7 +49,6 @@ import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 // ⚠ BOUNDS ONLY. No assertion, subject or wait target changed here.
 test.describe.configure({ mode: 'parallel', timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
-/** Assert the menu's bounding box sits FULLY inside the window. */
 async function expectFullyInViewport(page: Page, menu: Locator): Promise<void> {
   await expect(menu).toBeVisible();
   // Let the clamp's coalesced ResizeObserver pass settle (≤1 frame).
@@ -135,9 +132,7 @@ async function panNodeTo(
   await page.waitForTimeout(120);
 }
 
-// ============================================================================
 // Module add palette — pane right-click at the pane's extremes (classic rack)
-// ============================================================================
 
 test('module palette opens fully in view from right/bottom/left pane extremes', async ({ page }) => {
   await gotoClassic(page);
@@ -166,9 +161,7 @@ test('module palette opens fully in view from right/bottom/left pane extremes', 
   }
 });
 
-// ============================================================================
 // Module (node) + control menus — card at the window's right/bottom/corner
-// ============================================================================
 
 test('module context menu opens fully in view with the card at the right edge, bottom edge and corner', async ({ page }) => {
   await gotoClassic(page);
@@ -218,9 +211,7 @@ test('control (MIDI) context menu opens fully in view from a fader at the bottom
 // fixed-menu-escapes-the-transformed-node class is carried by the lane-tile
 // drill-down leg at the bottom of this file.
 
-// ============================================================================
 // THE OWNER'S CASE — clip editor inside the DOCK full-view pane (?shell=1)
-// ============================================================================
 
 test('clip editor menus inside the dock full-view pane stay fully in view (owner case, ?shell=1)', async ({ page }) => {
   await gotoWorkflowShell(page);
@@ -304,9 +295,7 @@ test('clip editor menus inside the dock full-view pane stay fully in view (owner
   });
 });
 
-// ============================================================================
 // Patch drill-down — a lane tile at the LEFT window edge (?shell=1)
-// ============================================================================
 
 test('patch drill-down menu from a lane tile at the left edge stays fully in view (?shell=1)', async ({ page }) => {
   await gotoWorkflowShell(page);

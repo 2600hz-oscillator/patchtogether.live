@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-clock.test.ts
-//
 // PURE math for the clipplayer per-lane clock RATE (mult/div) — the table, the
 // coercion, and the duration scaling. The SCHEDULING behavior (exact 2:1:4
 // ratios, common phase origin, reset re-anchor, tempo change) is tested through

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/singleton-cleanup-ydoc.test.ts
-//
 // THE SELF-MERGE GATE — multi-peer no-double-delete proof.
 //
 // Two REAL syncedStore-backed Y.Docs act as two collab peers. Both concurrently

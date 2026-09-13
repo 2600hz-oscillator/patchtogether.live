@@ -1,5 +1,3 @@
-// e2e/tests/present-survives-card-collapse.spec.ts
-//
 // THE PROJECTOR OUTLIVES THE CARD (owner P0, dev: "backdraft on dev when card
 // is not expanded and its been sent to a projector, the output stops").
 //

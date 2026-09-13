@@ -1,5 +1,3 @@
-// e2e/tests/picturebox-limits.spec.ts
-//
 // Verifies the per-workspace (8) PICTUREBOX cap lands in the spawn
 // handler in single-user mode. Tested by clicking through the real
 // palette UI rather than the dev-only __patch global so we exercise the

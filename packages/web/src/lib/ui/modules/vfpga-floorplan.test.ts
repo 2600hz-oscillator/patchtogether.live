@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vfpga-floorplan.test.ts
-//
 // Pure (GL-free, DOM-free) unit tests for the vfpga fabric-floorplan layout
 // selector + the Canvas2D draw routine (P5). The load-bearing logic — placement,
 // edge-node synthesis, net classification, lit-path reachability — is exercised
@@ -214,9 +212,7 @@ describe('TILE_TYPE_META', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // drawFloorplan — Canvas2D smoke (stub ctx records the calls it makes).
-// ----------------------------------------------------------------------
 
 function stubCtx() {
   const calls: string[] = [];

@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-screen-layout.ts
-//
 // WHERE everything sits on the Push 2's 960×160 panel — the pure half of the
 // renderer. `renderPushCard(view)` turns a PushCardView into a flat list of
 // DRAW OPS; a ~40-line executor (push-card-paint.ts) replays them onto a 2D
@@ -117,7 +115,6 @@ export interface PushTextOp {
 
 export type PushDrawOp = PushRectOp | PushTextOp;
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 
 /** Left edge of strip `i` (0-based). */
 export function stripX(i: number): number {

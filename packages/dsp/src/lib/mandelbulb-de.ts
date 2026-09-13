@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/mandelbulb-de.ts
-//
 // MANDELBULB distance estimate (DE) — the single source of truth for the
 // Mandelbulb iteration math, shared by:
 //   • the WebGL GLSL generator + the pure-TS DE reference (web mandelbulb.ts,

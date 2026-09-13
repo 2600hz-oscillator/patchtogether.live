@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/audioIn/AudioInSourceBody.svelte
-  //
   // THE AUDIO IN faceplate body: the input-device picker, the two capture lamps,
   // the acquire/stop gesture and music mode.
   //

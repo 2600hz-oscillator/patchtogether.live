@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog914.ts
-//
 // MOOG 914 EXTENDED FIXED FILTER BANK — a slice of the Moog System 55/35
 // clone initiative (docs/adr/018-moog-clone-provenance.md). The 914 is
 // the Moog System 55's full

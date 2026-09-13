@@ -1,5 +1,3 @@
-// e2e/tests/videovarispeed-output.spec.ts
-//
 // VIDEOVARISPEED downstream-streams-at-ALL-speeds coverage.
 //
 // This is the LOAD-BEARING regression guard for the bug the rolled-back

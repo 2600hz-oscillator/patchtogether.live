@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/fourplexer-commit.test.ts
-//
 // 4PLEXER's gate inputs are AUDIO-RATE PORTS, and every rising edge used to
 // become a Y.Doc write.
 //

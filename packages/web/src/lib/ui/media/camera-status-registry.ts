@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/camera-status-registry.ts
-//
 // THE CAPTURE-STATUS SEAM — how a SECOND surface can show, and drive, a camera
 // whose stream has exactly ONE owner.
 //

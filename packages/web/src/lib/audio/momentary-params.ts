@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/momentary-params.ts
-//
 // A PRESS IS NOT STATE — the one rule, and the one place it is enforced.
 //
 // A `face.momentary` param is a PAD: the user's finger, live, right now. It has

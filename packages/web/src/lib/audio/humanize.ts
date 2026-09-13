@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/humanize.ts
-//
 // Pure helpers for "humanize" timing offsets. Used by POLYSEQZ to nudge the
 // per-voice gate-on time around the nominal step boundary, simulating the
 // micro-variation of a human pianist.

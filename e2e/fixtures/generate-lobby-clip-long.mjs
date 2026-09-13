@@ -1,5 +1,3 @@
-// e2e/fixtures/generate-lobby-clip-long.mjs
-//
 // One-time generator for `lobby-clip-long.webm` — the LONG video-only fixture
 // that removes the hidden 4-second deadline from collapse-keeps-playing
 // (#1553/#1577).

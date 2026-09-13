@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-frame-producer-registry.test.ts
-//
 // THE ANCHOR for the node-lifetime PER-FRAME producer seam (legacy-removal S1).
 //
 // Two halves, and they fail for different reasons:

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/scheduler-clock.test.ts
-//
 // Unit tests for the scheduler-clock singleton. Vitest's jsdom env doesn't
 // ship a Worker constructor, so the test path always exercises the
 // setTimeout fallback (assertion below). What we really verify is the
@@ -128,12 +126,10 @@ describe('scheduler-clock', () => {
     expect(clock.usingWorker).toBe(false);
   });
 
-  // -------------------------------------------------------------------------
   // Tick-latency instrumentation (Idea 3). The recorder's own arithmetic is
   // negative-controlled in both directions by `tick-latency.test.ts`; what THIS
   // block proves is the WIRING — that `dispatch()` actually feeds it, and that
   // a slow subscriber lands in `dispatch*Ms` rather than in lateness.
-  // -------------------------------------------------------------------------
 
   it('tickStats() accumulates one sample per dispatch — the recorder is wired in', () => {
     const clock = getSchedulerClock();

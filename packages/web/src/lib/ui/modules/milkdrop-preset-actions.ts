@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/milkdrop-preset-actions.ts
-//
 // The MILKDROP preset actions, shared by the LEGACY CARD and the FACED shell
 // cells so the two surfaces cannot drift.
 //

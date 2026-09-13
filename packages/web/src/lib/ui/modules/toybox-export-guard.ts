@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/toybox-export-guard.ts
-//
 // EXPORT MUST NOT SUCCEED AT PRODUCING NOTHING — the pure decision behind
 // TOYBOX's `.toybox.zip` export refusing to write a preset it knows is
 // incomplete (#1589).

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/workflow-surfaces.test.ts
-//
 // WORKFLOW MODE P2 — the pure helpers behind the topbar surfaces:
 // timelorde resolution, externally-clocked detection, the MIDI-DIN
 // assign/unassign wiring plans, and the tap-tempo external guard.

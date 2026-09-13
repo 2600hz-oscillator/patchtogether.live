@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-layers.ts
-//
 // TOYBOX per-layer editing — Yjs mutators for node.data.layers[<index>].
 //
 // The card edits ANY of the LAYER_COUNT layers (the layer-INDEX selector picks

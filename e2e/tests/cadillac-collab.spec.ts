@@ -1,5 +1,3 @@
-// e2e/tests/cadillac-collab.spec.ts
-//
 // @collab — CADILLAC across two contexts on one rackspace. User A
 // spawns the car; the deletions land in A's Yjs doc and propagate to
 // B via the Hocuspocus relay. B observes the same final state. The car

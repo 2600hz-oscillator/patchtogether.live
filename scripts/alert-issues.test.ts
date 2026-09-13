@@ -1,5 +1,3 @@
-// scripts/alert-issues.test.ts
-//
 // Gate for the ALERT-ISSUE RECONCILER (scripts/alert-issues.mjs +
 // .github/workflows/live-smoke-alert.yml). Pure-unit, zero-flake, runs in the
 // `unit` lane via `task test` → `task test:scripts`. No network, no clock.
@@ -73,9 +71,7 @@ const NEON_402 = (n: number) =>
   'web /api/health database UNREACHABLE: Server error (HTTP status 402): ' +
   `{"message":"You have exceeded the compute time quota","request_id":"req-${n}"}`;
 
-// ---------------------------------------------------------------------------
 // Helpers: an in-memory GitHub so the whole loop runs without a network
-// ---------------------------------------------------------------------------
 
 type FakeIssue = {
   number: number;
@@ -166,9 +162,7 @@ async function tick(
 
 const openIssues = (gh: ReturnType<typeof fakeGithub>) => gh.issues.filter((i) => i.state === 'open');
 
-// ---------------------------------------------------------------------------
 // 1. The key is pinned to the probe script — the two cannot drift
-// ---------------------------------------------------------------------------
 
 describe('check-id registry is pinned to scripts/live-smoke-alert.sh', () => {
   /** Every `failures+=("…")` literal in the probe script. */
@@ -206,9 +200,7 @@ describe('check-id registry is pinned to scripts/live-smoke-alert.sh', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 2. Key stability — the property the whole design rests on
-// ---------------------------------------------------------------------------
 
 describe('alert key stability', () => {
   it('derives the env from the probed URL hostname', () => {
@@ -315,9 +307,7 @@ describe('negative control — the key is what makes dedup work', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 3. Body rendering + stats accounting
-// ---------------------------------------------------------------------------
 
 describe('issue body', () => {
   const body = renderNewIssueBody({
@@ -374,9 +364,7 @@ describe('issue body', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 4. THE CORE: the four required behaviours
-// ---------------------------------------------------------------------------
 
 describe('reconcile — first failure OPENS', () => {
   it('opens exactly one issue, labelled, with the key marker', async () => {
@@ -568,9 +556,7 @@ describe('reconcile — RECOVERY closes the issue', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 5. SAFETY negative controls — the ways this fix could be WORSE than the flood
-// ---------------------------------------------------------------------------
 
 describe('safety — issues without our marker are untouchable', () => {
   it('never updates, comments on, or closes a human-filed issue', async () => {
@@ -707,9 +693,7 @@ describe('self-healing — a raced double-open collapses to the OLDEST', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 6. Probe-log interpretation
-// ---------------------------------------------------------------------------
 
 describe('interpretSmokeLog', () => {
   const wrap = (json: unknown) =>
@@ -771,9 +755,7 @@ describe('interpretSmokeLog', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 7. Workflow wiring
-// ---------------------------------------------------------------------------
 
 describe('live-smoke-alert.yml wiring', () => {
   /**
@@ -830,9 +812,7 @@ describe('live-smoke-alert.yml wiring', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 8. The REST client — the only part that would otherwise fail first in prod
-// ---------------------------------------------------------------------------
 
 describe('githubClient request construction', () => {
   function recordingFetch(pages: any[][] = [[]]) {

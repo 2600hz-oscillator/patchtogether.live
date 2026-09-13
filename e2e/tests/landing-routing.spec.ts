@@ -1,5 +1,3 @@
-// e2e/tests/landing-routing.spec.ts
-//
 // Phase 1 of the landing-page overhaul: the scratch canvas moved from `/` to
 // `/rack?seed=none`, and `/` is now a static, prerendered landing / front door.
 //

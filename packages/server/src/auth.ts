@@ -1,5 +1,3 @@
-// packages/server/src/auth.ts
-//
 // Stage B PR-D: validate the auth token at the Hocuspocus handshake.
 // Two valid forms:
 //   clerk:<JWT>      → verified via @clerk/backend.verifyToken

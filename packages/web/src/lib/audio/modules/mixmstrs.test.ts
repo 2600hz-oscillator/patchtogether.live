@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/mixmstrs.test.ts
-//
 // Unit tests for MIXMSTRS:
 //   - the comp macro mapping (added in feat/audio-fidelity-mixmstrs-comp-swolevco),
 //   - the per-channel POST-FADER VU: rmsLevel() + read('levels') (added with the
@@ -94,7 +92,6 @@ describe('rmsLevel: pure RMS over a sample window', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // read('levels') — drives mixmstrsDef.factory() against a mock Web Audio env.
 // The 16 post-fader meter AnalyserNodes (one per LEG, created first and in
 // leg order: ch1L, ch1R, ch2L, ch2R, …) are each fed a KNOWN constant buffer,
@@ -108,7 +105,6 @@ describe('rmsLevel: pure RMS over a sample window', () => {
 // (`sqrt((L²+R²)/2)`), which cannot cancel — and a constant buffer per leg is
 // exactly the probe that separates the two orders: legs +c and −c read c
 // combined-after and 0 summed-before.
-// ─────────────────────────────────────────────────────────────────────────
 
 interface FakeAnalyser {
   __meterCh: number;

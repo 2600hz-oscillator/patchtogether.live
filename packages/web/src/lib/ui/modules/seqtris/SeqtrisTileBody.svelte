@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/seqtris/SeqtrisTileBody.svelte
-  //
   // THE SEQTRIS LANE TILE — the live well, read-only, plus the bind lamp.
   //
   // ⚠ WHAT THIS TILE REPLACED WAS A BLANK PLATE. Before it, the seqtris lane

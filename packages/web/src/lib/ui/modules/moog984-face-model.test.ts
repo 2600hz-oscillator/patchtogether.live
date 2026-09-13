@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog984-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the moog984 faceplate's four column
 // readouts, plus the totality legs that keep them from taking the face down.
 //

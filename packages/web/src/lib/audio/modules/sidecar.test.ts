@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/sidecar.test.ts
-//
 // Two test layers:
 //   1. Module-def shape: 7 inputs, 4 outputs, 9 params, stereo pairs, CV
 //      targets, ossAttribution mentions GMR.
@@ -49,13 +47,9 @@ function makeParams(over: Record<string, number> = {}): Record<string, Float32Ar
   return out;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 // Module-def shape
-// ────────────────────────────────────────────────────────────────────────────
 
-// ────────────────────────────────────────────────────────────────────────────
 // Worklet behavior
-// ────────────────────────────────────────────────────────────────────────────
 
 /** Run the processor for `seconds`, returning the L audio output AND the
  *  env_out, both as full-length Float32Arrays. `inMainFn` drives the MAIN /

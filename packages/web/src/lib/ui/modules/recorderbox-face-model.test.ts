@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/recorderbox-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the recorderbox face (wave 5).
 //
 // ⚠ THIS FILE EXISTS BECAUSE EVERY GENERIC GATE PASSES VACUOUSLY OVER THIS

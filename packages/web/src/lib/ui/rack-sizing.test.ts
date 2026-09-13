@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/rack-sizing.test.ts
-//
 // Invariants for the 1u/3u rack sizing system. Data-level here (every declared
 // def is well-formed + the CSS token relationship is 3u = 3×1u); the rendered
 // "all 1u cards share one height / all 3u share another" check rides VRT.

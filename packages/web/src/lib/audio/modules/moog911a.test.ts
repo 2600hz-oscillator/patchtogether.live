@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog911a.test.ts
-//
 // Two test layers for the MOOG 911A DUAL TRIGGER DELAY:
 //   1. Module-def shape — pins the I/O surface (trig1/trig2 gate inputs,
 //      out1/out2 gate outputs, the delay1/delay2/mode param array) so a
@@ -31,9 +29,7 @@ beforeAll(() => {
   (globalThis as unknown as { sampleRate: number }).sampleRate = SR;
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // 1) Module-def shape.
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('moog911aDef — module def shape', () => {
   it('exposes 3 params: delay1/delay2 (log s, 0.002..10, default 0.1) + mode (discrete 0..2)', () => {
@@ -53,9 +49,7 @@ describe('moog911aDef — module def shape', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // 2) Worklet DSP behavior — drive the processor directly.
-// ────────────────────────────────────────────────────────────────────────────
 
 // Capture the registered processor class via a shim (the worklet entry NEVER
 // exports its class — see dsp-worklet-no-top-level-export.md).

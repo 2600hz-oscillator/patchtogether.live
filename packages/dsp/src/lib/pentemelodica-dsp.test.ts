@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/pentemelodica-dsp.test.ts
-//
 // Pure-DSP unit tests for the PENTEMELODICA core (5-voice poly synth math).
 // Pins the building blocks the worklet + render mirror share:
 //   • voiceFreqHz   — V/oct + coarse + fine + exp-FM → Hz, C4 anchor, clamps.
@@ -146,7 +144,6 @@ describe('pentemelodica-dsp / modeMorph', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
 // THE NOTCH IS A NOTCH — the regression test for the missing-`k` bug.
 //
 // `modeMorph` computed `notch = x - bp` (no `k`). That is not a notch: it is a
@@ -163,7 +160,6 @@ describe('pentemelodica-dsp / modeMorph', () => {
 // legs are permanent: the null must hold at EVERY resonance (which the bug
 // could only manage at 0.5), and the same measurement on the BP tap must be
 // large (else "0 everywhere" would also be what a dead filter reports).
-// ----------------------------------------------------------------------------
 describe('pentemelodica-dsp / the mode-1 tap is a TRUE notch (notch fix)', () => {
   /** Steady-state RMS gain of a mode tap at frequency `f`. */
   function modeGainAt(f: number, fcHz: number, res: number, mode: number): number {
@@ -384,7 +380,6 @@ describe('pentemelodica-dsp / renderPentemelodica', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
 // Release-tail pitch fix (the cube #669 bug, reproduced + fixed in PENTEMELODICA).
 //
 // The poly bus zeroes a released lane's pitch channel. A voice still RINGING in
@@ -394,7 +389,6 @@ describe('pentemelodica-dsp / renderPentemelodica', () => {
 // release tail's dominant frequency by its zero-crossing rate on the per-voice
 // pre-mixer tap. Before the fix the tail rings at C4 (≈262 Hz); after, at the
 // played pitch. Long release + high sustain keep the tail loud + clean.
-// ----------------------------------------------------------------------------
 describe('pentemelodica-dsp / release-tail pitch (release-tail pitch fix)', () => {
   const MOOG_C4 = MOOG_C4_HZ;
 

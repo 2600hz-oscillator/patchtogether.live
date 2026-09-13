@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/loopback-crop.ts
-//
 // Pure crop-rectangle math for the LOOPBACK module (browser-viewport video
 // source). GL-free + side-effect free so it unit-tests deterministically (see
 // loopback-crop.test.ts).

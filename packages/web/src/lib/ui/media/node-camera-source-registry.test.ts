@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-camera-source-registry.test.ts
-//
 // The node-owned CAMERA capture lifecycle (legacy-removal S1), driven against
 // fakes.
 //
@@ -43,9 +41,7 @@ import {
   type CameraSourceStatus,
 } from './node-camera-source-registry';
 
-// ---------------------------------------------------------------------------
 // The fake world
-// ---------------------------------------------------------------------------
 
 function node(id: string, type = 'cameraInput'): ModuleNode {
   return { id, type, domain: 'video', position: { x: 0, y: 0 }, params: {} } as unknown as ModuleNode;
@@ -238,7 +234,6 @@ function build(h: Harness) {
   return createNodeCameraSourceRegistry(h.deps);
 }
 
-// ---------------------------------------------------------------------------
 
 describe('NODE_CAMERA_SOURCE_TYPES', () => {
   it('names cameraInput and nothing else', () => {

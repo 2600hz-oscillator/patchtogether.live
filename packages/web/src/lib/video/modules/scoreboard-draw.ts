@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/scoreboard-draw.ts
-//
 // SCOREBOARD — pure Canvas2D draw helper for the 4-digit 7-segment display.
 //
 // Lives in its own file because the rendering is pure (no engine / GL /

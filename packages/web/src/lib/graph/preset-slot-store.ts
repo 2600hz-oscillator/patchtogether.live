@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/preset-slot-store.ts
-//
 // IndexedDB persistence for the quick-switch PRESET SLOT bar (the five
 // numbered buttons in the top-left of the menu bar).
 //

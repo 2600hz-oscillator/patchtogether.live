@@ -1,5 +1,3 @@
-// e2e/tests/videovarispeed-crop.spec.ts
-//
 // VIDEOVARISPEED CROP output coverage. Proves the new `crop` video output +
 // "add crop" overlay end-to-end:
 //   • the crop output is a DISTINCT texture that routes to a downstream videoOut;

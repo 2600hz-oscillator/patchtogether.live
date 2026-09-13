@@ -1,5 +1,3 @@
-// e2e/tests/midi-cv-buddy.spec.ts
-//
 // MIDI-CV-BUDDY end-to-end coverage. Without a real MIDI device (or a
 // Playwright fake-device flag for Web MIDI — there isn't one), we can't
 // drive the full event path here. What we CAN assert:

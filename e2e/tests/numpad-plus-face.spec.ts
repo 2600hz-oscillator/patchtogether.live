@@ -1,5 +1,3 @@
-// e2e/tests/numpad-plus-face.spec.ts
-//
 // THE NUMPAD+ FACEPLATE, driven for real — and specifically the seams no other
 // gate can see.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-shader-validate.test.ts
-//
 // The PURE half of shader validation (#1576, workstream 3): log parsing and the
 // compiler-line → source-line mapping.
 //

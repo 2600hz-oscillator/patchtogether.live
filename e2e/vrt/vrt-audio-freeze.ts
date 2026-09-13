@@ -1,8 +1,5 @@
-// e2e/vrt/vrt-audio-freeze.ts
-//
 // FREEZE THE AUDIO GRAPH — AND PROVE IT ACTUALLY FROZE.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE BUG THIS FILE EXISTS FOR: THE VRT AUDIO FREEZE WAS A SILENT NO-OP.
 //
 // Nineteen VRT specs and both scene registries contained some spelling of:
@@ -46,7 +43,6 @@
 // HELD DC level has no time-domain phase — the running audio could not hurt
 // them. That is luck, not design.)
 //
-// ─────────────────────────────────────────────────────────────────────────
 // WHAT THIS HELPER DOES DIFFERENTLY
 //
 //   1. Resolves the AudioContext through BOTH spellings, so it keeps working

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog911-eg-dsp.ts
-//
 // Shared MOOG 911 contour-generator (envelope) core — the pure per-sample DSP
 // extracted from the moog911 worklet so the SHIPPED envelope math is unit-tested
 // (the ADSR-env / moog-ladder-dsp pattern). The 911 is a three-time-constant

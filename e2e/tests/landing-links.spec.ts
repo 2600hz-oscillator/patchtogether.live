@@ -1,5 +1,3 @@
-// e2e/tests/landing-links.spec.ts
-//
 // Phase 2 of the landing-page overhaul: the visual front door — 6 link tiles
 // (NEW RACK / MY RACKSPACES / MODULES / ART GALLERY / DOCS / VRT GALLERY, no
 // numbers, no hero CTA — owner review removed it) and a static header "sign in".

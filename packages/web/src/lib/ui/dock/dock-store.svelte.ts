@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/dock-store.svelte.ts
-//
 // DOCKING — the LOCAL, reactive dock state (model: ./dock.ts + ./dock-entries.ts).
 //
 // One module-scope singleton, like skinStore. Two layers of state:

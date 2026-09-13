@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/sidecar-face-model.ts
-//
 // The PURE model behind the SIDECAR faceplate — the arithmetic for its four
 // derived readouts.
 //

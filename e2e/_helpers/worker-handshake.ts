@@ -1,5 +1,3 @@
-// e2e/_helpers/worker-handshake.ts
-//
 // #1905 — READING THE RENDER-WORKER HANDSHAKE FROM A SPEC.
 //
 // The producer-init race family always presented as ONE number — zero pixels —

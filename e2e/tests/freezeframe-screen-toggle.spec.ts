@@ -1,5 +1,3 @@
-// e2e/tests/freezeframe-screen-toggle.spec.ts
-//
 // SCREEN ON / OFF on FREEZEFRAME — on the surface it ships on (owner ruling,
 // 2026-08-18: "'screen on / off' like that is a thing all video modules should
 // have moving forward").
@@ -77,9 +75,7 @@ async function persistedCollapsed(page: import('@playwright/test').Page): Promis
   });
 }
 
-// -----------------------------------------------------------------------------
 // THE FACE SURFACE - the default shell, which is what actually ships.
-// -----------------------------------------------------------------------------
 
 const FACE_TOGGLE = '[data-testid="freezeframe-face-screen-toggle"]';
 const FACE_CANVAS = '[data-testid="freezeframe-face-canvas"]';

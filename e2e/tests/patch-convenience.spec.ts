@@ -1,5 +1,3 @@
-// e2e/tests/patch-convenience.spec.ts
-//
 // Workflow-mode "Assign to channel N" — the folded-together right-click action,
 // end-to-end against the live app + engine. One gesture does up to THREE things
 // for channel N: assign the module to automation lane N (ALWAYS), wire the clip

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/cable-leg-groups.test.ts
-//
 // ONE BEZIER PER LEG GROUP, and the dashed only-L/R verdict.
 //
 // The two ways this can fail are opposite and both silent:

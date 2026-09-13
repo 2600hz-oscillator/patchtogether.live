@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/module-shell-model.ts
-//
 // PURE display helpers for the RACKLINE <ModuleShell> + <ModuleShellPlaceholder>
 // (P0.3b). Everything a shell/placeholder needs to paint its frame that can be
 // computed WITHOUT the DOM or the live registry lives here, so it is

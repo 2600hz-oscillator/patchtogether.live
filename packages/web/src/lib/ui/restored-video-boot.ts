@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/restored-video-boot.ts
-//
 // Pure decision helper for the persisted-rack VIDEO boot — the seam driven by
 // the `$effect` in Canvas.svelte (see fix/video-engine-persist-reconcile).
 //

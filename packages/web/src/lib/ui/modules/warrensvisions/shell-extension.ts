@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/warrensvisions/shell-extension.ts
-//
 // The WARREN'S VISIONS SHELL EXTENSION — the module-owned end of the extension
 // seam (#1512), joining `backdraft`, `videoOut`, `spirographs`, `mirrorpool`,
 // `freezeframe`, `outlines`, `b3ntb0x` and `4plexvid` on the `fullViewBody`

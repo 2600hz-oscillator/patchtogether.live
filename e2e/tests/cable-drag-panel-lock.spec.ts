@@ -1,5 +1,3 @@
-// e2e/tests/cable-drag-panel-lock.spec.ts
-//
 // PatchPanel open/close contract after the no-drag redesign.
 //
 // The drag-induced panel lock is GONE — cable dragging is retired, so there

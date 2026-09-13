@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/kria-grid-map.ts
-//
 // PURE mapping between the monome grid's 16×8 surface and KRIA's full-grid
 // layout (clean-room reimagining of monome Kria's grid UX — behavior from the
 // public docs, no monome source). Hardware-free so the pad↔edit math and the
@@ -63,9 +61,7 @@ export const TRIG_ROW = 6;
 /** Number of NOTE degrees the editor can address (rows 0-6 = 7 degrees). */
 export const NOTE_DEGREE_RANGE = NOTE_ROWS.bottom - NOTE_ROWS.top + 1; // 7
 
-// ---------------------------------------------------------------------------
 // Key → edit action (PURE)
-// ---------------------------------------------------------------------------
 export type KriaAction =
   | { kind: 'selectTrack'; track: number }
   | { kind: 'selectPage'; page: KriaPage }
@@ -129,9 +125,7 @@ export function keyToAction(x: number, y: number, view: KriaGridView): KriaActio
   }
 }
 
-// ---------------------------------------------------------------------------
 // LED frame computation (PURE)
-// ---------------------------------------------------------------------------
 function frameIndex(x: number, y: number): number {
   return y * GRID_WIDTH + x;
 }

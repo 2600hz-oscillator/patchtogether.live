@@ -1,5 +1,3 @@
-// packages/dsp/src/moog-cp3.ts
-//
 // MOOG CP3 / CP3A CONSOLE PANEL (mixer) AudioWorkletProcessor.
 //
 // CP3 console mixer slice of the Moog System 55 / 35 clone initiative

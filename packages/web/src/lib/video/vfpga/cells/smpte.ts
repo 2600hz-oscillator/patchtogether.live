@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/smpte.ts
-//
 // CLB generator cell `smpte` — renders the SMPTE-bars test pattern (the
 // authenticity dogfood for the fabric → place-and-route path, design §4.2/§5 P1).
 // ZERO inputs (a pure pattern generator), three host-bound knobs (shift /

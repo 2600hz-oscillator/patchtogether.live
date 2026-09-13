@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/picturebox-data.ts
-//
 // PICTUREBOX's 7-slot asset bank — the node.data read/write seam, in ONE place.
 //
 // ⚠ WHY THIS FILE EXISTS. The pad-and-slice that keeps `assets` / `assetNames` /

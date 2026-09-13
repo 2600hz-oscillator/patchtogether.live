@@ -1,5 +1,3 @@
-// e2e/tests/dock-tray-shrink-to-content.spec.ts
-//
 // #1573 — an expanded card's tray must be only as WIDE AS ITS CONTENT NEEDS.
 //
 // Owner, on dev: expanding a ~300 px SOURCERY card opened a tray spanning the whole

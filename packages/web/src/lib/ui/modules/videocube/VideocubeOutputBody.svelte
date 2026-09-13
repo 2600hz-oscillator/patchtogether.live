@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/videocube/VideocubeOutputBody.svelte
-  //
   // The VIDEOCUBE dock full-view body: the volumetric ray-march, the SLICE
   // cross-section and the derived WAVE trace — the three surfaces
   // `VideocubeCard.svelte` draws — plus the SCREEN ON/OFF switch the 2026-08-18

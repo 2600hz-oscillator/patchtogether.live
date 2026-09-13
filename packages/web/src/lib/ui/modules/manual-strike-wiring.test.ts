@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/manual-strike-wiring.test.ts
-//
 // THE CALLER↔SEAM GATE. `manual-strike-actions.test.ts` proves the seam works;
 // this proves the RACK ACTUALLY USES IT, and uses the right half of it.
 //

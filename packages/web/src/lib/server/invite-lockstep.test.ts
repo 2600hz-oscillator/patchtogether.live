@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/invite-lockstep.test.ts
-//
 // LOCKSTEP GUARD — catches ALGORITHM drift between the two halves of the
 // anonymous-invite scheme:
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/outlines-face-model.ts
-//
 // The PURE model behind the OUTLINES faceplate — four readouts, each of which
 // exists because ITS KNOB'S MAPPING IS DISCONTINUOUS WHERE THE DIAL IS NOT.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/chromakey.ts
-//
 // CHROMAKEY — proper 2-input chroma-key compositor (green-screen style).
 //
 // Inputs: `fg` (foreground), `bg` (background). Output: composited video.
@@ -146,7 +144,6 @@ export const chromakeyDef: VideoModuleDef = {
     { id: 'spillSuppress', label: 'Spill',defaultValue: DEFAULTS.spillSuppress, min: 0, max: 1,   curve: 'linear' },
   ],
 
-  // ── FACE (PF-20) ──────────────────────────────────────────────────────────
   //
   // CHROMAKEY is the two-input COMPOSITOR: pick a key colour, and everywhere the
   // FOREGROUND matches it within a threshold, show the BACKGROUND instead.

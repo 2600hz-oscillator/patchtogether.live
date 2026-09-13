@@ -656,9 +656,7 @@ describe('startPresent', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE FRAME TRANSPORT REPORTS BACK
-// ---------------------------------------------------------------------------
 //
 // ⚠ WHAT WAS WRONG WITH THE OLD PROTOCOL. `__presentFrame` returned `void`, so
 // the sink learned nothing from pulling it, and the opener's own liveness flags

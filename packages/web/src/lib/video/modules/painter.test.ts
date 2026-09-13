@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/painter.test.ts
-//
 // PCU coverage for PAINTER's pure drawing core (no canvas, no GL). The video
 // plumbing (painter.ts factory) is exercised on the real GPU by the render-smoke
 // e2e; here we lock the serializable op model + the deterministic paint logic

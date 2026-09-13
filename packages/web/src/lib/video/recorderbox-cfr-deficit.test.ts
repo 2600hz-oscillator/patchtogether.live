@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-cfr-deficit.test.ts
-//
 // REGRESSION: SUSTAINED-deficit A/V desync. Under a render PERSISTENTLY below
 // ~10 fps the old planCfrEmit (maxCatchup=2 → ≤3 frames/tick) let the video
 // frameCount lag the 30 fps grid FOREVER (the grid advances >3 slots/tick when

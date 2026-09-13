@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midi-learn-wiring-audit.test.ts
-//
 // STATIC AUDIT — "every knob/fader is MIDI-learnable" invariant.
 //
 // MIDI Learn is a first-class feature: a plain right-click on ANY Knob or

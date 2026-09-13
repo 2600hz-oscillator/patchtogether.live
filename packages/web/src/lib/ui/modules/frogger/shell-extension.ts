@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/frogger/shell-extension.ts
-//
 // The FROGGER shell extension — the module-owned end of the extension seam
 // (#1512), and an adopter of the `fullViewBody` slot alongside `backdraft`,
 // `videoOut`, `spirographs`, `cameraInput` and `rasterize`.

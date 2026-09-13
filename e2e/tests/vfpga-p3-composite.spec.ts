@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-p3-composite.spec.ts
-//
 // vfpga P3 — the COMPOSITE/ANALOG-era bent VFPGA catalog (sync-bender, chroma-rot,
 // framestore-howl, databend-cvbs), end-to-end on a REAL WebGL2 context. Each bent
 // program needs a video source, so the patch is:

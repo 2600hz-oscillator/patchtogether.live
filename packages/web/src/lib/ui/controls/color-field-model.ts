@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/color-field-model.ts
-//
 // PURE model for <ColorField> — the RACKLINE COLOUR CELL, the primitive for a
 // param whose value is a PACKED 24-BIT RGB INTEGER rather than a scalar.
 //

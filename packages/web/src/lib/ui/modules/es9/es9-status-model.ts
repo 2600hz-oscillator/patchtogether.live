@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/es9/es9-status-model.ts
-//
 // Every STRING the ES-9 bridge body can produce, decided here rather than
 // inline in the component — including the ones that are never painted.
 //

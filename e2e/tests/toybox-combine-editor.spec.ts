@@ -1,5 +1,3 @@
-// e2e/tests/toybox-combine-editor.spec.ts
-//
 // TOYBOX Phase 4 — the bespoke SVG combine-graph editor.
 //
 // Spawns a TOYBOX with two DISTINCT lit layers, opens the console's combine
@@ -267,7 +265,6 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
     // Baseline output (default graph = layer 0 base, fades at amount 0).
     const before = await frozenAverage(page, 2.0);
 
-    // Open the editor (idempotent — the section defaults open in the wide card).
     await ensureCombineOpen(page);
     await expect(page.locator('[data-testid="toybox-graph-svg"]')).toBeVisible();
 

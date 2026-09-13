@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-scope-draw.ts
-//
 // Pure 2D-canvas draw logic for TOYBOX's per-input inline mini-scopes (sibling
 // to audio/modules/scope-draw.ts). Each of the 6 modulation inputs has an
 // always-on scope: it plots the post scale+offset modulation value as a filled

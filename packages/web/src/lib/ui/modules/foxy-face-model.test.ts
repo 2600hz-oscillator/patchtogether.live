@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/foxy-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the FOXY faceplate.
 //
 // This face makes five claims in prose that no shared gate can check, and every

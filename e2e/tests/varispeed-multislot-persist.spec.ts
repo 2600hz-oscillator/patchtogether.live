@@ -53,7 +53,6 @@ test('videovarispeed persists every loaded asset slot to the synced doc', async 
   // spare Escape here would close the whole full view).
   await expect(page.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible();
 
-  // Load the same fixture into three different slots (0, 1, 2).
   for (const i of [0, 1, 2]) {
     await page.locator(`[data-testid="videovarispeed-slot-input-${i}"]`).setInputFiles(FX);
     await page.waitForFunction(

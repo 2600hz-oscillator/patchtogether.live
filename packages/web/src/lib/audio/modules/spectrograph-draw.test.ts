@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/spectrograph-draw.test.ts
-//
 // GPU-free unit tests for the SPECTROGRAPH pure draw core. The web
 // package's vitest runs in node (no DOM canvas), so we test the binning
 // + colormap math directly against plain Float32Array / number[] buffers

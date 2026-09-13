@@ -1,5 +1,3 @@
-// e2e/tests/coverage-group-1-sinks.spec.ts
-//
 // Group 1 of the module-coverage roadmap (see e2e/MODULE-COVERAGE-PLAN.md):
 // shakedown coverage for sinks + utility modules. These are the simplest
 // modules to verify — they accept signals + emit/sink them without

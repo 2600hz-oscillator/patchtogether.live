@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/scope.test.ts
-//
 // Unit test for SCOPE's def shape, including the new mono-video
 // output port added in this PR. SCOPE has no Faust assets so we can
 // import its def directly without dynamic-import hedging.

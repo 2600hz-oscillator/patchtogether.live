@@ -1,5 +1,3 @@
-// e2e/tests/mapper.spec.ts
-//
 // MAPPER (video keyer / matte processor) functional e2e — the REAL
 // source → key → module → audible-output chain.
 //

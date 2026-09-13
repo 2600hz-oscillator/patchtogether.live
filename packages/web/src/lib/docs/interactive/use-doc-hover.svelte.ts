@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/interactive/use-doc-hover.svelte.ts
-//
 // A Svelte ACTION for the interactive virtual-module doc page. Attached to the
 // VirtualModule root, it delegates `mouseover` / `focusin` and resolves the
 // hovered SOURCE element to either a PATCH PORT or a FACEPLATE CONTROL, then

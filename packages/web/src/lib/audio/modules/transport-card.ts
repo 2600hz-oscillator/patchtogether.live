@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/transport-card.ts
-//
 // Card-side helpers (DOM- and Y.Doc-aware) for handling QuicksaveControls
 // callbacks. Each sequencer card provides:
 //   - `snapshot()` — capture the current pattern/params into a snapshot object

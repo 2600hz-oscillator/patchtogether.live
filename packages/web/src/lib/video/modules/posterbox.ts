@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/posterbox.ts
-//
 // POSTERBOX — retro PALETTE-CRUSH (posterizer) video PROCESSOR.
 //
 // Takes a `video` input and truncates every pixel to an authentic retro
@@ -68,9 +66,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 
-// ----------------------------------------------------------------------
 // Depth-ladder model — exported for unit tests + the card readout (no GL).
-// ----------------------------------------------------------------------
 
 /** The 5 per-channel bit-allocation steps the DEPTH knob snaps to.
  *  `bits` is the R/G/B bit split; `levels` = 2^bits per channel;
@@ -118,10 +114,8 @@ export function posterboxBitDepth(rawDepth: number): number {
   return bits[0] + bits[1] + bits[2];
 }
 
-// ----------------------------------------------------------------------
 // Bayer 4×4 ordered dither — shared by the shader (constant-interpolated)
 // + the CPU mirror so JS + GLSL agree exactly.
-// ----------------------------------------------------------------------
 
 /** The standard Bayer 4×4 index matrix (row-major; Bayer 1973). Each cell
  *  0..15; every 2×2 quadrant spreads the full range, which is what makes
@@ -210,9 +204,7 @@ export function posterboxPixel(
   return [r + (qr - r) * m, g + (qg - g) * m, b + (qb - b) * m];
 }
 
-// ----------------------------------------------------------------------
 // GLSL — one texture sample + one Bayer lookup per pixel, single pass.
-// ----------------------------------------------------------------------
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -337,7 +329,6 @@ export const posterboxDef: VideoModuleDef = {
     { id: 'mix',    label: 'Mix',    defaultValue: POSTERBOX_DEFAULTS.mix,    min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
   face: {
     order: ['depth', 'dither', 'mix'],
 

@@ -1,5 +1,3 @@
-// packages/web/src/lib/observability/sentry-server.ts
-//
 // Server/Worker-side Sentry for the Cloudflare Pages runtime — env-gated on
 // PUBLIC_SENTRY_DSN (no DSN ⇒ this module never touches the SDK at all).
 //

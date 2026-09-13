@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/gate-edge-worklet.test.ts
-//
 // The audio-thread gate-edge accumulator, tested by EVALUATING THE SHIPPED
 // SOURCE STRING. `GATE_EDGE_WORKLET_SOURCE` is what `ensureGateEdgeWorklet`
 // hands to `addModule`, and it is what these tests drive — so the tested code

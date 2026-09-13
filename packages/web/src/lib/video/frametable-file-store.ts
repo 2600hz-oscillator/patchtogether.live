@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/frametable-file-store.ts
-//
 // Per-browser persistence for FRAMETABLE atlas files (`.frametable.png` bytes).
 //
 // A loaded/saved frametable is ~45 MiB of frames encoded as a lossless PNG

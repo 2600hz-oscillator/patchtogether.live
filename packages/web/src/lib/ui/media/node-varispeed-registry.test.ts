@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-varispeed-registry.test.ts
-//
 // The node-owned varispeed transport (LEG-02 P2, #1511), driven against fakes.
 //
 // Every leg runs with NO card anywhere — there is no component in this file at
@@ -273,7 +271,6 @@ function openWindow(eng: ReturnType<typeof makeEngine>, _nodeId: string): void {
   eng.setKnob('speed', 0.5); // midpoint knob == 1x
 }
 
-// ---------------------------------------------------------------------------
 
 describe('NODE_VARISPEED_TYPES — the ownership declaration', () => {
   it('every declared type is a REGISTERED module def', () => {
@@ -678,7 +675,6 @@ describe('command delivery + robustness', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE LOADER, THE RESTORE, THE EXPORT AND THE ASPECT RE-FIT (wave-4 face PR)
 //
 // ⚠ THESE FOUR WERE THE CARD'S, AND WERE THEREFORE DOCK-GATED ON `main`.
@@ -689,7 +685,6 @@ describe('command delivery + robustness', () => {
 // sweep and the perf-zip restore. Every leg below therefore runs with NO card
 // — there is no component in this file at all — because "it only works while a
 // surface happens to be mounted" IS the defect class.
-// ---------------------------------------------------------------------------
 
 /** A `File` the node-env test lane can build. */
 function fakeVideo(name = 'clip.webm', size = 1_000, type = 'video/webm'): File {
@@ -914,7 +909,6 @@ describe('the crop ASPECT RE-FIT is the node\'s, not a card $effect', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ⚠ SAME-SESSION LOAD AT A REUSED ID (fleet audit 2026-09-06, finding #3)
 //
 // Same shape as videobox, per slot: `loadEnvelopeIntoStore` re-inserts the
@@ -923,7 +917,6 @@ describe('the crop ASPECT RE-FIT is the node\'s, not a card $effect', () => {
 // holding v1's bytes. The reload pump used to latch "attempted" per slot and
 // short-circuit on "has bytes", so v1 kept PLAYING — ×7 slots. The asset
 // picker writing a fresh `fileMeta` onto a populated node is the same case.
-// ---------------------------------------------------------------------------
 
 describe('⚠ SAME-SESSION LOAD AT A REUSED ID — a slot re-attaches on a CHANGE of handle id', () => {
   async function settle(): Promise<void> {

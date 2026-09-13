@@ -1,5 +1,3 @@
-// art/scenarios/slew-switch/profile.test.ts
-//
 // AUDIO PROFILE for SLEWSWITCH (quad slew limiter + 4→1 sequential switch)
 // (backfill batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

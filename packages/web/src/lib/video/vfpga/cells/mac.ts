@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/mac.ts
-//
 // DSP cell `mac(a, b, scale, offset)` — the multiply-accumulate primitive (the
 // fundamental DSP MAC, design §1.3): per-channel `a * b * scale + offset`,
 // clamped. The building block of every filter/mixer (a scaled product summed onto

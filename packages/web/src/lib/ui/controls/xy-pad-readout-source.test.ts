@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/xy-pad-readout-source.test.ts
-//
 // THE PAD half of the resting-text ruling, denied at the PRIMITIVE level.
 //
 // ── WHY A FIFTH GATE, AND WHY THIS SHAPE (#2038) ────────────────────────────

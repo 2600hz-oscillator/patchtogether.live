@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/mirrorpool-core.ts
-//
 // MIRRORPOOL — pure, off-GL physics core (jsdom-testable; the GLSL shader in
 // mirrorpool.ts mirrors these exact functions so the algebra is verified
 // outside WebGL, which jsdom can't render). NOTHING in here touches `gl`.

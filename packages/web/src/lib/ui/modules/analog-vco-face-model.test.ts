@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/analog-vco-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind ANALOG VCO's derived readouts — the
 // whole difference between this registry and four relabelled knobs.
 //

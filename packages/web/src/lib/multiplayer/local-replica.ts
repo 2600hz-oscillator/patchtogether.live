@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/local-replica.ts
-//
 // LOCAL REPLICA of the rackspace Y.Doc (y-indexeddb), so a relay outage is
 // a SYNC outage, not a product outage.
 //

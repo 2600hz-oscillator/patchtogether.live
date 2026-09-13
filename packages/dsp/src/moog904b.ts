@@ -1,5 +1,3 @@
-// packages/dsp/src/moog904b.ts
-//
 // MOOG 904B — Voltage Controlled High Pass Filter AudioWorkletProcessor.
 //
 // Batch-1 module of the Moog System 55 / 35 clone initiative

@@ -140,7 +140,6 @@ export const pongDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE (PF-20) ─────────────────────────────────────────────────
   //
   // ⚠ THE PROMOTION WAS THE FIX, NOT A SKIN. Before it, pong's lane tile was an
   // empty plate — no court, no score, no faders — WHILE THE GAME RAN, scored,
@@ -449,12 +448,10 @@ export const pongDef: AudioModuleDef = {
   },
 };
 
-// ---------------------------------------------------------------------------
 // Pure draw function — shared between the on-card 2D canvas and any future
 // cross-domain video bridge. Pixel art-y: solid white-on-black, sharp
 // rectangles. Pixel-perfect within the canvas backing store; the card
 // uses a 2× DPR backing for crisp 16-bit-aesthetic edges.
-// ---------------------------------------------------------------------------
 
 export interface PongDrawOpts {
   /** Paddle visual width in CSS pixels. */

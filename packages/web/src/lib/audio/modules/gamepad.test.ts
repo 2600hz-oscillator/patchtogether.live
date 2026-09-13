@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/gamepad.test.ts
-//
 // Pure-function coverage for the GAMEPAD helpers + def shape. The
 // browser Gamepad API path (navigator.getGamepads()) needs a real
 // browser to exercise — covered by the e2e spec.
@@ -132,7 +130,6 @@ describe('gamepad def shape', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // GAMEPAD stick → WAVESCULPT camera-joystick mapping (full-range regression)
 //
 // The reported regression: patching a GAMEPAD stick to WAVESCULPT's X-Y
@@ -149,7 +146,6 @@ describe('gamepad def shape', () => {
 // param range is reachable, that centre is neutral, and that the Y axis
 // is inverted the way the camera convention expects — so a future tweak
 // to either half of the chain can't silently re-clamp the stick.
-// ---------------------------------------------------------------------------
 describe('GAMEPAD stick → WAVESCULPT camera mapping (composed full-range)', () => {
   // WAVESCULPT pos_x / pos_y: bipolar ±1, default knob 0, linear cv-scale.
   const posX = wavesculptDef.params.find((p) => p.id === 'pos_x')!;
@@ -224,14 +220,12 @@ describe('GAMEPAD stick → WAVESCULPT camera mapping (composed full-range)', ()
   });
 });
 
-// ---------------------------------------------------------------------------
 // LEFT-STICK CALIBRATION — pure math (Gladiator NXT first deliverable).
 //
 // The full flow exercised here, GL/hardware-free:
 //   newCalibrationSweep() → recordCalibrationSample()× (the user sweep) →
 //   sweepIsUsable() (gate) → finalizeCalibration() (one-time committed record)
 //   → applyCalibration()/normalizeAxis() (the per-frame read-loop mapping).
-// ---------------------------------------------------------------------------
 describe('calibration sweep capture', () => {
   it('seeds an empty sweep that is NOT yet usable', () => {
     const s = newCalibrationSweep();
@@ -457,9 +451,7 @@ describe('applyCalibration (full per-frame mapping incl. radial deadzone)', () =
   });
 });
 
-// ---------------------------------------------------------------------------
 // CONTROL-REMAP DETECTION — pure diff (broad-control-support feasibility core).
-// ---------------------------------------------------------------------------
 describe('detectChangedControl', () => {
   const reading = (axes: number[], btnValues: number[]): RawGamepadReading => ({
     axes,
@@ -557,9 +549,7 @@ describe('detectChangedControl', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // CONTROL REMAP — per-output binding model (default table + override logic).
-// ---------------------------------------------------------------------------
 describe('gamepad remap bindings', () => {
   const reading = (axes: number[], btnValues: number[]): RawGamepadReading => ({
     axes,
@@ -761,9 +751,7 @@ describe('gamepad remap bindings', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // PER-AXIS INVERT — pure transform + composition with remap (4 toggles).
-// ---------------------------------------------------------------------------
 describe('gamepad per-axis invert', () => {
   // DERIVED MEMBERSHIP rather than a re-typed list: the invertible set IS "every
   // cv output that is a stick axis" — the cv outputs minus the two unipolar
@@ -839,13 +827,11 @@ describe('gamepad per-axis invert', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // RIGHT-STICK CALIBRATION — the right stick stores its OWN StickCalibration
 // record on node.data.rightStickCalibration, applied to rx/ry exactly as the
 // left's is to lx/ly. The calibration MATH is shared (already covered above);
 // these pin that the right record is independent + symmetric on GamepadData.
 // (The read-loop application is covered end-to-end by the e2e spec.)
-// ---------------------------------------------------------------------------
 describe('right-stick calibration (symmetric to left)', () => {
   const cal: StickCalibration = { minX: -0.6, maxX: 0.6, minY: -0.6, maxY: 0.6, deadzone: 0.1 };
 
@@ -870,14 +856,12 @@ describe('right-stick calibration (symmetric to left)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // BOUND-AXIS calibration (the right-stick-never-completes bug). The card's
 // calibration sweep folds the RAW value of the axis BOUND to each stick output
 // (boundAxisRaw), not a hardcoded pad.axes[2]/[3]. Before this fix, a stick whose
 // axes weren't the STD default (a non-standard controller, or one remapped via
 // the UI) drove its rx/ry output fine but the sweep folded a dead hardcoded axis
 // → the range never spanned → "complete calibration" stayed disabled forever.
-// ---------------------------------------------------------------------------
 describe('boundAxisRaw — calibration sweeps the BOUND axis (right-stick fix)', () => {
   const axes = [0.11, 0.22, 0.33, 0.44, 0.55, 0.66]; // 6-axis pad
 
@@ -922,11 +906,9 @@ describe('boundAxisRaw — calibration sweeps the BOUND axis (right-stick fix)',
   });
 });
 
-// ---------------------------------------------------------------------------
 // SAVE / LOAD MAPPING + built-in PRESETS — exportMapping / applyMapping /
 // isGamepadMapping / GAMEPAD_PRESETS (pure paths; the real-Y.Doc apply trap is
 // covered in gamepad-remap-ydoc.test.ts).
-// ---------------------------------------------------------------------------
 describe('gamepad save/load mapping', () => {
   const fullData = (): GamepadData => ({
     bindings: { a: { kind: 'button', index: 2 }, rx: { kind: 'axis', index: 0 } },
@@ -1078,7 +1060,6 @@ describe('gamepad built-in presets', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE VKB GLADIATOR EVO R — the owner's flight stick, from measured hardware.
 //
 // Every number below was captured on the real device (browser console,
@@ -1092,7 +1073,6 @@ describe('gamepad built-in presets', () => {
 //     never moves more than ~0.011 while the stick is being twisted.
 //   * Physical axis 0 (the primary X) is dragged to ~0.26 by a full twist,
 //     because you cannot twist this stick without leaning on it a little.
-// ---------------------------------------------------------------------------
 describe('VKB Gladiator EVO R (measured hardware)', () => {
   /** A 10-axis reading with all buttons released — the shape this device sends. */
   const evoR = (axes: number[]): RawGamepadReading => ({
@@ -1104,7 +1084,6 @@ describe('VKB Gladiator EVO R (measured hardware)', () => {
   const TWIST_POS = evoR([  0.261, -0.163, 0, 0, 0,  1.000, 0, 0, 0, 0]);
   const TWIST_NEG = evoR([ -0.123, -0.167, 0, 0, 0, -1.000, 0, 0, 0, 0]);
 
-  // -------------------------------------------------------------------------
   // THE DIAGNOSIS. A POSITIVE CONTROL on the DETECTOR, run against the real
   // numbers, recording a NEGATIVE finding: the learn path picks axis 5 correctly,
   // so "the twist cannot be assigned" was never a detection failure. (The card
@@ -1112,7 +1091,6 @@ describe('VKB Gladiator EVO R (measured hardware)', () => {
   // `prev` is the arm baseline, not the previous frame — so a full ±1 twist
   // clears the 0.5 threshold with room to spare.) The real defect was in the
   // GESTURE that arms the listener; see GamepadMappingBody's AXIS_GESTURES.
-  // -------------------------------------------------------------------------
   it('the armed learn listener picks the TWIST (axis 5), both directions', () => {
     expect(detectChangedControl(REST, TWIST_POS, { only: 'axis' }))
       .toEqual({ kind: 'axis', index: 5 });
@@ -1137,10 +1115,8 @@ describe('VKB Gladiator EVO R (measured hardware)', () => {
     expect(detectChangedControl(REST, idle, { only: 'axis' })).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
   // THE AUX STICK — the owner's actual request: a third X/Y pair, twist on X,
   // Y left unpatched.
-  // -------------------------------------------------------------------------
   const shape = (outputId: string, reading: RawGamepadReading, bindings: RemapBindings) =>
     shapeOutputValue({
       outputId,
@@ -1200,9 +1176,7 @@ describe('VKB Gladiator EVO R (measured hardware)', () => {
     expect(shape('ly', REST, bindings)).toBeCloseTo(-applyDeadzone(-0.177), 6);
   });
 
-  // -------------------------------------------------------------------------
   // THE PRESET — offered in the picker, never auto-applied on a device match.
-  // -------------------------------------------------------------------------
   const GLADIATOR_EVO_R = 'Gladiator EVO R (twist → AUX X)';
 
   it('ships a Gladiator EVO R preset that puts the twist on AX and leaves AY unbound', () => {

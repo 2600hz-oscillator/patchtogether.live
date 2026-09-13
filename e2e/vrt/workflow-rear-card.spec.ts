@@ -1,5 +1,3 @@
-// e2e/vrt/workflow-rear-card.spec.ts
-//
 // VRT: the REAR CARD — the dock full-view's flip side (rear-card-spec.md).
 // PINNED scenes bracket the range and pin the curation shapes:
 //

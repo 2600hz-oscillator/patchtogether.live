@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midiclock-timelorde-integration.test.ts
-//
 // Integration coverage for the canonical MIDI-slave wiring:
 //   MIDICLOCK.midistart → TIMELORDE.start_in
 //   MIDICLOCK.midistop  → TIMELORDE.stop_in
@@ -271,7 +269,6 @@ function makeMidiclockNode(): ModuleNode {
   };
 }
 
-// ---------------- Tests ----------------
 
 describe('MIDICLOCK → TIMELORDE start/stop bridge integration', () => {
   beforeEach(() => {

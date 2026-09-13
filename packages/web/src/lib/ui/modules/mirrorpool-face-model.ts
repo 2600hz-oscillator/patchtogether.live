@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mirrorpool-face-model.ts
-//
 // The PURE model behind the MIRRORPOOL faceplate — WHERE THE EYE IS STANDING,
 // which is the one thing about this module no single dial can tell you.
 //

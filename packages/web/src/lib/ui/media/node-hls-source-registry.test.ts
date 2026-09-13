@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-hls-source-registry.test.ts
-//
 // The unit gate for the NODE-OWNED HLS TUNER (LEG-02 P3, #1511).
 //
 // ⚠ WHAT THIS FILE IS FOR, stated first because it decides what belongs here.
@@ -48,9 +46,7 @@ import {
   DOM_SOURCE_LANE_TYPES,
 } from '$lib/ui/workflow/dom-source-modules';
 
-// ---------------------------------------------------------------------------
 // A fake world
-// ---------------------------------------------------------------------------
 
 /** A manual clock. Intervals and timeouts fire only when `tick(ms)` is called,
  *  so nothing here depends on wall time and there is no polling to flake on. */
@@ -393,7 +389,6 @@ const PT_SEARCH = {
 
 const PT_DETAILS_HLS = { name: 'Clip One', streamingPlaylists: [{ playlistUrl: 'https://a.example/master.m3u8' }] };
 
-// ---------------------------------------------------------------------------
 
 describe('NODE_HLS_SOURCE_TYPES — the ownership anchor', () => {
   it('is DERIVED from the profiles, and every member is a registered video module', () => {

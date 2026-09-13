@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/singleton-cleanup-registry.test.ts
-//
 // REGISTRY-DRIVEN coverage gate for Phase 4c singleton cleanup.
 //
 // The unrecoverable-ghost bug is specifically about modules that are BOTH

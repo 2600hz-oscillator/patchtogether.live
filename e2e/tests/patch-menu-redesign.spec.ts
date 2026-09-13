@@ -1,5 +1,3 @@
-// e2e/tests/patch-menu-redesign.spec.ts
-//
 // Behavior coverage for the redesigned patch-menu interaction (UX rewrite):
 //
 //   1. The menu EDGE-ALIGNS to the card side it opened from. Right trigger →
@@ -44,7 +42,6 @@ function chrome(page: Page, nodeId: string) {
   return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
 }
 
-/** Open the panel from a given trigger side. */
 async function openFrom(page: Page, nodeId: string, side: 'left' | 'right') {
   const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
   await page

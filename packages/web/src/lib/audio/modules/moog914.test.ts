@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog914.test.ts
-//
 // Two test layers for the MOOG 914 EXTENDED FIXED FILTER BANK (moogafakkin System 55
 // clone):
 //   1. Module-def shape — pins the 914's I/O surface (single audio in, single

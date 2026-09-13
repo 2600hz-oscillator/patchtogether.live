@@ -1,5 +1,3 @@
-// scripts/verify-deploy-sha.mjs
-//
 // The decision logic behind deploy.yml's `verify-ci` job: may we deploy THIS
 // commit?
 //

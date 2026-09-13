@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/camera-device.ts
-//
 // Pure decision helpers for the CAMERA card's device-recovery logic, factored
 // out of CameraInputCard.svelte so the "load a patch whose saved camera is
 // gone, then pick a working one" recovery path is unit-testable WITHOUT a

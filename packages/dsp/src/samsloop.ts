@@ -1,5 +1,3 @@
-// packages/dsp/src/samsloop.ts
-//
 // SAMSLOOP — loop-based sample player AudioWorklet.
 //
 // User uploads a .wav (≤2 MB), AudioContext.decodeAudioData turns it into

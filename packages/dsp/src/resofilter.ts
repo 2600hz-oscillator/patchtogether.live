@@ -1,5 +1,3 @@
-// packages/dsp/src/resofilter.ts
-//
 // RESOFILTER — multi-mode filter port of Resonarium's MultiFilter
 // (gabrielsoule/resonarium, Source/dsp/MultiFilter.{h,cpp}). 5 active
 // modes: LP / HP / BP / Notch / Allpass (Resonarium's filterTextFunction

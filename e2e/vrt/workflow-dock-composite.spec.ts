@@ -1,5 +1,3 @@
-// e2e/vrt/workflow-dock-composite.spec.ts
-//
 // VRT: the WORKFLOW bottom dock — two composite scenes.
 //
 //  1. `workflow-dock-patch` — the pinned MIXMSTRS open in the bottom dock with

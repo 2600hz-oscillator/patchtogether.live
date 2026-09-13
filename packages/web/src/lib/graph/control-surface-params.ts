@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface-params.ts
-//
 // CONTROL SURFACE param adapter — the single resolution layer the surface card
 // uses to turn a binding {moduleId, paramId} into (ParamDef + read + write),
 // regardless of whether the source module stores its params FLAT on node.params

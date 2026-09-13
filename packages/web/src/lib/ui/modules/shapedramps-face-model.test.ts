@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/shapedramps-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the SHAPEDRAMPS faceplate (cut A, batch 2).
 //
 // Two claims are worth pinning here rather than in a comment, because both are

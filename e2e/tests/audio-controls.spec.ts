@@ -1,5 +1,3 @@
-// e2e/tests/audio-controls.spec.ts
-//
 // Audio-domain analog of video-controls.spec.ts: assert that mutating
 // a knob/CV input on a low-coverage module produces a measurable delta
 // in the produced audio signal. The pattern is the same — drive a

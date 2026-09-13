@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/adsr.ts
-//
 // ADSR — classic attack/decay/sustain/release envelope generator.
 //
 // Gate-driven unipolar 0..1 envelope. Rising gate opens the attack stage;

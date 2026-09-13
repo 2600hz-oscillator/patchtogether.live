@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-dsp.test.ts
-//
 // Unit gates for the WARREN'S SPECTRUM spectral-resynth engine.
 //
 // Two of these are load-bearing beyond ordinary regression cover:
@@ -32,9 +30,7 @@ import {
 
 const SR = 48000;
 
-// ---------------------------------------------------------------------------
 // Test signal generators + measurement helpers
-// ---------------------------------------------------------------------------
 
 /** A tone whose frequency STEPS every `stepMs` — the analysis RATE is what
  *  decides how faithfully the bank follows it, so it is the right probe for
@@ -150,7 +146,6 @@ function render(input: Float32Array, o: EngineOpts = {}): Float32Array {
   return makeEngine(o).processBlock(input);
 }
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum engine — basics', () => {
   it('resynthesises a steady tone as a tracked partial near its own frequency', () => {
@@ -196,9 +191,7 @@ describe('warrensspectrum engine — basics', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE SLICE NEGATIVE CONTROL — mandatory + permanent.
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum SLICE — the CORRECTED range (VST divergence gate)', () => {
   // The VST's own clamp, for reference. `setSliceMs` (SpectralResynth.cpp:
@@ -335,9 +328,7 @@ describe('warrensspectrum SLICE — the CORRECTED range (VST divergence gate)', 
   });
 });
 
-// ---------------------------------------------------------------------------
 // HOST-SYNCED COMMIT BOUNDARIES — the per-block, timeline-derived semantic.
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum SYNC — the boundary is RE-DERIVED per block, not configured once', () => {
   /** 1/16 at 120 BPM, 48 kHz = (60/120)·48000·(4/16) = 6000 samples. */
@@ -461,9 +452,7 @@ describe('warrensspectrum SYNC — the boundary is RE-DERIVED per block, not con
   });
 });
 
-// ---------------------------------------------------------------------------
 // THE PHASE-1 ACCEPTANCE CRITERION — the SMS residual.
-// ---------------------------------------------------------------------------
 
 describe("warrensspectrum RESIDUAL — the SMS stochastic half (phase-1 VST criterion)", () => {
   /**
@@ -535,9 +524,7 @@ describe("warrensspectrum RESIDUAL — the SMS stochastic half (phase-1 VST crit
   });
 });
 
-// ---------------------------------------------------------------------------
 // The remaining spectral controls — each with its own negative control.
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum FREEZE', () => {
   it('holds the spectrum: the frozen tail ignores a changed input', () => {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/faust-runtime.ts
-//
 // Minimal runtime helper for instantiating a pre-compiled Faust module
 // (.wasm + metadata .json + pre-bundled .worklet.js from packages/dsp/dist/)
 // as an AudioWorkletNode.

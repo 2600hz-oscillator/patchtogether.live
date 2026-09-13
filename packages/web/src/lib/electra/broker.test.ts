@@ -1,4 +1,3 @@
-// packages/web/src/lib/electra/broker.test.ts
 import { describe, it, expect, vi } from 'vitest';
 import {
   ElectraBroker,

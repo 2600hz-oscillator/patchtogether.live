@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/matrixmix-grid.test.ts
-//
 // PURE unit tests for the MATRIXMIX matrix-classification core. No Svelte / no
 // Yjs — exercises every cell-kind branch (direct / inputTaken / outputFanout /
 // legalEmpty / illegal) + the legal-patch predicate + the jack/edge helpers.
@@ -16,7 +14,6 @@ import {
   type Jack,
 } from './matrixmix-grid';
 
-// ── fixtures ──
 const inPort = (id: string, type = 'audio'): PortDef => ({ id, type });
 const outPort = (id: string, type = 'audio'): PortDef => ({ id, type });
 

@@ -1,5 +1,3 @@
-// e2e/tests/noise.spec.ts
-//
 // NOISE behavioral e2e: LEVEL=0 must silence the output (a knob-value →
 // definite-silence contract the registry sweeps don't pin — they only
 // assert each output EMITS when driven). Mount smoke + per-output

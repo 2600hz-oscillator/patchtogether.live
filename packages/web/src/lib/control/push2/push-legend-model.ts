@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-legend-model.ts
-//
 // LEGEND MODE — on-device documentation for the Push 2's 960×160 display, and
 // the pure model behind it. Hold the LEGEND button (`PUSH_CC_LEGEND`) and the
 // screen becomes 2 rows × 8 slices naming what the surrounding buttons do IN THE
@@ -139,9 +137,7 @@ export function legendScope(): {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Cell builders. Each is a thin wrapper over the classifier the ROUTER calls.
-// ---------------------------------------------------------------------------
 
 function cell(index: number, tag: string, label: string): PushLegendCell {
   return { index, tag, label, bound: label !== '' };
@@ -208,9 +204,7 @@ function lengthEditSceneCell(index: number): PushLegendCell {
   return cell(index, sceneTag(index), isEditExitSceneRow(row) ? 'EXIT' : '');
 }
 
-// ---------------------------------------------------------------------------
 // The rows
-// ---------------------------------------------------------------------------
 
 /** Caption for the scene row, naming the view/mode it documents. */
 function sceneCaption(ctx: LaunchpadLegendContext): string {

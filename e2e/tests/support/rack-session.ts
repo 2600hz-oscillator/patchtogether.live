@@ -1,5 +1,3 @@
-// e2e/tests/support/rack-session.ts
-//
 // THE SHARED RACK SESSION — one `/rack` boot per WORKER, reused by every row of
 // a registry-driven sweep, instead of one boot per row.
 //

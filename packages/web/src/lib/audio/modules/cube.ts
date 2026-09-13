@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cube.ts
-//
 // CUBE — 3D wavetable-navigator oscillator (slice 3): the web AudioModuleDef +
 // factory. for the design.
 //
@@ -353,7 +351,6 @@ export const cubeDef: AudioModuleDef = {
     { id: 'cube-table-stack', label: 'Table stack', kind: 'cell', testidPrefix: 'cube-table-stack' },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // ⚠ SIX BANDS IS LOAD-BEARING. `DOCK_TAB_MIN_BANDS` is 7, and a seventh band
   // flips the whole face to a TAB RAIL: row packing stops and every band hint

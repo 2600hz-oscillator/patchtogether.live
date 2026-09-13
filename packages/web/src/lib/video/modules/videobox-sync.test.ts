@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videobox-sync.test.ts
-//
 // Drift-correction math + sync-write builder. No DOM, no engine —
 // just the pure helpers under videobox-sync.ts.
 

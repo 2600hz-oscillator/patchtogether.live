@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/textmarquee-layout.ts
-//
 // TEXTMARQUEE — pure (WebGL-free, DOM-optional) layout + scroll/position math
 // for the rich-text marquee video module.
 //
@@ -28,11 +26,9 @@
 // DOM and serializes it into a RichTextModel, then renders that model to an
 // offscreen 2D canvas with the SAME layout this file computes.
 
-// ----------------------------------------------------------------------
 // Rich-text model — the serializable shape persisted in node.data.richText
 // and consumed by the renderer. Deliberately minimal (this is an
 // "extremely basic" editor, not a word processor).
-// ----------------------------------------------------------------------
 
 /** Paragraph horizontal alignment. */
 export type RichAlign = 'left' | 'center' | 'right';
@@ -217,9 +213,7 @@ export function modelPlainText(model: RichTextModel): string {
     .join('\n');
 }
 
-// ----------------------------------------------------------------------
 // Layout — pure line splitting + metrics.
-// ----------------------------------------------------------------------
 
 /** A run placed on a line, with its measured width + x offset within the line. */
 export interface PlacedRun {
@@ -322,9 +316,7 @@ export function lineAlignOffset(lineWidth: number, blockWidth: number, align: Ri
   return 0;
 }
 
-// ----------------------------------------------------------------------
 // CV-calibrated POSITION + SCROLL math.
-// ----------------------------------------------------------------------
 //
 // Param convention (matches the engine + cv-scale.ts):
 //   * posX / posY are LINEAR knobs in [0, 1], default 0.5 (centred). A bipolar

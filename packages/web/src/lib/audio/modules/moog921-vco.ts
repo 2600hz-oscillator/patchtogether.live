@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog921-vco.ts
-//
 // MOOG 921 VCO — the first module of the Moog System 55 / 35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md).
 // Voltage-controlled oscillator faithful to
@@ -146,7 +144,6 @@ export const moog921VcoDef: AudioModuleDef = {
     { id: 'level',       label: 'Level', defaultValue: 1,   min: 0,     max: 2,    curve: 'linear' },
   ],
 
-  // ── THE FACE ────────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR, MUSICALLY: the 921A driver and the 921B slave packed into
   // ONE module, and the thing that buys you is the jack the pair does not have

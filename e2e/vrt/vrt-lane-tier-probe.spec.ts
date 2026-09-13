@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-lane-tier-probe.spec.ts
-//
 // PROBE (VRT_PROBE=1) — WHAT DOES A LANE TILE ACTUALLY LAY OUT, PER TIER?
 //
 // Asserts nothing. Prints, for a module at each of the three LANE tiers

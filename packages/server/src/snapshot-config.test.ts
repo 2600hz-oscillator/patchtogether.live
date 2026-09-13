@@ -1,5 +1,3 @@
-// packages/server/src/snapshot-config.test.ts
-//
 // Bug 1 (B5): tighten the Hocuspocus snapshot debounce so a fully cold
 // reload sees at most 5s of staleness rather than the library default 10s.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/trails/trails-status-model.ts
-//
 // EVERY STRING AND EVERY LAMP STATE THE TRAILS BODIES CAN PRODUCE, as pure
 // functions — including the ones that are never painted.
 //

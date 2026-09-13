@@ -1,5 +1,3 @@
-// art/scenarios/modtris/gate-pulses.test.ts
-//
 // ART for MODTRIS (research prototype). Mirrors the PONG ART in shape:
 //
 //   1. Pure-stepper behaviour at scale: drive the stepper with scripted

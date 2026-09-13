@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-color-passthrough.test.ts
-//
 // INTEGRATION / PASSTHROUGH test for the per-module control colour.
 //
 // THE PRINCIPLE THIS GUARDS: colour is SOURCE-MODULE state, read LIVE

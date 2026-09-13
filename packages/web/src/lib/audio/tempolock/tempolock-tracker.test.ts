@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/tempolock/tempolock-tracker.test.ts
-//
 // THE CANONICAL TEMPOLOCK FIXTURES, in the order the module was specified —
 // fixture 1 is the owner's case verbatim and is the reason the module exists.
 //

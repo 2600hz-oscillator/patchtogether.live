@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/outlines-sim.ts
-//
 // OUTLINES — pure, WebGL-free particle simulation + output-derivation math.
 //
 // Split out from the module def (outlines.ts) so the entire stateful sim —
@@ -24,9 +22,7 @@
 
 import { mulberry32 } from '$lib/sync/prng';
 
-// ---------------------------------------------------------------------------
 // Constants — the field, the param ranges, and the safety cap.
-// ---------------------------------------------------------------------------
 
 /** The square render field, in pixels. Matches the spec's "1024-px field".
  *  The video engine's FBO is 1024×768 (4:3); we sim + render the shapes in
@@ -73,13 +69,11 @@ export const RATE_ENGAGE_THRESHOLD = 0.001;
  *  ~10k) — cheap enough to run inline without spatial hashing. */
 export const MAX_CIRCLES = 200;
 
-// ---------------------------------------------------------------------------
 // SHAPE — a discrete selector over [circle, triangle, square, pentagon,
 // hexagon, octagon]. Each non-circle shape is a REGULAR polygon inscribed in
 // the diameter (every vertex on the circle of radius d/2 — circumradius = d/2),
 // so the bounding-circle collision radius (d/2) is valid unchanged. Index 0 is
 // the legacy CIRCLE (smooth — treated specially everywhere as the disc path).
-// ---------------------------------------------------------------------------
 
 /** Sides per shape index. Index 0 = circle (0 sides → the smooth-disc path).
  *  1=triangle(3) 2=square(4) 3=pentagon(5) 4=hexagon(6) 5=octagon(8). */
@@ -108,12 +102,10 @@ export function mapShape(shape01: number): number {
   return Math.min(SHAPE_COUNT - 1, Math.floor(s * SHAPE_COUNT));
 }
 
-// ---------------------------------------------------------------------------
 // ROTATION — a LIVE GLOBAL angular velocity (NOT spawn-latched). Bipolar: the
 // knob/CV center (0.5) = 0 rad/s (no spin), left extreme (0) = fast CCW, right
 // extreme (1) = fast CW. Every live shape shares one global rotation angle that
 // advances by this velocity each step, so the WHOLE field spins coherently.
-// ---------------------------------------------------------------------------
 
 /** Max spin speed at either extreme, rad/s. ~2 full turns/s at the extremes —
  *  fast but legible at 60fps. */
@@ -131,9 +123,7 @@ export function mapAngularVel(rot01: number): number {
   return (r - ROT_CENTER) * 2 * ROT_MAX_RAD_S;
 }
 
-// ---------------------------------------------------------------------------
 // Param mapping — knob/CV 0..1 (clamped) → physical units.
-// ---------------------------------------------------------------------------
 
 /** Clamp a 0..1 knob/CV value. CV can arrive slightly out of range. */
 export function clamp01(x: number): number {
@@ -190,9 +180,7 @@ export function mapRateIntervalMs(rate01: number): number | null {
   return Math.max(RATE_MIN_INTERVAL_MS, interval);
 }
 
-// ---------------------------------------------------------------------------
 // Shape state.
-// ---------------------------------------------------------------------------
 
 export interface Circle {
   /** Center x in [0, OUTLINES_FIELD]. */
@@ -331,13 +319,11 @@ export interface CirclesSpawnParams {
   collide?: boolean;
 }
 
-// ---------------------------------------------------------------------------
 // Inter-shape ELASTIC collision (the COLLIDE gate mode). The bounding-circle
 // radius is diameter/2 = the CIRCUMRADIUS for every shape (circle or N-gon),
 // which fully contains the shape, so this disc test is a valid (slightly
 // conservative — it fires when the circumcircles touch, just before polygon
 // edges necessarily do) collision for all shapes with ZERO change.
-// ---------------------------------------------------------------------------
 
 /**
  * EDGE-based pair test: two shapes collide when the distance between their
@@ -411,7 +397,6 @@ export function resolveElasticPair(a: Circle, b: Circle): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------------------
 // Regular-polygon geometry — point-in-shape + distance-to-edge, used by BOTH
 // the per-pixel output derivation AND (the same math) the 2D canvas paint. A
 // regular N-gon is the intersection of N half-planes, one per edge; the edge
@@ -431,7 +416,6 @@ export function resolveElasticPair(a: Circle, b: Circle): boolean {
 // so the per-pixel test (polyRadiusCached) is N dot products with ZERO trig.
 // This replaced an earlier per-pixel polyRadius()/apothemOf() that called
 // Math.cos/Math.sin per edge per pixel per shape per frame — the #699 regression.
-// ---------------------------------------------------------------------------
 
 /** Is the point (px,py) inside the shape `c` (rotated by the global `rot` plus
  *  the shape's seeded baseAngle)? Circle (sides 0) → the disc test; polygon →
@@ -499,9 +483,7 @@ export function shapeVertices(c: Circle, rot = 0): Array<[number, number]> {
   return verts;
 }
 
-// ---------------------------------------------------------------------------
 // The simulation.
-// ---------------------------------------------------------------------------
 
 export class OutlinesSim {
   /** Active shapes, oldest first (so cull-oldest = shift()). */
@@ -723,14 +705,12 @@ export class OutlinesSim {
  *  `OutlinesSim`; this keeps any straggling `CirclesSim` import resolving. */
 export { OutlinesSim as CirclesSim };
 
-// ---------------------------------------------------------------------------
 // Output-derivation math — pure functions over the shape list + a sample
 // point + the live-global rotation angle. outlines.ts renders these per-pixel
 // on the 2D scene canvases (passing the sim's rotationAngle); the unit suite
 // asserts them point-wise without a canvas. Passing `rot` makes EVERY output
 // (overlap / contour / combine / mapped) reflect the same spin as the rendered
 // geometry.
-// ---------------------------------------------------------------------------
 
 /** A shape's fade alpha, defaulting to 1 for plain {x,y,vx,vy,diameter} test
  *  discs that predate the decay fields (so all the derivation math degrades
@@ -867,7 +847,6 @@ export function mappedMaskAt(circles: readonly Circle[], px: number, py: number,
   return overlapCountAt(circles, px, py, rot) >= 2 ? 1 : 0;
 }
 
-// ---------------------------------------------------------------------------
 // DERIVE-ONCE field — the hot-path optimization. Instead of independently
 // scanning the whole field × every shape for EACH of the four outputs (the
 // #699 regression compounded that with per-pixel polygon trig), compute the
@@ -891,7 +870,6 @@ export function mappedMaskAt(circles: readonly Circle[], px: number, py: number,
 // The result is byte-for-byte identical to calling overlapCountAt /
 // overlapAlphaAt / overlapValueAt at each cell center — it's purely a different
 // iteration order — so every output is VISUALLY IDENTICAL.
-// ---------------------------------------------------------------------------
 
 /** Reusable coverage fields for a downsampled grid. Allocated lazily + reused
  *  across frames (no per-frame allocation). */

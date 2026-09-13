@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer.spec.ts
-//
 // CLIP PLAYER real-source-chain proof (the poly/real-source discipline): a
 // LAUNCHED note clip must drive a downstream VOICE to AUDIBLE output through the
 // REAL TIMELORDE-locked clock — not just "an edge materializes". The chain is

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vst/vst-persistence.ts
-//
 // Plugin persistence + auto-remount for a VST card — a PURE driver over
 // injected IO (read/write the node's Y.Doc data, send control messages,
 // timers), so every branch unit-tests without a store, a socket, or a clock

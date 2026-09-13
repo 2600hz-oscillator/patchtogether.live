@@ -1,5 +1,3 @@
-// e2e/tests/sourcery.spec.ts
-//
 // SOURCERY (2-input region shape-match recolor) — DETERMINISTIC render-smoke
 // (DRS) over the REAL two-video-source chain. The spec is the standard's
 // "real source chain" gate for a source-dependent video module: wire TWO real

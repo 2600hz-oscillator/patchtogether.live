@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-shader-validate.ts
-//
 // COMPILE VALIDATION FOR USER-SUPPLIED GLSL (#1576, workstream 3).
 //
 // Answers the one question `extractShaderParams` structurally cannot: does this

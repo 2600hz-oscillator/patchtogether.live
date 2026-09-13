@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/archivist-face-model.test.ts
-//
 // The ARCHIVIST face, pinned where a def-reading gate cannot look.
 //
 // ⚠ WHY THIS FILE EXISTS RATHER THAN LEANING ON THE FLEET GATES. archivist is

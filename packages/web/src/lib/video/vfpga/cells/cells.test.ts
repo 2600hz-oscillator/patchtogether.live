@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/cells.test.ts
-//
 // Cell-library tests — runs over EVERY glob-collected cell so a new cells/<op>.ts
 // auto-enrols. Asserts the kernel<->metadata contract the P&R + validation gate
 // rely on: a (type, op) lookup; the kernel declares the shared frag contract,

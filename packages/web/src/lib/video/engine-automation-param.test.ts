@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/engine-automation-param.test.ts
-//
 // Regression coverage for VIDEO-param clip-automation drive + the NO-STUCK
 // guarantee (fix/video-automation).
 //

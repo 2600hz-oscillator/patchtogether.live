@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kickdrum-face.test.ts
-//
 // The PIN for KICK DRUM's curated face — the design decisions, projected
 // through the same PURE selectors the shell renders from (`curatedFace`,
 // `dockFacePlan`, `paramCellKind`, `shellCellFor`), so a later edit that
@@ -326,9 +324,7 @@ describe('kickdrum face — the primitives each cell resolves to', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // PF-20 — THE FACEPLATE STRUCTURE (kickdrum is the platform's first adopter)
-// ─────────────────────────────────────────────────────────────────────────
 //
 // module-face-lint proves this face's hero/sidebar are WELL-FORMED — every key
 // ranked, every preset in range, the split total. It is structurally blind to

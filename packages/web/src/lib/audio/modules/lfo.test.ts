@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/lfo.test.ts
-//
 // Phase 1 of the shared-state-sync plan: assert that the LFO's pure
 // phase computation is a deterministic function of (t_ms, params).
 // We test the leaf module (lfo-state.ts) rather than lfo.ts because the

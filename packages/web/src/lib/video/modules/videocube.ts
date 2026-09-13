@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videocube.ts
-//
 // VIDEOCUBE — a VIDEO version of the audio CUBE oscillator, REBUILT as a GENUINE
 // volumetric 3D render (the flat-blend v1 was owner-rejected).
 //
@@ -245,10 +243,8 @@ const AUDIO_PARAMS: ReadonlySet<string> = new Set([
 // Params pushed straight to the oscillator worklet's AudioParams (pitch + gain).
 const OSC_PARAMS: ReadonlySet<string> = new Set(['tune', 'fine', 'level']);
 
-// ----------------------------------------------------------------------
 // GLSL — REDUCE (audio luma strip) + COMBINE (the volumetric ray-march). Both
 // transliterate the pure CPU mirror in videocube-core.ts / cube-dsp.ts 1:1.
-// ----------------------------------------------------------------------
 
 // Audio REDUCE pass: render ONE reader-selected ring frame's image into a
 // 256×FIELD_ROWS luma strip (x = image-x/phase, y = image-row), read back once
@@ -633,7 +629,6 @@ void main(){
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
-// ----------------------------------------------------------------------
 // SLICE-VIZ shaders (the 6 dedicated readout ports). These do NOT touch the
 // COMBINE ray-march / camera / field core (confirmed correct) — they READ the
 // SAME rings / SAME slice plane / SAME cube-dsp field the module already
@@ -641,7 +636,6 @@ void main(){
 // SAME 1:1 cube-dsp transliterations COMBINE_FRAG uses inline (kept a shared
 // string here so SLICE_FRAG + DEPTH_FRAG don't each re-duplicate them); COMBINE
 // keeps its own untouched copy.
-// ----------------------------------------------------------------------
 
 const VIZ_FIELD_HELPERS = `
 const float N = ${N}.0;
@@ -1234,7 +1228,6 @@ export const videocubeDef: VideoModuleDef = {
     { id: 'videocube-c-file-input', label: 'CEIL table', kind: 'other', testidPrefix: 'videocube-c-file-input' },
   ],
 
-  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. FRAMETABLE makes TIME scannable; VIDEOCUBE makes SPACE out
   // of three of those tables. Three 60-frame rings become the FLOOR, the WALL

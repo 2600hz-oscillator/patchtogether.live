@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/slewswitch.test.ts
-//
 // THE COVERAGE THIS FILE PAYS (#1524).
 //
 // `BEHAVIORAL_MODULE_EXEMPT['slewSwitch']` skipped the whole module from the

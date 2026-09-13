@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavesculpt.ts
-//
 // WAVESCULPT — hybrid 4-oscillator 3D video synth.
 //
 // v2 (post-wavetable-engine refactor):
@@ -782,7 +780,6 @@ function resolveOscFrames(oscData: WavesculptOscData | undefined): ResolvedFrame
   };
 }
 
-// ---------- module def ----------
 
 const POLL_MS = 200;
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -1152,66 +1149,15 @@ export const wavesculptDef: AudioModuleDef = {
   ],
 
   /**
-   * THE FACEPLATE.
+   * Camera controls rank first because zoom changes both ribbon size and audio
+   * gain. Pad axes are excluded from lane ranking, leaving zoom, master_gain,
+   * and blink_mode as the first lane controls.
    *
-   * ⚠ THE RANK IS NOT THE DECLARATION ORDER, AND THE INVERSION IS THE ONE
-   * DECISION HERE WORTH DEFENDING. The params declare the four oscillators
-   * first and the camera late. The face puts the CAMERA first, because it is
-   * the only control set that moves BOTH DOMAINS AT ONCE — `docs.controls.zoom`
-   * states the coupling: closer is bigger ribbons visually AND louder audibly,
-   * one shared distance number. It is also the only thing here a player
-   * operates continuously while performing, and the only control whose effect
-   * is audible with NO GATE PATCHED AT ALL: the four voices are silent until
-   * their gates open, while distance gain applies regardless.
-   *
-   * The counter-argument, stated so this reads as a decision: an oscillator
-   * with no table and no tuning makes no sound, so the voices "come first".
-   * That is true of the SETUP order and false of the PERFORMANCE order, and a
-   * faceplate ranks the second.
-   *
-   * ⚠ `order` AND `pages` ARE INDEPENDENT ARTIFACTS, and this face uses that on
-   * purpose. `order` is PRIORITY — it feeds the rank and, through `laneOrder`,
-   * the lane tier. `pages` is GROUPING — what the dock draws as bands. So the
-   * camera can rank first while `master_gain` still reaches the lane: the pad
-   * axes cost no lane rank at all (`laneOrder` drops every declared pad's axes,
-   * because a pad is square and a lane knob column is 46 px), so the first
-   * three LANE-eligible keys here are `zoom`, `master_gain`, `blink_mode` —
-   * the one camera axis that is both audible and visual, the level, and the
-   * mode that decides what the picture is. Deliberately NOT `pos_x`/`pos_y`:
-   * splitting a pad into two lane knobs is exactly the 2-D-gesture-flattened
-   * loss `xyPads` exists to prevent.
-   *
-   * ⚠ TEN BANDS, AND BAND 2 IS A PLATFORM-FORCED DEVIATION FROM THE REVIEWED
-   * MOCKS. The build spec put each oscillator's wavetable strip INSIDE that
-   * oscillator's band (`wavesculpt-osc-1` in OSC RED, and so on). That key
-   * form does not exist. A control-family key in `order`/`pages` is the
-   * TEMPLATE `<familyId>-{n}`, and `resolveFaceControl` resolves it to
-   * `kind: 'family'` — ONE cell standing for ALL of that family's instances.
-   * It is not addressable per index, so the strips CANNOT be distributed
-   * across the four OSC bands. (milkdrop is the only prior adopter and has
-   * exactly one instance per family, which is why nothing had hit this.)
-   *
-   * So the three families share a band of their own, ranked second: you pick a
-   * voice's table BEFORE you shape it, and having all four strips adjacent is
-   * how you compare voices. §7.2's argument for splitting one family into
-   * three is untouched by this — that argument is about the CELL KIND (two
-   * generic `selector`s and a `file`, versus one `panel` that would need a
-   * probe that is either circular or blind), not about placement.
-   *
-   * ⚠ THE FOUR OSCILLATOR BANDS ARE STILL FOUR BANDS, and that is what engages
-   * the tab rail HONESTLY. Four oscillators are "the same idea four times",
-   * which normally reads as CLUSTER rather than PAGE — but each carries twelve
-   * params plus (for three of them) a colour cell, and four of those in one
-   * band is a wall of knobs with four sub-headers on a dock that folds at
-   * 720p. The clusters then do their proper job INSIDE each band: SHAPE, ENV
-   * and FX are three different ideas about ONE voice. The rail engages on BAND
-   * COUNT alone, so `face.tabbed` is deliberately ABSENT — it is fenced to
-   * explicit owner instruction per module, and there is none naming wavesculpt.
-   * Nothing here is padded to reach the count; the split stands on the
-   * arithmetic above and the rail is a consequence.
-   *
-   * ⚠ ALPHA HAS NO COLOUR CELL AND THAT IS BY DESIGN, not an omission: it is
-   * the alpha/mask layer, and it has no colour param to rank.
+   * Control-family keys address the whole family, not individual oscillator
+   * instances, so wavetable strips share a band instead of living in each OSC
+   * band. Each oscillator keeps its own band to fit its controls; the tab rail
+   * follows from the band count without an explicit tabbed override.
+   * ALPHA is a mask layer and has no colour param.
    */
   face: {
     order: [

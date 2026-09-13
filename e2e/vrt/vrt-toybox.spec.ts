@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-toybox.spec.ts
-//
 // Dedicated per-content VRT for TOYBOX (Phase 1). Spawns a TOYBOX, points
 // layer 0 at each of the four bundled shaders in turn, FREEZES the engine
 // clock deterministically (window.__toyboxFreeze(time) pins iTime to a

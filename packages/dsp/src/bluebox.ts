@@ -1,5 +1,3 @@
-// packages/dsp/src/bluebox.ts
-//
 // BLUEBOX — DTMF dialer with phreaker buttons.
 //
 // What it does:
@@ -77,7 +75,6 @@ if (typeof _G.registerProcessor === 'undefined') {
   _G.registerProcessor = () => {};
 }
 
-// ─── constants ───────────────────────────────────────────────────────────────
 
 /** Click-suppression ramp at button on/off, in milliseconds. ~1 ms is
  *  short enough to feel instantaneous to the user (faster than the

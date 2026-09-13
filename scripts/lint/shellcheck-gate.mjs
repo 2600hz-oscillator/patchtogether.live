@@ -111,10 +111,8 @@ function main() {
     process.exit(1);
   }
 
-  // -----------------------------------------------------------------------
   // CONTROLS FIRST — so a dead instrument reports as "the linter stopped
   // working", not as "no problems found".
-  // -----------------------------------------------------------------------
   const scratch = fs.mkdtempSync(path.join(ROOT, 'node_modules/.cache/shellcheck-control-'));
   try {
     for (const control of CONTROLS) {
@@ -141,9 +139,7 @@ function main() {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 
-  // -----------------------------------------------------------------------
   // THE TREE — every tracked *.sh, zero findings permitted.
-  // -----------------------------------------------------------------------
   const files = execFileSync('git', ['ls-files', '*.sh'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n')
     .filter(Boolean);
@@ -167,9 +163,7 @@ function main() {
     );
   }
 
-  // -----------------------------------------------------------------------
   // EVERY SUPPRESSION CARRIES ITS REASONING.
-  // -----------------------------------------------------------------------
   const undocumented = [];
   for (const file of files) {
     const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-logic-maths.test.ts
-//
 // Unit tests for ANALOGLOGICMATHS pure helpers + module-def shape. Worklet
 // rendering is covered by the ART harness next door.
 

@@ -1,5 +1,3 @@
-// e2e/tests/workflow-shell-dual-glyph.spec.ts
-//
 // The tidyVco DUAL-DISPLAY glyph (owner spec) under `?shell=1`:
 //
 //   (a) DOCK: the hero band shows BOTH displays — the param-derived STATIC
@@ -57,7 +55,6 @@ async function gotoWorkflowShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Set the viewport ZOOM and wait for the LOD tier to settle on the shell. */
 async function setZoomTier(page: Page, nodeId: string, zoom: number, tier: string): Promise<void> {
   await page.evaluate((z) => {
     const f = (globalThis as unknown as { __flow: { getViewport: () => { x: number; y: number; zoom: number }; setViewport: (vp: { x: number; y: number; zoom: number }, o?: { duration?: number }) => void } }).__flow;
@@ -83,7 +80,6 @@ async function spawnLoneTidyVco(page: Page): Promise<void> {
   ]);
 }
 
-/** Open the tidyVco dock full-view from its lane tile's expand pill. */
 async function openDock(page: Page, nodeId: string) {
   await setZoomTier(page, nodeId, 0.6, 'full');
   await page

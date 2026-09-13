@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/canvas/import-confirm.test.ts
-//
 // Pure-unit coverage for the P4 destructive-import guard decision.
 
 import { describe, it, expect, vi } from 'vitest';

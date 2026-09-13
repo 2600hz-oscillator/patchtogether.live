@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/trails-decode.ts
-//
 // THE BELA TRAILS WIRE DECODER — pure, DOM-free, clock-injected.
 //
 // Trails is a quad touch-gesture recorder: a 85 × 85 mm multitouch pad whose

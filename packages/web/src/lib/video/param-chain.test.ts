@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/param-chain.test.ts
-//
 // Unit-level proof that the video-domain param chain (UI store → snapshot
 // bus → reconciler → PatchEngine.setParam → DomainEngine.setParam) drives
 // the value into the live module handle. Sibling to the audio reconciler

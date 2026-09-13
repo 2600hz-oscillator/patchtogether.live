@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/video-out.ts
-//
 // OUTPUT — visible-canvas sink. Phase 0 implementation of the spec at
 //
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/samsloop-face-actions.ts
-//
 // THE ONE SAMSLOOP TRANSPORT — shared by `SamsloopCard.svelte` (the legacy card)
 // and the curated face's SHELL_CELLS entry (`shell-cells.ts`).
 //

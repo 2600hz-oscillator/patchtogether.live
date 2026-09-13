@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/dx7-op-map-model.ts
-//
 // PURE model for the OPERATOR MAP (dx7 PR 6).
 //
 // The map is the algorithm diagram PLUS per-operator state, so it reuses

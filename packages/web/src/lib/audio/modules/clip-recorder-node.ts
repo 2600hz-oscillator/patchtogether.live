@@ -64,9 +64,7 @@ export {
  *  positions by): 2 channels × 4 bytes. */
 export const CLIP_RECORDER_BYTES_PER_FRAME = 8;
 
-// ---------------------------------------------------------------------------
 // Module registration
-// ---------------------------------------------------------------------------
 
 /** One in-flight/settled addModule per context, so N recorders share ONE
  *  registration (the gate-edge-worklet pattern; addModule twice with the same
@@ -93,9 +91,7 @@ export function ensureClipRecorderWorklet(ctx: BaseAudioContext): Promise<void> 
   return p;
 }
 
-// ---------------------------------------------------------------------------
 // Graph wiring
-// ---------------------------------------------------------------------------
 
 export interface ClipRecorderWiring {
   /** The eight-stereo-input recorder node. */
@@ -171,9 +167,7 @@ export function disconnectClipRecorderWiring(w: ClipRecorderWiring): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Port protocol — senders
-// ---------------------------------------------------------------------------
 
 /** Arm lane `lane` for the window (absolute context frames; stopFrame null =
  *  open endless take). The machine's `armWorklet` effect. */
@@ -207,9 +201,7 @@ export function cancelClipRecorderLane(node: Pick<AudioWorkletNode, 'port'>, lan
   node.port.postMessage({ type: 'cancel', lane });
 }
 
-// ---------------------------------------------------------------------------
 // Port protocol — receiving chunks into the store
-// ---------------------------------------------------------------------------
 
 /** Validate a raw port message against the shared protocol shapes. Anything
  *  malformed is null (dropped by the pump) — a recorder must never throw

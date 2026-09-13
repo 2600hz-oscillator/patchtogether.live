@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/midi-access.ts
-//
 // THE ONE PLACE WE ASK FOR WEB MIDI — and the one place that can explain a NO.
 //
 // ⚠ WHY THIS EXISTS (owner-reported, 2026-08-07). On a FRESH origin

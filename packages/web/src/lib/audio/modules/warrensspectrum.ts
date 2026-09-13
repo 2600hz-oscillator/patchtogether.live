@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/warrensspectrum.ts
-//
 // WARREN'S SPECTRUM — spectral-resynth engine, PHASE 1.
 //
 // A port of the SPECTRAL engine of the Warren's Spectrum VST (CMake project

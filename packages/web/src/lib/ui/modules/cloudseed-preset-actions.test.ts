@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cloudseed-preset-actions.test.ts
-//
 // THE LOSS-1 REGRESSION, in its pure half.
 //
 // The shipped bug was a state-consistency bug: turning the dock's PRESET

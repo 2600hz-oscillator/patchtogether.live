@@ -1,5 +1,3 @@
-// art/scenarios/sidecar/static-ratio-curve.test.ts
-//
 // ART-tier check on SIDECAR's static gain-computer curve. We exercise the
 // pure-math helper (computeGainDb) under the same offline-rendering
 // pattern as art/scenarios/stereovca — sweep input levels through the

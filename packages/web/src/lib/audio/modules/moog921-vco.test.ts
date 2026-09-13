@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog921-vco.test.ts
-//
 // Two test layers for the MOOG 921 VCO:
 //   1. Module-def shape — pins the 921's I/O surface (pitch + lin-FM + sync
 //      + width-CV inputs, the four simultaneous waveform outputs, the literal

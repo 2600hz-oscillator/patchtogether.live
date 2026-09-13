@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/pong/PongCourtBody.svelte
-  //
   // The PONG dock full-view body: the COURT, plus the SCREEN ON/OFF switch.
   //
   // ⚠ THIS BODY IS NOT OPTIONAL CHROME — IT IS THE MODULE'S ONLY REMAINING

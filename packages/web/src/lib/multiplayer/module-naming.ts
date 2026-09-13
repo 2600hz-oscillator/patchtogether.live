@@ -1,5 +1,3 @@
-// packages/web/src/lib/multiplayer/module-naming.ts
-//
 // Auto-naming + uniqueness for module instances within a single rack.
 //
 // Every module gets a stable, human-readable name like `ANALOGVCO1`,

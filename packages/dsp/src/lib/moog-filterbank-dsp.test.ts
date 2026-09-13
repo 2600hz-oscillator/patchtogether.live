@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-filterbank-dsp.test.ts
-//
 // Pins the shared Moog FIXED-FILTER-BANK data table (914 / 907A). This core is
 // DATA-ONLY (1/3-octave-ish band centers + Q + the bandN param-id contract);
 // the filtering itself is native BiquadFilterNodes, so there's no per-sample

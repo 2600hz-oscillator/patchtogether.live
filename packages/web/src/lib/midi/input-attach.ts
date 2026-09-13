@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/input-attach.ts
-//
 // THE ONE PLACE IN THE APP THAT ASSIGNS `MIDIInput.onmidimessage`.
 //
 // ── WHY THIS EXISTS ────────────────────────────────────────────────────────

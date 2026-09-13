@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/undo-cap.test.ts
-//
 // The undo depth cap (undo-cap.ts). The claims under test are the ones the
 // header derives its numbers from:
 //

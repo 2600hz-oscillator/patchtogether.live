@@ -1,5 +1,3 @@
-// e2e/tests/wavesculpt.spec.ts
-//
 // WAVESCULPT v2 (wavetable engine) smoke. Covers:
 //   - module spawns; card + canvas + two joysticks mount.
 //   - UNISON toggle flips the unison param.

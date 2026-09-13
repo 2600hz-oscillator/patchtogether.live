@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog-filterbank-face-model.test.ts
-//
 // THE PERMANENT CONTROLS for both Moog fixed-filter-bank faceplates.
 //
 // One file for two modules, like the model itself: every leg below runs over

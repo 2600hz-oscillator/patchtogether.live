@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-out-schedule-param.test.ts
-//
 // ⚠ NO FADE ON THE MASTER WAS EVER ACTUALLY SCHEDULED.
 //
 // `audioOutDef`'s handle exposed `setParam` / `readParam` and NO

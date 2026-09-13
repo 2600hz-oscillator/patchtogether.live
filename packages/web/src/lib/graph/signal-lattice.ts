@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/signal-lattice.ts
-//
 // THE VIDEO WIDENING RULE. `canConnect` (./types.ts) derives its video quadrant
 // from `videoWidensTo` below, so this file and every patch surface agree BY
 // CONSTRUCTION rather than by two lists being maintained in step.

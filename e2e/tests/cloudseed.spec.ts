@@ -1,5 +1,3 @@
-// e2e/tests/cloudseed.spec.ts
-//
 // CLOUDSEED end-to-end smoke on the shell the user gets. The card's 4-slot
 // preset strip + name/DECAY readouts became: the dock ladder's
 // `control-preset_index` radiogroup (selection), the TILE's preset knob

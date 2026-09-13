@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/spirographs/SpirographsOutputBody.svelte
-  //
   // The SPIROGRAPHS dock full-view body: its live picture plus the SCREEN
   // ON/OFF switch the owner ruling requires.
   //

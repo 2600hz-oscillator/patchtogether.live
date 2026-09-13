@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/buggles.test.ts
-//
 // Unit tests for BUGGLES: module-def shape + pure helpers
 // (rate mapping, stepped walk, period jitter, burst probability).
 // Live AudioContext behavior is covered by the ART scenario.

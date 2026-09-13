@@ -1,5 +1,3 @@
-// e2e/tests/picturebox-asset-select.spec.ts
-//
 // PICTUREBOX 7-slot ASSET SELECTOR — image-domain (CI-safe; no video decode,
 // no H.264 encoder). Loads TWO visually-distinct images into slots 0 and 1 via
 // node.data, patches a source's PITCH + GATE into asset_pitch + asset_gate, and
@@ -200,7 +198,6 @@ test.describe('PICTUREBOX — 7-slot asset selector (image)', () => {
       ],
     );
 
-    // Load two distinct images: slot 0 bright, slot 1 dark.
     const bright = await solidImage(page, 240);
     const dark = await solidImage(page, 8);
     await writeAssets(page, 'pb', [bright, dark, null, null, null, null, null]);

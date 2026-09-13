@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioin-face-model.test.ts
-//
 // ⚠ THIS FILE EXISTS BECAUSE THE GENERIC GATES PASS ALMOST VACUOUSLY OVER THIS
 // FACE — its sibling `audioout-face-model.test.ts` says the same about the same
 // shape, one wire later. `audioInDef` declares ONE param, so
@@ -87,7 +85,6 @@ function viewOf(state: AudioInputState, over: Partial<AudioInputView> = {}): Aud
   };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn face — the promotion itself', () => {
   it('the def in the REGISTRY declares the face (not just this import)', () => {
     const live = getModuleDef('audioIn');
@@ -129,7 +126,6 @@ describe('audioIn face — the promotion itself', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn face — the LANE PICTURE is live, and its twin proves the test can fail', () => {
   it('resolves a LIVE audio glyph bound to the first audio output', () => {
     expect(primaryAudioOutPortId(audioInDef)).toBe('audio_l_out');
@@ -151,7 +147,6 @@ describe('audioIn face — the LANE PICTURE is live, and its twin proves the tes
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn — the auto-acquire claim (the IRREVERSIBLE hazard of a second surface)', () => {
   const NID = 'audioin-auto-node';
   const engine = { get: () => null } as unknown as Parameters<typeof nodeAudioInput.adopt>[1];
@@ -224,7 +219,6 @@ describe('audioIn — the auto-acquire claim (the IRREVERSIBLE hazard of a secon
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn face — the eight-state machine survives, on `detail` not on a caption', () => {
   it('every state has a real sentence', () => {
     for (const s of ALL_STATES) {
@@ -298,7 +292,6 @@ describe('audioIn face — the eight-state machine survives, on `detail` not on 
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn face — the ACTION is reachable in every state that needs one', () => {
   it('maps each state to the gesture the card offered', () => {
     expect(inputActionKind(viewOf('idle'))).toBe('enable');
@@ -383,7 +376,6 @@ describe('audioIn face — the ACTION is reachable in every state that needs one
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn — the device roster and the constraints it builds', () => {
   const devices: MinimalDevice[] = [
     { deviceId: 'default', label: '', kind: 'audioinput' },
@@ -428,7 +420,6 @@ describe('audioIn — the device roster and the constraints it builds', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('audioIn — the picks are DELIBERATELY NOT UNDOABLE (both directions)', () => {
   const NID = 'audioin-face-model-node';
 

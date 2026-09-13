@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/skifree.test.ts
-//
 // Unit tests for the SKIFREE module def, the pure CV→cursor mapping, and
 // the committed bundle's crash/eaten → gate hook. The vitest environment is
 // `node`, so the bundle test installs minimal DOM stubs (no real 2D context

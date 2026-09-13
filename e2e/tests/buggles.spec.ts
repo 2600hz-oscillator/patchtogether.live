@@ -1,5 +1,3 @@
-// e2e/tests/buggles.spec.ts
-//
 // BUGGLES end-to-end coverage. The internal woggle scheduler runs off
 // setTimeout, so we need a real (in-browser) AudioContext rather than
 // the offline render that ART scenarios use.

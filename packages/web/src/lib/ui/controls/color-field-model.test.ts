@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/color-field-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL FOR THE COLOUR CELL'S PROBE.
 //
 // `faces-parity`'s `color` branch drives an `<input type="color">` to a colour

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/index.ts
-//
 // Barrel for the shared PRIMITIVE CONTROL LIBRARY (RACKLINE). The ModuleShell
 // faces (P0.3b) + the per-module reworks (P1) assemble their control grids from
 // these. Cards may still import a component by its direct path; this barrel is

@@ -1,5 +1,3 @@
-// art/scenarios/charlottes-echos/wet-output.test.ts
-//
 // Regression: CHARLOTTE'S ECHOS produced effectively-silent output at
 // mix=1.0 (fully wet). The cause was an unbounded head-volume accumulation:
 // head 0 spawned at volume=1 and never decayed, so its wet sum grew far

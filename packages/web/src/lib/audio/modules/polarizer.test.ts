@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/polarizer.test.ts
-//
 // Three test layers for POLARIZER (1-in / 1-out CV utility, unipolar→bipolar,
 // out = (2·in − 1)·depth):
 //   1. Module-def shape — pins the CV-only I/O surface (a single `in` cv port,

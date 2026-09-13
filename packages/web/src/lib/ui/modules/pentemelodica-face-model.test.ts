@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/pentemelodica-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind PENTEMELODICA's derived readouts.
 //
 // Each is perturbed on the input a knob readback is BLIND to, AND pinned in the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/playhead-tracker.test.ts
-//
 // Unit tests for the playhead tracker — the small helper every lookahead-
 // scheduling sequencer uses to derive "sounding now" from the queue of
 // scheduled future step events.

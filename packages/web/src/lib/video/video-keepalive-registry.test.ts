@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-keepalive-registry.test.ts
-//
 // The identity invariant the multi-slot freeze fix hinges on: a per-element
 // audio keep-alive is created AT MOST ONCE per element and is NEVER torn down on
 // a slot switch. `createMediaElementSource` is once-per-element-permanent (a 2nd

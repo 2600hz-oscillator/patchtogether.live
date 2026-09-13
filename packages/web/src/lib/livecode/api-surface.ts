@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/api-surface.ts
-//
 // Single source of truth for what LIVECODE scripts can see at the
 // `globalThis` of the sandboxed `new Function` runtime. Consumed by:
 //

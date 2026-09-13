@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-ladder-dsp.ts
-//
 // Shared Moog transistor-ladder filter core (24 dB/oct, 4-pole).
 //
 // OWN CODE — CLEAN-ROOM. Re-derived from the unpatented textbook TPT /

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/painter.ts
-//
 // PAINTER — an MS-Paint-style drawing surface as a video SOURCE.
 //
 // The faceplate is a tiny Windows-95 Paint: a toolbar (pencil / brush / line /

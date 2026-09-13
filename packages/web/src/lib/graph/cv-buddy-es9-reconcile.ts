@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/cv-buddy-es9-reconcile.ts
-//
 // CV BUDDY → ES-9 JANITOR (Part A). An INDEPENDENT graph-change reconciler that
 // wires each CV Buddy instance's note/transport OUTPUTS to the single ES-9
 // node's physical output jacks per the slot allocator, and writes each driven

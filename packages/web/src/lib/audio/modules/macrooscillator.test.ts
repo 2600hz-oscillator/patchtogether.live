@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/macrooscillator.test.ts
-//
 // Unit tests for MACROOSCILLATOR:
 //   - module-def shape (ports, params, cvScale annotations)
 //   - pure-math engine sanity (each model produces non-silent output at a

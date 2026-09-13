@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-window.spec.ts
-//
 // THE START/END LOOP WINDOW — the tests whose absence shipped a dead control.
 //
 // Owner report: "the start and end controls on samsloop are just broken. start

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/skifree/SkifreeTileBody.svelte
-  //
   // The SKIFREE LANE TILE's picture.
   //
   // ⚠ WITHOUT THIS THE PROMOTED TILE IS A TITLE BAR AND FOUR JACKS. skifree

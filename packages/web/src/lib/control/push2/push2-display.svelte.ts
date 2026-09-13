@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-display.svelte.ts
-//
 // Ableton Push 2 — the 960×160 DISPLAY transport (WebUSB). Phase 2 of the Push
 // integration, and the sibling of `push2-device.svelte.ts` (which owns the MIDI
 // half over Web MIDI). This file is lifecycle + plumbing ONLY: every byte
@@ -50,9 +48,7 @@ import {
   solidPushFrame,
 } from './push2-display-frame';
 
-// ---------------------------------------------------------------------------
 // The seams
-// ---------------------------------------------------------------------------
 
 /** The ONE thing the frame pump talks to. A real WebUSB device and the in-memory
  *  simulated display both satisfy it. */
@@ -100,9 +96,7 @@ export type Push2DisplayStatus =
   | 'denied'
   | 'failed';
 
-// ---------------------------------------------------------------------------
 // Singleton state
-// ---------------------------------------------------------------------------
 
 let transport: Push2DisplayTransport | null = null;
 let status: Push2DisplayStatus = 'idle';
@@ -146,9 +140,7 @@ function now(): number {
   return clockFn ? clockFn() : Date.now();
 }
 
-// ---------------------------------------------------------------------------
 // Capability + status
-// ---------------------------------------------------------------------------
 
 /** Is WebUSB available? Chromium + secure context only. Gates the whole display
  *  feature so Safari/Firefox/iOS and CI (no hardware) degrade cleanly — the
@@ -179,9 +171,7 @@ export function displayKeepaliveActive(): boolean {
   return keepaliveTimer !== null;
 }
 
-// ---------------------------------------------------------------------------
 // Opening a real device — the WebUSB path, exercised by fakes in unit tests.
-// ---------------------------------------------------------------------------
 
 /**
  * Open + claim the Push 2's vendor-specific display interface and return a
@@ -350,9 +340,7 @@ export async function disconnectDisplay(reason: Push2DisplayStatus = 'idle'): Pr
   bumpStatus(reason);
 }
 
-// ---------------------------------------------------------------------------
 // The frame pump
-// ---------------------------------------------------------------------------
 
 function ensureBuffers(): [Uint8Array, Uint8Array] {
   if (!bufs) {
@@ -473,9 +461,7 @@ export function keepaliveTick(): void {
   if (keepaliveDue(now(), lastSentAt, PUSH_DISPLAY_KEEPALIVE_MS)) repeatLastFrame();
 }
 
-// ---------------------------------------------------------------------------
 // Timers
-// ---------------------------------------------------------------------------
 
 function armFlush(delayMs: number): void {
   clearFlush();
@@ -530,10 +516,8 @@ function logWarn(msg: string, err?: unknown): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Simulated display — an in-memory Push panel, driven through the REAL
 // open/claim/transfer path so the tests exercise the shipping code.
-// ---------------------------------------------------------------------------
 
 export interface SimulatedPush2Display {
   /** Every byte run written to the bulk endpoint, in order (headers included). */

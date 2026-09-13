@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-record-machine.test.ts
-//
 // The KEYS record STATE MACHINE (redesign §2.1): idle → armed → recording →
 // overdubbing, with arming DECOUPLED from capture. Pins the transitions + the
 // robust loop-wrap detection (owner problem 1b — a skipped step 0 must still

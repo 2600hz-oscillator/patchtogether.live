@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/attenumix-face-model.ts
-//
 // The PURE model behind the ATTENUMIX faceplate — the three derived readouts,
 // and the arithmetic that makes them not-a-knob-relabelled.
 //

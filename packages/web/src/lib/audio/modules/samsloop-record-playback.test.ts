@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-record-playback.test.ts
-//
 // THE TEST WHOSE ABSENCE SHIPPED A SILENT RECORDER.
 //
 // The bug: `stopRecording` wrote `node.data.sample.bytesB64`; the engine

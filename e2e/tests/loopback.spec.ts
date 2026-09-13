@@ -1,5 +1,3 @@
-// e2e/tests/loopback.spec.ts
-//
 // LOOPBACK module e2e — the browser-viewport video source
 // (getDisplayMedia -> GL texture, crop-to-viewport).
 //

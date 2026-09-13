@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/module-shell-drawer-view.test.ts
-//
 // #1739 — THE SOURCE-LEVEL HALF OF THE `'drawer'` VIEW, because no runtime gate
 // in this repo can see it.
 //

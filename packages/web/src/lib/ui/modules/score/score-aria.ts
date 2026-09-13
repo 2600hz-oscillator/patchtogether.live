@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/score/score-aria.ts
-//
 // WHERE SCORE'S REMOVED NUMBERS LIVE.
 //
 // The owner ruling is that a faceplate paints no resting derived text and that

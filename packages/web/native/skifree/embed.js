@@ -1,5 +1,3 @@
-// packages/web/native/skifree/embed.js
-//
 // Embeddable wrapper around the upstream skifree.js engine (MIT, Daniel
 // Hough 2013 — see ./license.md). This is the esbuild ENTRY POINT for our
 // committed bundle at packages/web/static/skifree/skifree.bundle.js.

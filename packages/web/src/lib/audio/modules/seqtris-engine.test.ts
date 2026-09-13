@@ -43,7 +43,6 @@ import {
   type SeqtrisState,
 } from './seqtris-engine';
 
-// ────────────────────────── helpers ──────────────────────────
 
 /** Render a rotation state as rows of '#' / '.' so a shape assertion reads as
  *  the shape it is asserting. */

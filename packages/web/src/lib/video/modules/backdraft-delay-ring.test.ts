@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/backdraft-delay-ring.test.ts
-//
 // The LAZY-GROWING delay ring (2026-08-29, the PR that doubled
 // BACKDRAFT_MAX_DELAY_MS 500 → 1000). The owner's condition, verbatim: "if i
 // set it to our current max delay, it's the same as today, and only becomes

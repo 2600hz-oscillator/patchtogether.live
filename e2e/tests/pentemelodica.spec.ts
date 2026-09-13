@@ -1,5 +1,3 @@
-// e2e/tests/pentemelodica.spec.ts
-//
 // Bespoke E2E for PENTEMELODICA — the 5-voice polyphonic analog synth.
 // Validates:
 //   - the card mounts with all 6 input + 7 output handles present,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/port-types.ts
-//
 // Shared port-resolution + cable-compatibility helpers. Used by
 // runtime.ts (to validate patch() / unpatch() at run time) AND by
 // diagnostics.ts (to lint patch() calls at edit time without running).

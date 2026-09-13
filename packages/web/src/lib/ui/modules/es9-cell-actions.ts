@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/es9-cell-actions.ts
-//
 // The ES-9 faceplate's two ACTION seams — CONNECT and DISCONNECT — kept out of
 // `shell-cells.ts` so the shared registry imports one file per module rather
 // than the module's whole world.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/mutate.test.ts
-//
 // REAL-Y.Doc / real-syncedStore tests for the origin-tagged mutation seam
 // (graph/mutate.ts). These run against the SAME live syncedStore + Y.Doc +
 // UndoManager the patch uses (graph/store.ts) — NOT a mock — so we exercise the

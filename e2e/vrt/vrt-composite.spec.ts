@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-composite.spec.ts
-//
 // Composite-state VRT — captures a screenshot of TWO module cards in the
 // same scene, wired with a patch cord, with the upstream module driving
 // the downstream module into a deterministic state. Iterates the scenes

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/cc-commit-batch.ts
-//
 // GLOBAL two-lane batcher for streaming-CC store commits (phase 2 of the
 // MIDI-CC render-starvation fix). #1030's createCcCommit gave each
 // (moduleId, paramId) its own pump with a PRIVATE throttle timer — N

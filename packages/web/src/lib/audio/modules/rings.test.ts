@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rings.test.ts
-//
 // Unit tests for RINGS: module-def shape; pure-math engine sanity.
 
 import { readFileSync } from 'node:fs';

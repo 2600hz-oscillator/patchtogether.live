@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/contract-signature.ts
-//
 // The DETERMINISTIC contract projection for the living-docs drift gate
 //. This is the "what is
 // pinned" layer — the analog of ART's `moduleSourceSha` and VRT's baseline

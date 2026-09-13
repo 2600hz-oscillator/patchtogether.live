@@ -1,5 +1,3 @@
-// packages/dsp/src/featurecv.ts
-//
 // FEATURECV — audio→CV feature extractor. Thin AudioWorkletProcessor wrapper
 // around the pure core in ./lib/featurecv-dsp.ts (inlined by esbuild). Reads
 // ONE mono audio input, extracts whole-signal timbre + dynamics features, and

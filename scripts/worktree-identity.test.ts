@@ -1,5 +1,3 @@
-// scripts/worktree-identity.test.ts
-//
 // The IDENTITY probe behind #1597: an attest must never run against a server
 // it cannot prove is THIS worktree's. These tests drive the REAL
 // `assertServerIsThisWorktree` / `fetchWorktreeIdentity` (the exact predicate

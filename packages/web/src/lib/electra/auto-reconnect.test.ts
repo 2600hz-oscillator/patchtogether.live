@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/auto-reconnect.test.ts
-//
 // The (load, device-connect) edge machine behind the automatic Electra
 // re-flash (#2248), driven through fake deps + a manual timer so every edge,
 // debounce collapse and safety rail is asserted with no Web MIDI and no clock.

@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/rackspaces/[id]/+server.ts
-//
 // DELETE /api/rackspaces/[id] — owner-only rackspace deletion. The DB
 // schema's ON DELETE CASCADE on rack_members + rack_snapshots cleans up
 // related rows automatically; the Hocuspocus snapshot for this rack

@@ -1,5 +1,3 @@
-// e2e/tests/patch-load-leak.spec.ts
-//
 // PATCH-LOAD RETENTION — does loading a patch release the one it replaced?
 //
 // Origin: the 2026-07-29 audio-bog investigation reported, as a side-finding,

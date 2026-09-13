@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/synesthesia-dsp.ts
-//
 // SYNESTHESIA — shared DSP for the audio-analysis module. Lives under lib/ so
 // esbuild inlines it into the worklet entry (packages/dsp/src/synesthesia.ts);
 // lib/ files MAY export freely. Also imported directly by the unit + ART tests

@@ -1,5 +1,3 @@
-// e2e/tests/colourofmagic.spec.ts
-//
 // COLOUR OF MAGIC (multi-colorspace video processor) — DETERMINISTIC
 // render-smoke (DRS). The real chain LINES → CHROMA(tint) → COLOUR OF MAGIC
 // → videoOut is a pure function of the pinned clock + params (LINES' only time

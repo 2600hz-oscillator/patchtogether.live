@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audition-ledger.ts
-//
 // THE OBSERVABLE FOR AN AUDITION — what a `ShellActionCell` press actually did.
 //
 // ── Why this exists (the blind-gate finding, 2026-08-02) ────────────────────

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cv-buddy.ts
-//
 // CV BUDDY — the note-sink half of the ES-9 note-lane bridge (Part A).
 //
 // You hand-patch a clip lane's pitch / gate / velocity into CV Buddy's inputs;

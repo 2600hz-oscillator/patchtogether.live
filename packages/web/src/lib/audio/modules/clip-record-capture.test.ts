@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-record-capture.test.ts
-//
 // DETERMINISTIC record-capture math (redesign §4.1). Pins the two fixes for
 // owner problem 1a: NEAREST-step rounding (a note played a hair early lands on
 // the intended step, never floored onto the previous one) and clock-projected

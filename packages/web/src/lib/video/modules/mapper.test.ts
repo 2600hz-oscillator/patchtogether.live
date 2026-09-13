@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/mapper.test.ts
-//
 // MAPPER module-def shape + the pure keyer algorithm (no GL). The pure
 // functions (mapperLuma / mapperMask / mapperPixel) are the EXACT CPU
 // mirror of the GLSL shader's math — testing them here is the same source
@@ -78,12 +76,10 @@ describe('mapperMask — smoothstep key around the threshold', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Full per-texel decision: a synthetic VIDEO + KEY → the output shows the
 // video only where the key is active; the threshold raises/lowers the keyed
 // area. (The headline spec assertions — the CPU mirror of OUTLINES.mapped
 // generalised to an arbitrary key.)
-// ---------------------------------------------------------------------------
 describe('mapperPixel — video × key-mask on a synthetic source', () => {
   const VIDEO: [number, number, number] = [0.8, 0.4, 0.2]; // a distinctive RGB
   const KEY_ON: [number, number, number] = [1, 1, 1]; // bright key (luma 1)

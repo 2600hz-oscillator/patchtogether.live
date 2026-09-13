@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/vst/vst-protocol.ts
-//
 // VST bridge protocol v1 codec — the wire contract with the vst-bridge
 // native helper (spec: patchtogether.nativeapps
 // Sources/VSTBridgeCore/VSTProtocol.swift — its header carries the full
@@ -63,9 +61,7 @@ export const VST_MIDI_HEADER_SIZE = 8;
 export const VST_MIDI_EVENT_SIZE = 12;
 export const VST_MAX_MIDI_EVENTS = 1024;
 
-// ---------------------------------------------------------------------------
 // Control plane (JSON text frames) — bridge → card
-// ---------------------------------------------------------------------------
 
 export type VstPluginKind = 'instrument' | 'effect' | 'musicEffect' | 'generator';
 
@@ -161,9 +157,7 @@ export interface VstStatus {
   detail?: string;
 }
 
-// ---------------------------------------------------------------------------
 // 0x01 audio blocks
-// ---------------------------------------------------------------------------
 
 export interface VstDecodedBlock {
   seq: number;
@@ -228,9 +222,7 @@ export function encodeBlock(
   return buf;
 }
 
-// ---------------------------------------------------------------------------
 // 0x02 MIDI blocks
-// ---------------------------------------------------------------------------
 
 /** One event for the encoder — the allocation-free shape the worker drains
  *  out of the MIDI ring. Trailing data bytes are ignored when len < 3. */

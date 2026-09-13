@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-card-actions.test.ts
-//
 // Real-Y.Doc test for the CARD + MENU automation actions (owner-locked final
 // model: MODULE-level assignment + PER-LANE arm). The module card's right-click
 // "Assign to automation lane ▸ 1–8" / "Remove automation assignment" writes go
@@ -348,14 +346,12 @@ describe('per-lane arm shell pre-creation via the shared toggle (container-LWW h
   });
 });
 
-// ===========================================================================
 // CV BUDDY FORCES ITS LANE MONO (owner: "we should force a lane to monophonic
 // when we put cv buddy on it since polyphonic data is going to mess that up").
 // `assignAutomationLane` is the ONE seam every "put this module on channel N"
 // path funnels through — the context-menu channel assign, "Assign automation
 // only ▸ N", a workflow-column drop, a cross-column drag and a
 // spawn-into-column all call it — so covering it here covers all five.
-// ===========================================================================
 describe('CV Buddy assignment forces its lane MONO', () => {
   const BUDDY = 'cvb-1';
   const MINI = 'cvbm-1';

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/registry.ts
-//
 // The VFPGA catalog — every bundled `.vfpga` spec, collected GLOB-DRIVEN from
 // `$lib/video/vfpga/specs/*.ts` at build time (Vite `import.meta.glob`). Adding
 // a VFPGA needs NO edit here: drop `specs/<id>.ts` exporting a `<id>Spec`

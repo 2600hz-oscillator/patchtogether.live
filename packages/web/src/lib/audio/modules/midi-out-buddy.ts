@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midi-out-buddy.ts
-//
 // MIDI-OUT-BUDDY (label "MIDI CV BUDDY OUT") — the OUTPUT complement of
 // MIDI-CV-BUDDY. Takes CV/gate inputs from the patch and SENDS MIDI notes
 // out to a user-selected external MIDI device + channel, so a sequencer /
@@ -361,7 +359,6 @@ export function webMidiAvailable(): boolean {
   );
 }
 
-// ---------------- The FACEPLATE ----------------
 //
 // WHAT THIS MODULE IS FOR, MUSICALLY. It is the one module that points the
 // rack OUTWARDS: a gate and a pitch from anywhere inside — a sequencer, a clip
@@ -426,7 +423,6 @@ export const MIDI_OUT_BUDDY_FACE: ModuleFace = {
   ],
 };
 
-// ---------------- Module def ----------------
 
 export const midiOutBuddyDef: AudioModuleDef = {
   type: 'midiOutBuddy',

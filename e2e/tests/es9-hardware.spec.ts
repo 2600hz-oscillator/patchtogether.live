@@ -1,5 +1,3 @@
-// e2e/tests/es9-hardware.spec.ts
-//
 // HARDWARE-IN-THE-LOOP checks for the es9 module — OPT-IN ONLY (ES9_HW=1).
 // Never runs in CI: it needs a physical Expert Sleepers ES-9 attached AND the
 // es9-bridge native app (repo patchtogether.es9) serving ws://127.0.0.1:9209,

@@ -1,5 +1,3 @@
-// e2e/tests/ptzcam.spec.ts
-//
 // ════════════ THE BYTES-ON-THE-WIRE GATE FOR THE PTZ CAMERA MODULE ════════════
 //
 // Same argument as chromaconsole.spec.ts: the poly/MIDI rule demands the REAL

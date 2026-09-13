@@ -1,5 +1,3 @@
-// e2e/tests/preset-slots-and-sets.spec.ts
-//
 // Quick-switch PRESET SLOTS (File.. → Quicksave / Quickload / Load into slot /
 // Clear slot) + the portable `.set` (zip-of-zips of all five slots + the MIDI
 // map).

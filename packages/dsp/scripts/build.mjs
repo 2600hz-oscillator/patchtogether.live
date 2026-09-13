@@ -1,5 +1,3 @@
-// packages/dsp/scripts/build.mjs
-//
 // Build pipeline for DSP modules.
 //   *.dsp → dist/<name>.wasm + dist/<name>.json (via @grame/faustwasm CLI)
 //   *.ts  → dist/<name>.js (via esbuild, ESM bundle for AudioWorkletProcessor)

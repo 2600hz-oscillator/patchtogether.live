@@ -1,5 +1,3 @@
-// e2e/tests/clip-automation.spec.ts
-//
 // PER-CLIP AUTOMATION — the real UI drive (owner-locked FINAL model:
 // MODULE-level assignment + PER-LANE arm, Deluge-like). Proves the whole
 // workflow end-to-end against the live app + engine, gating all timing on the

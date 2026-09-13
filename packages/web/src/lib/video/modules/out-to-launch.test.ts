@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/out-to-launch.test.ts
-//
 // OUT TO LAUNCH — module def + pure-GL factory contract. The real 9×9 GPU
 // downsample needs a WebGL2 context (jsdom lacks one) — that's the e2e/VRT
 // surface; here we pin the def shape + that draw()/read() behave with a fake GL

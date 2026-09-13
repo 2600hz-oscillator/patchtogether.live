@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-lane.test.ts
-//
 // The PURE lane-selection rules behind the owner's spec: which modules are in a
 // lane, in what order, and which one's push card the Push shows by default.
 //

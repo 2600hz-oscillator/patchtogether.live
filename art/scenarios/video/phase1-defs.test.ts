@@ -1,5 +1,3 @@
-// art/scenarios/video/phase1-defs.test.ts
-//
 // "ART scenario" placeholder for Phase-1 video modules.
 //
 // Why a defs-shape test, not a render test: the existing ART harness

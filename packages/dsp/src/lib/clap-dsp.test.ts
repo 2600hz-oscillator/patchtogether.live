@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/clap-dsp.test.ts
-//
 // Proving tests for the CLAP core: strike determinism, the control laws
 // (tone/tail/spread CV octave laws with clamps, pulse-count latch), the
 // burst scheduler (PULSES onsets, SPREAD timing, held-trigger fires once),
@@ -158,9 +156,7 @@ function detectOnsets(buf: Float32Array, sr: number, uptoMs: number): number[] {
   return onsets;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Control LAWS (pure functions)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('clap: control laws', () => {
   it('tone_cv is ±1.5 oct/V — ±1 V covers the whole 400–3000 knob range from 1 kHz', () => {
@@ -215,9 +211,7 @@ describe('clap: control laws', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Burst scheduler (the clap's heart)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('clap: burst scheduler', () => {
   it('PULSES: onset count equals the knob (2 and 5 at 20 ms spacing)', () => {
@@ -279,9 +273,7 @@ describe('clap: burst scheduler', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // SONIC RANGE — spectrum + balance knobs
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('clap: sonic range proofs (spectrum + balance)', () => {
   it('TONE: centroid tracks the band center — monotonic, >2.5× min→max', () => {
@@ -491,9 +483,7 @@ describe('clap: sonic range proofs (spectrum + balance)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Determinism + hygiene
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('clap: determinism + hygiene', () => {
   it('two independent states render bit-identical output (pure core)', () => {

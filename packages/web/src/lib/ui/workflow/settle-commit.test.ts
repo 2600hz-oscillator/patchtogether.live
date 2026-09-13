@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/settle-commit.test.ts
-//
 // PF-13's storm guard. Every clause below is a value stream shaped like a real
 // input device, and the assertion is the COMMIT COUNT — because the whole point
 // of the guard is that one gesture costs one 46-param transaction rather than

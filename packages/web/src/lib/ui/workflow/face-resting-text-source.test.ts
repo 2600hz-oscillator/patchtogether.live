@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/face-resting-text-source.test.ts
-//
 // THE GATE FOR "THE RESTING FACEPLATE PAINTS NO DERIVED-STATE TEXT".
 //
 // ── THE RULING ─────────────────────────────────────────────────────────────

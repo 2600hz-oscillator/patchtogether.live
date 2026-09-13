@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the control-surface mutators. These run
 // against the SAME syncedStore + Y.Doc the live patch uses (graph/store.ts),
 // so binding/screen/layout entries become real Y.Maps once written — the only

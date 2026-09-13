@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-midi-conflict.test.ts
-//
 // THE MIDI CONFLICT MAP — the owner's explicit ask for the ElectraControl-mode
 // work: "we need to make sure our midi implementations for this, and also
 // generally for grid and how we assign things in electracontrol, do not
@@ -82,11 +80,9 @@ import { decodePush2Message, pushPadNote } from './push2-sysex';
 import { electraModeEncoder } from './push-electra-model';
 import { generatePreset } from '$lib/electra/preset';
 
-// ---------------------------------------------------------------------------
 // Role derivation — every string below comes from the SHIPPING dispatch, never
 // from a parallel table. That is what makes the ledger a check rather than a
 // second copy of the map.
-// ---------------------------------------------------------------------------
 
 function encRoleBase(t: PushEncoderTarget): string {
   switch (t.kind) {
@@ -142,11 +138,9 @@ function roleForCc(cc: number, electra: boolean): string | null {
   return roleOf(classifyPush2({ type: 'cc', cc, s: 1, value: 127 }), electra);
 }
 
-// ---------------------------------------------------------------------------
 // 1 — THE CC LEDGER. Every CC the Push binds, in both modes. Deny by default:
 // a CC that dispatches but is absent here is RED, and an entry naming a CC that
 // dispatches nothing is RED too.
-// ---------------------------------------------------------------------------
 
 interface LedgerRow {
   base: string;
@@ -336,9 +330,7 @@ describe('1 — the Push CC map: no CC has two owners, in either mode', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 2 — CC ↔ NOTE. Push scene CCs 36..43 and pad notes 36..43 share numbers.
-// ---------------------------------------------------------------------------
 
 describe('2 — the CC/NOTE number overlap is a non-collision, proven through the codec', () => {
   it('the SAME data byte decodes to a pad or a scene depending ONLY on the status byte', () => {
@@ -365,11 +357,9 @@ describe('2 — the CC/NOTE number overlap is a non-collision, proven through th
   });
 });
 
-// ---------------------------------------------------------------------------
 // 3 — Push CC ↔ ELECTRA-allocation CC. A LATENT overlap: the numbers really do
 // collide; whether a message crosses is an inbound-ROUTING question this file
 // does not own.
-// ---------------------------------------------------------------------------
 
 describe('3 — Push CCs vs the Electra One preset allocation', () => {
   const generated = generatePreset({
@@ -449,9 +439,7 @@ describe('3 — Push CCs vs the Electra One preset allocation', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 4 — A DUPLICATED CC LITERAL IS A GATE THAT CANNOT SEE A RENAME.
-// ---------------------------------------------------------------------------
 //
 // Found the hard way on 2026-08-03. `push2-clip-launch.spec.ts` hardcoded seven
 // Push CC literals, including `const CC_SHIFT = 49`. When SHIFT moved to CC 27,
@@ -575,9 +563,7 @@ describe('4 — no Push e2e spec re-types a CC the map already owns', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Outbound — the LED side of the same question.
-// ---------------------------------------------------------------------------
 
 describe('outbound: the ELECTRA-MODE button LED is Push-local, never a frame mirror', () => {
   it('no Launchpad frame can address CC 49', () => {

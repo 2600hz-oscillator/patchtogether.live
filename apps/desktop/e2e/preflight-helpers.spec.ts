@@ -1,5 +1,3 @@
-// apps/desktop/e2e/preflight-helpers.spec.ts
-//
 // NATIVE-SHELL PRE-FLIGHT — Tier-A Electron harness. Two shell-only claims the
 // browser lane structurally cannot make:
 //

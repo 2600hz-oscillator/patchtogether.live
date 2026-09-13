@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/snare-roll-dsp.test.ts
-//
 // The POLYPHONIC drumroll engine gate (design §6.1). Proves the two-hand 180°
 // interleave, the bounce/stroke structure (single → double → buzz), the frozen
 // rate map, roll determinism across sample rates, the §3.8 voice-budget bound,
@@ -64,7 +62,6 @@ function runRoll(
   return out;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snare-roll: rate mapping (frozen §3.4)', () => {
   it('rollHandHz(0) = 4 Hz, rollHandHz(1) = 24 Hz/hand', () => {
     expect(rollHandHz(0, 0)).toBeCloseTo(4, 6);
@@ -81,7 +78,6 @@ describe('snare-roll: rate mapping (frozen §3.4)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snare-roll: bounce/stroke structure (§3.3)', () => {
   const sr = 48000;
   const off = new Float32Array(MAX_SUBSTROKES);
@@ -130,7 +126,6 @@ describe('snare-roll: bounce/stroke structure (§3.3)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snare-roll: two-hand 180° interleave (§3.2)', () => {
   const sr = 48000;
 
@@ -164,7 +159,6 @@ describe('snare-roll: two-hand 180° interleave (§3.2)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snare-roll: determinism (§3.9)', () => {
   it('two runs at the same rate are bit-identical', () => {
     const a = runRoll(24000, 1, P({ humanize: 0.6 }), 48000);
@@ -210,7 +204,6 @@ describe('snare-roll: determinism (§3.9)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snare-roll: voice-budget bound (§3.8)', () => {
   it('under a max-density buzz, alloc rate ≤ cap and excess routes to the bed', () => {
     const sr = 48000;
@@ -236,7 +229,6 @@ describe('snare-roll: voice-budget bound (§3.8)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 describe('snare-roll: lowest-energy allocator (§3.7)', () => {
   const mk = (spec: [boolean, number][]): AllocSlot[] =>
     spec.map(([active, energy]) => ({ active, energy }));

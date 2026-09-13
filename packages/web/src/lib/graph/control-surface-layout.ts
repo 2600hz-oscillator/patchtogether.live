@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface-layout.ts
-//
 // CONTROL SURFACE — pure layout geometry.
 //
 // The surface renders its proxied controls grouped into per-source-module

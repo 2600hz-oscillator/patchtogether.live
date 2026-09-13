@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/resofilter.ts
-//
 // RESOFILTER — multi-mode filter port of Resonarium's MultiFilter
 // (gabrielsoule/resonarium, plugin/Source/dsp/MultiFilter.{h,cpp}). Five
 // modes drawn straight from upstream's MultiFilter::Type enum +
@@ -143,7 +141,6 @@ export const resofilterDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ────────────────────────────────────────────────────────
   //
   // Four controls, one band, and one picture beside them. The whole argument
   // for this face is a single sentence that no surface on the module said

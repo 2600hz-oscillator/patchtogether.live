@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/dock-store-fullview.test.ts
-//
 // The P0.3b TRANSIENT expanded full-view occupancy on dockStore. Proves it is
 // per-tab transient view furniture — open/close, cleared on rack
 // rebind/unbind/closeAll, and NEVER persisted (the un-migrated auto-fallback

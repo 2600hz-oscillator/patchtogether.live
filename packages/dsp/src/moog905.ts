@@ -1,5 +1,3 @@
-// packages/dsp/src/moog905.ts
-//
 // MOOG 905 SPRING REVERBERATION — AudioWorklet entry. Wraps the in-house
 // SpringReverb tank (./lib/spring-reverb-dsp.ts) and applies the dry/wet MIX
 // here so the lib stays a pure wet generator.

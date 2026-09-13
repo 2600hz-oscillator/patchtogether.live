@@ -1,5 +1,3 @@
-// packages/dsp/src/flipper.ts
-//
 // FLIPPER — a gate flip-flop. A gate on EITHER input alternately fires the
 // FLIP output, then the FLOP output, then back. No params. The toggle logic
 // lives in ./lib/flipper-dsp.ts (pure + unit-tested); this entry just wraps it

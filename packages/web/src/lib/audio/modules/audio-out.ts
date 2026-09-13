@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/audio-out.ts
-//
 // Audio Out — terminal stereo output. Two MONO inputs (L, R), each routed to
 // the corresponding channel of a stereo bus. Eurorack convention: every patch
 // cable is mono; if you want stereo, you patch both L and R.
@@ -114,7 +112,6 @@ export const audioOutDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // The rack's TERMINAL, promoted. One param, one bespoke body, and a lane
   // picture that is mechanically refused.

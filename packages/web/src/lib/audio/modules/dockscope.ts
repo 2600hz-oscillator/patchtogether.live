@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/dockscope.ts
-//
 // DOCKSCOPE — the slim, rail-friendly oscilloscope (P2.5b; owner answer Q3
 // pre-approved it: "if the regular scope cards dock poorly, owner
 // pre-approves a NEW `dockscope` module variant"). The regular SCOPE's

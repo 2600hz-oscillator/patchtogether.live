@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/b3ntb0x-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind b3ntb0x's two face readouts, plus the
 // leg that keeps a REFUTED reading from quietly coming back.
 //

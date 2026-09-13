@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/monome-control.svelte.ts
-//
 // Binds the monome grid (monome-device) to ONE focused 8-lane clip-player node.
 //
 // SESSION mode (default):

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/hsvshift.ts
-//
 // CLB cell `hsvShift(a, hue, sat, val)` — the colour-space CLB op (the analogue
 // colouriser / hue-rotate cell): converts input `a` to HSV, adds `hue` (wrapped),
 // scales saturation by `sat` and value by `val`, converts back to RGB. One input,

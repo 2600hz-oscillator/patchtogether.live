@@ -1,5 +1,3 @@
-// e2e/tests/scoreboard.spec.ts
-//
 // SCOREBOARD — 4-digit neon 7-segment counter. End-to-end coverage:
 //   1. SEQUENCER → SCOREBOARD.score: each step's GATE pulse advances the
 //      counter by 1. After ~1 second at 240 BPM (= 4 quarter-notes/sec)

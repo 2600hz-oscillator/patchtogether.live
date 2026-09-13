@@ -1,5 +1,3 @@
-// packages/web/src/lib/observability/sentry-config.ts
-//
 // Shared, side-effect-free helpers for the env-gated Sentry wiring. Both the
 // browser init (hooks.client.ts) and the server/Worker init (hooks.server.ts)
 // read their DSN + release through here so the gating rule lives in ONE place:

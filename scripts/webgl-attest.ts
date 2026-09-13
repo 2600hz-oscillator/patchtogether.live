@@ -1,5 +1,3 @@
-// scripts/webgl-attest.ts
-//
 // The real-GPU WebGL attestation RUNNER + WRITER (invoked by `task webgl:attest`
 // via scripts/webgl-attest.sh). Multi-pass (fix V5), measured spec counts (never
 // hand-typed), refuses SwiftShader, refuses to write on any shortfall.
@@ -413,9 +411,7 @@ function attestActor(): string {
   return 'patchtogether-maintainer';
 }
 
-// ---------------------------------------------------------------------------
 // Pre-flight: refuse a NON-SOLO machine.
-// ---------------------------------------------------------------------------
 // ROOT CAUSE of the "transients in different files each run" class (NOT a code
 // flake, NOT a per-test bug): the heavy passes drive ONE Metal/ANGLE context
 // with --workers=1, but a CO-TENANT GPU client (a browser, an Electron/native
@@ -464,9 +460,7 @@ class ContentionAbort extends Error {
 }
 
 
-// ---------------------------------------------------------------------------
 // main
-// ---------------------------------------------------------------------------
 // The attest's OWN app server (#1597) — module-scoped so the exit/signal
 // handlers can always tear it down (several refusal paths process.exit()
 // directly, which skips a try/finally in main). stop() is synchronous.

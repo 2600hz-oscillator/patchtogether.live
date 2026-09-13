@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-runner-face-screen.spec.ts
-//
 // THE RENDER LEGS for the two affordances VFPGA-RUNNER's promotion RECOVERED.
 //
 // Promotion sets `migrated('vfpgaRunner')` true, and from that moment neither

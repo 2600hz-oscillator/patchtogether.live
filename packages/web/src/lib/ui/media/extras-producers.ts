@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/extras-producers.ts
-//
 // THE NODE-LIFETIME EXTRAS PRODUCERS (#1720). See ./node-extras-registry for the
 // mechanism, the measurement, and why this is a registry rather than a permanent
 // off-screen card mount.

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/milkdrop/MilkdropOutputBody.svelte
-  //
   // The MILKDROP dock full-view body: the live visualizer picture and the
   // affordances that live only on `MilkdropCard.svelte`, which promotion
   // would otherwise delete (`migrated('milkdrop')` stops BOTH surfaces

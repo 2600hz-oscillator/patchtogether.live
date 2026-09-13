@@ -1,5 +1,3 @@
-// art/scenarios/bluebox/profile.test.ts
-//
 // AUDIO PROFILE for BLUEBOX (backfill batch 1 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the
 // shared capture harness (art/setup/capture.ts).
@@ -73,7 +71,6 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ── Render ──────────────────────────────────────────────────────────────────
 
 /** Full-length per-button param schedules (sample-exact segment edges). */
 function buttonSchedules(n: number): Map<string, Float32Array> {

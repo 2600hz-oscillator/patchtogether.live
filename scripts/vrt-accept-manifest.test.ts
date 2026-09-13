@@ -1,5 +1,3 @@
-// scripts/vrt-accept-manifest.test.ts
-//
 // Pins for the accept-candidates PRODUCER (scripts/vrt-accept-manifest.mjs) —
 // the step a failing vrt-strict shard runs to record, at the source, what
 // vrt-accept.yml may later promote. Three things are load-bearing enough to

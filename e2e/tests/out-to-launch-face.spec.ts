@@ -1,5 +1,3 @@
-// e2e/tests/out-to-launch-face.spec.ts
-//
 // OUT TO LAUNCH's FACEPLATE — the coverage the promotion would otherwise have
 // lost, plus the regression pin for a live defect the promotion uncovered.
 //

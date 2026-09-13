@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cvBuddy/shell-extension.ts
-//
 // The CV BUDDY shell extension — the module-owned end of the extension seam
 // (#1512), and the first adopter of `fullViewBody` for a NON-VIDEO reason.
 //

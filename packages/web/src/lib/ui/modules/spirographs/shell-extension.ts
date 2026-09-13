@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/spirographs/shell-extension.ts
-//
 // The spirographs SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), and the THIRD adopter of the `fullViewBody` slot after `backdraft`
 // and `videoOut`.

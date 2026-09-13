@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/varispeed-shifter.test.ts
-//
 // Unit spec for the OWN-CODE granular pitch shifter used by CHARLOTTE'S ECHOS
 // to keep its ascending-shimmer PITCHUP after the migration off the GPL
 // cocoadelay-core. Asserts: unity-rate is an exact bypass, rate > 1 raises the

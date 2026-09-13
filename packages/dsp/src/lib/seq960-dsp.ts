@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/seq960-dsp.ts
-//
 // Pure column-stepping logic for the MOOG 960 SEQUENTIAL CONTROLLER — a
 // 3-row × 8-step analog step sequencer. This file is the deterministic,
 // AudioContext-free core: it owns the current COLUMN index (0..7, shared by

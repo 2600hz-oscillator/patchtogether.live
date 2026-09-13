@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/docs-facts.test.ts
-//
 // Prose that states a FACT about the tree must match the tree.
 //
 // Measured 2026-08-12 (#1495): README.md claimed "45 modules total · 30 audio ·

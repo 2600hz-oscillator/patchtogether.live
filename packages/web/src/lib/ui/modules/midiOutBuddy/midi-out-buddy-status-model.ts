@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midiOutBuddy/midi-out-buddy-status-model.ts
-//
 // Every STRING the MIDI-OUT-BUDDY device body can produce, decided where a unit
 // test can read it.
 //

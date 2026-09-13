@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-control-kind.test.ts
-//
 // Unit tests for the PURE param render-kind resolver. Pure + fixture-driven —
 // no registry, no DOM. The two lines it holds:
 //

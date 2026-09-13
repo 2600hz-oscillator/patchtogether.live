@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/archivist-status-registry.ts
-//
 // THE ARCHIVE-BROWSE STATUS SEAM — how a SECOND surface can show, and drive, an
 // archive.org search whose three media elements have exactly ONE owner.
 //

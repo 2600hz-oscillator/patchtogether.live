@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/delay-echo-model.test.ts
-//
 // The delay's echo arithmetic, its three knob readouts, and the curated face
 // that consumes them — pinned together on purpose: a formatter nothing imports
 // proves nothing, and a rank nothing pins is one careless "tidy-up" away from

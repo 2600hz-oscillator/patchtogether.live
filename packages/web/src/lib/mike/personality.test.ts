@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/personality.test.ts
-//
 // Mike's structured progression — verified by reading the first
 // several intents emitted from an empty patch and asserting the order:
 //   clipplayer → drumVoice → mixer → (wires) → bass → melody → ...

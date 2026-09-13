@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/wavesculpt/WavesculptOutputBody.svelte
-  //
   // The WAVESCULPT dock full-view body: THE renderer, the camera pad that flies
   // it, the SCREEN switch and the MONITOR resize.
   //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/lushgarden-scene.test.ts
-//
 // LUSH GARDEN — unit coverage for the pure scene math the GL factory
 // consumes verbatim (lushgarden-scene.ts): manifest parsing (matte flags),
 // spawn-kind mix, cap/replace-oldest, reset, the rate→interval spawn
@@ -40,7 +38,6 @@ import {
   type LayoutParams,
 } from './lushgarden-scene';
 
-// ---- helpers --------------------------------------------------------------
 
 function entry(id: string, kind: LushgardenManifestEntry['kind'], w = 200, h = 250,
   matte: 'none' | 'white' = 'none'): LushgardenManifestEntry {

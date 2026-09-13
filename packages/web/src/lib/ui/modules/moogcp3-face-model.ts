@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moogcp3-face-model.ts
-//
 // The PURE model behind the MOOG CP3 faceplate — the one number a five-knob
 // console cannot print from any one of its knobs.
 //

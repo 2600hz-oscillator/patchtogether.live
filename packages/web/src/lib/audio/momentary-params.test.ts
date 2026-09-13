@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/momentary-params.test.ts
-//
 // THE TEST THAT WOULD HAVE CAUGHT THE STUCK PAD — a rack saved with tomtom's
 // STRIKE at 1, which masks `trigger_in` forever, or with tidyVco's HOLD at 1,
 // which reloads the voice already droning.

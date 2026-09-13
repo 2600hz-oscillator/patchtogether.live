@@ -1,5 +1,3 @@
-// art/scenarios/video/waveform-video-defs.test.ts
-//
 // ART-tier check on the waveform → mono-video CPU renderer's pixel
 // behaviour. Mirrors phase1-defs.test.ts in scope: math/property
 // asserts only, no headless GL yet (when headless-gl lands we'll add

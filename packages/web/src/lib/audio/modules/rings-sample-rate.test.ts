@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rings-sample-rate.test.ts
-//
 // A SAVED RACK MUST SOUND THE SAME ON SOMEONE ELSE'S INTERFACE.
 //
 // RINGS' MODAL bank sets each partial's Q proportional to its frequency,

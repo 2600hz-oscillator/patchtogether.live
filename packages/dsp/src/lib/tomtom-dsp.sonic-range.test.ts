@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/tomtom-dsp.sonic-range.test.ts
-//
 // SONIC-RANGE GUARD for TOM DRUM — the permanent form of the 2026-07-11
 // adversarial dynamism audit ("all controls are sonically dynamic").
 //
@@ -164,9 +162,7 @@ function zcPitch(buf: Float32Array, sS: number, eS: number): number {
   return ((count - 1) * SR) / (last - first);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Per-control 5-point sweeps
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom sonic range / per-control 5-point sweeps', () => {
   it('TUNE: f0 lands on the knob at every quartile; loudness stays compensated-flat', () => {
@@ -290,9 +286,7 @@ describe('tomtom sonic range / per-control 5-point sweeps', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // CV inputs actually modulate
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tomtom sonic range / CV inputs', () => {
   it('pitch_cv: exact octaves at ±1 V', () => {

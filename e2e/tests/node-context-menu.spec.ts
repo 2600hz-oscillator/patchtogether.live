@@ -1,5 +1,3 @@
-// e2e/tests/node-context-menu.spec.ts
-//
 // Right-click on a module card opens a context menu. Actions covered:
 //   - Delete: removes node + every edge touching it
 //   - Unpatch all: keeps node, removes every edge touching it

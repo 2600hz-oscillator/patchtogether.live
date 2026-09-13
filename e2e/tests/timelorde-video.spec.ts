@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-video.spec.ts
-//
 // LIVE-patch coverage for TIMELORDE's new VIDEO IN / VIDEO OUT jacks + the
 // big-display redesign. Claims:
 //

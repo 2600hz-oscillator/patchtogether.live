@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/moog956/Moog956RibbonStrip.svelte
-  //
   // THE PLAYABLE STRIP — the 956's actual instrument, and the ONE
   // implementation of it that both face surfaces mount.
   //

@@ -1,5 +1,3 @@
-// scripts/es9-sends-roundtrip.mjs
-//
 // ONE-OFF verification + re-emit for the owner's ES-9 send/return rack.
 //
 //   node scripts/es9-sends-roundtrip.mjs <in.zip> <out.ptperf.zip>

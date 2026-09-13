@@ -1,5 +1,3 @@
-// e2e/tests/modulation.spec.ts
-//
 // Verifies CV → AudioParam routing end-to-end:
 // 1. LFO produces non-zero output on its phase ports.
 // 2. Patching LFO output to ADSR.attack visibly modulates the param's

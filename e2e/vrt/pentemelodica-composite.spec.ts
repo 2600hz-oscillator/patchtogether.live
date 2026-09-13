@@ -1,5 +1,3 @@
-// e2e/vrt/pentemelodica-composite.spec.ts
-//
 // Composite-state VRT for PENTEMELODICA — the KEY deliverable: a whole-patch
 // screenshot of PENTEMELODICA driven by a MIDI LANE poly chord. Proves the
 // 5-voice synth plays a held chord routed off MIDI LANE's polyPitchGate bus.

@@ -1,5 +1,3 @@
-// packages/server/src/relay-error-handlers.ts
-//
 // Process-level last-resort error handlers for the relay, made ALERTABLE.
 //
 // The relay serves EVERY rack from one long-lived process, so crashing on an

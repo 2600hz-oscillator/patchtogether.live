@@ -1,5 +1,3 @@
-// art/scenarios/pattern3-face-pin.test.ts
-//
 // PF-11 — UI METADATA MUST NOT MOVE AN ART AUDIO PIN.
 //
 // The "pattern-3" scenarios pin their audio to the SOURCE FILE of the module

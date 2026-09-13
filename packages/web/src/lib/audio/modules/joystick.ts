@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/joystick.ts
-//
 // JOYSTICK — manual XY controller emitting four bipolar CV outputs.
 //
 // A user drags a virtual stick anywhere inside a square pad. The pad's

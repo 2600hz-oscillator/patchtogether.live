@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rings.ts
-//
 // RINGS — modal / sympathetic-string resonator (audio domain).
 //
 // Faithful TypeScript port of Émilie Gillet's Rings (Mutable Instruments).
@@ -473,7 +471,6 @@ export const ringsDef: AudioModuleDef = {
     { id: 'rings-strum', label: 'Strum — strike the resonator once', kind: 'other', testidPrefix: 'rings-strum' },
   ],
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // An exciter-driven RESONATOR, and the faceplate's job is three facts that
   // are all true of the shipping module, all invisible to every knob readback

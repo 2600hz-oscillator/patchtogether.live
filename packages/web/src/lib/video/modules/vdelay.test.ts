@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/vdelay.test.ts
-//
 // Unit tests for VDELAY's pure ring-buffer math. The GL-side draw is
 // covered by the e2e video-chain tests; here we verify just the index
 // + per-frame value math the shader implements in fixed-point.

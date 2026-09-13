@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-types.ts
-//
 // Data model + PURE helpers for the `clipplayer` module — the clip-launcher's
 // "clip page". Kept separate from the def/factory (clipplayer.ts) so the model,
 // the note→V/oct scheduling math, and the piano-roll note-editor row math are
@@ -32,7 +30,6 @@ import type { ArrangeData, ClipPlayMode } from './clip-arrange';
 // imports VALUES from this file). The SONG model lives in clip-song.ts.
 import type { SongData, SongRecState } from './clip-song';
 
-// ---------------------------------------------------------------------------
 // Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
 // 8 instrument lanes; the card shows 8 clip slots at a time (CLIP_SLOTS), but a
 // lane can hold clips in up to MAX_SCENES (= SCENE_STRIDE) SLOTS — the launchpad
@@ -46,7 +43,6 @@ import type { SongData, SongRecState } from './clip-song';
 // axis grow to MAX_SCENES without renumbering stored clips. Schema v1 (pre-this-
 // change) used a stride of 8 (== the old CLIP_SLOTS), so a v1 key `lane*8+slot`
 // is re-keyed to `lane*64+slot` on load by `migrateClipPlayerData` (data.sv=2).
-// ---------------------------------------------------------------------------
 export const CLIP_LANES = 8; // rows = instruments
 export const CLIP_SLOTS = 8; // VISIBLE clip columns per instrument (the card grid)
 /** FIXED storage stride for the flat clip key (`lane*SCENE_STRIDE + slot`). The
@@ -215,9 +211,7 @@ export function plainCloneClip(v: ClipRecord | null): ClipRecord | null {
   return v == null ? null : (JSON.parse(JSON.stringify(v)) as ClipRecord);
 }
 
-// ---------------------------------------------------------------------------
 // Types
-// ---------------------------------------------------------------------------
 export type ClipKind = 'note' | 'audio' | 'snapshot';
 
 /** One note in a note clip. Multiple events may share a `step` (a chord). */
@@ -333,9 +327,7 @@ export interface SnapshotClipRecord extends ClipBase {
   snapshot: Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
 // PER-CLIP AUTOMATION — the sibling `auto` map (automation redesign Phase 1)
-// ---------------------------------------------------------------------------
 //
 // Every NOTE clip implicitly owns an automation object: a SIBLING record in the
 // sparse `data.auto` map keyed by the SAME stride-64 `clipIndex(slot, lane)` as
@@ -695,11 +687,9 @@ export function isAutomationArmed(data: ClipPlayerData | undefined): boolean {
   return false;
 }
 
-// ---------------------------------------------------------------------------
 // AUTOMATION ASSIGNMENT (MODULE → lane) — PURE reads over `data.autoAssign`.
 // The owner-locked model: entire MODULES are assigned to a lane; while that
 // lane is armed, touching ANY control of an assigned module records it.
-// ---------------------------------------------------------------------------
 
 /** Coerce a raw `autoAssign` map: keep only entries whose key is a plausible
  *  MODULE node id (a non-empty string WITHOUT the retired `::` target-key
@@ -875,7 +865,6 @@ export function toggleLaneAutomationArm(
   return arming;
 }
 
-// ---------------------------------------------------------------------------
 // LIVE-PERFORMANCE (transient) data fields — the DUPLICATE scrub. A duplicated
 // clip player must copy CONTENT (clips, recorded automation, per-lane
 // settings, the arrangement) but never LIVE STATE: a duplicate born ARMED
@@ -898,7 +887,6 @@ export function toggleLaneAutomationArm(
 // missing word, so the list that diverged is gone: the loader imports
 // `CLIP_PLAYER_ARM_DATA_FIELDS` from here and there is nothing left to keep in
 // step. A new field is classified ONCE, below, or it does not compile.
-// ---------------------------------------------------------------------------
 /** Every live-performance `node.data` field, tagged with WHICH scrubs drop it.
  *
  *  `'arm'`  — a record-ARM latch. Dropped by BOTH scrubs. A duplicate born
@@ -1109,7 +1097,6 @@ export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'o
   return data?.recordMode === 'overdub' ? 'overdub' : 'replace';
 }
 
-// ---------------------------------------------------------------------------
 // PAD STATE — the ONE projection of how a launch-grid cell paints.
 //
 // ⚠ IT LIVES HERE BECAUSE TWO SURFACES PAINT THE SAME GRID. `ClipplayerCard`
@@ -1129,7 +1116,6 @@ export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'o
 // `hasClip` agree BY CONSTRUCTION rather than by both being maintained. The
 // engine's load-seam zombie sweep exists precisely to paper over the raw
 // reading; with this it no longer has to.
-// ---------------------------------------------------------------------------
 
 /** A launch-grid pad's painted state.
  *
@@ -1176,14 +1162,12 @@ export function clipPadState(data: ClipPlayerData | undefined, index: number): C
   return readClip(data, index) ? 'loaded' : 'empty';
 }
 
-// ---------------------------------------------------------------------------
 // Per-lane CLIP COLOR (card color-picker) — PURE. Each instrument channel (a
 // COLUMN of clips in the transposed grid) carries a user-PICKED hex color; the
 // card tints every non-empty clip in that column with it. Stored as a per-lane
 // hex array on node.data, same forgiving discipline as `rate`/`mono`/`swing`: a
 // missing / short / corrupt entry reads as null (unpicked → the default hue).
 // This is node.data only — NO PortDef/ParamDef change, so no contract-lock churn.
-// ---------------------------------------------------------------------------
 /** Coerce a raw value to a normalized lowercase `#rrggbb` hex, or null. Accepts
  *  a `#rgb` shorthand (expanded to `#rrggbb`) and a full `#rrggbb`; anything
  *  else (null, number, named color, wrong length, non-hex digits) ⇒ null =
@@ -1242,11 +1226,9 @@ export function laneColorEff(data: ClipPlayerData | undefined, lane: number): st
   return laneColor(data, lane) ?? defaultLaneColorHex(lane);
 }
 
-// ---------------------------------------------------------------------------
 // SWING (per-lane off-beat shuffle) — PURE. Same 0..0.75 range as DRUMSEQZ's
 // swing param. The engine delays a lane's ODD steps by swing*laneDur so even
 // steps stay locked to the grid (swing 0 ⇒ no offset ⇒ the un-swung schedule).
-// ---------------------------------------------------------------------------
 /** Max swing amount (fraction of a step the odd steps are pushed late). */
 export const MAX_SWING = 0.75;
 /** Clamp a raw swing value into [0, MAX_SWING]; non-finite ⇒ 0 (straight). */
@@ -1274,9 +1256,7 @@ export function isSwingCentered(v: number, eps = 1e-9): boolean {
   return Math.abs(v) <= eps;
 }
 
-// ---------------------------------------------------------------------------
 // Defaults + coercion
-// ---------------------------------------------------------------------------
 export function defaultNoteClip(): NoteClipRecord {
   return {
     kind: 'note',
@@ -1462,10 +1442,8 @@ export function clipLengthSteps(clip: ClipRecord | null | undefined): number {
   return Math.max(1, Math.round(len));
 }
 
-// ---------------------------------------------------------------------------
 // AUTOMATION helpers — PURE (record-layer building blocks; the Y.Doc callers
 // mutate in place per `yjs-save-load-real-ydoc`, these just compute values)
-// ---------------------------------------------------------------------------
 
 /** Clamp a raw value into a valid AutomationEvent, or null. */
 export function coerceAutomationEvent(raw: unknown): AutomationEvent | null {
@@ -1716,13 +1694,11 @@ export function readClip(
   return coerceClipRecord(clips[String(index)]);
 }
 
-// ---------------------------------------------------------------------------
 // SCENE copy/paste — a TYPED clipboard for the Launchpad clip-launcher. A
 // "scene" is all CLIP_LANES lanes' clips at ONE slot (`clipIndex(slot, lane)`).
 // The buffer holds either ONE clip OR a whole scene, always as PLAIN deep-clones
 // (never a live Y child). These helpers are PURE (the .svelte.ts owns the buffer
 // state + the origin-tagged Y writes). See launchpad-control.svelte.ts.
-// ---------------------------------------------------------------------------
 
 /** What the copy buffer holds, or what a paste targets. */
 export type CopyBufferKind = 'clip' | 'scene';
@@ -1810,9 +1786,7 @@ export function sceneWritePlan(
   return plan;
 }
 
-// ---------------------------------------------------------------------------
 // Scheduling math (note clip → poly lanes) — PURE
-// ---------------------------------------------------------------------------
 
 /** NoteEvents that START on `step` (their gate opens here). */
 export function notesStartingAt(clip: NoteClipRecord, step: number): NoteEvent[] {
@@ -2063,9 +2037,7 @@ export function resetPolyLaneBook(book: PolyLaneBook): void {
   book.note.fill(null);
 }
 
-// ---------------------------------------------------------------------------
 // piano-roll note-editor row math (X = step, Y = pitch) — PURE
-// ---------------------------------------------------------------------------
 
 /** The named scales, in KEYS-view select order. Chromatic is the ABSENCE of a
  *  scale (undefined), so it is not in this list. */
@@ -2222,7 +2194,6 @@ export function restrictedRowWindow(
   return { lo, hi: clampedHi, count: clampedHi - lo + 1 };
 }
 
-// ---------------------------------------------------------------------------
 // CUSTOM SCALE — a PER-LANE note-ROW FILTER for the editor. PURE.
 //
 // The use case that defines it: a hardware device listens on MIDI ch 10 for
@@ -2239,7 +2210,6 @@ export function restrictedRowWindow(
 // `visibleNoteRows` is the ONE row list the card AND every hardware surface
 // render from (D6) — neither re-derives the filter, so a card cannot silently
 // disagree with a controller about which rows exist.
-// ---------------------------------------------------------------------------
 
 /** Normalize a raw custom-scale entry to sorted-ASCENDING, de-duplicated MIDI
  *  note numbers inside the playable `[MIN_MIDI, MAX_MIDI]`. Anything else in the
@@ -2374,7 +2344,6 @@ export function toggleNoteAt(
   return { ...clip, steps: [...steps, { step, midi, velocity: opts.velocity ?? VEL_DEFAULT, lengthSteps: 1 }] };
 }
 
-// ---------------------------------------------------------------------------
 // Velocity LEVELS (DECIDED 2026-06-15, revised). SIX evenly-spaced steps the
 // VELOCITY-hold modifier cycles through, so the velocity CV out (velocity/127)
 // spans the FULL 0..1 range. The old 3-tier set (40/80/120) bunched into
@@ -2386,7 +2355,6 @@ export function toggleNoteAt(
 // A plain note tap places VEL_DEFAULT (60%). On the grid you HOLD the VELOCITY
 // pad + tap a note to cycle its level UP (wrapping, never removing — removal is
 // a plain tap).
-// ---------------------------------------------------------------------------
 /** The six velocity levels (MIDI 0..127) ≈ 0 / 20 / 40 / 60 / 80 / 100%. */
 export const VEL_LEVELS: readonly number[] = [0, 25, 51, 76, 102, 127];
 /** Number of velocity levels (6) — grid LEDs + card cells render this many. */
@@ -2459,7 +2427,6 @@ export function noteCovering(
   );
 }
 
-// ---------------------------------------------------------------------------
 // PER-NOTE PROBABILITY (owner-spec'd). EVERY note has a firing probability,
 // always: while a note's `prob` key is UNSET (a brand-new note that has never
 // been set) it USES THE CLIP DEFAULT (else 1); once SET it uses THAT value in
@@ -2473,7 +2440,6 @@ export function noteCovering(
 //
 // The "40 levels × 2.5%" is a UI affordance only (the LED count bar + the card
 // menu); storage keeps the raw 0..1 float, coerced/clamped in coerceNoteEvent.
-// ---------------------------------------------------------------------------
 /** UI probability step — 2.5% per level. Storage stays a raw 0..1 float. */
 export const PROB_STEP = 0.025;
 /** Number of UI probability levels (40): level 1 = 2.5% … level 40 = 100%. */
@@ -2525,7 +2491,6 @@ export function setNoteProb(
   return { ...clip, steps };
 }
 
-// ---------------------------------------------------------------------------
 // CLIP-DEFAULT PROBABILITY (owner-spec'd — extends per-note). A note clip carries
 // an optional DEFAULT firing probability (`NoteClipRecord.defaultProb`, 0..1)
 // used by EVERY note that has NOT had its OWN `prob` set. PRECEDENCE: a note's
@@ -2535,7 +2500,6 @@ export function setNoteProb(
 // NOTE `prob`, by contrast, stores 1.0 (there IS a lower level — the clip
 // default — to sit above). node.data only → NO PortDef/ParamDef, schema-version,
 // contract-lock or attest churn.
-// ---------------------------------------------------------------------------
 /** The clip's DEFAULT firing probability — its clamped `defaultProb`, or 1 when
  *  absent/invalid (every note that follows the clip always fires). PURE. */
 export function clipDefaultProbEff(clip: { defaultProb?: number } | undefined): number {
@@ -2604,7 +2568,6 @@ export function setClipDefaultProb(clip: NoteClipRecord, prob: number): NoteClip
   return { ...clip, defaultProb: p };
 }
 
-// ---------------------------------------------------------------------------
 // PER-NOTE PLAY EVERY (owner-spec'd — a COUNT-divider that STACKS with per-note
 // PROBABILITY). Each note carries an optional `playEvery` 1..8: the note only
 // gets a chance to fire on every Nth loop of its clip. It STACKS with prob — a
@@ -2617,7 +2580,6 @@ export function setClipDefaultProb(clip: NoteClipRecord, prob: number): NoteClip
 // fires on passes 2,4,6 (silent on the first pass after launch) and play-every-1
 // (the default) fires on every pass. node.data only → NO PortDef/ParamDef change
 // (the note field is pure data), so no attest churn beyond the GRAND source-SHA.
-// ---------------------------------------------------------------------------
 /** Max play-every divisor (the Launchpad top-row has 8 pads). */
 export const PLAY_EVERY_MAX = 8;
 /** The default play-every — 1 = every loop (unset ⇒ this). */
@@ -2679,7 +2641,6 @@ export function setNotePlayEvery(
   return { ...clip, steps };
 }
 
-// ---------------------------------------------------------------------------
 // PER-NOTE PITCH PROBABILITY (owner-spec'd — the THIRD per-note control, next to
 // PROBABILITY and PLAY EVERY). Each note carries an optional `pitchProb` 0..1:
 // its PITCH INSTABILITY. It is ORTHOGONAL to the other two, which decide WHETHER
@@ -2696,7 +2657,6 @@ export function setNotePlayEvery(
 // as PROB_STEP here); storage keeps the raw 0..1 float, clamped in
 // coerceNoteEvent. node.data only → NO PortDef/ParamDef, schema-version,
 // contract-lock or attest churn.
-// ---------------------------------------------------------------------------
 /** Clamp a raw pitch-instability to 0..1; non-finite ⇒ 0 (off). PURE. */
 export function coercePitchProb(v: unknown): number {
   const n = Number(v);
@@ -2771,10 +2731,8 @@ export function setNoteSpan(
   return { ...clip, steps };
 }
 
-// ---------------------------------------------------------------------------
 // Clip transforms (DOUBLE / REVERSE / COPY) — PURE. All return a NEW clip
 // (steps cloned), so the caller persists via the in-place Y discipline.
-// ---------------------------------------------------------------------------
 
 /**
  * DOUBLE a clip's length, duplicating the first half into the second half.
@@ -2865,12 +2823,10 @@ export function copyClip(clip: NoteClipRecord): NoteClipRecord {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // LENGTH-EDIT page math (PURE) — the grid's 2-row length editor. Length L
 // (1..MAX_CLIP_STEPS) is described as a 16-step BLOCK + a final STEP within it:
 //   endBlock = ceil(L/16)  (1..MAX_EDIT_PAGES)
 //   endStep  = L − (endBlock−1)*16  (1..16)
-// ---------------------------------------------------------------------------
 
 /** The 16-step block (1-based, 1..MAX_EDIT_PAGES) the clip's last step lives in. */
 export function lengthEndBlock(lengthSteps: number): number {

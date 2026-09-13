@@ -1,5 +1,3 @@
-// e2e/tests/toybox-presets.spec.ts
-//
 // TOYBOX Phase 6 — bundled PRESETS, the in-card DROPDOWN UI.
 //
 // Phase 2 lean (webgl-suite-optimization §2): the per-preset RENDER loop (the

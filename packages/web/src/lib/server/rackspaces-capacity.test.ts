@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/rackspaces-capacity.test.ts
-//
 // Regression for the joinRackspace capacity-race window flagged by the Codex
 // audit: the original CTE checked `counts.n < MAX_MEMBERS` and INSERTed in
 // the same statement, but without a row lock two concurrent joins on the

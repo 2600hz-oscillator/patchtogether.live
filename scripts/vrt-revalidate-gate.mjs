@@ -1,5 +1,3 @@
-// scripts/vrt-revalidate-gate.mjs
-//
 // The decision logic behind `vrt-update.yml`'s `revalidate` job — the step that
 // has to guarantee a bot-pushed baseline commit actually gets a CI run THAT RUNS.
 //
@@ -138,7 +136,6 @@ export const DEFAULTS = {
   pollIntervalMs: 5_000,
 };
 
-// ---------------------------------------------------------------------------
 // THE TAXONOMY IS THE FIX
 //
 // One question is asked of every run GitHub reports: DID IT EXECUTE, or will
@@ -151,7 +148,6 @@ export const DEFAULTS = {
 // only mean GitHub invented a new one — which is named in the failure rather
 // than silently swallowed into either bucket. Deny-by-default: an unrecognised
 // state is NOT a pass.
-// ---------------------------------------------------------------------------
 
 /** @typedef {'ran'|'parked'|'stuck'|'unknown'|'by-conclusion'} RunVerdict */
 
@@ -546,7 +542,6 @@ export async function runVerification({
   /* c8 ignore stop */
 }
 
-// ---------------------------------------------------------------------------
 // "BLOCKED WITH NOTHING RED" LOOKS THE SAME WHATEVER CAUSED IT
 //
 // From the PR page, #1694 and #1815 are the same picture: a required context
@@ -562,7 +557,6 @@ export async function runVerification({
 // missing run ambiguous — #1184/#1783 were the docs-only-bypass halves of that
 // ambiguity. The path filter and the bypass are both deleted (2026-08-23), and
 // three observables went with them.
-// ---------------------------------------------------------------------------
 
 /** The distinguishable causes, each with the issue that documents it. */
 export const BLOCKED_CAUSES = Object.freeze({
@@ -606,8 +600,6 @@ export function diagnoseBlocked({ runs = [] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// CLI
 //
 //   node scripts/vrt-revalidate-gate.mjs verify
 //       env: REPO, REF, [PUSHED_SHA], [MAX_REFIRES], [MAX_APPROVALS],
@@ -624,7 +616,6 @@ export function diagnoseBlocked({ runs = [] }) {
 //       which of #1694 / #1815 it is, and prints the posted contexts alongside.
 //
 // All shell out to `gh`, which is on the runner and in the flox env.
-// ---------------------------------------------------------------------------
 
 /**
  * ⚠ `head_sha=` MATCHES THE FULL 40-CHAR SHA AND NOTHING ELSE. An abbreviated

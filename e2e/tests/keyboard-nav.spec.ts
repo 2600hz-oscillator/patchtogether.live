@@ -1,5 +1,3 @@
-// e2e/tests/keyboard-nav.spec.ts
-//
 // End-to-end coverage for arrow-key driven editing on Sequencer + Cartesian.
 // Verifies the user's "very rapid arrow-only editing" UX:
 //   - Arrow keys NEVER move the caret inside a pitch input.

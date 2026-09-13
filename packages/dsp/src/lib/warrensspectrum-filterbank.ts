@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-filterbank.ts
-//
 // WARREN'S SPECTRUM — the 8-band resonant FILTERBANK (phase 2).
 //
 // A port of `src/dsp/FilterBank.{h,cpp}` + `src/dsp/Svf.h` from the Warren's

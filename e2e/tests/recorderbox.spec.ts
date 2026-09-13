@@ -1,5 +1,3 @@
-// e2e/tests/recorderbox.spec.ts
-//
 // LIVE end-to-end coverage for RECORDERBOX, the video+audio recorder sink.
 //
 // Drives the REAL source chain (per the test-the-real-source-chain

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/rasterize/RasterizeOutputBody.svelte
-  //
   // The RASTERIZE dock full-view body: its live raster picture plus the SCREEN
   // ON/OFF switch.
   //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/ruttetra.test.ts
-//
 // Unit tests for the AUTHENTIC forward-scatter Rutt-Etra scope (port of
 // p10entrancer XYZ). Covers:
 //   - the pure TS mirror of the GLSL `shapedRamp` (morph 0/0.333/0.666/1

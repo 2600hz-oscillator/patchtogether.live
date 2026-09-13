@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/card-preview-gate.test.ts
-//
 // A CARD MAY NOT PREVIEW ITS OWN NODE THROUGH THE UNGATED BLIT (#1802).
 //
 // `VideoEngine.blitOutputToDrawingBuffer` marks the node WATCHED, which makes

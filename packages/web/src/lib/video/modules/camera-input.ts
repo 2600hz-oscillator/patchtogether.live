@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/camera-input.ts
-//
 // CAMERA — webcam-as-source video module.
 //
 // Frame ingestion path (the single technical decision): a NODE-OWNED
@@ -205,7 +203,6 @@ export const cameraInputDef: VideoModuleDef = {
     { id: 'fillMode', label: 'Fill',   defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
   ],
 
-  // ── FACE ──────────────────────────────────────────────────────────────────
   //
   // WHAT CAMERA IS FOR: it is the rack's only CAPTURE SOURCE — the one module
   // whose pixels come from the physical world rather than from a shader. Its

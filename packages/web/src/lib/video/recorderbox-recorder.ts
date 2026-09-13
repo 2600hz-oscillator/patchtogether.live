@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-recorder.ts
-//
 // RECORDERBOX recording engine. Encodes a live <canvas> + a MediaStream audio
 // track into a HIGH-QUALITY H.264 MP4, streamed to OPFS scratch so the file
 // is crash-recoverable, then Save-As'd to disk on stop.
@@ -1197,9 +1195,7 @@ async function createWritableSink(handle: FileSystemFileHandle): Promise<ChunkSi
   };
 }
 
-// ---------------------------------------------------------------------------
 // Default remux: fragmented OPFS scratch → flat (moov-based) MP4
-// ---------------------------------------------------------------------------
 
 /**
  * The DEFAULT remux used by stop(): read the FRAGMENTED OPFS scratch as a ranged
@@ -1243,9 +1239,7 @@ async function defaultRemuxToFlatMp4(opfsPath: string): Promise<Uint8Array | nul
   }
 }
 
-// ---------------------------------------------------------------------------
 // Default OPFS writer — Worker-backed (SyncAccessHandle is worker-only)
-// ---------------------------------------------------------------------------
 
 /** Build the real OPFS writer. The Worker owns the FileSystemSyncAccessHandle
  *  and writes each fragment to disk synchronously (durable + crash-safe). */

@@ -1,4 +1,3 @@
-// packages/dsp/src/lib/sixstrum-tuning.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   SIXSTRUM_STRINGS,

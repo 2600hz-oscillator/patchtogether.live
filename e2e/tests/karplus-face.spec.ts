@@ -1,5 +1,3 @@
-// e2e/tests/karplus-face.spec.ts
-//
 // KARPLUS's CURATED FACE, driven for real under `?shell=1`. Two claims that
 // only a browser can settle, and neither is "the DOM re-labelled itself":
 //

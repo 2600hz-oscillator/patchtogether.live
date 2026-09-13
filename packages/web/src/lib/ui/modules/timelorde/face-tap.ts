@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/timelorde/face-tap.ts
-//
 // TAP TEMPO for the FACEPLATE's action cell.
 //
 // ⚠ THE CONTROLLER IS KEYED ON THE NODE, NOT HELD BY A COMPONENT, and that is

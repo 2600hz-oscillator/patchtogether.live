@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog-tail-faces-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the MOOG TAIL faceplates — the
 // two-and-three-control Moog System modules faced in batch 18.
 //

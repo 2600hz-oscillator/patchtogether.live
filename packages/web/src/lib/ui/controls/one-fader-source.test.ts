@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/one-fader-source.test.ts
-//
 // THERE IS ONE THROW, AND A NEW FACE CANNOT QUIETLY GO BACK TO THE OLD ONE.
 //
 // Owner directive, 2026-08-17: *"we should be using our new mxmsters faders for

@@ -1,5 +1,3 @@
-// e2e/tests/toybox-control-surface.spec.ts
-//
 // CONTROL SURFACE × TOYBOX — the two surface tests that boot a full TOYBOX
 // WebGL console. SPLIT OUT of control-surface.spec.ts (which stays in the
 // parallel sharded matrix) so the filename matches the `**/toybox-*.spec.ts`
@@ -43,7 +41,6 @@ async function readSurfaceBindings(page: Page, surfaceId: string) {
   }, surfaceId);
 }
 
-/** Open both dock panes (toybox console + surface board) and return them. */
 async function openPanes(page: Page) {
   await page.evaluate(() => {
     const w = globalThis as unknown as WGlobals;

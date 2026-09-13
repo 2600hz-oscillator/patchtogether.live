@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/picturebox.test.ts
-//
 // Def-shape + factory (7-slot asset switching, animated-gif playback) tests
 // for PICTUREBOX. The old v1→v4 old-patch migrate() was dropped in the schema
 // cleanup (cleanup 2/5); a fresh save stamps the current version so no migrate
@@ -13,10 +11,8 @@ import type { ModuleNode } from '$lib/graph/types';
 import { ASSET_SLOTS, ASSET_SLOT_NOTES, slotForVOct } from '$lib/video/asset-select';
 import { midiToVOct } from '$lib/audio/note-entry';
 
-// ---------------------------------------------------------------------------
 // Factory: 7-slot asset switching (fake GL — no WebGL). Mirrors the fake-GL
 // pattern in scoreboard.test.ts / 4plexvid.test.ts.
-// ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {
   const stub = (): unknown => ({});
@@ -148,10 +144,8 @@ describe('pictureboxDef.factory — 7-slot asset selection', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Animated GIF: frame scheduling on the engine clock + no-leak teardown.
 // draw() only uses frame.gl + frame.time (the rest of the fake ctx is stubbed).
-// ---------------------------------------------------------------------------
 
 /** A fake ImageBitmap with a spy-able close() so leak tests can assert release. */
 function animBitmap(): ImageBitmap {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/compressor-dsp.test.ts
-//
 // Pure-DSP unit tests for packages/dsp/src/lib/compressor-dsp.ts. These
 // pin the per-sample math directly (no worklet wrapper) — the fast,
 // deterministic layer of the SIDECAR test pyramid.
@@ -96,9 +94,7 @@ describe('compressor-dsp / env outs', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // DUCKER pipeline — out = MAIN + ducked(inputLevel · SC)
-// ────────────────────────────────────────────────────────────────────────────
 
 describe('compressor-dsp / sidecarStep — ducker pipeline', () => {
   const sr = 48000;

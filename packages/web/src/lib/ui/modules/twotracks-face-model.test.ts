@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/twotracks-face-model.test.ts
-//
 // The twotracks faceplate's own gate — and it is mostly NEGATIVE CONTROLS,
 // because almost everything this face decided is UNPROTECTED. Three of its
 // choices would go green if reversed:

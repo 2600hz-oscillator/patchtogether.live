@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/detached-display.test.ts
-//
 // THE DETACHED DISPLAY's pure model (#1821). No DOM, no Yjs — every rule the
 // component obeys is a function here, so the constraints the owner blessed are
 // pinned rather than described.

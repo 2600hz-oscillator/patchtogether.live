@@ -1,12 +1,9 @@
-// scripts/ci-service-container-pull.test.ts
-//
 // Gate for HOW CI GETS A POSTGRES. Pure-unit, zero-flake, runs in the `unit`
 // lane via `task test` → `task test:scripts`. No database and no real Docker:
 // the script is driven against a SHIM on PATH, so the retry and the fallback
 // are exercised as behaviour rather than grepped for as source.
 //
 // THE BUG THIS EXISTS TO PREVENT (#1828)
-// --------------------------------------
 // Every DB-using job declared postgres as a `services:` block. A service
 // container is initialised BEFORE the job's first step, so a transient registry
 // error there kills the job outright:
@@ -29,7 +26,6 @@
 // rule below is what makes that not the smallest available change.
 //
 // WHAT THIS GATE ASSERTS
-// ----------------------
 //  1. DENY BY DEFAULT — no workflow may declare a `services:` container again,
 //     keyed per `<workflow>::<job>` with a reason, anchored so a stale
 //     exemption is RED.
@@ -53,7 +49,6 @@
 //     no retry at all).
 //
 // WHAT THIS GATE CANNOT SEE
-// -------------------------
 //   · WHETHER A REAL PULL SUCCEEDS. Every docker call here is a shim. The gate
 //     proves the script's control flow and the workflows' shape; only a real CI
 //     run proves that ECR Public serves the image today.
@@ -76,11 +71,9 @@ const WORKFLOW_DIR = join(ROOT, '.github/workflows');
 const STARTER = '.github/scripts/start-postgres.sh';
 const STARTER_ABS = join(ROOT, STARTER);
 
-// ---------------------------------------------------------------------------
 // Scanners. Raw text on purpose: a YAML loader would normalise away the very
 // things under test (comments, quoting, key order) and would also happily
 // accept a file that no longer parses the way Actions reads it.
-// ---------------------------------------------------------------------------
 
 function workflows(dir = WORKFLOW_DIR): Array<[string, string]> {
   return readdirSync(dir)
@@ -194,9 +187,7 @@ export function jobsWithTestDbUrl(wfs = workflows()): string[] {
  */
 export const ALLOWED_SERVICE_CONTAINERS: Record<string, { why: string }> = {};
 
-// ---------------------------------------------------------------------------
 // 1 + 2 + 3. The workflow shape.
-// ---------------------------------------------------------------------------
 
 describe('CI postgres is started by a step, not a service container', () => {
   it('finds jobs with a test DB url at all — a scan matching nothing would pass everything below', () => {
@@ -260,9 +251,7 @@ describe('CI postgres is started by a step, not a service container', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 4. Resolution order, read by EXECUTION rather than by grep.
-// ---------------------------------------------------------------------------
 
 function printRefs(env: Record<string, string> = {}): string[] {
   return execFileSync('bash', [STARTER_ABS, '--print-refs'], {
@@ -307,9 +296,7 @@ describe('the starter resolves more than one registry, primary first', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 5 + 6. The retry itself, driven against a docker shim.
-// ---------------------------------------------------------------------------
 
 /**
  * A fake `docker` on PATH that records every invocation and fails `pull` for the
@@ -421,10 +408,8 @@ describe('a failing pull is retried into success, not fatal', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Negative controls for the SCANNERS. A scanner that silently stopped matching
 // would pass every assertion above while measuring nothing.
-// ---------------------------------------------------------------------------
 
 describe('negative controls: the workflow scanners can actually fail', () => {
   const wf = (name: string, body: string): Array<[string, string]> => [[name, body]];

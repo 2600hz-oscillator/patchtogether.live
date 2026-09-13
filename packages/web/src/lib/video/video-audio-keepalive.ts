@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/video-audio-keepalive.ts
-//
 // Shared silent audio keep-alive for <video>-source modules (VIDEOBOX,
 // VIDEOVARISPEED, CAMERA). ONE correct implementation rather than three
 // copies — see the per-module wireAudio() callers.

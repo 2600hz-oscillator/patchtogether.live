@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog907a.test.ts
-//
 // Two test layers for the MOOG 907A FIXED FILTER BANK (moogafakkin System 35 clone):
 //   1. Module-def shape — pins the 907A's I/O surface (single audio in, single
 //      audio out, the hp / band1..band8 / lp param array driven by the SHARED

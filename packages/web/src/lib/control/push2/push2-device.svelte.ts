@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push2-device.svelte.ts
-//
 // Ableton Push 2 — Web-MIDI device singleton (the MIDI half of the Push
 // integration). The 960×160 display is a SEPARATE, vendor-specific USB
 // interface and lives in the sibling `push2-display.svelte.ts` (WebUSB) +
@@ -54,9 +52,7 @@ import {
 import type { Push2LedSpec } from './push2-map';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
 
-// ---------------------------------------------------------------------------
 // Singleton state
-// ---------------------------------------------------------------------------
 let access: MidiFullAccessLike | null = null;
 let connectStarted = false;
 let connectFailed = false;
@@ -87,9 +83,7 @@ function bumpStatus(): void {
   statusVersion++;
 }
 
-// ---------------------------------------------------------------------------
 // Capability + status
-// ---------------------------------------------------------------------------
 
 /** Is Web MIDI available (Chromium)? Gates the whole feature so Safari/Firefox +
  *  CI degrade cleanly (no hardware). */
@@ -105,9 +99,7 @@ export function isBound(): boolean {
   return !!(unit.input && unit.output);
 }
 
-// ---------------------------------------------------------------------------
 // Connect (acquire sysex access) — lazy, idempotent, gesture-gated.
-// ---------------------------------------------------------------------------
 
 /**
  * Acquire a sysex-capable MIDIAccess. MUST be called from a user gesture.
@@ -164,9 +156,7 @@ function dumpPortNames(): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Port matching + enumeration.
-// ---------------------------------------------------------------------------
 
 /**
  * Classify a Push 2 port name as its LIVE / USER role, or 'other'. On macOS
@@ -266,9 +256,7 @@ export function enumeratePush2Ports(): Push2Port[] {
   return selectPush2Ports(ins, outs);
 }
 
-// ---------------------------------------------------------------------------
 // Bind / unbind + LIVE-mode handshake.
-// ---------------------------------------------------------------------------
 
 /**
  * Bind the Push to a concrete input/output pair and set LIVE mode. Idempotent for
@@ -351,9 +339,7 @@ export function unbind(): void {
   bumpStatus();
 }
 
-// ---------------------------------------------------------------------------
 // Inbound dispatch
-// ---------------------------------------------------------------------------
 function handleInbound(ev: MidiEventLike): void {
   const data = ev.data;
   if (data.length < 1) return;
@@ -369,9 +355,7 @@ export function onKey(cb: (e: Push2RxEvent) => void): () => void {
   return () => keyListeners.delete(cb);
 }
 
-// ---------------------------------------------------------------------------
 // LED output — diffed writes via the codec.
-// ---------------------------------------------------------------------------
 const padKey = (note: number): string => `p${note}`;
 const btnKey = (cc: number): string => `b${cc}`;
 
@@ -418,10 +402,8 @@ export function clear(): void {
   for (const b of toSend) sendRaw(b);
 }
 
-// ---------------------------------------------------------------------------
 // Simulated-device test hook — an in-memory Push so e2e/unit can drive pad/CC
 // presses + assert emitted bytes, with no hardware + no Web-MIDI prompt.
-// ---------------------------------------------------------------------------
 export interface SimulatedPush2 {
   /** Simulate a pad press at (x,y). */
   press(x: number, y: number, velocity?: number): void;

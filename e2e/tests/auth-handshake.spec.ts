@@ -1,5 +1,3 @@
-// e2e/tests/auth-handshake.spec.ts
-//
 // @auth tests: Hocuspocus WS handshake validates the auth token (Stage B
 // PR-D). Two valid token forms — `anon:<HMAC>` and `clerk:<JWT>` — and
 // the server rejects everything else.

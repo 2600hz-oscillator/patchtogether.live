@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/loopback-crop-pump.ts
-//
 // THE LOOPBACK CROP PUMP — the per-frame viewport measurement that windows a
 // tab capture down to "just what I see", given a NODE-scoped home instead of a
 // card-scoped one.

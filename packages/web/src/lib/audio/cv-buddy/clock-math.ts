@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-buddy/clock-math.ts
-//
 // PURE clock-pulse scheduling math for CV Buddy's hardware clock output.
 //
 // The clock is GENERATED (not divided from a patched input) at PPQN pulses per
@@ -7,7 +5,6 @@
 // ConstantSource at each returned edge time — a DIN-sync / analog-clock pulse
 // for the ES-9's slot-8 jack.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // ⚠ WHY THIS IS AN ACCUMULATOR AND NOT A GRID (owner-reported, 2026-08-07:
 //   "Pam's locks to it but not flawlessly"; a Mandala MK2 downstream of Pam's
 //   showed obvious missed triggers)

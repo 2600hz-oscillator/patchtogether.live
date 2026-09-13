@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-shadertoy.test.ts
-//
 // Pure-helper coverage for the Shadertoy runtime seam:
 //   - mainImage → main shim + uniform injection,
 //   - iMouse client→engine coord mapping (Y-flip) + .z/.w press state machine,

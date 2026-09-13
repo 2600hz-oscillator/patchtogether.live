@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/treeohvox-range-source.test.ts
-//
 // ONE SOURCE OF TRUTH for TREE.oh.VOX's CUTOFF range — the def, the worklet's
 // AudioParam descriptor, and the value the ladder actually clamps to.
 //

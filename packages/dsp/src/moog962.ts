@@ -1,5 +1,3 @@
-// packages/dsp/src/moog962.ts
-//
 // MOOG 962 SEQUENTIAL SWITCH — Moog System 55 clone. A gate-advanced signal
 // selector: up to three signal inputs (in1..in3) feed a single output, and a
 // rising edge on the SHIFT gate steps the selector to the next input

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/synesthesia-worklet.test.ts
-//
 // Worklet-wrapper smoke test for packages/dsp/src/synesthesia.ts. The
 // synesthesia-dsp.test.ts file proves the pure DSP maths; THIS file proves the
 // AudioWorkletProcessor wiring — copy A/B independence and the per-band output

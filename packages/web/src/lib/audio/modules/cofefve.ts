@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cofefve.ts
-//
 // COFEFVE DELAY — a clean-room, OWN-CODE analog BBD/tape-style stereo delay.
 // The per-sample DSP is packages/dsp/src/cofefve.ts (wrapping the own-code
 // packages/dsp/src/lib/analog-delay-core.ts); NO GPL delay source was read
@@ -297,7 +295,6 @@ export const cofefveDelayDef: AudioModuleDef = {
         "ECHO TRAIN — the faceplate's hero picture, not a control: the dry hit followed by the repeats the current settings will actually produce, spaced at the EFFECTIVE delay (TIME, or the SYNC division when SYNC is on), each one shorter than the last by the feedback loop's gain, and split into a left and a right stem when STEREO skews the two channels apart. The WOW ripple over the train is drawn only when WOW AMOUNT is above 0 — at the shipped default it is greyed, so the picture says the motion section is off instead of drawing a still train that looks like a working one. The window button under it switches the time axis between 2 s and 8 s.",
     },
   },
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // THE PROBLEM THIS FACE EXISTS FOR, in one sentence: SEVEN of this
   // module's twenty-three controls do nothing at the factory default — FIVE of

@@ -1,5 +1,3 @@
-// packages/web/src/hooks.client.ts
-//
 // Browser-side error tracking via Sentry — FULLY ENV-GATED on PUBLIC_SENTRY_DSN.
 // With the DSN unset (local dev, CI, prod-before-provisioning) this is a TOTAL
 // no-op: Sentry.init() is never called and handleError falls through to the

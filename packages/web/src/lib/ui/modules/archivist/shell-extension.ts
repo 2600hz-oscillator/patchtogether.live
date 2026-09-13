@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/archivist/shell-extension.ts
-//
 // The ARCHIVIST SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on BOTH body slots.
 //

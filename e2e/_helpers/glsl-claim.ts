@@ -1,5 +1,3 @@
-// e2e/_helpers/glsl-claim.ts
-//
 // MEASURE A GLSL-DELIVERED VALUE AGAINST A DEF CLAIM.
 //
 // ── WHY THIS EXISTS ─────────────────────────────────────────────────────────

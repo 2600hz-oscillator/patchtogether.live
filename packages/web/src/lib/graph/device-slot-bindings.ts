@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/device-slot-bindings.ts
-//
 // THE PER-MACHINE RIG STORE — device bindings that must NEVER ride the Y.Doc.
 //
 // ── WHY THIS EXISTS ─────────────────────────────────────────────────────────

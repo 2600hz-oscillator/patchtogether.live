@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/index.ts
-//
 // Auto-registers EVERY video module on first import — GLOB-DRIVEN. Mirrors
 // packages/web/src/lib/audio/modules/index.ts.
 //

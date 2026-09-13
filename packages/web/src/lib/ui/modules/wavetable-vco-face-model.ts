@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavetable-vco-face-model.ts
-//
 // THE PURE MODEL BEHIND WAVETABLE VCO's FACEPLATE — the two derived readouts,
 // mirroring `packages/dsp/src/wavetable-vco.ts` line for line.
 //

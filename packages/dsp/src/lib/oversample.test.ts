@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/oversample.test.ts
-//
 // Proving tests for the shared 2×/4× oversampler (DSP-audit A4; the kick-drum
 // drive stage consumes it first). The load-bearing bar, per the kick plan's
 // adversarial review (Finding 2): ≥60 dB image rejection for EVERY nonlinearity

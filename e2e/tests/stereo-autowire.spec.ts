@@ -1,5 +1,3 @@
-// e2e/tests/stereo-autowire.spec.ts
-//
 // THE LEG-GROUP COMMIT, end to end.
 //
 // Every case here drives the REAL redesigned commit gesture — open the source
@@ -448,7 +446,6 @@ test.describe('leg-group removal', () => {
   });
 });
 
-// ───────────────────────────── helpers ─────────────────────────────
 
 /** Seed raw edges through the app's own Y.Doc — used for LEGACY single-leg
  *  shapes (a rack saved before leg groups existed) that no UI writes yet. */

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/gif-frames.ts
-//
 // PURE frame scheduler for animated-GIF playback in PICTUREBOX (no DOM, no
 // engine, no WebGL). Given a list of per-frame durations (milliseconds) and an
 // elapsed time, decide which frame index is on screen — looping forever. The

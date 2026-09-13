@@ -1,5 +1,3 @@
-// e2e/tests/toybox-fixtures.spec.ts
-//
 // THE FIXTURE-SHADER MECHANISM (#2070) — proves the deterministic pack loads
 // through the product's own custom-shader seam and that EXACT compositing
 // arithmetic is assertable on SwiftShader, replacing perceptual floors for
@@ -95,9 +93,7 @@ test('@webgl-smoke fixture pack registers through the REAL seam and composites t
   expect(s2, 'fixture frames must be byte-stable across 30 frames (canvas bytes)').toEqual(s1);
 });
 
-// ---------------------------------------------------------------------------
 // HEAVY LANE — the rest of the mechanism
-// ---------------------------------------------------------------------------
 
 test.describe('toybox fixture mechanism — heavy proofs', () => {
   test('GRADIENT maps position into pixel values (orientation pinned by measurement)', async ({ page }) => {

@@ -1,5 +1,3 @@
-// packages/dsp/src/attenumix.ts
-//
 // ATTENUMIX — the simple mixer.
 //
 // 4-channel attenuating mixer. Each channel has an audio input, an

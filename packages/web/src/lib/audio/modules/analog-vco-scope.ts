@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-vco-scope.ts
-//
 // Single-cycle waveform extraction + 2D draw for the ANALOG VCO card's
 // on-card scope. Pure functions (no DOM, no engine) so they're unit-
 // testable; the card wires them to an HTMLCanvasElement on rAF.

@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-play-every.spec.ts
-//
 // PER-NOTE PLAY EVERY end-to-end (card path): drawing a note and picking "Play
 // Every 3" from its right-click menu writes `playEvery: 3` onto that note in the
 // synced clip data — the observable every peer + the engine + the LED read. The

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/cc-commit.test.ts
-//
 // Unit gate for the streaming-CC coalescer (the MIDI-CC render-starvation
 // fix). Uses injected fake timers/now — no real setTimeout, no rAF, fully
 // deterministic. The load-bearing invariants:

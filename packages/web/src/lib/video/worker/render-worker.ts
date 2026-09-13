@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/render-worker.ts
-//
 // Fix E Phase 1 — the RENDER WORKER entry point.
 //
 // A Vite *module* worker (`new Worker(new URL('./render-worker.ts',

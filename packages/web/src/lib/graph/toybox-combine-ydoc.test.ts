@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-combine-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the TOYBOX Phase-4 combine-graph mutators.
 // These run against the SAME syncedStore + Y.Doc the live patch uses, so graph
 // nodes/edges become real Y.Maps once written — the only way to catch the "Type

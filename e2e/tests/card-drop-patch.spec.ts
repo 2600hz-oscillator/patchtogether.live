@@ -1,5 +1,3 @@
-// e2e/tests/card-drop-patch.spec.ts
-//
 // DROP ONE CARD ONTO ANOTHER → THE PATCH MODAL.
 //
 // The owner's problem, verbatim: "patching video is very intensive on the patch

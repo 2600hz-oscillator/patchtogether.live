@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/feedback.ts
-//
 // Feedback data layer — Neon HTTP API. One row per submission.
 //
 // kind ∈ {'suggestion', 'bug'} qualifies the message; the column stays

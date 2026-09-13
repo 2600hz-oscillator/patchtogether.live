@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/asset-spawn.ts
-//
 // WORKFLOW MODE P3 — the imperative driver behind the Loaded Assets
 // Picker: create an asset-backed module in the RIGHT RAIL, load the
 // asset into it THROUGH THE MODULE'S OWN LOAD PATH (never a parallel
@@ -97,9 +95,7 @@ export interface AssetSpawnResult {
   portId: string;
 }
 
-// ---------------------------------------------------------------------------
 // Right-rail placement (DOM-measured footprints, organize.ts precedent)
-// ---------------------------------------------------------------------------
 
 /** Fallbacks for cards that haven't mounted/measured yet. */
 const DEFAULT_CARD_W = 320;
@@ -134,9 +130,7 @@ export function computeRailPosition(): { x: number; y: number } {
   return nextRightRailPosition(others, rail);
 }
 
-// ---------------------------------------------------------------------------
 // Per-module media load drivers (see header — the modules' OWN paths)
-// ---------------------------------------------------------------------------
 
 async function loadAudioIntoSamsloop(
   nodeId: string,
@@ -233,9 +227,7 @@ async function loadMediaIntoNode(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Create / ensure / unload
-// ---------------------------------------------------------------------------
 
 /** Cap guards mirroring spawnFromPalette (silent-discard callers get the
  *  message through ctx.onError). Null = allowed. */
@@ -334,9 +326,7 @@ export function unloadAsset(assetId: string): void {
   mediaLibrary.remove(assetId);
 }
 
-// ---------------------------------------------------------------------------
 // Rebind sweep (missing-media default — reversible, see asset-modules.ts)
-// ---------------------------------------------------------------------------
 
 /** Minimal node shape the pure planner needs. */
 export interface RebindNodeLike {

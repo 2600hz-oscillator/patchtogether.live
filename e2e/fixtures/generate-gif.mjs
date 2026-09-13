@@ -1,5 +1,3 @@
-// e2e/fixtures/generate-gif.mjs
-//
 // One-time generator for `animated-test.gif` — a TINY (~few hundred bytes),
 // 4-frame animated GIF used by picturebox-gif.spec.ts to prove PICTUREBOX
 // preserves + PLAYS animated gifs (the output pixels change over time).

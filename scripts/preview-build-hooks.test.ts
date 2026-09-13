@@ -1,5 +1,3 @@
-// scripts/preview-build-hooks.test.ts
-//
 // A PREVIEW-SERVING LANE THAT BUILDS ITS OWN BUNDLE MUST BAKE THE TEST HOOKS.
 //
 // `VITE_E2E_HOOKS=1` is a Vite BUILD-time var. Without it, a prod build

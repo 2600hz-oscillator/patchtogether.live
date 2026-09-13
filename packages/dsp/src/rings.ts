@@ -1,5 +1,3 @@
-// packages/dsp/src/rings.ts
-//
 // RINGS — modal / sympathetic-string resonator (Mutable Instruments archetype).
 //
 // Faithful TypeScript port (algorithm-level, not bit-exact) of Émilie Gillet's

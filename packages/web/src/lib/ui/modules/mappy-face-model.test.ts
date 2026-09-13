@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mappy-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the MAPPY faceplate.
 //
 // Everything here is a claim the shipped face MAKES that no other gate checks.

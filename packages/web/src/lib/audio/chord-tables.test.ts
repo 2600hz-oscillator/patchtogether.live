@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/chord-tables.test.ts
-//
 // Unit tests for the pure chord-table helpers used by POLYSEQZ.
 
 import { describe, it, expect } from 'vitest';

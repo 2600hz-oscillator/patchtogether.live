@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mixmstrs-face-model.ts
-//
 // THE PURE MODEL BEHIND MIXMSTRS' FACEPLATE — the console's ranking axis, and
 // the four hero readouts.
 //

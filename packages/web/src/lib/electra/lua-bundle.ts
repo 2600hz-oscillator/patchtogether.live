@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/lua-bundle.ts
-//
 // The Lua layer the broker uploads to the device (SysEx 01 0C). Kept as a TS
 // string constant (rather than a ?raw import of docs/electra/lua/*) so it bundles
 // cleanly in the web build and the docs templates stay editable independently.

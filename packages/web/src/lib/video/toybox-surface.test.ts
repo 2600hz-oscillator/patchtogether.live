@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-surface.test.ts
-//
 // Unit tests for the PURE texmap helpers: readSurfaceSource (defensive
 // normalisation of material.surfaceSource) + resolveRenderOrder (the per-frame
 // dependency order + safe-source guard). The GL pass itself is VRT-only; these

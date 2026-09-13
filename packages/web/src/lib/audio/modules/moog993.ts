@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog993.ts
-//
 // MOOG 993 TRIGGER & ENVELOPE VOLTAGES PANEL — a slice of the Moog System 55
 // clone initiative (docs/adr/018-moog-clone-provenance.md). The 993 is a
 // patch-bay convenience
@@ -103,7 +101,6 @@ export const moog993Def: AudioModuleDef = {
     { id: 'route3', label: 'Route 3', defaultValue: 1, min: 0, max: 2, curve: 'discrete', options: MOOG993_ROUTE_OPTIONS },
   ],
 
-  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. Every other panel in this family PROCESSES a signal. The
   // 993 does nothing to one — it DECIDES WHERE IT GOES. It is a trigger

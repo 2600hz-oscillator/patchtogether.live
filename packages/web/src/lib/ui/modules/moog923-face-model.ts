@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog923-face-model.ts
-//
 // The PURE model behind the MOOG 923 faceplate — the arithmetic for its five
 // derived readouts.
 //

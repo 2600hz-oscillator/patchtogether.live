@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clipplayer.ts
-//
 // CLIP PLAYER (v2) — an Ableton-Session-style clip launcher with 8 INSTRUMENT
 // LANES. Rows = instruments (8), columns = clip slots (8) → 64 note clips. Each
 // lane independently plays its launched clip out its OWN pitch/gate/velocity
@@ -347,7 +345,6 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'clipplayer-scene-repeat', label: 'Per-scene repeat count', kind: 'other', testidPrefix: 'clipplayer-scene-repeat' },
   ],
 
-  // ── THE FACE ──────────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: eight instrument lanes, eight clip slots each, locked to
   // TIMELORDE. You launch clips into lanes and they drop in on a shared musical

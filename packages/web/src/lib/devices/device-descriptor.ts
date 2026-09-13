@@ -1,5 +1,3 @@
-// packages/web/src/lib/devices/device-descriptor.ts
-//
 // DEVICE DESCRIPTOR — a declarative description of an external MIDI device's
 // control surface. DATA, not code: adding a second device must not require a
 // second module, a second card, or a second contract-lock entry.

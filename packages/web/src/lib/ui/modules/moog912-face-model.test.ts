@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog912-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for moog912's two derived readouts.
 //
 // ⚠ THESE READOUTS ARE NOT DECORATION ON THIS MODULE — THEY ARE ITS MERIT.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/meter-frame.ts
-//
 // ONE shared requestAnimationFrame ticker for card "meter" repaints — the
 // per-card scope / playhead / level-meter loops that read an AnalyserNode (or
 // the engine) and repaint a canvas once per frame.

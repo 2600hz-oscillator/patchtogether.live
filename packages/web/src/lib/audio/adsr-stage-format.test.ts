@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/adsr-stage-format.test.ts
-//
 // The unit gate for adsr's PF-3 readout law. Three layers, deliberately:
 //
 //  1. TABLE — the exact strings, including the two rounding BAND EDGES where a

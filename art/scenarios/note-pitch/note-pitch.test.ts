@@ -1,5 +1,3 @@
-// art/scenarios/note-pitch/note-pitch.test.ts
-//
 // ART (Audio Regression Test) for D5: note-name -> MIDI -> V/oct -> Hz pipeline.
 //
 // Scenario: parse a note name through the same parser the Sequencer + Cartesian

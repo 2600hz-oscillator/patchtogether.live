@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/treeohvox-envelope.test.ts
-//
 // THE FOUR MEASURED TREE.oh.VOX DEFECTS, each pinned by the number that found
 // it, each with a negative control that runs on EVERY invocation (not once at
 // authoring time).
@@ -53,11 +51,9 @@ const DEFAULTS: VoiceParams = {
   waveform: 0,
 };
 
-// ---------------------------------------------------------------------------
 // The REAL worklet, captured through a registerProcessor shim (the
 // mandelbulb-osc.test.ts / cube.test.ts pattern — the entry deliberately
 // top-level-exports nothing).
-// ---------------------------------------------------------------------------
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;
 };
@@ -147,9 +143,7 @@ function harmonic(buf: Float32Array, f0: number, k: number): number {
   return (2 * Math.sqrt(re * re + im * im)) / buf.length;
 }
 
-// ===========================================================================
 // D1 — GATE LENGTH IS THE NOTE LENGTH (was: ignored entirely)
-// ===========================================================================
 describe('D1 · gate length is the note length', () => {
   it('a 10 ms gate and a 1 s gate are NOT byte-identical (they were: 0.0000e+0 over 3 s)', async () => {
     const short = await renderWorkletGated(SR * 3, 480);
@@ -243,9 +237,7 @@ describe('D1 · gate length is the note length', () => {
   });
 });
 
-// ===========================================================================
 // D2 — THE WAVE MORPH HAS NO NULL
-// ===========================================================================
 
 /** The SHIPPED (defective) square tap, kept verbatim as a permanent negative
  *  control on the DFT probe: an oppositely-signed square must still show the
@@ -343,9 +335,7 @@ describe('D2 · the WAVE morph never cancels', () => {
   });
 });
 
-// ===========================================================================
 // D3 — A RETRIGGER OVER A RINGING NOTE DOES NOT RESET THE FILTER
-// ===========================================================================
 describe('D3 · retrigger over a ringing note does not step to zero', () => {
   const AT = 9600;
 
@@ -409,9 +399,7 @@ describe('D3 · retrigger over a ringing note does not step to zero', () => {
   });
 });
 
-// ===========================================================================
 // D4 — THE WHOLE CUTOFF TRAVEL IS ALIVE
-// ===========================================================================
 describe('D4 · every part of the CUTOFF travel changes the sound', () => {
   /** The def's own taper: log from floor to ceiling. */
   function cutoffAt(knob01: number): number {

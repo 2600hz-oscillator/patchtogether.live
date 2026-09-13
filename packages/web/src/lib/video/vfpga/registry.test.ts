@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/registry.test.ts
-//
 // VFPGA catalog validation — runs over EVERY bundled spec (glob-collected), so
 // any new specs/<id>.ts auto-enrols. Asserts the invariants the host relies on:
 // unique ids, slots within the host superset, videoIn/videoOut within range,

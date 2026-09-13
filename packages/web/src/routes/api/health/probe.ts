@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/health/probe.ts
-//
 // Pure, dependency-injected helpers for the web /api/health cross-tier relay
 // probe. Deliberately free of $env / SvelteKit imports so they unit-test
 // headlessly (probe.test.ts) — the +server.ts handler wires the real build-time

@@ -1,5 +1,3 @@
-// e2e/tests/ringback-face.spec.ts
-//
 // THE RINGBACK FACE, driven for real.
 //
 // faces-parity already proves every ringback cell is present and operable, and
@@ -57,7 +55,6 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Open the module's dock full-view and return the dock-tier shell. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
   await expect(shell).toBeVisible();

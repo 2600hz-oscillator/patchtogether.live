@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/level-meter.ts
-//
 // A tiny reusable OUTPUT-LEVEL tap for the module-faceplate refactor: hang a
 // passive AnalyserNode off a module's output node and expose a `getLevel()`
 // that returns the current RMS as a 0..1 fraction. This is the LIVE source the

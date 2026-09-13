@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavesculpt.test.ts
-//
 // Unit tests for WAVESCULPT v2 (wavetable engine refactor).
 //
 // What changed vs v1:
@@ -184,7 +182,6 @@ describe('distanceGain', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // PCU (pure-core-unit) ports of three deleted WAVESCULPT e2e satellite specs.
 //
 // The e2e specs spawned a real card + LFO/joystick + scope and asserted on
@@ -198,7 +195,6 @@ describe('distanceGain', () => {
 // Thresholds below are derived from the ACTUAL computed values (commented
 // inline at each assert), then set comfortably under the real delta so the
 // test pins behaviour without false-failing on harmless arithmetic drift.
-// ---------------------------------------------------------------------------
 
 /** Per-wall spatial-gain vector at a camera eye position. */
 function wallGainVector(eye: readonly [number, number, number]): number[] {
@@ -674,7 +670,6 @@ describe('ribbonStripRange (alpha-rotate bugfix: per-osc sub-strip)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Per-oscillator AUDIO outputs (RED/GRN/BLU/ALP) — factory routing.
 //
 // These tests drive wavesculptDef.factory() against a mock Web Audio
@@ -686,7 +681,6 @@ describe('ribbonStripRange (alpha-rotate bugfix: per-osc sub-strip)', () => {
 // out_red carries osc 0, out_grn osc 1, etc. We also confirm those panners
 // are the SAME nodes the BLINK scope analysers tap, so the per-osc audio out
 // is literally the oscilloscope's per-osc source.
-// ---------------------------------------------------------------------------
 
 import type { ModuleNode } from '$lib/graph/types';
 
@@ -908,7 +902,6 @@ describe('wavesculpt factory: per-osc audio output routing (RED/GRN/BLU/ALP)', (
   });
 });
 
-// ---------------------------------------------------------------------------
 // MASTER GAIN → the summed L/R audio bus.
 //
 // THE BUG THIS PINS (Tier-A-2 of the DSP decision doc). `master_gain` was a
@@ -926,7 +919,6 @@ describe('wavesculpt factory: per-osc audio output routing (RED/GRN/BLU/ALP)', (
 // the pre-fix topology (both bus gains hard 1). If the predicate ever stops
 // being able to tell those apart it goes red on its own, without needing the
 // module to regress first.
-// ---------------------------------------------------------------------------
 
 /** The observable: do BOTH published output nodes carry `expected` as their
  *  gain? Units: LINEAR GAIN (0..2), not dB. Returns the reason on failure so a

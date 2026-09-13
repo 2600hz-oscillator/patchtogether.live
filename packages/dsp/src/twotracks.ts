@@ -1,5 +1,3 @@
-// packages/dsp/src/twotracks.ts
-//
 // TWOTRACKS — tape loop emulator AudioWorklet (Phase 4: live waveform + WAV export).
 //
 // Phase 1 additions (reel A): stereo ring buffer, transport state machine,
@@ -71,9 +69,6 @@ import {
   reelOutSample,
 } from './lib/twotracks-engine';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 /** Maximum tape length in samples (per channel) — the fixed physical tape.
  *  Single source of truth: lib/twotracks-engine.ts (≈20 s at 48 kHz). */
@@ -81,9 +76,7 @@ const TWOTRACKS_MAX_SAMPLES = TWOTRACKS_TAPE_LEN;
 
 const TRIG_THRESHOLD = 0.5;
 
-// ---------------------------------------------------------------------------
 // Message types (host → worklet)
-// ---------------------------------------------------------------------------
 
 interface ResizeMessage {
   type: 'resize';
@@ -135,15 +128,11 @@ type TwoTracksMessage =
   | LoadTapeMessage
   | TransportMessage;
 
-// ---------------------------------------------------------------------------
 // Transport states
-// ---------------------------------------------------------------------------
 
 type TapeState = 'idle' | 'play' | 'armed' | 'rec' | 'overdub';
 
-// ---------------------------------------------------------------------------
 // EQ Biquad state (per band, per channel)
-// ---------------------------------------------------------------------------
 
 // Direct-form II transposed biquad state — two delay elements.
 interface BiquadState { s1: number; s2: number; }
@@ -223,9 +212,7 @@ function peakEqCoeffs(fcHz: number, dB: number, sr: number): [number,number,numb
   return [b0/a0, b1/a0, b2/a0, a1/a0, a2/a0];
 }
 
-// ---------------------------------------------------------------------------
 // SVF filter state (per channel)
-// ---------------------------------------------------------------------------
 
 interface SvfState { ic1: number; ic2: number; }
 function makeSvf(): SvfState { return { ic1: 0, ic2: 0 }; }
@@ -257,9 +244,7 @@ function cutoffToG(fcHz: number, sr: number): number {
   return Math.tan(Math.PI * fc / sr);
 }
 
-// ---------------------------------------------------------------------------
 // A/B mix law (pure, exported as a helper comment; tested via ab gains utility)
-// ---------------------------------------------------------------------------
 //
 // abGains(ab): gainA, gainB
 //   ab in [0, 0.5]: gainA = 1.0, gainB = ab * 2
@@ -275,9 +260,7 @@ function abGains(ab: number): { gainA: number; gainB: number } {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Reel state — one instance per reel (A + B)
-// ---------------------------------------------------------------------------
 
 class ReelState {
   // Ring buffers (stereo, separate L/R)
@@ -340,9 +323,7 @@ class ReelState {
   playbackCurR: Float32Array = new Float32Array(128);
 }
 
-// ---------------------------------------------------------------------------
 // Lofi state — global, applied once to combined A/B output
-// ---------------------------------------------------------------------------
 
 /**
  * Lofi tape degradation stage.
@@ -364,9 +345,7 @@ class LofiState {
   stutterSampleR: number = 0;
 }
 
-// ---------------------------------------------------------------------------
 // Processor
-// ---------------------------------------------------------------------------
 
 class TwoTracksProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {

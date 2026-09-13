@@ -1,9 +1,6 @@
-// packages/web/src/lib/ui/controls/drag-commit.ts
-//
 // rAF-coalesced commit helper for continuous drag inputs (Fader, Knob).
 //
 // Why this exists
-// ---------------
 // Pointer events fire at 120–240 Hz on modern hardware. Every event the
 // fader / knob handler dispatches `onchange(v)` synchronously, and
 // `onchange` in turn mutates the SyncedStore patch graph (a

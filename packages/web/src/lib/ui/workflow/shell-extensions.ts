@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-extensions.ts
-//
 // THE MODULE-EXTENSION REGISTRY (#1512) — def-declared, LAZILY-resolved
 // bespoke components at the shell's defined slots.
 //

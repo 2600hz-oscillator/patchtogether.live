@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog911.test.ts
-//
 // Two test layers for the MOOG 911 ENVELOPE GENERATOR:
 //   1. Module-def shape — pins the 911's I/O surface (gate input + t*_cv /
 //      esus_cv CV inputs, env / env_inv outputs, the literal param array) so

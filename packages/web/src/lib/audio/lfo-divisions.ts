@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/lfo-divisions.ts
-//
 // Standalone constants for the Cartesian-embedded LFO. Lives outside the
 // audio-module factory so unit + ART tests can import the snap-points + math
 // without dragging the SvelteKit `$lib/graph/store` import chain (which the

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/scope/ScopeTraceSurface.svelte
-  //
   // THE scope trace, extracted from `ScopeCard.svelte` so every surface that
   // shows one paints the SAME picture from the SAME code — the legacy card and
   // the dock faceplate body. (There was a THIRD host, `GroupCard`'s

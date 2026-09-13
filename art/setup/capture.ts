@@ -1,5 +1,3 @@
-// art/setup/capture.ts
-//
 // Reusable AUDIO-PROFILE capture harness (ART backfill Phase 0 — spec:
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md §1.2).
 //
@@ -44,9 +42,7 @@ import {
 
 export { SAMPLE_RATE };
 
-// ---------------------------------------------------------------------------
 // Source-SHA pin
-// ---------------------------------------------------------------------------
 
 /**
  * Combined source SHA over one or more files under `packages/dsp/src/`
@@ -129,9 +125,7 @@ export async function docsStrippedRepoSourceSha(...relPaths: string[]): Promise<
   return h.digest('hex').slice(0, 16);
 }
 
-// ---------------------------------------------------------------------------
 // Render loop — drive + capture every signature output
-// ---------------------------------------------------------------------------
 
 export interface CaptureOptions {
   /** Render length in seconds. Spec §2.1: ~0.5 s steady sources/FX, ≥1.0 s
@@ -169,9 +163,7 @@ export function captureOutputs(
   return bufs;
 }
 
-// ---------------------------------------------------------------------------
 // Baseline pinning (write-or-compare round trip)
-// ---------------------------------------------------------------------------
 
 export interface PinOptions {
   tier?: ComparisonTier;

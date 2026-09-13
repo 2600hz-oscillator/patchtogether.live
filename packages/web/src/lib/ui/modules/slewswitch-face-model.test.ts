@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/slewswitch-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for SLEWSWITCH's faceplate (queue Q14).
 //
 // A derived readout is only worth publishing if it is checked on the input a

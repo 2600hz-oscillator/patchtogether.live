@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/adsr-stage-format.ts
-//
 // PURE readout arithmetic for the ADSR stage controls — the model behind
 // `ParamDef.format` (PF-3) on adsr's attack / decay / release / sustain.
 // No DOM, no engine: the def declares the formatter, KnobConic renders the

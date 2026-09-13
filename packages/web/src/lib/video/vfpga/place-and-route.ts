@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/place-and-route.ts
-//
 // PLACE & ROUTE — the pure, GL-FREE compile step (design §1.2) that lowers a
 // fabric configuration ("the bitstream") into the foundation's `VfpgaEffect`
 // shape the factory's `buildEffect` already consumes. NO WebGL here: this is
@@ -83,9 +81,7 @@ export class FabricCompileError extends Error {
   }
 }
 
-// ----------------------------------------------------------------------
 // Net-endpoint parsing.
-// ----------------------------------------------------------------------
 
 /** A resolved `net.from` source. */
 type ResolvedSource =
@@ -120,10 +116,8 @@ function parseTo(to: string): ResolvedDest {
   return { kind: 'tileInput', tileId: to.slice(0, colon), input: to.slice(colon + 1) };
 }
 
-// ----------------------------------------------------------------------
 // Validation (design §2.1) — pure; returns every diagnostic, throws nothing.
 // fabricToEffect runs this first and throws a FabricCompileError if non-empty.
-// ----------------------------------------------------------------------
 
 /** Validate a fabric end-to-end and return every diagnostic (empty = valid).
  *  Checks: unique tile ids; IOB tiles ⊆ host superset; every net.from/net.to
@@ -411,9 +405,7 @@ function findCycle(deps: Map<string, Set<string>>): string[] | null {
   return null;
 }
 
-// ----------------------------------------------------------------------
 // Topological sort (combinational order) over the this-frame DAG.
-// ----------------------------------------------------------------------
 
 /** Kahn-ordered tile ids: a tile appears AFTER every tile it reads this frame
  *  (its inputs are ready). Deterministic: ties broken by the fabric tile order.
@@ -452,9 +444,7 @@ function topoSort(tiles: VfpgaTile[], deps: Map<string, Set<string>>): string[] 
   return out;
 }
 
-// ----------------------------------------------------------------------
 // fabricToEffect — the public P&R entry point.
-// ----------------------------------------------------------------------
 
 /** Compile a fabric configuration into a `VfpgaEffect` (the foundation render-
  *  graph the factory's `buildEffect` consumes). Pure + GL-free. Throws a

@@ -1,5 +1,3 @@
-// e2e/tests/videocube-assign.spec.ts
-//
 // VIDEOCUBE joystick per-axis MIDI / Control-Surface / Electra ASSIGN.
 //
 // Each XyPad axis carries a tiny ASSIGN BUTTON (X / Y). It does NOT change the

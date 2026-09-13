@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/wavesculpt-luma-bandpass.test.ts
-//
 // Pure-DSP unit tests for the WAVESCULPT luminosity → morphable band-pass
 // mapping. Pins the owner spec quantitatively so a refactor surfaces as a
 // specific regression:

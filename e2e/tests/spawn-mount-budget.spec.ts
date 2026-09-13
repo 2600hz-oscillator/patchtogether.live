@@ -1,5 +1,3 @@
-// e2e/tests/spawn-mount-budget.spec.ts
-//
 // THE HARNESS'S OWN MOUNT WAIT, under a deliberately STARVED MAIN THREAD.
 //
 // `spawnPatch`'s "is the node in the DOM yet" wait was a flat 5000 ms. That is

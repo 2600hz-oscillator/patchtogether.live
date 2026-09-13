@@ -1,5 +1,3 @@
-// e2e/tests/videovarispeed-perfzip.spec.ts
-//
 // FIX 2: VIDEOVARISPEED video + PICTUREBOX image must round-trip through the
 // portable performance .zip.
 //
@@ -161,7 +159,6 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     });
     await expect.poll(() => nodeCount(page), { timeout: 5000 }).toBe(0);
 
-    // Load.
     await page.evaluate(async (b64) => {
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);
@@ -211,7 +208,6 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     await expect(vvsCard.locator('[data-testid="videovarispeed-slot-1"]'))
       .toHaveAttribute('data-slot-local', 'true', { timeout: 10000 });
 
-    // Export.
     const zipB64 = await page.evaluate(async () => {
       const w = globalThis as unknown as { __perfZip: { export: () => Promise<Uint8Array> } };
       const bytes = await w.__perfZip.export();
@@ -235,7 +231,6 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     });
     await expect.poll(() => nodeCount(page), { timeout: 5000 }).toBe(0);
 
-    // Load.
     await page.evaluate(async (b64) => {
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);

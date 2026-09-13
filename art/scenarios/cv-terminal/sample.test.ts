@@ -1,12 +1,8 @@
-// art/scenarios/cv-terminal/sample.test.ts
-//
 // THE BEHAVIOURAL SAMPLE — a SMALL, FIXED set of ports rendered as real audio,
 // so the structural sweep beside this file keeps corresponding to something a
 // player can hear.
 //
-// ---------------------------------------------------------------------------
 // WHY IT EXISTS, AND WHY IT IS DELIBERATELY TINY
-// ---------------------------------------------------------------------------
 //
 // `cv-terminal.test.ts` proves a cable LANDS somewhere live. Its first stated
 // blind spot is that a graph edge never proves the value ARRIVES: all 83 live
@@ -34,9 +30,7 @@
 //   native-node param in the chain      the ordinary DelayNode/GainNode shape
 //   shadow routed back into the DSP     the #1661 fix's own shape
 //
-// ---------------------------------------------------------------------------
 // THE INSTRUMENT
-// ---------------------------------------------------------------------------
 //
 // Two renders per row against one control: peak |Δsample| in LINEAR AMPLITUDE
 // (not dB, not RMS) — the same metric #1661 reported its 0.0000e+0 in. The CV
@@ -93,7 +87,6 @@ const SAMPLE: readonly SampleRow[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
 
 function audioIshOutputs(def: AudioModuleDef): string[] {
   return def.outputs
@@ -193,7 +186,6 @@ function peakOf(chans: Float32Array[]): number {
   return m;
 }
 
-// ---------------------------------------------------------------------------
 
 describe('behavioural sample: a structurally-live terminal is an AUDIBLE terminal', () => {
   it('MECH: ConstantSource → GainNode.gain moves a render in THIS harness', async () => {

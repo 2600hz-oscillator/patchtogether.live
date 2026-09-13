@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/param-cell-coverage.test.ts
-//
 // WHAT `faces-parity` IS STRUCTURALLY UNABLE TO SEE — stated inside a gate
 // instead of in a comment.
 //

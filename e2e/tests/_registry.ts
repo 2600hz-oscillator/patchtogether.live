@@ -1,5 +1,3 @@
-// e2e/tests/_registry.ts
-//
 // Playwright fixture that loads the synthesized module manifest.
 //
 // Why this exists: Playwright resolves `for (const x of X) test(...)`

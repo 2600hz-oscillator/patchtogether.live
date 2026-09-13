@@ -1,5 +1,3 @@
-// e2e/tests/click-pickup-cable.spec.ts
-//
 // Jack-click → pickup (carry) gesture on a port ROW.
 //
 // The no-drag redesign RETIRED cable dragging entirely (the old

@@ -1,10 +1,6 @@
-// packages/web/src/lib/video/modules/mappy.ts
-//
 // MAPPY — a multi-surface MANUAL projection mapper (v1 MVP).
 //
-// ──────────────────────────────────────────────────────────────────────────
 // WHAT IT DOES
-// ──────────────────────────────────────────────────────────────────────────
 // MAPPY hosts up to SIX surfaces. Each surface owns its own draggable QUAD in
 // the output frame; surface i is fed by input in(i+1). The surfaces are
 // composited (painter's order, OVER) into ONE output → a projector. Use cases:
@@ -26,9 +22,7 @@
 // at the projection, solve the homography from detected features) is a LATER
 // phase — there is NO camera input and NO CV here, by design.
 //
-// ──────────────────────────────────────────────────────────────────────────
 // WARP + COMPOSITE
-// ──────────────────────────────────────────────────────────────────────────
 // Each surface owns a 4-corner QUAD in NORMALIZED [0,1] output space, corner
 // order TL, TR, BR, BL — the SAME order as mappy-homography's UNIT_QUAD. The
 // homography unitToQuad(corners) maps the unit square (the source frame) onto
@@ -54,9 +48,7 @@
 // the input — the manual-alignment aid (line up the grid to the physical
 // surface, then turn it off).
 //
-// ──────────────────────────────────────────────────────────────────────────
 // GL FEEDBACK-LOOP RULE
-// ──────────────────────────────────────────────────────────────────────────
 // We NEVER bind our own composite FBO texture as an input/placeholder (that
 // is a read+write-the-same-texture feedback loop, garbage on Chrome — see
 // quadralogical.ts / mixer.ts). A 1×1 black sentinel covers the
@@ -74,7 +66,6 @@ import {
   type Quad,
 } from '$lib/video/mappy-homography';
 
-// ───────────────────────── constants ─────────────────────────
 
 /** Number of MAPPY surfaces (= number of video inputs). */
 export const MAPPY_SURFACE_COUNT = 6;

@@ -1,5 +1,3 @@
-// art/scenarios/meowbox/voct-tracking.test.ts
-//
 // ART for the MEOWBOX V/oct fix (PR fix/meowbox-voct).
 //
 // Background: prior to this PR, meowbox declared its `pitch` input as

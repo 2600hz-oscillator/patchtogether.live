@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/videocube-core.test.ts
-//
 // VIDEOCUBE pure-CORE certification (jsdom, no WebGL). Pins the NEW math the GLSL
 // ray-march COMBINE shader transliterates 1:1 — the per-voxel FIELD SAMPLE
 // (density + occupancy-weighted colour over a GENUINE z axis), the SPACE
@@ -403,12 +401,10 @@ describe('stripToHeightfield — single-frame ring luma reduction (reads the .a 
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────
 // SPREAD temporal window (FrameTable-style) — the CPU mirror of the shader's
 // surfWindow / REDUCE window loop. Pins: SPREAD=0 is byte-identical (single
 // centre frame), the half-width mapping, Hann weights sum to 1 + symmetric, and
 // a wider SPREAD genuinely OOZES (blends more of the ring).
-// ──────────────────────────────────────────────────────────────────────────
 describe('SPREAD temporal window', () => {
   const N = VIDEOCUBE_RING_FRAMES;
 
@@ -512,13 +508,11 @@ describe('SPREAD temporal window', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────
 // SCAN — the reader-centre position (FrameTable's MORPH). Pins: scan=0 is
 // byte-identical (the exact pre-scan centre, an integer), scan sweeps the centre
 // monotonically BACK through the ring (wrapping), the linear/ clamped offset map,
 // and that SCAN + SPREAD centre-then-widen (scan MOVES which frames the window
 // reads; spread WIDENS the blend at that scanned centre).
-// ──────────────────────────────────────────────────────────────────────────
 describe('SCAN reader-centre position', () => {
   const N = VIDEOCUBE_RING_FRAMES;
   const MODES = [VIDEOCUBE_MODE_SMOOTH, VIDEOCUBE_MODE_MORPH, VIDEOCUBE_MODE_CHAOS];
@@ -608,7 +602,6 @@ describe('SCAN reader-centre position', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────
 // CHROMASTACK — the dynamic CHROMA→timbre derivation (owner 2026-07-20). Pins:
 // the archetype BANKS (zero-mean, band-limited, seamlessly periodic, MONOTONE
 // spectral centroid, both banks), rgbStripToHueHist (grayscale ⇒ colourless),
@@ -616,7 +609,6 @@ describe('SCAN reader-centre position', () => {
 // = the FALLBACK proof; a hue rotation at constant luma AUDIBLY sweeps the
 // spectral centroid = the owner bar; saturation = dry/wet monotone; DC ~0), and
 // motionEnergy (responds to change, 0 for identical, blends by the amount).
-// ──────────────────────────────────────────────────────────────────────────
 
 // A DFT power-weighted spectral centroid (harmonic-number units) — the audible
 // "brightness" metric. Amplitude-invariant (scale-free).

@@ -1,5 +1,3 @@
-// e2e/vrt/dashboard.spec.ts
-//
 // Public/unauthed scratch-canvas snapshot. `/rack?seed=none` is the scratch canvas
 // (moved off `/` in the landing-page overhaul; `/` is now the static
 // landing). `/dashboard` redirects to /sign-in for anon users, so a

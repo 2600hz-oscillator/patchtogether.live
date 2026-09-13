@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/input-device.svelte.ts
-//
 // THE INPUT-DEVICE SEAM — one roster, one writer, for AUDIO IN.
 //
 // The input-side twin of `./output-device.svelte.ts`, and it exists for the

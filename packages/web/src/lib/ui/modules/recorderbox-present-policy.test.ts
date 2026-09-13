@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/recorderbox-present-policy.test.ts
-//
 // Regression guard for the presentation-safe record-start policy: starting a
 // recording while in fullscreen presentation mode must NOT open a modal browser
 // surface (folder picker / overwrite confirm), because Chrome resolves modal

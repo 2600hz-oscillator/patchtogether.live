@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/home-auth.ts
-//
 // Server-side auth read for the COOP/COEP-isolated routes (the public
 // canvas at `/`) where we DON'T mount the client <ClerkProvider>.
 //

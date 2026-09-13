@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-map.ts
-//
 // LAUNCHPAD PLACEMENT adapter — the 2× Launchpad Mini Mk3 surface laid over the
 // controller-agnostic clip-surface core (`$lib/control/clip-surface-map`). It
 // supplies ONLY the Launchpad-specific PLACEMENT (which pad/CC is which control
@@ -109,9 +107,7 @@ import { type LaunchpadFrame, type LaunchpadUnit, emptyFrame } from './launchpad
 
 export { editPageCount, type LengthEditAction } from '../clip-surface-map';
 
-// ---------------------------------------------------------------------------
 // RGB COLOUR LANGUAGE (legend-colors.svg). 0..127 components.
-// ---------------------------------------------------------------------------
 export type Rgb = readonly [number, number, number];
 
 export const RGB_OFF: Rgb = [0, 0, 0];
@@ -313,7 +309,6 @@ export const RGB_PANIC: Rgb = [96, 22, 0]; // red-orange
 // ── KEYS octave ± / editor octave ± (P6/P7) — a neutral function hue.
 export const RGB_OCTAVE: Rgb = RGB_FUNC;
 
-// ---------------------------------------------------------------------------
 // SINGLE-MODE (S2a) COLOUR PALETTE — two families the docs render EXACT colours
 // from (remap in ONE place). (a) the PERMANENT TOP-ROW navigation palette
 // (purple views · yellow shift · red/green transport · orange undo/redo); and
@@ -321,7 +316,6 @@ export const RGB_OCTAVE: Rgb = RGB_FUNC;
 // orange = system · yellow = length), plus the KEYS-entry bright-orange override
 // and the Swing± meter tints. Values REUSE the nearest existing triple where
 // sensible (noted per line) so the single + pair surfaces stay colour-coherent.
-// ---------------------------------------------------------------------------
 // TOP-ROW NAVIGATION palette.
 export const RGB_VIEW_IDLE: Rgb = [16, 6, 30]; // dim purple (a "you-are-not-here" view button)
 export const RGB_VIEW_ACTIVE: Rgb = [104, 40, 127]; // bright purple (active view) — echoes RGB_DECK_NOW_ON
@@ -347,9 +341,7 @@ export const RGB_SWING_CENTER: Rgb = [23, 104, 53]; // green (returned to dead-c
 export const RGB_VEL_WASH: Rgb = [6, 2, 10]; // faint purple (Clip velocity-edit mode grid wash)
 export const RGB_ARRANGER_DIM: Rgb = [3, 1, 6]; // faint purple (inert Arranger grid)
 
-// ---------------------------------------------------------------------------
 // UNIT L — the clip matrix placement (PURE classifiers).
-// ---------------------------------------------------------------------------
 
 // The launchpad's programmer-mode y is measured from the BOTTOM (y=0 = bottom
 // row). The on-screen ClipplayerCard renders lane 0 as the TOP grid row (it
@@ -382,7 +374,6 @@ export function lSceneSlotForRow(row: number): number | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // SINGLE-UNIT clip-view ARM ROW (top CCs 91..97). In single mode the clip view's
 // top row is otherwise dead (handleL has no `top` branch), so it hosts a 7-cell
 // ACTION-ARM strip: tap a cell to ARM an action, then tap a clip pad to apply it
@@ -400,7 +391,6 @@ export function lSceneSlotForRow(row: number): number | null {
 //   CC 96          = LENGTH    · CC 97 = DOUBLE
 // 'keys' + 'now' are STICKY toggles (never stored in `armedAction`); the rest are
 // arm-then-tap actions consumed by consumeArmed.
-// ---------------------------------------------------------------------------
 export type ClipArmAction =
   | 'keys'
   | 'copy'
@@ -437,9 +427,7 @@ export function clipArmAction(cc: number): ClipArmAction | null {
  *  with overdub OFF (true-replace) → armed with overdub ON (additive) → off. */
 export type KeysArm = 'off' | 'rec' | 'od';
 
-// ---------------------------------------------------------------------------
 // UNIT R — SESSION command-deck placement.
-// ---------------------------------------------------------------------------
 // Deck control columns (the active pad is at ROW 0 of each column).
 export const DECK_ROW = 0;
 export const DECK_EDIT_COL = 0;
@@ -575,9 +563,7 @@ export function lTopMuteLane(cc: number): number | null {
   return col !== null && col < CLIP_LANES ? col : null;
 }
 
-// ---------------------------------------------------------------------------
 // UNIT R — EDIT note-grid placement (8 pitch rows × 8 step columns).
-// ---------------------------------------------------------------------------
 export const EDIT_ROWS = LP_HEIGHT; // 8 pitch rows (full grid — no function row eaten)
 export const EDIT_COLS = LP_WIDTH; // 8 step columns = HALF a 16-step block
 
@@ -660,11 +646,9 @@ export function editSceneAction(row: number, opts: { followButton?: boolean } = 
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // UNIT R — LENGTH-EDIT page placement. Row 0 = end-BLOCK ruler (pads 0..7 →
 // blocks 1..8). Rows 1+2 = end-STEP ruler (steps 1..8 on row 1, 9..16 on row
 // 2). EXIT = the top scene button (row 7), same as the editor.
-// ---------------------------------------------------------------------------
 export const LEN_BLOCK_ROW = 0;
 export const LEN_STEP_LO_ROW = 1; // steps 1..8
 export const LEN_STEP_HI_ROW = 2; // steps 9..16
@@ -686,7 +670,6 @@ export function rLengthPad(x: number, y: number): LengthEditAction | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // KEYS mode (note/keyboard + clip-record). In PAIR deployment BOTH units flip
 // here together, side-by-side = 16 wide:
 //   · top row (y=7) = PLAYHEAD strip, 16 cells (L cols 0..7 = clip cells 0..7,
@@ -700,7 +683,6 @@ export function rLengthPad(x: number, y: number): LengthEditAction | null {
 // the same bottom-row controls, and the playhead strip compressed to 8 cells
 // spanning the WHOLE clip (KeysFrameOpts.phCells = LP_WIDTH) so the moving dot
 // never runs off the one surface.
-// ---------------------------------------------------------------------------
 export const KEYS_PH_ROW = LP_HEIGHT - 1; // top row (y=7) = playhead strip
 export const KEYS_KB_ROW_LO = 1; // keyboard band y=1..6 (row 0 = y=1)
 export const KEYS_KB_ROW_HI = LP_HEIGHT - 2; // 6
@@ -751,12 +733,10 @@ export function keysPad(unit: LaunchpadUnit, x: number, y: number): KeysPad {
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // LED FRAMES (PURE) — build a LaunchpadFrame for each unit/mode from the shared
 // brain. The render loop in launchpad-control passes the blink phase so pulses /
 // flashes animate (the device only does static RGB; animation = swapping
 // triples on the blink cadence, exactly like the monome's brightness blink).
-// ---------------------------------------------------------------------------
 
 function put(frame: LaunchpadFrame, index: number, rgb: Rgb): void {
   frame.leds.set(index, [rgb[0], rgb[1], rgb[2]]);
@@ -1223,7 +1203,6 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
   return frame;
 }
 
-// ===========================================================================
 // SINGLE-UNIT REWORK (S2a) — the single-pad Launchpad layout: a 4-view surface
 // (Grid / Clip / Arranger / Control) with a PERMANENT top-CC nav row + a hybrid
 // shift layer, all over the SAME clip-surface brain. Everything below is
@@ -1238,7 +1217,6 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
 // scene index. The GRID 8×8 is TRANSPOSED vs pair unit-L: x = channel/lane
 // (0..7 left→right); the slot runs TOP→bottom (top row = slot 0), so slot =
 // LP_HEIGHT-1-y.
-// ===========================================================================
 
 // ── Views + permanent top-row navigation ──
 export type SingleView = 'grid' | 'clip' | 'arranger' | 'control';
@@ -1733,7 +1711,6 @@ export function controlRehomePad(x: number, y: number): ControlRehomeAction | nu
   return null;
 }
 
-// ---------------------------------------------------------------------------
 // PER-LANE AUTOMATION ARM on the PERMANENT TOP ROW (owner gesture, single
 // mode): "for every lane except the right-most, SHIFT + the button at the very
 // top of that lane turns on automation recording." SHIFT is a MOMENTARY HOLD
@@ -1749,7 +1726,6 @@ export function controlRehomePad(x: number, y: number): ControlRehomeAction | nu
 //     EVERY view; while shift is HELD the whole row paints as the arm map AND
 //     LANE8_ARM_PAD lights (red pulse = armed · dim red = available), so the
 //     hold gesture is discoverable (see paintPermanentTopRow).
-// ---------------------------------------------------------------------------
 /** SHIFT+top-row arm classifier: the LANE a top CC toggles (columns 0..6 →
  *  lanes 1..7), or null for CC 98 (lane 8 = the LANE8_ARM_PAD gesture) and
  *  non-top CCs. PURE. */
@@ -1771,11 +1747,9 @@ export function isLane8ArmPad(x: number, y: number): boolean {
   return x === LANE8_ARM_PAD.x && y === LANE8_ARM_PAD.y;
 }
 
-// ---------------------------------------------------------------------------
 // SINGLE-MODE LED FRAMES (PURE). Each view's frame paints its 8×8 + right column
 // then the PERMANENT TOP ROW via the shared paintPermanentTopRow. The render loop
 // (S2b) passes the blink phase (software pulse/flash) + all the stateful opts.
-// ---------------------------------------------------------------------------
 
 // ── Meter ramp helpers (pale→bright per level) for the Swing± meter. PURE. ──
 function clamp01(t: number): number {

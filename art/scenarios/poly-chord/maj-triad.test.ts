@@ -1,5 +1,3 @@
-// art/scenarios/poly-chord/maj-triad.test.ts
-//
 // Stage-1 polyphony ART. Verifies that chordVoicing(a4, 'maj') yields a chord
 // whose three carrier lanes (root, M3, P5) — when each is driven into its own
 // sine OscillatorNode in an OfflineAudioContext, summed, FFT'd — produces

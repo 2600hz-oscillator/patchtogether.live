@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/shapedramps/ShapedrampsOutputBody.svelte
-  //
   // The SHAPEDRAMPS dock full-view body: a live picture of its ramp output plus
   // the SCREEN ON/OFF switch the 2026-08-18 owner ruling requires of every video
   // module.

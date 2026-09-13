@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/vrt-font-pinning.test.ts
-//
 // THE FONT-PINNING GATE for the VRT suite.
 //
 // Every VRT spec that captures a screenshot must pin the bundled Inter /

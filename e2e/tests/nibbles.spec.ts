@@ -1,5 +1,3 @@
-// e2e/tests/nibbles.spec.ts
-//
 // NIBBLES module smoke + AUTO-mode integration:
 //
 //   1. Spawning the module brings up a card with a visible 320×200 canvas

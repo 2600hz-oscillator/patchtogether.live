@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/output-sink-report.ts
-//
 // THE SINK REPORT — how the one `setSinkId` caller tells the UI what happened.
 //
 // ⚠ WHY THIS EXISTS, WHICH IS A PARITY BUG CAUGHT IN REVIEW RATHER THAN A

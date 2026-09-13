@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-record-machine.ts
-//
 // The KEYS live-record STATE MACHINE — a PURE view + transition set over the
 // synced `NoteRecState` (`clip-types.ts`). Redesign §2.1: a real
 //   idle → armed → recording → overdubbing → (stop) idle

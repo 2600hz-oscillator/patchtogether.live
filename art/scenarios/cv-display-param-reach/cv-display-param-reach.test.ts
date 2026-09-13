@@ -1,11 +1,7 @@
-// art/scenarios/cv-display-param-reach/cv-display-param-reach.test.ts
-//
 // CV REACH FOR *DISPLAY* PARAMS — "does a cable patched into this input reach
 // the number the module actually DRAWS with?"
 //
-// ---------------------------------------------------------------------------
 // WHY A SECOND SWEEP (#1664)
-// ---------------------------------------------------------------------------
 //
 // `art/scenarios/cv-terminal` proves a CV cable lands on a live, unaliased
 // AudioParam, but the last thing it can say about a DISPLAY param is that the
@@ -30,9 +26,7 @@
 // painter and its video bridge draw from — measured across a real
 // `OfflineAudioContext` render.
 //
-// ---------------------------------------------------------------------------
 // WHAT IT ASSERTS, per (module, port)
-// ---------------------------------------------------------------------------
 //
 //   REACH        a ConstantSource wired the way `AudioEngine.addEdge` wires one
 //                (engine.ts, the `din.param` branch) moves that port's draw
@@ -52,9 +46,7 @@
 //                a 629 000× blow-up down THRU toward the speaker bus — because
 //                the published AudioParam was the live passthrough gain.
 //
-// ---------------------------------------------------------------------------
 // MEMBERSHIP IS DERIVED, AND SO IS THE PORT LIST
-// ---------------------------------------------------------------------------
 //
 // There is no list of modules here. A def is enrolled iff its materialised
 // handle answers `read('drawParams')` with an object — a property of the
@@ -62,9 +54,7 @@
 // `paramTarget`s of its CV inputs, both directions, so neither a new port
 // without a draw param nor a draw param without a port can pass unnoticed.
 //
-// ---------------------------------------------------------------------------
 // WHAT THIS GATE STRUCTURALLY CANNOT SEE
-// ---------------------------------------------------------------------------
 //
 //  1. WHETHER THE PICTURE IS RIGHT. It asserts the NUMBER the painter is handed,
 //     not the pixels it produces. A draw routine that ignored `timeMs` entirely
@@ -112,9 +102,7 @@ function expectClose(actual: number, expected: number, what: string): void {
   ).toBeLessThanOrEqual(tol);
 }
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 function audioIshOutputs(def: AudioModuleDef): string[] {
   return def.outputs
@@ -291,10 +279,8 @@ function peakDelta(a: LegResult, b: LegResult): number {
   return m;
 }
 
-// ---------------------------------------------------------------------------
 // The two synthetic control defs. Both run through the SAME renderLeg and the
 // SAME assertions as every real module.
-// ---------------------------------------------------------------------------
 
 /**
  * `broken: true` reproduces the #1664 graph EXACTLY: every CV port publishes
@@ -376,10 +362,8 @@ function makeControlDef(type: string, broken: boolean): AudioModuleDef {
   } as unknown as AudioModuleDef;
 }
 
-// ---------------------------------------------------------------------------
 // THE PREDICATES. Every leg of this file — the sweep and both controls — calls
 // THESE, so a control cannot drift away from the check it controls for.
-// ---------------------------------------------------------------------------
 
 export interface PortVerdict {
   module: string;
@@ -453,7 +437,6 @@ async function measureDef(def: AudioModuleDef): Promise<PortVerdict[]> {
   return verdicts;
 }
 
-// ---------------------------------------------------------------------------
 
 let ENROLLED: { def: AudioModuleDef; keys: string[] }[] = [];
 let VERDICTS: PortVerdict[] = [];
@@ -471,11 +454,9 @@ describe('CV reach for DISPLAY params — the cable must move the number the mod
     }
   }, 600_000);
 
-  // -------------------------------------------------------------------------
   // Controls. Permanent legs, run through the SAME predicate as the sweep: if
   // the harness ever stops being able to see a working display-CV path, or
   // stops being able to see the #1664 one, every green below is worthless.
-  // -------------------------------------------------------------------------
 
   it('POSITIVE CONTROL (mechanism): ConstantSource → GainNode.gain is observable off an UNCONNECTED analyser here', async () => {
     // The whole shadow design rests on this: a GainNode reachable from nothing
@@ -531,9 +512,7 @@ describe('CV reach for DISPLAY params — the cable must move the number the mod
     ).toBeGreaterThan(0);
   });
 
-  // -------------------------------------------------------------------------
   // The sweep.
-  // -------------------------------------------------------------------------
 
   it('every display CV input reaches its draw param, and NOTHING else', () => {
     const offenders = VERDICTS.filter((v) => !passes(v)).map(describe1);

@@ -1,5 +1,3 @@
-// e2e/tests/_face-quiesce.ts
-//
 // PER-DEF QUIESCE for the faces-parity sweep — the declaration that lets a face
 // whose module runs an expensive LIVE pipeline be driven without the sweep
 // competing with it for the page's main thread.

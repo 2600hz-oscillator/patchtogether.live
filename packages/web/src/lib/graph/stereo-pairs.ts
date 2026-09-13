@@ -1,9 +1,6 @@
-// packages/web/src/lib/graph/stereo-pairs.ts
-//
 // THE SINGLE SOURCE OF TRUTH for "are these two ports one stereo L/R pair?".
 //
 // WHY THIS EXISTS
-// ---------------
 // The app answered that question in FIVE independent places, with five
 // different rules and five different answers:
 //
@@ -23,7 +20,6 @@
 // it derives the map and pins it; the consumers move over one at a time.
 //
 // THE DERIVATION
-// --------------
 //   allStereoPairs(def) = DECLARED `stereoPairs` ∪ the id-token fallback,
 //                         AUDIO-typed ports ONLY, resolved PER DIRECTION.
 //   derivedStereoPairs(def) = allStereoPairs(def) − COLLAPSE_EXEMPT

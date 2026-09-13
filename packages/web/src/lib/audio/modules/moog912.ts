@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog912.ts
-//
 // MOOG 912 ENVELOPE FOLLOWER — a slice of the Moog System 55 / 35 clone
 // initiative (docs/adr/018-moog-clone-provenance.md). The 912 is a
 // passive ANALYSIS utility: it
@@ -146,7 +144,6 @@ export const moog912Def: AudioModuleDef = {
     { id: 'smoothing',   label: 'Smooth', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACE ────────────────────────────────────────────────────────────────
   //
   // ⚠ STOP 1 IS THE CLOSEST CALL IN THIS COHORT, AND IT IS WORKED EXPLICITLY
   // RATHER THAN WAVED THROUGH. The refuse rule fires when ALL of these hold:

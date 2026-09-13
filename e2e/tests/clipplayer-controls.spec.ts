@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-controls.spec.ts
-//
 // CLIP PLAYER + TIMELORDE card-control wiring (DOM/state, no audio):
 //   - the per-lane MONO toggle (left of each launch row) flips node.data.mono
 //     AND makes the note editor replace-on-add in that lane;

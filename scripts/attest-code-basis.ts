@@ -1,5 +1,3 @@
-// scripts/attest-code-basis.ts
-//
 // THE ONE PLACE that decides "what part of a basis file is CODE" for every
 // local-attestation content hash (webgl — collab and grand were deleted
 // 2026-08-17 with their non-gating CI jobs) and for the ART
@@ -7,7 +5,6 @@
 // WAS the bug (webgl had a docs escape hatch, collab had none, so a two-line
 // comment edit under packages/server/src forced a full relay re-attest, #1422).
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // WHY THIS EXISTS
 //
 // An attest certifies that some SUBSTANCE still behaves correctly on real
@@ -22,7 +19,6 @@
 // dedicated lint whose only job was catching a FORGOTTEN marker before it cost
 // a ~10-min GPU re-attest. Every one of those is deleted by this module.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // THE MECHANISM — AST re-emit, not a regex
 //
 // A naive `//`-stripping regex is WRONG on real source: it eats the tail of
@@ -46,7 +42,6 @@
 // A useful side effect: the printer normalises formatting, so a pure re-indent
 // or line-rewrap is hash-neutral too.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // WHAT IS TREATED AS DOCUMENTATION (removed from the hash)
 //
 //   * ALL comments — line, block, JSDoc, in every .ts/.js/.svelte<script>.
@@ -77,9 +72,7 @@
 
 import ts from 'typescript';
 
-// ---------------------------------------------------------------------------
 // Policy
-// ---------------------------------------------------------------------------
 
 /**
  * Object-literal properties that are DOCUMENTATION or UI CURATION, never
@@ -154,9 +147,7 @@ function scriptKindFor(relPath: string): ts.ScriptKind {
   return ts.ScriptKind.TS;
 }
 
-// ---------------------------------------------------------------------------
 // TypeScript: parse → drop documentation nodes → re-emit without comments
-// ---------------------------------------------------------------------------
 
 function propertyName(name: ts.PropertyName | undefined): string | undefined {
   if (!name) return undefined;
@@ -265,9 +256,7 @@ function normalizeTs(text: string, fileName: string, report: NormalizeReport): s
   }
 }
 
-// ---------------------------------------------------------------------------
 // Svelte: normalise <script> bodies, keep markup verbatim
-// ---------------------------------------------------------------------------
 
 /**
  * Find `<script …>` … `</script>` spans.
@@ -320,9 +309,7 @@ function normalizeSvelte(text: string, fileName: string, report: NormalizeReport
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // package.json: keep the dependency/config surface, drop scripts + prose
-// ---------------------------------------------------------------------------
 
 /** Stable JSON: keys sorted at every level, so a pure reordering is neutral. */
 function stableStringify(value: unknown): string {
@@ -360,9 +347,7 @@ export function packageJsonCodeDigest(text: string, report?: NormalizeReport): s
   return stableStringify(kept);
 }
 
-// ---------------------------------------------------------------------------
 // The entry points
-// ---------------------------------------------------------------------------
 
 /**
  * THE function every attest hash feeds its bytes through. Returns the CODE of

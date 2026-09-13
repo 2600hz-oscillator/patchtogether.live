@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-content.test.ts
-//
 // Pure-helper coverage for the TOYBOX content/model registry (Phase 3). The
 // manifest-fetching paths are exercised by the e2e/VRT specs against the real
 // static manifest; here we lock the defaulting helpers + the layer/combine

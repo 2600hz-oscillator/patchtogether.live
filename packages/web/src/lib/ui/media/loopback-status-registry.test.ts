@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/loopback-status-registry.test.ts
-//
 // The LOOPBACK capture-status seam, driven as a unit — plus the SOURCE-level
 // gates that keep its state union SINGLE, which no runtime test can see.
 

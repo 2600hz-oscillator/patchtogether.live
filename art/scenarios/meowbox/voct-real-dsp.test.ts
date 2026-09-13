@@ -1,5 +1,3 @@
-// art/scenarios/meowbox/voct-real-dsp.test.ts
-//
 // THE 1V/OCT INVARIANT, MEASURED ON THE SHIPPED MEOWBOX WASM.
 //
 // WHY THIS FILE EXISTS. voct-tracking.test.ts guards a real historical bug —

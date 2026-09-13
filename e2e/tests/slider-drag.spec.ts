@@ -1,5 +1,3 @@
-// e2e/tests/slider-drag.spec.ts
-//
 // "Every knob/slider is dead" regression — the THREE-channel guarantee.
 //
 // When a user changes a module control, the new value MUST propagate to all

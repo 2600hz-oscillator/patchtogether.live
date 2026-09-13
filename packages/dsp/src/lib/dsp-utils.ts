@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/dsp-utils.ts
-//
 // Tiny shared per-sample DSP utilities. Lives in `lib/` so esbuild inlines it
 // into the top-level worklet entries at build time (the top-level .ts files in
 // packages/dsp/src/ are worklet entries; helpers go here and `export` freely —
@@ -14,10 +12,8 @@ export function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x;
 }
 
-// ────────────────────────────────────────────────────────────────────────
 // DC blocker: y[n] = x[n] − x[n−1] + R·y[n−1] (first-order high-pass).
 // Keeps a percussive voice's output bipolar (no unipolar DC blob).
-// ────────────────────────────────────────────────────────────────────────
 
 export interface DcBlockState {
   x1: number;

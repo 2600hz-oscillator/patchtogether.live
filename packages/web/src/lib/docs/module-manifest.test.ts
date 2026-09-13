@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/module-manifest.test.ts
-//
 // Unit tests for the docs module-manifest generator. These run against the
 // REAL packages/web/src/lib/audio/modules/ source tree because that's the
 // shape we ship; a synthetic fixture would just duplicate the parser's own
@@ -292,7 +290,6 @@ describe('buildModuleManifest', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
 // I/O-spec consistency: published manifest <-> registered module def.
 //
 // Catches drift introduced by:
@@ -304,7 +301,6 @@ describe('buildModuleManifest', () => {
 //
 // The reverse direction (UI handles match the def) is enforced by the
 // e2e/tests/io-spec-consistency.spec.ts harness.
-// ----------------------------------------------------------------------------
 describe('manifest stays in sync with module defs', () => {
   // The manifest emitter walks `../audio/modules/*.ts` only — video +
   // meta module defs are out of scope. Filter the spec list so we
@@ -353,7 +349,6 @@ describe('manifest stays in sync with module defs', () => {
   }
 });
 
-// ----------------------------------------------------------------------------
 // I/O-EXPLANATION DRIFT GATE (docs-overhaul §5).
 //
 // The auto-generated Inputs & Outputs section renders io-explain's output for
@@ -368,7 +363,6 @@ describe('manifest stays in sync with module defs', () => {
 // across ALL domains — so internal `*-engine`/`*-types` support files (which
 // never registerModule) are inherently excluded, and the explicit DRIFT_EXEMPT
 // set is the registry-driven escape hatch for any special registered type.
-// ----------------------------------------------------------------------------
 describe('I/O-explanation drift gate (every port + param explains)', () => {
   const specs = getAllModuleSpecs().filter((s) => !DRIFT_EXEMPT.has(s.type));
 

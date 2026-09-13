@@ -1,5 +1,3 @@
-// art/scenarios/wavecel/wavecel.test.ts
-//
 // Toolchain validation for the WAVECEL TS worklet. Mirrors the
 // charlottes-echos / buggles pattern: assert the build artifact exists
 // and the source SHA matches what's pinned alongside it. Live audio

@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/controller.ts
-//
 // Tick loop for Meticulous Mike. Mirror of Carl's controller with
 // slower default pacing — Mike pauses 5–15 s between actions where
 // Carl pauses ~250 ms. The slow cadence is the FEATURE of Mike's

@@ -1,5 +1,3 @@
-// art/scenarios/mixmstrs/profile.test.ts
-//
 // AUDIO PROFILE for MIXMSTRS (8-channel stereo mixer + EQ/comp + 2 stereo aux
 // sends) — backfill batch 6, Faust-in-Node harness (spec §3). MIXMSTRS is the
 // batch's harness STRESS TEST: a 20-input / 22-output Faust module

@@ -1,5 +1,3 @@
-// e2e/tests/render-worker-acidwarp.spec.ts
-//
 // Fix E Phase 1 — the off-main-thread render worker, end-to-end (deterministic).
 //
 // The CORRECTNESS GATE for the worker path: with the flag ON, acidwarp renders

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-prob-menu.ts
-//
 // PURE logic for the clipplayer card's PER-NOTE PROBABILITY right-click menu —
 // extracted from ClipplayerCard.svelte so the "Probability ▸" submenu (the level
 // list, the default-checked 100%, the percent labels, the write) is unit-testable

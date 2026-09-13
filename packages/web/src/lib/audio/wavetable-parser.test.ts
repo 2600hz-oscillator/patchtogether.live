@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/wavetable-parser.test.ts
-//
 // Pure unit tests for the E352 wavetable WAV parser. Round-trips an
 // in-memory synthesized E352-format buffer (encodeE352Wav → parseE352Wav)
 // across the standard frame counts (32, 64, 128, 256), and exercises the

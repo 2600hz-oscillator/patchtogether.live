@@ -1,5 +1,3 @@
-// e2e/tests/workflow-dock-collab.spec.ts
-//
 // @collab — the TAGGED multi-user dock spec (workflow P2.5b). The tag routes it
 // onto the dedicated `collab` CI lane. (Owner answer Q4 was that it also JOINED
 // the collab-attest basis by design, with the attest paid at P2.5b review; that

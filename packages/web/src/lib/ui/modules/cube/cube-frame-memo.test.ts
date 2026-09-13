@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cube/cube-frame-memo.test.ts
-//
 // THE MEMO, NEGATIVE-CONTROLLED IN BOTH DIRECTIONS.
 //
 // `cubeSlotFrames` exists because `resolveSlotFrames` COPIES every frame

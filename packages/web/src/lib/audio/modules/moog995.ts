@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog995.ts
-//
 // MOOG 995 ATTENUATORS — a slice of the Moog System 55 / 35 clone initiative
 // (docs/adr/018-moog-clone-provenance.md). The 995 is a PASSIVE utility
 // panel: three INDEPENDENT

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-extensions.test.ts
-//
 // LINT for the module-extension registry (#1512) — deny by default, anchored
 // to the artifact in BOTH directions:
 //

@@ -1,5 +1,3 @@
-// e2e/tests/control-color.spec.ts
-//
 // PER-MODULE CONTROL COLOUR — the assign UI + the PASSTHROUGH render.
 //
 //   1. spawn an ADSR + a Control Surface; bind ADSR.attack onto the surface.

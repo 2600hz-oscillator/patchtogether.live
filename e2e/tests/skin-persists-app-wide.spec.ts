@@ -1,5 +1,3 @@
-// e2e/tests/skin-persists-app-wide.spec.ts
-//
 // Regression: the user's selected skin must apply on EVERY route and survive
 // a hard reload — not just inside the canvas. The skin store (localStorage
 // "pt.skin") used to be imported only by canvas components (Canvas /

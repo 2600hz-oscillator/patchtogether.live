@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/electra-cell-actions.ts
-//
 // SEND TO ELECTRA, as a face cell — and the OUTCOME STORE the faceplate needs
 // because a cell cannot own component state.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/gamepad-remap-ydoc.test.ts
-//
 // REAL-Y.Doc regression for the GAMEPAD remap mutation. The card commits a
 // remap through `mutateNode(...) → applyBindingToData(live.data, ...)` against
 // the LIVE SyncedStore proxy, so `node.data.bindings` becomes a real Y.Map once
@@ -254,7 +252,6 @@ describe('GAMEPAD remap — real Y.Doc mutation', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // SAVE / LOAD MAPPING — applyMapping against the LIVE Y.Doc. The "Load mapping"
 // + "Load preset" UIs commit through `mutateNode → applyMapping(live.data, …)`.
 // Just like the remap commit, applyMapping must NOT re-assign an already-
@@ -262,7 +259,6 @@ describe('GAMEPAD remap — real Y.Doc mutation', () => {
 // throw that killed the card's rAF poll). These exercise that path against the
 // real syncedStore, including the apply-over-existing + apply-twice cases that a
 // plain-object test can't catch. [[yjs-save-load-real-ydoc]]
-// ---------------------------------------------------------------------------
 const FULL_MAPPING: GamepadMapping = {
   bindings: { a: { kind: 'button', index: 2 }, rx: { kind: 'axis', index: 0 } },
   invert: { ly: true, rx: true },

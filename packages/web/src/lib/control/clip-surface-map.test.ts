@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/clip-surface-map.test.ts
-//
 // Unit tests for the CONTROLLER-AGNOSTIC clip-surface core — the placement-free
 // brain the monome + Launchpad adapters share. These assert the pure clip/note/
 // length logic directly (no coordinates), so a future Launchpad adapter can rely

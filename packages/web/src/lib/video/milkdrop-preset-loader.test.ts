@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/milkdrop-preset-loader.test.ts
-//
 // Unit coverage for the MILKDROP custom-preset loader helpers. convertMilkPreset
 // runs the REAL `milkdrop-preset-converter` (the deterministic in-browser .milk →
 // butterchurn-JSON path the card uses), so this also proves the converter

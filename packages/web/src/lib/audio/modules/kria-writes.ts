@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/kria-writes.ts
-//
 // THE ONE WRITE SEAM for kria's sequencer state.
 //
 // `kria-types.ts` owns the arithmetic and is pure (no store, no Y.Doc). This
@@ -9,9 +7,7 @@
 // "the grid path and the face write the same keys through the same helper" a
 // property of the code rather than a thing to re-verify.
 //
-// ==========================================================================
 // TWO DEFECTS THIS FILE EXISTS TO CLOSE, both of which were present TWICE
-// ==========================================================================
 //
 // (1) EVERY SEQUENCER EDIT WAS OUTSIDE Cmd-Z. `KriaCard.svelte`'s `writeData`
 //     and `kria-grid.svelte.ts`'s `mutateTrack` each called `ydoc.transact(fn)`
@@ -35,9 +31,7 @@
 //
 //     `writeTrackDiff` writes only the cells that actually changed.
 //
-// ==========================================================================
 // ⚠ WHAT IS AND IS NOT ASSIGNABLE — MEASURED, not reasoned
-// ==========================================================================
 // `node.data` rides SyncedStore, so everything nested under it is a live Y
 // type behind a proxy. Measured against a real store before this was written:
 //

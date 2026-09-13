@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-camera-source-registry.ts
-//
 // THE NODE-SCOPED OWNER OF THE CAMERA CAPTURE — getUserMedia, the device roster,
 // the saved-device rebind, the permission/error state machine and the engine
 // attach, on GRAPH lifetime instead of card lifetime.

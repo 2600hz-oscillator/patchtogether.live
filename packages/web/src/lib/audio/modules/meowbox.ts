@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/meowbox.ts
-//
 // MEOWBOX — gate-triggered cat-vocal synth voice. Faust DSP — formant bank +
 // harmonic+noise excitation + stereo decorrelation tail. See drummergirl.ts
 // for the closest reference (similar gate-triggered all-in-one voice shape).

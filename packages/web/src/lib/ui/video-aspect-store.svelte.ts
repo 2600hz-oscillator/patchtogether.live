@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/video-aspect-store.svelte.ts
-//
 // Video OUTPUT aspect store (Svelte 5 runes). Singleton per page. Tracks the
 // 4:3 ↔ 16:9 switch + derives the engine resolution for the active aspect.
 //

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/seq960-dsp.test.ts
-//
 // Pure-logic coverage for the MOOG 960 column stepper. Proves the column
 // pointer advances correctly under every per-column MODE combination (NORMAL
 // advance + wrap, SKIP pass-through, STOP halt, all-skip graceful no-op) and

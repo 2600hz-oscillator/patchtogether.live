@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-algorithms.test.ts
-//
 // The GOLDEN for the 32-algorithm routing table. This file used to assert only
 // structural invariants (six modSrcs slots, carriers in 0..5) — which every
 // possible wrong table also satisfies. It let a table ship in which the 32

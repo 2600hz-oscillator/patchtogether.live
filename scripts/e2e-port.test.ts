@@ -1,5 +1,3 @@
-// scripts/e2e-port.test.ts
-//
 // scripts/e2e-port.sh is THE single derivation of a worktree's default e2e
 // port (#1597) — every entry point (Taskfile targets, dev-server.sh,
 // e2e/worktree-port.ts and through it the vrt/chaos/audio-drift configs)

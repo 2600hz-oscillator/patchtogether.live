@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/kria-grid.test.ts
-//
 // Integration test for the grid↔KRIA binding, driven through the REAL
 // grid-device (simulated transport) + the REAL graph store. Mocks only the
 // scheduler-clock so the LED render loop can be stepped manually. Also covers

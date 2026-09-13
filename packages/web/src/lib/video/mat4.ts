@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/mat4.ts
-//
 // Minimal column-major 4×4 / 3×3 matrix helpers for TOYBOX's OBJ mesh pass.
 // PURE (no GL, no DOM) so it unit-tests in jsdom and runs identically in the
 // render hot path. Column-major to match WebGL's `uniformMatrix4fv` (which

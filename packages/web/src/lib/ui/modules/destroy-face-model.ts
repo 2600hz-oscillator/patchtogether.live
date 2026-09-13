@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/destroy-face-model.ts
-//
 // THE PURE MODEL BEHIND DESTROY's FACEPLATE — the four numbers a bitcrusher's
 // three dials cannot print.
 //

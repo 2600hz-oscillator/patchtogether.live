@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-media-drain.ts
-//
 // THE DRAIN — chunks from the capture worklet to the clip media store, in
 // order, with backpressure, and WITHOUT EVER DROPPING ONE.
 //

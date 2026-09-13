@@ -1,5 +1,3 @@
-// e2e/tests/backdraft-preview-toggle.spec.ts
-//
 // THE PREVIEW ON/OFF TOGGLE on backdraft's faceplate (owner review round 1):
 // *"the screen preview on the card should have an on/off button and when it's
 // off it collapses so we reclaim the vertical space. that on/off persists
@@ -173,7 +171,6 @@ async function centerOnNode(page: Page, nodeId: string, zoom = 0.9): Promise<voi
   await waitFrames(page, 4);
 }
 
-/** Open backdraft's dock faceplate and return the full-view locator. */
 async function openFace(page: Page) {
   await centerOnNode(page, NODE);
   const shell = page.locator(`.svelte-flow__node[data-id="${NODE}"] [data-testid="module-shell"]`);

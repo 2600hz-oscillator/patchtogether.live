@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/gif-frames.test.ts
-//
 // Pure frame-scheduler tests (node). The browser decode path (ImageDecoder →
 // VideoFrame → ImageBitmap) is covered by the picturebox-gif e2e; here we lock
 // the deterministic "which frame at time t" math + its loop/edge behaviour.

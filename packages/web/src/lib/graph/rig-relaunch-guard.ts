@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/rig-relaunch-guard.ts
-//
 // NATIVE-SHELL PRE-FLIGHT — THE RELAUNCH BOUNCE.
 //
 // Owner rule (native-shell plan): force the pre-flight setup screen only on a

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/unityscalemathematik-face-model.ts
-//
 // THE PURE MODEL BEHIND THE UNITYSCALEMATHEMATIK FACEPLATE — the four hero
 // readouts, which are all one function of the module's own shaping law read at
 // two probe magnitudes.

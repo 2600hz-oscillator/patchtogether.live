@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midi-lane.test.ts
-//
 // Unit + factory tests for MIDI LANE — the per-channel instrument-demux.
 //
 // Two layers:
@@ -160,9 +158,7 @@ function makeMidiAccess(...inputs: ReturnType<typeof makeMidiInput>[]): MidiAcce
   return { inputs: map, onstatechange: null };
 }
 
-// ════════════════════════════════════════════════════════════════════
 // 1. Module-def shape
-// ════════════════════════════════════════════════════════════════════
 
 describe('midiLaneDef: module shape', () => {
   it('defaults are sensible: all channels, mono, last, retrig, CC1=A, kick=36', () => {
@@ -176,9 +172,7 @@ describe('midiLaneDef: module shape', () => {
   });
 });
 
-// ════════════════════════════════════════════════════════════════════
 // 2. Pure helpers
-// ════════════════════════════════════════════════════════════════════
 
 describe('expandLaneChannels: channel-set normalization', () => {
   it('null → null (all channels)', () => {
@@ -268,11 +262,8 @@ describe('buildPolyLanes: chord allocation', () => {
   });
 });
 
-// ════════════════════════════════════════════════════════════════════
 // 3. Factory wiring (mock requestMIDIAccess + drive synthetic MIDI)
-// ════════════════════════════════════════════════════════════════════
 
-// ════════════════════════════════════════════════════════════════════
 // 3a. THE PR REGRESSION — a MIDI LANE must not silence a control surface
 //     that shares its MIDIAccess.
 //
@@ -293,7 +284,6 @@ describe('buildPolyLanes: chord allocation', () => {
 // The NEGATIVE CONTROL is permanent: the pre-fix routine is reproduced verbatim
 // and asserted to kill the bystander on every run, so this test cannot quietly
 // stop being able to fail.
-// ════════════════════════════════════════════════════════════════════
 
 describe('midiLaneDef.factory — a lane must not silence a surface sharing its access', () => {
   let originalRequestMIDIAccess: unknown;

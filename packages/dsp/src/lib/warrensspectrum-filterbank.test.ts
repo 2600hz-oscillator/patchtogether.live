@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-filterbank.test.ts
-//
 // Unit gates for the WARREN'S SPECTRUM 8-band FILTERBANK (phase 2) and for
 // its routing through the engine.
 //
@@ -145,7 +143,6 @@ function scrambledBands(): WsBandSettings[] {
   return b;
 }
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — the SVF and the morph (pure functions)', () => {
   it('morphSvf crossfades LP → BP → HP and hits each response exactly', () => {
@@ -245,7 +242,6 @@ describe('warrensspectrum filterbank — the band table is range-checked at ONE 
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — THE DEFAULT IS UNTOUCHED (the phase-2 promise)', () => {
   const input = source();
@@ -311,7 +307,6 @@ describe('warrensspectrum filterbank — THE DEFAULT IS UNTOUCHED (the phase-2 p
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — every control is its own live axis', () => {
   const input = source();
@@ -371,7 +366,6 @@ describe('warrensspectrum filterbank — every control is its own live axis', ()
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — STEREO (the reason phase 2 exists)', () => {
   const input = source();
@@ -427,7 +421,6 @@ describe('warrensspectrum filterbank — STEREO (the reason phase 2 exists)', ()
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — INPUT MIX is a genuinely separate path', () => {
   const input = source();
@@ -452,7 +445,6 @@ describe('warrensspectrum filterbank — INPUT MIX is a genuinely separate path'
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — WET is a crossfade, not a level', () => {
   const input = source();
@@ -518,7 +510,6 @@ describe('warrensspectrum filterbank — WET is a crossfade, not a level', () =>
   });
 });
 
-// ---------------------------------------------------------------------------
 
 describe('warrensspectrum filterbank — the per-QUANTUM CPU deadline', () => {
   // ⚠ Budgeted against the DEADLINE, not against "% of one core". A worklet

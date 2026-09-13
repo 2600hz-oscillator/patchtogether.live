@@ -1,5 +1,3 @@
-// packages/web/src/lib/dev/registry-manifest.test.ts
-//
 // The registry-manifest GATE. Not the emitter — that is `registry-manifest.ts`,
 // a plain module (#1526).
 //
@@ -184,9 +182,7 @@ describe('registry manifest gate', () => {
     expect(offenders, `param validity:\n  ${offenders.join('\n  ')}`).toEqual([]);
   });
 
-  // ---------------------------------------------------------------------
   // The BUILDER — pure over the registry.
-  // ---------------------------------------------------------------------
 
   it('the builder is deterministic: two independent reads serialize byte-identically', () => {
     // Fixed fingerprint on both sides so this measures the REGISTRY read, not
@@ -206,11 +202,9 @@ describe('registry manifest gate', () => {
     expect(m.modules.map((x) => x.type)).toEqual(specs.map((x) => x.type));
   });
 
-  // ---------------------------------------------------------------------
   // The WRITER — driven against a TEMP path. The real artifact is written
   // ONLY by the `MANIFEST_EMIT=1` seam at the bottom of this file, so a plain
   // `task test` leaves the working tree alone.
-  // ---------------------------------------------------------------------
 
   it('the writer round-trips and is write-if-changed (no needless mtime churn)', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'registry-manifest-'));
@@ -250,11 +244,9 @@ describe('registry manifest gate', () => {
     }
   });
 
-  // ---------------------------------------------------------------------
   // The SOURCE FINGERPRINT — what `e2e/tests/_registry.ts` uses to refuse a
   // stale manifest. A staleness gate whose fingerprint cannot move is a gate
   // that cannot fail, so the perturbation legs here are PERMANENT.
-  // ---------------------------------------------------------------------
 
   it('the basis covers every registered module def file and the projection', () => {
     const files = manifestBasisFiles();
@@ -325,10 +317,8 @@ describe('registry manifest gate', () => {
     expect(manifestSourceFingerprint(undefined, withoutOne)).not.toBe(baseline);
   });
 
-  // ---------------------------------------------------------------------
   // The GENERATE seam. This is the ONLY thing in the unit lane that writes to
   // e2e/.generated/, and it is off unless `task test:emit-manifest` turns it on.
-  // ---------------------------------------------------------------------
 
   it.runIf(process.env.MANIFEST_EMIT)(
     '[MANIFEST_EMIT] emits e2e/.generated/registry-manifest.json',

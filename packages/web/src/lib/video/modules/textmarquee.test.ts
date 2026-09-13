@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/textmarquee.test.ts
-//
 // Def-level invariants for TEXTMARQUEE (the engine module). The pixel/GL path
 // is covered by the bespoke e2e (textmarquee.spec.ts) + the per-port/VRT
 // sweeps; the pos/scroll/layout math by textmarquee-layout.test.ts. Here we

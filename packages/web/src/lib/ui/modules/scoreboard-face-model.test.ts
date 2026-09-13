@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/scoreboard-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the SCOREBOARD faceplate (#2089).
 //
 // This is the THINNEST face in the video fleet — one ranked control — which

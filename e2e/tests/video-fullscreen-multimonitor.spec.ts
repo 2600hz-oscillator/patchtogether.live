@@ -1,5 +1,3 @@
-// e2e/tests/video-fullscreen-multimonitor.spec.ts
-//
 // Multi-monitor fullscreen for video displays (Window Management API).
 // On Chromium with window.getScreenDetails(), the canvas right-click menu
 // offers a "Fullscreen on …" entry PER display so a video display can go

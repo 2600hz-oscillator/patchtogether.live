@@ -1,5 +1,3 @@
-// e2e/tests/face-moog956.spec.ts
-//
 // ═══════ THE 956 RIBBON'S FACE, AND ITS REAL SOURCE CHAIN ═══════
 //
 // moog956 entered STRICT_FACES on 2026-09-02. Its instrument is ONE POINTER

@@ -1,5 +1,3 @@
-// scripts/vrt-png-verify.mjs
-//
 // DECODE-VERIFY PNG FILES; print the paths of the CORRUPT ones.
 //
 // Why this exists (run 33198943725): the first sharded VRT capture delivered

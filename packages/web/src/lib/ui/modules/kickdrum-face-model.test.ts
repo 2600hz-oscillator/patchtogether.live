@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/kickdrum-face-model.test.ts
-//
 // The hero graph is only worth drawing if it MOVES. Every block below is built
 // as a NEGATIVE CONTROL on the instrument, not a restatement of it: perturb the
 // one param the number claims to be about, and assert the number moves in the

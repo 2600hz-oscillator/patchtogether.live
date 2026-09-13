@@ -1,5 +1,3 @@
-// e2e/tests/save-load.spec.ts
-//
 // JSON patch save/load DATA round-trip (Phase 1 done-gate item).
 //
 // The manual Save / Load patch buttons were retired in rack Phase 3 (the
@@ -51,7 +49,6 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
     ],
   );
 
-  // Set sequencer step data via the live patch.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -95,12 +92,10 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
       __ydoc: { transact: (fn: () => void) => void };
     };
     const env = w.__persistence.save();
-    // Clear everything
     w.__ydoc.transact(() => {
       for (const id of Object.keys(w.__patch.edges)) delete w.__patch.edges[id];
       for (const id of Object.keys(w.__patch.nodes)) delete w.__patch.nodes[id];
     });
-    // Load it back
     const loadResult = w.__persistence.load(env);
     return {
       env,
@@ -138,7 +133,6 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
   expect(e3.source).toEqual({ nodeId: 'vco', portId: 'sine' });
   expect(e3.target).toEqual({ nodeId: 'vca', portId: 'audio' });
 
-  // Load result diagnostics — should be clean (5 nodes, 6 edges, no warnings).
   const lr = result.loadResult as { nodesLoaded: number; edgesLoaded: number; diagnostics: unknown[] };
   expect(lr.nodesLoaded).toBe(5);
   expect(lr.edgesLoaded).toBe(6);
@@ -179,7 +173,6 @@ test('save-load: __persistence.load() restores the patch from a saved envelope',
     return w.__persistence.save();
   });
 
-  // Clear the patch.
   await fileMenuClick(page, 'workflow-file-clear');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 

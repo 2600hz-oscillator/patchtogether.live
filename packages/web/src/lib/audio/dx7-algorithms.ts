@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-algorithms.ts
-//
 // Mirror of the 32-algorithm routing table embedded in packages/dsp/src/dx7.ts.
 // Exported here so the host can validate the table structure under unit tests
 // (the worklet bundle is not directly importable from the web workspace), and

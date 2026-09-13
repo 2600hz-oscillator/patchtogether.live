@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/vfpga-floorplan.ts
-//
 // FABRIC FLOORPLAN — the pure, GL-FREE layout selector (vfpga P5). It lowers a
 // loaded `VfpgaSpec`'s placed FABRIC (tiles[] + nets[] + grid, the place-and-
 // route INPUT/placement map — design §1.4) into a flat, render-ready floorplan

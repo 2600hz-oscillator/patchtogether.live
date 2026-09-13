@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/channel-columns.ts
-//
 // WORKFLOW CHANNEL COLUMNS — PURE geometry + ordered-membership array helpers.
 //
 // The workflow-mode canvas is projected as 8 numbered CHANNEL COLUMNS (1..8) with
@@ -26,7 +24,6 @@
 
 import { HP_UNIT, RACK_UNIT, snapPositionToGrid } from '$lib/ui/rack-grid';
 
-// ---------------- Constants ----------------
 
 /** The workflow view has exactly 8 channel columns (= the 8 mixmstrs channels).
  *  HARD CAP — no scroll/page beyond 8. */

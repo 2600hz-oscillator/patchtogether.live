@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/samsloop/samsloop-rec-refusal.svelte.ts
-//
 // WHY THE REC BUTTON NEEDED SOMEWHERE TO FAIL.
 //
 // `startSamsloopTake` REFUSES rather than arming when the engine is not up or

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/peertube/PeerTubeBrowseBody.svelte
-  //
   // The PEERTUBE dock full-view body: the picture, the SCREEN switch, and the
   // browse surface this module exists for.
   //

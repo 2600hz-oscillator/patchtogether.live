@@ -1,5 +1,3 @@
-// e2e/tests/toybox-shadertoy.spec.ts
-//
 // TOYBOX Shadertoy runtime — end-to-end pixel proofs.
 //
 //   1. a FRAG shader (frag-invert-scan) VISIBLY TRANSFORMS the layer below it

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/clip-audio-rec-machine.ts
-//
 // THE ARM STATE MACHINE + THE FRAME MATHS — pure, so every §4.4 transition and
 // every boundary derivation is testable with no audio context at all. The
 // worklet (packages/dsp/src/clip-recorder.ts) is deliberately DUMB: it slices
@@ -33,9 +31,7 @@
 import type { RecordingWindow } from './clip-media';
 import { laneStepDur } from './modules/clip-clock';
 
-// ---------------------------------------------------------------------------
 // Frame maths
-// ---------------------------------------------------------------------------
 
 /** Fallback tempo when there is no TIMELORDE in the rack — the shipped
  *  clipplayer fallback (`transportBpm`), restated here so the recorder and the
@@ -100,9 +96,7 @@ export function clipRecWholeUnits(startFrame: number, unitFrames: number, frame:
   return Math.max(0, Math.floor((frame - startFrame) / unitFrames));
 }
 
-// ---------------------------------------------------------------------------
 // The machine
-// ---------------------------------------------------------------------------
 
 export type ClipRecMode = 'single' | 'endless';
 

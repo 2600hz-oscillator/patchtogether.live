@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/asset-modules.test.ts
-//
 // WORKFLOW MODE P3 unit coverage — the pure core of the click-to-patch
 // asset flow: the kind→module mapping (CROSS-CHECKED against the live
 // registries so a def/port rename can't silently strand the map), the

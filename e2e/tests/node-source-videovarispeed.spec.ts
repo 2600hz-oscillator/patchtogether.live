@@ -1,5 +1,3 @@
-// e2e/tests/node-source-videovarispeed.spec.ts
-//
 // ⚠ THE FILENAME IS LOAD-BEARING — DO NOT RENAME THIS BACK TO `videovarispeed-node-lifetime.spec.ts`.
 // `e2e/webgl-heavy-globs.ts` classifies by PREFIX (`**/videobox-*.spec.ts`,
 // `**/videovarispeed-*.spec.ts`), so a spec named after either module is swept

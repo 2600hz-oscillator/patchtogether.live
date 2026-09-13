@@ -1,5 +1,3 @@
-// art/scenarios/marbles/gate-and-cv.test.ts
-//
 // Audio Regression Test scenarios for MARBLES. Longer-render checks of clock
 // rate scaling, gate-stream density, and X-section CV numerical stability
 // across the T-model × scale cube.

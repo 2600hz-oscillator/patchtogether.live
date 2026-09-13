@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cloudseed.test.ts
-//
 // Unit tests for CLOUDSEED — Ghost Note Audio reverb port. Verifies the
 // scaleParam table is bit-compatible with the C++ reference, the
 // deterministic RandomBuffer generates the same seeded sequences, the

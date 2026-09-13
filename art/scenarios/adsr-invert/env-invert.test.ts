@@ -1,5 +1,3 @@
-// art/scenarios/adsr-invert/env-invert.test.ts
-//
 // ART for ADSR's new env_inv output. The full ADSR DSP runs in a Faust
 // AudioWorklet which node-web-audio-api can't host directly (see other
 // ART scenarios that work around this), so we exercise the SAME

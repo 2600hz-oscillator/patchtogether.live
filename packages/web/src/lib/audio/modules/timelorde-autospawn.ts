@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde-autospawn.ts
-//
 // TIMELORDE auto-spawn helper.
 //
 // The promise that timelorde.ts's module-def header makes — "if a rack is

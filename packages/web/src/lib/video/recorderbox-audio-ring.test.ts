@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/recorderbox-audio-ring.test.ts
-//
 // Unit coverage for the rolling 5-second audio overlap ring buffer. It retains
 // the trailing N frames of emitted capture audio so a chunk roll can PREPEND the
 // last 5 s as the start of the next chunk. PURE — CI-safe, no encoder. Verifies:

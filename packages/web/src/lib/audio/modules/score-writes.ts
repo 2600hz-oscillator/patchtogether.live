@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/score-writes.ts
-//
 // THE ONE WRITE SEAM for SCORE's music.
 //
 // `score-data.ts` owns the arithmetic and is pure (no store, no Y.Doc);
@@ -9,9 +7,7 @@
 // same helper" is a
 // property of the code rather than something to re-verify per PR.
 //
-// ==========================================================================
 // FOUR DEFECTS THIS FILE EXISTS TO CLOSE
-// ==========================================================================
 //
 // (1) ⚠ EVERY EDIT TO THE MUSIC WAS OUTSIDE Cmd-Z. `ScoreCard.svelte`'s
 //     `writeData` and its quicksave `applySnapshot` both called
@@ -59,9 +55,7 @@
 //     setter would be the wrong control — it would turn a mis-click into
 //     permanent data loss, which is the defect it is meant to fix, inverted.
 //
-// ==========================================================================
 // ⚠ THE SELECTION AND THE NOTE VALUE LIVE ON THE NODE, AND THAT IS FORCED
-// ==========================================================================
 // A face cell's `value(node)` receives the node and nothing else
 // (`shell-cells.ts`), so state the mark cells must READ — the selection AND the
 // armed marks below — has literally nowhere else to live: component-local, a

@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-vco-dsp.ts
-//
 // Shared Moog-VCO oscillator core. OWN CODE — a clean-room polyBLEP
 // oscillator written for this project; it is NOT a port of any Moog
 // schematic or copyleft DSP source (

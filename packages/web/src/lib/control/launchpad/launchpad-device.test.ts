@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-device.test.ts
-//
 // Port enumeration regression test. The real-hardware bug: TWO identical
 // Launchpad Mini Mk3 units enumerate with the EXACT SAME port name
 // ("LPMiniMK3 MIDI In" / "… Out"). Pairing an input to an output by NAME

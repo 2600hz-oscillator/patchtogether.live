@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/gibribbon/shell-extension.ts
-//
 // The GIBRIBBON shell extension — the module-owned end of the extension seam
 // (#1512). `gibribbonDef.face.extension: 'gibribbon'` declares this file; the
 // non-eager glob in $lib/ui/workflow/shell-extensions.ts is the one resolver,

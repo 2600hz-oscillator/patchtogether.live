@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/mirrorpool-core.test.ts
-//
 // Pure-unit coverage for the MIRRORPOOL physics core — the algebra the GLSL
 // shader mirrors, verified outside WebGL (jsdom can't render). Locks the
 // adversarial-review fixes: normal sign convention (#1), single brightness

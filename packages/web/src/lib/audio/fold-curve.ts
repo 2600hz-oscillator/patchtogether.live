@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/fold-curve.ts
-//
 // West-Coast (Buchla)-style sin-foldback curve for WaveShaperNode.curve.
 // Shared by WAVVIZ and SWOLEVCO; also pinned by the wavefolder ART
 // scenario. Originally lived inside vizvco.ts before that module was

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/archivist/ArchivistArchiveBody.svelte
-  //
   // The ARCHIVIST dock full-view body: the picture, the SCREEN switch, and the
   // archive.org browse surface this module exists for.
   //

@@ -1,5 +1,3 @@
-// e2e/vrt/landing.spec.ts
-//
 // VRT snapshot of the static landing / front door at `/` (Phase 2 of the
 // landing-page overhaul). The landing is fully static — prerendered, no
 // AudioContext, no auth read, no animation — so the capture is deterministic.

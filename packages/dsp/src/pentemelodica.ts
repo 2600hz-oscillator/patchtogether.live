@@ -1,5 +1,3 @@
-// packages/dsp/src/pentemelodica.ts
-//
 // PENTEMELODICA — 5-voice polyphonic analog-style synth (AudioWorklet entry).
 //
 // A POLY input drives five band-limited VCO voices (each with TUNE / FINE /

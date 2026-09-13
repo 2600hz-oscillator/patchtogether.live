@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/ringback-core.ts
-//
 // RINGBACK — the twotracks record-time crush, extracted and made intentional.
 //
 // The artifact: while TWOTRACKS fresh-records, it writes the live input into

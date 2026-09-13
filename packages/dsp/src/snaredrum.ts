@@ -1,5 +1,3 @@
-// packages/dsp/src/snaredrum.ts
-//
 // SNARE DRUM — deep stereo snare VOICE with a polyphonic two-hand DRUMROLL
 // AudioWorkletProcessor. The per-sample DSP lives in ./lib/snaredrum-dsp.ts
 // (HEAD modal bank + BODY noise + CRACK per-voice, the SHARED re-excitable

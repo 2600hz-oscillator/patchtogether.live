@@ -1,5 +1,3 @@
-// packages/web/src/lib/media/probe.test.ts
-//
 // Unit coverage for the poster-frame capture (the Loaded Assets Picker's
 // video hover thumbnail). Vitest runs in NODE (no jsdom, no media
 // decode), so the video element + canvas are structural fakes through

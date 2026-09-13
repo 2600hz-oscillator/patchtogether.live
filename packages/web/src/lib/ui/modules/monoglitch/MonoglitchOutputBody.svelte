@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/monoglitch/MonoglitchOutputBody.svelte
-  //
   // The MONOGLITCH dock full-view body: the live scanline picture and the
   // affordances that live only on `MonoglitchCard.svelte`, which promotion
   // would otherwise delete (`migrated('monoglitch')` stops BOTH surfaces

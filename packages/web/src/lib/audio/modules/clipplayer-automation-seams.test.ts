@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clipplayer-automation-seams.test.ts
-//
 // FACTORY-LEVEL tests for the param-jump policy SEAMS (Phase 0 adversarial
 // fixes): drives the REAL clipplayer factory + tick loop against a fake
 // AudioContext, the live graph store, and a FAKE active engine that records

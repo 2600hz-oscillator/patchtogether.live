@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/asset-select.ts
-//
 // Shared PURE helper for the "7-slot asset selector" on the video SOURCE
 // modules (PICTUREBOX + VIDEOVARISPEED). A note/gate output from a clip
 // player (or any pitch+gate source) selects which of 7 loaded image/video

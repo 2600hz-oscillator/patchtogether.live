@@ -1,5 +1,3 @@
-// art/scenarios/mixmstrs/rec-tap-points.test.ts
-//
 // THE THREE `recTap` POINTS, DELIVERED AND MEASURED — the slice-3b scenario.
 //
 // Slice 3 shipped the `recTap` roster with one live option (BOARD IN) and a

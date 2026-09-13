@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/module-docs-ensure.test.ts
-//
 // The BUILD-TIME-GENERATED render module's seam + gate (LoC campaign row 4).
 // Before this, `module-docs.generated.ts` was COMMITTED and
 // contract-lock.test.ts held a freshness assertion over the committed copy

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavecel.test.ts
-//
 // Tests for WAVECEL:
 //   1. Module-def shape (stereo outs, cross-domain video outs, the `poly`
 //      input added in feat/poly-in-wavcel-cube).
@@ -21,9 +19,7 @@ beforeAll(() => {
   (globalThis as unknown as { sampleRate: number }).sampleRate = SR;
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Worklet DSP behavior — capture the processor + drive process().
-// ─────────────────────────────────────────────────────────────────────────
 
 type ProcInstance = {
   process: (i: Float32Array[][], o: Float32Array[][], p: Record<string, Float32Array>) => boolean;
@@ -218,7 +214,6 @@ describe('WAVECEL worklet — poly input (polyPitchGate)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // no-stray-drone gating (Bug 1) + BASE VOL per-voice VCA floor (Bug-fix 2).
 //
 // Connectedness is a k-rate param (poly_connected / trigger_connected) pushed by
@@ -228,7 +223,6 @@ describe('WAVECEL worklet — poly input (polyPitchGate)', () => {
 // voice is SILENT (patching poly never auto-drones). Nothing connected → a raw
 // VCO whose level IS base_vol (env idle). gain = base + (1-base)*env per ACTIVE
 // voice; default base=1 keeps the raw-VCO drone byte-identical.
-// ─────────────────────────────────────────────────────────────────────────
 describe('WAVECEL worklet — no-stray-drone gating + BASE VOL floor', () => {
   const C2 = Math.log2(65.41 / 261.626);
 

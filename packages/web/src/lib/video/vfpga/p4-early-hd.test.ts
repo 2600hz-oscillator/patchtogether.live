@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/p4-early-hd.test.ts
-//
 // P4 early-HD-era bent VFPGA catalog — pure (GL-free) unit coverage. Asserts the
 // three bent programs (macroblock-mosh, tmds-sparkle, scaler-glitch) register, pass
 // the §2.1 validation gate, place through P&R into the expected pass plan, drive
@@ -32,9 +30,7 @@ function spec(id: string): VfpgaSpec {
   return s!;
 }
 
-// ----------------------------------------------------------------------
 // New P4 bend cells register + carry the seed plumbing.
-// ----------------------------------------------------------------------
 
 describe('P4 bend cells — registration', () => {
   it('every new bend cell is registered + round-trips by (type, op)', () => {
@@ -65,9 +61,7 @@ describe('P4 bend cells — registration', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Every P4 spec validates + places.
-// ----------------------------------------------------------------------
 
 describe('P4 specs — validate + place through place-and-route', () => {
   describe.each(P4_SPECS)('%s', (id) => {
@@ -109,10 +103,8 @@ describe('P4 specs — validate + place through place-and-route', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // macroblock-mosh — the EARLY-HD register frame-store: a real feedback loop
 // (the reference frame), cut at :prev (same flagship pattern as framestore-howl).
-// ----------------------------------------------------------------------
 
 describe('macroblock-mosh — register reference frame-store feedback', () => {
   it('declares TWO register pairs (the reference store + clip-B motion store) swapped at end of frame', () => {
@@ -168,9 +160,7 @@ describe('macroblock-mosh — register reference frame-store feedback', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // tmds-sparkle — the LUT16 bit-flip datapath (the second literal LUT16 showcase).
-// ----------------------------------------------------------------------
 
 describe('tmds-sparkle — LUT16 bit-flip field', () => {
   it('places the literal LUT16 tile (a 4-input truth table over the picture)', () => {
@@ -202,9 +192,7 @@ describe('tmds-sparkle — LUT16 bit-flip field', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // scaler-glitch — the BRAM line-buffer (the early-HD video staple), budget-counted.
-// ----------------------------------------------------------------------
 
 describe('scaler-glitch — BRAM line buffer', () => {
   it('places exactly one BRAM line-buffer tile reading the host video in', () => {

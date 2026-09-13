@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7/dx7-selection.svelte.ts
-//
 // WHICH OPERATOR the detail panel is showing — shared between the map and the
 // detail panel, which are registered as two INDEPENDENT shell cells and so
 // cannot share component state directly.

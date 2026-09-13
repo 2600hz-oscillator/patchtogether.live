@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/feedback/+server.ts
-//
 // POST /api/feedback — record a user feedback submission.
 // Body shape:
 //   {

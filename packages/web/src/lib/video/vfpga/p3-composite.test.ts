@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/p3-composite.test.ts
-//
 // P3 composite-era bent VFPGA catalog — pure (GL-free) unit coverage. Asserts the
 // four bent programs (sync-bender, chroma-rot, framestore-howl, databend-cvbs)
 // register, pass the §2.1 validation gate, place through P&R into the expected
@@ -33,9 +31,7 @@ function spec(id: string): VfpgaSpec {
   return s!;
 }
 
-// ----------------------------------------------------------------------
 // Bend cells register + carry the seed plumbing.
-// ----------------------------------------------------------------------
 
 describe('P3 bend cells — registration', () => {
   it('every new bend cell is registered + round-trips by (type, op)', () => {
@@ -66,9 +62,7 @@ describe('P3 bend cells — registration', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Every P3 spec validates + places.
-// ----------------------------------------------------------------------
 
 describe('P3 specs — validate + place through place-and-route', () => {
   describe.each(P3_SPECS)('%s', (id) => {
@@ -114,9 +108,7 @@ describe('P3 specs — validate + place through place-and-route', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // The const/bind lowering (the new plumbing this PR adds).
-// ----------------------------------------------------------------------
 
 describe('P3 const/bind lowering', () => {
   it('a bound knob is renamed to its bind uniform + omitted from consts', () => {
@@ -161,9 +153,7 @@ describe('P3 const/bind lowering', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // framestore-howl — the feedback flagship: a real register loop, cut at :prev.
-// ----------------------------------------------------------------------
 
 describe('framestore-howl — register frame-store feedback', () => {
   it('declares ONE register pair (the frame store) swapped at end of frame', () => {
@@ -207,9 +197,7 @@ describe('framestore-howl — register frame-store feedback', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // databend-cvbs — the LUT16 datapath bend.
-// ----------------------------------------------------------------------
 
 describe('databend-cvbs — LUT16 datapath', () => {
   it('places the literal LUT16 tile (a 4-input truth table over the picture)', () => {

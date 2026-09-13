@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/dsp-utils.test.ts
-//
 // Pins the shared per-sample utilities (extracted from the retired
 // chowkick-dsp core; kickdrum / snaredrum / snare-roll import them).
 

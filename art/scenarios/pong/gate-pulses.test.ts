@@ -1,5 +1,3 @@
-// art/scenarios/pong/gate-pulses.test.ts
-//
 // ART for PONG (research prototype).
 //
 // PONG's game-loop runs off scheduler-clock (a Web Worker tick) that

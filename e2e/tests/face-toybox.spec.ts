@@ -1,5 +1,3 @@
-// e2e/tests/face-toybox.spec.ts
-//
 // TOYBOX's v2 face, driven in a real browser — the half no source gate can see.
 //
 // ⚠ THE FILENAME IS `face-<module>`, NOT `<module>-face`, AND THAT IS LOAD-

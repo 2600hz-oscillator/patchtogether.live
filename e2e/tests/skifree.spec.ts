@@ -1,5 +1,3 @@
-// e2e/tests/skifree.spec.ts
-//
 // SKIFREE module end-to-end. This is the dedicated spec the per-port
 // EXEMPT_OUTPUT_EMIT entry (`skifree.gate` / `skifree.out`) cross-references:
 // the gate output ONLY fires on an in-game crash / eaten-by-yeti event, so

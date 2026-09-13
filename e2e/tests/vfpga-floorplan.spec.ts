@@ -1,5 +1,3 @@
-// e2e/tests/vfpga-floorplan.spec.ts
-//
 // vfpga-runner P5 — the FABRIC FLOORPLAN view. Spawns the host, toggles the
 // floorplan on, and asserts the tile-grid + routing-nets diagram actually
 // RENDERS (the Canvas2D surface is non-blank with structure) and that switching

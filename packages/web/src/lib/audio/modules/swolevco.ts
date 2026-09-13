@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/swolevco.ts
-//
 // SWOLEVCO — Buchla 259-style complex waveform generator. The "swoleVCO"
 // of the patchtogether.live oscillator lineup: two oscillators in one
 // module, audio-rate cross-modulation ("timbre"), waveform morph
@@ -309,7 +307,6 @@ export const swolevcoDef: AudioModuleDef = {
     { id: 'fold',     label: 'Fold',  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
   //
   // WHAT SWOLEVCO IS FOR. It is the COMPLEX (West-Coast) oscillator: one pitch
   // goes in, and instead of choosing a waveform you BUILD a timbre by warping

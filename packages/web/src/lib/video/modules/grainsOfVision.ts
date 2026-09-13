@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/grainsOfVision.ts
-//
 // GRAINS OF VISION — a granular VIDEO synthesizer.
 //
 // A 1-or-2 video-in, 1-or-2 video-out granular engine on ONE fixed linear
@@ -69,9 +67,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 
-// ----------------------------------------------------------------------
 // Constants (shared by the CPU mirror + the GLSL via interpolation).
-// ----------------------------------------------------------------------
 
 /** Reduced render resolution — SwiftShader/CI feasibility (mirrorpool pattern). */
 export const GOV_RENDER_SCALE = 0.5;
@@ -101,9 +97,7 @@ export const GOV_COMPOSITE_MODES = ['off', 'density', 'displace', 'size', 'rate'
 export type GovCompositeMode = (typeof GOV_COMPOSITE_MODES)[number];
 export const GOV_COMPOSITE_MODE_COUNT = GOV_COMPOSITE_MODES.length; // 5
 
-// ----------------------------------------------------------------------
 // Pure scalar helpers — transliterated 1:1 into the GLSL below.
-// ----------------------------------------------------------------------
 
 function clamp01(v: number): number { return Math.min(1, Math.max(0, v)); }
 function clamp(v: number, lo: number, hi: number): number { return Math.min(hi, Math.max(lo, v)); }
@@ -240,9 +234,7 @@ export function govCompositeRateOffset(mode: number, bLuma: number, amount: numb
   return (bLuma - 0.5) * clamp01(amount);
 }
 
-// ----------------------------------------------------------------------
 // Param model.
-// ----------------------------------------------------------------------
 
 export interface GrainsOfVisionParams {
   // GRAIN engine
@@ -295,9 +287,7 @@ export const GRAINS_OF_VISION_DEFAULTS: GrainsOfVisionParams = {
   freeze: 0,
 };
 
-// ----------------------------------------------------------------------
 // GLSL — the passes. Each fragment transliterates the CPU mirror above.
-// ----------------------------------------------------------------------
 
 const GLSL_HEADER = `#version 300 es
 precision highp float;
@@ -503,9 +493,7 @@ void main(){ outColor = vec4(texture(uTex, vUv).rgb, 1.0); }`;
 
 const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(GRAINS_OF_VISION_DEFAULTS));
 
-// ----------------------------------------------------------------------
 // A managed RGBA8 render target at an arbitrary size (reduced-res render).
-// ----------------------------------------------------------------------
 function createTarget(gl: WebGL2RenderingContext, w: number, h: number): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
   const tex = gl.createTexture();
   if (!tex) throw new Error('grainsOfVision: createTexture failed');

@@ -1,5 +1,3 @@
-// packages/dsp/src/warrensspectrum.ts
-//
 // WARREN'S SPECTRUM — AudioWorkletProcessor wrapper.
 //
 // The engine lives in ./lib/warrensspectrum-dsp.ts (ONE implementation,

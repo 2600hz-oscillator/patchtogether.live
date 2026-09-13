@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/no-user-control.test.ts
-//
 // THE LINT for the no-user-control DECLARATION (#1726).
 //
 // The declaration exists so a module can say "a player never sets this param"

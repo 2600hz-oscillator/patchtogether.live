@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-launch-quantize.property.test.ts
-//
 // fast-check property suite for `nextLaunchBoundary` (#1526) — the Deluge
 // "quantize a queued launch to the longest currently-playing clip's next loop
 // wrap" math.
@@ -44,9 +42,7 @@ import fc from 'fast-check';
 
 import { nextLaunchBoundary, type PlayingLaneClock } from './clip-launch-quantize';
 
-// ---------------------------------------------------------------------------
 // Generators — shaped like the scheduler's real state.
-// ---------------------------------------------------------------------------
 
 const laneClock = fc
   .record({
@@ -90,11 +86,9 @@ function describeSet(playing: readonly PlayingLaneClock[], now: number): string 
   );
 }
 
-// ---------------------------------------------------------------------------
 // The two BROKEN variants. Each is the real function with exactly one line
 // changed — never an independent reimplementation, so a control failure can
 // only mean the property stopped constraining that line.
-// ---------------------------------------------------------------------------
 
 function withoutFutureRoll(
   playing: readonly PlayingLaneClock[],
@@ -287,9 +281,7 @@ describe('nextLaunchBoundary properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // PERMANENT NEGATIVE CONTROLS.
-  // -------------------------------------------------------------------
 
   it('CONTROL: dropping the future-roll VIOLATES P1 (so P1 constrains that line)', () => {
     let violations = 0;

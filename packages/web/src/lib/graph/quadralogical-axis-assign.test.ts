@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/quadralogical-axis-assign.test.ts
-//
 // REAL-Y.Doc proof of the registration the QUADRALOGICAL pad's bespoke 2-axis
 // menu uses to expose pos_x / pos_y as assignable controls. The pad is a custom
 // <div> (not a Knob/Fader embedding ControlContextMenu), so it calls the SAME

@@ -1,5 +1,3 @@
-// e2e/tests/rack-audio-gate.spec.ts
-//
 // THE /rack AUDIO GATE (#1826) — the default route booted NO engine and showed
 // NO prompt: without a gesture the AudioContext cannot start (autoplay
 // policy), and unlike /r/[id] nothing on /rack said so. The fix mounts the

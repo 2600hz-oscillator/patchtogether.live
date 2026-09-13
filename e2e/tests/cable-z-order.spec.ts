@@ -1,5 +1,3 @@
-// e2e/tests/cable-z-order.spec.ts
-//
 // Regression for the "cables sometimes render in front of modules" bug.
 // We rely on the structural CSS contract — `.svelte-flow__edges` sits in
 // a stacking-context layer below `.svelte-flow__nodes` — rather than a

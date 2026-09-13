@@ -1,5 +1,3 @@
-// e2e/tests/topbar-1024.spec.ts
-//
 // Topbar overflow regression (owner report): at narrow viewports the single
 // flex row of topbar controls ran past the viewport edge and pushed the
 // rightmost control — the Sign in / account link at the end of the .actions

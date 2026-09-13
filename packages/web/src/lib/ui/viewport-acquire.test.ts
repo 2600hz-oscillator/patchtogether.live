@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/viewport-acquire.test.ts
-//
 // Unit checks for the LOOPBACK screen-capture acquire seam. No real display
 // prompt — the getDisplayMedia dependency is injected as a mock.
 

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/es9.ts
-//
 // ES-9 — full 16×16 audio+CV I/O with a real Eurorack system, via the
 // es9-bridge NATIVE companion app (repo: patchtogether.es9). The browser
 // cannot do this alone: getUserMedia caps the ES-9 at its first stereo pair
@@ -272,92 +270,17 @@ function controlDocs(): Record<string, string> {
   return docs;
 }
 
-// ---- the FACE ------------------------------------------------------------
 
 /**
- * PF-20 FACEPLATE.
+ * CONNECT ranks first because all hardware routing depends on the bridge.
+ * DISCONNECT releases its single-client connection for a DAW. Output classes
+ * precede input classes: outputs default to audio, so hardware CV use requires
+ * an explicit change; inputs already default to CV.
  *
- * ⚠ THIS MODULE WAS DISPOSITIONED `bespoke-surface`, AND THE ENTRY WAS WRONG
- * IN FOUR OF ITS FIVE CLAUSES. It read: *"the ES-9 BRIDGE: connection state
- * machine, connect/disconnect gestures, device rate and channel-count detail,
- * xrun/rtt telemetry, and sectioned routing across many jacks."* Measured
- * against `Es9Card.svelte`:
- *
- *   * "connection state machine"  → `stateLabel`, a seven-way string switch
- *     painted as one `<span>`. A STATE WORD about the module, outside every
- *     control — the shape the resting-text ruling deletes. It is a lamp now.
- *   * "device rate and channel-count detail" → three derived numbers. Deleted.
- *   * "xrun/rtt telemetry" → a count and a measurement with a decimal.
- *     Deleted as text; the count reaches a lamp's `aria-label`.
- *   * "sectioned routing across many jacks" → twenty-two ordinary `ParamDef`s
- *     that have been in `contract-lock.txt` since the module shipped, plus a
- *     `PatchPanel` — which on a face is the REAR CARD, not the plate.
- *
- * Only "connect/disconnect gestures" survived, and two gestures are two
- * `action` cells. So the surface this module needs is two buttons and three
- * lamps: strictly LESS bespoke machinery than `kria`, which needed a real
- * PF-14 panel component and was re-dispositioned anyway.
- *
- * ⚠ THE PROMOTION'S POINT IS THE SAME ONE `midiclock` AND `midiLane` MADE, and
- * it is larger here. `laneRenderKind` returns 'placeholder' for es9 today — a
- * rackline tile with ZERO ranked controls — so both gestures AND all 22
- * routing params are reachable only by discovering that the dock full view
- * exists. An `action` cell is not dock-restricted, so CONNECT and DISCONNECT
- * land on the lane tile; and this is the only module in its cohort with real
- * params, so it is the biggest such change in it.
- *
- * ── THE TIER LADDER, READ BACK AS A SENTENCE ──────────────────────────────
- *
- * At the smallest tier you get CONNECT — because a module whose hardware link
- * is down is silent, and nothing else on the plate does anything until it is
- * up. One tier out, DISCONNECT joins it, because the ES-9 accepts a single
- * client and handing it back to a DAW is a first-class gesture rather than a
- * teardown. Then the eight OUT-JACK classes, because they are the ones a
- * player MUST touch: the def defaults them to `audio` deliberately
- * (bit-transparent), so sending a patchtogether LFO to a hardware VCA means
- * changing one, and leaving it means sending full-scale audio into a CV input.
- * The fourteen IN twins come last because their default is already right for
- * the modular-native case (`cv`), which is the def's own stated reason for the
- * split — not a guess from the card, whose IN-before-OUT column order is
- * merely "IN has more rows".
- *
- * ⚠ `order` AND `pages` AGREE HERE, unusually. Priority and signal order are
- * the same list because the module has exactly one story: bring the link up,
- * then say what each jack carries.
- *
- * ── WHY THE CLASS BANDS ARE CLUSTERED ─────────────────────────────────────
- *
- * Not for looks — for the capture box. These are SEGMENTED cells painting four
- * option labels each, which makes them far wider than a knob;
- * `moog960/stepmode` measured EIGHT three-option cells at 1336 CSS px against
- * a 1220 px box and was clustered into halves for exactly this reason. Four
- * per row is the same fix with one more option per cell. The OUT band's two
- * equal clusters make it a CONSOLE GRID (`console-grid.ts`) — column j is
- * "the j-th jack of this half", the moog960 correspondence — while the IN
- * band's 4/4/4/2 is deliberately ragged, since fourteen does not divide into
- * rows that both fit and align.
- *
- * ── WHAT IS NOT DECLARED, AND WHY ─────────────────────────────────────────
- *
- * No `hero`: there is no live picture, scope trace, video preview or XY pad
- * here, and a hero that promoted one of 22 identical class switches would be
- * picking a favourite jack. No `tabbed`: three honest bands, and the rail
- * engages at seven. No `bareCells`: the per-cell jack NUMBER is the only thing
- * separating fourteen otherwise-identical controls — tidyVco's A/D/S/R
- * exactly — and the band label "in twins" does not say WHICH jack. No
- * `rackStatus`: `maxInstances: 1`, so there is no second instance and no band
- * to suppress (the CV-Buddy relationship runs the other way; that module
- * declares `rackStatus` and this is the shared hardware it points at).
- *
- * ⚠ `glyph: 'meter'` IS REACHABLE, and this module is the first in its cohort
- * for which that is true. `glyphBinding` short-circuits on
- * `primaryAudioOutPortId`, which matches `type === 'audio'` exactly; the MIDI
- * binders declare no audio output and are all forced to `'none'`. es9 declares
- * sixteen, so `in1` resolves and the binding is `{ kind: 'live-audio' }`. The
- * glance it buys is the right one — IS THE EURORACK SENDING ANYTHING — and its
- * one ambiguity is stated rather than hidden: a dark meter cannot tell "the
- * bridge is down" from "jack 1 is unpatched", which is what the BRIDGE lamp
- * two rows down answers.
+ * Class selectors are grouped in rows of at most four to fit the dock. Keep
+ * jack-number captions: they distinguish otherwise identical controls.
+ * The meter reads in1; the BRIDGE lamp distinguishes a disconnected bridge
+ * from an unpatched, silent input.
  */
 export const ES9_FACE: ModuleFace = {
   glyph: 'meter',

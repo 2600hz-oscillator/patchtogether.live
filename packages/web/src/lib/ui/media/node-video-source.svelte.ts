@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-video-source.svelte.ts
-//
 // THE REAL-DOM SINGLETON for ./node-video-source-registry — a thin binding of
 // the pure core to the browser, the Y.Doc and the engine.
 //

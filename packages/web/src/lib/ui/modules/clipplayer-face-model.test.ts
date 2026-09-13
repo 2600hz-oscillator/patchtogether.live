@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-face-model.test.ts
-//
 // THE CLIP PLAYER FACE — its model, its promotion, and the legs the shared
 // gates cannot carry on this module.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/colourofmagic-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind the COLOUROFMAGIC faceplate.
 //
 // WHAT MAKES THIS FILE NECESSARY: two of the three defects this face fixes were

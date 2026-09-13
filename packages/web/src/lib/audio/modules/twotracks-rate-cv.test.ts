@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks-rate-cv.test.ts
-//
 // TWOTRACKS varispeed CV — one jack per reel onto the RATE control.
 //
 // WHAT THIS FILE PROVES, and why each leg exists.
@@ -214,9 +212,7 @@ function maxAbsDiff(a: Float32Array, b: Float32Array): number {
   return m;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // 1) The DECLARATION — both reels, complete, and pointing somewhere real.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('twotracks RATE CV: the declaration', () => {
   it.each(REELS)('reel $reel declares $port as a cv input scaled onto $param', ({ port, param }) => {
@@ -260,7 +256,6 @@ describe('twotracks RATE CV: the declaration', () => {
   );
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 2) FULL RANGE — a ±1 CV reaches BOTH ends, per reel, through the real LUT.
 //
 // The standard's semantic (cv-scale.ts) is "±1 sweeps the param's full natural
@@ -271,7 +266,6 @@ describe('twotracks RATE CV: the declaration', () => {
 // always COMMANDS a full 6-unit swing wherever the knob sits, the param's own
 // bounds then pinning it, which is the Eurorack behaviour — is asserted
 // separately across the whole knob range.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('twotracks RATE CV: a ±1 CV reaches both ends of the declared range', () => {
   it.each(REELS)('reel $reel: cv −1 → exactly min, cv +1 → exactly max', ({ port, param }) => {
@@ -324,12 +318,10 @@ describe('twotracks RATE CV: a ±1 CV reaches both ends of the declared range', 
   );
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 3) THE AUDIO — the CV actually moves the tape, both reels, both ends.
 //
 // Everything above is about numbers on a curve. This is the leg that reads the
 // speed off the rendered samples through the real DSP.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('twotracks RATE CV: the rendered tape speed follows the CV', () => {
   it.each(REELS)('reel $reel: the measurement instrument reads a known rate back', ({ reel, ab }) => {
@@ -375,13 +367,11 @@ describe('twotracks RATE CV: the rendered tape speed follows the CV', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // 4) NEGATIVE CONTROLS — both directions, on every run.
 //
 // A green suite is only evidence if the assertions can go red. These two force
 // the failure modes and assert the checks above WOULD have caught them, so the
 // instrument is validated continuously rather than once at authoring time.
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('twotracks RATE CV: negative controls', () => {
   it.each(REELS)(

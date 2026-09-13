@@ -1,5 +1,3 @@
-// e2e/tests/numpad-plus.spec.ts
-//
 // NUMPAD+ ENGINE TRUTH, end to end.
 //
 // Every test here is about the ENGINE rather than any painted surface: they
@@ -73,11 +71,9 @@ const readStep0 = (page: Page) =>
     return w.__patch.nodes.np?.data?.layers?.[0]?.[0] ?? null;
   });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // THE ENGINE-TRUTH TESTS — on the DEFAULT SHELL, which is the renderer every
 // player actually gets. None of these touches a card or a faceplate cell: they
 // dispatch real document KeyboardEvents and read the graph and the engine back.
-// ═══════════════════════════════════════════════════════════════════════════
 test.describe('NUMPAD+ — the ENGINE, on the default (faceplate) shell', () => {
   test('pressing Numpad1 at octave 4 drives l1_pitch ~ 0 V/oct (C4)', async ({ page, rack }) => {
     await page.goto('/rack?seed=none');
@@ -311,7 +307,6 @@ test.describe('NUMPAD+ — the ENGINE, on the default (faceplate) shell', () => 
       const jo = w.__patch.nodes.jo;
       if (jo) jo.params.pos_x = 0.75;
     });
-    // Set the activeLayer param to 0 (L1) — the CV (→ L4) should win.
     await page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
       const np = w.__patch.nodes.np;

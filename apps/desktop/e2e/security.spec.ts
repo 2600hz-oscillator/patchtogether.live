@@ -67,13 +67,11 @@ async function shellOrigin(app: ElectronApplication): Promise<string> {
   return new URL(page.url()).origin;
 }
 
-// ---------------------------------------------------------------------------
 // 1. The pure policy, driven directly in the MAIN process.
 //
 // electronApp.evaluate runs in main, so this requires the SHIPPED dist module —
 // the same file main.ts imports, not a copy. Every arm of the decision is
 // reachable here; over a socket, most of them are not.
-// ---------------------------------------------------------------------------
 
 test('policy predicates: shell origin yes, everything else no', async () => {
   const app = await launch({ userDataDir: freshUserDataDir('policy') });
@@ -152,9 +150,7 @@ test('policy predicates: shell origin yes, everything else no', async () => {
   }
 });
 
-// ---------------------------------------------------------------------------
 // 2. The handlers as INSTALLED — end to end, through Chromium.
-// ---------------------------------------------------------------------------
 
 test('permission checks: granted for the shell, denied for a non-shell origin serving the same bytes', async () => {
   const app = await launch({ userDataDir: freshUserDataDir('perm') });
@@ -363,9 +359,7 @@ test('loopback server rejects a rebound Host header but serves the loopback ones
   }
 });
 
-// ---------------------------------------------------------------------------
 // 3. The bridge envelope.
-// ---------------------------------------------------------------------------
 
 test('bridge envelope: versioned, correlated, structured errors, cancellable', async () => {
   const app = await launch({ userDataDir: freshUserDataDir('bridge') });

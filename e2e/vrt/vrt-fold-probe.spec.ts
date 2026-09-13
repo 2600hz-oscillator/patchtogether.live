@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-fold-probe.spec.ts
-//
 // MEASUREMENT TOOL, not a gate. `VRT_PROBE=1` only (see vrt.config.ts), so it
 // costs CI nothing. Sibling of vrt-geom-probe.spec.ts — same question, other
 // surface: WHERE DOES THE DOCK CAPTURE BOX END, and how much of the faceplate

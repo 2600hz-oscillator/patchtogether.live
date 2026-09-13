@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/device-slots-ydoc.test.ts
-//
 // NATIVE-SHELL P1 — the device-slot layer against REAL syncedStore-backed
 // Y.Docs, the REAL reconciler, and the REAL envelope loader.
 //
@@ -321,7 +319,6 @@ describe('hostile peer vs. a reserved slot', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // THE LOAD PATH — the real loader, the real reconciler.
 //
 // This is the row the phase is actually about. `loadEnvelopeIntoStore` clears
@@ -351,7 +348,6 @@ describe('hostile peer vs. a reserved slot', () => {
 // Do not "simplify" these loads to an envelope that happens to contain the
 // slots: that would move every case into the first bucket and this file would
 // pass without the skip existing.
-// ───────────────────────────────────────────────────────────────────────────
 
 /** Build an envelope from a throwaway doc holding `nodes`. */
 function envelopeOf(nodes: ModuleNode[]): ReturnType<typeof makeEnvelope> {
@@ -534,7 +530,6 @@ describe('patch load — the device-slot survival contract', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // LAZY ENGINES — asserted against the REAL reconciler, both ways.
 //
 // ⚠ WATCH THE VACUITY SHAPE HERE. "No engine was created" is the easiest green
@@ -544,7 +539,6 @@ describe('patch load — the device-slot survival contract', () => {
 // FIRST and asserts against a POSITIVE CONTROL in the same rack — a node that
 // DID produce an engine — so an empty `live` set can only mean the filter,
 // never the harness.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('lazy engines: an unused slot holds none', () => {
   it('a fresh rack stands up ONE slot engine — and the control proves the rig works', async () => {

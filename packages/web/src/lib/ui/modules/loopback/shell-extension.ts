@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/loopback/shell-extension.ts
-//
 // The LOOPBACK SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

@@ -1,34 +1,4 @@
-// skifree-bridge.test.ts
-//
-// SKIFREE'S RUNTIME HAS ONE OWNER — the factory — AND THE CARD HAS NO SPELLING
-// TO REACH IT.
-//
-// ── WHAT THIS FILE USED TO PIN, AND WHY IT CHANGED ──────────────────────────
-//
-// It pinned #1590: the bridge was ONE object with TWO owners on DIFFERENT
-// lifetimes (`onGate` factory-owned and node-lifetime, `controller` card-owned
-// and card-lifetime), the card's teardown deleted the whole object, and GATE —
-// this module's only trigger source — died for the life of the node.
-//
-// That was a correct fix to a symptom. The disease was that the GAME belonged
-// to the card at all: `SkifreeCard` was the only caller of
-// `window.SkiFree.create()`, so under the shipping shell (where an un-migrated
-// module renders a placeholder and the card lives only inside an open dock
-// pane) a rack containing SKIFREE had NO GAME until someone expanded it, and
-// collapsing destroyed the run. Measured on `/rack` with nothing expanded:
-// `tick 0 -> 15` while `distance 0 -> 0` and `controller: false`.
-//
-// The factory owns the controller now, so the two-owner hazard is GONE RATHER
-// THAN GUARDED — and this file tests the property that replaced it.
-//
-// ⚠ THE #1590 REGRESSION IS NOT MERELY FIXED, IT IS UNSPELLABLE, and that is
-// what the last test asserts. `releaseSkifreeCardState` — the card-facing
-// release whose existence let an `onDestroy` reach the shared object — is
-// DELETED rather than deprecated, so a future card teardown that tries to
-// re-introduce the defect fails at `tsc` before any test runs. That is the same
-// absence-is-the-guard discipline the node registries use (#1531 / #1574), and
-// it is why this file greps the SOURCE: a missing export cannot be observed by
-// calling it.
+// The factory owns the game; surfaces may blit it but never create or dispose it.
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -56,25 +26,15 @@ function read(p: string): string {
   return readFileSync(p, 'utf8');
 }
 
-/**
- * The file's CODE, with every comment blanked.
- *
- * ⚠ A RAW GREP CANNOT TELL CODE FROM COMMENT, AND THAT IS NOT HYPOTHETICAL HERE
- * — it is how the first run of this gate failed. `SkifreeCard.svelte` explains
- * the defect it used to have, so the words `window.SkiFree.create(...)` appear
- * in its header and in a markup comment, and a plain `/SkiFree\.create/` test
- * reported the card as still creating the game. The comments are the valuable
- * part (they are the historical record of the bug) and must not be reworded to
- * appease a grep, so the GATE learns to read code instead.
- *
- * `stripSourceComments` handles line, block AND html comments, which a `.svelte`
- * file needs — and `…WithReport` is used rather than the plain form so the
- * negative control below can prove the stripper actually removed something,
- * instead of passing because the file happened to contain no comments.
- */
+// Comment examples must not satisfy source guards.
 function codeOf(p: string): { code: string; stripped: number } {
   const { text, report } = stripSourceCommentsWithReport(read(p));
   return { code: text, stripped: report.line + report.block + report.html };
+}
+
+function isSkifreeScreenSource(source: string): boolean {
+  const { text } = stripSourceCommentsWithReport(source);
+  return /\bSkifreeSnapshot\b/.test(text) && /<canvas\b[^>]*\bbind:this=\{canvasEl\}/.test(text);
 }
 
 function peek(): SkifreeBridge | undefined {
@@ -167,10 +127,7 @@ describe('#1590 is UNSPELLABLE — the source-level guards', () => {
     // ⚠ SOURCE-LEVEL, because no runtime gate can see this. The surface
     // rendering fine and the game being owned by the wrong thing look identical
     // from the DOM — that is precisely how this shipped.
-    const { code: card, stripped } = codeOf(SURFACE_SRC);
-    // ⚠ THE STRIPPER MUST HAVE DONE SOMETHING. Three `false` assertions over an
-    // empty string pass beautifully; this is what stops that.
-    expect(stripped, 'comments were actually stripped from the surface').toBeGreaterThan(0);
+    const { code: card } = codeOf(SURFACE_SRC);
     expect(card.length, 'and there is still code left to test').toBeGreaterThan(500);
 
     expect(/SkiFree\s*\.\s*create/.test(card), 'the SURFACE must not create the game').toBe(false);
@@ -230,9 +187,21 @@ describe('#1590 is UNSPELLABLE — the source-level guards', () => {
       expect(read(p).length, `${name} source is readable and non-empty`).toBeGreaterThan(500);
     }
     expect(
-      read(SURFACE_SRC).includes('SkifreeScreen'),
+      isSkifreeScreenSource(read(SURFACE_SRC)),
       'the surface path resolves to the shared screen',
     ).toBe(true);
     expect(read(DEF_SRC).includes('skifreeDef'), 'the def path resolves to the def').toBe(true);
+  });
+
+  it('the surface self-check requires code, not a filename or commented-out markup', () => {
+    expect(isSkifreeScreenSource('// SkifreeScreen.svelte')).toBe(false);
+    expect(isSkifreeScreenSource(
+      '/* SkifreeSnapshot */\n<!-- <canvas bind:this={canvasEl}></canvas> -->',
+    )).toBe(false);
+    const source = read(SURFACE_SRC);
+    expect(isSkifreeScreenSource(source)).toBe(true);
+    expect(isSkifreeScreenSource(stripSourceCommentsWithReport(source).text)).toBe(true);
+    expect(isSkifreeScreenSource(source.replace(/\bSkifreeSnapshot\b/g, 'UnrelatedSnapshot'))).toBe(false);
+    expect(isSkifreeScreenSource(source.replace(/<canvas\b/g, '<div'))).toBe(false);
   });
 });

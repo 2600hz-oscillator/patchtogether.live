@@ -1,5 +1,3 @@
-// art/scenarios/meowbox/meow-c4.test.ts
-//
 // Toolchain validation for MEOWBOX. Asserts the compiled artifacts exist
 // and the source SHA matches the built SHA. The harness's render() is a
 // stub (D17 stage 1) — once real OfflineAudioContext rendering lands, this

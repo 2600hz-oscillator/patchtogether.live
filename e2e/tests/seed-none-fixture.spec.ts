@@ -1,5 +1,3 @@
-// e2e/tests/seed-none-fixture.spec.ts
-//
 // THE EMPTY-RACK FIXTURE IS ITSELF A CONTRACT, so it gets a test.
 //
 // `?seed=none` is what ~200 specs stand on after the second shell was deleted:

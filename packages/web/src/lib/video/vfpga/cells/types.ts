@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/types.ts
-//
 // The CELL LIBRARY — the fabric's "primitive cells" (design §1.3). Each fabric
 // tile `type`+`op` maps to ONE cell: a GLSL kernel TEMPLATE the place-and-route
 // step instantiates with the tile's config, plus the metadata P&R + validation

@@ -1,5 +1,3 @@
-// e2e/tests/audioctx-sample-rate.spec.ts
-//
 // A2a regression guard: the app AudioContext is PINNED to 48 kHz
 // (Canvas.svelte boot). Every ART baseline, DSP-core unit test, and worklet
 // time-constant is calibrated at 48 000 Hz — on a 44.1 kHz-native device an

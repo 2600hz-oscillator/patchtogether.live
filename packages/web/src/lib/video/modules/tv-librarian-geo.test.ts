@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tv-librarian-geo.test.ts
-//
 // Pure geometry tests for the 2D world-map country picker. Verifies the
 // equirectangular projection + the click → nearest-available-country
 // resolution (the load-bearing map interaction).

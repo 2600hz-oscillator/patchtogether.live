@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/seqtris-engine.ts
-//
 // SEQTRIS — the PURE game core. No Web Audio, no Svelte, no DOM, no clock.
 // Every function here is total and deterministic: given a seed and a sequence
 // of inputs/clock pulses you get the same board, the same pieces and the same
@@ -299,7 +297,6 @@ export function shuffledBag(seed: number): { state: number; bag: readonly Seqtri
   return { state, bag };
 }
 
-// ---------------- State ----------------
 
 export interface SeqtrisPiece {
   readonly id: SeqtrisPieceId;

@@ -1,5 +1,3 @@
-// art/scenarios/vca-invert/sign-flip.test.ts
-//
 // ART for VCA's new audio_inv output. We can't run the Faust VCA worklet
 // under node-web-audio-api directly, so we exercise the SAME inverter
 // topology vca.ts uses — a parallel GainNode(-1) tap of the main output

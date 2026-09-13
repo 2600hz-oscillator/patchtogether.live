@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/tidy-vco-dsp.test.ts
-//
 // TIDY VCO core correctness gates:
 //   • diode-ladder math: small-signal linearity (DC gain 1), −24 dB/oct
 //     asymptote, THE TUNING GATE (self-osc pitch < 3 cents across 5+
@@ -56,10 +54,8 @@ import {
 
 const SR = 48000;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Local spectral helpers (the house pattern — each DSP test hand-rolls its
 // Goertzel; there is no shared spectral module).
-// ─────────────────────────────────────────────────────────────────────────
 
 function goertzel(buf: Float32Array, rate: number, hz: number, s0: number, s1: number): number {
   const n = s1 - s0;
@@ -95,9 +91,7 @@ function fnv1a(buf: Float32Array): string {
   return h.toString(16).padStart(8, '0');
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Render helpers
-// ─────────────────────────────────────────────────────────────────────────
 
 function silentBus(): TidyVcoBus {
   return { poly: new Float32Array(10), monoPitch: 0, monoGate: 0, resCv: 0, driveCv: 0 };
@@ -182,9 +176,7 @@ function measureSelfOsc(fcKnob: number, sr: number): { freq: number; peak: numbe
   return { freq, peak };
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Diode ladder
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('diode ladder — linear behavior', () => {
   it('has unity small-signal DC gain at k = 0 (exact ZDF solve, no leakage)', () => {
@@ -294,9 +286,7 @@ describe('diode ladder — THE TUNING GATE (self-osc pitch = the cutoff knob)', 
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // RC-punch ADSR
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('RC-punch ADSR (CEM3310 lineage)', () => {
   it('attack terminates at the knob time (±5 %) and is CONVEX (the 1.08-target punch)', () => {
@@ -375,9 +365,7 @@ describe('RC-punch ADSR (CEM3310 lineage)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // OTA VCA
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('OTA-flavored VCA', () => {
   it('is exactly silent at zero envelope and zero-in/zero-out at any level', () => {
@@ -415,9 +403,7 @@ describe('OTA-flavored VCA', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Stereo wavefolder — the triangle folder, its ADAA, and the control laws
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('triangle wavefolder core', () => {
   it('triFold is the IDENTITY on [−1, 1] and reflects off the ±1 rails beyond', () => {
@@ -495,9 +481,7 @@ describe('triangle wavefolder core', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Control laws (pure)
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('control laws', () => {
   it('V/oct: 0 V = C4, +1 V doubles', () => {
@@ -533,9 +517,7 @@ describe('control laws', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // Voice render
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('voice render', () => {
   it('is exactly silent with no gate anywhere', () => {
@@ -747,12 +729,10 @@ describe('voice render', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // New per-knob CVs — GLOBAL block-rate scalars, consumed by the core. The
 // byte-exact NO-OP at cv = 0 is ALSO pinned by the FNV bit-identity test
 // above (silentBus / lane0Bus omit the new optional fields → they default to
 // 0, so the committed hashes only pass if every new law is an identity at 0).
-// ─────────────────────────────────────────────────────────────────────────
 
 describe('tidy-vco: new per-knob CVs are consumed', () => {
   it('levelCv (dB): −1 V pulls the whole voice down ~18 dB; cv = 0 is a no-op', () => {

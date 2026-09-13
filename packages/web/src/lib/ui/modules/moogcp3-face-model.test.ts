@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moogcp3-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL for moogCp3's one derived readout.
 //
 // The face rests on a single claim: the console is +18 dB over full scale AT

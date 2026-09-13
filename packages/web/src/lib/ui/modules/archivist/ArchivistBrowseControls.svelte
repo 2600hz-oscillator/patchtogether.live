@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/archivist/ArchivistBrowseControls.svelte
-  //
   // THE ARCHIVIST BROWSE + TRANSPORT SURFACE — the search this module IS, and
   // the transport for whatever it found. ONE component, TWO mounts: the dock
   // `fullViewBody` and the lane `tileBody`.

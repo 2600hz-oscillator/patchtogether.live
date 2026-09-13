@@ -1,5 +1,3 @@
-// e2e/tests/workflow-master-transport.spec.ts
-//
 // P0 GUARD — WORKFLOW MASTER TRANSPORT drives real clip playback, end to end.
 // Joins the transport guard family (clipplayer-transport-no-controller covers
 // the pre-promotion seam); this one drives the OWNER-FACING workflow surface on

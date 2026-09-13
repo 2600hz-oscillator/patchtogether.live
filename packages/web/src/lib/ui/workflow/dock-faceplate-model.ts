@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/dock-faceplate-model.ts
-//
 // PF-20 — the PURE model for the DOCK FACEPLATE's structure: the hero slot, the
 // page header and the annotation layer.
 //
@@ -349,4 +347,3 @@ export function heroFacePlanIsTotal(
   const b = [...keysAfter].sort();
   return a.every((k, i) => k === b[i]);
 }
-

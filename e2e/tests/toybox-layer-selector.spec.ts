@@ -1,5 +1,3 @@
-// e2e/tests/toybox-layer-selector.spec.ts
-//
 // TOYBOX per-layer editing UI — the LAYER-INDEX selector (tabs).
 //
 // The card HARDCODED layers[0] everywhere; the new LAYER tabs let it author ANY
@@ -186,7 +184,6 @@ test.describe('TOYBOX per-layer editing — LAYER selector @webgl-serial', () =>
     // It's empty → the empty-state prompt shows, and KIND reads OFF.
     await expect(page.locator('[data-testid="toybox-layer-empty"]')).toBeVisible();
 
-    // Set LAYER 2's KIND = OBJ → seeds a material + the empty prompt disappears.
     await selectEd(page, 'toybox-kind-select', 'obj');
     await expect(page.locator('[data-testid="toybox-layer-empty"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="toybox-model-select"]')).toBeVisible();

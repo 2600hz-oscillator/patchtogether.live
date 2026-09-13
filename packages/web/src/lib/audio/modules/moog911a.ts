@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog911a.ts
-//
 // MOOG 911A DUAL TRIGGER DELAY — Moog System 55/35 clone (batch 5 utility
 // cluster). Two independent trigger delays with a coupling MODE. A gate on an
 // input is detected on its RISING edge; after a programmed delay the matching
@@ -98,7 +96,6 @@ export const moog911aDef: AudioModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
   //
   // WHAT THE 911A IS FOR. It is the rack's only TIME-SHIFTER FOR EVENTS: a
   // trigger goes in, the same trigger comes out later. The verb is OFFSETTING A

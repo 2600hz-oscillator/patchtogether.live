@@ -1,5 +1,3 @@
-// e2e/tests/poly-chord.spec.ts
-//
 // Stage-1 polyphony E2E spec, on CARTESIAN — the surviving chord-cell
 // surface after the legacy sequencers were deleted (2026-08-24). Validates:
 //   - a pad with chord='maj' broadcasts a triad on the polyPitchGate

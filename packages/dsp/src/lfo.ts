@@ -1,5 +1,3 @@
-// packages/dsp/src/lfo.ts
-//
 // Clockable LFO. Outputs four phases (0°, 90°, 180°, 270°) of a single
 // underlying oscillator. Shape morphs continuously sine → saw → square via
 // the `shape` AudioParam (0=sine, 1=saw, 2=square).

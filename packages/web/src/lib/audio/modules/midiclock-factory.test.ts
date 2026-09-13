@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midiclock-factory.test.ts
-//
 // Factory-level tests for MIDICLOCK: drive synthetic MIDI System Real-Time
 // messages (0xF8 Clock, 0xFA Start, 0xFC Stop) through the handler and
 // assert the four output ConstantSourceNodes get the right pulses.
@@ -115,7 +113,6 @@ function makeMidiAccess(...inputs: ReturnType<typeof makeMidiInput>[]): MidiAcce
   };
 }
 
-// ---------------- tests ----------------
 
 describe('midiclockDef.factory — MIDI System Real-Time → ConstantSourceNode pulses', () => {
   let originalRequestMIDIAccess: unknown;

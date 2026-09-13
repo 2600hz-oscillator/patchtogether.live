@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/arp-engine.test.ts
-//
 // Exhaustive, deterministic unit tests for the pure arpeggiator generator.
 // Covers: division→period + coercion; each octave range's expanded+sorted
 // pool (incl. MIDI-range drop); up/down/exclusive-updown ordering for 1/2/3

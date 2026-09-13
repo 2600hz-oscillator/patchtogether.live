@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/snaredrum.test.ts
-//
 // SNARE DRUM module-def shape + worklet-wrapper behavior. The per-sample DSP
 // math is pinned in packages/dsp/src/lib/snaredrum-dsp.test.ts + snare-roll-
 // dsp.test.ts (the pure cores) and the raw audio profile in
@@ -34,13 +32,9 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ───────────────────────────────────────────────────────────────────────
 // Module-def shape (the frozen contract)
-// ───────────────────────────────────────────────────────────────────────
 
-// ───────────────────────────────────────────────────────────────────────
 // Worklet processor — load + behavior the wrapper owns
-// ───────────────────────────────────────────────────────────────────────
 
 const BLOCK = 128;
 

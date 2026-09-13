@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/warrensspectrum-face-model.ts
-//
 // The PURE model behind the WARREN'S SPECTRUM faceplate — the arithmetic for
 // its four derived readouts.
 //

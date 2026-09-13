@@ -1,5 +1,3 @@
-// art/scenarios/timelorde/bpm-120-internal.test.ts
-//
 // Toolchain validation for TIMELORDE TS worklet. Once the render harness
 // gains AudioWorklet + multi-output support, this scenario expands to the
 // timing assertions from the spec (5s @120 BPM = 10 pulses on 1x, 40 on

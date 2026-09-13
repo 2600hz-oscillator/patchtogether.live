@@ -1,5 +1,3 @@
-// packages/dsp/src/master-limiter.ts
-//
 // MASTER LIMITER — AudioWorklet entry for `audioOut`'s terminal safety stage.
 // Wraps the pure core in ./lib/master-limiter-dsp.ts, which carries the design
 // notes and the no-overshoot proof. This file is only the worklet shell.

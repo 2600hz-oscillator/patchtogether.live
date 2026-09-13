@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/workflow-audio-verdict.ts
-//
 // DID THIS WORKFLOW DISRUPT THE OUTPUT? — one pass/fail verdict over the three
 // instruments that can answer, and an explicit list of the ones that COULDN'T.
 //

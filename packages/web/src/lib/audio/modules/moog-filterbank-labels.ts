@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog-filterbank-labels.ts
-//
 // The ONE place a Moog fixed-filter-bank section is turned into a CONTROL
 // LABEL — shared by the 907A and the 914 defs (and read back, never re-typed,
 // by the faceplate model in $lib/ui/modules/moog-filterbank-face-model).

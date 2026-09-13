@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/textmarquee/TextmarqueeEditorBody.svelte
-  //
   // The TEXTMARQUEE dock full-view body — the module's rich-text EDITOR, its
   // live OUT preview, and the SCREEN ON/OFF switch the 2026-08-18 owner ruling
   // requires of every video module.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/face-tab-request.svelte.ts
-//
 // WHICH TAB of a tabbed dock faceplate is open, per NODE — and the seam a
 // module's own surface uses to NAVIGATE the rail.
 //

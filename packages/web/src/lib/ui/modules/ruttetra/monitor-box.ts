@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/ruttetra/monitor-box.ts
-//
 // THE RUTTETRA MONITOR BOX — the geometry of "hide the controls and watch the
 // picture", in ONE place because TWO surfaces need it: `RuttetraCard.svelte`
 // (the legacy lane card) and `./RuttetraOutputBody.svelte` (the faced dock

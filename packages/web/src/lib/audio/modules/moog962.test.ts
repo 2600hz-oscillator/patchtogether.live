@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog962.test.ts
-//
 // Two test layers for the MOOG 962 SEQUENTIAL SWITCH (moogafakkin System 55 clone):
 //   1. Module-def shape — pins the 962's I/O surface (in1..in3 + shift inputs,
 //      the single out output, the literal `stages` param) so a refactor that

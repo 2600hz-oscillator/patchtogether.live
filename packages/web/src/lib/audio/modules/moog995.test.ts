@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog995.test.ts
-//
 // Two test layers for the MOOG 995 ATTENUATORS (moogafakkin System 55/35 clone —
 // three INDEPENDENT passive variable attenuators):
 //   1. Module-def shape — pins the 995's I/O surface (in1..in3 → out1..out3

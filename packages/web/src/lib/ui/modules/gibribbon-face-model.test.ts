@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/gibribbon-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the rewritten GIBRIBBON surface.
 //
 // The rewrite rests on claims no shared gate can check, and every one of them

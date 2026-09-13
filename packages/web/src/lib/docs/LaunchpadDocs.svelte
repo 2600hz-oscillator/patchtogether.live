@@ -213,13 +213,11 @@
     { label: 'SLOTS  1 → 8', fromCol: 0, toCol: 7, tier: 0 },
   ];
 
-  // ═══════════════════════════════════════════════════════════════════════
   // SINGLE-MODE (4-view rework) diagram data. The lone device is a Grid / Clip /
   // Keys / Control / Arranger surface over a PERMANENT top-row nav bar + a hybrid
   // SHIFT layer. Every colour comes from launchpad-map (permTop mirrors
   // paintPermanentTopRow; the right columns mirror the per-view classifiers), so
   // the pictures can't drift from the firmware.
-  // ═══════════════════════════════════════════════════════════════════════
   type SView = 'grid' | 'clip' | 'arranger' | 'control';
   /** The PERMANENT top row (CC 91..98) — identical in every view. Mirrors
    *  paintPermanentTopRow: transport (red stopped / green playing), the 4 view

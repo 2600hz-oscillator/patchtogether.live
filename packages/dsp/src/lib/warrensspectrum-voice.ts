@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/warrensspectrum-voice.ts
-//
 // The SHAPE morph — sine → saw → square — shared by BOTH of Warren's
 // Spectrum's engines.
 //

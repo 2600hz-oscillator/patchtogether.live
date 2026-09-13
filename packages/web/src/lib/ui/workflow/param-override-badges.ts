@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/param-override-badges.ts
-//
 // PER-PARAM LIVE-OVERRIDE BADGES for the generic faceplate — the declaration
 // that lets a module say "this param's control is currently being IGNORED by
 // the engine, show it". First (and so far only) adopter: backdraft's DELAY

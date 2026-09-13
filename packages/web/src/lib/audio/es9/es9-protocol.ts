@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/es9-protocol.ts
-//
 // Bridge protocol v1 codec — the wire contract with the es9-bridge native
 // app (spec: patchtogether.es9/Sources/ES9Core/BridgeProtocol.swift; summary
 // in that repo's docs/DESIGN.md). Constants are DUPLICATED here rather than

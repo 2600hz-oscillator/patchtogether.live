@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-scene-repeats-ydoc.test.ts
-//
 // SCENE REPEATS over REAL Y.Docs (syncedStore) — the sync-layer contracts:
 //   - `sceneRepeats` is a PER-KEY map: two peers setting DIFFERENT scenes'
 //     counts concurrently (offline) both survive the merge (no whole-map LWW);

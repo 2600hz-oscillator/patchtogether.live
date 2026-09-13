@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/b3ntb0x-face-model.ts
-//
 // The PURE model behind the B3NTB0X faceplate — the two numbers its twenty
 // knobs cannot print, both of them JOINS over controls that sit on different
 // pages of the face.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/shimmershine.test.ts
-//
 // Unit tests for SHIMMERSHINE:
 //   - module-def shape (ports, params, cvScale annotations)
 //   - pitch-shifter math: a 440Hz sine driven through the pure-TS pitch
@@ -122,7 +120,6 @@ describe('granular pitch shifter: 440Hz → 880Hz octave-up shift', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // DC — the assertion this module shipped without, and the P0 it was hiding.
 //
 // SHIMMERSHINE's headline feature is described on the def as "a continuous,
@@ -140,7 +137,6 @@ describe('granular pitch shifter: 440Hz → 880Hz octave-up shift', () => {
 // even has a leg NAMED "the late tail should not be DC-loaded" — which only
 // asserts `Number.isFinite`. Two instruments, both blind to the exact
 // quantity in their own titles.
-// ─────────────────────────────────────────────────────────────────────────
 describe('shimmershine: the tail is AUDIO, not a DC rail', () => {
   const TANK = { decay: 0.6, size: 0.6, damp: 0.4, mix: 1 };
 

@@ -1,5 +1,3 @@
-// e2e/tests/fader.spec.ts
-//
 // FADER — the face ↔ engine param-wiring chain. The per-module-per-port sweep
 // proves the 3 inputs (A/B/RETURN) accept video + the 2 outputs (OUT/SEND)
 // exist + emit (FADER is in EXEMPT_OUTPUT_EMIT_MODULES — black until an input is

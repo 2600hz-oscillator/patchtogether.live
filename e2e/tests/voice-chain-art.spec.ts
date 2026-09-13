@@ -1,5 +1,3 @@
-// e2e/tests/voice-chain-art.spec.ts
-//
 // "Voice chain ART smoke" — Phase 1 done-gate item. Renders the canonical voice
 // patch with deterministic params + step pattern and compares a fingerprint of
 // the output (peak, RMS, zero-cross rate, energy-by-quartile) to a stored

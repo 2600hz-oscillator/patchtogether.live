@@ -1,5 +1,3 @@
-// packages/web/src/lib/mike/music-theory.test.ts
-//
 // Mike's music-theory unit. Tiny + pure — easy to test exhaustively.
 
 import { describe, expect, it } from 'vitest';

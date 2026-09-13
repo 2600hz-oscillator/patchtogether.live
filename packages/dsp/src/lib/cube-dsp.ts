@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/cube-dsp.ts
-//
 // CUBE — pure DSP for the 3D wavetable-navigator oscillator (slice 1 of ~8).
 //
 // CUBE builds a 3D scalar field ("the cube") out of THREE e352 wavetables —
@@ -21,7 +19,6 @@
 // data shape is the same canonical e352 wavetable: Float32Array[], 64 frames ×
 // 256 samples, each value in [-1, 1].
 //
-// ───────────────────────────────────────────────────────────────────────────
 // Plan-default choices made here (the §10 questions the plan left to a default):
 //   • Q1 field orientation: x → sample-phase (u), y → frame (v). The wavetable's
 //     2D "image" paints the floor/wall/ceiling relief. (Plan's stated default.)
@@ -125,9 +122,7 @@ export function clampRange(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 1. Heightfield read (§5.1) — a wavetable as a 2D image H(u,v) ∈ [-1, 1].
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Bilinearly sample a wavetable as a 2D heightfield image H(u, v) ∈ [-1, 1].
@@ -178,9 +173,7 @@ export function heightAt(
   return clamp01((bilinearHeight(frames, u, v) + 1) * 0.5);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 2. The connecting curve / occupancy (§5.2) — occ(z; bottom, top, connect).
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Occupancy (density of solid material) at vertical position z ∈ [0, 1] of the
@@ -240,9 +233,7 @@ export function occ(
   return clamp01(circle * (1 - c) + vee * c);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 3. The cube scalar field (§5.3) — fieldAt(x, y, z; morphFC, connect, material)
-// ───────────────────────────────────────────────────────────────────────────
 
 export interface FieldParams {
   /** MORPH FLOOR/CEILING m ∈ [0,1]: 0 → floor-fill only (ceiling ignored),
@@ -328,9 +319,7 @@ export function fieldAt(
   return fieldFromHeights(z, h, p);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 4. CRUSH (§5.4) — 3D bitcrush: spatial grid + amplitude quantization.
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Spatial grid resolution (steps per axis) for CRUSH amount k ∈ [0,1].
@@ -428,9 +417,7 @@ export function crush(value: number, k: number): number {
   return Math.round(v * (levels - 1)) / (levels - 1);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 4b. SPACE CRUSH — independent spatial voxelization of the FIELD itself.
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Spatial grid steps for SPACE CRUSH amount k ∈ [0,1], INDEPENDENT of CRUSH.
@@ -467,9 +454,7 @@ export function spaceCrushCoord(coord: number, k: number): number {
   return (cell + 0.5) / n;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 4c. SPACE DIFFUSE — gravity toward the cube's lowest-information wall.
-// ───────────────────────────────────────────────────────────────────────────
 
 /** A cube face: axis 0=x,1=y,2=z; dir +1 = high face, -1 = low face. */
 export interface DiffuseTarget {
@@ -588,9 +573,7 @@ export function diffusePull(c: number, k: number, dir: -1 | 1): number {
   return c + (target - c) * Math.min(kk * kk, CUBE_DIFFUSE_MAX_PULL);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 5. WRAP fold (§5.5) — triangle-wave mirror fold of an out-of-cube coord.
-// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Triangle-wave mirror fold of a coordinate back into [0,1] — the "mirrored
@@ -605,12 +588,10 @@ export function wrapFold(coord: number): number {
   return m <= 1 ? m : 2 - m; // reflect [1,2) back down to [0,1]
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 5b. FOLD (West-coast wavefolder) — classic triangle/sine folding on the
 //     output sample. Adds harmonics as the amount increases; at 0 it is a
 //     pass-through identity. Applied AFTER the slice is sampled and BEFORE the
 //     output level/gain (see the worklet + the web factory).
-// ───────────────────────────────────────────────────────────────────────────
 
 /** Drive gain at fold=1: how hard the signal is pushed into the sine folder.
  *  ~4.0 gives roughly 2 extra fold-overs at full peak (±1) — a rich but bounded
@@ -654,9 +635,7 @@ export function applyFold(wave: Float32Array, k: number): Float32Array {
   return wave;
 }
 
-// ───────────────────────────────────────────────────────────────────────────
 // 6. The slice plane + SURFACE-HEIGHT SCAN readout (§5.5 / §5.6).
-// ───────────────────────────────────────────────────────────────────────────
 
 export interface SliceParams {
   /** Slice plane center height sliceY ∈ [0,1] (offset up/down in the cube). */

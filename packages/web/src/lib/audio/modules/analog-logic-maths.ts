@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/analog-logic-maths.ts
-//
 // ANALOGLOGICMATHS (ALM) — analog-logic mixer.
 //
 // Inspired by Mystic Instruments ANA (hardware, no firmware source — this is
@@ -143,7 +141,6 @@ export const analogLogicMathsDef: AudioModuleDef = {
     { id: 'attB', label: 'Att B', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS, IN ONE SENTENCE: two attenuverters in front of FIVE
   // simultaneous algebra jacks, of which one saturates, one is a common-mode

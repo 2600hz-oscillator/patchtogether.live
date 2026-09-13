@@ -1,5 +1,3 @@
-// art/setup/node-audio-globals.ts
-//
 // Installs the browser AudioWorklet globals so an ART scenario can drive a REAL
 // module factory — the shipped `AudioModuleDef.factory`, worklet and all —
 // instead of hand-rebuilding its graph or falling back to a pure-TS mirror.

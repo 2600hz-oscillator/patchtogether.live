@@ -1,4 +1,3 @@
-// packages/dsp/src/lib/sixstrum-dsp.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   SS_STRINGS,

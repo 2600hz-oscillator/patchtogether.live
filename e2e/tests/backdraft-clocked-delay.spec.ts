@@ -1,5 +1,3 @@
-// e2e/tests/backdraft-clocked-delay.spec.ts
-//
 // A PATCHED DELAY CLOCK MAKES THE DELAY FADER INERT — owner ruling, verbatim:
 // *"how does the delay fader interact with a clocked delay? i think if delay
 // clock is patched this is a case where we should ignore the fader entirely."*

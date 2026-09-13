@@ -1,5 +1,3 @@
-// packages/dsp/src/moog902.ts
-//
 // MOOG 902 — Voltage Controlled Amplifier AudioWorkletProcessor.
 //
 // Slice 3 of the Moog System 55 / 35 clone initiative

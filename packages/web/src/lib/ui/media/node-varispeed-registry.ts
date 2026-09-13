@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-varispeed-registry.ts
-//
 // NODE-OWNED VARISPEED TRANSPORT (LEG-02 P2, #1511) — the controller that makes
 // VIDEOVARISPEED's seven-slot player exist, switch and run because the NODE
 // exists, not because a card is mounted.
@@ -171,9 +169,7 @@ export const RETRY_ATTEMPTS = 50;
 /** The canonical gate rising-edge threshold. */
 const GATE_RISING_EDGE = 0.5;
 
-// ---------------------------------------------------------------------------
 // Injected seams
-// ---------------------------------------------------------------------------
 
 /** The engine surface, every method a 1:1 map onto an EXISTING public call. */
 export interface VarispeedEngine {
@@ -349,9 +345,7 @@ export interface VarispeedExportedBytes {
   slot: number;
 }
 
-// ---------------------------------------------------------------------------
 // Published status
-// ---------------------------------------------------------------------------
 
 export interface VarispeedStatus {
   /** Which asset slot is ON AIR. NODE state now — it used to be card `$state`
@@ -431,7 +425,6 @@ export interface NodeVarispeedRegistry {
   snapshot(): Array<{ nodeId: string } & VarispeedStatus>;
 }
 
-// ---------------------------------------------------------------------------
 
 interface Controller<E> {
   node: ModuleNode;

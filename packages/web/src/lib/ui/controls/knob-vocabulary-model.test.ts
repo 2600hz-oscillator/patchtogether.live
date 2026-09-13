@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/knob-vocabulary-model.test.ts
-//
 // The PF-1 / PF-3 / PF-10 readout + detent resolvers. The interesting cases are
 // all "what does the dial say when the value is NOT where the roster expected
 // it" — an off-detent save, a value exactly between two waypoints, an empty

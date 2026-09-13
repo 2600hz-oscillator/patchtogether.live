@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy-shapes-draw.ts
-//
 // FOXY 3dShapeGen — on-card renderer. The actual draw logic has moved to
 // `packages/web/src/lib/video/modules/shapegen-draw.ts` so the new
 // SHAPEGEN video module can share it byte-for-byte (FOXY's COMBINED

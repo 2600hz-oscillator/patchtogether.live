@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/arp-engine.ts
-//
 // PURE, dependency-light arpeggiator generator + state machine for the
 // Launchpad KEYS view. Given a held-note set, params, and a monotonic clock
 // that ticks it forward one "arp step" at a time, it emits the ordered
@@ -13,7 +11,6 @@
 // testable. It carries no velocity (a control-layer concern) and no scheduler
 // (the caller drives one `arpAdvance` per transport-projected arp tick).
 //
-// ---------------------------------------------------------------------------
 // CONTRACT (
 // "ARP ENGINE CONTRACT"):
 //
@@ -51,7 +48,6 @@
 //   arpSetParams(state, partialParams)   → change direction/division/range/latch
 //   arpAdvance(state) → { noteOn?, noteOff?, state }   → drive one arp step
 // Every function returns a NEW state; nothing is mutated in place.
-// ---------------------------------------------------------------------------
 
 /** Lowest / highest valid MIDI note. Octave expansion that would leave this
  *  range is dropped (not clamped — clamping would fold copies onto the edge). */

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/vrt-meta.test.ts
-//
 // Coverage self-test for the Playwright FACE VRT scenes.
 //
 // Asserts, in the vitest pass (~1 s) rather than the Playwright pass, that
@@ -281,9 +279,7 @@ describe('vrt-meta — the face-scene AUDIO FREEZE is deny-by-default', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // FACE SCENE COVERAGE — the roster was HAND-MAINTAINED and nothing checked it
-// ---------------------------------------------------------------------------
 //
 // ⚠ THE GAP THIS CLOSES IS ONE THE SKILL DOCUMENTS AND NO GATE ENFORCED.
 // `module-faceplates.md` lists `e2e/vrt/_shell-faces.ts`'s `FACES` roster under

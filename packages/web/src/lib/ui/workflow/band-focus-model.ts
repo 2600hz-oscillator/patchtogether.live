@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/band-focus-model.ts
-//
 // BAND FOCUS — a param VALUE decides which control bands a faceplate shows.
 //
 // ── What it is for ─────────────────────────────────────────────────────────

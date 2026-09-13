@@ -1,5 +1,3 @@
-// packages/dsp/src/cloudseed-seed.test.ts
-//
 // Deterministic-render seam for CLOUDSEED (the ART-backfill unblock): a
 // numeric processorOptions.seed drives the two mod-phase inits — the ONLY
 // unseeded state in the voice; everything else already flows from

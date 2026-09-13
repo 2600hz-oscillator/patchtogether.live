@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/monome/mext.ts
-//
 // monome grid "mext" (monome extended) serial-protocol CODEC — PURE, hardware-
 // free. This is the byte layer the WebSerial grid-device (grid-device.svelte.ts)
 // uses to talk to a 2011+ varibright grid 128. No DOM, no `navigator.serial`,
@@ -28,9 +26,7 @@
 // Series/40h fallback codec (≤2010 monobright units, §1.5 of the plan) is a
 // SEPARATE module added only if Phase 0 finds such a unit; this file is mext.
 
-// ---------------------------------------------------------------------------
 // Hardware constants
-// ---------------------------------------------------------------------------
 
 /** FTDI USB vendor id — every classic (non-USB-C) monome grid is an FTDI UART. */
 export const FTDI_VENDOR_ID = 0x0403;
@@ -68,9 +64,7 @@ const CMD_LED_ALL = 0x19;
 const CMD_KEY_UP = 0x20;
 const CMD_KEY_DOWN = 0x21;
 
-// ---------------------------------------------------------------------------
 // Small helpers
-// ---------------------------------------------------------------------------
 
 /** Clamp + integerize an LED level to the 0..15 varibright range. */
 export function clampLevel(level: number): number {
@@ -91,10 +85,8 @@ function clampCoord(v: number, max: number): number {
   return n;
 }
 
-// ---------------------------------------------------------------------------
 // TX — encode commands (host → grid). Each returns the MINIMAL protocol frame
 // (no USB padding); the device layer batches + pads. Golden-vector tested.
-// ---------------------------------------------------------------------------
 
 /** Set a single LED (x,y) to a varibright level (0-15). The common case for
  *  incremental updates (one clip pad changes state). */
@@ -167,12 +159,10 @@ export function padToPacket(bytes: Uint8Array, packet = USB_PACKET_BYTES): Uint8
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // RX — decode the inbound stream (grid → host). A grid only sends well-formed
 // frames (the 0xFF padding is a TX-only concern), but we still resync defensively
 // on any unknown byte so a single corrupt byte can't wedge the parser. Partial
 // frames split across reads are buffered until complete.
-// ---------------------------------------------------------------------------
 
 export type GridRxEvent =
   | { type: 'key'; x: number; y: number; s: 0 | 1 } // s=1 down, 0 up

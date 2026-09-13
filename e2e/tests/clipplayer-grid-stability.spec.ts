@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-grid-stability.spec.ts
-//
 // THE LAUNCH GRID MUST NOT MOVE WHEN YOU CLICK A PAD.
 //
 // Owner report: "i often end up in a state where trying to double click into an

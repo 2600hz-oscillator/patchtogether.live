@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/ringback-crush-model.ts
-//
 // RINGBACK's CRUSH LAW as a pure model — the four declared ranges in ONE place,
 // the two derived quantities the dial cannot show on its own (the decimation
 // divisor and the ring's decay in LAPS), and the readouts the curated face

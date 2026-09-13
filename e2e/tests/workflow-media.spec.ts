@@ -1,5 +1,3 @@
-// e2e/tests/workflow-media.spec.ts
-//
 // The media system on the default /rack:
 //
 //   +  media loader — hidden-input pick (files / folder) + drop target

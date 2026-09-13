@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/midi-out-buddy-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for MIDI-OUT-BUDDY's faceplate.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-cells`,
@@ -139,7 +137,6 @@ describe('midiOutBuddy face — the dock plan is ONE honest band', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE INVERSE ASSERTION — the card's CH-vs-LANE badge is GONE from the plate.
 //
 // ⚠ RELOCATION AND DELETION LOOK IDENTICAL FROM A GREEN RUN. The status-model
@@ -153,7 +150,6 @@ describe('midiOutBuddy face — the dock plan is ONE honest band', () => {
 // body's markup, and states that blind spot in its own header. Like every
 // source gate here it cannot tell code from a comment, which is why the
 // strings below are assembled rather than written out.
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('midiOutBuddy — the card\'s CH-vs-LANE badge and violet outline are GONE', () => {
   const bodySource = (): string =>

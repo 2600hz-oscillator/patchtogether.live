@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/param-format.ts
-//
 // The ONE numeric readout ladder for a param value, extracted so every surface
 // that prints a param prints the SAME STRING.
 //

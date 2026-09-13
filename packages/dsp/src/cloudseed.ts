@@ -1,5 +1,3 @@
-// packages/dsp/src/cloudseed.ts
-//
 // CLOUDSEED — exact algorithm port of Ghost Note Audio's CloudSeed reverb
 // (https://github.com/GhostNoteAudio/CloudSeedCore, MIT-licensed,
 // Copyright (c) 2024 Ghost Note Engineering Ltd). The C++ source lives at
@@ -36,9 +34,7 @@
 // We match the Web Audio convention.
 const BUFFER_SIZE = 128;
 
-// ============================================================================
 // LcgRandom + RandomBuffer (1:1 from DSP/LcgRandom.h + DSP/RandomBuffer.cpp)
-// ============================================================================
 //
 // The C++ uses a 22695477 / 1 LCG (Borland-classic). Per-iteration state
 // is computed as (a*x + c) & 0xFFFFFFFF — masked to uint32, then converted
@@ -126,9 +122,7 @@ function randomBufferGenerateCrossSeed(
   return out;
 }
 
-// ============================================================================
 // 1-pole filters Hp1 / Lp1 (1:1 ports of Hp1.h / Lp1.h)
-// ============================================================================
 
 class Lp1 {
   private fs: number;
@@ -209,12 +203,10 @@ class Hp1 {
   }
 }
 
-// ============================================================================
 // Biquad (1:1 from Biquad.h + Biquad.cpp). Only LowShelf + HighShelf are
 // exercised by CloudSeed's late-line EQ; the full filter-type enum is
 // included so the port is faithful + the unit test can verify the same
 // formulas.
-// ============================================================================
 
 const enum BiquadType {
   LowPass6db = 0,
@@ -398,9 +390,7 @@ class Biquad {
   }
 }
 
-// ============================================================================
 // ModulatedAllpass (1:1 from ModulatedAllpass.h)
-// ============================================================================
 
 class ModulatedAllpass {
   static readonly DelayBufferSize = 19200; // 100ms at 192Khz, matches C++
@@ -503,9 +493,7 @@ class ModulatedAllpass {
   }
 }
 
-// ============================================================================
 // ModulatedDelay (1:1 from ModulatedDelay.h)
-// ============================================================================
 
 class ModulatedDelay {
   private static readonly ModulationUpdateRate = 8;
@@ -576,9 +564,7 @@ class ModulatedDelay {
   }
 }
 
-// ============================================================================
 // AllpassDiffuser (1:1 from AllpassDiffuser.h)
-// ============================================================================
 
 class AllpassDiffuser {
   static readonly MaxStageCount = 12;
@@ -686,9 +672,7 @@ class AllpassDiffuser {
   private static _tempBlock = new Float32Array(BUFFER_SIZE);
 }
 
-// ============================================================================
 // MultitapDelay (1:1 from MultitapDelay.h)
-// ============================================================================
 
 class MultitapDelay {
   static readonly MaxTaps = 256;
@@ -773,12 +757,10 @@ class MultitapDelay {
   }
 }
 
-// ============================================================================
 // DelayLine (1:1 from DelayLine.h). Each ReverbChannel runs 12 of these in
 // parallel for the late-reflection field. CircularBuffer<2*BUFFER_SIZE> in
 // the C++ holds the per-block feedback buffer — we use a length-2N
 // Float32Array with explicit read/write counters.
-// ============================================================================
 
 class DelayLine {
   private delay: ModulatedDelay;
@@ -900,9 +882,7 @@ class DelayLine {
   private static _tempA = new Float32Array(BUFFER_SIZE);
 }
 
-// ============================================================================
 // Parameter enum (1:1 from Parameters.h)
-// ============================================================================
 export const Param = {
   Interpolation: 0,
   LowCutEnabled: 1,
@@ -1029,9 +1009,7 @@ export function scaleParam(val: number, index: number): number {
   return 0;
 }
 
-// ============================================================================
 // ReverbChannel (1:1 from ReverbChannel.h)
-// ============================================================================
 
 export type ChannelLR = 'L' | 'R';
 
@@ -1354,9 +1332,7 @@ export class ReverbChannel {
   private static _lineSum = new Float32Array(BUFFER_SIZE);
 }
 
-// ============================================================================
 // ReverbController — stereo dispatcher (1:1 from ReverbController.h)
-// ============================================================================
 
 export class ReverbController {
   parameters = new Float32Array(Param.COUNT);
@@ -1442,9 +1418,7 @@ export class ReverbController {
   private static _tmpR = new Float32Array(BUFFER_SIZE);
 }
 
-// ============================================================================
 // AudioWorklet integration
-// ============================================================================
 
 // The 7 normalized macro params we expose as AudioParams (so they accept
 // CV connections from cv inputs through web-audio AudioParam summing).

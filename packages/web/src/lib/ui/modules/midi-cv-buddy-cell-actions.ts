@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midi-cv-buddy-cell-actions.ts
-//
 // The MIDI-CV-BUDDY faceplate's cell seams — the module-owned end of every
 // ranked cell, kept out of `shell-cells.ts` so the shared registry imports one
 // file per module rather than the module's whole world.

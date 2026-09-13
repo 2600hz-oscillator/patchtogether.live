@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/output-device-model.ts
-//
 // THE OUTPUT-DEVICE PICKER'S DECISIONS — pure, so the states a player can
 // actually be in are assertable without a browser.
 //

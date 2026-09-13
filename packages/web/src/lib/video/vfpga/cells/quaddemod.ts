@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/quaddemod.ts
-//
 // DSP cell `quadDemod(i, q, gain)` — a quadrature demodulator (design §1.3):
 // treats inputs `i` and `q` as the in-phase / quadrature channels of a complex
 // signal (each centred at 0.5 → signed [-0.5,0.5]) and emits, per pixel:

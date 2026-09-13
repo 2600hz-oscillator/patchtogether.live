@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/synesthesia/SynesthesiaVuBody.svelte
-  //
   // The SYNESTHESIA dock full-view body: the VU WALL — both copies' four band
   // meters — and the SCREEN ON/OFF switch.
   //

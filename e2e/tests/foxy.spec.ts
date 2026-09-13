@@ -1,5 +1,3 @@
-// e2e/tests/foxy.spec.ts
-//
 // E2E for FOXY — the hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL
 // module. FOXY is SELF-DRIVING: its internal mini-SWOLEVCO feeds the raster,
 // so spawning it alone is enough to exercise the whole chain. We assert:

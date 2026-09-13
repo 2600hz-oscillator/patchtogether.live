@@ -1,5 +1,3 @@
-// packages/web/src/lib/blood/blood-pcm-schedule.test.ts
-//
 // The arithmetic that decides how much audio BLOOD's main-thread pump owes the
 // blood-pcm worklet on each tick. The bug this replaced was a CONSTANT (735
 // frames, i.e. 44100/60) spent against a 48 kHz drain at a cadence the pump does

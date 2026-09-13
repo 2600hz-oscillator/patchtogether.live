@@ -1,5 +1,3 @@
-// e2e/tests/cable-drag-section-expand.spec.ts
-//
 // CV-family interchange in the patch-to picker.
 //
 // The no-drag redesign RETIRED the drag-over-auto-open + drag-time

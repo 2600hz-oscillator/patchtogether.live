@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cv-buddy-face-model.test.ts
-//
 // THE Q52 FACE — the claims that are specific to `cvBuddy` / `cvBuddyMini` and
 // are not decidable from the platform alone.
 //

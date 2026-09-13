@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-poly-source-chain.spec.ts
-//
 // SAMSLOOP through the REAL SOURCE CHAIN — the CLAUDE.md poly/MIDI rule, in the
 // shape this module actually has.
 //

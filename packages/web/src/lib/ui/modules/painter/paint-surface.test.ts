@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/painter/paint-surface.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for PAINTER's shared interaction seam.
 //
 // ⚠ WHAT THIS FILE IS ACTUALLY PROTECTING, stated first because it is not

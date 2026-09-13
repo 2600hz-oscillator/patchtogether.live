@@ -1,5 +1,3 @@
-// e2e/tests/video-chain.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for the chainable video outputs + the VDELAY
 // effect (plan §3/§5 Layer B). Converted IN-PLACE from the old wall-clock
 // `spawn → waitForTimeout(800) → readCanvas once` shape (three un-synchronized

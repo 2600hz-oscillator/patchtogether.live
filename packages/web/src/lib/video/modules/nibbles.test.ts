@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/nibbles.test.ts
-//
 // NIBBLES module-def shape + factory contract.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';

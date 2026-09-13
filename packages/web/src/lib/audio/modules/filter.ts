@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/filter.ts
-//
 // FILTER — multi-mode resonant state-variable filter (LP / HP / BP).
 //
 // The bread-and-butter subtractive-synthesis filter. Faust-compiled DSP

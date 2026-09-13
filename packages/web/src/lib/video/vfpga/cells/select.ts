@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/select.ts
-//
 // CLB cell `select(a, b, sel)` — the 2:1 routing MUX (the switch-matrix's
 // data-path mux as a CLB cell): `sel` < 0.5 → a, else b. A hard, per-pixel
 // router (the combinational counterpart to a CV-/gate-driven A/B switch). Two

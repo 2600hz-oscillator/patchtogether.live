@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/dock-tabs-model.test.ts
-//
 // PF-16's pure half. The interesting properties are all "the two consumers
 // agree": DockFullView paints the rail off `dockTabPlan` + `activeDockTab`,
 // ModuleShell hides bands off `dockTabPlan` + `dockBandVisible`, and if those

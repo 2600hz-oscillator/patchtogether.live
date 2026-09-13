@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/gamepad/gamepad-board-model.ts
-//
 // EVERY STRING AND EVERY COORDINATE THE GAMEPAD MAPPING BODY PRODUCES — pure,
 // beside the component that renders them.
 //

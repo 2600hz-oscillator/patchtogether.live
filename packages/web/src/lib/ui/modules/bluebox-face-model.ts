@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/bluebox-face-model.ts
-//
 // THE PURE MODEL BEHIND BLUEBOX's FACEPLATE — every number the faceplate prints
 // or draws, derived here and nowhere else, from the WORKLET'S OWN tone table
 // (`packages/dsp/src/lib/bluebox-dsp`, imported by relative path exactly as

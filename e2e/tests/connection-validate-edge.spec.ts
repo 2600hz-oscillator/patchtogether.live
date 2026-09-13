@@ -1,5 +1,3 @@
-// e2e/tests/connection-validate-edge.spec.ts
-//
 // Phase 4a (standards-refactor): enforce edge compatibility at the COMMIT
 // point in Canvas.svelte's handleConnect, and reject invalid drags in the UI
 // via SvelteFlow's isValidConnection prop — both using the now-merged FW3

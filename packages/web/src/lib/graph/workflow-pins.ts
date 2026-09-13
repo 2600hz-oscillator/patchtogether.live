@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/workflow-pins.ts
-//
 // WORKFLOW MODE P1 — the PINNED SINGLETON trio + the M/E/C drawer keymap.
 // WORKFLOW MODE P2 — extends the same mechanism to the always-on TOPBAR
 // SURFACE modules (timelorde / midiclock / audioIn / audioOut — see

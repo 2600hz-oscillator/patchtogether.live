@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/cofefve-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for COFEFVE's faceplate, and the pin that
 // anchors its central claim to the SHIPPING DSP rather than to a comment.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/picturebox-data.test.ts
-//
 // REAL-Y.Doc tests for the picturebox slot-bank writers, against the SAME
 // syncedStore + Y.Doc the live patch uses (`graph/store.ts`) — the discipline
 // [[yjs-save-load-real-ydoc]] records, and the only way a "Type already

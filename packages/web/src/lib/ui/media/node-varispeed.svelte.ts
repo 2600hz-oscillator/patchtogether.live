@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-varispeed.svelte.ts
-//
 // THE REAL-DOM SINGLETON for ./node-varispeed-registry — a thin binding of the
 // pure core to the browser, the Y.Doc and the engine.
 //

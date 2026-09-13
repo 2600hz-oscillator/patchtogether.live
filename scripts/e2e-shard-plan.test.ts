@@ -1,5 +1,3 @@
-// scripts/e2e-shard-plan.test.ts
-//
 // Guards the cost-based e2e shard planner (#1538).
 //
 // THE PROPERTY THAT MATTERS: once CI assigns spec files explicitly, Playwright

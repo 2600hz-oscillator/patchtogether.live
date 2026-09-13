@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavecel.ts
-//
 // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder. Distinct
 // from the existing wavetableVco (more advanced: stereo, spread, fold, runtime
 // upload of E352-format WAV files). Card UI provides a 3D wavetable
@@ -235,7 +233,6 @@ export const wavecelDef: AudioModuleDef = {
     { id: 'wavecel-viz-toggle',    label: 'Scope / 3D view toggle',      kind: 'other', testidPrefix: 'wavecel-viz-toggle' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ────────────────────────────────────────────
   //
   // WHAT IT IS FOR: a stereo WAVETABLE oscillator. MORPH scans a stack of
   // single-cycle frames with cross-fading, SPREAD layers copies reading

@@ -1,5 +1,3 @@
-// e2e/tests/extras-producer-lifetime.spec.ts
-//
 // #1720 — "painter / textmarquee / picturebox render a PLACEHOLDER unless the
 // card is open." THE REGRESSION GUARD for the EXTRAS-channel producer seam.
 //

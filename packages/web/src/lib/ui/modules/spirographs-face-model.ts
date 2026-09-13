@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/spirographs-face-model.ts
-//
 // The PURE model behind the SPIROGRAPHS faceplate.
 //
 // THIRTY-ONE DIALS AND NOT ONE OF THEM SAYS WHAT THE PICTURE WILL BE. Three
@@ -198,4 +196,3 @@ export function spirographsFigureText(
   if (spiroIsDense(s)) return 'dense';
   return `${spiroPetals(s)} petals · ${spiroRevolutions(s)} rev`;
 }
-

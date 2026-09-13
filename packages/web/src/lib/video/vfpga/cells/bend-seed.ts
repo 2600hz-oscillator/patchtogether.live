@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/bend-seed.ts
-//
 // SHARED seeded-pseudorandom GLSL for the circuit-bent VFPGA family (the ratified
 // OWNER DECISION, design §3 + Q6): every bend's "random" feel comes from a
 // DETERMINISTIC frame-index + uv seeded hash — NOT genuine non-determinism — so

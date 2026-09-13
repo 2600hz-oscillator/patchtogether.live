@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/recorderbox.test.ts
-//
 // Unit-level checks for the RECORDERBOX module def + its factory guards.
 // Vitest runs under node — no WebGL2, so we can't exercise the surface.draw
 // path (covered by e2e), but we CAN verify:

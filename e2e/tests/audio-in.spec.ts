@@ -1,5 +1,3 @@
-// e2e/tests/audio-in.spec.ts
-//
 // AUDIO IN module — end-to-end demo verification under Chromium's fake
 // audio device (440 Hz sine produced by --use-fake-device-for-media-stream).
 //
@@ -286,7 +284,6 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     await expect(panel).toHaveCSS('opacity', '0');
     await expect(panel).toHaveCSS('pointer-events', 'none');
 
-    // Open → the panel paints and the real card faces are usable.
     await page.getByTestId('workflow-topbar-slot-audio-io').click();
     await expect(panel).toHaveAttribute('data-open', 'true');
     await expect(panel).toHaveCSS('opacity', '1');
@@ -467,7 +464,6 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     await page.waitForLoadState('networkidle');
     await waitForWorkflowPins(page);
 
-    // Open the 🎧 panel.
     await page.getByTestId('workflow-topbar-slot-audio-io').click();
     const panel = page.getByTestId('workflow-io-panel');
     await expect(panel).toHaveAttribute('data-open', 'true');

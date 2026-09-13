@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog911a-face-model.ts
-//
 // The PURE model behind the MOOG 911A faceplate — the two numbers a trigger
 // delay cannot print from any one of its knobs.
 //

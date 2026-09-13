@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-auto-spawn.spec.ts
-//
 // TIMELORDE auto-spawn (the long-promised one-per-rack singleton):
 // when a rackspace mounts (Hocuspocus provider 'synced' fires) and the
 // Yjs doc contains no TIMELORDE node, Canvas drops one in automatically.

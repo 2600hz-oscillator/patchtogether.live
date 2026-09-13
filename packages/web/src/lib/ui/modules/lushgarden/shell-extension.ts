@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/lushgarden/shell-extension.ts
-//
 // The LUSH GARDEN SHELL EXTENSION — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

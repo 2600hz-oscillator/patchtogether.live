@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-cv-scale.test.ts
-//
 // Pin the engine.ts <-> cv-scale.ts integration: when an edge is added
 // from a `cv`-typed source to a `cv`-typed target whose port declares a
 // `cvScale` hint, AudioEngine.addEdge MUST interpose a scaling node

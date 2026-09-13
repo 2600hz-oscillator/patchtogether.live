@@ -1,5 +1,3 @@
-// art/scenarios/clap/profile.test.ts
-//
 // AUDIO PROFILE for CLAP (id `clap` — the analog-modeled handclap voice:
 // seeded noise → COLOR pole → Chamberlin band-pass, the 808 twin-VCA
 // burst+tail topology, 2×-oversampled warm-tanh drive). Ships with the

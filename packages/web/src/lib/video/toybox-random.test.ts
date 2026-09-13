@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-random.test.ts
-//
 // The TOYBOX randomize engine (#1576, workstream 4) — pure-function coverage.
 //
 // Everything here drives `generateToyboxPatch` with FIXTURE assets (the engine

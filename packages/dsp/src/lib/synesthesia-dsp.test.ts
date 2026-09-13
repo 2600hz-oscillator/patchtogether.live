@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/synesthesia-dsp.test.ts
-//
 // Pure-DSP unit tests for the SYNESTHESIA audio-analysis core (LZX Sensory
 // Translator-style: 4-band split → env followers → gate → spectral-flux beat
 // triggers → VU meter; plus a VIDEO mode reusing the same follower stage).

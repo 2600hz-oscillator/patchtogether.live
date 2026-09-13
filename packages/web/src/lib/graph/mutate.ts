@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/mutate.ts
-//
 // ORIGIN-TAGGED MUTATION SEAM (Phase 3a / FW2).
 //
 // The single shared primitive for editing a patch node's live Yjs state. Every
@@ -8,7 +6,6 @@
 //   - registers on the local UndoManager — but ONLY when tagged LOCAL_ORIGIN.
 //
 // WHY THIS EXISTS — the undo bypass it closes
-// --------------------------------------------
 // The UndoManager (graph/store.ts) is configured with
 // `trackedOrigins: new Set([LOCAL_ORIGIN])`. It therefore captures an edit for
 // Cmd-Z ONLY when that edit's transaction was tagged with LOCAL_ORIGIN. Any
@@ -29,7 +26,6 @@
 // this PR builds + tests the primitive only.)
 //
 // CRITICAL — never reassign an integrated Y type ([[yjs-save-load-real-ydoc]])
-// ----------------------------------------------------------------------------
 // `fn` receives the LIVE node, re-read from `patch.nodes[nodeId]` INSIDE the
 // transaction, and MUST mutate it IN PLACE (set a key, push/splice an array).
 // It must NEVER rebuild-and-reassign an array/object that holds already-

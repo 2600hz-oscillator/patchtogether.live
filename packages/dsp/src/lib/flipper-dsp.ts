@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/flipper-dsp.ts
-//
 // Pure flip-flop logic for the FLIPPER module. A gate on EITHER input
 // alternately routes to the FLIP output, then the FLOP output, then back.
 // The first gate after construction (or reset) fires FLIP.

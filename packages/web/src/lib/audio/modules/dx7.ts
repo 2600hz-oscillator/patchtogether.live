@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/dx7.ts
-//
 // DX7-style FM synth module. Pure-TypeScript 6-op AudioWorklet (no Plaits
 // dependency). See packages/dsp/src/dx7.ts for the worklet, and
 // packages/web/src/lib/audio/dx7-syx.ts for the SYX bank parser.
@@ -29,9 +27,7 @@
 //   level       — master output level. AudioParam.
 //   transpose   — ±24 semitones. AudioParam.
 //
-// ==========================================================================
 // THE AUTHORITY SPLIT — memorize this, it is the whole state design
-// ==========================================================================
 //   node.params.algorithm / node.params.feedback  are AUTHORITATIVE.
 //   node.data.voice (the EDIT BUFFER) is authoritative for the other 78
 //     operator values. Its OWN `algorithm`/`feedback` fields are a STAMP
@@ -717,4 +713,3 @@ export const dx7Def: AudioModuleDef = {
     };
   },
 };
-

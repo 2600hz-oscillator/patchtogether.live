@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-model.test.ts
-//
 // THE BAR IS THE THING MOST LIKELY TO SILENTLY LIE, so most of this file is
 // about the bar. A non-linear param drawn with a linear map LOOKS FINE at both
 // endpoints and is wrong everywhere between — a screenshot, a VRT baseline and
@@ -55,9 +53,7 @@ function linearFrac(v: number, min: number, max: number): number {
   return (v - min) / (max - min);
 }
 
-// ---------------------------------------------------------------------------
 // The bar position, per curve
-// ---------------------------------------------------------------------------
 
 describe('the bar honours the LOG curve', () => {
   // filter.cutoff — log 20..20000 Hz. The real workhorse case.
@@ -192,9 +188,7 @@ describe('the bar honours the DISCRETE curve — cells, not a sweep', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The bipolar anchor
-// ---------------------------------------------------------------------------
 
 describe('a BIPOLAR param anchors its bar at ZERO, not at the left edge', () => {
   it('vca.cvAmount at rest draws from the centre', () => {
@@ -239,9 +233,7 @@ describe('a BIPOLAR param anchors its bar at ZERO, not at the left edge', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // The readout text + detents
-// ---------------------------------------------------------------------------
 
 describe('the readout says exactly what the on-screen dial says', () => {
   it('prints a declared OPTION name, never the raw number', () => {
@@ -294,9 +286,7 @@ describe('the readout says exactly what the on-screen dial says', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // The card
-// ---------------------------------------------------------------------------
 
 describe('pushCardView', () => {
   it('renders the AUTHORED dx7 card: 8 strips, encoders 1..8, live values', () => {
@@ -375,9 +365,7 @@ describe('paramValue / emptyStrip', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Sweep: every authored + curated card, every strip, on its defaults
-// ---------------------------------------------------------------------------
 
 describe('every shipped module renders a coherent card at its defaults', () => {
   it('frac and zeroFrac stay inside the bar for every strip of every module', () => {

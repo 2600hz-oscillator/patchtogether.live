@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/poly.test.ts
-//
 // Unit tests for the chord math and the cable-type resolver. These don't
 // touch Web Audio — sender/receiver helpers are exercised in the ART scenario
 // (which runs under node-web-audio-api) and in the E2E spec.

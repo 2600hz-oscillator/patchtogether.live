@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/cellshade.test.ts
-//
 // CELLSHADE rebuild — module-def shape + the pure 4-pass cel pipeline (no GL):
 //   - BANDS knob (legacy `bits` id) snaps to the 5 band counts {2,3,4,6,8};
 //   - P3 soft luminance quantization: hard-degenerate anchor (softness 0 ==
@@ -40,10 +38,8 @@ import {
 } from './cellshade';
 import { EDGES_MAX_THICKNESS, EDGES_LUMA_WEIGHTS } from './edges';
 
-// ---------------------------------------------------------------------------
 // Test-local HSV helpers (for building hue-sweep fixtures + measuring hue —
 // the MODULE no longer ships HSV code; the engine never leaves RGB/Y space).
-// ---------------------------------------------------------------------------
 
 function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   const i = Math.floor(h * 6);
@@ -80,9 +76,7 @@ function hueErrDeg(a: number, b: number): number {
   return Math.min(d, 360 - d);
 }
 
-// ---------------------------------------------------------------------------
 // Def shape
-// ---------------------------------------------------------------------------
 describe('cellshadeDef shape', () => {
   it('threshold spans 0..1 (default 0.2), matching EDGES', () => {
     const t = cellshadeDef.params.find((p) => p.id === 'threshold');
@@ -129,9 +123,7 @@ describe('cellshadeDef shape', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // BANDS knob: snaps to the 5 luminance band counts.
-// ---------------------------------------------------------------------------
 describe('BANDS knob snaps to the 5 band-count steps', () => {
   it('the 5 steps are exactly {2, 3, 4, 6, 8} luminance bands', () => {
     expect([...CELLSHADE_BAND_STEPS]).toEqual([2, 3, 4, 6, 8]);
@@ -151,9 +143,7 @@ describe('BANDS knob snaps to the 5 band-count steps', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Scalar helpers — GLSL-mirror exactness.
-// ---------------------------------------------------------------------------
 describe('scalar mirrors (mix / smoothstep / sigmaR / softWidth / luma)', () => {
   it('cellshadeLuma matches the EDGES Rec.601 weights', () => {
     expect(cellshadeLuma(1, 1, 1)).toBeCloseTo(1, 6);
@@ -186,9 +176,7 @@ describe('scalar mirrors (mix / smoothstep / sigmaR / softWidth / luma)', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // P3 — soft luminance quantization.
-// ---------------------------------------------------------------------------
 describe('cellshadeQuantizeLuma — soft luminance banding', () => {
   it('HARD-DEGENERATE ANCHOR: softness 0 reproduces floor(Y·n)/(n−1) exactly, every step', () => {
     for (const n of CELLSHADE_BAND_STEPS) {
@@ -353,9 +341,7 @@ describe('cellshadeQuantizeY — chroma-preserving reconstruction (additive luma
   });
 });
 
-// ---------------------------------------------------------------------------
 // P1/P2 — separable bilateral.
-// ---------------------------------------------------------------------------
 describe('cellshadeSmoothGrid — separable bilateral abstraction', () => {
   const W = 24, H = 8;
 
@@ -440,9 +426,7 @@ describe('cellshadeSmoothGrid — separable bilateral abstraction', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // P4 — ink strength composite.
-// ---------------------------------------------------------------------------
 describe('cellshadeInkComposite — outline darkness', () => {
   it('5-POINT INK DYNAMISM: an edge texel interpolates linearly quantized → black', () => {
     const q: [number, number, number] = [0.8, 0.5, 0.3];
@@ -466,9 +450,7 @@ describe('cellshadeInkComposite — outline darkness', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Full pipeline — cellshadePixel over synthetic grids.
-// ---------------------------------------------------------------------------
 describe('cellshadePixel — the full 4-pass mirror', () => {
   // Left half mid-grey, right half white → one high-contrast vertical edge.
   const W = 16, H = 8;

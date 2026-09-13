@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-archivist-source-registry.ts
-//
 // THE NODE-SCOPED OWNER OF THE ARCHIVIST SOURCE — the archive.org search/load
 // chain, the three node-owned media elements, the engine attach, the audio wire,
 // the transport and both polling loops, on GRAPH lifetime instead of card

@@ -1,5 +1,3 @@
-// packages/dsp/src/stereovca.ts
-//
 // STEREOVCA worklet processor.
 //
 // Stereo VCA + ring modulator. The same per-channel multiply

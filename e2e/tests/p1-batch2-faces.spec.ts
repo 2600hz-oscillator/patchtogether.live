@@ -1,5 +1,3 @@
-// e2e/tests/p1-batch2-faces.spec.ts
-//
 // P1 BATCH 2 — the MIGRATION sanity check for the newly promoted faces, on the
 // three surfaces a migration actually has to land on. The registry-driven
 // faces-parity sweep already proves the dock renders the def's FULL control

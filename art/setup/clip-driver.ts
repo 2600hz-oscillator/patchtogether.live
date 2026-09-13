@@ -1,5 +1,3 @@
-// art/setup/clip-driver.ts
-//
 // A PURE, deterministic clip → per-sample note-frame driver for the offline
 // GRAND-INTEGRATION combined-master ART. (The `grand-attest` local runner and
 // its skill doc were deleted 2026-08-17 with the other non-gating CI lanes; the

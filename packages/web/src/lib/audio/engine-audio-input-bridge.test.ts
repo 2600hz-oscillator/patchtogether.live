@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-audio-input-bridge.test.ts
-//
 // Coverage for the NEW cross-domain AUDIO → video AUDIO-INPUT bridge
 // (RECORDERBOX's soundtrack capture). This is the INVERSE direction of the
 // existing video→audio bridge: an AUDIO-domain source's output is connected

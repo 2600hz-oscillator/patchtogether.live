@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/graph-param-dispatch.test.ts
-//
 // #1727 — THE COVERAGE + STRUCTURE GATE for the graph-resolved MIDI delivery
 // path. The e2e (`e2e/tests/midi-binding-node-lifetime.spec.ts`) proves the
 // WIRING on one module in a real browser; this proves the CLAIM the wiring is

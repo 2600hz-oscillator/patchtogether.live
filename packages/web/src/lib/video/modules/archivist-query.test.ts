@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/archivist-query.test.ts
-//
 // Pure-core unit tests for the ARCHIVIST archive.org query/parse/file-pick
 // logic. NO network: every input is a literal, every assertion is on a pure
 // transform. (Live archive.org calls live only in the route-mocked e2e.)

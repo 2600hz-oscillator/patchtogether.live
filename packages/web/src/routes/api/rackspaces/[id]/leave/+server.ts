@@ -1,5 +1,3 @@
-// packages/web/src/routes/api/rackspaces/[id]/leave/+server.ts
-//
 // POST /api/rackspaces/[id]/leave — a non-owner member removes themselves
 // from a rackspace they joined, freeing a slot (the 4/4 cap is owner + 3).
 // This is the only way a guest can get a joined rack off their dashboard;

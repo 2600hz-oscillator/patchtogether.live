@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/depolarizer.test.ts
-//
 // Three test layers for DEPOLARIZER (1-in / 1-out CV utility, bipolar→unipolar,
 // out = 0.5 + depth·(in/2)):
 //   1. Module-def shape — pins the CV-only I/O surface (a single `in` cv port,

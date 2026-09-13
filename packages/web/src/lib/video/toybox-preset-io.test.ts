@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-preset-io.test.ts
-//
 // Pure round-trip coverage for the TOYBOX preset .zip export/import. No GL/DOM,
 // so this is fully deterministic — the real correctness guard for #61.
 

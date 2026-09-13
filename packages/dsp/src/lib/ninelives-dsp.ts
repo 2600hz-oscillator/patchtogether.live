@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/ninelives-dsp.ts
-//
 // NINE LIVES — the PURE DSP core, shared verbatim by:
 //   * the AudioWorklet (packages/dsp/src/ninelives.ts) — the live 9-output
 //     LFO hot path, and

@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/tiler/TilerOutputBody.svelte
-  //
   // The TILER dock full-view body: its live tiled picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

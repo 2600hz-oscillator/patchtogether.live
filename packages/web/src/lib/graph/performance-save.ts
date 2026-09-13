@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/performance-save.ts
-//
 // Save the portable performance .zip bytes to a file the USER names — instead
 // of force-downloading a fixed `performance.ptperf.zip`. Two paths, mirroring
 // recorderbox-save-flow.ts:

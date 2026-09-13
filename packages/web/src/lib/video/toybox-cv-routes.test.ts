@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-cv-routes.test.ts
-//
 // TOYBOX — CV routing + scale/offset coverage (PURE helpers). Proves the
 // three demonstrated assignment setups resolve + map correctly:
 //   (a) cv → a SHADER param   (layer 0 content uniform),
@@ -442,9 +440,7 @@ describe('findOrphanedRoutes (auto-unmap, #60)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // #1708 — a CUSTOM disk-loaded shader is a CV target like any bundled content.
-// ---------------------------------------------------------------------------
 //
 // The layers below carry ONLY what the Y.Doc carries (source bytes + filename)
 // and are never registered by these tests, so they are a receiving peer's state:

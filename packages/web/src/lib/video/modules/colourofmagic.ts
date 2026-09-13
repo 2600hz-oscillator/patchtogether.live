@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/colourofmagic.ts
-//
 // COLOUR OF MAGIC — real-time multi-colorspace video processor.
 //
 // One video IN; FIVE PARALLEL colorspace blocks — RGB, YDbDr (SECAM), HSV-or-HSL,
@@ -274,7 +272,6 @@ void main(){
   outColor = vec4(outRgb, 1.0);
 }`;
 
-// ─────────────────────────── params ───────────────────────────
 
 interface ColourParams {
   bias_r: number; bias_g: number; bias_b: number;
@@ -639,7 +636,6 @@ export const colourofmagicDef: VideoModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR: one picture, five colorspaces at once. The source runs
   // through RGB, YDbDr (SECAM), HSV/HSL, YIQ (NTSC) and YCbCr BT.601 in

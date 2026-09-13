@@ -1,5 +1,3 @@
-// e2e/tests/bentbox.spec.ts
-//
 // BENTBOX — CRT-emulation video OUTPUT. Three concerns:
 //   t1 = DETERMINISTIC render-smoke (DRS): the GL CRT pipeline decodes a
 //        NON-BLACK, structured, FRAME-STABLE frame (the real pixel gate).

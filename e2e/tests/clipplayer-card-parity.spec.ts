@@ -1,5 +1,3 @@
-// e2e/tests/clipplayer-card-parity.spec.ts
-//
 // CLIP PLAYER surface parity (Part A + Part B of the card-parity design), on
 // the DEFAULT SHELL. These assert BEHAVIOUR (the synced node.data the engine
 // consumes), not just presence:
@@ -82,7 +80,6 @@ async function openDockPane(page: Page, id: string) {
   return pane;
 }
 
-// ---------------------------------------------------------------------------
 
 test('parity: dock CONTROL-deck MUTE and the single-pad Launchpad MUTE write the SAME node.data.muted[]', async ({ page, rack }) => {
   await spawnPatch(page, [

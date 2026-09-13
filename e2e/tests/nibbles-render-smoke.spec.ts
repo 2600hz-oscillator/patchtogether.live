@@ -1,5 +1,3 @@
-// e2e/tests/nibbles-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for NIBBLES (plan §5 Layer B), modeled on
 // acidwarp-render-smoke.spec.ts.
 //

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/matrixmix-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the MATRIXMIX axis mutators + the
 // create-edge-from-a-cell writer. Runs against the SAME syncedStore + Y.Doc the
 // live patch uses (graph/store.ts), so node.data / patch.edges become real Y
@@ -247,11 +245,9 @@ describe('matrixmix — removeMatrixEdge (unpatch) against the live patch', () =
   });
 });
 
-// ---------------------------------------------------------------------------
 // LEG GROUPS (PR-3). A matrix cell is a patch gesture, so it writes whole
 // stereo cables like every other commit path. Uses REAL registry defs, since
 // what is under test is that the planner resolves live pairs here.
-// ---------------------------------------------------------------------------
 
 const CLOUDS = 'clouds-1';
 const COCO = 'cofefve-1';

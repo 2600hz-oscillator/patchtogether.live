@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/spring-reverb-dsp.ts
-//
 // SpringReverb — an in-house, from-scratch spring-reverb-tank model for the
 // MOOG 905 SPRING REVERBERATION module. ORIGINAL CODE — no GPL / CC-BY-SA
 // reverb source was copied. The *technique* (a cascade of dispersive

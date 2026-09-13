@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/home-auth.test.ts
-//
 // Covers the server-side auth read that feeds the `/` header when the
 // client <ClerkProvider> is NOT mounted (SAB / cross-origin isolation
 // constraint). The behavior we lock in:

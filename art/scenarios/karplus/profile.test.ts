@@ -1,5 +1,3 @@
-// art/scenarios/karplus/profile.test.ts
-//
 // AUDIO PROFILE for KARPLUS (id `karplus` — the extended Karplus-Strong
 // string/harp voice on the cofefve delay-line core). Ships with the module
 // per the audio-profile gate: every new audio def lands with ≥1 committed

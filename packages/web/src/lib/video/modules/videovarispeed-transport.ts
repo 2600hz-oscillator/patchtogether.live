@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videovarispeed-transport.ts
-//
 // Pure-functional transport helpers for VIDEOVARISPEED: the varispeed knob
 // map, the START/END playback-window logic, END-CV normalling, and the
 // loop-vs-one-shot decision at the end of the window.
@@ -13,9 +11,7 @@
 // This mirrors the same spec as the rolled-back VIDEOBOX #291 transport, but
 // is owned by VIDEOVARISPEED so the two modules stay decoupled.
 
-// ---------------------------------------------------------------------------
 // 1. Varispeed knob -> speed multiplier
-// ---------------------------------------------------------------------------
 //
 // The speed knob behaves like an analog-clock face, but ASYMMETRIC: the
 // dead-centre (12:00) is +1x forward, NOT 0. The two halves span different
@@ -42,9 +38,7 @@ export function speedKnobToMultiplier(knob: number): number {
   return 1 + (k - 0.5) * 6;
 }
 
-// ---------------------------------------------------------------------------
 // 2. CV summing for the speed knob
-// ---------------------------------------------------------------------------
 //
 // CV is bipolar -1..+1 and (per the project convention) ±1 sweeps the param
 // through its full range. The speed knob's natural range is the normalized
@@ -58,9 +52,7 @@ export function effectiveSpeedKnob(knob: number, cv: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
-// ---------------------------------------------------------------------------
 // 3. START / END window
-// ---------------------------------------------------------------------------
 //
 // START + END are fractions of duration in [0, 1].
 //   - START default 0 (full-left slider) = beginning; it is BOTH the play
@@ -120,9 +112,7 @@ export function resolveWindow(
   return { startSec, endSec, hasWindow };
 }
 
-// ---------------------------------------------------------------------------
 // 4. Loop / one-shot at the window edge
-// ---------------------------------------------------------------------------
 //
 // When the playhead reaches (or passes) END:
 //   - LOOP     -> jump back to START + keep playing.
@@ -158,9 +148,7 @@ export function decideEdgeAction(
     : { kind: 'stop', clampTo: window.startSec };
 }
 
-// ---------------------------------------------------------------------------
 // 5. Reverse-scrub throttle (the perf-critical part)
-// ---------------------------------------------------------------------------
 //
 // HTMLVideoElement cannot play backward natively, and seeking `currentTime`
 // every animation frame is what tanked the #291 VIDEOBOX implementation:

@@ -1,5 +1,3 @@
-// packages/dsp/src/cofefve.ts
-//
 // COFEFVE DELAY — the AudioWorklet entry that wraps the OWN-CODE
 // AnalogDelayCore (./lib/analog-delay-core.ts) into a patchable stereo delay.
 // Clean-room replacement for the retired COCOA DELAY; no GPL source was read

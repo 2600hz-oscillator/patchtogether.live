@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/session-leader-elected.ts
-//
 // Approach B — "Resilient Carl" exclusivity + leader election.
 //
 // Two coupled concepts:

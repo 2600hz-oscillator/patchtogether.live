@@ -1,5 +1,3 @@
-// packages/server/src/rack-access.ts
-//
 // Post-auth gate: given the verified auth result + rack id, decide whether
 // to accept the WS handshake. Extracted from index.ts's onAuthenticate so
 // the prod-only anon-existence-check branch can be unit-tested without

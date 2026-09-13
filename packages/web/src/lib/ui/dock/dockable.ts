@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/dock/dockable.ts
-//
 // DOCKING P2.5a — the DOCKABLE allowlist (owner answer Q3, plan §7):
 // control-first (knob/fader-heavy modules a performer parks in a rail),
 // PLUS scope, WORKFLOW racks only. Rollout is allowlist-FIRST as the plan,

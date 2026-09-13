@@ -1,5 +1,3 @@
-// e2e/tests/dock-pane-close-chrome.spec.ts
-//
 // DOCK FULL-VIEW PANE ✕ — the owner split-view close-button fix. Every pane
 // of the bottom-drawer full-view (single AND 50/50 split) must show a
 // clearly VISIBLE close button on the drawer chrome itself (the RACKLINE

@@ -1,5 +1,3 @@
-// e2e/tests/lines-render-smoke.spec.ts
-//
 // DETERMINISTIC render-smoke (DRS) for LINES — a pure-GL procedural mono-video
 // SOURCE (category 'sources'; the `fm` mono-video input is a Phase-0 stub the
 // shader multiplies by 0.0, so it is never sampled — LINES renders standalone).

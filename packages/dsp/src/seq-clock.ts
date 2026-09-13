@@ -1,5 +1,3 @@
-// packages/dsp/src/seq-clock.ts
-//
 // SEQ-CLOCK — the audio-thread clock worklet module. It registers TWO
 // processors that share one motivation (a main-thread stall must never be able
 // to drop a scheduled edge, because AudioParam scheduling is main-thread-only):

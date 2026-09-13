@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/es9/bridge.worker.ts
-//
 // The ES-9 bridge transport worker. Owns the WebSocket to the es9-bridge
 // native app and shuttles audio between the socket and the two
 // SharedArrayBuffer rings shared with the 'es9-bridge' AudioWorklet — so

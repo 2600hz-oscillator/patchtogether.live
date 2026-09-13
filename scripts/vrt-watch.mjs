@@ -1,5 +1,3 @@
-// scripts/vrt-watch.mjs
-//
 // WATCH A VRT CAPTURE, AND REPORT WHAT IT ACTUALLY COMMITTED (#1821).
 //
 // ── Why this exists ────────────────────────────────────────────────────────

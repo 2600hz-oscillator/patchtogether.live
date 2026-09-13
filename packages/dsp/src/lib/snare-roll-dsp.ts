@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/snare-roll-dsp.ts
-//
 // SNARE DRUM — the POLYPHONIC two-hand DRUMROLL engine + the fixed-ring
 // lowest-energy voice allocator. Pure, deterministic, allocation-free in the hot path; the unit-tested
 // correctness gate for the roll. It emits STROKE EVENTS (velocity, hand, pan,
@@ -33,9 +31,7 @@ import { clamp } from './dsp-utils';
 // Inlined (a lib/ DSP helper can't import from $lib), kept === 0.5.
 export const GATE_HI = 0.5;
 
-// ─────────────────────────────────────────────────────────────────────────
 // Constants (FROZEN — the roll's tuning surface)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Voice pool size (design §3.7; verdict 8–12). Continuity lives in the shared
  *  bed, so this only bounds simultaneous TONAL-onset overlap. */
@@ -76,9 +72,7 @@ const TIMING_JITTER = 0.08; // ±0.08·period on each sub-stroke countdown
 const VEL_JITTER = 0.15; // ±15 % per-sub-stroke velocity
 const DETUNE_ST = 1.5; // ± semitones of humanize detune (× spread)
 
-// ─────────────────────────────────────────────────────────────────────────
 // Seeded xorshift32 (deterministic humanize jitter)
-// ─────────────────────────────────────────────────────────────────────────
 
 export function xorshift32(s: number): number {
   s ^= s << 13;
@@ -87,9 +81,7 @@ export function xorshift32(s: number): number {
   return s >>> 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Rate mapping (knob + CV) — FROZEN (design §3.4)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Per-hand roll rate in Hz. roll_speed 0 → 4 Hz, 1 → 24 Hz (exp); roll_speed_cv
  *  is a 1 V/oct multiply (±4 V); composite two-hand sticking ≈ 2× this. */
@@ -103,9 +95,7 @@ export function minAllocIntervalSamples(sr: number): number {
   return Math.max(1, Math.round(sr / ALLOC_RATE_CAP));
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Bounce / stroke structure (design §3.3) — PURE, unit-tested directly
-// ─────────────────────────────────────────────────────────────────────────
 
 /**
  * Fill the sub-stroke schedule for ONE primary stroke into caller-provided
@@ -154,9 +144,7 @@ export function bounceSchedule(
   return N;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Voice-pool allocator (design §3.7) — first-free, else steal LOWEST energy
-// ─────────────────────────────────────────────────────────────────────────
 
 /** The minimum a pool voice must expose to be allocated. SnareVoice satisfies
  *  this structurally, keeping the allocator free of the voice DSP. */
@@ -184,9 +172,7 @@ export function allocateVoice(voices: readonly AllocSlot[], maxVoices: number): 
   return steal;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // The two-hand roll engine state + step
-// ─────────────────────────────────────────────────────────────────────────
 
 /** Continuous roll params the engine reads (subset of the module params). */
 export interface RollParams {

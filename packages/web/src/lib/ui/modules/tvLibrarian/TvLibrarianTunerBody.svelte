@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/tvLibrarian/TvLibrarianTunerBody.svelte
-  //
   // The TV LIBRARIAN dock full-view body: the picture, the SCREEN switch, and
   // the browse surface this module exists for.
   //

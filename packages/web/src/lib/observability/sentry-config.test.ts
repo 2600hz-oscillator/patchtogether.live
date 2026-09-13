@@ -1,5 +1,3 @@
-// packages/web/src/lib/observability/sentry-config.test.ts
-
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sentryEnabled, sentryEnvironment, sentryRelease } from './sentry-config';
 

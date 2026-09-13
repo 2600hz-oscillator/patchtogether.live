@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/module-categories.test.ts
-//
 // Guard rails for the nested-add-module palette.
 //
 //  1. Every registered audio/video/meta module is classified — if a new

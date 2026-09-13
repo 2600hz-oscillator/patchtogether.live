@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-shadertoy.ts
-//
 // TOYBOX Shadertoy runtime — pure helpers (no GL).
 //
 // This file holds the parts of the Shadertoy compatibility layer that are
@@ -16,9 +14,7 @@
 // modules/toybox.ts and CONSUMES these helpers. See the PR for the full plan;
 // the contract here is the testable seam.
 
-// ----------------------------------------------------------------------
 // 1. Single-pass shim + uniform preamble
-// ----------------------------------------------------------------------
 
 /**
  * The full Shadertoy uniform block, declared exactly as the official site does
@@ -120,9 +116,7 @@ void main() {
 `;
 }
 
-// ----------------------------------------------------------------------
 // 2. iMouse pointer routing
-// ----------------------------------------------------------------------
 
 /**
  * The letterbox rectangle the preview canvas draws the engine framebuffer into
@@ -243,9 +237,7 @@ export function mouseToVec4(s: MouseState): [number, number, number, number] {
   return [s.x, s.y, z, w];
 }
 
-// ----------------------------------------------------------------------
 // 3. Multi-buffer project model + pass topo-ordering + channel resolution
-// ----------------------------------------------------------------------
 
 /** A single iChannel binding for a pass. Discriminated union, all plain JSON
  *  (Yjs-safe). `buffer` samples another pass's output; `self` samples this

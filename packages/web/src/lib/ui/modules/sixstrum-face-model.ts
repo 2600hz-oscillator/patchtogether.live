@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/sixstrum-face-model.ts
-//
 // THE PURE MODEL BEHIND SIX STRUM's FACEPLATE — every derived number the face
 // prints, computed through the DSP's OWN laws (`karplusLoopRho`,
 // `karplusDampingCoeff`, `karplusDampingMag`, `karplusDcBlockMag`, `karplusF0`'s

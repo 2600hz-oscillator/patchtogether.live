@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-algorithm-layout.test.ts
-//
 // The GOLDEN PIN for the algorithm picture, plus the structural invariants a
 // renderer relies on. The golden is what stops a routing-table edit from
 // silently producing a different diagram: dx7-algorithms.test.ts already pins

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/trails-cell-actions.ts
-//
 // THE BELA TRAILS' NON-PARAM GESTURES, as one plain-TypeScript seam called by
 // BOTH surfaces — the ranked `trails-connect-{n}` action cell, the shell
 // extension's pad body, and the legacy `TrailsCard.svelte`.

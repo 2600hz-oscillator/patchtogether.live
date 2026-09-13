@@ -1,5 +1,3 @@
-// e2e/tests/dx7-operator-panel.spec.ts
-//
 // The DX7 OPERATOR VIEW — dx7 PR 6's deliverable.
 //
 // The pure models are pinned without a browser (dx7-op-map-model.test.ts, all

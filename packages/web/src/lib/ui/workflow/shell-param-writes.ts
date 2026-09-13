@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-param-writes.ts
-//
 // PF-13 — the PARAM WRITE OVERRIDE registry.
 //
 // ModuleShell's param cells all commit through `setNodeParam(id, paramId, v)`,

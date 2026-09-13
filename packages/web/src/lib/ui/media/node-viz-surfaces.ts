@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-viz-surfaces.ts
-//
 // THE ROSTER + THE REAL-DOM SINGLETON for node-lifetime viz surfaces. See
 // ./node-viz-surface-registry for the mechanism and for why wavesculpt's
 // producer is a MOUNTED COMPONENT rather than a `FrameProducer` callback.

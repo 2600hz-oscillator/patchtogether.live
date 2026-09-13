@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-launch-quantize.test.ts
-//
 // Pins the PURE launch-quantization boundary math (the Deluge model): a queued
 // launch snaps to the next loop wrap of the LONGEST currently-playing clip, not
 // any single lane's own sooner wrap, and null when nothing is playing (→ the

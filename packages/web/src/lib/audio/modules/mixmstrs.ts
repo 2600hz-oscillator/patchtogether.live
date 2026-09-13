@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/mixmstrs.ts
-//
 // MIXMSTRS — 8-channel stereo mixer with EQ, compressor, two stereo aux sends,
 // two stereo returns. Multiple instances are allowed (submixes / parallel
 // master buses); each instance sums its inputs to the destination additively.
@@ -386,7 +384,6 @@ export const mixmstrsDef: AudioModuleDef = {
   ],
   params: PARAMS,
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // The largest face in the repo, and the design problem is stated by the
   // module itself: a mixer is N INTERCHANGEABLE CHANNEL STRIPS. The eight

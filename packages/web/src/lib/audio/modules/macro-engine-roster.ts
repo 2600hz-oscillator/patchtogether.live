@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/macro-engine-roster.ts
-//
 // THE FOURTEEN ENGINES, IN ONE PLACE — the roster macrooscillator's def, its
 // card, MACSEQ and the faceplate all read.
 //

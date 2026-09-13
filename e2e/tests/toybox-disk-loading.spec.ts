@@ -1,5 +1,3 @@
-// e2e/tests/toybox-disk-loading.spec.ts
-//
 // TOYBOX disk-loading of CUSTOM shaders + OBJ models — end-to-end pixel proofs.
 //
 //   1. a layer with an inline custom GEN shader (layer.shaderSrc, void main +
@@ -300,9 +298,7 @@ test.describe('TOYBOX disk-loading (custom shaders + OBJ)', () => {
   });
 });
 
-// ===========================================================================
 // #1708 — a custom shader's EXTRACTED PARAMS reach the card and the uniforms.
-// ===========================================================================
 //
 // ── What each test is the only witness to ──────────────────────────────────
 //

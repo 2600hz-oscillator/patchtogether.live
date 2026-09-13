@@ -1,5 +1,3 @@
-// packages/web/src/lib/art/fingerprint.test.ts
-//
 // Pure-unit coverage for the ART fingerprint GEOMETRY (fingerprint.ts) — the
 // "unit for the ART-viz compute" the Phase-3 plan requires. Known uint8 input →
 // asserted bar geometry / peak-cap Y / meter segment counts. No fs, no python,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/devices/device-card-source.test.ts
-//
 // THE REPLACEMENT COVERAGE for what `card-def-agreement` structurally cannot
 // see on a device card.
 //

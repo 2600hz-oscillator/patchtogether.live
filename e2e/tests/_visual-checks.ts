@@ -1,5 +1,3 @@
-// e2e/tests/_visual-checks.ts
-//
 // Gate for canvas/pixel/frame-advance assertions. Lives OUTSIDE _helpers.ts:
 // this is imported only by heavy video specs, which already drive the
 // webgl-attest basis, and the shared multi-context helper file should not own

@@ -1,5 +1,3 @@
-// e2e/tests/pong.spec.ts
-//
 // PONG module end-to-end (research prototype):
 //
 //   1. The card mounts cleanly + renders its 16-bit canvas.

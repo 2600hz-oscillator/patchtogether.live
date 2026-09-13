@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/sixstrum-tuning.ts
-//
 // SIX STRUM — pure tuning + guitar-chord voicing tables (DSP-package, so the
 // worklet can voice a chord from the mono Chord-CV root without importing web
 // $lib). Everything here is a deterministic function of (root MIDI, quality,

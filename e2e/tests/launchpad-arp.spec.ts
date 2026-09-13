@@ -1,5 +1,3 @@
-// e2e/tests/launchpad-arp.spec.ts
-//
 // LAUNCHPAD **ARP** real-source-chain proof (the poly/MIDI discipline,
 // CLAUDE.md): the single-mode KEYS arpeggiator must SEQUENCE a held chord into
 // AUDIBLE notes at a real voice output — not just flip a state flag. The whole

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/place-and-route.test.ts
-//
 // Pure (GL-free) unit tests for the fabric place-and-route core. Mirrors the
 // b3ntb0x-dsp discipline: the load-bearing compile logic (topo order, comb-loop
 // reject, :prev loop-cut, FBO assignment/precision/ping-pong, pass emission,
@@ -16,9 +14,6 @@ import type { VfpgaFabric, VfpgaTile, VfpgaNet } from './types';
 import { smpteBarsSpec } from './specs/smpte-bars';
 import { framestoreHowlSpec } from './specs/framestore-howl';
 
-// ----------------------------------------------------------------------
-// Fixtures.
-// ----------------------------------------------------------------------
 
 const clb = (id: string, op: string, inputs?: string[], extra?: Partial<VfpgaTile>): VfpgaTile => ({
   id,
@@ -57,9 +52,7 @@ function chainFabric(): VfpgaFabric {
 
 const findError = (errs: FabricError[], re: RegExp) => errs.find((e) => re.test(e.message));
 
-// ----------------------------------------------------------------------
 // validateFabric.
-// ----------------------------------------------------------------------
 
 describe('validateFabric', () => {
   it('accepts a minimal 1-tile passthru fabric', () => {
@@ -216,9 +209,7 @@ describe('validateFabric', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Combinational-loop rejection vs. :prev loop-cut.
-// ----------------------------------------------------------------------
 
 describe('combinational cycle handling', () => {
   it('REJECTS a pure combinational cycle (a→b→a, no register)', () => {
@@ -273,9 +264,7 @@ describe('combinational cycle handling', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // fabricToEffect — topo order, FBO assignment, pass emission.
-// ----------------------------------------------------------------------
 
 describe('fabricToEffect', () => {
   it('compiles the 1-tile passthru fabric to a single output pass', () => {
@@ -433,9 +422,7 @@ describe('fabricToEffect', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // Determinism — the same fabric compiles byte-identically (VRT-safe).
-// ----------------------------------------------------------------------
 
 describe('determinism', () => {
   it('compiles a fabric to an identical effect across runs', () => {
@@ -458,9 +445,7 @@ describe('determinism', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // P1 — register ping-pong pairs (`registers[]`) emitted for the host swap.
-// ----------------------------------------------------------------------
 
 /** A feedback fabric: mix(input, reg:prev) → reg ; mix → vout1. */
 function regFabric(): VfpgaFabric {
@@ -522,10 +507,8 @@ describe('register ping-pong pairs (P1 host swap metadata)', () => {
   });
 });
 
-// ----------------------------------------------------------------------
 // P1 dogfood — smpte-bars expressed as a fabric P&R's to the SAME effect as its
 // legacy hand-authored `effect` (the byte-identical correctness anchor).
-// ----------------------------------------------------------------------
 
 describe('smpte-bars dogfood: fabric P&R == legacy effect', () => {
   it('the spec carries BOTH a fabric (runtime path) and a legacy effect (reference)', () => {

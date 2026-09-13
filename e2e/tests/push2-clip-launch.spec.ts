@@ -1,5 +1,3 @@
-// e2e/tests/push2-clip-launch.spec.ts
-//
 // PUSH 2 real-source-chain proof (the poly/MIDI discipline, CLAUDE.md): a pad
 // press on a (simulated) Ableton Push 2 must LAUNCH a clip on the bound
 // clip-player and drive a downstream VOICE to AUDIBLE output through the REAL

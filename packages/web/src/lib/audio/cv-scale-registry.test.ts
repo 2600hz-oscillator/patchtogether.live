@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-scale-registry.test.ts
-//
 // Belt-and-suspenders pin: confirm that every module's CV-typed input port
 // EITHER carries a `cvScale` hint OR is an intentional "passthrough" case
 // (i.e. the destination DSP scales internally — filter.dsp). This catches
@@ -300,7 +298,6 @@ describe('cv-scale / registry coverage', () => {
     ).toEqual([]);
   });
 
-  // ───────────────────────────────────────────────────────────────────────
   // EVERY curve-backed port: a cable sitting at cv=0 adds EXACTLY nothing.
   //
   // The per-mode gate lives in cv-scale.test.ts on hand-picked shapes. This is
@@ -313,7 +310,6 @@ describe('cv-scale / registry coverage', () => {
   // At CURVE_LEN=4096 this found 130 of 317 ports biased at cv=0: 74 clamped
   // linear (≈0.0061 % of range), 39 log (≤1.1e-5 %), and 17 discrete, of which
   // 16 returned a half-integer that is not a valid bucket at all.
-  // ───────────────────────────────────────────────────────────────────────
   it('every curve-backed cvScale port emits its unmodulated delta at cv=0', () => {
     interface Off { id: string; mode: string; range: string; knob: number; got: number; want: number }
     const offenders: Off[] = [];

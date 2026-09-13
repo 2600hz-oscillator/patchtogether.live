@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/sourcery.test.ts
-//
 // SOURCERY module-def SHAPE test (ports / params / CV targets / lowercase
 // label). The pure algorithm is covered exhaustively by
 // $lib/video/sourcery-core.test.ts; the GL factory's draw() needs a WebGL2

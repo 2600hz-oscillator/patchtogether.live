@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/push2-cell-actions.test.ts
-//
 // THE CONNECT CELL'S AUDITION PROBE, AND ITS PERMANENT NEGATIVE CONTROL.
 //
 // `push2-control-connect-{n}` declares

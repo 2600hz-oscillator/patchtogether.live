@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-ladder-dsp.test.ts
-//
 // Pure-DSP unit tests for the shared Moog transistor-ladder LPF core
 // (own-code TPT/Zavalishin zero-delay-feedback ladder + Huovilainen-style
 // tanh feedback saturation). Shared by the 904A (this slice) + 904B/904C
@@ -27,7 +25,6 @@ import {
 
 const SR = 48000;
 
-// ── helpers ──
 function rms(a: Float32Array, from = 0): number {
   let s = 0;
   let n = 0;
@@ -271,7 +268,6 @@ describe('moog-ladder-dsp / shared constants', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Denormal floor (P2-A5). An idle ladder used to latch its four integrator
 // states in the f64 denormal range FOREVER — measured 3.458e-323 at both 2 s
 // and 5 s of silence at fc=400 Hz, i.e. stuck, not still decaying. Every
@@ -284,7 +280,6 @@ describe('moog-ladder-dsp / shared constants', () => {
 // latched at 1e-323 reads as a clean 0.0 output either way. The f64 STATE is
 // where the cycles are burned, so `settled()` is what these read. Verified by
 // reverting the flush: these two fail, an output-tail assertion does not.
-// ---------------------------------------------------------------------------
 
 describe('moog-ladder-dsp / denormal floor', () => {
   const SETTLE_CASES = [

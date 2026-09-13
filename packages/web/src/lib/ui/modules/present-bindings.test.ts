@@ -255,9 +255,7 @@ describe('readPresentBindingsFromUpdate', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // WHO OWNS DISPLAY PLACEMENT
-// ---------------------------------------------------------------------------
 //
 // ⚠ THE COLLISION THIS RULE EXISTS FOR. Two placement surfaces already exist:
 // `settings.presentBindings`, which rides the SHARED doc into every save,

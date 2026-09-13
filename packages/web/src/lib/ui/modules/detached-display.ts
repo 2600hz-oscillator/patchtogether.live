@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/detached-display.ts
-//
 // THE DETACHED DISPLAY (#1821) — the pure model behind "right-click → detach
 // display": a free-floating, resizable picture of one video OUTPUT, with no
 // patch wires, that re-attaches from either side and dies with its node.

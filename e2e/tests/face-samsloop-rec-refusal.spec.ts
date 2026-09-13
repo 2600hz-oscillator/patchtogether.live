@@ -1,5 +1,3 @@
-// e2e/tests/face-samsloop-rec-refusal.spec.ts
-//
 // A REFUSED REC PRESS MUST BE VISIBLE ON THE FACEPLATE.
 //
 // ⚠ THE FILENAME IS DELIBERATE. Checked against the live `e2e/webgl-heavy-globs.ts`
@@ -90,7 +88,6 @@ async function spawnWithoutEngine(page: Page, nodeId: string): Promise<void> {
   ).toBeVisible({ timeout: BOOT_MS });
 }
 
-/** Open this node's dock faceplate, scoped BY NODE. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
   const dockShell = page

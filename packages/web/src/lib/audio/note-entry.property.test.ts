@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/note-entry.property.test.ts
-//
 // fast-check property suite for the note-name ⇄ MIDI ⇄ V/oct conversions
 // (#1526) — the pitch seam behind sequencer step entry, Cartesian cells and
 // every V/oct source.
@@ -196,9 +194,7 @@ describe('note-entry properties', () => {
     );
   });
 
-  // -------------------------------------------------------------------
   // PERMANENT NEGATIVE CONTROL.
-  // -------------------------------------------------------------------
   it('CONTROL: an off-by-one speller FAILS R1 (so R1 really compares the pitch)', () => {
     /** The canonical speller with a one-semitone error — the single most likely
      *  regression in a note table, and exactly the class R1 exists to catch. */

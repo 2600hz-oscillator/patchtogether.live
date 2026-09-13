@@ -1,5 +1,3 @@
-// e2e/tests/analog-vco-fm-sync.spec.ts
-//
 // ANALOG VCO FM×SYNC interaction, end-to-end. Two analog VCOs:
 //   A = sine carrier; B = square modulator (B audio → A's FM input).
 //   B.sine → A.fm                                    (FM)

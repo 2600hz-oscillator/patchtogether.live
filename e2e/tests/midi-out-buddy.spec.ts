@@ -1,5 +1,3 @@
-// e2e/tests/midi-out-buddy.spec.ts
-//
 // MIDI-OUT-BUDDY (label "MIDI CV BUDDY OUT") end-to-end coverage.
 //
 // This is the OUTPUT complement of midi-cv-buddy: gate/pitch/velocity CV in →
@@ -68,7 +66,6 @@ test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no c
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE INSTRUMENT'S OWN NEGATIVE CONTROL — runs on every pass, not once.
 //
 // `readMidiOutCaptured` returning `[]` has TWO causes that are indistinguishable
@@ -84,7 +81,6 @@ test('midi-out-buddy: drops + card mounts with EVERY declared input handle, no c
 // instrument really does see bytes when bytes are sent — is the captured-NoteOn
 // test below, which is what makes this pair a both-directions control rather
 // than half of one.
-// ─────────────────────────────────────────────────────────────────────────────
 test('midi-out-capture-instrument: the buffer EXISTS and is empty before anything sends', async ({ page }) => {
   await installFakeMidiOut(page);
   await page.goto('/rack?seed=none');

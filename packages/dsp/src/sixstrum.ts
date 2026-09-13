@@ -1,5 +1,3 @@
-// packages/dsp/src/sixstrum.ts
-//
 // SIX STRUM — 6-voice Karplus guitar/bass/harp AudioWorkletProcessor. The
 // per-sample DSP lives in ./lib/sixstrum-dsp.ts (6 EKS string voices + per-voice
 // ADSR + strum scheduler + resonant body); this file is the worklet wrapper that

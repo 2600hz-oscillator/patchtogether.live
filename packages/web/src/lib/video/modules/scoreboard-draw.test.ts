@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/scoreboard-draw.test.ts
-//
 // Pure-helper tests for the 4-digit 7-segment renderer. Three regression
 // targets:
 //   1. The 7-segment hex masks match the canonical Wikipedia table — a

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/no-user-control.ts
-//
 // THE "NO USER CONTROL" DECLARATION (#1726) — the pure resolver + its lint.
 //
 // A `ParamDef` that exists so the GRAPH has somewhere to write, not so a PLAYER

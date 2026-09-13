@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/gibribbon-spectral.ts
-//
 // GIBRIBBON — the PURE spectral front-end: FFT bins → the four COURSE BANDS
 // + the ONSET flag the game engine consumes.
 //

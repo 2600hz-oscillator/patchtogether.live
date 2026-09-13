@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/seqtris/SeqtrisWellBody.svelte
-  //
   // THE SEQTRIS DOCK FULL-VIEW BODY — the well, the LAUNCHPAD'S OWN SCENE
   // COLUMN, and the CONNECT gesture. Everything on the legacy card that is not
   // a param, a jack or the title.

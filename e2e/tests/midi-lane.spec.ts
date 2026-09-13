@@ -1,5 +1,3 @@
-// e2e/tests/midi-lane.spec.ts
-//
 // MIDI LANE end-to-end coverage. The full MIDI demux path (channel filter,
 // CC taps, by-note gate, poly chord) is unit-tested in
 // packages/web/src/lib/audio/modules/midi-lane.test.ts by mocking

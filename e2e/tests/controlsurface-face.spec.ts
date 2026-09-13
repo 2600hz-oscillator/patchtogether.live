@@ -1,5 +1,3 @@
-// e2e/tests/controlsurface-face.spec.ts
-//
 // CONTROL SURFACE, against the FACEPLATE — the DEFAULT renderer.
 //
 // ── ⚠ WHY THIS FILE EXISTS, AND WHY `control-surface.spec.ts` IS NOT ENOUGH ──
@@ -71,7 +69,6 @@ function laneShell(page: Page, nodeId: string): Locator {
   return page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
 }
 
-/** Open a node's dock faceplate, scoped BY NODE. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = laneShell(page, nodeId);
   await expect(shell).toBeVisible();

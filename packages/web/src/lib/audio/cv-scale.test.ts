@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-scale.test.ts
-//
 // Pin the CV-scaling math: at cv=-1 the param hits its (clamped) min, at
 // cv=0 the knob position passes through unchanged, and at cv=+1 the param
 // hits its (clamped) max. This is the "LFO sweeps full range" guarantee
@@ -141,7 +139,6 @@ describe('cv-scale / buildCvCurve (WaveShaper LUT)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
 // cv = 0 IS EXACTLY THE UNMODULATED VALUE — through the REAL transfer function
 //
 // A WaveShaperNode does not read `curve[round(i)]`; it interpolates between the
@@ -155,7 +152,6 @@ describe('cv-scale / buildCvCurve (WaveShaper LUT)', () => {
 // three shapes that an EVEN table got wrong (clamped-linear, log, discrete),
 // and the negative control below drives this same builder with the old even
 // length and pins that each one goes red.
-// ─────────────────────────────────────────────────────────────────────────
 
 interface ZeroCase {
   name: string;

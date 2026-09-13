@@ -1,5 +1,3 @@
-// scripts/webgl-cotenancy.ts
-//
 // WHO ELSE IS ON THIS GPU — sampled BEFORE and DURING a real-GPU attest.
 //
 // The attest drives one Metal/ANGLE context. A co-tenant GPU client (a browser,

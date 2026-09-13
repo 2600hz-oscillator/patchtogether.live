@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop.test.ts
-//
 // Unit tests for SAMSLOOP:
 //   - module-def shape (ports, params, registry)
 //   - WAV size rejection (>2 MB returns a clear error, no decode attempted)

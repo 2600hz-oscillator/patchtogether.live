@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-load-migration.spec.ts
-//
 // THE LOAD-STALENESS FIX FOR THE TRANSPORT (fleet audit 2026-09-06, finding 7).
 //
 // v1 TIMELORDE patches saved `isPlaying`; v2 split it into muteOutputs +

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/noise.ts
-//
 // NOISE — basic noise source. Three flavors of noise on three independent
 // outputs, all gain-scaled by a single LEVEL knob:
 //
@@ -118,7 +116,6 @@ export const noiseDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE ─────────────────────────────────────────────────────────
   //
   // The smallest face in the registry, and the one whose argument had to be
   // made rather than assumed.

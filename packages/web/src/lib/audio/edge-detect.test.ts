@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/edge-detect.test.ts
-//
 // Regression coverage for the overlap-rescan double-count bug class
 // (NUMPAD+/ATLANTIS-CATALYST): a main-thread consumer that re-scans
 // the WHOLE 2048-sample analyser buffer every ~25 ms tick counts a rising edge

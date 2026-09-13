@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/poly-alloc.ts
-//
 // STABLE per-voice allocator for the poly cable — Phase 2a of the gate/held-note
 // model (the why: docs/adr/009-gate-carries-timing-only.md).
 //

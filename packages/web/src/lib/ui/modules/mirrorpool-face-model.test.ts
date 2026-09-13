@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/mirrorpool-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for mirrorpool's eye-place join.
 //
 // ⚠ THIS JOIN NO LONGER PAINTS ANYWHERE, AND THAT IS WHY THIS FILE MATTERS

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/crop-edit-ydoc.test.ts
-//
 // REAL-Y.Doc regression tests for the crop-rect edit helpers (crop-edit.ts),
 // run against the SAME syncedStore + Y.Doc the live patch uses (graph/store.ts),
 // so node.data.crop becomes a real Y type once written — the way to catch the

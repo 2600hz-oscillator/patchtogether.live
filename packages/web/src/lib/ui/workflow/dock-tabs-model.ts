@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/dock-tabs-model.ts
-//
 // PF-16 — the DOCK TAB plan: when does a curated faceplate stop being ONE
 // scrolling column of section bands and become a TAB RAIL, and which band is
 // showing?

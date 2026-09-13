@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/analog-logic-maths-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS UNDER ANALOGLOGICMATHS' FACEPLATE.
 //
 // A derived readout is only worth more than a relabelled dial if something

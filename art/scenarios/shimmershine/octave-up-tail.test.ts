@@ -1,5 +1,3 @@
-// art/scenarios/shimmershine/octave-up-tail.test.ts
-//
 // ART scenario for SHIMMERSHINE: drive a 440Hz tone burst through the
 // reverb math helper and assert the tail contains 880Hz energy (octave-up
 // shimmer) when shimmer is engaged, and that the SAME signal path with

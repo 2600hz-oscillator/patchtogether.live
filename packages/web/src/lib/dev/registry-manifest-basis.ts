@@ -1,5 +1,3 @@
-// packages/web/src/lib/dev/registry-manifest-basis.ts
-//
 // The SOURCE BASIS of `e2e/.generated/registry-manifest.json` — the set of
 // files whose bytes decide what the manifest contains, plus a content
 // fingerprint over them.

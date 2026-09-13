@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/shared-clock.svelte.ts
-//
 // Phase 0 of the shared-state-sync plan: a Svelte 5 rune-store hook that
 // exposes the rack epoch and a sharedTimeNow() function so SyncedModule
 // implementations can compute their state deterministically across clients.

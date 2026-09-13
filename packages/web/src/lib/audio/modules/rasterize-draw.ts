@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/rasterize-draw.ts
-//
 // Canvas-splatting layer for RASTERIZE. Wraps the pure mapping
 // (rasterize-map.ts) with a persistent frame buffer + the per-frame
 // canvas blit. Used by BOTH:

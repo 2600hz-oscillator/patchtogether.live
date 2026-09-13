@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/controller.test.ts
-//
 // Lifecycle + cancellation tests for the Carl tick loop. Uses fake
 // timers so the tests run synchronously regardless of the baseTickMs.
 

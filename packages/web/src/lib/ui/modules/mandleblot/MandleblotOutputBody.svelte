@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/mandleblot/MandleblotOutputBody.svelte
-  //
   // The MANDLEBLOT dock full-view body: the live fractal picture plus the SCREEN
   // ON/OFF switch the 2026-08-18 owner ruling requires of every video module.
   //

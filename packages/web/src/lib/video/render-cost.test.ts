@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/render-cost.test.ts
-//
 // The instrument's own gate. CLAUDE.md §VALIDATE THE INSTRUMENT: "perturb the
 // thing it claims to measure and confirm the number moves" — and do it in BOTH
 // directions, because a probe that can only go up is satisfied by a counter

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/graphicEq/monitor-box.ts
-//
 // THE GRAPHIC EQ MONITOR BOX — the geometry of "hide the controls and watch the
 // meters", in ONE place because TWO surfaces need it: `GraphicEqCard.svelte`
 // (the legacy lane card) and `./GraphicEqOutputBody.svelte` (the faced dock

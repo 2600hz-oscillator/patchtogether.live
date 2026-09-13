@@ -1,5 +1,3 @@
-// packages/web/src/lib/midi/cc-ramp.test.ts
-//
 // The rasterizer's job is to make a scheduled ramp AUDIBLE on a wire that has
 // no ramps. The negative control that matters is the STEP case: if the
 // rasterizer silently degenerated to "emit only the endpoint", every test that

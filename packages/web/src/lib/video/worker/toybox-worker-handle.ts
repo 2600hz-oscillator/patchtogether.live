@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/worker/toybox-worker-handle.ts
-//
 // Fix E Phase 2 — the WORKER-SIDE TOYBOX renderer (texture co-processor).
 //
 // TOYBOX is the most complex video module in the codebase (3377-line main-

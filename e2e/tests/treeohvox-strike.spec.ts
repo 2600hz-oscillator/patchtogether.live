@@ -1,5 +1,3 @@
-// e2e/tests/treeohvox-strike.spec.ts
-//
 // THE ONE ASSERTION THAT COULD NOT BE MADE ANYWHERE ELSE: that TREE.oh.VOX CAN
 // BE SOUNDED BY HAND.
 //

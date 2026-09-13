@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/illogic-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS FOR THE ILLOGIC FACEPLATE.
 //
 // A derived readout earns its place by being negative-controlled on the input a

@@ -1,5 +1,3 @@
-// packages/server/vitest.config.ts
-//
 // Explicit vitest config for the relay workspace. The tests always ran fine
 // via bare `vitest run` discovery (`npm test -w packages/server`), but the
 // repo-wide single-test loop — `task test:one PKG=server -- <filter>` —

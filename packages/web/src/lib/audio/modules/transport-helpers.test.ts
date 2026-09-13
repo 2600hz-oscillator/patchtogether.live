@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/transport-helpers.test.ts
-
 import { describe, it, expect } from 'vitest';
 import {
   SLOT_KEYS,

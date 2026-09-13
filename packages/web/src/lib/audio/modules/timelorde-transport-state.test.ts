@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde-transport-state.test.ts
-//
 // The gate for the STOP-vs-MUTE fix. The whole point of the readout is that it
 // separates four states the JACKS cannot separate at all (measured: STOPPED,
 // MUTED and STOPPED + MUTED are byte-identical on all 13 gate outputs), so the

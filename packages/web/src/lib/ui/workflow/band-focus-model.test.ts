@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/band-focus-model.test.ts
-//
 // The pure half of BAND FOCUS: which bands a param value reveals, and whether a
 // declaration covers everything the param can hold.
 //

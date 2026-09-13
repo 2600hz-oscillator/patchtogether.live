@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/shell-glyph-live.ts
-//
 // LIVE glyph binding for the RACKLINE <ModuleShell> face glyphs (the P1
 // batch-1 owner feedback: "LIVE, not static"). Two halves:
 //

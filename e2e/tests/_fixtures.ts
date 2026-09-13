@@ -1,5 +1,3 @@
-// e2e/tests/_fixtures.ts
-//
 // Shared Playwright fixtures for the three copy-pasted blocks that used to be
 // hand-rolled at the top of most specs (LoC campaign row 3). A SEPARATE file
 // from `_helpers.ts` — originally so fixture-only changes could not move the
@@ -53,7 +51,6 @@ import { applySetupCredit } from './_setup-credit';
 export interface ErrorWatch {
   /** Live list of collected page/console errors (push-ordered). */
   errors: string[];
-  /** Assert no errors have been collected so far. */
   assertClean(): void;
 }
 
@@ -266,9 +263,7 @@ export async function loadVoiceDemo(page: Page): Promise<void> {
   await waitForMounted(page, [...VOICE_DEMO_NODE_IDS]);
 }
 
-// ---------------------------------------------------------------------------
 // THE FILE.. MENU — the only route to the actions the deleted topbar carried.
-// ---------------------------------------------------------------------------
 //
 // The old full-width topbar put New rack / Clear / Export Perf / Load Perf /
 // Raw JSON / the 5-slot preset strip / Save Set / Load Set / the account link

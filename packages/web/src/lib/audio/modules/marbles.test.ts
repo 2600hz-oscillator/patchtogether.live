@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/marbles.test.ts
-//
 // Unit tests for the MARBLES DSP core (host mirror). Table-driven where it
 // helps: gate-generation determinism, déjà-vu loop locking, and the
 // weighted-scale quantizer snapping.

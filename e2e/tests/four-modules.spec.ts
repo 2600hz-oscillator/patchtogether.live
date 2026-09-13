@@ -1,5 +1,3 @@
-// e2e/tests/four-modules.spec.ts
-//
 // Functional E2E for the four new modules (MEOWBOX, MIXMSTRS, TIMELORDE,
 // CHARLOTTE'S ECHOS). For each: spawn into a rackspace, drive it with a
 // gate/signal source, route output through a Scope, then assert the Scope
@@ -54,7 +52,6 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page, rack, er
     ],
   );
 
-  // Set the seq pattern: all four steps on, pitch 0.
   await seedKriaWith(page, 'seq', buildKriaMidiData([60, 60, 60, 60], { duration: 0.5 }));
 
   // Wait for several gate triggers + ring-out.

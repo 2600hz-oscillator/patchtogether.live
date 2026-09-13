@@ -1,5 +1,3 @@
-// art/scenarios/filter/profile.test.ts
-//
 // AUDIO PROFILE for FILTER (multi-mode resonant SVF) — backfill batch 6,
 // Faust-in-Node harness (spec §3). FILTER is Faust
 // (packages/dsp/src/filter.dsp): LP/HP/BP resonant modes, cutoff CV mapped

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/same-session-load-rehydrate.test.ts
-//
 // THE HYDRATE-ONCE FAMILY — fleet audit 2026-09-06, findings #4 and #8.
 //
 // A module factory reads its discrete settings off `node.data` once. The
@@ -45,9 +43,7 @@ import { midiclockDef, midiclockHydrateOf, type MidiclockApi } from './midiclock
 // midi/clock re-hydrate sections below keep #2370's seam and are unchanged.
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 
-// ---------------------------------------------------------------------------
 // The store: spawn / same-session load / despawn, all at ONE id
-// ---------------------------------------------------------------------------
 
 function spawn(node: ModuleNode): void {
   ydoc.transact(() => {
@@ -85,9 +81,7 @@ function poll(): void {
   vi.advanceTimersByTime(LIVE_DATA_POLL_MS);
 }
 
-// ---------------------------------------------------------------------------
 // The recording audio graph
-// ---------------------------------------------------------------------------
 
 interface Sched { kind: 'cancel' | 'set'; value?: number; time: number }
 
@@ -145,9 +139,7 @@ function gateHighs(src: FakeConstantSource): number {
   return src.offset.events.filter((e) => e.kind === 'set' && e.value === 1).length;
 }
 
-// ---------------------------------------------------------------------------
 // The fake Web MIDI access
-// ---------------------------------------------------------------------------
 
 function makeMidiInput(id: string, name = id): MidiInputLike & { fire: (ev: MidiEventLike) => void } {
   let handler: ((ev: MidiEventLike) => void) | null = null;
@@ -194,9 +186,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// ---------------------------------------------------------------------------
 // 1. The seam
-// ---------------------------------------------------------------------------
 
 describe('watchLiveNodeData — the one re-hydrate seam', () => {
   const ID = 'live-watch-seam';
@@ -292,9 +282,7 @@ describe('watchLiveNodeData — the one re-hydrate seam', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 2. midi-cv-buddy — channel filter + device follow the loaded patch
-// ---------------------------------------------------------------------------
 
 describe('midi-cv-buddy: a same-session load at a reused id re-hydrates', () => {
   const ID = 'mcb-reused';
@@ -384,9 +372,7 @@ describe('midi-cv-buddy: a same-session load at a reused id re-hydrates', () => 
   });
 });
 
-// ---------------------------------------------------------------------------
 // 3. midi-lane — channel set, CC number and device follow the loaded patch
-// ---------------------------------------------------------------------------
 
 describe('midi-lane: a same-session load at a reused id re-hydrates', () => {
   const ID = 'mlane-reused';
@@ -434,9 +420,7 @@ describe('midi-lane: a same-session load at a reused id re-hydrates', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 4. midi-out-buddy — the bytes on the wire carry the LOADED channel
-// ---------------------------------------------------------------------------
 
 describe('midi-out-buddy: a same-session load at a reused id re-hydrates', () => {
   const ID = 'mob-reused';
@@ -485,9 +469,7 @@ describe('midi-out-buddy: a same-session load at a reused id re-hydrates', () =>
   });
 });
 
-// ---------------------------------------------------------------------------
 // 5. midiclock — legacy division + device follow the loaded patch
-// ---------------------------------------------------------------------------
 
 describe('midiclock: a same-session load at a reused id re-hydrates', () => {
   const ID = 'mclk-reused';
@@ -554,7 +536,6 @@ describe('midiclock: a same-session load at a reused id re-hydrates', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 6. audio-out — REMOVED in the feat/native-preflight ← origin/main merge.
 //
 // The audio-out sink pick moved OFF `node.data` into the per-machine rig store
@@ -564,4 +545,3 @@ describe('midiclock: a same-session load at a reused id re-hydrates', () => {
 // covered by device-slot-bindings.test.ts, audioout-face-model.test.ts, and the
 // e2e specs rig-bindings-survive-reload / preflight-rig-setup /
 // device-slot-continuity. The midi/clock sections above keep #2370's seam.
-// ---------------------------------------------------------------------------

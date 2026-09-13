@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/seq-clock-core.ts
-//
 // SEQ-CLOCK CORE — the sequencer's INTERNAL-clock step engine, extracted as a
 // pure, sample-accurate core so it can run inside an AudioWorklet (../seq-clock.ts)
 // instead of a main-thread setTimeout/lookahead loop.

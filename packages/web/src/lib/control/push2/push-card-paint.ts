@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-paint.ts
-//
 // The ONLY browser-touching part of the push-card renderer: replay a
 // `PushDrawOp[]` onto a 2D context and hand the RGBA to the display transport.
 //
@@ -59,9 +57,7 @@ export function paintPushOps(ctx: PushCanvasContextLike, ops: readonly PushDrawO
   }
 }
 
-// ---------------------------------------------------------------------------
 // The browser half — a single reused 960×160 scratch canvas.
-// ---------------------------------------------------------------------------
 
 interface ScratchSurface {
   ctx: PushCanvasContextLike;

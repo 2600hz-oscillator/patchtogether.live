@@ -1,5 +1,3 @@
-// e2e/tests/workflow-surfaces.spec.ts
-//
 // WORKFLOW MODE P2 — the topbar surface trio on /rack:
 //
 //   🕐 clock — TIMELORDE's face: live BPM readout, the REAL tempo knob,
@@ -376,7 +374,6 @@ test.describe('workflow MIDI DIN surface (⚇ clock source)', () => {
       await w.__ensureEngine();
     });
 
-    // Connect → the faked access lists exactly our device.
     await page.getByTestId('workflow-topbar-slot-midi-din').click();
     const menu = page.getByTestId('workflow-din-menu');
     await expect(menu).toBeVisible();

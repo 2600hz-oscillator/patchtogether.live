@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dual-mono.test.ts
-//
 // THE DUAL-MONO LEDGER GATE. Deny-by-default classification of every module
 // that declares exactly one audio input (plan §0b, PR-3b).
 //
@@ -60,10 +58,8 @@ const allDefs = (): DualMonoDefLike[] => [
 
 const MODULES_DIR = fileURLToPath(new URL('./modules/', import.meta.url));
 
-// ---------------------------------------------------------------------------
 // THE ROSTER — a text pin, so a reclassification shows up as a readable diff
 // rather than as a number that moved.
-// ---------------------------------------------------------------------------
 
 const GOLDEN_ROSTER = `
 delay            native-stereo

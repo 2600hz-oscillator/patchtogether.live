@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/viewport-acquire.ts
-//
 // Screen-capture acquisition seam for the LOOPBACK module — the thin wrapper
 // LoopbackCard uses instead of calling getDisplayMedia directly (mirrors
 // camera-acquire.ts for CAMERA). Keeping it here makes the card's capture path

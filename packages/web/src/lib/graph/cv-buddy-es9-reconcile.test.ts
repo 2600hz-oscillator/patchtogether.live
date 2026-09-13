@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/cv-buddy-es9-reconcile.test.ts
-//
 // PURE unit coverage for the CV Buddy → ES-9 planner (planCvBuddyEs9). Plain
 // object fixtures — no Yjs, no AudioContext. (Flake-check REPEAT=3 pre-MR.)
 

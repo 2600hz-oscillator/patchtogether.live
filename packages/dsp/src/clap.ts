@@ -1,5 +1,3 @@
-// packages/dsp/src/clap.ts
-//
 // CLAP — analog-modeled handclap voice AudioWorkletProcessor.
 //
 // The per-sample DSP lives in ./lib/clap-dsp.ts (seeded noise → COLOR

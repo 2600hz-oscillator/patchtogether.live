@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/timelorde.ts
-//
 // TIMELORDE — central time source per rackspace. TS AudioWorklet for
 // sample-accurate phase counters. See packages/dsp/src/timelorde.ts.
 //
@@ -397,7 +395,6 @@ export const timelordeDef: AudioModuleDef = {
     { id: 'timelorde-tap', label: 'Tap tempo', kind: 'transport', testidPrefix: 'timelorde-tap' },
   ],
 
-  // ── THE FACEPLATE ────────────────────────────────────────────────────────
   //
   // `order` is PRIORITY (what a shrinking tier keeps); `pages` is FUNCTION
   // order. They disagree DELIBERATELY here and the disagreement is the design:

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/loopback-crop.test.ts
-//
 // Pure-unit checks for LOOPBACK's crop-rectangle math (loopback-crop.ts). No
 // GL, no DOM — deterministic on node. Pins the vertical FLIP (top-origin CSS →
 // bottom-origin GL sample space) so a future refactor can't silently invert the

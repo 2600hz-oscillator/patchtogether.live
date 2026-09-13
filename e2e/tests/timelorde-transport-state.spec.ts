@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-transport-state.spec.ts
-//
 // THE STOP-vs-MUTE FIX, IN A BROWSER.
 //
 // MEASURED on the real clock core (packages/dsp/src/lib/timelorde-clock-core.

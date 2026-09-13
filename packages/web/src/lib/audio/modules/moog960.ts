@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog960.ts
-//
 // MOOG 960 SEQUENTIAL CONTROLLER — the Moog System 55 step sequencer. A
 // 3-row × 8-step (column) analog sequencer: a single shared column pointer
 // sweeps the 8 columns; on each advance, each of the 3 rows outputs its

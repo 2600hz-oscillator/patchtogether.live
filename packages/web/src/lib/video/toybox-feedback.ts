@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-feedback.ts
-//
 // TOYBOX FEEDBACK node — the PURE model for the first STATEFUL combine node.
 //
 // Every other combine node (fade/lumakey/chromakey/map) is a STATELESS RGBA8

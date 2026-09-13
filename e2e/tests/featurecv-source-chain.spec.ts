@@ -1,5 +1,3 @@
-// e2e/tests/featurecv-source-chain.spec.ts
-//
 // FEATURECV real-source-chain coverage. The per-module-per-port output-emit
 // sweep exempts featurecv (a pure analyser — its CV/onset outputs are silent
 // until `in` is driven, which the generic sweep doesn't wire). This spec closes

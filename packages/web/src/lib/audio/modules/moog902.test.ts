@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/moog902.test.ts
-//
 // Two test layers for the MOOG 902 VCA (moogafakkin System 55/35 clone, slice 3):
 //   1. Module-def shape — pins the 902's I/O surface (the SIGNAL `audio`
 //      input + the summing `cv` / `fcv` CONTROL INPUTS, the differential

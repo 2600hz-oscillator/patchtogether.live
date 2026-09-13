@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-composite-scenes.ts
-//
 // Composite-state VRT scenes — a NEW category alongside the per-card scenes
 // in vrt-scenes.ts.
 //

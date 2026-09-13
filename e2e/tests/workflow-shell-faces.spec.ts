@@ -1,5 +1,3 @@
-// e2e/tests/workflow-shell-faces.spec.ts
-//
 // P1 batch 1 — the first six MIGRATED module faces, end to end. Two sampled
 // modules (adsr + kickdrum) prove the migration seam behaves under `?shell=1`:
 //

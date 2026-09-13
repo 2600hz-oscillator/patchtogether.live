@@ -1,5 +1,3 @@
-// art/scenarios/moog-filterbank/response-model.test.ts
-//
 // DOES THE FACEPLATE'S RESPONSE MODEL DESCRIBE THE SHIPPING GRAPH?
 //
 // The 907A and 914 faceplates print three numbers (`peak` / `notch` / `tilt`)

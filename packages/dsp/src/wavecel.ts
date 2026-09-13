@@ -1,5 +1,3 @@
-// packages/dsp/src/wavecel.ts
-//
 // WAVECEL — stereo wavetable VCO with morph + spread + wavefolder.
 //
 // Per-sample DSP (sample/frame interpolation, fold, spread-mix) now lives

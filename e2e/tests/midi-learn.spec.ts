@@ -1,5 +1,3 @@
-// e2e/tests/midi-learn.spec.ts
-//
 // MIDI Learn — first-class right-click → learn → CC-drives-param flow.
 //
 // Exercises the full UX with a SIMULATED MIDI device (no hardware, no Web

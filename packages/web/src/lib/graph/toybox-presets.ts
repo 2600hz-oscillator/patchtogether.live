@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/toybox-presets.ts
-//
 // TOYBOX Phase 6 — Yjs mutator that loads a bundled PRESET into node.data.
 //
 // A preset (manifest `presets[]`, toybox-content.ts:ToyboxPreset) fully

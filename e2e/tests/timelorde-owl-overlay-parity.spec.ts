@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-owl-overlay-parity.spec.ts
-//
 // THE REAL-COMPOSITOR PARITY PROOF for TIMELORDE's beat-boost overlay.
 //
 // ── WHAT CHANGED, AND WHY A UNIT TEST CANNOT CLOSE IT ────────────────────────

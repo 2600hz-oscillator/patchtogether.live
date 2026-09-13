@@ -1,5 +1,3 @@
-// art/scenarios/stereo-dual-mono/dual-mono-signal.test.ts
-//
 // THE SIGNAL PROOF for dual-mono (plan §0b, PR-3b). Real Web Audio, real
 // channel laws, real up-mix/down-mix — not a recorded property.
 //
@@ -138,7 +136,6 @@ async function renderThroughSeam(
   };
 }
 
-// ---------------------------------------------------------------------------
 
 describe('dual-mono — ⚠ A MONO PATCH MUST STILL WORK', () => {
   it('a 1-CHANNEL source comes out with EQUAL, NON-ZERO L and R', async () => {
@@ -401,9 +398,7 @@ describe("'native-stereo' — the claim is MEASURED, not read off the source", (
   }
 });
 
-// ---------------------------------------------------------------------------
 // 'mono-fanout' — ONE instance, fanned. The SIGNAL proof.
-// ---------------------------------------------------------------------------
 //
 // ⚠ WHY THIS IS 25 SPAWNS AND NOT ONE. The behaviour being fixed was a COIN
 // FLIP, so a single green render proves nothing: the pre-fix graph passed a

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/moog923-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS under the MOOG 923 faceplate's five derived
 // readouts, plus the totality legs.
 //

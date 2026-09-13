@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/scaler.test.ts
-//
 // Three test layers for SCALER (1-in / 1-out signal multiplier, out = in × amount):
 //   1. Module-def shape — pins the I/O surface (the single `in` audio port that
 //      also accepts the CV family, the single `out` audio port, and the `amount`

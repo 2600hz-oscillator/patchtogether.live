@@ -1,5 +1,3 @@
-// e2e/tests/timelorde-pinned-source.spec.ts
-//
 // #1754 — THE CANVAS-HIDDEN ARM of the producer rule, on the only module that
 // sits in it.
 //

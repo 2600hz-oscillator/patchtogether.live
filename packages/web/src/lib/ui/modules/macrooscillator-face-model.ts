@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/macrooscillator-face-model.ts
-//
 // THE PURE MODEL BEHIND MACROOSCILLATOR's FACEPLATE — the derived readouts and
 // the hero picture's geometry.
 //

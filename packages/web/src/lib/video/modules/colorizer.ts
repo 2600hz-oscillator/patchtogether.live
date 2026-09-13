@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/colorizer.ts
-//
 // COLORIZER — maps a mono-video signal to a solid color.
 //
 // Per spec §3.8 + agent kickoff: takes a `mono-video` (or video — implicit
@@ -90,7 +88,6 @@ export const colorizerDef: VideoModuleDef = {
     { id: 'tintB', label: 'B', defaultValue: DEFAULTS.tintB, min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── FACE (batch-22 · the video thin tail) ─────────────────────────────────
   face: {
     order: ['tintR', 'tintG', 'tintB'],
 

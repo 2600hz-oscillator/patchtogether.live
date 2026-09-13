@@ -1,5 +1,3 @@
-// e2e/tests/preflight-rig-setup.spec.ts
-//
 // NATIVE-SHELL STAGE-1 PRE-FLIGHT — the per-slot rig setup panel, driven end to
 // end through TEST DOUBLES (never real hardware). Each device class is a row
 // that (1) renders LIVE presence from its double and (2) writes the per-machine

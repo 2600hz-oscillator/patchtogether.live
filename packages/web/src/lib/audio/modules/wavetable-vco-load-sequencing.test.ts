@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavetable-vco-load-sequencing.test.ts
-//
 // THE PERMANENT GATE FOR THE SILENT-RENDER DEFECT — and it is SOURCE-level for a
 // measured reason, not by preference.
 //

@@ -1,5 +1,3 @@
-// e2e/tests/chromaconsole.spec.ts
-//
 // ══════════════ THE BYTES-ON-THE-WIRE GATE FOR THE DEVICE MODULE ══════════════
 //
 // WHY THIS SPEC IS THE ONLY THING THAT CAN SEE THE SUBJECT.
@@ -200,7 +198,6 @@ test('chromaconsole: RATE is CC 66 and TIME is CC 68 (the pair the research had 
   ]);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // REDUNDANCY, END TO END — and an explicit note about what this pair does NOT
 // prove, because it was measured rather than assumed.
 //
@@ -220,7 +217,6 @@ test('chromaconsole: RATE is CC 66 and TIME is CC 68 (the pair the research had 
 // `packages/web/src/lib/midi/cc-out.test.ts`, where the same wedge turns FOUR
 // tests red in both directions. If you are changing suppression, that is the
 // file that will tell you; this one will not.
-// ─────────────────────────────────────────────────────────────────────────────
 
 test('chromaconsole: repeating a value puts no second message on the wire (graph-coalesced)', async ({ page }) => {
   await boot(page);

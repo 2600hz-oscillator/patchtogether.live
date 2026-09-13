@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-history.test.ts
-//
 // Pure-function coverage for the TOYBOX FRAME-HISTORY ops (the stateful batch
 // ops: framedelay/channeldesync/flowsmear/dreammelt/datamosh). The SHADER is
 // e2e/VRT-only (jsdom can't render); this covers the param→uniform clamp math +

@@ -1,9 +1,6 @@
-// packages/web/src/lib/ui/lint-coverage-guard.test.ts
-//
 // THE LINT GATE READS EVERY TS-BEARING WORKSPACE — and the `--if-present`
 // hole cannot reopen on `lint` (#1504, sibling of the typecheck guard #1499).
 //
-// ─────────────────────────────────────────────────────────────────────────
 // THE BUG THIS EXISTS FOR
 //
 // Root package.json used to run `npm run lint --workspaces --if-present`.
@@ -21,7 +18,6 @@
 // against ESLint's own ignore resolution rather than a re-implementation of
 // its glob semantics.
 //
-// ─────────────────────────────────────────────────────────────────────────
 // WHAT IT CHECKS (and what it structurally cannot see)
 //
 //   1. The workspace roster is DERIVED from root package.json — a new

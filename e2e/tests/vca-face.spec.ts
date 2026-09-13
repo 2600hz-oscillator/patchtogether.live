@@ -1,5 +1,3 @@
-// e2e/tests/vca-face.spec.ts
-//
 // THE VCA FACE, driven for real: the two knob values must follow the GRAPH,
 // not merely re-label themselves.
 //
@@ -47,7 +45,6 @@ async function gotoShell(page: Page): Promise<void> {
   await page.locator('.svelte-flow__pane:visible').first().waitFor({ state: 'visible' });
 }
 
-/** Open the module's dock full-view and return the dock-tier shell. */
 async function openDock(page: Page, nodeId: string): Promise<Locator> {
   const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
   await expect(shell).toBeVisible();
@@ -309,7 +306,6 @@ test.describe('vca face — the knob readouts follow the graph', () => {
 // forwarded value reaches a REAL rendered control. (`units` is proved at the
 // unit tier only — VCA declares none, and inventing one to make a browser
 // assertion possible would be a contract change written for a test.)
-// ─────────────────────────────────────────────────────────────────────────────
 test.describe('vca face — the two dials NAME their sense, and neither can see the other', () => {
   // ⚠ THIS DESCRIBE USED TO PROVE THE DERIVED HERO READOUT (`at cv 1`), AND
   // THAT READOUT IS DELETED (owner, 2026-08-19 — the resting faceplate paints no

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/nibbles-bot.test.ts
-//
 // Bot strategy tests + the 95th-percentile length calibration that fixes
 // NIBBLES_MAX_LENGTH (the constant used by the length-CV mapping in
 // nibbles.ts).

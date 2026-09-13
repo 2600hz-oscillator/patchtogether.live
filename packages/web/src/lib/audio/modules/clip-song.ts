@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-song.ts
-//
 // SONG MODE — the SONG data model + PURE helpers for the `clipplayer` module.
 //
 // (design: docs/adr/013-clip-owned-state-per-clip.md — PHASE 1 core.)
@@ -57,9 +55,7 @@ export const MAX_SONG_AUTO_TRACKS = 32;
 /** Max breakpoints PER auto track (the decimated-density guard, Phase 2). */
 export const MAX_SONG_AUTO_EVENTS = 8000;
 
-// ---------------------------------------------------------------------------
 // Types — the printed layers.
-// ---------------------------------------------------------------------------
 
 /** One printed note ONSET at an ABSOLUTE song-beat. Poly: several events may
  *  share a `beat` (a chord). `lengthBeats` is the sounding gate width captured
@@ -145,10 +141,8 @@ export interface SongRecState {
   arrangerEnable?: boolean;
 }
 
-// ---------------------------------------------------------------------------
 // Defaults + coercion (SyncedStore / patch-load safe — drops garbage, caps
 // sizes, plain-object-severs live Y children per [[yjs-save-load-real-ydoc]]).
-// ---------------------------------------------------------------------------
 
 /** A fresh, empty song (open length, looping). */
 export function defaultSongData(): SongData {
@@ -312,11 +306,9 @@ export function coerceSongRecState(raw: unknown): SongRecState | null {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // SONG-REC state reads over node.data (`songRec`) — PURE. Kept here (not in
 // clip-types.ts) so clip-types never imports clip-song VALUES (no runtime cycle;
 // clip-song imports clip-types values). The engine + card consume these.
-// ---------------------------------------------------------------------------
 
 /** True when the SONG is ARMED to record (the SYNCED flag every peer reads). */
 export function songArmed(data: { songRec?: unknown } | undefined): boolean {
@@ -366,11 +358,9 @@ export function songArrangerEnabled(data: { songRec?: unknown } | undefined): bo
   return rec?.armed === true && rec.arrangerEnable === true;
 }
 
-// ---------------------------------------------------------------------------
 // Container-init (LWW-race hardening) — create the sparse maps at the factory
 // load seam, never lazily inside a racy commit path (a concurrent creation
 // would last-writer-wins a peer's whole subtree). Mutates IN PLACE.
-// ---------------------------------------------------------------------------
 
 /** Ensure `holder.song` + its sparse containers exist (empty). Idempotent;
  *  called from the engine's deterministic per-node load seam. */
@@ -391,11 +381,9 @@ export function ensureSongContainers(holder: { song?: SongData | null }): void {
   if (!s.arrangerAssign || typeof s.arrangerAssign !== 'object') s.arrangerAssign = {};
 }
 
-// ---------------------------------------------------------------------------
 // NOTE record helpers (PRINT) — PURE. The engine buffers plain SongNoteEvents
 // during a take and commits them per-channel at song-loop boundaries / punch-out
 // ([[cv-modulation-live-store-write-storm]]).
-// ---------------------------------------------------------------------------
 
 /** Merge buffered `incoming` note onsets into an `existing` channel's events:
  *  concat + STABLE beat-sort + cap. OVERDUB (keep everything). Returns a NEW
@@ -416,9 +404,7 @@ export function mergeSongNotes(
   return merged.slice(0, MAX_SONG_NOTE_EVENTS);
 }
 
-// ---------------------------------------------------------------------------
 // PLAYBACK queries — PURE.
-// ---------------------------------------------------------------------------
 
 /** A lane's printed note channel from a song, or null. */
 export function songNoteChannel(
@@ -494,10 +480,8 @@ export function songNoteCount(song: SongData | undefined): number {
   return n;
 }
 
-// ---------------------------------------------------------------------------
 // AUTOMATION override ownership (Phase 2 playback drive; locked semantics
 // shipped + tested now). PURE.
-// ---------------------------------------------------------------------------
 
 /** Sentinel channel index meaning "the arranger-automation lane" (it OVERRIDES
  *  every clip/channel automation for a param). */

@@ -1,5 +1,3 @@
-// packages/dsp/scripts/build-worklet.mjs
-//
 // Pre-bundle a Faust AudioWorklet processor at build time.
 //
 // @grame/faustwasm normally builds the processor JS at runtime by stitching

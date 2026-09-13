@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/code-buffer-face.ts
-//
 // The geometry the two CODE-BUFFER faceplates share — LIVECODE and the CLOCKED
 // RUNNER it spawns. ONE place, imported by both bodies and read back by both
 // `*-face-model.test.ts` files, so the number cannot drift between two surfaces

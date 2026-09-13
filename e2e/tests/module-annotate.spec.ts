@@ -1,5 +1,3 @@
-// e2e/tests/module-annotate.spec.ts
-//
 // On-canvas "Annotate" mode (living-docs). Proves the REAL flow on a LIVE module:
 //   1. A module WITH authored docs (adsr) surfaces an "Annotate" entry in its
 //      right-click menu; a module WITHOUT docs (analogVco) does NOT.
@@ -78,7 +76,6 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await menu.getByTestId('ctx-annotate').click();
   await expect(menu).toBeHidden();
 
-  // Open the yellow patch panel → drill into INPUT.
   const card = page.locator('.svelte-flow__node:has([data-shell-type="adsr"])').first();
   await card.getByTestId('patch-trigger').click();
   await expect(page.getByTestId('patch-panel')).toBeVisible();

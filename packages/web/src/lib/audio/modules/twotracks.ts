@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/twotracks.ts
-//
 // TWOTRACKS — two-reel tape loop emulator: two independent decks in one box,
 // mixed to a stereo output. Live waveform + WAV export.
 //
@@ -133,9 +131,7 @@ export interface TwoTracksData {
 // synthetic audio — that's the code the worklet actually runs. This module only
 // owns wiring + the A/B gain law (used by the card).
 
-// ---------------------------------------------------------------------------
 // Tape persistence codec (pure) — perf-zip round-trip of recorded reel audio.
-// ---------------------------------------------------------------------------
 //
 // The reel ring buffers are worklet-owned Float32 (NOT on node.data — a
 // ~7.7 MB/reel typed array can't ride the Y.Doc envelope). For the portable
@@ -434,7 +430,6 @@ export const twotracksDef: AudioModuleDef = {
     };
   })(),
 
-  // ── THE FACE ────────────────────────────────────────────────────────────
   //
   // The mental model this has to serve: you work on ONE REEL AT A TIME, and
   // while you work you need to see that reel's tape — where the audio is, where

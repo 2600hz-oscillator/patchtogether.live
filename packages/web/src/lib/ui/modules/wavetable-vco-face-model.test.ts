@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/wavetable-vco-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS behind WAVETABLE VCO's two derived readouts —
 // the whole difference between this registry and two relabelled knobs.
 //

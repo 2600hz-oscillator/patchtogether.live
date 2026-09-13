@@ -1,5 +1,3 @@
-// scripts/cf-preview-cleanup.test.ts
-//
 // Unit coverage for the two CF Pages preview-pipeline scripts:
 //   - cf-preview-cleanup.sh        — delete a closed PR's preview deployments
 //   - cf-set-preview-beta-gate.sh  — set BETA_GATE_PASS on the Preview scope

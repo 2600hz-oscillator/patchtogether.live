@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/push2/push-card-model.ts
-//
 // WHAT a module's PUSH CARD shows, for a live node — the pure view model the
 // Push 2's 960×160 display (and its DOM preview) paint. Given a resolved
 // PushCardSpec plus the node's current params, it produces EIGHT strips: a

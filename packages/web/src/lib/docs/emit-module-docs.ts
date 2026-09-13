@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/emit-module-docs.ts
-//
 // NODE-ONLY writer for `module-docs.generated.ts` — the render module the
 // prerendered doc page (and Canvas's has-docs check) imports. The file is a
 // BUILD ARTIFACT, not a committed source: it is regenerated from the live

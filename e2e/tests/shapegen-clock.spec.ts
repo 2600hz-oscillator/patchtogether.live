@@ -1,5 +1,3 @@
-// e2e/tests/shapegen-clock.spec.ts
-//
 // SHAPEGEN — CLOCK gate input (sample-and-hold).
 //
 //   ACIDWARP (time-varying video source) → SHAPEGEN.raster_a

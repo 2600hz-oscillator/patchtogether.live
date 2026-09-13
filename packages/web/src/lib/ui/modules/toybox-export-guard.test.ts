@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/toybox-export-guard.test.ts
-//
 // The pure decision behind "Export refuses to write a preset it knows is
 // incomplete" (#1589). No DOM, no engine, no Y.Doc — the guard is a function of
 // the data blob and the set of layers that actually produced bytes.

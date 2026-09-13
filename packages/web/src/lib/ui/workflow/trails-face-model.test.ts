@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/trails-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the TRAILS faceplate.
 //
 // The registry-driven sweeps (`module-face-lint`, `shell-extensions`,

@@ -1,5 +1,3 @@
-// packages/web/src/lib/server/test-helpers/neon-pg-shim.ts
-//
 // Minimal Neon-HTTP-shape facade backed by a real `pg` Pool. Lets the
 // rackspaces capacity-race test exercise the production join code (which
 // uses `sql.transaction([advisory_lock, CTE])`) against a real Postgres

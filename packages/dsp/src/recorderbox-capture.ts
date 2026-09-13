@@ -1,5 +1,3 @@
-// packages/dsp/src/recorderbox-capture.ts
-//
 // RECORDERBOX capture-tap AudioWorklet. Runs on the AUDIO THREAD: reads the
 // merged stereo input, batches BATCH_FRAMES per channel, and POSTS a planar
 // Float32 block ([L…, R…], transferred) to the main thread. The MessagePort

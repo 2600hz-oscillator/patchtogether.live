@@ -1,5 +1,3 @@
-// art/scenarios/warrensspectrum/cv-path.test.ts
-//
 // DOES A CV CABLE ON A `paramTarget` INPUT CHANGE THE AUDIO?
 //
 // The gate owed by the #1661 / #1662 defect class (`swolevco`: four declared CV

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/loopback-crop-pump.test.ts
-//
 // The NODE-KEYED crop pump, driven as a unit — including the viewport pick that
 // the old card-local `document.querySelector('.svelte-flow')` got right only by
 // markup order.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/performance-zip.ts
-//
 // PORTABLE Performance Bundle — a self-contained `.zip` of an ENTIRE rackspace
 // so it can be moved to another MACHINE and reloaded for a live show.
 //

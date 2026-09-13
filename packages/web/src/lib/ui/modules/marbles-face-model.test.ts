@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/marbles-face-model.test.ts
-//
 // The ORACLE for the MARBLES faceplate: every law `marbles-face-model` states
 // is RE-DERIVED here from `marblesMath` — a real render of the same engine core
 // the worklet runs — so a DSP change turns a stale faceplate claim RED instead
@@ -187,7 +185,6 @@ function repeatRate(v: readonly (number | string)[], period: number): number {
 
 const bitEqual = (a: Float32Array, b: Float32Array): boolean => a.every((v, i) => v === b[i]);
 
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('marbles face model — the CLOCK', () => {
   it('ORACLE: f = 2 Hz · 2^(RATE/12), across the whole fader', () => {

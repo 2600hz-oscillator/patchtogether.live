@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/grainsOfVision.test.ts
-//
 // GRAINS OF VISION — module-def shape + the pure grain/feedback/reverb/composite
 // math (no GL). The exported helpers are the EXACT CPU MIRROR of the GLSL passes
 // (the EDGES / CELLSHADE / BACKDRAFT source-of-truth pattern), so unit-testing

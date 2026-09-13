@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/tmds-sparkle.ts
-//
 // tmds-sparkle — EARLY-HD-era bent VFPGA (design §3.6). Bends the HDMI/DVI TMDS
 // 8b/10b serial link: the shimmering "sparkle" / bit-error look of a marginal HDMI
 // cable. THE SECOND LITERAL LUT16 SHOWCASE — a real 4-input bitwise truth table

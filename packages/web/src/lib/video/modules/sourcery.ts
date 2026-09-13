@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/sourcery.ts
-//
 // SOURCERY — a 2-video-input "region shape-match recolor" WebGL module. It
 // edge-detects input A (top) and B (bottom), segments each edge map into
 // bounded regions (the connected non-edge areas walled off by edges), then for
@@ -51,7 +49,6 @@ import {
   type Affine,
 } from '$lib/video/sourcery-core';
 
-// ─────────────────────────── params ───────────────────────────
 
 interface SourceryParams {
   thresholdA: number; // 0..1 edge gradient trigger for A
@@ -240,7 +237,6 @@ void main() {
 // map the 0..1 knob to an intra-region rotation angle ±π.
 const rotateRadians = (knob: number): number => (knob - 0.5) * 2 * Math.PI;
 
-// ─────────────────────────── module def ───────────────────────────
 
 export const sourceryDef: VideoModuleDef = {
   type: 'sourcery',
@@ -266,7 +262,6 @@ export const sourceryDef: VideoModuleDef = {
     { id: 'rotate',     label: 'Rot',  defaultValue: DEFAULTS.rotate,     min: 0, max: 1, curve: 'linear' },
   ],
 
-  // ── FACE (batch-22 · G3, the screens) ─────────────────────────────────────
   face: {
     order: ['thresholdA', 'thresholdB', 'colorSkew', 'rotate'],
 

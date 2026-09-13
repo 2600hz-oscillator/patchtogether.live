@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/modtris-state.test.ts
-//
 // Unit tests for the pure MODTRIS state stepper. No Web Audio, no DOM.
 
 import { describe, it, expect } from 'vitest';

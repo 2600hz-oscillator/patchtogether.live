@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/joystick/JoystickPadBody.svelte
-  //
   // THE JOYSTICK PAD, at the head of the dock full view — the module's real
   // instrument, carried across the promotion.
   //

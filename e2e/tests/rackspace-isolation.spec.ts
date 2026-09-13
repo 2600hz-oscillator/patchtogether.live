@@ -1,5 +1,3 @@
-// e2e/tests/rackspace-isolation.spec.ts
-//
 // Regression for the "edits in one rackspace leak into all 4" bug.
 //
 // Root cause: `patch` / `ydoc` / `undoManager` were `export const` in

@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/session-leader-elected.test.ts
-//
 // Unit tests for the leader-elected exclusivity layer. We simulate
 // Y.Awareness with a tiny in-memory shim — the real Awareness class
 // has the same interface but pulling it in requires a Y.Doc + browser

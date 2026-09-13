@@ -1,5 +1,3 @@
-// e2e/tests/snh-hold.spec.ts
-//
 // Real-source-chain proof for the baked-in gate-sampled SAMPLE & HOLD on the
 // pitch CV of the step sequencers (clipplayer / sequencer / polyseqz / cartesian
 // share one mechanism; this spec covers SEQUENCER + CLIPPLAYER per the owner's

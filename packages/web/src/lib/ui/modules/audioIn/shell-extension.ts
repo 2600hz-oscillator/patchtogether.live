@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/audioIn/shell-extension.ts
-//
 // AUDIO IN's bespoke surface. `audioInDef.face.extension = 'audioIn'` resolves
 // to this directory through `shell-extensions.ts`'s non-eager glob.
 //

@@ -1,5 +1,3 @@
-// e2e/webgl-heavy-globs.ts
-//
 // THE single source of truth for "what is a heavy WebGL spec".
 //
 // NB: this module is imported in BOTH an ESM context (playwright.config.ts, and

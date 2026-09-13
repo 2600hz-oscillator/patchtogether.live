@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/preset.test.ts
-//
 // Snapshot + structural tests for the pure preset generator. A KNOWN patch →
 // expected .epr structure + allocation table. These are the contract the
 // feedback pump + inbound dispatch rely on, so they're asserted explicitly
@@ -449,7 +447,6 @@ describe('allocation table — deterministic + collision-free', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────
 // HARDWARE INVARIANT — no two EMITTED controls share a (deviceId, type,
 // parameterNumber). This is the device-side seam the "two panel knobs move
 // together" bug lives on: the Electra firmware links any two controls that
@@ -459,7 +456,6 @@ describe('allocation table — deterministic + collision-free', () => {
 // NOT sufficient: it asserts the TABLE is collision-free, this asserts the
 // emitted .epr the device actually ingests is collision-free. (Bug report:
 // backdraft offsetX/offsetY on adjacent slots both tracking together.)
-// ──────────────────────────────────────────────────────────────────────────
 describe('generatePreset — emitted controls are device-collision-free', () => {
   /** Collect a "deviceId:type:parameterNumber" key for every value-message of
    *  every emitted control, and return any address shared by ≥2 controls. */

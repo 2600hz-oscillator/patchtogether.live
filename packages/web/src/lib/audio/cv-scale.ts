@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/cv-scale.ts
-//
 // CV → AudioParam scaling. Project convention (see
 // docs/adr/004-cv-range-convention.md): the `cv` cable type carries a
 // bipolar -1..+1 modulation signal. ±1 should sweep the destination
@@ -191,41 +189,11 @@ export function attachCvScale(
 }
 
 /**
- * LUT size. **ODD ON PURPOSE — do not "round" it back to a power of two.**
- *
- * A WaveShaperNode maps its input to a fractional table position
- * `v = (N-1)/2 · (x+1)` and LINEARLY INTERPOLATES between `curve[⌊v⌋]` and
- * `curve[⌊v⌋+1]`. With an EVEN `N` there is no table entry at the centre, so
- * `cv = 0` — the value a patched-but-idle cable holds — lands at `v = (N-1)/2`,
- * i.e. exactly HALFWAY between two samples, and the shaper emits their MEAN
- * rather than the curve's true value at zero.
- *
- * That mean equals the true value only where the delta function happens to be
- * ODD-SYMMETRIC about cv=0. It is not, in three cases, all of them real:
- *
- *   1. `discrete` — the buckets straddling the centre differ by one, so the
- *      mean is a HALF-INTEGER: a value the mode can never legitimately produce.
- *      Measured on the registry at N=4096: 16 of 17 discrete ports emitted a
- *      non-bucket value at cv=0 (macrooscillator.model_cv read 6.5 of 0..13;
- *      qbrt.mode / rings.model_cv / the 8 mixmstrs compEnable switches read
- *      0.5 of 0..1 — a boolean stuck exactly between off and on).
- *   2. `linear` with the knob AT a range end — the min/max clamp flattens one
- *      side, so the two neighbours are not ∓equal. 74 registry ports, biased by
- *      `range / (4·(N-1))` ≈ 0.0061 % of range (e.g. analogVco.shape 0..1 at
- *      knob 0 idled at 6.105e-5 instead of 0).
- *   3. `log` — the exponential is convex, so the mean of the neighbours sits
- *      above the true value. All 39 log ports, ≤ 1.1e-5 % of range.
- *
- * 130 of 317 curve-backed ports were affected. An ODD `N` puts a sample
- * EXACTLY at cv=0 (index `(N-1)/2`), so the shaper reads it directly (f=0) and
- * the guarantee "cv=0 ⇒ the unmodulated value" holds BY CONSTRUCTION for every
- * mode — including modes added later — instead of by accident of symmetry.
- *
- * The ENDS are unaffected: `i=0 → cv=-1` and `i=N-1 → cv=+1` hold for any `N`,
- * and the shaper clamps `v` to `[0, N-1]`, so `cv=±1` still reads `curve[0]` /
- * `curve[N-1]` exactly. 4097 additionally makes EVERY sample position an exact
- * dyadic rational (`i/2048 - 1`), removing the float rounding that 4095ths
- * carried. Cost is 4 bytes per curve.
+ * Keep the LUT length odd so cv=0 lands exactly on its centre sample. With an
+ * even length, WaveShaperNode interpolates between the two middle entries,
+ * producing half-integer discrete values and biasing clamped or log curves.
+ * 4097 also makes every sample position an exact dyadic rational (i/2048 - 1);
+ * the endpoints remain exactly -1 and +1.
  */
 export const CURVE_LEN = 4097;
 

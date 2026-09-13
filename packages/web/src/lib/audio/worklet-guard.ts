@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/worklet-guard.ts
-//
 // THE SHARED WORKLET CONSTRUCTION SEAM — and the `processorerror` handler that
 // makes a dead processor LOUD instead of silent.
 //

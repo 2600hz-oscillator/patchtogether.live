@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/painter/shell-extension.ts
-//
 // The PAINTER shell extension — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot.
 //

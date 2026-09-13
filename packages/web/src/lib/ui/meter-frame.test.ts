@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/meter-frame.test.ts
-//
 // The shared meter rAF ticker: ONE requestAnimationFrame drives every
 // subscriber, off-screen subscribers are skipped (IntersectionObserver gate),
 // and the loop halts once the last subscriber leaves.

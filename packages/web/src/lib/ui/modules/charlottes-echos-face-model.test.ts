@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/charlottes-echos-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for CHARLOTTE'S ECHOS's five derived values.
 //
 // A derived readout earns its slot only if it is negative-controlled on the

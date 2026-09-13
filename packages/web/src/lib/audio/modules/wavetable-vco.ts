@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavetable-vco.ts
-//
 // WAVETABLE VCO — one-shot wavetable oscillator with continuous
 // frame-morph control. The DSP is a custom JS AudioWorklet
 // (packages/dsp/src/wavetable-vco.ts). The factory generates a synthetic
@@ -119,7 +117,6 @@ export const wavetableVcoDef: AudioModuleDef = {
     { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: -1,   max: 1,   curve: 'linear' },
   ],
 
-  // ── THE FACEPLATE (PF-20) ───────────────────────────────────────────────────
   //
   // WHAT THIS MODULE IS FOR. Every other VCO in the rack decides its shape
   // BEFORE the note — tidyVco's four fixed jacks, analogVco's morph crossfade,

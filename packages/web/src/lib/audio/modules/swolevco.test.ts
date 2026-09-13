@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/swolevco.test.ts
-//
 // Unit tests for SWOLEVCO def shape + the pure helpers (symmetry crossfade,
 // V/oct → Hz LUT, tune+fine → Hz). DSP rendering goes through the ART
 // harness in art/scenarios/swolevco/.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/twotracks-waveform-draw.ts
-//
 // THE ONE TWOTRACKS REEL PICTURE — shared by `TwotracksCard.svelte` (the legacy
 // card, two reels side by side) and `twotracks/TwotracksReelBody.svelte` (the
 // faceplate's dock body, one reel at a time).

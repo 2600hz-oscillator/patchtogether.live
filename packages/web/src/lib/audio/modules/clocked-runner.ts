@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clocked-runner.ts
-//
 // CLOCKED RUNNER — a self-contained mini-LIVECODE that owns a single
 // clocked() callback. Spawned by the parent LIVECODE card when the
 // user invokes `clocked(division, fn)`; the runner stores the
@@ -85,7 +83,6 @@ export const clockedRunnerDef: AudioModuleDef = {
     },
   },
 
-  // ── THE FACEPLATE (PF-20) ───────────────────────────────────────────────
   //
   // WHAT IT IS FOR, IN ONE PARAGRAPH. This is the only module in the fleet a
   // PLAYER never adds: a LIVECODE script writes it into existence by calling

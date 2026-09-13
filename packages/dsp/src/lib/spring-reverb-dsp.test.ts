@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/spring-reverb-dsp.test.ts
-//
 // Pure-DSP unit tests for the in-house spring-reverb tank (MOOG 905). These
 // PROVE the model behaves like a spring reverb (decaying, dispersive tail),
 // not merely that it runs:

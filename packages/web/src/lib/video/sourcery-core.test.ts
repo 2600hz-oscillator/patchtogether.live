@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/sourcery-core.test.ts
-//
 // SOURCERY pure-core correctness gate (unit lane, deterministic, no WebGL, no
 // randomness). Pins the CCL, moments/PCA, Hu descriptors, z-score match,
 // rel→uvB transform, HSV hue-skew, texture packing, and the amortization

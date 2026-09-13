@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/spectrograph-draw.ts
-//
 // Pure (GPU-free) core for the SPECTROGRAPH module's two video outputs.
 // Lifted from WAVESCULPT's drawSpectrograph (video_mode 2): a log-binned
 // scrolling sonogram. Frequency on the vertical axis (log scale, low at

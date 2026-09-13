@@ -1,5 +1,3 @@
-// e2e/tests/tempo-stability.spec.ts
-//
 // Tempo-stability regression spec for the fix in PR fix/tempo-stability.
 //
 // User report: "unstable tempo when dragging stuff around" / "unstable

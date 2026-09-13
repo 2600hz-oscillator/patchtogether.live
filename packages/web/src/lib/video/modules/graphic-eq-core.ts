@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/graphic-eq-core.ts
-//
 // GRAPHIC EQ core — the pure, GL-free heart of the Winamp-style VU-meter
 // video output. Everything here is deterministic + side-effect-free so it
 // unit-tests without a WebGL context (graphic-eq-core.test.ts):

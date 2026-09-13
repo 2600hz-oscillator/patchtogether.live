@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/waveform-video.test.ts
-//
 // Unit tests for the waveform → mono-video renderer. The GL path runs
 // only in a real WebGL2 context (not vitest's node runner), so this
 // suite focuses on:

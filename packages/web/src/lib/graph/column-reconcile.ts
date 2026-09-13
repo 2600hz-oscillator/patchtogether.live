@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/column-reconcile.ts
-//
 // WORKFLOW CHANNEL COLUMNS — the RECONCILER APPLICATOR (the store-touching seam
 // that commits the PURE plans from channel-columns.ts + patch-convenience.ts).
 //

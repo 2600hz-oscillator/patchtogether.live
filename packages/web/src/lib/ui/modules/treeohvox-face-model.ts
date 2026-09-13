@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/treeohvox-face-model.ts
-//
 // The PURE model behind the TREE.oh.VOX faceplate — the three frequencies a
 // TB-303 actually sweeps between, none of which is the number on its CUTOFF
 // knob.

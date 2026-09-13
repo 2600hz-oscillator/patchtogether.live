@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/preview-gate.ts
-//
 // SHOULD A CARD REPAINT ITS PREVIEW THIS FRAME? — the pure decision behind
 // `VideoEngine.blitOutputForPreview` (#1802).
 //

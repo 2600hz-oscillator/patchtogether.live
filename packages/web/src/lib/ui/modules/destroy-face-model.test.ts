@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/destroy-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS UNDER DESTROY's FACEPLATE.
 //
 // A derived readout is only worth more than a relabelled dial if something

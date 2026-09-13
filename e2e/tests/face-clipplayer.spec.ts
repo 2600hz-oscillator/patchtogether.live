@@ -1,5 +1,3 @@
-// e2e/tests/face-clipplayer.spec.ts
-//
 // THE CLIP PLAYER FACE, driven for real on the DEFAULT shell.
 //
 // ⚠ THE FILENAME IS DELIBERATE — `face-` rather than `clipplayer-face-`, the

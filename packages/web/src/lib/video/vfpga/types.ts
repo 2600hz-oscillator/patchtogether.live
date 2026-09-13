@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/types.ts
-//
 // The `.vfpga` declarative spec format — the "virtual FPGA bitstream" a
 // `vfpga-runner` host card loads + runs.
 //
@@ -143,7 +141,6 @@ export interface VfpgaEffect {
   registers?: VfpgaRegisterPair[];
 }
 
-// ----------------------------------------------------------------------
 // FABRIC CONFIGURATION ("the bitstream") — the FPGA-authentic authoring
 // surface (design §2). An author describes a GRID of typed TILES wired by a
 // routing NETLIST; a pure place-and-route step (`vfpga/place-and-route.ts`)
@@ -151,7 +148,6 @@ export interface VfpgaEffect {
 // `buildEffect` already consumes — `effect.passes[]` becomes the *output* of
 // P&R, not the authoring surface. `effect` stays as a legacy escape hatch
 // (smpte-bars keeps it). See ``.
-// ----------------------------------------------------------------------
 
 /** A fabric tile TYPE (the silicon primitive it models, design §1.1):
  *  - `clb`     — generic per-pixel ALU cell (parameterised kernel; the P0 cells).
@@ -314,11 +310,9 @@ export interface VfpgaSpec {
   effect?: VfpgaEffect;
 }
 
-// ----------------------------------------------------------------------
 // Host superset constants — the FIXED port/param pools the host declares
 // + every spec maps a subset of. Shared by the module def, the card, the
 // factory, and the validation unit test (single source of truth).
-// ----------------------------------------------------------------------
 
 /** Host VIDEO inputs (the superset; a spec activates videoIn of them). */
 export const VFPGA_VIDEO_IN_PORTS = ['vin1', 'vin2', 'vin3', 'vin4'] as const;
@@ -331,12 +325,10 @@ export const VFPGA_VIDEO_OUT_PORTS = ['vout1', 'vout2'] as const;
 /** Host generic param slots. */
 export const VFPGA_PARAM_SLOTS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'] as const;
 
-// ----------------------------------------------------------------------
 // FABRIC IOB superset — the fixed fabric-edge ports a net can source/sink
 // (design §1.1). They map 1:1 onto the host superset above: IIN←vin, CIN←cv
 // (post attenuverter), GIN←gate (edge-detected), OUT→vout. A net `from`/`to`
 // referencing an IOB name must be within these sets (validation §2.1).
-// ----------------------------------------------------------------------
 
 /** Fabric IOB-in VIDEO ports (←vin1..vin4). */
 export const VFPGA_IOB_IIN = ['IIN1', 'IIN2', 'IIN3', 'IIN4'] as const;

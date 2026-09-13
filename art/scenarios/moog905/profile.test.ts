@@ -1,5 +1,3 @@
-// art/scenarios/moog905/profile.test.ts
-//
 // AUDIO PROFILE for MOOG905 (spring reverberation) (backfill batch 1 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-voice-edit.test.ts
-//
 // THE MIGRATION IS THE POINT OF THIS FILE.
 //
 // `DX7OpData` stored only the DERIVED `ratio` until this PR — `parsePackedVoice`
@@ -41,9 +39,6 @@ import {
 import { dx7FormatFrequency, dx7FormatRatio } from './dx7-format';
 import { renderDx7Note } from './dx7-render';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
 
 /** Strip `coarse`/`fine` from every operator — reproduces the EXACT shape a
  *  rack saved before this PR has on disk. The keys are DELETED, not set to
@@ -109,9 +104,7 @@ const WIDE_BANK = parseSyxBank(buildWideSyx()).voices;
  *  cartridge, all reduced to the legacy on-disk shape. */
 const LEGACY_CORPUS: DX7Voice[] = [...DX7_BUILTIN_BANK, ...WIDE_BANK].map(toLegacyShape);
 
-// ---------------------------------------------------------------------------
 // THE MIGRATION
-// ---------------------------------------------------------------------------
 
 describe('MIGRATION — a legacy-shaped voice still resolves a pitch row', () => {
   it('the corpus really IS legacy-shaped (the fixture negative control)', () => {
@@ -257,9 +250,7 @@ describe('MIGRATION — a legacy-shaped voice still resolves a pitch row', () =>
   });
 });
 
-// ---------------------------------------------------------------------------
 // The inverse
-// ---------------------------------------------------------------------------
 
 describe('ratioToCoarseFine — the defined inverse', () => {
   it('reproduces the ratio with ZERO error for all 3200 reachable pairs', () => {
@@ -382,9 +373,7 @@ describe('FIXED mode — the trap the ratio inverse must never spring', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // deepUnwrapVoice
-// ---------------------------------------------------------------------------
 
 describe('deepUnwrapVoice — survives a real Yjs proxy', () => {
   /** Put a voice through a REAL syncedStore + Y.Doc, the way a SYX-loaded
@@ -477,9 +466,7 @@ describe('deepUnwrapVoice — survives a real Yjs proxy', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // setOpField
-// ---------------------------------------------------------------------------
 
 describe('setOpField — derived values are recomputed, and only the right ones', () => {
   const base = DX7_BUILTIN_BANK[0]!;
@@ -581,9 +568,7 @@ describe('setOpField — derived values are recomputed, and only the right ones'
   });
 });
 
-// ---------------------------------------------------------------------------
 // copyEg
-// ---------------------------------------------------------------------------
 
 describe('copyEg', () => {
   const base = DX7_BUILTIN_BANK[0]!;
@@ -625,9 +610,7 @@ describe('copyEg', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // isDirty
-// ---------------------------------------------------------------------------
 
 describe('isDirty — the dirty chip', () => {
   const base = DX7_BUILTIN_BANK[0]!;

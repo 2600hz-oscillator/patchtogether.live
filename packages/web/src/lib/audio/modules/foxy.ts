@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/foxy.ts
-//
 // FOXY — HYBRID audio-visual module. A single card that hides a whole
 // signal chain inside one box:
 //

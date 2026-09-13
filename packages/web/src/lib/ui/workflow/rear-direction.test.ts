@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/rear-direction.test.ts
-//
 // THE GATE FOR "COLOUR MEANS CABLE DOMAIN, DIRECTION MEANS SOMETHING ELSE".
 //
 // #1800 unified the rear card's two rails onto one row grammar, and the shipped

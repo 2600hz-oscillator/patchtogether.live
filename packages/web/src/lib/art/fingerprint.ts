@@ -1,5 +1,3 @@
-// packages/web/src/lib/art/fingerprint.ts
-//
 // Pure, dependency-free GEOMETRY for the ART "Spectral Column Print" gallery
 // (plan §1.4 / Phase 3). It turns a committed uint8 fingerprint — computed
 // read-only from the `.f32` ART baselines by `art/build_gallery.py` and pinned

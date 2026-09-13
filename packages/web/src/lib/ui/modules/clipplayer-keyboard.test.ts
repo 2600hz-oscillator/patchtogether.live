@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/clipplayer-keyboard.test.ts
-//
 // Pure unit coverage for the computer-keyboard → control-strip mapping (Part B).
 // The DOM-stateful hold/capture/stuck-shift behaviour is exercised in e2e
 // (clipplayer-card-parity.spec.ts); here we pin the pure decisions: the digit↔

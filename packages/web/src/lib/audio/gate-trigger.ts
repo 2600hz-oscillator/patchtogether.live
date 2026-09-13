@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/gate-trigger.ts
-//
 // The shared trigger ↔ gate semantic model + the canonical thresholds and
 // emitted waveforms. One source of truth so every module agrees on what a
 // "trigger" and a "gate" ARE — mirrors the `$lib/audio/midi-timing` precedent

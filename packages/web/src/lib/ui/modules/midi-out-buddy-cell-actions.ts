@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midi-out-buddy-cell-actions.ts
-//
 // The MIDI-OUT-BUDDY faceplate's cell seams — the module-owned end of both
 // ranked cells, kept out of `shell-cells.ts` so the shared registry imports one
 // file per module rather than the module's whole world.

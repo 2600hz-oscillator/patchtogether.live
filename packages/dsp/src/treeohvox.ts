@@ -1,5 +1,3 @@
-// packages/dsp/src/treeohvox.ts
-//
 // TREE.oh.VOX — TB-303-style bassline voice. AudioWorkletProcessor wrapper
 // around the pure-DSP voice in ./lib/treeohvox-dsp.ts. All the maths
 // (filter, envelopes, oscillator, env-mod mapping) live there; this file

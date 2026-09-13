@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/control-surface-params.test.ts
-//
 // REAL-Y.Doc coverage for the control-surface param ADAPTER (the bridge the
 // surface card uses). Runs against the live syncedStore + Y.Doc (graph/store.ts)
 // so a toybox node's layers/material/combine are real Y types — the conditions

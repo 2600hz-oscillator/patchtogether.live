@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midiclock.ts
-//
 // MIDICLOCK — bridges a hardware MIDI device's TRANSPORT into the patch.
 // Sibling to MIDI-CV-BUDDY (which handles note/velocity per channel);
 // MIDICLOCK is transport-only:
@@ -287,58 +285,14 @@ export interface MidiclockApi {
   tapMidi(cb: (ev: { atMs: number; bytes: number[] }) => void): () => void;
 }
 
-// ---------------- The FACE ----------------
 
 /**
- * THE FACEPLATE. Two ranked cells, one band, one device body.
+ * Division and CONNECT remain available in the lane; device selection lives
+ * in the extension body because it needs a runtime roster and a permission
+ * gesture. There is no audio output for a live glyph binding.
  *
- * WHAT THE MODULE IS FOR, in one sentence, because every rank descends from it:
- * letting something OUTSIDE the browser be the boss. Everything else in the
- * rack can generate its own time; this is the one module whose entire job is to
- * surrender that and follow a hardware sequencer, a drum machine or a DAW. So
- * the face is one CHOICE (how fast) and one BINDING (which device) — and the
- * binding is a permission gesture, not a value.
- *
- * THE TIER LADDER, as a sentence: at every tier the player sees the division
- * and the connect gesture, because with two ranked keys there is no tier that
- * has to drop one. That is the whole ladder, and it is the correct outcome of
- * "compact is the default" rather than a thin face.
- *
- * ⚠ `glyph: 'none'` IS MECHANICALLY FORCED, not a preference. `glyphBinding`
- * short-circuits on `primaryAudioOutPortId`, which is
- * `outputs.find(o => o.type === 'audio')?.id` — `type === 'audio'` exactly.
- * These four outputs are gate/cv/gate/gate, so that resolves null, no
- * `live-audio` binding is reachable, and every other literal falls through to
- * `{ kind: 'static' }`, which `module-face-lint`'s dead-glyph clause reddens
- * unconditionally with no exemption list.
- *
- * ⚠ AND THE PICTURE THIS MODULE WOULD WANT DOES NOT EXIST, which is recorded as
- * an argument rather than built. The useful glance here is "is a clock
- * ARRIVING?" — a blinking tick indicator. That is not a picture of a signal, it
- * is a picture of an EVENT RATE, and all five `VALID_GLYPHS` members
- * (scope/meter/envelope/waveform/algorithm) describe a continuous audio
- * quantity. Inventing a sixth on a module PR is the wrong shape; the binder
- * cohort makes the same argument for four more modules, which is the evidence a
- * platform change should wait for.
- *
- * ⚠ A PUSH 2 CARD APPEARS WHERE THERE WAS NONE, and it is deliberately NOT
- * pinned with a `PUSH_CARD_CONTROLS` override. The card is resolved from the
- * LIVE def, so adding a param normally risks the tiers re-ranking themselves —
- * but re-ranking needs COMPETITION for slots and there is none here: one
- * turnable param against eight encoder strips, with the CONNECT family skipped
- * because an encoder can only turn a value. An override would be byte-identical
- * to what the FACE tier already derives, and it REPLACES rather than merges, so
- * pinning would silently keep a future second param off the hardware forever.
- * That is chromaconsole's argument read the other way round: correct by
- * construction, not correct because somebody remembered to pin it.
- *
- * ⚠ BOTH CELLS REACH THE LANE, and D4's fix depends entirely on it. Only the
- * `panel` kind is dock-only (`panelCellKeys` filters on `kind === 'panel'`); an
- * `action` cell is not restricted, and `laneOrder` drops exactly a declared
- * `hero.cell` and each `xyPads` entry's `x` key — this face declares neither.
- * So the CONNECT gesture stops being reachable only from the dock full view,
- * which on a module that does NOTHING until it is granted access is the single
- * biggest thing promotion changes for a player.
+ * Let Push 2 derive controls from the def: a pinned override would hide future
+ * params, and CONNECT cannot be operated by an encoder.
  */
 export const MIDICLOCK_FACE: ModuleFace = {
   glyph: 'none',
@@ -360,7 +314,6 @@ export const MIDICLOCK_FACE: ModuleFace = {
   ],
 };
 
-// ---------------- Module def ----------------
 
 export const midiclockDef: AudioModuleDef = {
   type: 'midiclock',

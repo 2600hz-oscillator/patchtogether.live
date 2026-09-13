@@ -1,5 +1,3 @@
-// e2e/tests/samsloop-load-audible.spec.ts
-//
 // OWNER BUG (dev, 2026-09-06): "when i load this patch samsloop doesnt play."
 //
 // ── THE MECHANISM ───────────────────────────────────────────────────────────

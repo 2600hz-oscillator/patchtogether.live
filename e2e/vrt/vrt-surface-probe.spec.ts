@@ -1,5 +1,3 @@
-// e2e/vrt/vrt-surface-probe.spec.ts
-//
 // MEASUREMENT TOOL, not a gate. Opt-in via `VRT_PROBE=1` (see the testMatch
 // switch in vrt.config.ts) so it never costs CI a second.
 //

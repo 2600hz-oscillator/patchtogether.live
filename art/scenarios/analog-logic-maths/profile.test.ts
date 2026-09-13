@@ -1,5 +1,3 @@
-// art/scenarios/analog-logic-maths/profile.test.ts
-//
 // AUDIO PROFILE for ANALOGLOGICMATHS (analog logic mixer) (backfill
 // batch 4 — spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md), through the

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/chord-tables.ts
-//
 // POLYSEQZ + future chord-aware modules share these pure-data lookup tables.
 // Everything in this file is dependency-free — chord intervals + voicing
 // strategies are deterministic functions of (root MIDI, quality, inversion,

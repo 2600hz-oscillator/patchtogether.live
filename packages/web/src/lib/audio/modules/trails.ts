@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/trails.ts
-//
 // TRAILS — the Bela Trails eurorack module as a rack-wide modulation source.
 //
 // Trails is a quad touch-gesture recorder: an 85 × 85 mm multitouch pad whose
@@ -172,7 +170,6 @@ export function trailsPolyPortId(channel: TrailsChannel): string {
  */
 export const TRAILS_POLY_LANE: Readonly<Record<TrailsAxis, number>> = { x: 0, y: 1 };
 
-// ── Params ──────────────────────────────────────────────────────────────────
 
 /**
  * POLARITY of the eight X/Y jacks. 0 = UNIPOLAR 0..1 (DEFAULT), 1 = BIPOLAR
@@ -500,7 +497,6 @@ export interface TrailsCardApi {
   resetMonitor(): void;
 }
 
-// ─────────────────────────── THE FACE ───────────────────────────────────────
 //
 // ⚠ CONNECT RANKS FIRST, ABOVE EVERY KNOB, and that ordering is the whole
 // reason this module gets a `controlFamily` rather than three param cells and a

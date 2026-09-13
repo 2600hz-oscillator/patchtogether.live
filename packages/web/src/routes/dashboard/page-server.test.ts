@@ -1,5 +1,3 @@
-// packages/web/src/routes/dashboard/page-server.test.ts
-//
 // The dashboard's server load: rackspaces is CORE, so a failure there still
 // bubbles and SvelteKit 500s, and an unauthenticated request redirects before
 // anything touches the data layer.

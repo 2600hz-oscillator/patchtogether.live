@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/archivist-query.ts
-//
 // ARCHIVIST pure cores — Internet Archive (archive.org) query building,
 // response parsing, and per-type best-file selection. NO network, NO DOM:
 // every function here is a pure transform so it can be unit-tested hard
@@ -175,9 +173,7 @@ export function pickRandomDoc(
   return docs[i] ?? null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
 // Metadata → best-file selection (per type)
-// ─────────────────────────────────────────────────────────────────────────
 
 /** A file entry from the metadata API (subset). */
 export interface ArchiveFile {

@@ -1,5 +1,3 @@
-// e2e/tests/spawn-at-cursor.spec.ts
-//
 // Cursor-anchored spawn + on-top stacking. Two invariants the user explicitly
 // asked for:
 //
@@ -52,9 +50,7 @@ async function ready(page: Page) {
   });
 }
 
-// ============================================================================
 // Cursor-anchored spawn (overlap allowed)
-// ============================================================================
 
 test('spawn lands at the requested cursor position even when overlapping', async ({ page }) => {
   await ready(page);
@@ -91,9 +87,7 @@ test('right-click spawn anchors at the click point with no auto-offset', async (
   expect(lfo!.position).toEqual({ x: 0, y: 0 });
 });
 
-// ============================================================================
 // Visual on-top stacking via xyflow zIndex
-// ============================================================================
 
 test('newly-spawned overlapping module renders ON TOP via elevated zIndex', async ({ page }) => {
   await ready(page);

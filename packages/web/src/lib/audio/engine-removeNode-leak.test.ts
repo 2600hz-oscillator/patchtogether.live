@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/engine-removeNode-leak.test.ts
-//
 // Regression for issue #146: chaos 24/7 (seed=7, ~5500 iters of balanced
 // add/delete) accumulated stale state in the AudioEngine across the run.
 // The smoking gun was an orphaned per-param-modulator AnalyserNode for

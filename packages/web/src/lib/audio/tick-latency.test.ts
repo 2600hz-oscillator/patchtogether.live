@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/tick-latency.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROL for the scheduler tick-latency histogram.
 //
 // Both directions run on every unit lane:

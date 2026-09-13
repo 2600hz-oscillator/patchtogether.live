@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/videovarispeed-transport.test.ts
-//
 // Pure transport math for VIDEOVARISPEED: the varispeed knob map, CV summing,
 // START/END window logic + END-CV normalling, loop-vs-one-shot edge action,
 // and the throttled reverse-scrub step (the perf-critical part).

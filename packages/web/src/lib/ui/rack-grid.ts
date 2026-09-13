@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/rack-grid.ts
-//
 // Rack GRID geometry (virtual-rack Phase 2). One square grid tile = the
 // `--rack-unit` (180px) — the same tile Phase-1 sizing snaps every card's box
 // to (see _module-card.css + rack-sizes.ts). This module owns the PURE math for

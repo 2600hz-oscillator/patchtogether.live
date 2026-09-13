@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-archivist-source.svelte.ts
-//
 // THE REAL-DOM SINGLETON for ./node-archivist-source-registry — a thin binding of
 // the pure core to the browser, the graph store, the engine and archive.org.
 //

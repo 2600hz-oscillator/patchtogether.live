@@ -1,4 +1,3 @@
-// packages/web/src/lib/video/obj-parse.test.ts
 import { describe, it, expect } from 'vitest';
 import { parseObj } from './obj-parse';
 import { MESH_FLOATS_PER_VERT } from './mesh';

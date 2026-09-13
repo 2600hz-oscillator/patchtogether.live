@@ -1,5 +1,3 @@
-// art/scenarios/moog911a/profile.test.ts
-//
 // AUDIO PROFILE for MOOG 911A (dual trigger delay) (backfill batch 3 —
 // spec §2.1/§1.2,
 // evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md),

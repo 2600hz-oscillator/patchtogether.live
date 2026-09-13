@@ -65,7 +65,6 @@ export interface PtzcamState {
   readonly lastVel: PtzTargets | null;
 }
 
-// ─────────────────────────── THE FACE ───────────────────────────────────────
 //
 // ⚠ CONNECT RANKS FIRST, ABOVE EVERY KNOB, and that ordering is the whole
 // reason this module gets a `controlFamily` rather than four param cells and a

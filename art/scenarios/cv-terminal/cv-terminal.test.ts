@@ -1,5 +1,3 @@
-// art/scenarios/cv-terminal/cv-terminal.test.ts
-//
 // REGISTRY-DRIVEN STRUCTURAL SWEEP — "where does a cable patched into this
 // paramTarget input actually LAND?"
 //
@@ -20,9 +18,7 @@
 // the registry in well under a second, against `cv-param-reach`'s 1008 s of
 // test time / 18m31s of job wall.
 //
-// ---------------------------------------------------------------------------
 // ⚠ THE 30-SECOND "TIMEOUTS" THAT WERE NOT A FINDING
-// ---------------------------------------------------------------------------
 //
 // The first version of this sweep reported 11 modules (every moog*, qbrt, rings,
 // resofilter, ringback, samsloop) as failing to materialise, each hitting a 30 s
@@ -48,9 +44,7 @@
 // gone stale on main, and its own re-check is one of the two assertions that
 // were failing when the job was killed.
 //
-// ---------------------------------------------------------------------------
 // WHAT IT ASSERTS, per (module, port)
-// ---------------------------------------------------------------------------
 //
 //   TERMINAL   the port resolves off the LIVE handle and publishes an
 //              AudioParam. `AudioEngine.addEdge` connects a same-domain CV
@@ -82,9 +76,7 @@
 //              signal — measured 3.146e+5 peak against a 5.0e-1 baseline, a
 //              629 000x blow-up pointed at the speaker bus.
 //
-// ---------------------------------------------------------------------------
 // ⚠ THE CORRECT FIX AND THE #1661 DEFECT HAVE THE SAME GRAPH SIGNATURE
-// ---------------------------------------------------------------------------
 //
 // `cv-shadow.ts` builds a landing pad for a param whose consumer is JAVASCRIPT:
 // a GainNode reachable from nothing, deliberately, because pinning a carrier and
@@ -102,9 +94,7 @@
 // then false and the cable is landing on live audio. Marking a genuinely dead
 // DSP param swaps one red for another rather than silencing the gate.
 //
-// ---------------------------------------------------------------------------
 // WHAT THIS GATE STRUCTURALLY CANNOT SEE  (assert-what-you-are-blind-to)
-// ---------------------------------------------------------------------------
 //
 //  1. REACHABLE-BUT-INERT. A graph edge proves connection, never that the value
 //     arrives, arrives scaled correctly, or is used at all. All 83 live mixmstrs
@@ -151,7 +141,6 @@ import { isJsConsumedParam, markJsConsumedParam } from '../../../packages/web/sr
 
 const SR = 48_000;
 
-// ---------------------------------------------------------------------------
 // Exemptions — DENY BY DEFAULT, one NAMED entry per instance, `why` REQUIRED by
 // the TYPE so `tsc` refuses an undeclared form before a test runs.
 //
@@ -159,7 +148,6 @@ const SR = 48_000;
 // re-derived from the same materialised handle every run and goes RED when the
 // evidence that justified it disappears. An entry can therefore only go stale in
 // one direction — someone made things better — and that is red.
-// ---------------------------------------------------------------------------
 
 type Exemption =
   /** The worklet sums this CV per-sample off a DEDICATED node input instead of
@@ -233,9 +221,7 @@ const EXEMPT: readonly Exemption[] = [
   //        its permanent negative control below either way.
 ];
 
-// ---------------------------------------------------------------------------
 // The structural reader
-// ---------------------------------------------------------------------------
 
 /** Everything the predicates below are allowed to look at, for ONE port. */
 interface PortStructure {
@@ -437,11 +423,9 @@ async function readStructure(def: AudioModuleDef): Promise<PortStructure[]> {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // THE PREDICATES. One function per class, called by the sweep, by every
 // exemption re-check AND by every control — so a control cannot drift from the
 // check it claims to validate.
-// ---------------------------------------------------------------------------
 
 /** #1734: the cable lands on `{node, input}` instead of an AudioParam. */
 const failsTerminal = (s: PortStructure): boolean => !s.hasRef || !s.hasParam;
@@ -472,10 +456,8 @@ const exemptKeys = new Set(EXEMPT.map(key));
 const exemptOfKind = (kind: Exemption['kind']) =>
   new Set(EXEMPT.filter((e) => e.kind === kind).map(key));
 
-// ---------------------------------------------------------------------------
 // SYNTHETIC CONTROLS — real defs with real factories, read by the REAL
 // `readStructure`. Not registered anywhere; built and torn down here.
-// ---------------------------------------------------------------------------
 
 type ControlShape =
   | 'live' | 'dead-terminal' | 'js-consumed' | 'js-consumed-lying'
@@ -550,7 +532,6 @@ function controlDef(shape: ControlShape): AudioModuleDef {
 
 const readControl = (shape: ControlShape) => readStructure(controlDef(shape));
 
-// ---------------------------------------------------------------------------
 
 describe('every paramTarget CV input lands on a live, unaliased AudioParam', () => {
   let defs: AudioModuleDef[] = [];

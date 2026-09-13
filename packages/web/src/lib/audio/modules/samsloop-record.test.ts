@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-record.test.ts
-//
 // Unit tests for the SAMSLOOP recording helpers — pure functions, no
 // AudioContext involved.
 //

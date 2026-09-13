@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/snaredrum.ts
-//
 // SNARE DRUM — deep, flexible stereo snare VOICE with a POLYPHONIC two-hand
 // DRUMROLL. Mate to
 // KICK DRUM; it clones that template (state-object DSP, sr-calibrated decay,

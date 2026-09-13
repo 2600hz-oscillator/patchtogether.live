@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/tempolock/shell-extension.ts
-//
 // The TEMPOLOCK shell extension — the module-owned end of the extension seam
 // (#1512), on the `fullViewBody` slot: the LOCK + BEAT status lamps.
 //

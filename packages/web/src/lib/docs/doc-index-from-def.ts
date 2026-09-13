@@ -1,5 +1,3 @@
-// packages/web/src/lib/docs/doc-index-from-def.ts
-//
 // LIVE-REGISTRY adapter for buildDocIndex.
 //
 // The doc PAGE builds its DocIndex from the prerender-safe regex-parsed

@@ -1,5 +1,3 @@
-// e2e/tests/snaredrum-face.spec.ts
-//
 // SNARE DRUM's CURATED FACE, driven for real under `?shell=1`. Three claims
 // only a browser can settle, and none of them is "the DOM re-labelled itself":
 //

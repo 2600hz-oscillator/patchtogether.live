@@ -1,5 +1,3 @@
-// packages/web/src/lib/electra/host.ts
-//
 // LIVE HOST WIRING — builds the AutoconfigHost from the running app (patch store,
 // engine, registries, control-surface bindings). Kept out of the orchestrator so
 // autoconfig.ts / preset.ts / feedback.ts stay pure + unit-testable; this is the

@@ -1,5 +1,3 @@
-// e2e/tests/vco-pitch-tracking.spec.ts
-//
 // VCO pitch-tracking sweep across the keyboard range. User report:
 // "swolevco and wavetable don't seem to have more than 1-2 octave range.
 // I expect these oscillators to track c0-c8 and we should have good

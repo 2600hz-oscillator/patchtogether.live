@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/port-types.test.ts
-//
 // Tests resolveCable() — the heart of LIVECODE's direction-agnostic
 // patch logic. The runtime + the linter + the autocomplete all defer
 // to this function so a single test surface keeps them aligned.

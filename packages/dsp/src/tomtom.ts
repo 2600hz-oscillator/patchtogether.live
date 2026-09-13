@@ -1,5 +1,3 @@
-// packages/dsp/src/tomtom.ts
-//
 // TOM DRUM — analog-modeled tom-tom voice AudioWorkletProcessor.
 //
 // The per-sample DSP lives in ./lib/tomtom-dsp.ts (MEMBRANE fundamental +

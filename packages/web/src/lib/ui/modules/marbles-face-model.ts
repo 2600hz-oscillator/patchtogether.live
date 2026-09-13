@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/marbles-face-model.ts
-//
 // The PURE MODEL behind the MARBLES faceplate — every number the hero, the
 // readouts and the loop picture print, derived from the DSP's OWN laws rather
 // than measured off one seeded render.
@@ -131,7 +129,6 @@ export const MARBLES_STEP_MIN_STEPS = 0.5;
 /** `generateNewVoltage`'s output range before the host's `/5` normalisation. */
 export const MARBLES_CV_VOLTS = 5;
 
-// ── PARAMS ──────────────────────────────────────────────────────────────────
 
 export interface MarblesFaceParams {
   rate: number;

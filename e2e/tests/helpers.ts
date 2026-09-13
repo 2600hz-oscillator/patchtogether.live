@@ -1,5 +1,3 @@
-// e2e/tests/helpers.ts
-//
 // Shared utilities for the E2E suite.
 
 import type { Page, ConsoleMessage } from '@playwright/test';

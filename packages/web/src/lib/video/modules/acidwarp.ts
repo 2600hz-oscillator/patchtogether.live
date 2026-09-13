@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/acidwarp.ts
-//
 // ACIDWARP — 320×240 plasma video source with scene cycler.
 //
 // Algorithm port of Noah Spurrier's ACIDWARP (1992-1993, GPL) by way of
@@ -217,7 +215,6 @@ export const acidwarpDef: VideoModuleDef = {
     },
   },
 
-  // ─────────────────────────────────────────────────────────────────────────
   // THE FACEPLATE — five params, but FOUR DISTINCT CONTROL SHAPES over one
   // picture, which is what put this module on the complex side of the owner's
   // batch split and sent it out alone.
@@ -421,7 +418,6 @@ export const acidwarpDef: VideoModuleDef = {
           g.texImage2D(g.TEXTURE_2D, 0, g.RGB, 256, 1, 0, g.RGB, g.UNSIGNED_BYTE, rotatedPaletteBuf);
         }
 
-        // ----- Render -----
         g.bindFramebuffer(g.FRAMEBUFFER, fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);

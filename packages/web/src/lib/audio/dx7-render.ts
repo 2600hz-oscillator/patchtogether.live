@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dx7-render.ts
-//
 // Pure-TS DX7 voice renderer mirroring the worklet's algorithm. The web
 // workspace owns the voice + preset definitions, so this renderer is the
 // authoritative spec for what the worklet should produce. Used by ART

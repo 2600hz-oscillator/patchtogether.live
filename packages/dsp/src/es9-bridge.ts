@@ -1,5 +1,3 @@
-// packages/dsp/src/es9-bridge.ts
-//
 // ES-9 — AudioWorklet half of the native-bridge module. Moves 128-frame
 // quanta between the Web Audio graph and two SharedArrayBuffer rings that
 // the bridge Worker (web-side, owns the ws://127.0.0.1 socket to the

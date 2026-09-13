@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/moog-vco-dsp.test.ts
-//
 // Pure-DSP unit tests for the Moog VCO core (own-code polyBLEP oscillator,
 // shared by the 921 worklet). Pins the math that the 921 depends on so a
 // refactor surfaces as a specific quantitative regression:

@@ -1,5 +1,3 @@
-// e2e/tests/stereo-drop-choice.spec.ts
-//
 // DROP A MONO SOURCE ON A STEREO JACK → BE ASKED WHICH SIDE.
 //
 // Owner (2026-08-12): "whenever we drop a mono source on a stereo jack or a

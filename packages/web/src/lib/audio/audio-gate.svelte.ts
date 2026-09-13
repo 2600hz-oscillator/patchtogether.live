@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/audio-gate.svelte.ts
-//
 // Audio gate state — Svelte 5 rune store that tracks whether the canvas's
 // AudioContext is currently `running`, plus a one-shot `resume()` that
 // boots the engine on first user gesture and resumes a suspended context
@@ -142,4 +140,3 @@ export function createAudioGate(): AudioGate {
     },
   };
 }
-

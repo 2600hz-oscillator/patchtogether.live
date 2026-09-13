@@ -1,5 +1,3 @@
-// packages/web/src/lib/source-guards/strip-source-comments.ts
-//
 // ONE quote-aware comment stripper for every SOURCE-LEVEL gate in the repo.
 //
 // ── WHY THIS EXISTS ────────────────────────────────────────────────────────

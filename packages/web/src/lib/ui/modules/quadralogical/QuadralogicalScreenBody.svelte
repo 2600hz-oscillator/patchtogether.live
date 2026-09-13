@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/quadralogical/QuadralogicalScreenBody.svelte
-  //
   // THE QUADRALOGICAL SCREEN — the dock full-view body, and the one surface on
   // this module where the PICTURE and the CONTROL are the same element.
   //

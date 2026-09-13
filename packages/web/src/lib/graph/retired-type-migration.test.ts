@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/retired-type-migration.test.ts
-//
 // THE MIGRATION GATE for the 2026-08-02 module swap: `callsine` and
 // `warrenspectrum` were deleted and WARREN'S SPECTRUM (`warrensspectrum`)
 // replaces them. The two predecessors take OPPOSITE paths on purpose, and

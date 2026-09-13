@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-asset-registry.ts
-//
 // THE TOYBOX ASSET PROVIDER SEAM (#1576, workstream 2; plumbing for #1575).
 //
 // ── The constraint that shaped the whole design ─────────────────────────────

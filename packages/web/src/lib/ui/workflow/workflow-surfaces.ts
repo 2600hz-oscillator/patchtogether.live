@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/workflow-surfaces.ts
-//
 // WORKFLOW MODE P2 — pure helpers behind the topbar surface menus
 // (ClockSurface / MidiDinSurface / AudioIoSurface). Framework-free (no
 // Svelte, no Yjs, no DOM) so every decision the menus make is unit-testable

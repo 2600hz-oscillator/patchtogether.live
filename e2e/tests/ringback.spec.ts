@@ -1,5 +1,3 @@
-// e2e/tests/ringback.spec.ts
-//
 // RINGBACK end-to-end: the REAL stereo-in→stereo-out chain.
 //   analogVco.saw → RINGBACK.in_l   and   analogVco.saw → RINGBACK.in_r
 //   RINGBACK.out_l → SCOPE.ch1   and   RINGBACK.out_r → SCOPE.ch2

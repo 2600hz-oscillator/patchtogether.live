@@ -1,5 +1,3 @@
-// e2e/tests/fader-midi-assign.spec.ts
-//
 // FADER's two HORIZONTAL crossfade sliders — A↔B (`fader`) and DRY↔WET
 // (`dryWet`) — are raw <input type=range> elements, not the standard Knob/
 // Fader controls, so they historically had NO right-click MIDI/Electra

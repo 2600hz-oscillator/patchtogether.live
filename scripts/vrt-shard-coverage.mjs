@@ -1,5 +1,3 @@
-// scripts/vrt-shard-coverage.mjs
-//
 // THE ONE CHECK ANCHORED TO THE RUN RATHER THAN TO THE PLAN (#1595).
 //
 // `scripts/vrt-shard-plan.mjs` proves the PLAN is a partition and that each

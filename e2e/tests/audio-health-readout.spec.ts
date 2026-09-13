@@ -1,5 +1,3 @@
-// e2e/tests/audio-health-readout.spec.ts
-//
 // ⚠ READ THIS BEFORE ADDING AN ASSERTION HERE.
 //
 // **`expect(underruns).toBe(0)` IS VACUOUSLY GREEN FOREVER AND MUST NOT BE

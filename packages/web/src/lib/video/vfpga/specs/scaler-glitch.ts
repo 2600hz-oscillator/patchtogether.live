@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/specs/scaler-glitch.ts
-//
 // scaler-glitch — EARLY-HD-era bent VFPGA (design §3.7). Bends the early-HD
 // upscaler / line-doubler / deinterlacer of a cheap SD→HD set-top box: comb/weave
 // deinterlace zipper edges, broken bilinear tap weights (nearest-neighbour

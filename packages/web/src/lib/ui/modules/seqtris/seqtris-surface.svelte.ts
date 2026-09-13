@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/seqtris/seqtris-surface.svelte.ts
-//
 // THE `revision` SEAM, PROMOTED OUT OF ONE COMPONENT AND MADE SHARED.
 //
 // `SeqtrisCard.svelte` carries `let revision = $state(0)`, bumped after every

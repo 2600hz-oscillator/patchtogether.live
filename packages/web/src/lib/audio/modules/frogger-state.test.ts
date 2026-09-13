@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/frogger-state.test.ts
-//
 // Pure-state-stepper coverage. Mirrors modtris-state.test.ts in shape —
 // no Web Audio, no React; just the deterministic stepper.
 
@@ -298,7 +296,6 @@ describe('detectRisingEdge', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE TIME KNOB IS LIVE — the fix for "FROGGER's only control does nothing".
 //
 // Before this, `params.initialTime` was read at exactly two sites and both were
@@ -312,7 +309,6 @@ describe('detectRisingEdge', () => {
 // The decay leg is the sharp one: it is the half a naive fix (assign
 // `defaultTime` on change) silently breaks, because it would erase the levels
 // already cleared.
-// ─────────────────────────────────────────────────────────────────────────────
 describe('frogger-state — the TIME knob reaches the running game (§13.1)', () => {
   /** Start a game at `initialTime` and burn `elapsed` seconds off the clock. */
   function playing(initialTime: number, elapsed = 0): { s: FroggerState; params: FroggerParams } {

@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/engine.test.ts
-//
 // Phase 0 video-domain spike — unit-level checks that don't require a
 // WebGL2 context. Vitest runs under node here (see vitest.config.ts);
 // WebGL/OffscreenCanvas live in the browser, so the actual engine.step()

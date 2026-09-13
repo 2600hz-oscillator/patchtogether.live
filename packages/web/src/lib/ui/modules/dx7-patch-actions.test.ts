@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/dx7-patch-actions.test.ts
-//
 // REAL-Y.Doc tests for the DX7 PRESET STAMP and the edit-buffer readers.
 // These run against the SAME live syncedStore + Y.Doc + UndoManager the patch
 // uses (graph/store.ts) — not a mock — because the two things the stamp has to
@@ -79,9 +77,7 @@ afterEach(() => {
   undoManager.clear();
 });
 
-// ---------------------------------------------------------------------------
 // 1. THE STAMP — five writes, ONE transaction
-// ---------------------------------------------------------------------------
 
 describe('selectDx7Preset — the STAMP', () => {
   it('writes 3 data keys + 2 params in ONE undo step', () => {
@@ -200,9 +196,7 @@ describe('selectDx7Preset — the STAMP', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 2. THE YJS PROXY — deepUnwrapVoice is MANDATORY, not defensive
-// ---------------------------------------------------------------------------
 
 describe('selectDx7Preset — stamping a voice that lives in the Y.Doc', () => {
   /** Write a cartridge-shaped voice into `data.userPatches` so reading it back
@@ -275,9 +269,7 @@ describe('selectDx7Preset — stamping a voice that lives in the Y.Doc', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 2b. CARTRIDGE IMPORT — the second one is the one that used to break
-// ---------------------------------------------------------------------------
 
 describe('loadDx7SyxFile — stacking cartridges', () => {
   function syxFile(): File {
@@ -316,9 +308,7 @@ describe('loadDx7SyxFile — stacking cartridges', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 3. READERS + THE MIGRATION THEY CARRY
-// ---------------------------------------------------------------------------
 
 describe('dx7 edit-buffer readers', () => {
   it('dx7EditVoice resolves a LEGACY node (no data.voice) to its preset', () => {
@@ -378,9 +368,7 @@ describe('dx7 edit-buffer readers', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // 4. THE DIRTY CHIP — and the <select> it must not break
-// ---------------------------------------------------------------------------
 
 describe('dx7 dirty chip', () => {
   it('a freshly stamped voice is CLEAN', () => {

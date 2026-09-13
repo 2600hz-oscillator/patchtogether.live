@@ -1,5 +1,3 @@
-// e2e/tests/flip-rack-rear-view.spec.ts
-//
 // Rack Phase 3 — "Flip rack" (rear view), ON BOTH RENDERERS.
 //
 // The Flip rack toggle (top of the SvelteFlow Controls panel) and the `F`

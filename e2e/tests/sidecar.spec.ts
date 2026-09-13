@@ -1,5 +1,3 @@
-// e2e/tests/sidecar.spec.ts
-//
 // SIDECAR end-to-end smoke + behavior checks (DUCKER topology — the MAIN
 // pair is the trigger; the SIDECHAIN pair is ducked + summed to the out):
 //   1. Smoke: VCO → Sidecar → AUDIOOUT — card mounts, no errors.
@@ -49,9 +47,7 @@ async function audioFlowing(
     .toBeGreaterThan(0.001);
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 // 1. SMOKE — card mounts + audio flows
-// ────────────────────────────────────────────────────────────────────────────
 
 test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', async ({ page, rack, errorWatch }) => {
   await spawnPatch(
@@ -101,9 +97,7 @@ test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', a
 
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // 2. SC-in-mix + ducking (THE BUG FIX): SC pad → output; MAIN trigger ducks it
-// ────────────────────────────────────────────────────────────────────────────
 
 test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', async ({ page, rack, errorWatch }) => {
   // VCO pad → SIDECHAIN (always-on signal). NOISE (mutable level) → MAIN
@@ -161,9 +155,7 @@ test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', 
 
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // 3. Cross-patch ducking via env_inv_out → STEREOVCA.strength
-// ────────────────────────────────────────────────────────────────────────────
 
 test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({ page, rack, errorWatch }) => {
   // Patch: NOISE (mutable level) → SIDECAR (self-detect, hot);

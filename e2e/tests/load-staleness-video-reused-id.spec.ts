@@ -1,5 +1,3 @@
-// e2e/tests/load-staleness-video-reused-id.spec.ts
-//
 // VIDEOBOX + VIDEOVARISPEED KEEP PLAYING THE PREVIOUS PATCH'S CLIP after a
 // same-session load at a reused node id — fleet audit 2026-09-06, finding #3.
 //

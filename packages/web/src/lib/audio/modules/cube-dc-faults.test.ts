@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cube-dc-faults.test.ts
-//
 // THE STATES A REAL SPAWN REACHES. `cube-degenerate-wave.test.ts` (packages/dsp)
 // pins the predicate and the two cap functions, but it renders through synthetic
 // hand-written tables because it cannot import the factory data from this

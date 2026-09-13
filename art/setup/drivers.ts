@@ -1,5 +1,3 @@
-// art/setup/drivers.ts
-//
 // Canonical DETERMINISTIC drivers for ART audio-profile scenarios (spec
 // §2.2/§1.2 — evidence/active/plans/art-backfill-audio-profiles-2026-07-01.md).
 // One driver per module category, so every profile is driven the same way:
@@ -28,9 +26,7 @@ export const CLOCK_BPM = 240;
 
 const n = (durationS: number, sr: number) => Math.round(sr * durationS);
 
-// ---------------------------------------------------------------------------
 // Gate / trigger / clock drivers
-// ---------------------------------------------------------------------------
 
 export interface HeldGateOptions {
   /** Total driver length in seconds. */
@@ -92,9 +88,7 @@ export function clockTrain(totalS: number, sampleRate?: number): Float32Array {
   return triggerTrain({ totalS, bpm: CLOCK_BPM, sampleRate });
 }
 
-// ---------------------------------------------------------------------------
 // Audio-input drivers (for FX / processor profiles)
-// ---------------------------------------------------------------------------
 
 export interface VcoTestSignalOptions {
   totalS: number;

@@ -1,5 +1,3 @@
-// packages/web/src/lib/meta/modules/cadillac.ts
-//
 // CADILLAC — a singleton meta module that drives across the canvas from
 // right to left at a constant 300 px/s and deletes every audio + video
 // module its hit-box runs over. TIMELORDE (the rack's undeletable system

@@ -1,5 +1,3 @@
-// packages/web/src/lib/graph/vfpga-runner.ts
-//
 // Yjs mutator for the vfpga-runner host's loaded preset (node.data.vfpga). A
 // preset change is a DISCRETE user action (selecting a VFPGA from the "load
 // preset…" menu) — written IN PLACE inside one ydoc.transact(LOCAL_ORIGIN), so

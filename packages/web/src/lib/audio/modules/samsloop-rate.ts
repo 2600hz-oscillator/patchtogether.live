@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/samsloop-rate.ts
-//
 // SAMSLOOP rate-fader visual mapping.
 //
 // The underlying `rate` AudioParam ranges over [-2, +2] where the numeric

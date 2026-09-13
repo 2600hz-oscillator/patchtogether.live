@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/sixstrum.ts
-//
 // SIX STRUM — a 6-string guitar/bass/harp instrument built from SIX of our
 // KARPLUS string voices (packages/dsp/src/lib/sixstrum-dsp.ts), each with its
 // own amplitude ADSR, summed to MONO through a resonant body. It is a VOICE +

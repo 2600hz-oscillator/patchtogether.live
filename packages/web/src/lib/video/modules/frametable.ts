@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/frametable.ts
-//
 // FRAMETABLE — a video WAVETABLE oscillator.
 //
 // FrameTable continuously records the last 60 rendered input frames into a GPU
@@ -70,9 +68,7 @@ import {
 // would have been deleted by promotion.
 import { getFrametableBlob } from '$lib/video/frametable-file-store';
 
-// ----------------------------------------------------------------------
 // Param model.
-// ----------------------------------------------------------------------
 
 interface FrametableParams {
   // ── mode / lag dispatch ──
@@ -141,9 +137,7 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
-// ----------------------------------------------------------------------
 // GLSL — the two passes. Both transliterate the pure core in frametable-core.ts.
-// ----------------------------------------------------------------------
 
 // P0 — copy a source frame into the ring layer at `head`. Two callers:
 //   • live CAPTURE — uTileScale=(1,1), uTileOffset=(0,0) ⇒ the identity copy of
@@ -328,10 +322,8 @@ void main(){
   outColor = vec4(acc / max(wsum, 1.0), 1.0);
 }`;
 
-// ----------------------------------------------------------------------
 // GL resource helpers (module-owned — the array + output are NOT engine-managed
 // FBOs; ctx.createFbo() only mints auto-resizing TEXTURE_2D).
-// ----------------------------------------------------------------------
 
 /** A 60-layer RGBA8 TEXTURE_2D_ARRAY at (w×h). LINEAR, CLAMP on S/T/R. */
 function createRingArray(gl: WebGL2RenderingContext, w: number, h: number, layers: number): WebGLTexture {
@@ -603,7 +595,6 @@ export const frametableDef: VideoModuleDef = {
     },
   ],
 
-  // ── THE FACEPLATE ──────────────────────────────────────────────────────────
   //
   // WHAT IT IS FOR. Every other time-based video module in the fleet gives you
   // ONE tap on the past: vdelay hands back a frame from N slots ago, freezeframe

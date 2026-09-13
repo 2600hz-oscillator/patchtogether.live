@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/tempest.test.ts
-//
 // Pure unit tests for the TEMPEST renderer's GL-free geometry builder (P1).
 
 import { describe, expect, it } from 'vitest';

@@ -1,5 +1,3 @@
-// e2e/tests/audioout-face.spec.ts
-//
 // THE PROMOTED AUDIO OUT FACEPLATE — the two affordances that MOVED, and the
 // picture that is new.
 //

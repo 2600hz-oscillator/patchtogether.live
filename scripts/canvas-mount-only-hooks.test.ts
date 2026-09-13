@@ -1,10 +1,7 @@
-// scripts/canvas-mount-only-hooks.test.ts
-//
 // GATE: Canvas.svelte's `globalThis.__*` e2e hook installers run from `onMount`,
 // and they publish GETTERS, not snapshots.
 //
 // The hazard this exists for
-// --------------------------
 // `onMount(fn)` is `$effect(() => untrack(fn))`. Two of Canvas's hook installers
 // were `$effect` blocks that could only ever run once — they read nothing
 // reactive and installed no cleanup, because the globals deliberately outlive
@@ -27,7 +24,6 @@
 // file, and a green typecheck says nothing about the invariant below.
 //
 // WHY THIS IS SCOPED TO Canvas.svelte, and why that is not a silent filter
-// -----------------------------------------------------------------------
 // The same predicate run over every tracked `packages/**/*.svelte` reports 43
 // offending mounts (measured 2026-08-13, 331 files, 95 with an `onMount`) — and
 // essentially all of them are the ORDINARY, CORRECT Svelte 5 pattern: reading a
@@ -98,13 +94,11 @@ describe('Canvas test-hook installers are mount-only', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Permanent negative + positive control, on the SAME predicate the gate calls.
 // These are not illustrations: they are the reason a green run above means
 // anything. The negative leg proves the predicate can go RED; the positive leg
 // proves it is not simply flagging every read (which would make it useless in
 // the other direction, and would have flagged the real file).
-// ---------------------------------------------------------------------------
 
 const FIXTURE_SAFE = `<script lang="ts">
   import { onMount } from 'svelte';

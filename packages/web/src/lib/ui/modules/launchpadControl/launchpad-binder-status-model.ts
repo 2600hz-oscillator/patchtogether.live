@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/launchpadControl/launchpad-binder-status-model.ts
-//
 // EVERY STRING THE LAUNCHPAD BINDER BODY CAN PRODUCE — painted or not — decided
 // here, where a unit test can read them.
 //

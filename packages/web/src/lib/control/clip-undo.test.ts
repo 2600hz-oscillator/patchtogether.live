@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/clip-undo.test.ts
-//
 // REAL-Y.Doc regression tests for the PER-CARD clip undo scope (clip-undo.ts),
 // run against the SAME syncedStore + Y.Doc the live patch uses (graph/store.ts).
 //

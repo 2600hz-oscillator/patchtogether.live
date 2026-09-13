@@ -1,5 +1,3 @@
-// scripts/ci-playwright-timeout.test.ts
-//
 // A PLAYWRIGHT RUN THAT OUTLIVES ITS JOB DESTROYS ITS OWN EVIDENCE.
 //
 // When Playwright is still running at a job's `timeout-minutes`, GitHub

@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/resofilter-dsp.test.ts
-//
 // Pure-math tests for the shared RESOFILTER DSP helpers in
 // packages/dsp/src/lib/resofilter-dsp.ts. The worklet test file
 // (resofilter.test.ts) exercises the AudioWorkletProcessor wrapper;
@@ -63,9 +61,7 @@ describe('resofilter-dsp — coefficient helpers', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // Pure-math filter response — drive a sine through resofilterStep + measure.
-// ────────────────────────────────────────────────────────────────────────────
 
 /** Goertzel-style band magnitude. */
 function bandAmp(buf: Float32Array, freqHz: number, sr: number, skipFrames: number): number {

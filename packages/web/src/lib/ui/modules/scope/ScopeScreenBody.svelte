@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/scope/ScopeScreenBody.svelte
-  //
   // The SCOPE dock full-view body: the live dual-trace / Lissajous screen, the
   // tuning graticule, and the SCREEN ON/OFF switch.
   //

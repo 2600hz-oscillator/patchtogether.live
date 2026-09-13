@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/matrixmix-cell-actions.ts
-//
 // The read/write halves of matrixMix's TWO faceplate cells — the X-axis and
 // Y-axis module pickers.
 //
@@ -202,4 +200,3 @@ export function matrixmixSetXAxis(nodeId: string, value: string): void {
 export function matrixmixSetYAxis(nodeId: string, value: string): void {
   setYAxisModule(nodeId, value || undefined);
 }
-

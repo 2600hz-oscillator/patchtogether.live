@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/modules/outlines.test.ts
-//
 // Unit coverage for OUTLINES — the def/port/param shape + the entire stateful
 // particle sim (seeded spawn, rate-clock cadence capped at 1/500ms,
 // center-bounce reflection, per-shape d/v/spd/decay/SHAPE latching, the
@@ -60,9 +58,7 @@ import {
   type Circle,
 } from './outlines-sim';
 
-// ---------------------------------------------------------------------------
 // Def / port / param shape.
-// ---------------------------------------------------------------------------
 
 describe('outlinesDef — shape', () => {
   it('declares gate / collide / d / v / spd / decay / shape / rotation / video inputs', () => {
@@ -118,9 +114,7 @@ describe('outlinesDef — shape', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Param mapping ranges.
-// ---------------------------------------------------------------------------
 
 describe('param mapping ranges', () => {
   it('d 0..1 → 5..270 px (MAX bumped 90 → 270, 3×; MIN unchanged)', () => {
@@ -169,10 +163,8 @@ describe('param mapping ranges', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // SHAPE — discrete selector over [circle, triangle, square, pentagon, hexagon,
 // octagon] (6 shapes), inscribed in the diameter (circumradius = d/2).
-// ---------------------------------------------------------------------------
 
 describe('SHAPE — discrete selector + geometry', () => {
   it('maps 6 shapes: circle, triangle(3), square(4), pentagon(5), hexagon(6), octagon(8)', () => {
@@ -302,9 +294,7 @@ describe('SHAPE — discrete selector + geometry', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // ROTATION — live-global angular velocity (bipolar, center = no spin).
-// ---------------------------------------------------------------------------
 
 describe('ROTATION — live-global bipolar spin', () => {
   it('mapAngularVel: center = 0, extremes = ±ROT_MAX, sign flips across center', () => {
@@ -392,9 +382,7 @@ describe('ROTATION — live-global bipolar spin', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Spawn — seeded, latched, random position.
-// ---------------------------------------------------------------------------
 
 describe('OutlinesSim — spawn', () => {
   it('gate spawn adds one shape at a position inside the field', () => {
@@ -480,9 +468,7 @@ describe('OutlinesSim — spawn', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // DECAY — per-shape latched fade-out (0 = persist → up to 10 s fade).
-// ---------------------------------------------------------------------------
 
 describe('alphaFor — fade ramp', () => {
   it('decay=0 → always alpha 1 (no decay / persist)', () => {
@@ -560,10 +546,8 @@ describe('OutlinesSim — decay (latched at spawn)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // INDEPENDENT per-shape SPEED — the headline fix. Each shape integrates from
 // its OWN latched velocity; changing `spd` after spawn affects only NEW shapes.
-// ---------------------------------------------------------------------------
 
 describe('OutlinesSim — independent per-shape speed', () => {
   it('shape A keeps spd=X after spd is changed to Y for shape B', () => {
@@ -606,9 +590,7 @@ describe('OutlinesSim — independent per-shape speed', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Internal rate clock cadence.
-// ---------------------------------------------------------------------------
 
 describe('OutlinesSim — internal rate clock', () => {
   it('rate=0 spawns NOTHING (gate-only)', () => {
@@ -663,9 +645,7 @@ describe('OutlinesSim — internal rate clock', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Integration + center-bounce.
-// ---------------------------------------------------------------------------
 
 describe('OutlinesSim — motion + center-bounce', () => {
   it('a moving shape drifts in its velocity direction', () => {
@@ -709,11 +689,9 @@ describe('OutlinesSim — motion + center-bounce', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // COLLIDE gate — live inter-shape ELASTIC bounce via the bounding-circle test.
 // The headline behaviour: gate ON → two head-on shapes bounce APART (don't
 // pass through); gate OFF → they pass through unaffected.
-// ---------------------------------------------------------------------------
 
 describe('circlesCollide — bounding-circle detection (uses circumradii, not centers)', () => {
   it('two discs collide when center distance ≤ r1 + r2', () => {
@@ -889,9 +867,7 @@ describe('OutlinesSim — COLLIDE gate (live global mode)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Max-shape cap / cull-oldest.
-// ---------------------------------------------------------------------------
 
 describe('OutlinesSim — max-shape cull', () => {
   it('never exceeds MAX_CIRCLES; culls the OLDEST first', () => {
@@ -910,9 +886,7 @@ describe('OutlinesSim — max-shape cull', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Output derivation — overlap / contour / combine / mapped.
-// ---------------------------------------------------------------------------
 
 function disc(x: number, y: number, diameter: number): Circle {
   return { x, y, vx: 0, vy: 0, diameter };
@@ -985,7 +959,6 @@ describe('output derivation', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // GATE-spawn latches the LIVE params — the headline bug fix (preserved across
 // the rename) + the SHAPE latch on the gate path.
 //
@@ -1000,7 +973,6 @@ describe('output derivation', () => {
 //
 // These tests drive the REAL module factory's setParam('cv_gate', …) gate path
 // (not the sim in isolation) and inspect the spawned shape via read('circles').
-// ---------------------------------------------------------------------------
 
 /** A minimal fake WebGL2 context: factory only needs non-null texture / fbo /
  *  uniform-location handles; every draw call no-ops. */

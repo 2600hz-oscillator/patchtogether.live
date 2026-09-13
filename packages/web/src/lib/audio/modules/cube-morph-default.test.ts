@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/cube-morph-default.test.ts
-//
 // CUBE's headline knob must DO something on a freshly spawned module.
 //
 // THE BUG THIS PINS. `CUBE_DEFAULT_TABLES` set BOTH `floor` and `ceiling` to

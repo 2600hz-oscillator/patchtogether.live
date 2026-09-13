@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/snapshot.ts
-//
 // CPU-side preview snapshots for VFPGA effects that have a deterministic
 // generator pattern (so the host card can draw an on-card preview WITHOUT a GL
 // readback — and identically whether the effect renders on the main thread or

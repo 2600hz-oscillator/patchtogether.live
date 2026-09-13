@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/midiclock.test.ts
-//
 // Unit tests for MIDICLOCK pure helpers + divider semantics. Avoids
 // AudioContext / Web MIDI plumbing; the factory itself is exercised
 // transitively via the e2e smoke spec.

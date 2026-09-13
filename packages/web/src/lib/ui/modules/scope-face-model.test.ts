@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/scope-face-model.test.ts
-//
 // THE PERMANENT NEGATIVE CONTROLS for the SCOPE faceplate.
 //
 // ⚠ THIS FILE EXISTS BECAUSE NO GATE MAKES THIS FACE'S CENTRAL DECISION, and

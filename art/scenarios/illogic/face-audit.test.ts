@@ -1,5 +1,3 @@
-// art/scenarios/illogic/face-audit.test.ts
-//
 // THE ADVERSARIAL AUDIT FOR ILLOGIC, and the permanent anchor under its
 // faceplate (queue Q17).
 //

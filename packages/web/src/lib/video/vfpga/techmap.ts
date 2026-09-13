@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/techmap.ts
-//
 // LUT technology-mapper (hardware-accuracy A5).
 //
 // A real FPGA toolchain derives a LUT's INIT bits by enumerating the truth table
@@ -50,9 +48,7 @@ export function lutInitToTruthTable(init: number): boolean[] {
   return out;
 }
 
-// ----------------------------------------------------------------------
 // Tiny recursive-descent Boolean parser → AST.
-// ----------------------------------------------------------------------
 type Node =
   | { k: 'var'; v: 'a' | 'b' | 'c' | 'd' }
   | { k: 'const'; v: 0 | 1 }

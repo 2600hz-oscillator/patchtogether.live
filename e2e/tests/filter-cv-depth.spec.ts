@@ -1,5 +1,3 @@
-// e2e/tests/filter-cv-depth.spec.ts
-//
 // FILTER — the CV-DEPTH ATTENUVERTERS (P1 batch-3 rework). The filter's
 // cutoff CV jack is mapped ±5 OCTAVES by the Faust source, which is far too
 // much throw for a plain 0..1 envelope: before this rework the only way to

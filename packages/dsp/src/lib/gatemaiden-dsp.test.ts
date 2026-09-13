@@ -1,5 +1,3 @@
-// packages/dsp/src/lib/gatemaiden-dsp.test.ts
-//
 // Behaviour spec for the GATEMAIDEN converter core: gate→trigger (one trigger
 // per gate START) and trigger→gate (a short trigger widened to a usable gate).
 

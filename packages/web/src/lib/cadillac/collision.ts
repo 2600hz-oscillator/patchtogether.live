@@ -1,5 +1,3 @@
-// packages/web/src/lib/cadillac/collision.ts
-//
 // Pure collision + position math for CADILLAC. Zero DOM access: every
 // function takes plain inputs (positions, bounds, time) and returns
 // plain outputs. Easy to unit-test, easy to reason about determinism

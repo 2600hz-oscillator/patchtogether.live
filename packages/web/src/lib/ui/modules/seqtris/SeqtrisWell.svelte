@@ -1,6 +1,4 @@
 <script lang="ts">
-  // packages/web/src/lib/ui/modules/seqtris/SeqtrisWell.svelte
-  //
   // THE 8x8 WELL — the one picture BOTH promoted surfaces paint.
   //
   // A lane tile and an open dock pane for the same node are mounted at the same

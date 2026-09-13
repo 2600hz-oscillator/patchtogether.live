@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/scope-screen-model.ts
-//
 // PURE path-geometry for ScopeScreen.svelte — the point lists a screen mode
 // strokes onto its canvas. No DOM, no engine: the curve/wave math is
 // unit-testable and the Svelte component is a thin renderer that fills the dark

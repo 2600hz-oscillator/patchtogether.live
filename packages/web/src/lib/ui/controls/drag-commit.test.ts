@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/drag-commit.test.ts
-
 import { describe, it, expect, vi } from 'vitest';
 import { createDragCommit } from './drag-commit';
 

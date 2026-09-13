@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/wavetable-vco.test.ts
-//
 // THE COVERAGE THIS FILE PAYS (#1524).
 //
 // Three entries in `BEHAVIORAL_SWEEP_EXEMPT`
@@ -97,7 +95,6 @@ async function loadProcessor(): Promise<ProcCtor> {
   return capturedProc;
 }
 
-// ── fixtures ──
 
 const FRAME_SIZE = 256;
 const FRAME_COUNT = 2;

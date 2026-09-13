@@ -1,5 +1,3 @@
-// e2e/tests/_toybox-fixture-helpers.ts
-//
 // Shared Playwright-side helpers for the FIXTURE-registering toybox specs
 // (#2070). ⚠ Importing `spawnWithFixtures` makes a spec a FIXTURE-REGISTERING
 // spec: it mutates the randomize roll pools, so the disjointness gate in

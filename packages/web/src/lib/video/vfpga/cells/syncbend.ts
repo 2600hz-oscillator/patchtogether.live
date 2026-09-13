@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/vfpga/cells/syncbend.ts
-//
 // CLB cell `syncBend(a, hjit, vroll, crush, tear)` — composite H/V SYNC
 // corruption (the sync-bender bend, design §3.1). Models a bent CVBS sync
 // separator: it MIS-ROUTES the horizontal/vertical line-lock so the picture

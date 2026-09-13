@@ -1,5 +1,3 @@
-// packages/web/src/lib/video/toybox-shader-params.ts
-//
 // FIRST-CLASS PARAM EXTRACTION FOR ARBITRARY GLSL (#1576, workstream 1).
 //
 // ── Why this exists, and why it is NOT how bundled content works ────────────

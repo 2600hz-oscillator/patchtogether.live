@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/pong-state.ts
-//
 // Pure deterministic game-state stepper for PONG. Kept separate from the
 // AudioModuleDef factory so it's testable without Web Audio + reusable by
 // the cross-peer SyncedModuleDef wiring planned in the design doc

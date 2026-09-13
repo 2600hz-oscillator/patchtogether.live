@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/push2Control/push2-binder-status-model.test.ts
-//
 // EVERY STRING THE PUSH 2 FACEPLATE BODY CAN PRODUCE, READ IN THE UNIT LANE.
 //
 // ⚠ THIS FILE EXISTS BECAUSE THE DOCK BASELINE PHOTOGRAPHS EXACTLY ONE OF THEM.

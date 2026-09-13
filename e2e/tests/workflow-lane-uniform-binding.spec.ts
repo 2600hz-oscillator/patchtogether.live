@@ -1,5 +1,3 @@
-// e2e/tests/workflow-lane-uniform-binding.spec.ts
-//
 // EVERY MODULE BINDS TO A LANE THE SAME WAY — the #2247 owner rule, verbatim:
 //
 //   "all modules should be able to bind to a lane, binding automation and

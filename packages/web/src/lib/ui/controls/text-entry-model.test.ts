@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/controls/text-entry-model.test.ts
-//
 // The pure half of the #1509 typed-entry cell. Three properties, and the middle
 // one is the whole reason the contract is shaped this way.
 

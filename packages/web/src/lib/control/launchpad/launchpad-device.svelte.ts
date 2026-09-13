@@ -1,5 +1,3 @@
-// packages/web/src/lib/control/launchpad/launchpad-device.svelte.ts
-//
 // Launchpad Mini Mk3 PAIR — Web-MIDI device singleton (the clip-launcher's
 // hardware side, analogue of monome-device but over Web MIDI instead of
 // WebSerial, and managing TWO units: L = the clip matrix, R = the command deck
@@ -54,10 +52,8 @@ import {
   type LaunchpadRxEvent,
 } from './launchpad-sysex';
 
-// ---------------------------------------------------------------------------
 // Combined sysex-capable access (inputs + outputs). Same shape the Electra
 // broker uses; redeclared here to avoid an import cycle through electra/.
-// ---------------------------------------------------------------------------
 export interface MidiFullAccessLike {
   inputs: Map<string, MidiInputLike>;
   outputs: Map<string, MidiOutputLike>;
@@ -87,10 +83,8 @@ export function emptyFrame(): LaunchpadFrame {
   return { leds: new Map() };
 }
 
-// ---------------------------------------------------------------------------
 // Per-unit binding. Each Launchpad is one MIDI input + one MIDI output (the
 // `… MIDI` port pair, NOT the `… DAW` port — programmer mode lives on MIDI).
-// ---------------------------------------------------------------------------
 interface UnitBinding {
   inputId: string | null;
   outputId: string | null;
@@ -104,9 +98,7 @@ function newUnit(): UnitBinding {
   return { inputId: null, outputId: null, input: null, output: null, lastRgb: new Map() };
 }
 
-// ---------------------------------------------------------------------------
 // Singleton state
-// ---------------------------------------------------------------------------
 let access: MidiFullAccessLike | null = null;
 let connectStarted = false;
 let connectFailed = false;
@@ -139,9 +131,7 @@ export function statusRune(): number {
   return statusVersion;
 }
 
-// ---------------------------------------------------------------------------
 // Capability + status
-// ---------------------------------------------------------------------------
 
 /** Is Web MIDI available (Chromium)? Gates the whole feature so Safari/Firefox
  *  + CI degrade cleanly (no hardware). */
@@ -172,9 +162,7 @@ export function isSingleBound(): boolean {
   return isUnitBound('L') && !isUnitBound('R');
 }
 
-// ---------------------------------------------------------------------------
 // Connect (acquire sysex access) — lazy, idempotent, gesture-gated.
-// ---------------------------------------------------------------------------
 
 /**
  * Acquire a sysex-capable MIDIAccess. MUST be called from a user gesture (the
@@ -214,9 +202,7 @@ export async function connect(): Promise<boolean> {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Port enumeration — the pairing handshake's raw material.
-// ---------------------------------------------------------------------------
 
 /** A Launchpad-MIDI candidate port (the `… MIDI` pair, not `… DAW`). */
 export interface LaunchpadPort {
@@ -315,9 +301,7 @@ export function enumerateLaunchpadPorts(): LaunchpadPort[] {
   return out;
 }
 
-// ---------------------------------------------------------------------------
 // Binding a unit to a concrete port pair + programmer-mode handshake.
-// ---------------------------------------------------------------------------
 
 /**
  * Bind a unit (L or R) to a concrete input/output port pair and enter
@@ -402,9 +386,7 @@ export function unbindAll(): void {
   unbindUnit('R');
 }
 
-// ---------------------------------------------------------------------------
 // Inbound dispatch
-// ---------------------------------------------------------------------------
 
 function handleInbound(unit: LaunchpadUnit, ev: MidiEventLike): void {
   // A Launchpad sends 3-byte Note/CC for pad + button events in programmer
@@ -423,9 +405,7 @@ export function onKey(cb: (e: LaunchpadKeyEvent) => void): () => void {
   return () => keyListeners.delete(cb);
 }
 
-// ---------------------------------------------------------------------------
 // LED output — diffed RGB writes via the codec.
-// ---------------------------------------------------------------------------
 
 /** Send raw bytes to a unit's output (no-op if unbound). */
 function sendRaw(unit: LaunchpadUnit, bytes: Uint8Array): void {
@@ -511,7 +491,6 @@ export function clearUnit(unit: LaunchpadUnit): void {
   sendRaw(unit, encodeLedRgbBatch(specs));
 }
 
-// ---------------------------------------------------------------------------
 // MONITOR bindings — the "out to launch" video-monitor path. INDEPENDENT of the
 // L/R clip-launcher units: a monitor claims a Launchpad OUTPUT port (by id) and
 // owns its LEDs, reusing the SAME shared sysex `access` + the pure codec. This
@@ -525,7 +504,6 @@ export function clearUnit(unit: LaunchpadUnit): void {
 // owners painting the same physical surface would fight over every LED. The
 // clip-launcher control and a monitor therefore cannot share ONE device, but
 // they run happily on two different ones.
-// ---------------------------------------------------------------------------
 
 interface MonitorBinding {
   token: string;
@@ -634,14 +612,12 @@ export function unbindMonitor(token: string): void {
   bumpStatus();
 }
 
-// ---------------------------------------------------------------------------
 // Simulated-device test hook — installs an in-memory pair so e2e/unit can drive
 // pad presses + assert the LED bytes the device emitted, with no hardware + no
 // Web-MIDI permission prompt. Parallel to installSimulatedGrid /
 // installSimulatedMidiDevice. The handle's senders push through the SAME
 // decode/dispatch path real hardware uses, and `writes(unit)` captures every
 // byte run sent to each unit.
-// ---------------------------------------------------------------------------
 
 export interface SimulatedLaunchpad {
   /** Simulate a pad press at (x,y) on a unit. */
@@ -811,7 +787,6 @@ export async function installSimulatedLaunchpadSingle(): Promise<SimulatedLaunch
   return simInstalled;
 }
 
-// ---------------------------------------------------------------------------
 // Simulated MONITOR device — a Launchpad the OUT TO LAUNCH path can claim.
 //
 // The two sims above BIND their ports to the L/R clip-launcher units, so
@@ -827,7 +802,6 @@ export async function installSimulatedLaunchpadSingle(): Promise<SimulatedLaunch
 // reports what the sender believed) or a raw byte log (which can only be
 // asserted against by re-encoding the expectation, i.e. comparing the encoder
 // to itself).
-// ---------------------------------------------------------------------------
 
 export interface SimulatedLaunchpadMonitorDevice {
   /** The Launchpad OUTPUT port id — free for `bindMonitor` (no unit holds it). */

@@ -1,5 +1,3 @@
-// packages/web/src/lib/livecode/apply.ts
-//
 // Apply a Mutation list to the live patch graph. Shared by LivecodeCard
 // (one-shot RUN) and the clockedRunner factory (per-tick re-fire).
 //

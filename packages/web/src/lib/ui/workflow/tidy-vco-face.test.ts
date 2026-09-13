@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/workflow/tidy-vco-face.test.ts
-//
 // THE TIDY VCO FACE, PINNED THROUGH THE REAL PURE MODELS (batch F).
 //
 // `module-face-lint` proves a face is WELL-FORMED for every promoted module.

@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/modules/midiLane/midi-lane-status-model.ts
-//
 // Every STRING the MIDI LANE device body can produce, decided here rather than
 // inline in the component — including the ones that are never painted.
 //

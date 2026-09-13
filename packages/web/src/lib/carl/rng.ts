@@ -1,5 +1,3 @@
-// packages/web/src/lib/carl/rng.ts
-//
 // Mulberry32 seeded PRNG — identical algorithm to e2e/chaos/lib/seed-rng.ts.
 // Lives inside packages/web so the in-browser Rackspace Carl can import it
 // without pulling Playwright. Keep the two copies bit-for-bit identical so

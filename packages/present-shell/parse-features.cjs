@@ -1,5 +1,3 @@
-// packages/present-shell/parse-features.cjs
-//
 // Parse the web app's window.open() "features" string into display bounds.
 // The web present flow (lib/ui/modules/present-window.ts → computePopupFeatures)
 // emits "popup,left=<x>,top=<y>,width=<w>,height=<h>" carrying the TARGET

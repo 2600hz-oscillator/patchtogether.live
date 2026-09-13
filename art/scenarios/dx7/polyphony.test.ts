@@ -1,5 +1,3 @@
-// art/scenarios/dx7/polyphony.test.ts
-//
 // Validates the polyphony claim: rendering N independent DX7 voices and
 // summing them produces a chord-like signal whose total energy scales with
 // the voice count, and whose Goertzel probes hit each note's fundamental.

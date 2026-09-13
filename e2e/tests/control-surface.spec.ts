@@ -1,5 +1,3 @@
-// e2e/tests/control-surface.spec.ts
-//
 // CONTROL SURFACE Phase 1 — the full behavioral loop, on the DEFAULT shell
 // (S2 re-point; the module was promoted off NON_SHELL_LANE_TYPES, so the
 // board lives in the DOCK full view and the send gesture starts on the
@@ -354,7 +352,6 @@ test.fixme('card grows so ALL groups + knobs render within bounds (locked + unlo
   const groupSel = '[data-testid="control-surface-group"]';
   const knobSel = '[data-testid^="control-surface-knob-"]';
 
-  // Assert every group + every knob renders and is fully inside the card box.
   async function expectAllWithinBounds(label: string): Promise<void> {
     await expect(surface.locator(groupSel), label).toHaveCount(4);
     await expect(surface.locator(knobSel), label).toHaveCount(4);

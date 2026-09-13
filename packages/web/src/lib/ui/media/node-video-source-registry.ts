@@ -1,5 +1,3 @@
-// packages/web/src/lib/ui/media/node-video-source-registry.ts
-//
 // NODE-OWNED VIDEO SOURCE LIFECYCLE (LEG-02, #1511) — the controller that makes
 // a file-backed video module's SOURCE exist because the NODE exists, not because
 // a card is mounted.
@@ -117,9 +115,7 @@ export const RETRY_ATTEMPTS = 50;
  *  canonical gate level. */
 const GATE_RISING_EDGE = 0.5;
 
-// ---------------------------------------------------------------------------
 // Injected seams
-// ---------------------------------------------------------------------------
 
 /** The engine surface this controller uses. Every method maps 1:1 onto an
  *  EXISTING public call, so nothing here implies an engine-side change. */
@@ -234,9 +230,7 @@ export interface ExportedVideoBytes {
   name: string;
 }
 
-// ---------------------------------------------------------------------------
 // Published status + commands
-// ---------------------------------------------------------------------------
 
 /**
  * What a SURFACE (the legacy card today, a faceplate later) renders. Everything
@@ -327,9 +321,7 @@ export const NODE_VIDEO_SOURCE_TYPES: ReadonlySet<string> = new Set<string>([
   'videobox',
 ]);
 
-// ---------------------------------------------------------------------------
 // The controller
-// ---------------------------------------------------------------------------
 
 interface Controller<E> {
   node: ModuleNode;
@@ -832,4 +824,3 @@ export interface VideoSourceHandleHooks {
   requestPermission(handle: unknown): Promise<'granted' | 'prompt' | 'denied'>;
   getFile(handle: unknown): Promise<File>;
 }
-

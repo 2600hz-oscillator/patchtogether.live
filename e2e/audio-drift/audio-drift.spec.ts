@@ -1,5 +1,3 @@
-// e2e/audio-drift/audio-drift.spec.ts
-//
 // @audio-drift research harness: drives two browser contexts, both joined to the
 // same Yjs rackspace, builds a series of patches, captures audio buffers from
 // each side, and computes drift metrics to inform the Phase-C decision.
@@ -67,7 +65,6 @@ interface RunResults {
 const allResults: ScenarioResult[] = [];
 const runStartedAt = new Date().toISOString();
 
-// Helpers --------------------------------------------------------------------
 
 const COMMON_AUDIO_OUT = (id = 'out'): PatchSpec['nodes'][number] => ({
   id,

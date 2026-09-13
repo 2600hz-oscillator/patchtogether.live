@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/seqtris-launchpad.ts
-//
 // SEQTRIS ↔ Novation Launchpad: the CONNECT gesture, the port claim, the six
 // scene-button game controls and the LED picture of the board.
 //

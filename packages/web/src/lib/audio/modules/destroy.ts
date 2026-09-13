@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/destroy.ts
-//
 // DESTROY — bitcrusher / sample-rate decimator. The grungy lo-fi effect
 // the project ships under that name. Faust-compiled DSP
 // (packages/dsp/src/destroy.dsp) — three controls: SR decimation (1..64;

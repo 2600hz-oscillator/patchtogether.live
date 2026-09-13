@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/dual-mono.ts
-//
 // DUAL-MONO — a module with ONE audio input runs its DSP TWICE, one instance
 // per channel, so a stereo signal is not destroyed the first time it meets a
 // mono module. Owner decision, 2026-08-07 (the why:
@@ -52,9 +50,7 @@ import type { AudioModuleDef } from './module-registry';
 import type { AudioDomainNodeHandle, AudioModuleFactory } from './engine';
 import type { ModuleNode, PortDef } from '$lib/graph/types';
 
-// ---------------------------------------------------------------------------
 // The classification.
-// ---------------------------------------------------------------------------
 
 /**
  * What the engine does with a module that declares exactly ONE audio input.
@@ -374,9 +370,7 @@ export const DUAL_MONO_LEDGER: ReadonlyMap<string, DualMonoEntry> = new Map<stri
   }],
 ]);
 
-// ---------------------------------------------------------------------------
 // The ARTIFACT — derived from the live registry, never from the ledger.
-// ---------------------------------------------------------------------------
 
 /** Minimal def shape this file needs. Any AudioModuleDef/VideoModuleDef fits. */
 export interface DualMonoDefLike {
@@ -518,9 +512,7 @@ export function dualMonoClassOf(type: string): DualMonoClass | null {
   return DUAL_MONO_LEDGER.get(type)?.cls ?? null;
 }
 
-// ---------------------------------------------------------------------------
 // SCOPE — stated here, asserted in dual-mono.test.ts.
-// ---------------------------------------------------------------------------
 
 export const SCOPE = {
   /**
@@ -604,13 +596,9 @@ export const SCOPE = {
   ] as const,
 } as const;
 
-// ---------------------------------------------------------------------------
 // THE RUNTIME SEAM.
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
 // LEG PLACEMENT — the seam that stops two cables summing.
-// ---------------------------------------------------------------------------
 
 /** One end of a cable, as the engine's `inputs` map spells it. */
 export interface AudioInputRef { node: AudioNode; input: number }

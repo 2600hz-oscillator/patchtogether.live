@@ -1,5 +1,3 @@
-// art/scenarios/mixer/profile.test.ts
-//
 // AUDIO PROFILE for MIXER (4-channel mono summing mixer) — backfill batch 6,
 // Faust-in-Node harness (spec §3). MIXER is Faust
 // (packages/dsp/src/mixer.dsp): out = (in1*ch1 + … + in4*ch4) * master, each

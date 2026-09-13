@@ -1,5 +1,3 @@
-// packages/web/src/lib/audio/modules/clip-automation-controller.test.ts
-//
 // Unit tests for the PER-LANE automation controller (owner-locked final model:
 // MODULE-level assignment + PER-LANE arm): playback touch-gating, per-lane
 // continuous overdub, TOUCH-CREATED tracks scoped to a lane's assigned MODULE

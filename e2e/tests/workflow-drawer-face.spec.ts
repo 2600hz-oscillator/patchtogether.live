@@ -1,5 +1,3 @@
-// e2e/tests/workflow-drawer-face.spec.ts
-//
 // #1739 — THE PINNED `m` TRAY RENDERS THE PROMOTED FACE, AND KEEPS EVERY
 // AFFORDANCE IT SHIPPED WITH. Owner ruling: *"the `m` key tray view needs to
 // show the new card and not the old one"*, and then: *"functional parity and no
@@ -1056,7 +1054,6 @@ test.describe('workflow · the pinned `e` tray renders the ELECTRA board', () =>
   });
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // THE USER-DOCKED RAIL OCCUPANT — the 2026-09-03 owner P0's second half.
 //
 // This file's own header listed "A USER-DOCKED promoted module, which
