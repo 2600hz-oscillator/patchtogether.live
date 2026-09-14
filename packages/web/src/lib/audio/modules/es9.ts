@@ -250,7 +250,7 @@ function outputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_INPUT_JACKS; n++) {
     docs[`in${n}`] =
-      `ES-9 hardware input jack ${n} as audio: float ±1.0 is ±5 V at the jack (Eurorack nominal, the same unity as every internal module; the jack's ±10 V full scale reads as ±2.0). This is the audio-typed port — patch it to mixers, effects, AUDIO OUT, or a SCOPE.`;
+      `ES-9 hardware input jack ${n} as audio: float ±1.0 is ±5 V at the jack (Eurorack nominal, the same unity as every internal module; the jack's ±10 V full scale reads as ±2.0; +4 dBu line level reads about ±0.35, so line gear wants gain downstream). This is the audio-typed port — patch it to mixers, effects, AUDIO OUT, or a SCOPE.`;
     docs[`in${n}_cv`] =
       `ES-9 input jack ${n} as CV, scaled by the In ${n} class selector: cv maps ±5 V to the app's ±1 modulation range, pitch maps 1 V/oct onto the app's 1.0/oct (0 V ≙ C4), gate runs a 2 V/1 V hysteresis comparator and emits clean 0|1. Patch this twin into cv/pitch/gate inputs — e.g. a hardware Maths LFO into a filter's cutoff CV.`;
   }

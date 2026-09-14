@@ -7,6 +7,43 @@
 - Tags: dsp, semantics, es9, hardware
 - Related: ADR-004 (CV range convention — leaves audio LEVEL undefined)
 
+## Open owner decisions (read first)
+
+**This ADR fixes HALF of the report.** Modular (±5 V) audio reaches parity
+with the internal mixer; **line-level gear is still quiet after it**: +4 dBu
+lands at 0.35 peak (−9.2 dBFS), −10 dBV at 0.09 (−21 dBFS). Line gear only
+reaches parity with the per-jack trim follow-up (below), or with a different
+reference than the one chosen here. Two yes/no answers are needed on the PR:
+
+1. **Reference: ±5 V (this ADR) or line level?** One scale cannot make both
+   hit ±1.0. Numbers for the alternative, +4 dBu ≙ ±1.0 (×5.76 in, ×0.174
+   out), from the same `VOLTS_FULL_SCALE = 10`:
+
+   | source / sink | ±5 V reference (this ADR) | +4 dBu reference |
+   |---|---|---|
+   | ±5 V modular audio in | 1.00 (0 dBFS) | 2.88 (+9.2 dBFS) |
+   | +4 dBu line in | 0.35 (−9.2 dBFS) | 1.00 |
+   | −10 dBV consumer in | 0.09 (−21 dBFS) | 0.26 (−11.8 dBFS) |
+   | internal ±1.0 out, at the jack | ±5 V (Eurorack nominal) | ±1.74 V (−9.2 dB into a modular input) |
+   | cv class relation | identical scale to `cv` | audio and cv differ by ×2.88 |
+
+   ±5 V is chosen because modular is the product's stated case, it is the
+   `cv` class's scale already (ADR-004), and the output direction then drives
+   hardware at nominal instead of 9 dB under it. Either reference still needs
+   the trim for the other kind of gear.
+2. **Saved racks are re-interpreted** (Consequences, first bullet): the audio
+   class's existing value `0` / absent changes level, which the audio-runtime
+   contract forbids without an explicit decision. The contract's alternative
+   is a NEW id whose default reproduces today — e.g. a module-level
+   `audio_ref` selector (0 = full scale ±10 V, today; 1 = nominal ±5 V),
+   default 0 — which keeps every saved rack as it is but ships the reported
+   bug as the default for new racks too, and puts a switch on the face that
+   nobody would ever set back to 0. Rejected here; available if the answer to
+   the re-interpretation is no.
+
+Status moves to Accepted only when the owner's answers are quoted on the PR
+and in this section.
+
 ## Context
 
 The ES-9 bridge moves RAW hardware-full-scale floats on the wire: ±1.0 ≙ ±10 V
@@ -40,11 +77,11 @@ feeds (output channels 0-7: main/phones/S-PDIF/ES-5 under the default routing).
 guards; the worklet feeds its underrun fade from the EMITTED (scaled) level.
 
 Reference chosen: ±5 V (Eurorack nominal, VCV's voltage standard, our cv
-class), not a line-level reference. One convention cannot make modular and
-line gear both hit ±1.0; modular is the product's stated case. Line gear
-still lands at −9.2 dBFS (+4 dBu) / −21 dBFS (−10 dBV) after this change —
-a per-jack trim (bipolar, ≈ −12..+24 dB, default 0, applied to the audio port
-only) is the follow-up, as a separate PR after hardware verification.
+class), not a line-level reference — see "Open owner decisions" for the
+numbers of the alternative. Line gear still lands at −9.2 dBFS (+4 dBu) /
+−21 dBFS (−10 dBV) after this change — a per-jack trim (bipolar,
+≈ −12..+24 dB, default 0, applied to the audio port only) is the follow-up,
+as a separate PR after hardware verification.
 
 ## Consequences
 
