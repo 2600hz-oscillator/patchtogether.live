@@ -18,7 +18,8 @@
 //     20     ...   one frameCount×f32 plane per set mask bit, ascending
 //   bridge→client blocks carry ES-9 INPUT channels; client→bridge blocks
 //   carry ES-9 OUTPUT channels. Floats are RAW hardware full scale
-//   (±1.0 ≙ ±10 V) — class scaling happens in the worklet.
+//   (±1.0 ≙ ±10 V) — class scaling happens in the worklet, and so does the
+//   audio nominal scaling (app ±1.0 ≙ ±5 V on a DC jack; ADR-019).
 
 export const ES9_PROTOCOL_VERSION = 1;
 export const ES9_DEFAULT_URL = 'ws://127.0.0.1:9209/ws';

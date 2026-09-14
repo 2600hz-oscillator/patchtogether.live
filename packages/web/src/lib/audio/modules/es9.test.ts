@@ -8,9 +8,14 @@ import {
   ES9_CLASS_CV,
   ES9_CLASS_GATE,
   ES9_CLASS_PITCH,
+  ES9_REF_LINE,
+  ES9_REF_MODULAR,
+  ES9_REF_OPTIONS,
+  ES9_REF_PARAM_IDS,
   es9ClassesFromParams,
   es9Def,
   es9OutputModes,
+  es9RefsFromParams,
 } from './es9';
 
 describe('es9 def shape', () => {
@@ -44,17 +49,44 @@ describe('es9 def shape', () => {
     expect(es9Def.outputs.find((p) => p.id === 'spdif_l_cv')).toBeUndefined();
   });
 
-  it('declares 22 discrete class params with the right defaults', () => {
-    expect(es9Def.params).toHaveLength(22);
-    for (const p of es9Def.params) {
-      expect(p.curve).toBe('discrete');
-      expect(p.min).toBe(0);
-      expect(p.max).toBe(3);
+  it('declares one discrete class param AND one discrete ref param per DC jack, with the right defaults', () => {
+    const classes = es9Def.params.filter((p) => /_class$/.test(p.id));
+    const refs = es9Def.params.filter((p) => /_ref$/.test(p.id));
+    // 14 input jacks + 8 output jacks, each with a class and a ref; nothing else.
+    expect(classes).toHaveLength(22);
+    expect(refs).toHaveLength(22);
+    expect(es9Def.params).toHaveLength(classes.length + refs.length);
+    for (const p of classes) {
+      expect(p.curve, p.id).toBe('discrete');
+      expect(p.min, p.id).toBe(0);
+      expect(p.max, p.id).toBe(3);
     }
     // Input twins default to cv (the modular-native case), output jacks to
-    // audio (bit-transparent).
+    // audio (±1 → ±5 V; the usb1-8 feeds are the bit-transparent ones).
     expect(es9Def.params.find((p) => p.id === 'in3_class')?.defaultValue).toBe(ES9_CLASS_CV);
     expect(es9Def.params.find((p) => p.id === 'out3_class')?.defaultValue).toBe(ES9_CLASS_AUDIO);
+    // The REF (ADR-020): 0..1 discrete, default 0 = modular = the ADR-019
+    // behaviour, so a rack saved without the id reads exactly as it did.
+    for (const p of refs) {
+      expect(p.curve, p.id).toBe('discrete');
+      expect(p.min, p.id).toBe(0);
+      expect(p.max, p.id).toBe(1);
+      expect(p.defaultValue, `${p.id} default reproduces today`).toBe(ES9_REF_MODULAR);
+      expect(p.options, p.id).toBe(ES9_REF_OPTIONS);
+      expect(p.optionsExhaustive, `${p.id} roster is dense`).toBeUndefined();
+    }
+    expect(ES9_REF_OPTIONS.map((o) => o.label)).toEqual(['modular', 'line']);
+    expect(ES9_REF_OPTIONS.map((o) => o.value)).toEqual([ES9_REF_MODULAR, ES9_REF_LINE]);
+  });
+
+  it('ES9_REF_PARAM_IDS (derived from the jack counts) is exactly the `_ref` params (literal lines)', () => {
+    const literal = es9Def.params.filter((p) => /_ref$/.test(p.id)).map((p) => p.id).sort();
+    expect([...ES9_REF_PARAM_IDS].sort()).toEqual(literal);
+    // And every ref id pairs with a class id on the same jack.
+    for (const id of ES9_REF_PARAM_IDS) {
+      const cls = id.replace(/_ref$/, '_class');
+      expect(es9Def.params.some((p) => p.id === cls), `${id} pairs with ${cls}`).toBe(true);
+    }
   });
 
   it('is a singleton with palette + docs coverage for every port and control', () => {
@@ -89,6 +121,32 @@ describe('class mapping helpers', () => {
     expect(outClasses[15]).toBe(ES9_CLASS_CV);
     // USB 1-8 (channels 0-7) are mixer/S-PDIF/ES-5 feeds: always audio.
     for (let c = 0; c < 8; c++) expect(outClasses[c]).toBe(ES9_CLASS_AUDIO);
+  });
+
+  it('es9RefsFromParams: defaults are modular everywhere (16 wide); jack ids land on the jack channels; digital channels stay modular', () => {
+    const d = es9RefsFromParams(undefined);
+    expect(d.inRefs).toHaveLength(16);
+    expect(d.outRefs).toHaveLength(16);
+    for (let c = 0; c < 16; c++) {
+      expect(d.inRefs[c], `inRefs[${c}]`).toBe(ES9_REF_MODULAR);
+      expect(d.outRefs[c], `outRefs[${c}]`).toBe(ES9_REF_MODULAR);
+    }
+    const { inRefs, outRefs } = es9RefsFromParams({
+      in1_ref: ES9_REF_LINE,
+      in14_ref: ES9_REF_LINE,
+      out1_ref: ES9_REF_LINE,
+      out8_ref: ES9_REF_LINE,
+    });
+    expect(inRefs[0]).toBe(ES9_REF_LINE);
+    expect(inRefs[13]).toBe(ES9_REF_LINE);
+    for (let c = 1; c < 13; c++) expect(inRefs[c], `inRefs[${c}]`).toBe(ES9_REF_MODULAR);
+    expect(inRefs[14], 'S/PDIF L').toBe(ES9_REF_MODULAR);
+    expect(inRefs[15], 'S/PDIF R').toBe(ES9_REF_MODULAR);
+    // Jack 1 = channel index 8 (USB 9); jack 8 = channel index 15 (USB 16).
+    expect(outRefs[8]).toBe(ES9_REF_LINE);
+    expect(outRefs[15]).toBe(ES9_REF_LINE);
+    for (let c = 0; c < 8; c++) expect(outRefs[c], `usb ${c + 1}`).toBe(ES9_REF_MODULAR);
+    for (let c = 9; c < 15; c++) expect(outRefs[c], `outRefs[${c}]`).toBe(ES9_REF_MODULAR);
   });
 
   it('derives bridge hold/fade modes on the JACK channels: only LEVELS hold', () => {

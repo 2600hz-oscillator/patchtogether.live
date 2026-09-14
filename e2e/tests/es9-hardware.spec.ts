@@ -5,15 +5,23 @@
 //
 //   ES-9 input 1+2 ← a changing AUDIO source (VCO/mixer output, music, …)
 //   ES-9 input 3+4 ← a changing CV source (LFO, envelope, random)
+//   ES-9 output 1  → ES-9 input 5 (a LOOPBACK patch cable)
+//   ES-9 input 6   ← NOTHING (leave the jack empty: the negative control)
 //
 // Run:  ES9_HW=1 flox activate -- task e2e:one -- es9-hardware --workers=1
 //
 // --workers=1 is REQUIRED: the bridge accepts a single client, so parallel
 // pages would fight over it (later connections get status "busy").
 //
-// The output direction (browser → ES-9 jacks) is intentionally untested here:
-// asserting voltage at a physical jack needs a human (or a patched loopback
-// cable + a second listening channel — a future extension).
+// The output direction (browser → ES-9 jacks) is covered by the loopback
+// test at the bottom: out1 → in5 through a real cable is the round trip
+// ×0.5 (app ±1 → ±5 V) then ×2 (±5 V → app ±1), so an internal VCO at ~1.0
+// must come back at ~1.0 (ADR-019). The per-jack REFERENCE toggle (ADR-020:
+// `out{n}_ref` / `in{n}_ref`, modular | line) rides the same cable: line on
+// BOTH ends (×0.174 out, ×5.76 in) is identity again, line on out1 ALONE
+// reads 0.347 (1.736 V into a ±5 V-referenced jack) — the discriminator that
+// says the toggle reached the hardware path. Absolute volts at a jack still
+// need a meter — see the hardware-verify checklist on the ADR-019 / ADR-020 PRs.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
@@ -119,13 +127,17 @@ test('hardware audio on inputs 1+2 reaches the graph (raw jacks)', async ({ page
   expect(ch1.rmsMax - ch1.rmsMin, `in1 rms spread (${JSON.stringify(ch1)})`).toBeGreaterThan(0.002);
 });
 
-test('hardware CV on inputs 3+4 arrives on the cv twins, class-scaled ×2', async ({ page, rack, errorWatch }) => {
+test('hardware CV on inputs 3+4 arrives on the cv twins: cv twin ≈ audio port (same ±5 V → ±1 scale), pitch twin ≈ ×5', async ({ page, rack, errorWatch }) => {
   void rack;
   void errorWatch;
-  // Raw jack 3 on one scope, its cv twin on another: the twin must carry the
-  // SAME signal scaled by the cv class (±5 V → ±1, i.e. exactly ×2 vs the
-  // raw ±10 V-full-scale port). Polling both over the same span makes the
-  // peak ratio robust to the CV's own movement.
+  // Jack 3's audio port on one scope, its cv twin on another: since ADR-019
+  // the audio port is ±5 V → ±1 (Eurorack nominal), the SAME scale as the cv
+  // class, so the two must carry the same signal at a peak ratio ≈ 1. That
+  // alone would pass with NO scaling anywhere, so jack 4 is the
+  // discriminator: its twin is set to PITCH (×10 of the wire) against its
+  // audio port (×2 of the wire) — ratio ≈ 5. Polling every scope over the
+  // same span makes the ratios robust to the CV's own movement.
+  const sut: SpawnNode = { ...ES9_NODE, params: { in4_class: 2 /* pitch */ } };
   const edges: SpawnEdge[] = [
     { id: 'e1', from: { nodeId: 'sut', portId: 'in3' }, to: { nodeId: 'scpraw', portId: 'ch1' } },
     {
@@ -135,34 +147,131 @@ test('hardware CV on inputs 3+4 arrives on the cv twins, class-scaled ×2', asyn
       sourceType: 'cv',
       targetType: 'audio',
     },
+    { id: 'e3', from: { nodeId: 'sut', portId: 'in4' }, to: { nodeId: 'scpraw4', portId: 'ch1' } },
     {
-      id: 'e3',
+      id: 'e4',
       from: { nodeId: 'sut', portId: 'in4_cv' },
-      to: { nodeId: 'scpcv2', portId: 'ch1' },
+      to: { nodeId: 'scpcv4', portId: 'ch1' },
       sourceType: 'cv',
       targetType: 'audio',
     },
   ];
   await spawnPatch(
     page,
-    [ES9_NODE, scopeNode('scpraw', 0), scopeNode('scpcv', 200), scopeNode('scpcv2', 400)],
+    [sut, scopeNode('scpraw', 0), scopeNode('scpcv', 200), scopeNode('scpraw4', 400), scopeNode('scpcv4', 600)],
     edges,
   );
   await waitConnected(page);
 
   // Long SHARED window: CV can be slow (a 0.1 Hz LFO needs seconds to
-  // swing), and the ratio check wants raw + twin sampled over the same span.
-  const stats = await pollScopes(page, ['scpraw', 'scpcv', 'scpcv2'], 10_000);
+  // swing), and the ratio checks want port + twin sampled over the same span.
+  const stats = await pollScopes(page, ['scpraw', 'scpcv', 'scpraw4', 'scpcv4'], 10_000);
   const raw = stats['scpraw']!;
   const cv = stats['scpcv']!;
-  const cv4 = stats['scpcv2']!;
+  const raw4 = stats['scpraw4']!;
+  const cv4 = stats['scpcv4']!;
 
   expect(cv.peak, `in3_cv peak — is CV actually patched into ES-9 input 3? (${JSON.stringify(cv)})`).toBeGreaterThan(0.02);
   expect(cv4.peak, `in4_cv peak — is CV actually patched into ES-9 input 4? (${JSON.stringify(cv4)})`).toBeGreaterThan(0.02);
 
-  // Class scaling: cv twin ≈ raw ×2 (default in3_class = cv). Wide tolerance:
-  // the two scopes sample the same span but not the same instants.
-  const ratio = cv.peak / Math.max(raw.peak, 1e-6);
-  expect(ratio, `in3_cv/in3 peak ratio ≈ 2 (raw=${raw.peak.toFixed(4)} cv=${cv.peak.toFixed(4)})`).toBeGreaterThan(1.5);
-  expect(ratio, `in3_cv/in3 peak ratio ≈ 2 (raw=${raw.peak.toFixed(4)} cv=${cv.peak.toFixed(4)})`).toBeLessThan(2.5);
+  // Same scale (default in3_class = cv): ratio ≈ 1. Tolerance: the two
+  // scopes sample the same span but not the same instants.
+  const ratio3 = cv.peak / Math.max(raw.peak, 1e-6);
+  expect(ratio3, `in3_cv/in3 peak ratio ≈ 1 (audio=${raw.peak.toFixed(4)} cv=${cv.peak.toFixed(4)})`).toBeGreaterThan(0.8);
+  expect(ratio3, `in3_cv/in3 peak ratio ≈ 1 (audio=${raw.peak.toFixed(4)} cv=${cv.peak.toFixed(4)})`).toBeLessThan(1.25);
+
+  // The discriminator: pitch twin (×10) over audio port (×2) = 5.
+  const ratio4 = cv4.peak / Math.max(raw4.peak, 1e-6);
+  expect(ratio4, `in4_cv(pitch)/in4 peak ratio ≈ 5 (audio=${raw4.peak.toFixed(4)} pitch=${cv4.peak.toFixed(4)})`).toBeGreaterThan(4);
+  expect(ratio4, `in4_cv(pitch)/in4 peak ratio ≈ 5 (audio=${raw4.peak.toFixed(4)} pitch=${cv4.peak.toFixed(4)})`).toBeLessThan(6.25);
+});
+
+test('loopback out1 → in5: an internal VCO at ~1.0 comes back at ~1.0 (round-trip identity), and the empty jack 6 reads silence', async ({ page, rack, errorWatch }) => {
+  void rack;
+  void errorWatch;
+  // out1 is class audio by default (app ±1 → ±5 V); in5's audio port is
+  // ±5 V → ±1. Through a real patch cable the product is identity, so the
+  // ES-9 return must peak within ±10 % of the same VCO read directly. Before
+  // ADR-019 the loop was ×1/×1 as well, so this test is NOT the level pin —
+  // the parity gain lives in the ART scenario and the dsp suites; this test
+  // pins that the hardware path is transparent end to end, and its NEGATIVE
+  // control (an unpatched jack) is what separates "the return is live" from
+  // "a meter is stuck".
+  const edges: SpawnEdge[] = [
+    { id: 'e1', from: { nodeId: 'vco', portId: 'out' }, to: { nodeId: 'sut', portId: 'out1' } },
+    { id: 'e2', from: { nodeId: 'vco', portId: 'out' }, to: { nodeId: 'scpdirect', portId: 'ch1' } },
+    { id: 'e3', from: { nodeId: 'sut', portId: 'in5' }, to: { nodeId: 'scploop', portId: 'ch1' } },
+    { id: 'e4', from: { nodeId: 'sut', portId: 'in6' }, to: { nodeId: 'scpempty', portId: 'ch1' } },
+  ];
+  await spawnPatch(
+    page,
+    [
+      { id: 'vco', type: 'swolevco', position: { x: 60, y: 60 }, domain: 'audio' },
+      ES9_NODE,
+      scopeNode('scpdirect', 0),
+      scopeNode('scploop', 200),
+      scopeNode('scpempty', 400),
+    ],
+    edges,
+  );
+  await waitConnected(page);
+
+  const stats = await pollScopes(page, ['scpdirect', 'scploop', 'scpempty'], 5_000);
+  const direct = stats['scpdirect']!;
+  const loop = stats['scploop']!;
+  const empty = stats['scpempty']!;
+
+  expect(direct.peak, `direct VCO peak (${JSON.stringify(direct)})`).toBeGreaterThan(0.9);
+  expect(loop.peak, `in5 loopback peak — is out1 cabled to in5? (${JSON.stringify(loop)})`).toBeGreaterThan(0.9);
+  expect(loop.peak, `in5 loopback peak (${JSON.stringify(loop)})`).toBeLessThan(1.1);
+  const ratio = loop.peak / Math.max(direct.peak, 1e-6);
+  expect(ratio, `in5/direct peak ratio ≈ 1 (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeGreaterThan(0.9);
+  expect(ratio, `in5/direct peak ratio ≈ 1 (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeLessThan(1.1);
+  // Negative control: an unpatched jack must read silence (presence ≠ liveness).
+  expect(empty.peak, `in6 (unpatched) peak — is something patched into ES-9 input 6? (${JSON.stringify(empty)})`).toBeLessThan(0.02);
+});
+
+test('loopback out1 → in5 with the REF toggle (ADR-020): line on BOTH ends is still identity, line on out1 ALONE reads ≈0.347', async ({ page, rack, errorWatch }) => {
+  void rack;
+  void errorWatch;
+  // Two legs on the same cable. (a) out1_ref=line AND in5_ref=line: ×0.174
+  // out then ×5.76 in — identity, so the return peaks within ±10 % of the VCO
+  // read directly. (b) out1_ref=line ONLY: the jack drives ±1.736 V and the
+  // ±5 V-referenced in5 reads 1.736 / 5 = 0.347 — the discriminator, since a
+  // toggle that reached neither direction would read 1.0 here and a toggle
+  // that reached only one would read 5.76 or 0.174. Jack 6 stays the
+  // negative control on both legs.
+  const legs: ReadonlyArray<{ name: string; params: Record<string, number>; lo: number; hi: number }> = [
+    { name: 'line on both ends', params: { out1_ref: 1, in5_ref: 1 }, lo: 0.9, hi: 1.1 },
+    { name: 'line on out1 only', params: { out1_ref: 1 }, lo: 0.31, hi: 0.39 },
+  ];
+  for (const leg of legs) {
+    const edges: SpawnEdge[] = [
+      { id: 'e1', from: { nodeId: 'vco', portId: 'out' }, to: { nodeId: 'sut', portId: 'out1' } },
+      { id: 'e2', from: { nodeId: 'vco', portId: 'out' }, to: { nodeId: 'scpdirect', portId: 'ch1' } },
+      { id: 'e3', from: { nodeId: 'sut', portId: 'in5' }, to: { nodeId: 'scploop', portId: 'ch1' } },
+      { id: 'e4', from: { nodeId: 'sut', portId: 'in6' }, to: { nodeId: 'scpempty', portId: 'ch1' } },
+    ];
+    await spawnPatch(
+      page,
+      [
+        { id: 'vco', type: 'swolevco', position: { x: 60, y: 60 }, domain: 'audio' },
+        { ...ES9_NODE, params: leg.params },
+        scopeNode('scpdirect', 0),
+        scopeNode('scploop', 200),
+        scopeNode('scpempty', 400),
+      ],
+      edges,
+    );
+    await waitConnected(page);
+    const stats = await pollScopes(page, ['scpdirect', 'scploop', 'scpempty'], 5_000);
+    const direct = stats['scpdirect']!;
+    const loop = stats['scploop']!;
+    const empty = stats['scpempty']!;
+    expect(direct.peak, `[${leg.name}] direct VCO peak (${JSON.stringify(direct)})`).toBeGreaterThan(0.9);
+    const ratio = loop.peak / Math.max(direct.peak, 1e-6);
+    expect(ratio, `[${leg.name}] in5/direct peak ratio (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeGreaterThan(leg.lo);
+    expect(ratio, `[${leg.name}] in5/direct peak ratio (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeLessThan(leg.hi);
+    expect(empty.peak, `[${leg.name}] in6 (unpatched) peak (${JSON.stringify(empty)})`).toBeLessThan(0.02);
+  }
 });

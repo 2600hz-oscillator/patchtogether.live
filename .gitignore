@@ -94,6 +94,10 @@ e2e/.generated/
 # `task e2e:serve` / scripts/dev-server.sh. Per-machine runtime; never commit.
 .dev-server/
 
+# Detached native-helper state (PID + port + log per bridge) created by
+# `task helpers:start` / scripts/helpers.sh. Per-machine runtime; never commit.
+.helpers/
+
 
 # Blood game data. WHAT SHIPS IN-REPO AND WHY IS ADR-007 —
 # docs/adr/007-game-asset-distribution.md. That ADR is the canonical answer

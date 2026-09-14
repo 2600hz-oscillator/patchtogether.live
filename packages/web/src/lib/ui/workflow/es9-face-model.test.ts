@@ -18,6 +18,11 @@ import {
   ES9_CLASS_OPTIONS,
   ES9_CLASS_PITCH,
   ES9_FACE,
+  ES9_REF_LINE,
+  ES9_REF_MODULAR,
+  ES9_REF_NAMES,
+  ES9_REF_OPTIONS,
+  ES9_REF_PARAM_IDS,
   es9BridgeConfig,
   es9Def,
   es9OutputModes,
@@ -48,6 +53,7 @@ const DOWN: Es9OwnerSnapshot = {
 };
 
 const CLASS_PARAMS = es9Def.params.filter((p) => /_class$/.test(p.id));
+const REF_PARAMS = es9Def.params.filter((p) => /_ref$/.test(p.id));
 
 describe('es9 face — the promotion itself', () => {
   it('is promoted, and every ranked key resolves to a param or a registered cell', () => {
@@ -109,14 +115,14 @@ describe('es9 face — the promotion itself', () => {
 
   it('NEGATIVE CONTROL: the tier selector CAN drop a key, so the leg above is not vacuous', () => {
     // If `curatedFace` returned every key at every tier, the checks above would
-    // pass on any ranking at all. The cap is real, and with 24 keys it is not
-    // remotely close.
+    // pass on any ranking at all. The cap is real, and with 46 keys (2 gestures
+    // + 22 classes + 22 refs) it is not remotely close.
     const dock = curatedFace(es9Def, 'dock');
     const mini = curatedFace(es9Def, 'mini');
     expect(dock!.controls.length).toBe(ES9_FACE.order.length);
     expect(mini!.controls.length).toBeLessThan(dock!.controls.length);
     // And the ranked-LAST key is one a lane tier drops, so "survives the tier"
-    // genuinely discriminates between rank 1 and rank 24.
+    // genuinely discriminates between rank 1 and rank 46.
     expect(
       curatedFace(es9Def, 'compact')!.controls.map((c) => c.key),
     ).not.toContain(ES9_FACE.order[ES9_FACE.order.length - 1]);
@@ -171,6 +177,60 @@ describe('es9 face — the 22 class switches are SELECTABLE, not dials', () => {
   });
 });
 
+describe('es9 face — the 22 REF toggles (ADR-020) are SELECTABLE, sit beside their jack, and default to today', () => {
+  it('every ref param carries the roster, DERIVED from the two reference names', () => {
+    expect(REF_PARAMS.map((p) => p.id).sort()).toEqual([...ES9_REF_PARAM_IDS].sort());
+    for (const p of REF_PARAMS) {
+      expect(p.options, `${p.id} must carry the ref roster`).toBe(ES9_REF_OPTIONS);
+      expect(p.defaultValue, `${p.id} defaults to modular (today)`).toBe(ES9_REF_MODULAR);
+    }
+    expect(ES9_REF_OPTIONS.map((o) => o.label)).toEqual([...ES9_REF_NAMES]);
+    expect(ES9_REF_OPTIONS.map((o) => o.value)).toEqual([ES9_REF_MODULAR, ES9_REF_LINE]);
+  });
+
+  it('the roster is DENSE (2 options / 2 steps), so `optionsExhaustive` must NOT be declared', () => {
+    for (const p of REF_PARAMS) {
+      const steps = Math.round(p.max - p.min) + 1;
+      expect(ES9_REF_OPTIONS.length, `${p.id} roster covers every step`).toBe(steps);
+      expect(p.optionsExhaustive, `${p.id} must not declare it`).toBeUndefined();
+    }
+  });
+
+  it('so the DOCK renders SEGMENTED cells (two captioned buttons, not an anonymous switch) and the LANE renders knobs', () => {
+    const none = new Set<string>();
+    for (const p of REF_PARAMS) {
+      expect(paramCellKind(p, none, 'dock'), p.id).toBe('segmented');
+      expect(paramCellKind(p, none, 'lane'), p.id).toBe('knob');
+    }
+  });
+
+  it('NEGATIVE CONTROL: stripping the roster produces the anonymous toggle, so the segmented read is earned', () => {
+    // A 0..1 discrete default 0 with no roster is `looksLikeToggle` → 'toggle'
+    // at the dock: the ref would still be operable, but nameless.
+    const bare = { ...REF_PARAMS[0]!, options: undefined };
+    expect(paramCellKind(bare, new Set<string>(), 'dock')).toBe('toggle');
+  });
+
+  it('GROUP BY LANE: each ref is ranked IMMEDIATELY after its own jack\'s class, in the same page and cluster', () => {
+    // Owner ruling 2026-09-04: lane 1 is for ALL things lane 1 — never a page
+    // of classes and then a page of refs.
+    const order = [...ES9_FACE.order];
+    for (const id of ES9_REF_PARAM_IDS) {
+      const cls = id.replace(/_ref$/, '_class');
+      expect(order.indexOf(id), `${id} follows ${cls}`).toBe(order.indexOf(cls) + 1);
+      const page = (ES9_FACE.pages ?? []).find((pg) => pg.controls.includes(id));
+      expect(page, `${id} is on a page`).toBeDefined();
+      expect(page!.controls, `${id} shares ${cls}'s page`).toContain(cls);
+      const cluster = (page!.clusters ?? []).find((c) => c.controls.includes(id));
+      expect(cluster, `${id} is clustered`).toBeDefined();
+      expect(cluster!.controls, `${id} shares ${cls}'s cluster`).toContain(cls);
+    }
+    // The ranked-LAST key is now the last jack's ref (the e2e negative control
+    // reads it by name).
+    expect(ES9_FACE.order[ES9_FACE.order.length - 1]).toBe('in14_ref');
+  });
+});
+
 describe('es9 face — the bands, and why the wide ones are clustered', () => {
   it('THREE bands, no tab rail, and none of them padded toward one', () => {
     const ids = (ES9_FACE.pages ?? []).map((p) => p.id);
@@ -186,24 +246,29 @@ describe('es9 face — the bands, and why the wide ones are clustered', () => {
     expect(ids).not.toContain('voice');
   });
 
-  it('the OUT band is a CONSOLE GRID of 4 and the IN band is deliberately not', () => {
-    // ⚠ THE WIDTH FIX, PINNED AS A PROPERTY. These are segmented cells painting
-    // FOUR option labels each — wider than a knob by a long way. MEASURED on
-    // this branch: the clustered dock plate is 891 CSS px against the 1220 px
-    // capture box, with `hiddenX === 0`. Un-clustering the OUT band puts eight
-    // of them on one row, which is the shape `moog960/stepmode` measured at
-    // 1336 px and had refused.
+  it('BOTH jack bands are CONSOLE GRIDS of 4 (one JACK PAIR per row), so the face-wide ruler engages', () => {
+    // ⚠ THE WIDTH FIX, PINNED AS A PROPERTY. The class cells are segmented
+    // cells painting FOUR option labels each — wider than a knob by a long
+    // way. Before the ref toggle the clustered plate measured 891 CSS px
+    // against the 1220 px box with two 4-option cells per half-row; a row is
+    // now class, ref, class, ref — two 4-option and two 2-option cells — which
+    // is NARROWER than the four 4-option cells it replaces. Un-clustering
+    // either band puts sixteen or twenty-eight cells on one row, the shape
+    // `moog960/stepmode` measured at 1336 px and had refused.
+    //
+    // ONE JACK PAIR PER CLUSTER is the group-by-lane ruling applied twice:
+    // column j means the same thing in every row of both bands — class of the
+    // pair's first jack, its ref, class of the second, its ref. Fourteen
+    // input jacks now divide evenly (7 pairs), so the IN band that used to be
+    // RAGGED (4/4/4/2, refused by the rule) is a console grid too.
     const plan = dockFacePlan(es9Def)!;
     const byId = new Map(plan.map((b) => [b.id, b] as const));
-    expect(consoleGridCols(byId.get('out')!), 'two equal clusters of four').toBe(4);
-    // The IN band holds the same cell fourteen times and is clustered 4/4/4/2.
-    // RAGGED on purpose: fourteen does not divide into rows that both fit the
-    // box and align, and a 7-wide row would not fit.
-    expect(consoleGridCols(byId.get('in')!), 'ragged, so no shared ruler').toBeNull();
+    expect(consoleGridCols(byId.get('out')!), 'four equal clusters of four').toBe(4);
+    expect(consoleGridCols(byId.get('in')!), 'seven equal clusters of four').toBe(4);
     expect(consoleGridCols(byId.get('bridge')!), 'no clusters at all').toBeNull();
-    // ONE console band, so the FACE-WIDE ruler must not engage — a lone console
-    // band has nothing to align against.
-    expect(faceConsoleGridCols(plan)).toBeNull();
+    // TWO console bands (FACE_CONSOLE_MIN_BANDS), both 4 wide, so the FACE-WIDE
+    // ruler engages at 4: a class column above a class column, a ref above a ref.
+    expect(faceConsoleGridCols(plan)).toBe(4);
   });
 
   it('every cluster is a subset of its own band, and covers it exactly once', () => {

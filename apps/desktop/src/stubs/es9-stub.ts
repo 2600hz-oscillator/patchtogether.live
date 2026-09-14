@@ -1,7 +1,7 @@
 // Protocol-faithful Node stub of the es9-bridge helper (control plane v1) —
 // the harness's Tier-A device layer, spawned through the REAL supervisor
 // state machine via injected binary paths (plain `node dist/stubs/es9-stub.js`,
-// no Electron). Spec of record: patchtogether.es9
+// no Electron). Spec of record: apps/helpers/es9/
 // Sources/ES9Core/{BridgeProtocol,BridgeService}.swift. Faithful here:
 //
 //   - loopback bind + the default Origin allowlist (403 otherwise),
