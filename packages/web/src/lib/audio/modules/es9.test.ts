@@ -52,7 +52,7 @@ describe('es9 def shape', () => {
       expect(p.max).toBe(3);
     }
     // Input twins default to cv (the modular-native case), output jacks to
-    // audio (bit-transparent).
+    // audio (±1 → ±5 V; the usb1-8 feeds are the bit-transparent ones).
     expect(es9Def.params.find((p) => p.id === 'in3_class')?.defaultValue).toBe(ES9_CLASS_CV);
     expect(es9Def.params.find((p) => p.id === 'out3_class')?.defaultValue).toBe(ES9_CLASS_AUDIO);
   });

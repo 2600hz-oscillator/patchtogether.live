@@ -32,14 +32,19 @@
 // and this factory stays DOM-free and jsdom-testable either way.
 //
 // SIGNALS + the per-jack CLASS model: the wire carries RAW hardware floats
-// (±1.0 ≙ ±10 V). Because canConnect() forbids one port serving both the
-// audio and cv families, each hardware INPUT jack 1-14 exposes TWO ports —
-// a raw `audio` port and a class-scaled `cv` twin (cv ×2 = ±5 V→±1;
-// pitch ×10 = 1 V/oct→1.0/oct with 0 V ≙ C4; gate = hysteresis comparator
-// →0|1). The 16 browser→hardware jacks are single `audio` ports widened
-// with accepts:['cv','pitch','gate'] (the scope.ts/scaler.ts precedent),
-// inverse-scaled per their class param. S/PDIF returns (USB in 15/16) are
-// AC digital — audio only, no cv twin.
+// (±1.0 ≙ ±10 V, the ES-9's full scale). The app's audio unity is Eurorack
+// NOMINAL — ±1.0 in the graph ≙ ±5 V at a DC-coupled jack, the same scale as
+// cv — so the worklet scales the audio port ×2 on the way in and ×0.5 on the
+// way out (ADR-019; until 2026-09-14 audio was ×1 and hardware arrived 6 dB
+// under every internal module). Because canConnect() forbids one port
+// serving both the audio and cv families, each hardware INPUT jack 1-14
+// exposes TWO ports — an `audio` port (±5 V → ±1.0) and a class-scaled `cv`
+// twin (cv ×2 = ±5 V→±1, the same scale; pitch ×10 = 1 V/oct→1.0/oct with
+// 0 V ≙ C4; gate = hysteresis comparator →0|1). The 16 browser→hardware
+// channels are single `audio` ports widened with accepts:['cv','pitch','gate']
+// (the scope.ts/scaler.ts precedent), inverse-scaled per their class param
+// on the 8 physical jacks; usb1-8 and the S/PDIF returns (USB in 15/16) are
+// digital (0 dBFS = 1.0, passed ×1) — audio only, no cv twin.
 //
 // OUTPUT-DIRECTION CHANNEL MAP (hardware-verified + ES-9 manual §Routing):
 // under the ES-9's DEFAULT routing the 8 physical DC-coupled jacks are
@@ -65,7 +70,7 @@ const PROCESSOR_NAME = 'es9-bridge';
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 /** Signal classes — MUST mirror packages/dsp/src/lib/es9-bridge-core.ts
- *  (0=audio raw, 1=cv ±5 V↔±1, 2=pitch 1 V/oct↔1.0/oct, 3=gate 0|1↔0/+5 V). */
+ *  (0=audio ±5 V↔±1, 1=cv ±5 V↔±1, 2=pitch 1 V/oct↔1.0/oct, 3=gate 0|1↔0/+5 V). */
 export const ES9_CLASS_AUDIO = 0;
 export const ES9_CLASS_CV = 1;
 export const ES9_CLASS_PITCH = 2;
@@ -101,14 +106,17 @@ export const ES9_CLASS_OPTIONS: readonly ParamOption[] = ES9_CLASS_NAMES.map(
 
 const HW_CHANNELS = 16;
 const CV_TWIN_BASE = 16;
-/** DC-coupled input jacks (with cv twins); 15/16 are the S/PDIF return. */
+/** DC-coupled input jacks (with cv twins); 15/16 are the S/PDIF return.
+ *  MIRRORED in packages/dsp/src/lib/es9-bridge-core.ts (DC_INPUT_JACKS),
+ *  where the worklet's audio-scaling guard reads it. */
 const DC_INPUT_JACKS = 14;
 /** DC-coupled output jacks. */
 const DC_OUTPUT_JACKS = 8;
 /** First USB output channel (0-based) that drives a physical jack: the
  *  ES-9's DEFAULT routing puts the 8 jacks on USB/DAW channels 9-16
  *  (manual §Routing; hardware-verified) — USB 1-8 feed the internal
- *  mixer (main/phones), S/PDIF, and the ES-5 header. */
+ *  mixer (main/phones), S/PDIF, and the ES-5 header. MIRRORED in
+ *  packages/dsp/src/lib/es9-bridge-core.ts (JACK_CHANNEL_BASE). */
 const JACK_CHANNEL_BASE = 8;
 
 /** Payload the card hands across on connect (null = detach). */
@@ -219,7 +227,7 @@ function inputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}`] =
-      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = raw full scale, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock).`;
+      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = ±1 → ±5 V, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock).`;
   }
   const usbDefault: Record<number, string> = {
     1: 'the main outputs (via internal mix 1) and phones',
@@ -242,7 +250,7 @@ function outputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_INPUT_JACKS; n++) {
     docs[`in${n}`] =
-      `ES-9 hardware input jack ${n}, raw: float ±1.0 is ±10 V at the jack. This is the audio-typed port — patch it to mixers, effects, AUDIO OUT, or a SCOPE.`;
+      `ES-9 hardware input jack ${n} as audio: float ±1.0 is ±5 V at the jack (Eurorack nominal, the same unity as every internal module; the jack's ±10 V full scale reads as ±2.0; +4 dBu line level reads about ±0.35, so line gear wants gain downstream). This is the audio-typed port — patch it to mixers, effects, AUDIO OUT, or a SCOPE.`;
     docs[`in${n}_cv`] =
       `ES-9 input jack ${n} as CV, scaled by the In ${n} class selector: cv maps ±5 V to the app's ±1 modulation range, pitch maps 1 V/oct onto the app's 1.0/oct (0 V ≙ C4), gate runs a 2 V/1 V hysteresis comparator and emits clean 0|1. Patch this twin into cv/pitch/gate inputs — e.g. a hardware Maths LFO into a filter's cutoff CV.`;
   }
@@ -257,11 +265,11 @@ function controlDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_INPUT_JACKS; n++) {
     docs[`in${n}_class`] =
-      `Signal class for input jack ${n}'s CV twin port (audio/cv/pitch/gate; default cv). Sets how hardware volts map onto app units on in${n}_cv: cv = ±5 V → ±1, pitch = 1 V/oct → 1.0/oct (0 V ≙ C4), gate = hysteresis comparator (rise ≥2 V, fall <1 V) → 0|1, audio = raw. The raw in${n} port is unaffected.`;
+      `Signal class for input jack ${n}'s CV twin port (audio/cv/pitch/gate; default cv). Sets how hardware volts map onto app units on in${n}_cv: cv = ±5 V → ±1, pitch = 1 V/oct → 1.0/oct (0 V ≙ C4), gate = hysteresis comparator (rise ≥2 V, fall <1 V) → 0|1, audio = the same ±5 V → ±1 as the audio port (they differ only in how the twin fails on a stream hiccup: audio fades, cv holds). The audio in${n} port ignores this selector and always carries ±5 V → ±1.`;
   }
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}_class`] =
-      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = raw full scale) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
+      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = ±1 → ±5 V, the same scaling as cv) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
   }
   docs['es9-connect-{n}'] =
     "Bring the hardware link up. Unlike a browser permission this is not a grant the page can ask for — the es9-bridge companion app has to be RUNNING on this machine, because Chromium can only reach an ES-9's first stereo pair through getUserMedia and cannot pick a channel range at all. The app owns CoreAudio's full 16-in/16-out and serves a localhost WebSocket; pressing CONNECT points this node at it. Until it answers, every jack on this module sits silent and harmless in the patch. The link belongs to the NODE, not to any view, so it survives collapsing the dock, switching surfaces and never opening this plate again — and pressing CONNECT on an already-live link simply restarts it at the engine's current sample rate, which is the one rate the ring may run at.";
@@ -313,7 +321,7 @@ export const ES9_FACE: ModuleFace = {
       hint:
         'What each of the eight physical output jacks carries, which sets BOTH the voltage '
         + 'scaling on the way out (cv ±1 → ±5 V, pitch 1.0/oct → 1 V/oct, gate 0|1 → 0/+5 V, '
-        + 'audio raw full scale) AND how the jack fails if the stream hiccups: cv and pitch HOLD '
+        + 'audio ±1 → ±5 V) AND how the jack fails if the stream hiccups: cv and pitch HOLD '
         + 'their last voltage, since a pitch collapsing to 0 V is a wrong note, while gate and '
         + 'audio fall to zero, since a frozen gate is a stuck note or a stopped clock. They '
         + 'default to audio, so sending a rack LFO to hardware means changing one.',
@@ -332,9 +340,10 @@ export const ES9_FACE: ModuleFace = {
       hint:
         'How each hardware input jack\'s CV TWIN maps volts onto app units — cv ±5 V → ±1, pitch '
         + '1 V/oct → 1.0/oct with 0 V ≙ C4, gate through a 2 V / 1 V hysteresis comparator to a '
-        + 'clean 0|1, audio raw. It changes the in{n}_cv port only; the raw in{n} port beside it '
-        + 'always carries ±1.0 ≙ ±10 V whatever this says. cv is the default because a modular '
-        + 'patch into a rack param is the case this twin exists for.',
+        + 'clean 0|1, audio the same ±5 V → ±1 as cv (only the hiccup policy differs: audio fades, '
+        + 'cv holds). It changes the in{n}_cv port only; the audio in{n} port beside it always '
+        + 'carries ±1.0 ≙ ±5 V whatever this says, so a ±10 V signal reads ±2.0 there. cv is the '
+        + 'default because a modular patch into a rack param is the case this twin exists for.',
       controls: [
         'in1_class', 'in2_class', 'in3_class', 'in4_class', 'in5_class',
         'in6_class', 'in7_class', 'in8_class', 'in9_class', 'in10_class',
@@ -426,7 +435,8 @@ export const es9Def: AudioModuleDef = {
   ],
   params: [
   // 0=audio 1=cv 2=pitch 3=gate. Inputs default cv (the modular-native
-  // case for the cv twin); outputs default audio (bit-transparent).
+  // case for the cv twin); outputs default audio (±1 → ±5 V on the 8 jacks;
+  // usb1-8 stay bit-transparent whatever the class).
   { id: 'in1_class', label: 'In 1 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
   { id: 'in2_class', label: 'In 2 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
   { id: 'in3_class', label: 'In 3 class', defaultValue: 1, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
@@ -468,7 +478,7 @@ export const es9Def: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: a raw audio port (±1.0 ≙ ±10 V) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors; cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate\'s BRIDGE lamp says whether it answered, and CONNECT is on the module\'s tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
+      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: an audio port (±1.0 ≙ ±5 V, Eurorack nominal — the same unity as every internal module) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors (audio ±1.0 → ±5 V); cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate\'s BRIDGE lamp says whether it answered, and CONNECT is on the module\'s tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
     inputs: inputDocs(),
     outputs: outputDocs(),
     controls: controlDocs(),
