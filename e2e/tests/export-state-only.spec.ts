@@ -5,7 +5,8 @@
 // stubbed showSaveFilePicker so no native dialog opens. Asserted:
 //   1. the row produces a performance zip (with the state-only default name);
 //   2. after an aged session it is SMALLER than the default export of the
-//      same rack (the point of the feature);
+//      same rack (the point of the feature) — behind a negative control that
+//      the aging really left history the default export carries;
 //   3. it loads back through the real zip-load path and reproduces the
 //      rack's nodes + edges exactly.
 //
@@ -32,20 +33,61 @@ test('export state-only: menu row produces a smaller zip that round-trips the ra
     ],
   );
 
-  // Age the doc: 600 knob-drag-shaped transactions. The last write puts tune
-  // at a known value so the round-trip assertion pins real state, not luck.
+  // The un-aged default export: the negative control's baseline. Building it
+  // reads the live doc without writing to it (makePortableEnvelope works on a
+  // throwaway copy), so it leaves no history of its own.
+  const fullBefore = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __perfZip: { export: () => Promise<Uint8Array> } };
+    return (await w.__perfZip.export()).length;
+  });
+
+  // Age the doc with 600 transactions shaped like a real session: a module
+  // added and removed (one transaction in three) interleaved with knob-drag
+  // writes. Net-zero on STATE — the last write pins tune at a known value so
+  // the round-trip assertion pins real state, not luck — but the CRDT history
+  // it leaves is what the default export carries and the state-only sheds.
+  //
+  // ⚠ WHY NOT 600 KNOB WRITES ON ONE KEY. That shape flaked CI (run
+  // 34889639648: "state-only zip (847 B) must undercut the history-carrying
+  // export (847 B)"). Yjs merges consecutive same-key tombstones into ONE
+  // struct (Item.mergeWith — same client, adjacent clocks, both deleted,
+  // ContentDeleted lengths add), so 600 — or 6,000 — sets of `params.tune`
+  // encode to 13 bytes of history. The ~50 B that still separated the two
+  // exports was makePortableEnvelope's own x/y re-set, and the live doc's
+  // random uint32 clientID is written as a varint once per struct reference:
+  // a draw below 2^28 (1 in 16) is a byte narrower on ~43 references and
+  // erased that gap. The assertion was a coin flip on a random id, not a test
+  // of history. A scratch node on a NEW key has no left neighbour (origin =
+  // null), so its tombstone can never merge — 200 of them are ~6 KB of
+  // history no id draw can hide. The negative control below is what pins
+  // this: a fixture Yjs can fold away fails there, by name.
   await page.evaluate(() => {
     const w = globalThis as unknown as {
-      __patch: { nodes: Record<string, { params: Record<string, unknown> }> };
+      __patch: { nodes: Record<string, { params: Record<string, unknown> } | undefined> };
       __ydoc: { transact: (fn: () => void) => void };
     };
     for (let t = 0; t < 600; t++) {
       w.__ydoc.transact(() => {
-        w.__patch.nodes['vco'].params.tune = t % 36;
+        if (t % 3 === 0) {
+          // Add + remove in ONE transaction: Yjs raises no key event for an
+          // entry inserted and deleted in the same transaction, so the
+          // reconciler never sees the scratch module — only its tombstone stays.
+          const id = `scratch-${t}`;
+          w.__patch.nodes[id] = {
+            id,
+            type: 'analogVco',
+            domain: 'audio',
+            position: { x: t, y: t },
+            params: { tune: t % 36 },
+          } as never;
+          delete w.__patch.nodes[id];
+        } else {
+          w.__patch.nodes['vco']!.params.tune = t % 36;
+        }
       });
     }
     w.__ydoc.transact(() => {
-      w.__patch.nodes['vco'].params.tune = 5;
+      w.__patch.nodes['vco']!.params.tune = 5;
     });
   });
 
@@ -141,9 +183,18 @@ test('export state-only: menu row produces a smaller zip that round-trips the ra
   // payload can be made large enough for the assertion to mean something.
   expect(stateOnly.writes, 'the export wrote through the save stream').toBeGreaterThan(0);
   expect(stateOnly.size, 'the captured archive is non-empty').toBeGreaterThan(0);
+  // NEGATIVE CONTROL on the fixture: the aging must have left history the
+  // default export carries — more of it than the whole rack state weighs — so
+  // a write shape Yjs can merge away (see the aging comment) fails HERE
+  // instead of turning the assertion below into a coin flip.
+  const grew = stateOnly.fullSize - fullBefore;
+  expect(
+    grew,
+    `aging grew the default export by ${grew} B (${fullBefore} B → ${stateOnly.fullSize} B); that history must outweigh the state-only zip (${stateOnly.size} B)`,
+  ).toBeGreaterThan(stateOnly.size);
   expect(
     stateOnly.size,
-    `state-only zip (${stateOnly.size} B) must undercut the history-carrying export (${stateOnly.fullSize} B)`,
+    `state-only zip (${stateOnly.size} B) must undercut the history-carrying export (${stateOnly.fullSize} B; un-aged ${fullBefore} B)`,
   ).toBeLessThan(stateOnly.fullSize);
 
   // Round-trip: clear the rack, load the captured state-only zip back through
