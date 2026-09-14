@@ -1549,12 +1549,70 @@ tasks:
   helpers:build:
     desc: |
       Build all three native helpers — es9-bridge + vst-bridge (Swift, the
-      apps/helpers submodules) and the in-tree pt-ptz (C). macOS only.
+      in-tree apps/helpers/es9 + apps/helpers/nativeapps packages, folded in
+      with their history) and pt-ptz (C). macOS only. Compiles ONLY — nothing
+      starts; see helpers:start.
     cmds:
-      - git submodule update --init apps/helpers/es9 apps/helpers/nativeapps
       - swift build -c release --package-path apps/helpers/es9
       - swift build -c release --package-path apps/helpers/nativeapps
       - make -C tools/pt-ptz
+
+  # Lifecycle of the two bridges as DETACHED processes (scripts/helpers.sh —
+  # PID + log under .helpers/, gitignored like .dev-server/). A start without
+  # a stop is the foot-gun the es9 README warns about: a bridge that outlives
+  # its terminal is reparented to launchd and keeps holding the port AND the
+  # ES-9. Every start refuses a port something already listens on and names
+  # the PID; every stop kills what it recorded, and falls back to the port's
+  # listener only when that is THIS checkout's binary.
+  helpers:start:
+    desc: |
+      Start BOTH built bridges detached — es9-bridge on 9209, vst-bridge on
+      9309 (PT_HELPER_ES9_PORT / PT_HELPER_VST_PORT override, the same seam
+      apps/desktop reads). Builds a missing binary first. Takes no flags: the
+      two binaries do not share a flag set — pass flags through the per-helper
+      task (`task helpers:es9:start -- --synthetic`). Stop: task helpers:stop.
+    cmds:
+      - bash scripts/helpers.sh start all {{.CLI_ARGS}}
+
+  helpers:es9:start:
+    desc: |
+      Start es9-bridge detached on 9209 (needs an ES-9 attached, or pass
+      `-- --synthetic` for test signals on inputs 1-3). Extra args go to the
+      binary: `task helpers:es9:start -- --synthetic --port 9210`. Prints the
+      harness URL (http://127.0.0.1:9209/) and the protocol URL (…/ws).
+    cmds:
+      - bash scripts/helpers.sh start es9 {{.CLI_ARGS}}
+
+  helpers:vst:start:
+    desc: |
+      Start vst-bridge detached on 9309 (no hardware needed). Extra args go
+      to the binary: `task helpers:vst:start -- --allow-origin '*.pages.dev'`.
+      Prints the harness URL (http://127.0.0.1:9309/) and the protocol URL.
+    cmds:
+      - bash scripts/helpers.sh start vst {{.CLI_ARGS}}
+
+  helpers:stop:
+    desc: |
+      Stop both bridges started by this checkout (SIGINT via PID file, TERM →
+      KILL on a bounded wait) and free 9209/9309. A listener this checkout
+      did not start is NAMED, not killed (HELPERS_FORCE=1 to override).
+    cmds:
+      - bash scripts/helpers.sh stop all
+
+  helpers:es9:stop:
+    desc: Stop only es9-bridge (same rules as helpers:stop).
+    cmds:
+      - bash scripts/helpers.sh stop es9
+
+  helpers:vst:stop:
+    desc: Stop only vst-bridge (same rules as helpers:stop).
+    cmds:
+      - bash scripts/helpers.sh stop vst
+
+  helpers:status:
+    desc: Report, per bridge, whether its port is listening, which PID holds it, whether that PID is ours, and where the log is.
+    cmds:
+      - bash scripts/helpers.sh status all
 
   desktop:install:
     desc: Install apps/desktop deps (standalone package — run once per checkout).

@@ -9,9 +9,17 @@ REAL AU plugins. Issue #1953 (which carries the plan's milestones).
 
 ## Setup
 
+The helper lives in-tree at `apps/helpers/nativeapps` (folded in with its
+history, 2026-09-14). Build once, then run it detached:
+
 ```sh
-cd ../patchtogether.nativeapps && swift run -c release vst-bridge
+flox activate -- task helpers:build        # once (macOS only)
+flox activate -- task helpers:vst:start    # http://127.0.0.1:9309/ ; task helpers:vst:stop ends it
 ```
+
+`task helpers:status` shows whether it is up and which PID holds 9309. The
+"kill the helper" / "quit and relaunch" items below are
+`task helpers:vst:stop` followed by `task helpers:vst:start`.
 
 Chromium (or Firefox), `http://localhost:5173/rack` or
 `https://dev.patchtogether.live/rack` (the helper allowlists
