@@ -514,6 +514,33 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // the rack back to mono the instant they released the pad, which is the one
     // behaviour nobody could use it for.
     'samsloop:poly',
+    // LINNSTRUMENT, 2026-09-14. Seven 0/1 switches resting at 0, all LATCHING,
+    // classified AT THE READ SITE (`linnstrument-runtime.ts`):
+    //   sel_g / sel_b — the G and B joystick SELECTORS. Read as a LEVEL: the
+    //     reducer's `mask[id]` decides on EVERY pointer sample whether that
+    //     pair follows the finger (`applySample` skips unselected ids). D04 is
+    //     an owner ruling that these are independent TOGGLES; a momentary
+    //     render would deselect the pair the instant the player let go, which
+    //     is the one thing a selector cannot be. (sel_r rests at 1 — D08 — so
+    //     it is not switch-shaped and needs no entry.)
+    //   keys_arp_on / pad_arp_on — whether the region's arp OWNS its bus. Read
+    //     as a level by `applyArpParams` (`arp.setEnabled(on)`) and by every
+    //     voice write (`if (!r.arp.enabled)`); the transport keeps running for
+    //     as long as the value stands.
+    //   keys_arp_latch / pad_arp_latch — the engine's `params.latch`, a MODE
+    //     `arpSetHeld` consults on every held-set change (arp-engine.ts: a
+    //     frozen set survives only while latch is on). HOLD on the control
+    //     column flips the same value.
+    //   join_policy — the D07 SWITCH between `next_coherent_xy_sample` and
+    //     `soft_takeover`, read as a level when the profile is rebuilt and on
+    //     every `setSelector`/`applySample`. It is a preference, not a gesture.
+    'linnstrument:sel_g',
+    'linnstrument:sel_b',
+    'linnstrument:keys_arp_on',
+    'linnstrument:pad_arp_on',
+    'linnstrument:keys_arp_latch',
+    'linnstrument:pad_arp_latch',
+    'linnstrument:join_policy',
     // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
     // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
     //
