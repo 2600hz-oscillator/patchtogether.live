@@ -30,6 +30,12 @@
   import * as push2 from '$lib/control/push2/push2-device.svelte';
   import * as launchpad from '$lib/control/launchpad/launchpad-device.svelte';
   import { connectPtzMidi, listPtzOutputNames, ptzMidiVersion } from '$lib/audio/ptz-midi';
+  import {
+    connectLinnstrument,
+    linnstrumentHasAccess,
+    linnstrumentMidiVersion,
+    listLinnstrumentPorts,
+  } from '$lib/midi/linnstrument-device';
 
   interface PtNativeLike {
     command?: (
@@ -228,6 +234,28 @@
   function ptzPresent(): boolean {
     const b = rig.ptz;
     return !!b && ptzNames.includes(b.deviceId);
+  }
+
+  // ── LINNSTRUMENT ──────────────────────────────────────────────────────────
+  // The Push 2 pattern: the status store → enumerate; the pick writes the rig
+  // store and NOTHING else here — the device layer's own rig subscription
+  // applies it (enters User Firmware Mode on the picked port live), so this
+  // screen never owns a device. sysex:false seam (NRPN/CC only).
+  let linnPorts = $derived.by(() => {
+    $linnstrumentMidiVersion;
+    return linnstrumentHasAccess() ? listLinnstrumentPorts() : [];
+  });
+  let linnScanned = $state(false);
+  async function connectLinn(): Promise<void> {
+    await connectLinnstrument();
+    linnScanned = true;
+  }
+  function pickLinn(inputId: string): void {
+    store.setLinnstrument(inputId === '' ? null : { deviceId: inputId });
+  }
+  function linnPresent(): boolean {
+    const b = rig.linnstrument;
+    return !!b && linnPorts.some((p) => p.inputId === b.deviceId);
   }
 
   // ── GAMEPAD ───────────────────────────────────────────────────────────────
@@ -596,6 +624,44 @@
           <option value={rig.ptz.deviceId} disabled>bound (not connected)</option>
         {/if}
         {#each ptzNames as n (n)}<option value={n}>{n}</option>{/each}
+      </select>
+    </div>
+  </section>
+
+  <!-- LINNSTRUMENT -->
+  <section class="group" data-testid="preflight-section-linnstrument">
+    <div class="group-head">
+      <h2>linnstrument</h2>
+      <button class="ghost" data-testid="preflight-linnstrument-connect" onclick={connectLinn}>
+        {linnstrumentHasAccess() ? 'rescan' : 'enable midi'}
+      </button>
+    </div>
+    <div class="row">
+      <span class="label">linnstrument</span>
+      <span
+        class="lamp"
+        data-testid="preflight-linnstrument-presence"
+        data-state={rig.linnstrument && !linnPresent() ? 'down' : linnPorts.length > 0 ? 'ok' : 'idle'}
+      >
+        {rig.linnstrument && !linnPresent()
+          ? 'not connected'
+          : linnPorts.length > 0
+            ? 'connected'
+            : linnScanned
+              ? 'not found'
+              : 'not scanned'}
+      </span>
+      <select
+        class="control"
+        data-testid="preflight-linnstrument-select"
+        value={rig.linnstrument?.deviceId ?? ''}
+        onchange={(e) => pickLinn(e.currentTarget.value)}
+      >
+        <option value="">— none —</option>
+        {#if rig.linnstrument && !linnPresent()}
+          <option value={rig.linnstrument.deviceId} disabled>bound (not connected)</option>
+        {/if}
+        {#each linnPorts as p (p.inputId)}<option value={p.inputId}>{p.name}</option>{/each}
       </select>
     </div>
   </section>
