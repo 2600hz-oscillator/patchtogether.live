@@ -4,6 +4,10 @@ import { waitFrames } from '../_helpers/frames';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 import { writeFile } from 'node:fs/promises';
 
+// Keep the expensive physical-loop probes sequential within this file. Other
+// CI specs still run alongside them on the shared software renderer.
+test.describe.configure({ mode: 'default' });
+
 // Real factory/shaders; fixed frame counts and equal starting histories.
 // The profile coefficient tests cannot see a disconnected shader uniform.
 const BASE = { tvMode: 3, mix: 0, feedback: 1.1, zoom: 0.93, rotate: 6,
@@ -24,6 +28,35 @@ async function boot(page: Page, variants: Record<string, number>[]) {
     { id: `s${i}`, from: { nodeId: 'src', portId: 'out' }, to: { nodeId: `m${i}`, portId: 'in_a' }, sourceType: 'mono-video' as const, targetType: 'video' as const },
     { id: `e${i}`, from: { nodeId: `m${i}`, portId: 'out' }, to: { nodeId: `o${i}`, portId: 'in' }, sourceType: 'video' as const, targetType: 'video' as const },
   ]));
+  // The probe consumes every output, including off-screen variants. Preview
+  // watches expire after 1.5 s; a synchronous SwiftShader frame burst can
+  // outlast that TTL. Own hard leases, as an actual presentation surface does,
+  // and prove PER-NODE draws rather than only the engine's global tick count.
+  const counts = await page.evaluate((count) => {
+    const w = window as unknown as { __engine: () => { getDomain(d: string): {
+      acquireRenderLease(id: string): () => void;
+      pullStats(): { framesDrawn: Record<string, number> };
+    } } };
+    const ve = w.__engine().getDomain('video');
+    for (let i = 0; i < count; i++) ve.acquireRenderLease(`m${i}`);
+    return ve.pullStats().framesDrawn;
+  }, variants.length);
+  let driven = 0;
+  return async (nodeId: string, steps: number) => {
+    const stats = await stepAndReadStats(page, { nodeId, steps });
+    driven += steps;
+    const drawn = await page.evaluate(() => {
+      const w = window as unknown as { __engine: () => { getDomain(d: string): {
+        pullStats(): { framesDrawn: Record<string, number> };
+      } } };
+      return w.__engine().getDomain('video').pullStats().framesDrawn;
+    });
+    for (let i = 0; i < variants.length; i++) {
+      const id = `m${i}`;
+      expect((drawn[id] ?? 0) - (counts[id] ?? 0), `${id}: every requested field was drawn`).toBe(driven);
+    }
+    return stats;
+  };
 }
 
 /** Spatial probe after the shared harness drives frames. Reads the actual
@@ -71,9 +104,9 @@ function difference(a: number[], b: number[]) {
 
 test('sensor seed is reproducible, changes the picture, and becomes inert at zero variation', async ({ page }) => {
   test.setTimeout(120_000);
-  await boot(page, [{ sensorSeed: 167 }, { sensorSeed: 167 }, { sensorSeed: 49820 },
+  const step = await boot(page, [{ sensorSeed: 167 }, { sensorSeed: 167 }, { sensorSeed: 49820 },
     { sensorSeed: 167, sensorVariation: 0 }, { sensorSeed: 49820, sensorVariation: 0 }]);
-  assertRenderStats(await stepAndReadStats(page, { nodeId: 'm0', steps: 24 }), 24);
+  assertRenderStats(await step('m0', 8), 8);
   const p = await pictures(page, 5);
   expect(difference(p[0]!, p[1]!), 'same seed + same input/history').toBe(0);
   expect(difference(p[0]!, p[2]!), 'rerolled physical response reaches GPU pixels').toBeGreaterThan(0.2);
@@ -89,7 +122,7 @@ test('sensor seed is reproducible, changes the picture, and becomes inert at zer
     const w = window as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
     return w.__patch.nodes.m0?.params.sensorSeed !== 167;
   });
-  await stepAndReadStats(page, { nodeId: 'm0', steps: 8 });
+  await step('m0', 8);
   const rerolled = await pictures(page, 2);
   expect(difference(rerolled[0]!, rerolled[1]!), 'face action changes the live feedback response').toBeGreaterThan(0.05);
   const data = await page.evaluate(() => {
@@ -128,52 +161,54 @@ test('sensor seed is reproducible, changes the picture, and becomes inert at zer
 
 test('camera angle, focus and colour gain change the iterated image', async ({ page }) => {
   test.setTimeout(120_000);
-  await boot(page, [{}, { camTiltX: 0.13, camTiltY: -0.08 }, { focus: 1 }, { r: 0.4, b: 1.5 }]);
-  assertRenderStats(await stepAndReadStats(page, { nodeId: 'm0', steps: 24 }), 24);
+  const step = await boot(page, [{}, { camTiltX: 0.13, camTiltY: -0.08 }, { focus: 1 }, { r: 0.4, b: 1.5 }]);
+  assertRenderStats(await step('m0', 8), 8);
   const p = await pictures(page, 4);
   for (let i = 1; i < p.length; i++) expect(difference(p[0]!, p[i]!), `physical stage ${i}`).toBeGreaterThan(0.2);
 });
 
 test('closing the iris exposes charge decay; freeze holds both physical histories', async ({ page }) => {
   test.setTimeout(90_000);
-  await boot(page, [{ sensorLag: 0.1 }, { sensorLag: 0 }]);
-  assertRenderStats(await stepAndReadStats(page, { nodeId: 'm0', steps: 24 }), 24);
+  const step = await boot(page, [{ sensorLag: 0.025 }, { sensorLag: 0 }]);
+  assertRenderStats(await step('m0', 8), 8);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
     const ve = w.__engine().getDomain('video');
     ve.setParam('m0', 'exposure', 0); ve.setParam('m1', 'exposure', 0);
   });
-  const fading = await stepAndReadStats(page, { nodeId: 'm0', steps: 1 });
-  const closed = await stepAndReadStats(page, { nodeId: 'm1', steps: 0 });
+  const fading = await step('m0', 1);
+  const closed = await step('m1', 0);
   expect(closed.mean).toBe(0);
   expect(fading.mean).toBeGreaterThan(5);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
     w.__engine().getDomain('video').setParam('m0', 'freeze', 1);
   });
-  const held = await stepAndReadStats(page, { nodeId: 'm0', steps: 8 });
+  const held = await step('m0', 8);
   expect(held.mean).toBe(fading.mean);
   expect(held.glErrors).toEqual([]);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
     w.__engine().getDomain('video').setParam('m0', 'freeze', 0);
   });
-  const decayed = await stepAndReadStats(page, { nodeId: 'm0', steps: 36 });
+  // Ten fields cover >6 time constants at 25 ms, including the slowest RGB
+  // channel; this measures the same exponential tail without 36 GPU draws.
+  const decayed = await step('m0', 10);
   expect(decayed.mean).toBeLessThan(fading.mean * 0.01);
   expect(decayed.glErrors).toEqual([]);
 });
 
 test('monitor decay changes the transient independently of sensor charge', async ({ page }) => {
   test.setTimeout(90_000);
-  await boot(page, [{ tubeDecay: 0, sensorLag: 0 }, { tubeDecay: 0.5, sensorLag: 0 }]);
-  assertRenderStats(await stepAndReadStats(page, { nodeId: 'm0', steps: 24 }), 24);
+  const step = await boot(page, [{ tubeDecay: 0, sensorLag: 0 }, { tubeDecay: 0.5, sensorLag: 0 }]);
+  assertRenderStats(await step('m0', 8), 8);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
     const ve = w.__engine().getDomain('video');
     for (const id of ['m0', 'm1']) for (const [key, value] of Object.entries({ feedback: 0, room: 0, blackLevel: -0.3 })) ve.setParam(id, key, value);
   });
-  const fast = await stepAndReadStats(page, { nodeId: 'm0', steps: 1 });
-  const slow = await stepAndReadStats(page, { nodeId: 'm1', steps: 0 });
+  const fast = await step('m0', 1);
+  const slow = await step('m1', 0);
   expect(fast.mean, 'zero emission + zero sensor memory is black immediately').toBe(0);
   expect(slow.mean, 'only monitor history remains after cutting the drive').toBeGreaterThan(1);
   expect(slow.glErrors).toEqual([]);
@@ -181,13 +216,13 @@ test('monitor decay changes the transient independently of sensor charge', async
 
 test('the physical loop restarts after mode re-entry and reallocates at the current aspect', async ({ page }) => {
   test.setTimeout(90_000);
-  await boot(page, [{}]);
-  assertRenderStats(await stepAndReadStats(page, { nodeId: 'm0', steps: 8 }), 8);
+  const step = await boot(page, [{}]);
+  assertRenderStats(await step('m0', 8), 8);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
     w.__engine().getDomain('video').setParam('m0', 'tvMode', 0);
   });
-  expect((await stepAndReadStats(page, { nodeId: 'm0', steps: 2 })).glErrors).toEqual([]);
+  expect((await step('m0', 2)).glErrors).toEqual([]);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): {
       setParam(id: string, key: string, value: number): void;
@@ -197,5 +232,5 @@ test('the physical loop restarts after mode re-entry and reallocates at the curr
     ve.setParam('m0', 'tvMode', 3);
     ve.setResolution(1366, 768);
   });
-  assertRenderStats(await stepAndReadStats(page, { nodeId: 'm0', steps: 8 }), 8);
+  assertRenderStats(await step('m0', 8), 8);
 });
