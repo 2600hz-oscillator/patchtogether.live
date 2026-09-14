@@ -1078,6 +1078,19 @@
   // engine materialized nodes from incoming Yjs ops but the canvas
   // didn't render them in lockstep.
   let snapshot = $state.raw<PatchSnapshot>(getDefaultSnapshotBus().current());
+  let layoutRevision = $state(0);
+  onMount(() => {
+    let layouts = ydoc.getMap('layouts');
+    const changed = () => { layoutRevision += 1; };
+    layouts.observeDeep(changed);
+    const offBind = onBindRackspace((_patch, doc) => {
+      layouts.unobserveDeep(changed);
+      layouts = doc.getMap('layouts');
+      layouts.observeDeep(changed);
+      changed();
+    });
+    return () => { offBind(); layouts.unobserveDeep(changed); };
+  });
   $effect(() => {
     return getDefaultSnapshotBus().subscribe((snap) => {
       snapshot = snap;
@@ -3336,6 +3349,7 @@
   $effect(() => {
     const snap = snapshot;
     const top = topNodeId;
+    void layoutRevision;
     const next: FlowNode[] = [];
     const nextPrev = new Map<string, PrevFlowNodeEntry>();
     let rebuiltAny = false;

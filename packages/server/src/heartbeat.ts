@@ -8,6 +8,7 @@
 // offset estimate inside ~1s without paying for that bandwidth at idle.
 
 import type { Extension } from '@hocuspocus/server';
+import { randomUUID } from 'node:crypto';
 
 // Minimal structural type for the bits of the Hocuspocus Document we use.
 // Importing the deep `Document.js` path resolves only to a .d.ts (the
@@ -82,6 +83,7 @@ export function createHeartbeatExtension(
   depsOverride: Partial<HeartbeatDeps> = {},
 ): HeartbeatExtension {
   const deps: HeartbeatDeps = { ...realDeps, ...depsOverride };
+  const clockSession = randomUUID();
   // documentName → DocState. Cleared on document unload.
   const docs = new Map<string, DocState>();
   // documentName → live Document reference (for emitting awareness updates).
@@ -159,6 +161,19 @@ export function createHeartbeatExtension(
 
   return {
     extensionName: 'heartbeat',
+
+    async onStateless({ payload, connection }) {
+      const serverRecvTs = deps.now();
+      // Requests carry only a correlation id and are answered to this connection.
+      if (payload.length > 256) return;
+      let request: { type?: unknown; id?: unknown };
+      try { request = JSON.parse(payload); } catch { return; }
+      if (!request || request.type !== 'clock-ping' || !Number.isSafeInteger(request.id)) return;
+      connection.sendStateless(JSON.stringify({
+        type: 'clock-pong', id: request.id, session: clockSession,
+        serverRecvTs, serverSendTs: deps.now(),
+      }));
+    },
 
     async afterLoadDocument(payload) {
       // Hocuspocus instantiates a Document per name on first connect (or

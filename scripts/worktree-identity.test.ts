@@ -24,7 +24,7 @@
 //     actually call the guard`), the same anchored-to-the-artifact shape
 //     dev-server-ownership.test.ts uses for the Taskfile.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,7 @@ import { assertServerIsThisWorktree, createGroupStopper, fetchWorktreeIdentity, 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const servers: Server[] = [];
+const retryWait = vi.fn(async (ms: number) => { expect(ms).toBe(2000); });
 afterEach(() => {
   for (const s of servers.splice(0)) s.close();
 });
@@ -67,7 +68,7 @@ describe('assertServerIsThisWorktree (#1597)', () => {
   it('REFUSES a wrong-tree server, naming BOTH paths', async () => {
     const foreignRoot = realpathSync(tmpdir()); // definitively not this checkout
     const url = await listen({ root: foreignRoot, commit: 'cafe1234', mode: 'dev' });
-    const err = await assertServerIsThisWorktree(url, ROOT, 'test').then(
+    const err = await assertServerIsThisWorktree(url, ROOT, 'test', retryWait).then(
       () => null,
       (e: Error) => e,
     );
@@ -80,14 +81,14 @@ describe('assertServerIsThisWorktree (#1597)', () => {
 
   it('POSITIVE CONTROL: accepts a server naming THIS tree, and returns its identity', async () => {
     const url = await listen({ root: realpathSync(ROOT), commit: 'feed5678', mode: 'preview' });
-    const id = await assertServerIsThisWorktree(url, ROOT, 'test');
+    const id = await assertServerIsThisWorktree(url, ROOT, 'test', retryWait);
     expect(id.commit).toBe('feed5678');
     expect(id.mode).toBe('preview');
   });
 
   it('REFUSES a server with NO /__worktree endpoint (unidentifiable ≠ trusted)', async () => {
     const url = await listen(null);
-    const err = await assertServerIsThisWorktree(url, ROOT, 'test').then(
+    const err = await assertServerIsThisWorktree(url, ROOT, 'test', retryWait).then(
       () => null,
       (e: Error) => e,
     );
@@ -106,7 +107,7 @@ describe('assertServerIsThisWorktree (#1597)', () => {
     const { port } = server.address() as { port: number };
     const url = `http://127.0.0.1:${port}`;
     expect(await fetchWorktreeIdentity(url)).toBeNull();
-    const err = await assertServerIsThisWorktree(url, ROOT, 'test').then(
+    const err = await assertServerIsThisWorktree(url, ROOT, 'test', retryWait).then(
       () => null,
       (e: Error) => e,
     );

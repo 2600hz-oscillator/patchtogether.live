@@ -111,7 +111,15 @@ async function buildTs(filePath) {
 async function main() {
   const entries = await readdir(SRC_DIR);
   const dspFiles = entries.filter((f) => f.endsWith('.dsp')).map((f) => join(SRC_DIR, f));
-  const tsFiles = entries.filter((f) => f.endsWith('.ts')).map((f) => join(SRC_DIR, f));
+  // Remove old outputs from builds that mistakenly bundled tests/declarations.
+  for (const file of entries.filter(f => f.endsWith('.test.ts') || f.endsWith('.d.ts'))) {
+    for (const suffix of ['.js', '.js.map', '.sha']) {
+      await rm(join(DIST_DIR, basename(file, '.ts') + suffix), { force: true });
+    }
+  }
+  const tsFiles = entries
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.d.ts'))
+    .map((f) => join(SRC_DIR, f));
 
   // Preflight: a .dsp and a .ts that share the same stem would race for the
   // same dist/<stem>.{js,wasm,sha} outputs and one would silently overwrite

@@ -75,18 +75,34 @@ export function attachReconciler(
 
   let latest: PatchSnapshot = bus.current();
   let scheduled = false;
-  let inFlight: Promise<void> = Promise.resolve();
+  let inFlight: Promise<void> | null = null;
+  let pending = false;
 
   function enqueue(): Promise<void> {
-    const next = inFlight.then(async () => {
-      if (disposed) return;
-      await doReconcile(latest);
-      if (!disposed) opts.onReconciled?.();
-    });
-    inFlight = next.catch((err) => {
-      console.error('[reconciler] reconcile failed:', err);
-    });
-    return next;
+    pending = true;
+    if (!inFlight) {
+      inFlight = Promise.resolve().then(async () => {
+        let failure: unknown;
+        try {
+          while (pending && !disposed) {
+            pending = false;
+            try {
+              await doReconcile(latest);
+              if (!disposed) opts.onReconciled?.();
+            } catch (err) {
+              failure = err;
+              console.error('[reconciler] reconcile failed:', err);
+            }
+          }
+        } finally {
+          // Clear before settling the promise: a later microtask must start a
+          // new drain, rather than attach to an already-finished one.
+          inFlight = null;
+        }
+        if (failure) throw failure;
+      });
+    }
+    return inFlight;
   }
 
   async function doReconcile(snap: PatchSnapshot): Promise<void> {

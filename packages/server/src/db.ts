@@ -40,7 +40,81 @@ let pool: pg.Pool | null = null;
 // ephemeral test racks (Playwright uses a fresh rack id per run) and a dev
 // loop where durability isn't the point.
 const USE_MEMORY = !process.env.DATABASE_URL;
-const memSnapshots = new Map<string, Uint8Array>();
+const memSnapshotRecords = new Map<string, SnapshotRecord>();
+let memSnapshotGeneration = 0n;
+const memSnapshotGarbage = new Map<string, number>();
+
+export interface SnapshotRecord {
+  state: Uint8Array;
+  generation: string;
+  r2Key: string | null;
+}
+
+/** Allocate before starting object I/O, so late completion cannot replace a newer save. */
+export async function nextSnapshotGeneration(): Promise<string> {
+  if (USE_MEMORY) return String(++memSnapshotGeneration);
+  const result = await getPool().query<{ generation: string }>(
+    "SELECT nextval('rack_snapshot_generation')::text AS generation",
+  );
+  return result.rows[0]!.generation;
+}
+
+export async function loadSnapshotRecord(rackId: string): Promise<SnapshotRecord | null> {
+  if (USE_MEMORY) {
+    return memSnapshotRecords.get(rackId) ?? null;
+  }
+  const result = await getPool().query<{ yjs_state: Buffer; generation: string; r2_key: string | null }>(
+    'SELECT yjs_state, generation::text, r2_key FROM rack_snapshots WHERE rack_id = $1', [rackId],
+  );
+  const row = result.rows[0];
+  return row ? { state: new Uint8Array(row.yjs_state), generation: row.generation, r2Key: row.r2_key } : null;
+}
+
+/** Commit the authority and payload together. False keeps the crash journal intact. */
+export async function storeSnapshotRecord(rackId: string, record: SnapshotRecord): Promise<boolean> {
+  if (USE_MEMORY) {
+    const previous = memSnapshotRecords.get(rackId);
+    if (!previous || BigInt(previous.generation) < BigInt(record.generation)) {
+      if (previous?.r2Key && previous.r2Key !== record.r2Key) memSnapshotGarbage.set(previous.r2Key, Date.now());
+      memSnapshotRecords.set(rackId, record);
+    } else if (record.r2Key && record.r2Key !== previous.r2Key) {
+      memSnapshotGarbage.set(record.r2Key, Date.now());
+    }
+    return true;
+  }
+  try {
+    await getPool().query(
+      `WITH committed AS (INSERT INTO rack_snapshots (rack_id, yjs_state, generation, r2_key, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (rack_id) DO UPDATE SET yjs_state = EXCLUDED.yjs_state,
+         generation = EXCLUDED.generation, r2_key = EXCLUDED.r2_key, updated_at = now()
+       WHERE rack_snapshots.generation < EXCLUDED.generation RETURNING rack_id)
+       INSERT INTO rack_snapshot_garbage(object_key)
+       SELECT $4::text WHERE $4::text IS NOT NULL AND NOT EXISTS (SELECT 1 FROM committed)
+         AND NOT EXISTS (SELECT 1 FROM rack_snapshots WHERE rack_id = $1 AND r2_key = $4)
+       ON CONFLICT DO NOTHING`,
+      [rackId, Buffer.from(record.state), record.generation, record.r2Key],
+    );
+    return true;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[hocuspocus] snapshot authority commit failed: doc=${rackId} ${(err as Error).message}`);
+    return false;
+  }
+}
+
+export async function retiredSnapshotObjects(): Promise<string[]> {
+  if (USE_MEMORY) return [...memSnapshotGarbage].filter(([, at]) => at < Date.now() - 3600_000).slice(0, 32).map(([key]) => key);
+  const result = await getPool().query<{ object_key: string }>(
+    "SELECT object_key FROM rack_snapshot_garbage WHERE retired_at < now() - interval '1 hour' ORDER BY retired_at LIMIT 32",
+  );
+  return result.rows.map(row => row.object_key);
+}
+
+export async function forgetRetiredSnapshotObject(key: string): Promise<void> {
+  if (USE_MEMORY) { memSnapshotGarbage.delete(key); return; }
+  await getPool().query('DELETE FROM rack_snapshot_garbage WHERE object_key = $1', [key]);
+}
 
 if (USE_MEMORY) {
   // eslint-disable-next-line no-console
@@ -166,71 +240,9 @@ export async function rackspaceExists(rackId: string): Promise<boolean> {
   return result.rowCount !== null && result.rowCount > 0;
 }
 
-/** Load the persisted Yjs state for a rackspace. Returns null if no
- *  snapshot exists yet (fresh rack). */
-export async function loadSnapshot(rackId: string): Promise<Uint8Array | null> {
-  if (USE_MEMORY) return memSnapshots.get(rackId) ?? null;
-  const result = await getPool().query<{ yjs_state: Buffer }>(
-    'SELECT yjs_state FROM rack_snapshots WHERE rack_id = $1',
-    [rackId],
-  );
-  if (result.rowCount === 0) return null;
-  return new Uint8Array(result.rows[0].yjs_state);
-}
-
-/** Persist a Yjs snapshot. Upsert: one row per rack, latest state wins.
- *  Silently no-ops when the rack doesn't exist (FK violation 23503) —
- *  this codepath is unreachable from real user flows (the SvelteKit
- *  loader inserts the rack before the WS handshake), but Playwright
- *  tests connect with ephemeral rack ids that never get a `racks` row.
- *  Logging + swallowing keeps the test ergonomics clean and is safe in
- *  prod (the FK still enforces integrity if it ever did get triggered).
- *
- *  Returns whether the state is now DURABLE (written, or a deliberate
- *  no-op for an FK-less test rack — which journals nothing either, so
- *  there's nothing to lose). `false` = a swallowed transient failure —
- *  the caller must NOT compact the update journal on false, or a crash
- *  during the failure window loses edits the journal was holding. The
- *  never-throws contract is unchanged (see the crash rationale below). */
-export async function storeSnapshot(rackId: string, state: Uint8Array): Promise<boolean> {
-  if (USE_MEMORY) {
-    memSnapshots.set(rackId, state);
-    return true;
-  }
-  try {
-    await getPool().query(
-      `INSERT INTO rack_snapshots (rack_id, yjs_state, updated_at)
-       VALUES ($1, $2, now())
-       ON CONFLICT (rack_id) DO UPDATE SET yjs_state = $2, updated_at = now()`,
-      [rackId, Buffer.from(state)],
-    );
-    return true;
-  } catch (err) {
-    if ((err as { code?: string }).code === '23503') {
-      // eslint-disable-next-line no-console
-      console.log(`[hocuspocus] persist skipped (no such rack): doc=${rackId}`);
-      return true;
-    }
-    // A persist failure must NEVER crash the relay. onStoreDocument has no
-    // catch of its own, so a re-throw here becomes an unhandled rejection
-    // that kills the whole process (every connected rack drops) — the
-    // tab-switch 500 root cause: a transient pg 'Authentication timed out'
-    // (08P01) on the unloadImmediately store fired on disconnect churn.
-    // A dropped snapshot is recoverable: Hocuspocus re-fires the debounced
-    // onStoreDocument on the next edit (and again on the next disconnect),
-    // so the latest doc state lands as soon as the DB is reachable again.
-    // Log + swallow so one bad write costs at most `debounce` ms of
-    // durability, not the entire relay.
-    // eslint-disable-next-line no-console
-    console.error(
-      `[hocuspocus] persist FAILED (transient — relay stays up, will retry): doc=${rackId} ` +
-        `code=${(err as { code?: string }).code ?? ''} ${(err as Error).message}`,
-    );
-    return false;
-  }
-}
-
 /** Test-only: wipe the in-memory snapshot map between cases. */
 export function _resetMemorySnapshots(): void {
-  memSnapshots.clear();
+  memSnapshotRecords.clear();
+  memSnapshotGeneration = 0n;
+  memSnapshotGarbage.clear();
 }

@@ -1,0 +1,628 @@
+{
+  "reviewed_commit": "221e4d76d",
+  "date": "2026-09-13",
+  "ci_provenance": [
+    {
+      "conclusion": "success",
+      "createdAt": "2026-09-13T12:38:15Z",
+      "databaseId": 34757630198,
+      "headSha": "e687640074929d34eddf6e29bbda3f392a1ffb8d",
+      "updatedAt": "2026-09-13T12:56:15Z",
+      "url": "https://github.com/2600hz-oscillator/patchtogether.live/actions/runs/34757630198"
+    },
+    {
+      "conclusion": "success",
+      "createdAt": "2026-09-09T23:34:43Z",
+      "databaseId": 34417548872,
+      "headSha": "7501726221814c72ad16fdabbeffda7663316a4b",
+      "updatedAt": "2026-09-09T23:54:41Z",
+      "url": "https://github.com/2600hz-oscillator/patchtogether.live/actions/runs/34417548872"
+    },
+    {
+      "conclusion": "success",
+      "createdAt": "2026-09-09T22:39:52Z",
+      "databaseId": 34413328938,
+      "headSha": "406b2dc7557de50a9d6e8c9826402b6f54445be9",
+      "updatedAt": "2026-09-09T22:59:13Z",
+      "url": "https://github.com/2600hz-oscillator/patchtogether.live/actions/runs/34413328938"
+    }
+  ],
+  "ci_timings": [
+    {
+      "run_id": "34413328938",
+      "job_minutes": 322.22,
+      "install_minutes": 45.68,
+      "install_steps": 35,
+      "slowest_jobs": [
+        {
+          "name": "e2e (shard 5/12)",
+          "seconds": 900.0
+        },
+        {
+          "name": "e2e (shard 11/12)",
+          "seconds": 871.0
+        },
+        {
+          "name": "e2e (shard 6/12)",
+          "seconds": 795.0
+        },
+        {
+          "name": "e2e (shard 12/12)",
+          "seconds": 785.0
+        }
+      ],
+      "selected_steps": [
+        {
+          "job": "unit",
+          "name": "Apply DB schema (for capacity-race test)",
+          "seconds": 0.0
+        },
+        {
+          "job": "unit",
+          "name": "Run unit tests (server + web)",
+          "seconds": 594.0
+        }
+      ],
+      "collab_steps": [
+        {
+          "job": "collab (@collab multi-context)",
+          "name": "Run @collab specs (single non-sharded runner, html report)",
+          "seconds": 386.0
+        },
+        {
+          "job": "collab (@collab multi-context)",
+          "name": "Upload Playwright test-results on failure (@collab)",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "run_id": "34417548872",
+      "job_minutes": 322.2,
+      "install_minutes": 44.38,
+      "install_steps": 35,
+      "slowest_jobs": [
+        {
+          "name": "e2e (shard 11/12)",
+          "seconds": 966.0
+        },
+        {
+          "name": "e2e (shard 5/12)",
+          "seconds": 896.0
+        },
+        {
+          "name": "e2e (shard 1/12)",
+          "seconds": 828.0
+        },
+        {
+          "name": "e2e (shard 8/12)",
+          "seconds": 791.0
+        }
+      ],
+      "selected_steps": [
+        {
+          "job": "unit",
+          "name": "Apply DB schema (for capacity-race test)",
+          "seconds": 1.0
+        },
+        {
+          "job": "unit",
+          "name": "Run unit tests (server + web)",
+          "seconds": 601.0
+        }
+      ],
+      "collab_steps": [
+        {
+          "job": "collab (@collab multi-context)",
+          "name": "Run @collab specs (single non-sharded runner, html report)",
+          "seconds": 366.0
+        },
+        {
+          "job": "collab (@collab multi-context)",
+          "name": "Upload Playwright test-results on failure (@collab)",
+          "seconds": 0.0
+        }
+      ]
+    },
+    {
+      "run_id": "34757630198",
+      "job_minutes": 312.97,
+      "install_minutes": 45.07,
+      "install_steps": 35,
+      "slowest_jobs": [
+        {
+          "name": "e2e (shard 5/12)",
+          "seconds": 848.0
+        },
+        {
+          "name": "e2e (shard 11/12)",
+          "seconds": 847.0
+        },
+        {
+          "name": "e2e (shard 1/12)",
+          "seconds": 812.0
+        },
+        {
+          "name": "e2e (shard 6/12)",
+          "seconds": 788.0
+        }
+      ],
+      "selected_steps": [
+        {
+          "job": "unit",
+          "name": "Apply DB schema (for capacity-race test)",
+          "seconds": 0.0
+        },
+        {
+          "job": "unit",
+          "name": "Run unit tests (server + web)",
+          "seconds": 590.0
+        }
+      ],
+      "collab_steps": [
+        {
+          "job": "collab (@collab multi-context)",
+          "name": "Run @collab specs (single non-sharded runner, html report)",
+          "seconds": 368.0
+        },
+        {
+          "job": "collab (@collab multi-context)",
+          "name": "Upload Playwright test-results on failure (@collab)",
+          "seconds": 0.0
+        }
+      ]
+    }
+  ],
+  "rack_bundle": {
+    "method": "Static import closure of root layout node 0 and rack route node 29; excludes dynamic imports, boot entry, CSS, WASM, media, network caching.",
+    "chunks": 86,
+    "bytes": 6754938,
+    "gzip_bytes": 2214212,
+    "largest": [
+      {
+        "key": "_DOX2iECv.js",
+        "name": "local-replica",
+        "bytes": 2591447,
+        "gzip_bytes": 810090
+      },
+      {
+        "key": "_cbw2nCqH.js",
+        "name": "index",
+        "bytes": 1567794,
+        "gzip_bytes": 531613
+      },
+      {
+        "key": "_DOI15yGz.js",
+        "name": "index",
+        "bytes": 1175463,
+        "gzip_bytes": 382770
+      },
+      {
+        "key": "_CrQWTGo9.js",
+        "name": "ModuleShell",
+        "bytes": 630049,
+        "gzip_bytes": 201215
+      },
+      {
+        "key": "_9sC4E7TB.js",
+        "name": "peakstate",
+        "bytes": 165721,
+        "gzip_bytes": 56165
+      },
+      {
+        "key": "_DOYrlc9X.js",
+        "name": "store",
+        "bytes": 104318,
+        "gzip_bytes": 31667
+      },
+      {
+        "key": "_C2ssro1T.js",
+        "name": "controller",
+        "bytes": 49927,
+        "gzip_bytes": 13345
+      },
+      {
+        "key": "_BXLBpxzr.js",
+        "name": "control-surface",
+        "bytes": 38049,
+        "gzip_bytes": 12573
+      },
+      {
+        "key": "_Dnj0fxGu.js",
+        "name": "entry",
+        "bytes": 33969,
+        "gzip_bytes": 13055
+      },
+      {
+        "key": "_DRvwRrui.js",
+        "name": "DropPatchModal",
+        "bytes": 28829,
+        "gzip_bytes": 9594
+      },
+      {
+        "key": "_Bv4E2rVc.js",
+        "name": "midi-assignable.svelte",
+        "bytes": 28320,
+        "gzip_bytes": 10141
+      },
+      {
+        "key": "_F_HlKSGk.js",
+        "name": "clip-types",
+        "bytes": 27231,
+        "gzip_bytes": 9354
+      }
+    ]
+  },
+  "web_probe_repeat3": [
+    {
+      "name": "clock_cursor",
+      "result": {
+        "initial": {
+          "offsetMs": 9000,
+          "rttMs": null,
+          "converged": false,
+          "sampleCount": 1
+        },
+        "final": {
+          "offsetMs": 8500,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "resyncCount": 11
+      }
+    },
+    {
+      "name": "clock_delay",
+      "result": {
+        "a": {
+          "offsetMs": -10,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "b": {
+          "offsetMs": -110,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "skewMs": 100
+      }
+    },
+    {
+      "name": "doom_key_collision",
+      "result": {
+        "press": [
+          {
+            "doomKey": 173,
+            "pressed": true
+          }
+        ],
+        "release": []
+      }
+    },
+    {
+      "name": "reconcile_queue",
+      "result": {
+        "updates": 200,
+        "completedPasses": 202,
+        "writes": [
+          200
+        ]
+      }
+    },
+    {
+      "name": "snapshot_scaling",
+      "result": [
+        {
+          "nodes": 32,
+          "edges": 31,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 25.997625000000028,
+          "paramMs": 25.768417
+        },
+        {
+          "nodes": 128,
+          "edges": 127,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 79.18116700000002,
+          "paramMs": 79.26208399999996
+        },
+        {
+          "nodes": 512,
+          "edges": 511,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 308.631584,
+          "paramMs": 311.89258299999995
+        }
+      ]
+    },
+    {
+      "name": "doom_graph_amplification",
+      "result": {
+        "tics": 350,
+        "players": 2,
+        "updates": 700,
+        "bytes": 38131,
+        "snapshots": 700,
+        "nodes": 0
+      }
+    },
+    {
+      "name": "lfo_anchor",
+      "result": {
+        "earlySharedMs": 10000,
+        "lateSharedMs": 11250,
+        "messages": [
+          {
+            "type": "init",
+            "epoch_ms": 10000,
+            "audioOrigin_s": 0,
+            "smoothing_ms": 0
+          },
+          {
+            "type": "init",
+            "epoch_ms": 10000,
+            "audioOrigin_s": 0,
+            "smoothing_ms": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "clock_cursor",
+      "result": {
+        "initial": {
+          "offsetMs": 9000,
+          "rttMs": null,
+          "converged": false,
+          "sampleCount": 1
+        },
+        "final": {
+          "offsetMs": 8500,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "resyncCount": 11
+      }
+    },
+    {
+      "name": "clock_delay",
+      "result": {
+        "a": {
+          "offsetMs": -10,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "b": {
+          "offsetMs": -110,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "skewMs": 100
+      }
+    },
+    {
+      "name": "doom_key_collision",
+      "result": {
+        "press": [
+          {
+            "doomKey": 173,
+            "pressed": true
+          }
+        ],
+        "release": []
+      }
+    },
+    {
+      "name": "reconcile_queue",
+      "result": {
+        "updates": 200,
+        "completedPasses": 202,
+        "writes": [
+          200
+        ]
+      }
+    },
+    {
+      "name": "snapshot_scaling",
+      "result": [
+        {
+          "nodes": 32,
+          "edges": 31,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 25.650250000000028,
+          "paramMs": 25.518374999999992
+        },
+        {
+          "nodes": 128,
+          "edges": 127,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 79.97800000000001,
+          "paramMs": 81.498041
+        },
+        {
+          "nodes": 512,
+          "edges": 511,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 312.3874589999999,
+          "paramMs": 312.95233400000006
+        }
+      ]
+    },
+    {
+      "name": "doom_graph_amplification",
+      "result": {
+        "tics": 350,
+        "players": 2,
+        "updates": 700,
+        "bytes": 38131,
+        "snapshots": 700,
+        "nodes": 0
+      }
+    },
+    {
+      "name": "lfo_anchor",
+      "result": {
+        "earlySharedMs": 10000,
+        "lateSharedMs": 11250,
+        "messages": [
+          {
+            "type": "init",
+            "epoch_ms": 10000,
+            "audioOrigin_s": 0,
+            "smoothing_ms": 0
+          },
+          {
+            "type": "init",
+            "epoch_ms": 10000,
+            "audioOrigin_s": 0,
+            "smoothing_ms": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "clock_cursor",
+      "result": {
+        "initial": {
+          "offsetMs": 9000,
+          "rttMs": null,
+          "converged": false,
+          "sampleCount": 1
+        },
+        "final": {
+          "offsetMs": 8500,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "resyncCount": 11
+      }
+    },
+    {
+      "name": "clock_delay",
+      "result": {
+        "a": {
+          "offsetMs": -10,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "b": {
+          "offsetMs": -110,
+          "rttMs": 0,
+          "converged": true,
+          "sampleCount": 16
+        },
+        "skewMs": 100
+      }
+    },
+    {
+      "name": "doom_key_collision",
+      "result": {
+        "press": [
+          {
+            "doomKey": 173,
+            "pressed": true
+          }
+        ],
+        "release": []
+      }
+    },
+    {
+      "name": "reconcile_queue",
+      "result": {
+        "updates": 200,
+        "completedPasses": 202,
+        "writes": [
+          200
+        ]
+      }
+    },
+    {
+      "name": "snapshot_scaling",
+      "result": [
+        {
+          "nodes": 32,
+          "edges": 31,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 25.54849999999999,
+          "paramMs": 25.167542000000026
+        },
+        {
+          "nodes": 128,
+          "edges": 127,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 78.80337499999996,
+          "paramMs": 80.20358399999998
+        },
+        {
+          "nodes": 512,
+          "edges": 511,
+          "layoutUpdates": 300,
+          "layoutEmissions": 300,
+          "layoutMs": 309.59062500000005,
+          "paramMs": 309.344417
+        }
+      ]
+    },
+    {
+      "name": "doom_graph_amplification",
+      "result": {
+        "tics": 350,
+        "players": 2,
+        "updates": 700,
+        "bytes": 38131,
+        "snapshots": 700,
+        "nodes": 0
+      }
+    },
+    {
+      "name": "lfo_anchor",
+      "result": {
+        "earlySharedMs": 10000,
+        "lateSharedMs": 11250,
+        "messages": [
+          {
+            "type": "init",
+            "epoch_ms": 10000,
+            "audioOrigin_s": 0,
+            "smoothing_ms": 0
+          },
+          {
+            "type": "init",
+            "epoch_ms": 10000,
+            "audioOrigin_s": 0,
+            "smoothing_ms": 0
+          }
+        ]
+      }
+    }
+  ],
+  "storage_probe": {
+    "durable": true,
+    "fallbackValue": "after",
+    "loadedValue": "before"
+  },
+  "validation": {
+    "build_web": "passed",
+    "web_probe_tests": 8,
+    "server_probe_tests": 2,
+    "probe_runs": "focused once followed by REPEAT=3 for each package",
+    "existing_web_tests": 130,
+    "existing_server_tests": 10
+  }
+}

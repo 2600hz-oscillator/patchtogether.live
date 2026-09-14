@@ -31,6 +31,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+import { waitTics, MOVE_EPS, manhattan } from './_doom-helpers';
 import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
@@ -226,7 +227,7 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
   test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix');
   test.setTimeout(180_000);
 
-  test('peers show slot badge + DOOM color; A moving changes B\'s POV (cross-peer)', async ({ browser }) => {
+  test('@multiplayer-critical peers show slot badge + DOOM color; A moving changes B\'s POV (cross-peer)', async ({ browser }) => {
     const pair = await openPair(browser);
     try {
       const assets = await checkAssets(pair.pageA);
@@ -332,26 +333,34 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
       expect(bState!.isHost, 'B is not the host').toBe(false);
       expect(bState!.mySlot, 'B is a joined player → renders own POV').toBe(1);
 
-      // Let both render a few frames so B's canvas holds a stable POV.
-      await pair.pageB.waitForTimeout(800);
+      // Prove the remote marine stays put while the sim runs without input.
+      const readRemote = () => pair.pageB.evaluate(id =>
+        (window as any).__doomCards[id].getSlotState(0) as {x:number;y:number} | null, NODE);
+      expect(await waitTics(pair.pageB, NODE, 2)).toBeGreaterThanOrEqual(2);
+      const stationary = await readRemote();
+      expect(stationary).not.toBeNull();
+      expect(await waitTics(pair.pageB, NODE, 12)).toBeGreaterThanOrEqual(12);
+      const beforeMove = await readRemote();
+      expect(beforeMove).not.toBeNull();
+      expect(manhattan(stationary!, beforeMove!), 'no-input control on the remote marine').toBeLessThan(MOVE_EPS);
 
       // ─── Cross-peer visibility: snapshot B's POV, move A, snapshot again ───
       const bHashBefore = await canvasHash(pair.pageB);
 
-      await pair.pageA.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-face-surface"]') as HTMLElement | null;
-        c?.focus();
-      });
+      await pair.pageA.evaluate(id => (window as any).__doomCards[id].forceClaimKeyboard(), NODE);
       await pair.pageA.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
-      // A walks forward for ~2 s; its per-tic ticcmd broadcasts to B, whose
-      // sim moves A's marine → B's framebuffer changes.
-      await pair.pageA.waitForTimeout(2000);
+      // The actual remote player's position must change, not merely an animated
+      // framebuffer hash. A stalled or disconnected peer cannot satisfy this.
+      await pair.pageB.waitForFunction(({ id, before, epsilon }) => {
+        const now = (window as any).__doomCards[id].getSlotState(0);
+        return now && Math.abs(now.x - before.x) + Math.abs(now.y - before.y) >= epsilon;
+      }, { id: NODE, before: beforeMove!, epsilon: MOVE_EPS }, { timeout: SYNC_BUDGET_MS });
       await pair.pageA.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }));
       });
-      await pair.pageB.waitForTimeout(600);
+      expect(await waitTics(pair.pageB, NODE, 2)).toBeGreaterThanOrEqual(2);
 
       const bHashAfter = await canvasHash(pair.pageB);
       expect(bHashBefore, 'B canvas had pixels before').not.toBe(-1);

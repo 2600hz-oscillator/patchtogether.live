@@ -21,7 +21,7 @@
 //
 // Both encode/decode are pure functions — testable as part of the unit
 // suite without spinning up a Yjs provider. The actual awareness wiring
-// (subscribing, throttling, host-migration tie-break) lives in DoomCard
+// (subscribing, throttling, host-migration tie-break) lives in DoomSurface
 // and is e2e-tested by the multi-tab Playwright scenario.
 
 import { CV_GATE_PORT_IDS } from './doomkeys';
@@ -37,9 +37,11 @@ export interface KeyEnvelope {
   /** doomkeys.h constant (0..255). */
   doomKey: number;
   pressed: boolean;
-  /** Wall-clock millis at emit. Lossy on reorder but lets the host
-   *  drop stale messages on disconnect storms (deferred). */
+  /** Wall-clock millis at emit, retained for compatibility with older peers. */
   ts: number;
+  /** Sender lifetime and sequence identify events even when wall time repeats. */
+  session?: string;
+  seq?: number;
 }
 
 export function encodeKey(env: KeyEnvelope): KeyEnvelope {
@@ -53,6 +55,7 @@ export function encodeKey(env: KeyEnvelope): KeyEnvelope {
     doomKey: env.doomKey & 0xff,
     pressed: !!env.pressed,
     ts: env.ts,
+    ...(env.session !== undefined && env.seq !== undefined ? { session: env.session, seq: env.seq } : {}),
   };
 }
 
@@ -65,6 +68,10 @@ export function decodeKey(raw: unknown): KeyEnvelope | null {
   if (typeof r['doomKey'] !== 'number') return null;
   if (typeof r['pressed'] !== 'boolean') return null;
   if (typeof r['ts'] !== 'number') return null;
+  if (r['session'] !== undefined || r['seq'] !== undefined) {
+    if (typeof r['session'] !== 'string' || !r['session'] || !Number.isSafeInteger(r['seq'])
+      || (r['seq'] as number) < 1) return null;
+  }
   return {
     kind: 'key',
     moduleId: r['moduleId'] as string,
@@ -72,6 +79,7 @@ export function decodeKey(raw: unknown): KeyEnvelope | null {
     doomKey: (r['doomKey'] as number) & 0xff,
     pressed: r['pressed'] as boolean,
     ts: r['ts'] as number,
+    ...(r['session'] !== undefined ? { session: r['session'] as string, seq: r['seq'] as number } : {}),
   };
 }
 
@@ -90,15 +98,15 @@ export function decodeKey(raw: unknown): KeyEnvelope | null {
 // For KEY_DOWNARROW that reads in-game as the marine being shoved backward
 // continuously with no key pressed ("random CV on the movement pot").
 //
-// Fix: edge-trigger. Track the last key-envelope `ts` we relayed per
-// source client and only push when a STRICTLY NEWER envelope arrives.
+// Fix: track the last sender session and sequence per source client, with
+// a timestamp fallback for older senders. Only a new envelope is pushed.
 // Repeated observations of the same (sticky) envelope across unrelated
 // awareness updates are ignored. This is a pure reducer so it's unit-
 // testable without a live Yjs provider.
 
-/** Per-source-client cursor of the last relayed key-envelope timestamp.
- *  Keyed by awareness clientID. Callers own one map per DOOM card. */
-export type RelayCursor = Map<number, number>;
+/** Last relayed envelope identity, keyed by awareness clientID.
+ *  Callers own one map per DOOM surface. */
+export type RelayCursor = Map<number, number | { session: string; seq: number }>;
 
 /** One key event the host should push into its runtime this update. */
 export interface RelayPush {
@@ -108,7 +116,7 @@ export interface RelayPush {
 
 /**
  * Given the current awareness states + the cursor of already-relayed
- * timestamps, return ONLY the key events that are new since last call and
+ * envelopes, return ONLY the key events that are new since last call and
  * advance the cursor in place. Pure aside from the cursor mutation:
  * calling it twice with the same states + cursor yields an empty list the
  * second time (the dedup that kills the phantom re-injection).
@@ -134,8 +142,15 @@ export function collectIncomingKeyPushes(args: {
     if (!env || env.moduleId !== moduleId) return;
     if (env.srcUserId === selfUserId) return;
     const last = cursor.get(clientId);
-    if (last !== undefined && env.ts <= last) return; // already relayed — skip the sticky re-read.
-    cursor.set(clientId, env.ts);
+    if (env.session !== undefined && env.seq !== undefined) {
+      if (typeof last === 'object' && last.session === env.session && env.seq <= last.seq) return;
+      cursor.set(clientId, { session: env.session, seq: env.seq });
+    } else {
+      // Compatibility for already-open older clients. Never let their stale
+      // envelope replace a sequence-aware sender in the same awareness session.
+      if (typeof last === 'object' || (typeof last === 'number' && env.ts <= last)) return;
+      cursor.set(clientId, env.ts);
+    }
     pushes.push({ doomKey: env.doomKey, pressed: env.pressed });
   });
   return pushes;

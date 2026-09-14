@@ -1,118 +1,52 @@
 import { describe, it, expect } from 'vitest';
 import { ClockSyncEstimator, toSharedTime } from './clock-sync';
 
-describe('ClockSyncEstimator', () => {
-  it('returns nulls until the first observation', () => {
+function exchange(est: ClockSyncEstimator, tick: number, outward: number, inward: number, processing = 0) {
+  const sent = tick * 1000;
+  return est.observe({ clientSendTs: sent, serverRecvTs: sent + outward + 5000,
+    serverSendTs: sent + outward + processing + 5000, clientRecvTs: sent + outward + processing + inward });
+}
+describe('measured clock exchanges', () => {
+  it('starts unknown and recovers the offset with zero transit delay', () => {
     const est = new ClockSyncEstimator();
-    const snap = est.snapshot();
-    expect(snap.offsetMs).toBeNull();
-    expect(snap.rttMs).toBeNull();
-    expect(snap.converged).toBe(false);
-    expect(snap.sampleCount).toBe(0);
+    expect(toSharedTime(100, est.snapshot())).toBeNull();
+    for (let i = 0; i < 8; i++) exchange(est, i, 0, 0);
+    expect(est.snapshot()).toEqual({ offsetMs: 5000, rttMs: 0, uncertaintyMs: 0, sampleCount: 8, converged: true });
+    expect(toSharedTime(100, est.snapshot())).toBe(5100);
   });
-
-  it('produces an offset estimate after one observation', () => {
-    const est = new ClockSyncEstimator();
-    // Server at t=1000; client perf at t=200; expected offset ≈ 800.
-    const snap = est.observe({ tick: 1, serverTs: 1000, clientRecvTs: 200 });
-    expect(snap.offsetMs).toBeCloseTo(800, 2);
-    expect(snap.sampleCount).toBe(1);
+  it('clients with different fixed symmetric delays agree, and report their real RTT', () => {
+    const a = new ClockSyncEstimator(); const b = new ClockSyncEstimator();
+    for (let i = 0; i < 20; i++) { exchange(a, i, 10, 10); exchange(b, i, 110, 110); }
+    expect(a.snapshot().rttMs).toBe(20); expect(b.snapshot().rttMs).toBe(220);
+    expect(toSharedTime(21000, a.snapshot())).toBe(toSharedTime(21000, b.snapshot()));
+    expect(a.snapshot().offsetMs).toBe(5000);
   });
-
-  it('recovers shared-time correctly with simulated zero-latency network', () => {
-    // Server clock running 5000 ms ahead of client perf. Zero RTT.
+  it('subtracts server processing time and exposes asymmetric-delay uncertainty', () => {
     const est = new ClockSyncEstimator();
-    let serverTs = 1_000_000;
-    let clientTs = 5_000;
-    for (let i = 0; i < 10; i++) {
-      est.observe({ tick: i + 1, serverTs, clientRecvTs: clientTs });
-      serverTs += 1000;
-      clientTs += 1000;
-    }
-    const snap = est.snapshot();
-    expect(snap.offsetMs).toBeCloseTo(995_000, 0);
-    expect(snap.converged).toBe(true);
-    // Mapping should reproduce the server time exactly.
-    const recovered = toSharedTime(clientTs - 1000, snap);
-    expect(recovered).toBeCloseTo(serverTs - 1000, 0);
+    const snap = exchange(est, 1, 10, 110, 300);
+    expect(snap.rttMs).toBe(120);
+    expect(snap.offsetMs).toBe(4950);
+    expect(Math.abs(snap.offsetMs! - 5000)).toBeLessThanOrEqual(snap.uncertaintyMs!);
   });
-
-  it('estimates RTT from server/client delta divergence', () => {
-    // Simulate 50 ms of round-trip latency: each new heartbeat arrives
-    // 50 ms later than its server timestamp would suggest. The first
-    // sample's RTT is unmeasurable (synthetic Infinity); the second
-    // produces the first measured value, which the filtered-min picks.
+  it('selects a low-transit sample without mistaking constant delay for zero RTT', () => {
     const est = new ClockSyncEstimator();
-    let serverTs = 1_000_000;
-    let clientTs = 5_000;
-    est.observe({ tick: 1, serverTs, clientRecvTs: clientTs });
-    serverTs += 1000;
-    clientTs += 1050;
-    est.observe({ tick: 2, serverTs, clientRecvTs: clientTs });
-    const snap = est.snapshot();
-    expect(snap.rttMs).not.toBeNull();
-    expect(snap.rttMs as number).toBeCloseTo(50, 1);
-  });
-
-  it('converges to the lowest-RTT sample under jittered latency', () => {
-    const est = new ClockSyncEstimator();
-    const TRUE_OFFSET = 12_345;
-    let server = 1_000_000;
-    // First sample's RTT is synthetic (no prior); subsequent samples
-    // measure real RTT. Inject a low-noise pair (jitter 100→100) so
-    // the measured RTT is 0; the rest are noisy. Min-RTT filtering
-    // should pick the low-noise sample, yielding the cleanest offset.
-    const jitter = [50, 100, 100, 300, 220, 180, 250, 130, 30, 170];
-    for (let i = 0; i < jitter.length; i++) {
-      const j = jitter[i]!;
-      const client = server - TRUE_OFFSET + j;
-      est.observe({ tick: i + 1, serverTs: server, clientRecvTs: client });
-      server += 1000;
-    }
-    const snap = est.snapshot();
-    expect(snap.converged).toBe(true);
-    // The clean sample 2 has rtt=0; chosen offset = serverTs - clientRecv
-    // + halfRTT/2 = TRUE_OFFSET - jitter[2] = 12345 - 100 = 12245.
-    // We just check it's within typical jitter range of TRUE_OFFSET.
-    expect(Math.abs((snap.offsetMs ?? 0) - TRUE_OFFSET)).toBeLessThanOrEqual(150);
-    // RTT estimate locked onto the clean pair.
-    expect(snap.rttMs).toBeLessThanOrEqual(50);
-  });
-
-  it('marks converged=true once burst-many samples have been seen', () => {
-    const est = new ClockSyncEstimator();
-    for (let i = 0; i < 7; i++) {
-      est.observe({ tick: i + 1, serverTs: 1000 + i * 1000, clientRecvTs: i * 1000 });
-    }
-    expect(est.snapshot().converged).toBe(false);
-    est.observe({ tick: 8, serverTs: 8000, clientRecvTs: 7000 });
+    exchange(est, 1, 10, 10);
+    for (let i = 2; i < 9; i++) exchange(est, i, 100, 300);
+    expect(est.snapshot().offsetMs).toBe(5000);
+    expect(est.snapshot().rttMs).toBe(20);
     expect(est.snapshot().converged).toBe(true);
+    for (let i = 9; i < 30; i++) exchange(est, i, 200, 200);
+    expect(est._debugSamples()).toHaveLength(16);
+    expect(est.snapshot().rttMs).toBe(400);
   });
-
-  it('caps the rolling window so old samples drop off', () => {
+  it('rejects malformed or impossible timing, and resets for a new connection', () => {
     const est = new ClockSyncEstimator();
-    for (let i = 0; i < 50; i++) {
-      est.observe({ tick: i + 1, serverTs: 1000 + i * 1000, clientRecvTs: i * 1000 });
+    for (const values of [[0, NaN, 1, 2], [10, 20, 19, 30], [10, 20, 21, 9], [0, 0, 50, 20]]) {
+      const [clientSendTs, serverRecvTs, serverSendTs, clientRecvTs] = values as [number,number,number,number];
+      est.observe({clientSendTs,serverRecvTs,serverSendTs,clientRecvTs});
     }
-    expect(est._debugSamples().length).toBe(16);
-  });
-
-  it('reset() clears state', () => {
-    const est = new ClockSyncEstimator();
-    est.observe({ tick: 1, serverTs: 1000, clientRecvTs: 200 });
-    est.reset();
     expect(est.snapshot().sampleCount).toBe(0);
+    exchange(est, 1, 10, 10); est.reset();
     expect(est.snapshot().offsetMs).toBeNull();
-  });
-});
-
-describe('toSharedTime', () => {
-  it('returns null when offset is null', () => {
-    expect(toSharedTime(1000, { offsetMs: null, rttMs: null, converged: false, sampleCount: 0 })).toBeNull();
-  });
-
-  it('adds offset to perf time', () => {
-    const snap = { offsetMs: 5000, rttMs: 10, converged: true, sampleCount: 8 };
-    expect(toSharedTime(2000, snap)).toBe(7000);
   });
 });

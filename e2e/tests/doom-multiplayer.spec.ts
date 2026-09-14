@@ -225,4 +225,51 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
       await pair.close();
     }
   });
+  test('@multiplayer-critical spectator press and release in one millisecond both reach the host runtime', async ({ browser }) => {
+    const pair = await openDoomPair(browser);
+    try {
+      const assets = await checkDoomAssetsAvailable(pair.pageHost);
+      expect(assets.ok, assets.reason).toBe(true);
+      expect(await spawnAndLoadDoom(pair.pageHost), 'host WASM must load; a skip cannot prove key delivery').toBe(true);
+      await pair.pageSpec.locator(laneTile('sut')).waitFor({ timeout: SYNC_BUDGET_MS });
+      await openDoomFace(pair.pageSpec, 'sut');
+      await expect(pair.pageSpec.getByTestId(SURFACE).locator('.spec-badge')).toBeVisible();
+      await pair.pageHost.evaluate(() => {
+        const w = window as any;
+        const extras = w.__engine().getDomain('video').read('sut', 'extras');
+        const push = extras.pushDoomKey.bind(extras);
+        w.__receivedDoomKeys = [];
+        extras.pushDoomKey = (key: number, pressed: boolean) => {
+          w.__receivedDoomKeys.push({ key, pressed });
+          push(key, pressed); // Keep the actual WASM input path connected.
+        };
+      });
+      await pair.pageSpec.evaluate(() => {
+        const w = window as any;
+        w.__doomCards.sut.forceClaimKeyboard();
+        w.__originalDateNow = Date.now;
+        const fixed = Date.now();
+        Date.now = () => fixed;
+        w.__sentDoomKeys = [];
+        w.__provider.awareness.on('update', () => {
+          const key = w.__provider.awareness.getLocalState()['doom:sut:key'];
+          if (key) w.__sentDoomKeys.push(key);
+        });
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowDown', key: 'ArrowDown', bubbles: true }));
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowDown', key: 'ArrowDown', bubbles: true }));
+      });
+      await expect.poll(() => pair.pageHost.evaluate(() => (window as any).__receivedDoomKeys),
+        { timeout: SYNC_BUDGET_MS }).toEqual([{ key: 0xaf, pressed: true }, { key: 0xaf, pressed: false }]);
+      const sent = await pair.pageSpec.evaluate(() => {
+        const w = window as any;
+        Date.now = w.__originalDateNow;
+        return w.__sentDoomKeys as Array<{ts:number;seq:number;session:string}>;
+      });
+      expect(sent).toHaveLength(2);
+      expect(sent[0]!.ts).toBe(sent[1]!.ts);
+      expect(sent[1]!.seq).toBe(sent[0]!.seq + 1);
+      expect(sent[1]!.session).toBe(sent[0]!.session);
+    } finally { await pair.close(); }
+  });
+
 });

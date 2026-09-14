@@ -1,0 +1,140 @@
+// Temporary review instrument: expected failures document current defects.
+import { it, expect, vi } from 'vitest';
+import * as Y from 'yjs';
+import { Awareness } from 'y-protocols/awareness';
+import { syncedStore, getYjsDoc } from '@syncedstore/core';
+import { ClockSyncEstimator, toSharedTime } from './multiplayer/clock-sync';
+import { createSharedClock } from './audio/shared-clock.svelte';
+import { attachReconciler } from './audio/reconciler';
+import { createSnapshotBus } from './graph/snapshot';
+import { collectIncomingKeyPushes } from './doom/doom-presence';
+import { LockstepTransport } from './doom/doom-lockstep';
+import { lfoDef, setActiveSharedClock } from './audio/modules/lfo';
+
+it.fails('one heartbeat remains one sample despite cursor traffic', () => {
+  const doc = new Y.Doc();
+  const aw = new Awareness(doc);
+  let now = 1000;
+  aw.setLocalStateField('__heartbeat', { tick: 1, ts_ms: 10000 });
+  const clock = createSharedClock({ provider: { awareness: aw } as never, ydoc: doc,
+    deps: { perfNow: () => now, setInterval: (() => 0) as never, clearInterval: () => {} } });
+  const initial = { ...clock.snapshot };
+  for (let i = 1; i <= 10; i++) {
+    now = 1000 + i * 50;
+    aw.setLocalStateField('cursor', { x: i, y: 0 });
+  }
+  const final = { ...clock.snapshot };
+  console.log('PROBE clock_cursor', JSON.stringify({ initial, final, resyncCount: clock.resyncCount }));
+  clock.destroy(); aw.destroy(); doc.destroy();
+  expect(final.sampleCount).toBe(1);
+});
+
+it.fails('equal clocks with stable network delays converge to equal shared time', () => {
+  const a = new ClockSyncEstimator(); const b = new ClockSyncEstimator();
+  for (let tick = 1; tick <= 20; tick++) {
+    a.observe({ tick, serverTs: tick * 1000, clientRecvTs: tick * 1000 + 10 });
+    b.observe({ tick, serverTs: tick * 1000, clientRecvTs: tick * 1000 + 110 });
+  }
+  const skew = toSharedTime(21000, a.snapshot())! - toSharedTime(21000, b.snapshot())!;
+  console.log('PROBE clock_delay', JSON.stringify({ a: a.snapshot(), b: b.snapshot(), skewMs: skew }));
+  expect(skew).toBeCloseTo(0, 5);
+});
+
+it('zero-delay clock control recovers the actual offset', () => {
+  const a = new ClockSyncEstimator();
+  for (let tick = 1; tick <= 20; tick++) a.observe({tick, serverTs: tick*1000+5000, clientRecvTs: tick*1000});
+  expect(toSharedTime(21000,a.snapshot())).toBe(26000);
+});
+
+it.fails('key press and release in one millisecond both reach the DOOM host', () => {
+  const cursor = new Map<number, number>();
+  const states = new Map<number, Record<string, unknown>>();
+  const collect = () => collectIncomingKeyPushes({states,moduleId:'review',selfClientId:1,selfUserId:'host',cursor});
+  states.set(2, {'doom:review:key':{kind:'key',moduleId:'review',srcUserId:'guest',doomKey:173,pressed:true,ts:1000}});
+  const press = collect();
+  states.set(2, {'doom:review:key':{kind:'key',moduleId:'review',srcUserId:'guest',doomKey:173,pressed:false,ts:1000}});
+  const release = collect();
+  console.log('PROBE doom_key_collision',JSON.stringify({press,release}));
+  expect(release).toEqual([{doomKey:173,pressed:false}]);
+});
+
+it.fails('asynchronous node creation coalesces pending changes into one follow-up', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release=resolve; });
+  let snap = {nodes:[{id:'review',type:'analogVco',domain:'audio',position:{x:0,y:0},params:{value:0}}],edges:[]};
+  let listener!: (s: typeof snap) => void;
+  let completedPasses = 0; const writes: number[]=[];
+  const bus = {current:()=>snap,subscribe:(fn:typeof listener)=>{listener=fn;fn(snap);return ()=>{};}};
+  const engine = {addNode:()=>gate,removeNode:()=>{},addEdge:()=>{},removeEdge:()=>{},hasEdge:()=>false,
+    setParam:(_n:unknown,_p:string,v:number)=>writes.push(v)};
+  const handle = attachReconciler(engine as never,{bus:bus as never,
+    rig:{snapshot:()=>({cameras:{},outputs:{}}),subscribe:()=>()=>{}} as never,onReconciled:()=>{completedPasses++;}});
+  await Promise.resolve(); await Promise.resolve();
+  for(let i=1;i<=200;i++) {
+    snap={...snap,nodes:[{...snap.nodes[0]!,params:{value:i}}]};
+    listener(snap);
+    await new Promise<void>(resolve=>queueMicrotask(resolve));
+  }
+  release(); await handle.reconcile(); handle.dispose();
+  console.log('PROBE reconcile_queue',JSON.stringify({updates:200,completedPasses,writes}));
+  expect(completedPasses).toBeLessThanOrEqual(3);
+});
+
+it('snapshot cost includes non-graph updates and grows with untouched rack size', () => {
+  const rows=[];
+  for(const size of [32,128,512]) {
+    const patch=syncedStore({nodes:{},edges:{}}) as any; const doc=getYjsDoc(patch);
+    doc.transact(()=>{for(let i=0;i<size;i++){
+      patch.nodes['n'+i]={id:'n'+i,type:'analogVco',domain:'audio',position:{x:0,y:0},params:{gain:0}};
+      if(i>0)patch.edges['e'+i]={id:'e'+i,source:{nodeId:'n'+(i-1),portId:'out'},target:{nodeId:'n'+i,portId:'in'},sourceType:'audio',targetType:'audio'};
+    }});
+    const bus=createSnapshotBus({patch,ydoc:doc}); let emissions=0;
+    const off=bus.subscribe(()=>{emissions++;});
+    for(let i=0;i<20;i++)doc.getMap('layouts').set('review',i);
+    emissions=0; const begin=performance.now();
+    for(let i=0;i<300;i++)doc.getMap('layouts').set('review',i+100);
+    const layoutMs=performance.now()-begin;
+    const beginParam=performance.now();
+    for(let i=0;i<300;i++)patch.nodes.n0.params.gain=i;
+    const paramMs=performance.now()-beginParam;
+    rows.push({nodes:size,edges:size-1,layoutUpdates:300,layoutEmissions:emissions-300,layoutMs,paramMs});
+    off();bus.dispose();doc.destroy();
+  }
+  console.log('PROBE snapshot_scaling',JSON.stringify(rows));
+  expect(rows.every(r=>r.layoutEmissions===300)).toBe(true);
+});
+
+it.fails('DOOM tic traffic should not rebuild an unchanged patch graph',()=>{
+  const patch=syncedStore({nodes:{},edges:{}}) as any;const doc=getYjsDoc(patch);
+  const bus=createSnapshotBus({patch,ydoc:doc});let snapshots=0;let updates=0;let bytes=0;
+  const off=bus.subscribe(()=>{snapshots++;});snapshots=0;
+  doc.on('update',(u:Uint8Array)=>{updates++;bytes+=u.byteLength;});
+  const a=new LockstepTransport({doc,moduleId:'review',slot:0,numPlayers:2});
+  const b=new LockstepTransport({doc,moduleId:'review',slot:1,numPlayers:2});
+  const cmd={forwardmove:0,sidemove:0,angleturn:0,buttons:0};
+  for(let tic=0;tic<350;tic++){a.appendLocal(tic,cmd);b.appendLocal(tic,cmd);}
+  console.log('PROBE doom_graph_amplification',JSON.stringify({tics:350,players:2,updates,bytes,snapshots,nodes:bus.current().nodes.length}));
+  off();bus.dispose();doc.destroy();
+  expect(snapshots).toBe(0);
+});
+
+it.fails('a late LFO factory sends its different shared-time anchor to the worklet',async()=>{
+  const messages:unknown[]=[];
+  class WorkletNode {
+    parameters=new Map(['rate','shape','depth'].map(k=>[k,{setValueAtTime:()=>{}}]));
+    port={postMessage:(m:unknown)=>messages.push(m),close:()=>{}};
+    addEventListener(){} disconnect(){}
+  }
+  vi.stubGlobal('AudioWorkletNode',WorkletNode);
+  const clock=(now:number)=>({epoch_ms:10000,sharedTimeNow:()=>now,onReset:()=>()=>{}});
+  const ctx={currentTime:0,audioWorklet:{addModule:async()=>{}}};
+  const node={id:'review-lfo',type:'lfo',domain:'audio',params:{rate:1}};
+  try {
+    setActiveSharedClock(clock(10000) as never);
+    const early=await lfoDef.factory(ctx as never,node as never);early.dispose();
+    setActiveSharedClock(clock(11250) as never);
+    const late=await lfoDef.factory(ctx as never,node as never);late.dispose();
+    console.log('PROBE lfo_anchor',JSON.stringify({earlySharedMs:10000,lateSharedMs:11250,messages}));
+  } finally {setActiveSharedClock(null);vi.unstubAllGlobals();}
+  expect(messages[0]).not.toEqual(messages[1]);
+});

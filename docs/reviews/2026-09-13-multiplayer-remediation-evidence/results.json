@@ -1,0 +1,157 @@
+{
+  "baseCommit": "221e4d76d",
+  "branch": "codex/multiplayer-correctness",
+  "state": "uncommitted working tree",
+  "browser": {
+    "stats": {
+      "startTime": "2026-09-14T00:45:22.282Z",
+      "duration": 79232.436,
+      "expected": 12,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "results": [
+      {
+        "file": "doom-identity-crossview.spec.ts",
+        "title": "@collab DOOM identity + cross-peer visibility (slice 5) > @multiplayer-critical peers show slot badge + DOOM color; A moving changes B's POV (cross-peer)",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 6282
+      },
+      {
+        "file": "doom-identity-crossview.spec.ts",
+        "title": "@collab DOOM identity + cross-peer visibility (slice 5) > @multiplayer-critical peers show slot badge + DOOM color; A moving changes B's POV (cross-peer)",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 3951
+      },
+      {
+        "file": "doom-identity-crossview.spec.ts",
+        "title": "@collab DOOM identity + cross-peer visibility (slice 5) > @multiplayer-critical peers show slot badge + DOOM color; A moving changes B's POV (cross-peer)",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 3823
+      },
+      {
+        "file": "doom-multiplayer.spec.ts",
+        "title": "@collab DOOM shared-input multiplayer > @multiplayer-critical spectator press and release in one millisecond both reach the host runtime",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 3009
+      },
+      {
+        "file": "doom-multiplayer.spec.ts",
+        "title": "@collab DOOM shared-input multiplayer > @multiplayer-critical spectator press and release in one millisecond both reach the host runtime",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 3089
+      },
+      {
+        "file": "doom-multiplayer.spec.ts",
+        "title": "@collab DOOM shared-input multiplayer > @multiplayer-critical spectator press and release in one millisecond both reach the host runtime",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 3049
+      },
+      {
+        "file": "shared-clock.spec.ts",
+        "title": "@clock-sync @collab @multiplayer-critical staggered clients align actual LFO output; a broken anchor fails the probe",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 9930
+      },
+      {
+        "file": "shared-clock.spec.ts",
+        "title": "@clock-sync @collab @multiplayer-critical staggered clients align actual LFO output; a broken anchor fails the probe",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 9922
+      },
+      {
+        "file": "shared-clock.spec.ts",
+        "title": "@clock-sync @collab @multiplayer-critical staggered clients align actual LFO output; a broken anchor fails the probe",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 9929
+      },
+      {
+        "file": "toybox-multiplayer.spec.ts",
+        "title": "@collab @multiplayer-critical multilayer output survives concurrent edits, offline reconnect, and a fresh peer",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 7549
+      },
+      {
+        "file": "toybox-multiplayer.spec.ts",
+        "title": "@collab @multiplayer-critical multilayer output survives concurrent edits, offline reconnect, and a fresh peer",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 7051
+      },
+      {
+        "file": "toybox-multiplayer.spec.ts",
+        "title": "@collab @multiplayer-critical multilayer output survives concurrent edits, offline reconnect, and a fresh peer",
+        "project": "chromium",
+        "repeat": null,
+        "status": "passed",
+        "retry": 0,
+        "durationMs": 7382
+      }
+    ],
+    "audit": {
+      "passed": true,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "scope": "local Chromium, separate contexts, real AudioWorklet/WebGL/DOOM WASM, memory relay"
+  },
+  "regressions": {
+    "doomTraffic": {
+      "players": 2,
+      "tics": 350,
+      "updates": 700,
+      "beforeSnapshots": 700,
+      "afterSnapshots": 0
+    },
+    "pendingFactory": {
+      "updates": 200,
+      "beforePasses": 202,
+      "afterPasses": 2,
+      "appliedValues": [
+        200
+      ]
+    }
+  },
+  "postgres": {
+    "tests": 2,
+    "focused": "passed",
+    "repeat": 3,
+    "allPassed": true,
+    "isolatedDatabase": true,
+    "objectStorage": "controlled transport; real authority/garbage SQL and real journal"
+  },
+  "rollout": "Migration 008 before relay; drain old relay processes; relay before new clock clients."
+}

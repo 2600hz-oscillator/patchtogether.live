@@ -1,0 +1,75 @@
+web-probes-repeat1.log
+PROBE clock_cursor {"initial":{"offsetMs":9000,"rttMs":null,"converged":false,"sampleCount":1},"final":{"offsetMs":8500,"rttMs":0,"converged":true,"sampleCount":16},"resyncCount":11}
+PROBE clock_delay {"a":{"offsetMs":-10,"rttMs":0,"converged":true,"sampleCount":16},"b":{"offsetMs":-110,"rttMs":0,"converged":true,"sampleCount":16},"skewMs":100}
+PROBE doom_key_collision {"press":[{"doomKey":173,"pressed":true}],"release":[]}
+PROBE reconcile_queue {"updates":200,"completedPasses":202,"writes":[200]}
+PROBE snapshot_scaling [{"nodes":32,"edges":31,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":26.07120900000001,"paramMs":25.51962500000002},{"nodes":128,"edges":127,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":79.173292,"paramMs":80.11008399999997},{"nodes":512,"edges":511,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":310.602667,"paramMs":312.51599999999996}]
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":700,"nodes":0}
+PROBE lfo_anchor {"earlySharedMs":10000,"lateSharedMs":11250,"messages":[{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0},{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0}]}
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Duration  1.23s (transform 143ms, setup 7ms, collect 213ms, tests 909ms, environment 0ms, prepare 20ms)
+
+web-probes-repeat3.log
+[test:one] flake-check run 1/3
+PROBE clock_cursor {"initial":{"offsetMs":9000,"rttMs":null,"converged":false,"sampleCount":1},"final":{"offsetMs":8500,"rttMs":0,"converged":true,"sampleCount":16},"resyncCount":11}
+PROBE clock_delay {"a":{"offsetMs":-10,"rttMs":0,"converged":true,"sampleCount":16},"b":{"offsetMs":-110,"rttMs":0,"converged":true,"sampleCount":16},"skewMs":100}
+PROBE doom_key_collision {"press":[{"doomKey":173,"pressed":true}],"release":[]}
+PROBE reconcile_queue {"updates":200,"completedPasses":202,"writes":[200]}
+PROBE snapshot_scaling [{"nodes":32,"edges":31,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":25.997625000000028,"paramMs":25.768417},{"nodes":128,"edges":127,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":79.18116700000002,"paramMs":79.26208399999996},{"nodes":512,"edges":511,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":308.631584,"paramMs":311.89258299999995}]
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":700,"nodes":0}
+PROBE lfo_anchor {"earlySharedMs":10000,"lateSharedMs":11250,"messages":[{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0},{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0}]}
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Duration  1.23s (transform 144ms, setup 7ms, collect 214ms, tests 908ms, environment 0ms, prepare 21ms)
+[test:one] flake-check run 2/3
+PROBE clock_cursor {"initial":{"offsetMs":9000,"rttMs":null,"converged":false,"sampleCount":1},"final":{"offsetMs":8500,"rttMs":0,"converged":true,"sampleCount":16},"resyncCount":11}
+PROBE clock_delay {"a":{"offsetMs":-10,"rttMs":0,"converged":true,"sampleCount":16},"b":{"offsetMs":-110,"rttMs":0,"converged":true,"sampleCount":16},"skewMs":100}
+PROBE doom_key_collision {"press":[{"doomKey":173,"pressed":true}],"release":[]}
+PROBE reconcile_queue {"updates":200,"completedPasses":202,"writes":[200]}
+PROBE snapshot_scaling [{"nodes":32,"edges":31,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":25.650250000000028,"paramMs":25.518374999999992},{"nodes":128,"edges":127,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":79.97800000000001,"paramMs":81.498041},{"nodes":512,"edges":511,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":312.3874589999999,"paramMs":312.95233400000006}]
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":700,"nodes":0}
+PROBE lfo_anchor {"earlySharedMs":10000,"lateSharedMs":11250,"messages":[{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0},{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0}]}
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Duration  1.24s (transform 145ms, setup 7ms, collect 215ms, tests 918ms, environment 0ms, prepare 20ms)
+[test:one] flake-check run 3/3
+PROBE clock_cursor {"initial":{"offsetMs":9000,"rttMs":null,"converged":false,"sampleCount":1},"final":{"offsetMs":8500,"rttMs":0,"converged":true,"sampleCount":16},"resyncCount":11}
+PROBE clock_delay {"a":{"offsetMs":-10,"rttMs":0,"converged":true,"sampleCount":16},"b":{"offsetMs":-110,"rttMs":0,"converged":true,"sampleCount":16},"skewMs":100}
+PROBE doom_key_collision {"press":[{"doomKey":173,"pressed":true}],"release":[]}
+PROBE reconcile_queue {"updates":200,"completedPasses":202,"writes":[200]}
+PROBE snapshot_scaling [{"nodes":32,"edges":31,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":25.54849999999999,"paramMs":25.167542000000026},{"nodes":128,"edges":127,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":78.80337499999996,"paramMs":80.20358399999998},{"nodes":512,"edges":511,"layoutUpdates":300,"layoutEmissions":300,"layoutMs":309.59062500000005,"paramMs":309.344417}]
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":700,"nodes":0}
+PROBE lfo_anchor {"earlySharedMs":10000,"lateSharedMs":11250,"messages":[{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0},{"type":"init","epoch_ms":10000,"audioOrigin_s":0,"smoothing_ms":0}]}
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Duration  1.22s (transform 145ms, setup 7ms, collect 215ms, tests 905ms, environment 0ms, prepare 20ms)
+
+server-probes-repeat1.log
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  102ms (transform 24ms, setup 0ms, import 24ms, tests 25ms, environment 0ms)
+
+server-probes-repeat3.log
+[test:one] flake-check run 1/3
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  104ms (transform 24ms, setup 0ms, import 24ms, tests 25ms, environment 0ms)
+[test:one] flake-check run 2/3
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  103ms (transform 23ms, setup 0ms, import 24ms, tests 25ms, environment 0ms)
+[test:one] flake-check run 3/3
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  103ms (transform 24ms, setup 0ms, import 24ms, tests 26ms, environment 0ms)
+
+existing-web-tests.log
+ Test Files  7 passed (7)
+      Tests  130 passed (130)
+   Duration  910ms (transform 145ms, setup 12ms, collect 200ms, tests 580ms, environment 0ms, prepare 22ms)
+
+existing-server-tests.log
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Duration  98ms (transform 24ms, setup 0ms, import 17ms, tests 27ms, environment 0ms)

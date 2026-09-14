@@ -96,9 +96,6 @@ e2e/tests/doom-aspect.spec.ts :: DOOM letterboxed into the 4:3 FBO: top + bottom
 e2e/tests/doom-aspect.spec.ts :: content band contains non-zero pixels at multiple sample coordinates (DOOM not clipped to nothing) :: waitForTimeout(2500) #1
 e2e/tests/doom-cheat-gates.spec.ts :: rising edge on iddqd_in injects the IDDQD god-mode cheat within ~500ms :: waitForTimeout(300) #1
 e2e/tests/doom-cheat-gates.spec.ts :: rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat within ~500ms :: waitForTimeout(300) #1
-e2e/tests/doom-identity-crossview.spec.ts :: peers show slot badge + DOOM color; A moving changes B's POV (cross-peer) :: waitForTimeout(2000) #1
-e2e/tests/doom-identity-crossview.spec.ts :: peers show slot badge + DOOM color; A moving changes B's POV (cross-peer) :: waitForTimeout(600) #1
-e2e/tests/doom-identity-crossview.spec.ts :: peers show slot badge + DOOM color; A moving changes B's POV (cross-peer) :: waitForTimeout(800) #1
 e2e/tests/doom-launch.spec.ts :: arbiter launches coop E1M1; both peers enter the level + move their own marine :: waitForTimeout(1500) #1
 e2e/tests/doom-launch.spec.ts :: arbiter launches coop E1M1; both peers enter the level + move their own marine :: waitForTimeout(300) #1
 e2e/tests/doom-mp-latejoin-freeze.spec.ts :: host keeps playing after an anon late-joiner relaunches + moves past the consistency-check boundary :: waitForTimeout(800) #1

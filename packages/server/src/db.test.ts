@@ -2,12 +2,12 @@
 //
 // Regression coverage for the relay tab-switch 500 (PR fix(doom-mp)):
 //
-//   storeSnapshot ran inside Hocuspocus's onStoreDocument, which has NO catch.
+//   storeSnapshotRecord ran inside Hocuspocus's onStoreDocument, which has NO catch.
 //   A transient pg error (observed live: 'Authentication timed out', code
 //   08P01, on connect/disconnect churn from tab-switching with
 //   unloadImmediately) was re-thrown, became an unhandled rejection, and
 //   CRASHED the whole relay — every connected rack dropped + the Fly machine
-//   rebooted, surfacing as a server error on /r/[id]. The fix: storeSnapshot
+//   rebooted, surfacing as a server error on /r/[id]. The fix: storeSnapshotRecord
 //   must SWALLOW transient errors (log + return) so a dropped snapshot costs at
 //   most one debounce of durability, never the process. It must still swallow
 //   the FK violation (23503) it always did, and a healthy write must succeed.
@@ -31,7 +31,7 @@ vi.mock('pg', () => {
   return { default: { Pool }, Pool };
 });
 
-describe('storeSnapshot — never crashes the relay on a persist failure', () => {
+describe('storeSnapshotRecord — never crashes the relay on a persist failure', () => {
   beforeEach(() => {
     vi.resetModules();
     queryMock.mockReset();
@@ -47,40 +47,40 @@ describe('storeSnapshot — never crashes the relay on a persist failure', () =>
   });
 
   it('SWALLOWS a transient pg error (08P01 auth timeout) instead of throwing', async () => {
-    const { storeSnapshot } = await import('./db.js');
+    const { storeSnapshotRecord } = await import('./db.js');
     const authTimeout = Object.assign(new Error('Authentication timed out'), { code: '08P01' });
     queryMock.mockRejectedValueOnce(authTimeout);
     // The pre-fix code re-threw here → unhandled rejection → relay crash.
     // Since the journal slice, the swallow also reports NOT-durable (false)
     // so the caller must not compact the update journal on this round.
-    await expect(storeSnapshot('r_x', new Uint8Array([1, 2, 3]))).resolves.toBe(false);
+    await expect(storeSnapshotRecord('r_x', { state: new Uint8Array([1, 2, 3]), generation: '1', r2Key: null })).resolves.toBe(false);
   });
 
-  it('still no-ops on a FK violation (23503 — ephemeral test rack)', async () => {
-    const { storeSnapshot } = await import('./db.js');
+  it('returns non-durable on a FK violation (23503)', async () => {
+    const { storeSnapshotRecord } = await import('./db.js');
     queryMock.mockRejectedValueOnce(Object.assign(new Error('fk'), { code: '23503' }));
-    // FK-less racks journal nothing either → nothing to lose → durable=true.
-    await expect(storeSnapshot('r_missing', new Uint8Array([1]))).resolves.toBe(true);
+    // A missing parent is not a durable save; never authorize compaction.
+    await expect(storeSnapshotRecord('r_missing', { state: new Uint8Array([1]), generation: '1', r2Key: null })).resolves.toBe(false);
   });
 
   it('SWALLOWS a generic connection error (no code) too', async () => {
-    const { storeSnapshot } = await import('./db.js');
+    const { storeSnapshotRecord } = await import('./db.js');
     queryMock.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
-    await expect(storeSnapshot('r_y', new Uint8Array([9]))).resolves.toBe(false);
+    await expect(storeSnapshotRecord('r_y', { state: new Uint8Array([9]), generation: '1', r2Key: null })).resolves.toBe(false);
   });
 
   it('a healthy write resolves normally', async () => {
-    const { storeSnapshot } = await import('./db.js');
+    const { storeSnapshotRecord } = await import('./db.js');
     queryMock.mockResolvedValueOnce({ rowCount: 1 });
-    await expect(storeSnapshot('r_ok', new Uint8Array([1]))).resolves.toBe(true);
+    await expect(storeSnapshotRecord('r_ok', { state: new Uint8Array([1]), generation: '1', r2Key: null })).resolves.toBe(true);
     expect(queryMock).toHaveBeenCalledTimes(1);
   });
 
   it('registers a pool error listener so an idle-client error never crashes node', async () => {
-    const { storeSnapshot } = await import('./db.js');
+    const { storeSnapshotRecord } = await import('./db.js');
     // First query lazily constructs the pool → installs the listener.
     queryMock.mockResolvedValueOnce({ rowCount: 1 });
-    await storeSnapshot('r_listener', new Uint8Array([1]));
+    await storeSnapshotRecord('r_listener', { state: new Uint8Array([1]), generation: '1', r2Key: null });
     expect(poolOn).toHaveBeenCalledWith('error', expect.any(Function));
     // The listener must not re-throw when invoked with a backend error.
     const handler = poolOn.mock.calls.find((c) => c[0] === 'error')?.[1] as (e: Error) => void;
