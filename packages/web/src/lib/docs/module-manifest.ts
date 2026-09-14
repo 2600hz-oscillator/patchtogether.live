@@ -1533,6 +1533,13 @@ export function buildModuleManifest(
       if (file === 'score-layout.ts') return false;
       if (file === 'score-writes.ts') return false;
       if (file === 'score-transport-deps.ts') return false;
+      // LINNSTRUMENT's two companions (2026-09-14): `linnstrument-runtime.ts`
+      // is the factory's body — the source subscription, reducer, CVs, buses
+      // and arps, split out so the def file stays the contract + face + docs —
+      // and `linnstrument-arp.ts` is the caller-owned transport over the pure
+      // arp-engine. Neither is a ModuleDef; the def lives in linnstrument.ts.
+      if (file === 'linnstrument-runtime.ts') return false;
+      if (file === 'linnstrument-arp.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));
