@@ -13,7 +13,7 @@ test.describe.configure({ mode: 'default' });
 const BASE = { tvMode: 3, mix: 0, feedback: 1.1, zoom: 0.93, rotate: 6,
   sensorLag: 0.08, sensorVariation: 0.8, contrast: 1, exposure: 2, blackLevel: 0.08 };
 
-async function boot(page: Page, variants: Record<string, number>[]) {
+async function boot(page: Page, variants: Record<string, number>[], resolution?: [number, number]) {
   await page.setViewportSize({ width: 1280, height: 1100 });
   await installRenderSmokeHooks(page);
   await page.goto('/rack?seed=none');
@@ -32,15 +32,17 @@ async function boot(page: Page, variants: Record<string, number>[]) {
   // watches expire after 1.5 s; a synchronous SwiftShader frame burst can
   // outlast that TTL. Own hard leases, as an actual presentation surface does,
   // and prove PER-NODE draws rather than only the engine's global tick count.
-  const counts = await page.evaluate((count) => {
+  const counts = await page.evaluate(({ count, resolution }) => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): {
       acquireRenderLease(id: string): () => void;
+      setResolution(width: number, height: number): boolean;
       pullStats(): { framesDrawn: Record<string, number> };
     } } };
     const ve = w.__engine().getDomain('video');
+    if (resolution) ve.setResolution(...resolution);
     for (let i = 0; i < count; i++) ve.acquireRenderLease(`m${i}`);
     return ve.pullStats().framesDrawn;
-  }, variants.length);
+  }, { count: variants.length, resolution });
   let driven = 0;
   return async (nodeId: string, steps: number) => {
     const stats = await stepAndReadStats(page, { nodeId, steps });
@@ -102,19 +104,24 @@ function difference(a: number[], b: number[]) {
   return a.reduce((sum, value, i) => sum + Math.abs(value - b[i]!), 0) / a.length;
 }
 
-test('sensor seed is reproducible and reroll changes the live camera response', async ({ page }) => {
+test('sensor seed reproduces fixed camera geometry and response', async ({ page }) => {
   test.setTimeout(120_000);
   const step = await boot(page, [{ sensorSeed: 167 }, { sensorSeed: 167 }, { sensorSeed: 49820 }]);
   assertRenderStats(await step('m0', 8), 8);
   const p = await pictures(page, 3);
   expect(difference(p[0]!, p[1]!), 'same seed + same input/history').toBe(0);
   expect(difference(p[0]!, p[2]!), 'rerolled physical response reaches GPU pixels').toBeGreaterThan(0.2);
-  // The third camera has proved seed separation. Freeze it before testing the
-  // face action: only the matching pair is needed to observe the reroll.
-  await page.evaluate(() => {
-    const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
-    w.__engine().getDomain('video').setParam('m2', 'freeze', 1);
-  });
+});
+
+// Keep UI actionability independent of the three-camera profile comparison.
+// Their combined CI case took 111 of 120 s; this rack needs only a matching
+// pair and enough charge to observe the action's immediate response.
+test('reroll changes the live camera response through the face action', async ({ page }) => {
+  test.setTimeout(120_000);
+  const step = await boot(page, [{ sensorSeed: 167 }, { sensorSeed: 167 }]);
+  assertRenderStats(await step('m0', 4), 4);
+  const before = await pictures(page, 2);
+  expect(difference(before[0]!, before[1]!), 'the two cameras agree before reroll').toBe(0);
   // Exercise the shipping ModuleShell action and verify its actual effect.
   await page.evaluate(() => {
     (window as unknown as { __openDockFullView(id: string): void }).__openDockFullView('m0');
@@ -150,7 +157,7 @@ test('sensor seed is reproducible and reroll changes the live camera response', 
       __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } };
     };
     const ve = w.__engine().getDomain('video');
-    for (let i = 0; i < 3; i++) ve.setParam(`m${i}`, 'freeze', 1);
+    for (let i = 0; i < 2; i++) ve.setParam(`m${i}`, 'freeze', 1);
     w.__videoEnginePause = false;
   });
   await page.getByRole('tab', { name: 'crutchfield', exact: true }).click();
@@ -187,7 +194,12 @@ test('camera angle, focus and colour gain change the iterated image', async ({ p
 
 test('closing the iris exposes charge decay; freeze holds both physical histories', async ({ page }) => {
   test.setTimeout(90_000);
-  const step = await boot(page, [{ sensorLag: 0.025 }, { sensorLag: 0 }]);
+  // Temporal state, not resolvable bands: with the iris closed each sensor
+  // site follows the same exponential decay regardless of pixel density.
+  // Keep the 27 exact fields and relative energy assertions, but use a small
+  // buffer for this probe. Geometry/seed/resize probes retain full resolution.
+  // CI traced 68 s of render work here, including 12 s on the unused zero-lag arm.
+  const step = await boot(page, [{ sensorLag: 0.025 }, { sensorLag: 0 }], [320, 240]);
   assertRenderStats(await step('m0', 8), 8);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
@@ -200,7 +212,10 @@ test('closing the iris exposes charge decay; freeze holds both physical historie
   expect(fading.mean).toBeGreaterThan(5);
   await page.evaluate(() => {
     const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
-    w.__engine().getDomain('video').setParam('m0', 'freeze', 1);
+    const ve = w.__engine().getDomain('video');
+    ve.setParam('m0', 'freeze', 1);
+    // The zero-lag arm has proved immediate black; no later assertion reads it.
+    ve.setParam('m1', 'freeze', 1);
   });
   const held = await step('m0', 8);
   expect(held.mean).toBe(fading.mean);
