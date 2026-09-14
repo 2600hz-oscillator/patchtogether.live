@@ -85,8 +85,8 @@ test('?shell=1 renders es9 COMPACT, and the bridge is owned with NO card mounted
   //
   // ⚠ IT IS `moduleShell`, NOT `moduleShellPlaceholder`, SINCE THE PROMOTION,
   // and the difference is the whole point of it. A placeholder is a rackline
-  // tile with ZERO ranked controls, so both connect gestures AND all 22
-  // routing params lived behind the dock full view on a module that is silent
+  // tile with ZERO ranked controls, so both connect gestures AND every
+  // routing param lived behind the dock full view on a module that is silent
   // until one of them is pressed. es9 now declares a `face`, so the lane paints
   // `<ModuleShell>` with ranked cells — CONNECT first.
   const lane = page.locator(`.svelte-flow__node[data-id="${NODE}"]`);

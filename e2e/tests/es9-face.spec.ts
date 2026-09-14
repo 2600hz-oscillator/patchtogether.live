@@ -173,11 +173,12 @@ test.describe('ES-9 face — the gestures reach the LANE TILE', () => {
     ).toHaveCount(1);
     await expect(lane.getByTestId('shell-cell-es9-disconnect')).toHaveCount(1);
 
-    // NEGATIVE CONTROL for the same read: the tile does NOT carry all 24 keys —
-    // the tier caps are geometry, so a lane tile showing everything would make
-    // the assertion above true for any ranking at all.
+    // NEGATIVE CONTROL for the same read: the tile does NOT carry all 46 keys
+    // (2 gestures + 22 classes + 22 refs) — the tier caps are geometry, so a
+    // lane tile showing everything would make the assertion above true for
+    // any ranking at all.
     await expect(
-      lane.getByTestId('control-in14_class'),
+      lane.getByTestId('control-in14_ref'),
       'the ranked-last key is a DOCK control',
     ).toHaveCount(0);
   });

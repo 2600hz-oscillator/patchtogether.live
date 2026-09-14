@@ -24,8 +24,9 @@
 // un-promote for real, remove the docs, not the name.
 
 export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
-  // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack and
-  // class selector documented from day one (46 ports, 22 controls).
+  // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack,
+  // class selector and reference toggle documented from day one (the counts
+  // are derived from es9Def, never typed here).
   'es9',
   // VST BRIDGE cards (2026-08-19): born strict — the vst-bridge helper's
   // in-graph faces (instrument voice + stereo FX insert), every port

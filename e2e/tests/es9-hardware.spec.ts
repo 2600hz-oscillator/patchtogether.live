@@ -16,8 +16,12 @@
 // The output direction (browser → ES-9 jacks) is covered by the loopback
 // test at the bottom: out1 → in5 through a real cable is the round trip
 // ×0.5 (app ±1 → ±5 V) then ×2 (±5 V → app ±1), so an internal VCO at ~1.0
-// must come back at ~1.0 (ADR-019). Absolute volts at a jack still need a
-// meter — see the hardware-verify checklist on the ADR-019 PR.
+// must come back at ~1.0 (ADR-019). The per-jack REFERENCE toggle (ADR-020:
+// `out{n}_ref` / `in{n}_ref`, modular | line) rides the same cable: line on
+// BOTH ends (×0.174 out, ×5.76 in) is identity again, line on out1 ALONE
+// reads 0.347 (1.736 V into a ±5 V-referenced jack) — the discriminator that
+// says the toggle reached the hardware path. Absolute volts at a jack still
+// need a meter — see the hardware-verify checklist on the ADR-019 / ADR-020 PRs.
 
 import { test, expect } from './_fixtures';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
@@ -225,4 +229,49 @@ test('loopback out1 → in5: an internal VCO at ~1.0 comes back at ~1.0 (round-t
   expect(ratio, `in5/direct peak ratio ≈ 1 (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeLessThan(1.1);
   // Negative control: an unpatched jack must read silence (presence ≠ liveness).
   expect(empty.peak, `in6 (unpatched) peak — is something patched into ES-9 input 6? (${JSON.stringify(empty)})`).toBeLessThan(0.02);
+});
+
+test('loopback out1 → in5 with the REF toggle (ADR-020): line on BOTH ends is still identity, line on out1 ALONE reads ≈0.347', async ({ page, rack, errorWatch }) => {
+  void rack;
+  void errorWatch;
+  // Two legs on the same cable. (a) out1_ref=line AND in5_ref=line: ×0.174
+  // out then ×5.76 in — identity, so the return peaks within ±10 % of the VCO
+  // read directly. (b) out1_ref=line ONLY: the jack drives ±1.736 V and the
+  // ±5 V-referenced in5 reads 1.736 / 5 = 0.347 — the discriminator, since a
+  // toggle that reached neither direction would read 1.0 here and a toggle
+  // that reached only one would read 5.76 or 0.174. Jack 6 stays the
+  // negative control on both legs.
+  const legs: ReadonlyArray<{ name: string; params: Record<string, number>; lo: number; hi: number }> = [
+    { name: 'line on both ends', params: { out1_ref: 1, in5_ref: 1 }, lo: 0.9, hi: 1.1 },
+    { name: 'line on out1 only', params: { out1_ref: 1 }, lo: 0.31, hi: 0.39 },
+  ];
+  for (const leg of legs) {
+    const edges: SpawnEdge[] = [
+      { id: 'e1', from: { nodeId: 'vco', portId: 'out' }, to: { nodeId: 'sut', portId: 'out1' } },
+      { id: 'e2', from: { nodeId: 'vco', portId: 'out' }, to: { nodeId: 'scpdirect', portId: 'ch1' } },
+      { id: 'e3', from: { nodeId: 'sut', portId: 'in5' }, to: { nodeId: 'scploop', portId: 'ch1' } },
+      { id: 'e4', from: { nodeId: 'sut', portId: 'in6' }, to: { nodeId: 'scpempty', portId: 'ch1' } },
+    ];
+    await spawnPatch(
+      page,
+      [
+        { id: 'vco', type: 'swolevco', position: { x: 60, y: 60 }, domain: 'audio' },
+        { ...ES9_NODE, params: leg.params },
+        scopeNode('scpdirect', 0),
+        scopeNode('scploop', 200),
+        scopeNode('scpempty', 400),
+      ],
+      edges,
+    );
+    await waitConnected(page);
+    const stats = await pollScopes(page, ['scpdirect', 'scploop', 'scpempty'], 5_000);
+    const direct = stats['scpdirect']!;
+    const loop = stats['scploop']!;
+    const empty = stats['scpempty']!;
+    expect(direct.peak, `[${leg.name}] direct VCO peak (${JSON.stringify(direct)})`).toBeGreaterThan(0.9);
+    const ratio = loop.peak / Math.max(direct.peak, 1e-6);
+    expect(ratio, `[${leg.name}] in5/direct peak ratio (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeGreaterThan(leg.lo);
+    expect(ratio, `[${leg.name}] in5/direct peak ratio (direct=${direct.peak.toFixed(4)} loop=${loop.peak.toFixed(4)})`).toBeLessThan(leg.hi);
+    expect(empty.peak, `[${leg.name}] in6 (unpatched) peak (${JSON.stringify(empty)})`).toBeLessThan(0.02);
+  }
 });
