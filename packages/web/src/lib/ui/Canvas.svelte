@@ -462,6 +462,16 @@
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
   import { installSimulatedTrails, type SimulatedTrails } from '$lib/midi/trails-device';
   import {
+    bindLinnstrument,
+    connectLinnstrument,
+    installSimulatedLinnstrument,
+    linnstrumentDiagnostics,
+    linnstrumentStatus,
+    unbindLinnstrument,
+    type SimulatedLinnstrument,
+  } from '$lib/midi/linnstrument-device';
+  import { setLinnstrumentConnector } from '$lib/audio/modules/linnstrument-runtime';
+  import {
     installSimulatedLaunchpad,
     installSimulatedLaunchpadSingle,
     installSimulatedLaunchpadMonitorDevice,
@@ -1491,6 +1501,22 @@
   // a shell pre-flight `bindings.changed`, another tab's pick, or this session's
   // own write settling. Mount-only subscription; disposed with the component.
   onMount(() => rigBindings().subscribe(scheduleDeviceRestore));
+
+  // ── THE LINNSTRUMENT CONNECT SEAM ──────────────────────────────────────────
+  //
+  // The `linnstrument` runtime exposes `connect()` on its card-api and the
+  // ranked CONNECT cell calls whatever `setLinnstrumentConnector` registered
+  // (linnstrument-runtime.ts:181-196); the device layer owns the gesture-gated
+  // `connectLinnstrument()` (linnstrument-device.ts:666) but, by the
+  // trails-device rule, never imports a module runtime. Neither side can
+  // register the other, so the app root does — mount-only, and the connector is
+  // the FUNCTION, never a result, so the browser prompt stays inside the click
+  // that asks for it. Without this line the CONNECT cell reported
+  // `delivered: false` on every press (no connector registered).
+  onMount(() => {
+    setLinnstrumentConnector(() => connectLinnstrument());
+    return () => setLinnstrumentConnector(null);
+  });
 
   // ── RE-OPEN OUTPUT-SLOT PROJECTORS ONCE THE VIDEO ENGINE IS READY ──────────
   //
@@ -8660,6 +8686,54 @@
           stop: () => sim.stop(),
           send: (bytes: number[]) => sim.send(bytes),
           attached: () => sim.attached(),
+          portName: sim.portName,
+        };
+        return sim.attached();
+      };
+      // Simulated LINNSTRUMENT for e2e — the trails shape. Installs an in-memory
+      // MIDIAccess whose input/output pair is NAMED like the instrument, then
+      // runs the REAL `connectLinnstrument()` against it, so the /linnstrument/i
+      // port match, the `createMidiInputClaim` slot, the User-Firmware-Mode
+      // NRPN 245 entry on the output, `decodePhysicalMidi` → `mapSurface`, the
+      // source-registry fan-out, the module runtime's selection reducer / MPE
+      // allocator and the LED writer all run exactly as on hardware. Every
+      // driver call below spells the real User-Mode bytes (Note On per cell on
+      // the ROW channel, CC X hi/lo pairs, CC Y, poly pressure Z, CC119 slide)
+      // onto the wire; nothing reaches past it. `{ bind: false }` grants the
+      // access and lists the port but binds NOTHING — the "unbound device"
+      // negative control — and `bind()` then takes the real bind path.
+      // Coordinates are APPLICATION cells (col 0..24, row 0..7, bottom-left
+      // origin): the +1 wire-column asymmetry is exercised, not bypassed.
+      // DEV / VITE_E2E_HOOKS only — stripped from prod bundles.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__linnstrumentTestInstall = async (opts?: { bind?: boolean; decoyPortName?: string }) => {
+        const sim: SimulatedLinnstrument = await installSimulatedLinnstrument({
+          bind: opts?.bind,
+          decoyPortName: opts?.decoyPortName,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__linnstrumentSim = {
+          // a fresh press at app cell (col,row); raw X 0..16383, Y 0..127, Z 0..127.
+          touch: (col: number, row: number, o?: { velocity?: number; x?: number; y?: number; z?: number }) =>
+            sim.touch(col, row, o),
+          // expression on a HELD cell — X (bend), Y (timbre), Z (pressure).
+          move: (col: number, row: number, o: { x?: number; y?: number; z?: number }) => sim.move(col, row, o),
+          release: (col: number, row: number, velocity?: number) => sim.release(col, row, velocity),
+          // the documented CC119 transfer: source col → dest col on one row.
+          slide: (fromCol: number, toCol: number, row: number) => sim.slide(fromCol, toCol, row),
+          ackUserMode: (on?: boolean) => sim.ackUserMode(on),
+          send: (bytes: number[]) => sim.send(bytes),
+          // everything the app wrote to the instrument's OUTPUT, oldest first.
+          writes: () => sim.writes(),
+          clearWrites: () => sim.clearWrites(),
+          attached: () => sim.attached(),
+          // the real bind / unbind path, for the unbound-device control.
+          bind: () => bindLinnstrument(sim.inputId),
+          unbind: () => unbindLinnstrument(),
+          unplug: () => sim.unplug(),
+          plug: () => sim.plug(),
+          status: () => linnstrumentStatus(),
+          diagnostics: () => linnstrumentDiagnostics(),
           portName: sim.portName,
         };
         return sim.attached();

@@ -5861,6 +5861,50 @@ export const FACES = [
     // VRT harness, which is a change to the harness rather than to this module.
   },
 
+  // ── LINNSTRUMENT — the FIFTH binder baselined; three DOM pads, no canvas ──
+  {
+    type: 'linnstrument',
+    // SIX bands, grouped BY LANE (owner ruling 2026-09-04): `surface` (CONNECT,
+    // CENTER, PANIC, EXTRAS, JOIN), then `r` / `g` / `b` (each selector's
+    // toggle + its two retained axes), then `keys` and `pad` (root + arp).
+    // `glyph: 'none'` (forced — no audio port, see linnstrument.ts), so there is
+    // no hero split and the count is the declared `face.pages` length. Under
+    // `DOCK_TAB_MIN_BANDS` (7): not railed, and `tabbed` is NOT set — a
+    // control-heavy face goes tabbed only on an owner instruction.
+    pages: 6,
+
+    // ⚠ THE DETERMINISM ARGUMENT IS TRAILS', with the device double swapped
+    // for a NO-DEVICE reducer state:
+    //
+    //   1. `requestMIDIAccess` is NEVER CALLED until someone presses CONNECT
+    //      (linnstrument-device.ts `connectLinnstrument` is gesture-gated and
+    //      the factory never calls it); this scene presses nothing.
+    //   2. Even a granted origin binds nothing: the matcher is /linnstrument/i
+    //      over port NAMES and no CI machine has a LinnStrument on USB; the
+    //      rig store on a fresh runner names no port.
+    //   3. Even a bound port streams nothing without a finger on a cell.
+    //
+    // ⚠ AND THE BODY IS DOM ONLY, WITH NO CLOCK: `LinnstrumentPadsBody.svelte`
+    // paints three pads from the runtime's selection state (hydrated from the
+    // ParamDef defaults — R selected, every pair at (0, 0)), three lamps and
+    // three target pickers. No canvas, no rAF, no interval; its one
+    // subscription is the runtime's change notification, which fires only on a
+    // reducer transition, and nothing transitions. The device roster cannot be
+    // in frame (midi-lane.ts:525-529): the LINK lamp is DARK with its
+    // pre-connect `detail`, KEYS and PAD are dark (no voices, both arps off),
+    // and each target picker lists exactly `—` because the scene spawns no
+    // joystick node. Resting text is captions only (R / G / B, LINK / KEYS /
+    // PAD) — pinned by `linnstrument-face-model.test.ts`.
+    //
+    // ⚠ NO `videoFaceWhy` AND NO `simPin`: `domain: 'audio'`, no video port,
+    // and nothing advances between frames.
+    //
+    // ⚠ WHAT THIS BASELINE DOES NOT COVER, stated: the post-connect states —
+    // bound, a finger on the pad, an arp running. Their behaviour is
+    // `linnstrument.spec.ts` (a SIMULATED device through the real decoder to
+    // an audible-output assertion), their wiring `linnstrument-face-model.test.ts`.
+  },
+
   // ── CLIP PLAYER — the launcher, and the last module card to leave
   //    NON_SHELL_LANE_TYPES ────────────────────────────────────────────────
   //
