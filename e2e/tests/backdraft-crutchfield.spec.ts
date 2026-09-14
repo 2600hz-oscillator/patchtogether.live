@@ -102,15 +102,19 @@ function difference(a: number[], b: number[]) {
   return a.reduce((sum, value, i) => sum + Math.abs(value - b[i]!), 0) / a.length;
 }
 
-test('sensor seed is reproducible, changes the picture, and becomes inert at zero variation', async ({ page }) => {
+test('sensor seed is reproducible and reroll changes the live camera response', async ({ page }) => {
   test.setTimeout(120_000);
-  const step = await boot(page, [{ sensorSeed: 167 }, { sensorSeed: 167 }, { sensorSeed: 49820 },
-    { sensorSeed: 167, sensorVariation: 0 }, { sensorSeed: 49820, sensorVariation: 0 }]);
+  const step = await boot(page, [{ sensorSeed: 167 }, { sensorSeed: 167 }, { sensorSeed: 49820 }]);
   assertRenderStats(await step('m0', 8), 8);
-  const p = await pictures(page, 5);
+  const p = await pictures(page, 3);
   expect(difference(p[0]!, p[1]!), 'same seed + same input/history').toBe(0);
   expect(difference(p[0]!, p[2]!), 'rerolled physical response reaches GPU pixels').toBeGreaterThan(0.2);
-  expect(difference(p[3]!, p[4]!), 'negative control: seed cannot act when variation is zero').toBe(0);
+  // The third camera has proved seed separation. Freeze it before testing the
+  // face action: only the matching pair is needed to observe the reroll.
+  await page.evaluate(() => {
+    const w = window as unknown as { __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } } };
+    w.__engine().getDomain('video').setParam('m2', 'freeze', 1);
+  });
   // Exercise the shipping ModuleShell action and verify its actual effect.
   await page.evaluate(() => {
     (window as unknown as { __openDockFullView(id: string): void }).__openDockFullView('m0');
@@ -122,7 +126,9 @@ test('sensor seed is reproducible, changes the picture, and becomes inert at zer
     const w = window as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
     return w.__patch.nodes.m0?.params.sensorSeed !== 167;
   });
-  await step('m0', 8);
+  // Two fields expose the changed sensor response; waiting for eight keeps
+  // iterating the same difference and dominated the software-renderer bill.
+  await step('m0', 2);
   const rerolled = await pictures(page, 2);
   expect(difference(rerolled[0]!, rerolled[1]!), 'face action changes the live feedback response').toBeGreaterThan(0.05);
   const data = await page.evaluate(() => {
@@ -144,7 +150,7 @@ test('sensor seed is reproducible, changes the picture, and becomes inert at zer
       __engine: () => { getDomain(d: string): { setParam(id: string, key: string, value: number): void } };
     };
     const ve = w.__engine().getDomain('video');
-    for (let i = 0; i < 5; i++) ve.setParam(`m${i}`, 'freeze', 1);
+    for (let i = 0; i < 3; i++) ve.setParam(`m${i}`, 'freeze', 1);
     w.__videoEnginePause = false;
   });
   await page.getByRole('tab', { name: 'crutchfield', exact: true }).click();
@@ -157,6 +163,18 @@ test('sensor seed is reproducible, changes the picture, and becomes inert at zer
     ve.setParam('m0', 'tvGate', 0); ve.setParam('m0', 'tvGate', 1);
   });
   await expect(reroll).toBeHidden();
+});
+
+// Keep this independent negative control in its own rack. Carrying these two
+// extra cameras through the UI reroll check rendered 5 loops where 2 sufficed;
+// CI traces measured 57–66 s just for that rack's initial eight fields.
+test('zero variation makes sensor seed inert', async ({ page }) => {
+  test.setTimeout(90_000);
+  const step = await boot(page, [{ sensorSeed: 167, sensorVariation: 0 },
+    { sensorSeed: 49820, sensorVariation: 0 }]);
+  assertRenderStats(await step('m0', 8), 8);
+  const p = await pictures(page, 2);
+  expect(difference(p[0]!, p[1]!), 'negative control: seed cannot act when variation is zero').toBe(0);
 });
 
 test('camera angle, focus and colour gain change the iterated image', async ({ page }) => {
