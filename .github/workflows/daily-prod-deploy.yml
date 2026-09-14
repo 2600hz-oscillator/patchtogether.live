@@ -159,12 +159,14 @@ jobs:
           fi
           echo "relay_changed=$RELAY" >> "$GITHUB_OUTPUT"
 
-  # ---- 2. Build + deploy the green SHA's web bundle to prod ----
+  # ---- Build + deploy the green SHA's web bundle after its relay ----
   deploy-web:
     name: Deploy → patchtogether.live (web)
-    needs: [find-green]
+    needs: [find-green, deploy-relay]
     if: >-
-      needs.find-green.outputs.found == 'true'
+      always()
+      && (needs.deploy-relay.result == 'success' || (needs.deploy-relay.result == 'skipped' && needs.find-green.outputs.relay_changed == 'false'))
+      && needs.find-green.outputs.found == 'true'
       && needs.find-green.outputs.changed == 'true'
       && ! inputs.dry_run
     runs-on: ubuntu-latest
@@ -246,10 +248,11 @@ jobs:
   # ---- 3. Relay (Fly) — only when its sources changed since the last ship ----
   deploy-relay:
     name: Deploy relay → prod (only if changed)
-    needs: [find-green, deploy-web]
+    needs: [find-green]
     if: >-
-      always()
-      && needs.deploy-web.result == 'success'
+      needs.find-green.outputs.found == 'true'
+      && needs.find-green.outputs.changed == 'true'
+      && ! inputs.dry_run
       && needs.find-green.outputs.relay_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -263,8 +266,8 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "$FLY_API_TOKEN" ]; then
-            echo "::warning::FLY_API_TOKEN not set — skipping prod relay deploy."
-            exit 0
+            echo "::error::Relay deployment requires FLY_API_TOKEN; refusing a partial release."
+            exit 1
           fi
           flyctl deploy --config fly.prod.toml --remote-only
 

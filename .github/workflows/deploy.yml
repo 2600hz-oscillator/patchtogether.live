@@ -162,12 +162,13 @@ jobs:
 
   deploy-prod:
     name: Deploy → patchtogether.live (production)
-    needs: [detect-version-bump, verify-ci]
+    needs: [detect-version-bump, verify-ci, deploy-relay-prod]
     # `always()` runs the if-check even when needed jobs are skipped (the
     # detect-version-bump job is skipped on workflow_dispatch, verify-ci is
     # skipped on push). The body picks the right path per event.
     if: |
       always()
+      && needs.deploy-relay-prod.result == 'success'
       && (
         (github.event_name == 'push'
           && github.ref == 'refs/heads/main'
@@ -430,11 +431,12 @@ jobs:
 
   deploy-autotest:
     name: Deploy → autotest.patchtogether.live (autotest)
-    needs: [verify-ci]
+    needs: [verify-ci, relay-changed, deploy-relay-autotest]
     # `always()` lets us fire on push (where verify-ci is skipped). The body
     # gates the dispatch path on verify-ci success.
     if: |
       always()
+      && (needs.deploy-relay-autotest.result == 'success' || (needs.deploy-relay-autotest.result == 'skipped' && needs.relay-changed.result == 'success' && needs.relay-changed.outputs.changed == 'false'))
       && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main')
         || (github.event_name == 'workflow_dispatch'
@@ -527,9 +529,10 @@ jobs:
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (dev)
-    needs: [verify-ci]
+    needs: [verify-ci, relay-changed, deploy-relay-dev]
     if: |
       always()
+      && (needs.deploy-relay-dev.result == 'success' || (needs.deploy-relay-dev.result == 'skipped' && needs.relay-changed.result == 'success' && needs.relay-changed.outputs.changed == 'false'))
       && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main')
         || (github.event_name == 'workflow_dispatch'
@@ -723,7 +726,7 @@ jobs:
   # `needs`, which ARE available at job level.
   deploy-relay-dev:
     name: Deploy relay → dev
-    needs: [relay-changed]
+    needs: [relay-changed, verify-ci]
     if: |
       always()
       && (
@@ -731,6 +734,7 @@ jobs:
           && github.ref == 'refs/heads/main'
           && needs.relay-changed.outputs.changed == 'true')
         || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
           && contains(github.event.inputs.target, 'dev'))
       )
     runs-on: ubuntu-latest
@@ -743,14 +747,14 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "$FLY_API_TOKEN" ]; then
-            echo "::warning::FLY_API_TOKEN not set — skipping dev relay deploy. Wire the secret (flyctl auth token → gh secret set FLY_API_TOKEN) to enable relay CD."
-            exit 0
+            echo "::error::Relay deployment requires FLY_API_TOKEN; refusing a partial release."
+            exit 1
           fi
           flyctl deploy --config fly.dev.toml --remote-only
 
   deploy-relay-autotest:
     name: Deploy relay → autotest
-    needs: [relay-changed]
+    needs: [relay-changed, verify-ci]
     if: |
       always()
       && (
@@ -758,6 +762,7 @@ jobs:
           && github.ref == 'refs/heads/main'
           && needs.relay-changed.outputs.changed == 'true')
         || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
           && contains(github.event.inputs.target, 'autotest'))
       )
     runs-on: ubuntu-latest
@@ -770,8 +775,8 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "$FLY_API_TOKEN" ]; then
-            echo "::warning::FLY_API_TOKEN not set — skipping autotest relay deploy. Wire the secret to enable relay CD."
-            exit 0
+            echo "::error::Relay deployment requires FLY_API_TOKEN; refusing a partial release."
+            exit 1
           fi
           flyctl deploy --config fly.autotest.toml --remote-only
 
@@ -800,7 +805,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "$FLY_API_TOKEN" ]; then
-            echo "::warning::FLY_API_TOKEN not set — skipping prod relay deploy. Wire the secret to enable relay CD."
-            exit 0
+            echo "::error::Relay deployment requires FLY_API_TOKEN; refusing a partial release."
+            exit 1
           fi
           flyctl deploy --config fly.prod.toml --remote-only
