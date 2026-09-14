@@ -146,15 +146,12 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       // On eight identical physical jacks that is exactly how a player reads
       // them, so the aligned columns are right for the same musical reason.
       //
-      // ⚠ ITS SIBLING BAND IS DELIBERATELY *NOT* HERE. es9's `in` band holds
-      // FOURTEEN of the same cell and is clustered 4/4/4/2 — RAGGED, so
-      // `consoleGridCols` refuses it, which is correct: fourteen does not
-      // divide into rows that both fit the box and align. That refusal is what
-      // keeps es9 a ONE-console-band face and therefore off the face-wide
-      // ruler below.
-      //
-      // NO EXISTING BASELINE MOVES — the face is new in this PR, so its first
-      // captured baseline has the aligned columns from the start.
+      // ITS SIBLING BAND JOINED IT with the per-jack REF toggle (ADR-020).
+      // Every cluster on both bands is now ONE JACK PAIR — class, ref, class,
+      // ref — so `in` holds seven EQUAL clusters of four where it used to hold
+      // 4/4/4/2 (ragged, refused). Column j means the same thing in every row
+      // of both bands, which is what puts es9 on the face-wide ruler below.
+      'es9/in=4',
       'es9/out=4',
       'kickdrum/dynamics=3',
       // ⚠ THE NARROWEST CONSOLE BAND THAT CAN EXIST — two columns — and it
@@ -293,7 +290,10 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
     // band with more COLUMNS does. The face is new in this PR, so its first
     // captured baselines carry the aligned columns from the start and no
     // existing baseline moves.
-    expect(out.sort()).toEqual(['mixmstrs=9', 'wavesculpt=3']);
+    // es9 is the THIRD, at 4: with the ref toggle beside every class selector
+    // (ADR-020) both jack bands are equal-cluster console grids of four, and a
+    // class column sits above a class column, a ref above a ref.
+    expect(out.sort()).toEqual(['es9=4', 'mixmstrs=9', 'wavesculpt=3']);
   });
 
   it('NEGATIVE CONTROL: faces WITH a console band but only one keep their own ruler', () => {
@@ -310,12 +310,6 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
     expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
       // Crutchfield is Backdraft's only console band; other tabs keep their own layout.
       'backdraft',
-      // es9's `out` band is its only console band. The `in` band holds the
-      // SAME cell fourteen times and is clustered 4/4/4/2 — ragged, so the
-      // rule refuses it — and `bridge` carries no clusters at all. So the
-      // face-wide ruler must not engage, and a lone console band has nothing
-      // to align against.
-      'es9',
       'kickdrum',
       // kria's `track` is its only console band — `transport` and `scale` carry
       // no clusters at all — so the FACE-WIDE ruler must not engage. Same

@@ -20,7 +20,12 @@ import {
   CLASS_PITCH,
   FADE_FRAMES,
   GATE_OUT_LEVEL,
+  LINE_NOMINAL_VOLTS_PEAK,
+  NOMINAL_VOLTS,
+  REF_LINE,
+  REF_MODULAR,
   RingIO,
+  VOLTS_FULL_SCALE,
   createRingSpec,
   type RingSpec,
 } from './es9-bridge-core';
@@ -63,7 +68,12 @@ interface Rig {
   outRing: RingIO;  // we CONSUME here (the Worker's role)
 }
 
-async function rig(classes?: { inClasses?: number[]; outClasses?: number[] }): Promise<Rig> {
+async function rig(classes?: {
+  inClasses?: number[];
+  outClasses?: number[];
+  inRefs?: number[];
+  outRefs?: number[];
+}): Promise<Rig> {
   const Proc = await loadProcessor();
   const proc = new Proc();
   const inSpec = createRingSpec(HW, 4096);
@@ -229,5 +239,109 @@ describe('es9-bridge worklet — graph → hardware level', () => {
     const pass2 = io();
     r.proc.process(pass2.inputs, pass2.outputs, {});
     expect(pass2.outputs[0]![0]![50]).toBeCloseTo(1.0, 6);
+  });
+});
+
+describe('es9-bridge worklet — per-jack audio REFERENCE (modular / line)', () => {
+  /** +4 dBu peak on the wire — DERIVED from the constant, never typed. */
+  const LINE_WIRE = LINE_NOMINAL_VOLTS_PEAK / VOLTS_FULL_SCALE;
+  /** What a +4 dBu peak reads under the MODULAR reference (the residual). */
+  const LINE_UNDER_MODULAR = LINE_NOMINAL_VOLTS_PEAK / NOMINAL_VOLTS; // 0.347
+
+  function drain(r: Rig, frames: number): Float32Array[] {
+    const planes = Array.from({ length: HW }, () => new Float32Array(frames));
+    r.outRing.read(frames, (c, i, v) => { planes[c]![i] = v; });
+    return planes;
+  }
+
+  it('inRefs[0]=line: a +4 dBu wire sine reads 1.0 at raw in1, and at the twin ONLY when the twin\'s class is audio', async () => {
+    const inRefs = new Array(HW).fill(REF_MODULAR);
+    inRefs[0] = REF_LINE;
+    for (const [inCls, twinExpect] of [[CLASS_AUDIO, 1.0], [CLASS_CV, LINE_UNDER_MODULAR]] as const) {
+      const inClasses = new Array(HW).fill(CLASS_CV);
+      inClasses[0] = inCls;
+      const r = await rig({ inClasses, inRefs });
+      feedSine(r, 0, LINE_WIRE, BLOCK * 4);
+      let rawPeak = 0;
+      let twinPeak = 0;
+      for (let b = 0; b < 4; b++) {
+        const { inputs, outputs } = io();
+        r.proc.process(inputs, outputs, {});
+        rawPeak = Math.max(rawPeak, peak(outputs[0]![0]!));
+        twinPeak = Math.max(twinPeak, peak(outputs[CV_TWIN_BASE]![0]!));
+      }
+      expect(rawPeak, `raw in1 peak under line, in1_class=${inCls}`).toBeCloseTo(1.0, 3);
+      // THE DISCRIMINATOR: the twin's CLASS decides whether the ref applies.
+      // A cv twin carries volts (±5 V → ±1) and reads the line signal at 0.347.
+      expect(twinPeak, `in1_cv peak under line, in1_class=${inCls}`).toBeCloseTo(twinExpect, 3);
+    }
+  });
+
+  it('a jack NOT set to line is untouched by another jack\'s ref, and the S/PDIF return ignores its own', async () => {
+    const inRefs = new Array(HW).fill(REF_MODULAR);
+    inRefs[0] = REF_LINE;
+    inRefs[14] = REF_LINE;
+    const r = await rig({ inRefs });
+    r.inRing.write(BLOCK, (c) => (c === 1 ? 0.5 : c === 14 ? 0.5 : 0));
+    const { inputs, outputs } = io();
+    r.proc.process(inputs, outputs, {});
+    expect(outputs[1]![0]![5], 'in2 stays modular: ±5 V → 1.0').toBeCloseTo(1.0, 6);
+    expect(outputs[14]![0]![5], 'S/PDIF is digital whatever the ref says').toBeCloseTo(0.5, 6);
+  });
+
+  it('outRefs: an audio jack on line drives 0.1736 on the wire for 1.0; cv ignores it; usb1-8 ignore it', async () => {
+    const outClasses = new Array(HW).fill(CLASS_AUDIO);
+    outClasses[9] = CLASS_CV;
+    const outRefs = new Array(HW).fill(REF_LINE); // EVERY channel says line…
+    const r = await rig({ outClasses, outRefs });
+    const { inputs, outputs } = io();
+    for (let c = 0; c < HW; c++) inputs[c]![0]!.fill(1.0);
+    r.proc.process(inputs, outputs, {});
+    const wire = drain(r, BLOCK);
+    expect(wire[8]![7], 'out1 audio, line').toBeCloseTo(LINE_WIRE, 6);
+    expect(wire[8]![7], 'out1 audio, line').toBeCloseTo(0.1736, 4);
+    expect(wire[9]![7], 'out2 cv ignores the ref').toBeCloseTo(0.5, 6);
+    expect(wire[10]![7], 'out3 audio, line').toBeCloseTo(LINE_WIRE, 6);
+    // …but the USB feeds are digital and pass ×1 regardless.
+    for (let c = 0; c < 8; c++) expect(wire[c]![3], `usb${c + 1}`).toBeCloseTo(1.0, 6);
+  });
+
+  it('round trip: line out → wire → line in is identity; line out → modular in reads the 9.19 dB residual', async () => {
+    const outRefs = new Array(HW).fill(REF_MODULAR);
+    outRefs[8] = REF_LINE;
+    for (const [inRef, expected] of [[REF_LINE, 1.0], [REF_MODULAR, LINE_UNDER_MODULAR]] as const) {
+      const inRefs = new Array(HW).fill(REF_MODULAR);
+      inRefs[0] = inRef;
+      const r = await rig({ ...fullClasses(CLASS_AUDIO, CLASS_AUDIO), inRefs, outRefs });
+      const { inputs, outputs } = io();
+      inputs[8]![0]!.fill(1.0);
+      r.proc.process(inputs, outputs, {});
+      const wire = drain(r, BLOCK);
+      expect(wire[8]![50]).toBeCloseTo(LINE_WIRE, 6);
+      r.inRing.write(BLOCK, (c, i) => (c === 0 ? wire[8]![i]! : 0));
+      const pass2 = io();
+      r.proc.process(pass2.inputs, pass2.outputs, {});
+      expect(pass2.outputs[0]![0]![50], `in1 ref ${inRef}`).toBeCloseTo(expected, 5);
+    }
+  });
+
+  it('message compatibility: a `classes` message WITHOUT inRefs/outRefs leaves every jack at modular', async () => {
+    const r = await rig(fullClasses(CLASS_AUDIO, CLASS_AUDIO));
+    r.inRing.write(BLOCK, (c) => (c === 0 ? 0.5 : 0));
+    const { inputs, outputs } = io();
+    inputs[8]![0]!.fill(1.0);
+    r.proc.process(inputs, outputs, {});
+    expect(outputs[0]![0]![5]).toBeCloseTo(1.0, 6);          // ±5 V → 1.0
+    expect(drain(r, BLOCK)[8]![5]).toBeCloseTo(0.5, 6);      // 1.0 → ±5 V
+    // …and a later message that names the refs moves them, then one without
+    // them does NOT snap them back (the fields are optional, not defaulted).
+    const inRefs = new Array(HW).fill(REF_MODULAR);
+    inRefs[0] = REF_LINE;
+    r.proc.port.onmessage?.({ data: { type: 'classes', inRefs } });
+    r.proc.port.onmessage?.({ data: { type: 'classes', ...fullClasses(CLASS_AUDIO, CLASS_AUDIO) } });
+    r.inRing.write(BLOCK, (c) => (c === 0 ? LINE_WIRE : 0));
+    const p2 = io();
+    r.proc.process(p2.inputs, p2.outputs, {});
+    expect(p2.outputs[0]![0]![5]).toBeCloseTo(1.0, 6);
   });
 });

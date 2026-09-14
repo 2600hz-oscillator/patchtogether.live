@@ -4293,11 +4293,13 @@ export const FACES = [
   //    argument is the INVERSE of midiclock's ────────────────────────────────
   {
     type: 'es9',
-    // THREE bands: `bridge` (connect + disconnect), `out jacks` (eight class
-    // switches, clustered into halves) and `in twins` (fourteen, clustered
-    // 4/4/4/2). `DOCK_TAB_MIN_BANDS` is 7, so no rail — nothing is padded
-    // toward one or merged to stay under it. There is no hero, so no band is
-    // emptied by a promotion and the post-hero count is the authored count.
+    // THREE bands: `bridge` (connect + disconnect), `out jacks` and `in jacks`
+    // — the two jack bands are console grids, one JACK PAIR per row (class,
+    // ref, class, ref), clustered by pair: `jacks 1-2` … `jacks 7-8` on the
+    // out side and `jacks 1-2` … `jacks 13-14` on the in side.
+    // `DOCK_TAB_MIN_BANDS` is 7, so no rail — nothing is padded toward one or
+    // merged to stay under it. There is no hero, so no band is emptied by a
+    // promotion and the post-hero count is the authored count.
     pages: 3,
 
     // ⚠ THE DETERMINISM ARGUMENT HERE IS THE OPPOSITE OF `midiclock`'s AND
@@ -4324,7 +4326,9 @@ export const FACES = [
     //     scene with no cvBuddy in it leaves the third lamp dark too;
     //   * the static empty-state hint, because `snap.supported` is true and the
     //     link is down;
-    //   * 24 cells at the defaults the def declares;
+    //   * every jack's class + ref selector pair at the defaults the def
+    //     declares (out: audio + modular; in: cv + modular), one jack pair
+    //     per row;
     //   * the `meter` glyph on `in1`, fed by a worklet whose rings the worker
     //     never fills — digital silence, i.e. the same flat centreline every
     //     other faced module's live glyph draws — and `bootWithFace` freezes
