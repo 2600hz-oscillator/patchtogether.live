@@ -40,6 +40,11 @@ export async function spawnWithFixtures(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 420, y: 40 }, domain: 'video' }]);
   await openToyboxDock(page);
+  await registerToyboxFixtures(page);
+}
+
+/** Register deterministic content on an already mounted peer. */
+export async function registerToyboxFixtures(page: Page): Promise<void> {
   await expect
     .poll(
       () => page.evaluate(() => typeof (globalThis as unknown as FixtureG).__toyboxRegisterFixtureContent),

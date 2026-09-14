@@ -18,6 +18,7 @@
 // Tagged @clock-sync so it can be selected with --grep when iterating.
 
 import { test, expect } from '@playwright/test';
+import { captureLfoAlignment } from './_shared-clock-output';
 
 interface ClockSession {
   pageA: import('@playwright/test').Page;
@@ -83,7 +84,7 @@ async function openTwoContextsWithClock(
 }
 
 test.describe('@clock-sync', () => {
-  test('two tabs converge on a shared clock and agree on LFO phase within 0.5°', async ({ browser }) => {
+  test('two tabs share an epoch and their pure LFO models agree at a supplied instant', async ({ browser }) => {
     const s = await openTwoContextsWithClock(browser);
     try {
       // Page A creates the LFO; Page B sees it via Yjs sync.
@@ -343,4 +344,57 @@ test.describe('@clock-sync', () => {
       await s.close();
     }
   });
+});
+
+test('@clock-sync @collab @multiplayer-critical staggered clients align actual LFO output; a broken anchor fails the probe', async ({ browser }) => {
+  const s = await openTwoContextsWithClock(browser);
+  try {
+    for (const page of [s.pageA, s.pageB]) await page.evaluate(() => {
+      const w = window as any;
+      w.__clockAnchors = [];
+      const send = MessagePort.prototype.postMessage;
+      MessagePort.prototype.postMessage = function(...args: any[]) {
+        if (args[0]?.epoch_ms != null) w.__clockAnchors.push({
+          ...args[0], sentAt: performance.now(),
+          stamp: w.__engine().getDomain('audio').ctx.getOutputTimestamp(),
+          clock: w.__sharedClock().snapshot,
+        });
+        return (send as any).apply(this, args);
+      };
+    });
+    await s.pageB.evaluate(() => (window as any).__provider.disconnect());
+    await s.pageA.evaluate(() => {
+      const w = window as any;
+      w.__patch.nodes['shared-lfo'] = { id: 'shared-lfo', type: 'lfo', domain: 'audio',
+        position: {x:100,y:100}, params: {rate:1,shape:0,depth:0.5} };
+    });
+    await s.pageA.waitForFunction(() => (window as any).__engine()?.getDomain('audio')?.getOutputNode('shared-lfo','phase0'));
+    const start = await s.pageA.evaluate(() => (window as any).__engine().getDomain('audio').ctx.currentTime as number);
+    await s.pageA.waitForFunction((t) => (window as any).__engine().getDomain('audio').ctx.currentTime >= t + 1.25, start);
+    await s.pageB.evaluate(() => (window as any).__provider.connect());
+    for (const page of [s.pageA, s.pageB]) {
+      await page.waitForFunction(() => {
+        const w = window as any;
+        return w.__sharedClock()?.snapshot.converged && w.__sharedClock()?.epoch_ms !== null
+          && w.__engine()?.getDomain('audio')?.read('shared-lfo','clockEpoch') === w.__sharedClock().epoch_ms;
+      });
+    }
+    const results = await Promise.all([captureLfoAlignment(s.pageA), captureLfoAlignment(s.pageB)]);
+    for (const result of results) {
+      expect(result.samples, JSON.stringify(result)).toBeGreaterThanOrEqual(128);
+      expect(result.minMagnitude, JSON.stringify(result)).toBeGreaterThan(0.9);
+      expect(result.uncertaintyMs, JSON.stringify(result)).toBeLessThan(50);
+      expect(result.meanPhaseError, JSON.stringify(result)).toBeLessThan(result.tolerance);
+    }
+    await s.pageA.evaluate(() => (window as any).__sharedClock().resetEpoch());
+    const epoch = await s.pageA.evaluate(() => (window as any).__sharedClock().epoch_ms as number);
+    for (const page of [s.pageA,s.pageB]) await page.waitForFunction(e => {
+      const w=window as any;
+      return w.__sharedClock().epoch_ms === e && w.__engine().getDomain('audio').read('shared-lfo','clockEpoch') === e;
+    },epoch);
+    const reset = await captureLfoAlignment(s.pageB);
+    expect(reset.meanPhaseError,JSON.stringify(reset)).toBeLessThan(reset.tolerance);
+    const broken = await captureLfoAlignment(s.pageB, true);
+    expect(broken.meanPhaseError, JSON.stringify(broken)).toBeGreaterThan(0.15);
+  } finally { await s.close(); }
 });

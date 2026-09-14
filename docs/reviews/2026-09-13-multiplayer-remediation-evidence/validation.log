@@ -1,0 +1,104 @@
+
+SOURCE static-final.log
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Duration  8.89s (transform 5.98s, setup 30ms, collect 8.34s, tests 71ms, environment 0ms, prepare 95ms)
+svelte-check found 0 errors and 0 warnings
+eslint gate: PASS
+shellcheck gate: PASS
+
+SOURCE postgres-final.log
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  152ms (transform 32ms, setup 0ms, import 36ms, tests 55ms, environment 0ms)
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  153ms (transform 32ms, setup 0ms, import 37ms, tests 51ms, environment 0ms)
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  142ms (transform 30ms, setup 0ms, import 34ms, tests 48ms, environment 0ms)
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Duration  159ms (transform 32ms, setup 0ms, import 38ms, tests 52ms, environment 0ms)
+
+SOURCE web-unit-repeat.log
+PROBE reconcile_queue {"updates":200,"completedPasses":2,"writes":[200]}
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":0,"nodes":0}
+ Test Files  10 passed (10)
+      Tests  128 passed (128)
+   Duration  2.83s (transform 1.09s, setup 56ms, collect 1.85s, tests 464ms, environment 0ms, prepare 114ms)
+PROBE reconcile_queue {"updates":200,"completedPasses":2,"writes":[200]}
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":0,"nodes":0}
+ Test Files  10 passed (10)
+      Tests  128 passed (128)
+   Duration  2.86s (transform 982ms, setup 51ms, collect 1.63s, tests 455ms, environment 0ms, prepare 121ms)
+PROBE reconcile_queue {"updates":200,"completedPasses":2,"writes":[200]}
+PROBE doom_graph_amplification {"tics":350,"players":2,"updates":700,"bytes":38131,"snapshots":0,"nodes":0}
+ Test Files  10 passed (10)
+      Tests  128 passed (128)
+   Duration  2.99s (transform 1.10s, setup 63ms, collect 1.92s, tests 595ms, environment 0ms, prepare 82ms)
+
+SOURCE server-unit-repeat.log
+ Test Files  5 passed (5)
+      Tests  51 passed (51)
+   Duration  978ms (transform 958ms, setup 0ms, import 1.16s, tests 353ms, environment 1ms)
+ Test Files  5 passed (5)
+      Tests  51 passed (51)
+   Duration  739ms (transform 883ms, setup 0ms, import 1.11s, tests 428ms, environment 1ms)
+ Test Files  5 passed (5)
+      Tests  51 passed (51)
+   Duration  250ms (transform 319ms, setup 0ms, import 401ms, tests 117ms, environment 0ms)
+
+SOURCE dsp-repeat.log
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Duration  527ms (transform 77ms, setup 0ms, collect 48ms, tests 43ms, environment 0ms, prepare 124ms)
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Duration  497ms (transform 84ms, setup 0ms, collect 49ms, tests 43ms, environment 0ms, prepare 112ms)
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Duration  489ms (transform 76ms, setup 0ms, collect 42ms, tests 40ms, environment 0ms, prepare 116ms)
+
+SOURCE factory-repeat.log
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Duration  1.07s (transform 480ms, setup 24ms, collect 662ms, tests 11ms, environment 0ms, prepare 91ms)
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Duration  1.24s (transform 545ms, setup 31ms, collect 748ms, tests 13ms, environment 0ms, prepare 112ms)
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Duration  1.21s (transform 551ms, setup 32ms, collect 759ms, tests 15ms, environment 0ms, prepare 101ms)
+
+SOURCE adjacent-final.log
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Duration  3.30s (transform 1.58s, setup 8ms, collect 2.29s, tests 888ms, environment 0ms, prepare 22ms)
+  ✓  1 [chromium] › tests/collab.spec.ts:80:3 › @collab › sync: node added in A appears in B (4.6s)
+  ✓  2 [chromium] › tests/collab.spec.ts:114:3 › @collab › layouts: A drags node, B does not see it move (per-user layout split) (3.0s)
+  ✓  3 [chromium] › tests/collab.spec.ts:182:3 › @collab › layouts: A and B independently drag; each sees own override (3.6s)
+  ✓  4 [chromium] › tests/toybox-fixtures.spec.ts:56:1 › @webgl-smoke fixture pack registers through the REAL seam and composites to EXACT pixel values (4.4s)
+  ✓  5 [chromium] › tests/toybox-fixtures.spec.ts:127:3 › toybox fixture mechanism — heavy proofs › @webgl-smoke GATE: fixture-registering specs and engine-curation specs stay DISJOINT (3ms)
+  5 passed (19.0s)
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Duration  3.14s (transform 1.50s, setup 8ms, collect 2.17s, tests 856ms, environment 0ms, prepare 23ms)
+  ✓  1 [chromium] › tests/toybox-fixtures.spec.ts:56:1 › @webgl-smoke fixture pack registers through the REAL seam and composites to EXACT pixel values (6.3s)
+  ✓  2 [chromium] › tests/toybox-fixtures.spec.ts:127:3 › toybox fixture mechanism — heavy proofs › @webgl-smoke GATE: fixture-registering specs and engine-curation specs stay DISJOINT (3ms)
+  ✓  3 [chromium] › tests/toybox-fixtures.spec.ts:56:1 › @webgl-smoke fixture pack registers through the REAL seam and composites to EXACT pixel values (4.1s)
+  ✓  4 [chromium] › tests/toybox-fixtures.spec.ts:127:3 › toybox fixture mechanism — heavy proofs › @webgl-smoke GATE: fixture-registering specs and engine-curation specs stay DISJOINT (5ms)
+  ✓  5 [chromium] › tests/toybox-fixtures.spec.ts:56:1 › @webgl-smoke fixture pack registers through the REAL seam and composites to EXACT pixel values (4.3s)
+  ✓  6 [chromium] › tests/toybox-fixtures.spec.ts:127:3 › toybox fixture mechanism — heavy proofs › @webgl-smoke GATE: fixture-registering specs and engine-curation specs stay DISJOINT (5ms)
+  6 passed (18.9s)
+
+SOURCE scripts-repeat.log
+ Test Files  5 passed (5)
+      Tests  54 passed (54)
+   Duration  5.84s (transform 208ms, setup 0ms, collect 355ms, tests 5.22s, environment 0ms, prepare 80ms)
+ Test Files  5 passed (5)
+      Tests  54 passed (54)
+   Duration  5.25s (transform 198ms, setup 0ms, collect 306ms, tests 4.62s, environment 0ms, prepare 108ms)
+ Test Files  5 passed (5)
+      Tests  54 passed (54)
+   Duration  5.36s (transform 208ms, setup 0ms, collect 336ms, tests 4.52s, environment 0ms, prepare 135ms)

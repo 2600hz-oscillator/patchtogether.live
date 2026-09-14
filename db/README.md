@@ -7,6 +7,31 @@ Stage B1+ stores rackspaces and Yjs document snapshots in **Neon Postgres**, acc
 
 Schema lives in `db/schema/*.sql`. Apply in order; new files are append-only migrations.
 
+## Snapshot authority (migration 008)
+
+Apply `008_snapshot_authority.sql` before starting the updated relay. Postgres
+records a generation and either inline Yjs bytes or the key of an immutable R2
+object. A failed R2 write commits inline bytes at the same generation. Reads
+follow that record; an unavailable authoritative object fails the load instead
+of silently returning older state. The journal is compacted only after the
+authority commit succeeds.
+
+Generation-zero snapshots predate this contract. On their first load, the relay
+merges the legacy R2 object and database snapshot, preserving Yjs edits and
+deletion records from both. That migration load requires every configured
+backend to be readable. The next save establishes an authoritative generation.
+
+Complete the relay upgrade before shipping clients that use the new clock
+exchange. Drain older relay processes when switching snapshot formats: an older
+relay cannot read versioned objects or honor the authority record. A rollback
+to the old relay requires first materializing current authoritative snapshots
+into its legacy storage format. Applying 008 alone does not rewrite snapshots.
+
+Retired object keys are queued transactionally and retained for an hour so
+in-flight readers can finish. The relay removes queued objects in bounded
+background batches; failed deletions remain queued for a later attempt. Keep
+the configured R2 bucket and prefix stable while those records exist.
+
 ## Per-tier topology
 
 One Neon project (`patchtogether`), three branches:

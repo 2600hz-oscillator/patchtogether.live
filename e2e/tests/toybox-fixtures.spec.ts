@@ -142,6 +142,7 @@ test.describe('toybox fixture mechanism — heavy proofs', () => {
       // without this, extracting the call into a helper would launder the
       // marker out of the gate's sight — an importer registers just the same
       'spawn' + 'WithFixtures',
+      'register' + 'ToyboxFixtures',
     ];
     const CURATION_MARKERS = [
       // the perceptual liveness floor — measures REAL content brightness

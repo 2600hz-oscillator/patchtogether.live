@@ -38,8 +38,11 @@ Notes:
   having required CI to be green before merge.
 - **Relay CD is change-gated** (`dorny/paths-filter`): web-only merges skip relay
   redeploy so live WS connections aren't dropped.
-- **Relay deploy no-ops if `FLY_API_TOKEN` is unset** (steps exit 0 cleanly), so
-  CI doesn't go red before the token is wired.
+- **Relay upgrades precede their web clients.** A selected relay deployment
+  fails if its credential is absent; its web deployment then stays blocked.
+  Web-only releases continue when the relay is unchanged. A failed change
+  detection also blocks the web release. Apply required database migrations
+  before triggering either deployment.
 
 Dispatch a deploy via the CLI:
 

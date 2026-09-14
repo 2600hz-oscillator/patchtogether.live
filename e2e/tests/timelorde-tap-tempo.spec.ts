@@ -251,9 +251,10 @@ async function tapInPage(
   nodeId: string,
   n: number,
   gapMs: number,
+  input: 'pointer' | 'space' = 'pointer',
 ): Promise<{ taps: TapBracket[]; clockQuantumMs: number }> {
   return page.evaluate(
-    async ({ id, count, gap }) => {
+    async ({ id, count, gap, input }) => {
       const btn = document.querySelector<HTMLButtonElement>(
         '[data-testid="shell-cell-timelorde-tap"]',
       );
@@ -295,15 +296,23 @@ async function tapInPage(
         // (Button.svelte's onpointerdown) — a synthetic click never reaches
         // it. pointerup follows so the button's press state does not latch.
         const before = performance.now();
-        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        if (input === 'space') {
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
+        } else {
+          btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        }
         const after = performance.now();
-        btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+        if (input === 'space') {
+          document.body.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }));
+        } else {
+          btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+        }
         taps.push({ before, after });
       }
       proto.setPointerCapture = origCapture;
       return { taps, clockQuantumMs };
     },
-    { id: nodeId, count: n, gap: gapMs },
+    { id: nodeId, count: n, gap: gapMs, input },
   );
 }
 
@@ -458,49 +467,58 @@ test.describe('TIMELORDE tap tempo', () => {
     await page.goto('/rack?seed=none');
     await page.waitForLoadState('networkidle');
 
-    // A gate clock source → TIMELORDE.clock makes it an externally-clocked
-    // TIMELORDE. The card's `hasExternalClock` is a pure store-edge check (an
-    // edge whose target is the `clock` port), so the disable engages the moment
-    // the edge exists — we use the Moog 960 sequencer's `clock_out` gate (the
-    // documented "chain a clock into TIMELORDE" pairing).
+    // A 2 Hz square-wave LFO provides a steady external pulse train through
+    // the real audio graph, without the sequencer scheduler's tempo jitter.
     const nodes: SpawnNode[] = [
-      { id: 'clk', type: 'moog960', position: { x: 40, y: 360 }, domain: 'audio' },
+      { id: 'clk', type: 'lfo', position: { x: 40, y: 360 }, domain: 'audio', params: { rate: 2, shape: 2 } },
       { id: TL, type: 'timelorde', position: { x: 420, y: 80 }, domain: 'audio', params: { bpm: 50 } },
     ];
     const edges: SpawnEdge[] = [
-      { id: 'e_clk', from: { nodeId: 'clk', portId: 'clock_out' }, to: { nodeId: TL, portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'phase0' }, to: { nodeId: TL, portId: 'clock' }, sourceType: 'cv', targetType: 'gate' },
     ];
     await spawnPatch(page, nodes, edges);
 
     await openTimelordeDock(page, TL);
     const tap = page.locator(`[data-testid="dock-fullview-pane"][data-pane-node="${TL}"]`).getByTestId('shell-cell-timelorde-tap');
     await expect(tap, 'TAP present').toHaveCount(1);
-    // ⚠ THE FACE'S EXTERNAL-CLOCK STANCE IS DIFFERENT AND DOCUMENTED
-    // (face-tap.ts): the cell is never disabled (ShellActionCell has no
-    // disabled predicate — the accessible name carries the notice), and a tap
-    // is not REFUSED — the FOLLOWER's next measurement overwrites it. The
-    // card's greyed-affordance assert died with the card; what survives is
-    // the claim that matters: the clock cable OWNS the BPM, so no tap-set
-    // tempo STICKS.
+    // A steady clock sends no further measuredBpm messages. Lock before
+    // tapping so an absent source cannot satisfy the ownership assertions.
+    await expect.poll(() => readBpm(page, TL), {
+      timeout: 8000, message: 'the 2 Hz external source owns the tempo',
+    }).toBeCloseTo(120, 1);
+
+    await tapInPage(page, TL, 4, 200);
+    await expect.poll(() => readBpm(page, TL), {
+      timeout: 8000, message: 'TAP cannot replace a steady external tempo',
+    }).toBeCloseTo(120, 1);
+
     await selectTimelorde(page, TL);
+    const space = await tapInPage(page, TL, TAP_HISTORY, 200, 'space');
+    const intervals = intervalsOf(space.taps, space.clockQuantumMs);
+    const tapped: IntervalEstimate = {
+      ms: median(intervals.map((v) => v.ms)),
+      uncMs: Math.max(...intervals.map((v) => v.uncMs)),
+    };
+    expect(bpmMatch(120, tapped).ok, 'the measured tap challenge differs from the external clock').toBe(false);
+    await expect.poll(() => readBpm(page, TL), {
+      timeout: 8000, message: 'Space cannot replace a steady external tempo',
+    }).toBeCloseTo(120, 1);
 
-    // Tap fast — this WOULD lock ~300 BPM on a free-running TIMELORDE.
-    await tap.click();
-    await pressSpace(page, 4, 200);
-
-    // The follower re-owns the BPM within its next measurements: whatever the
-    // taps transiently wrote, the settled value must not be the ~300 the
-    // 200 ms cadence implies.
-    await expect
-      .poll(() => readBpm(page, TL), {
-        timeout: 8000,
-        message: 'the external clock re-owns the BPM — the ~300 tap tempo must not stick',
-      })
-      .toBeLessThan(280);
-    const after = await readBpm(page, TL);
-    if (after !== null) {
-      expect(Math.abs(after - 300), 'settled bpm is clearly away from the tapped ~300').toBeGreaterThan(20);
-    }
+    // Removing the cable restores the player's tapped tempo. This also rules
+    // out a disabled input path making the ownership assertions pass.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { edges: Record<string, unknown> } };
+      delete w.__patch.edges.e_clk;
+    });
+    await expect.poll(async () => {
+      const bpm = await readBpm(page, TL);
+      return bpm !== null && bpmMatch(bpm, tapped).ok;
+    }, {
+      timeout: 8000, message: 'unpatch restores the tempo of the actual measured Space taps',
+    }).toBe(true);
+    const restored = (await readBpm(page, TL))!;
+    expectBpmMatchesInterval(restored, tapped, 'unpatch restores the tapped tempo');
+    expectAllowanceStillDiscriminates(restored, tapped, 'unpatch');
 
     expect(errors).toEqual([]);
   });

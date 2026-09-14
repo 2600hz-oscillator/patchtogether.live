@@ -407,7 +407,7 @@ describe('snapshot bus: identity-stable entries', () => {
     bus.dispose();
   });
 
-  it('a write to a NON-graph root map (per-user layouts) still emits fresh wrappers with every entry reused', () => {
+  it('layout-only changes preserve the graph snapshot; Canvas observes layouts separately', () => {
     const { patch, ydoc } = freshPatch();
     addNode(patch, 'a');
     addNode(patch, 'b');
@@ -420,12 +420,8 @@ describe('snapshot bus: identity-stable entries', () => {
       layouts.set('user-1', mine);
     });
 
-    expect(snaps).toHaveLength(2);
-    const [prev, next] = [snaps[0]!, snaps[1]!];
-    expect(next).not.toBe(prev); // Canvas still re-resolves getNodePosition per transaction
-    expect(next.nodes).not.toBe(prev.nodes);
-    expect(next.nodes[0]).toBe(prev.nodes[0]);
-    expect(next.nodes[1]).toBe(prev.nodes[1]);
+    expect(snaps).toHaveLength(1);
+    expect(bus.current()).toBe(snaps[0]);
     bus.dispose();
   });
 

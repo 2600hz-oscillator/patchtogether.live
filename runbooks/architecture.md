@@ -143,4 +143,4 @@ Per-tier behavior and triggers: [deployment.md](deployment.md).
 | Relay DB (pg pool) | `packages/server/src/db.ts` |
 | Fly configs | `fly.prod.toml`, `fly.dev.toml`, `fly.autotest.toml` |
 | CF Pages config | `packages/web/wrangler.toml` |
-| DB schema | `db/schema/001_init.sql` … `007_drop_saved_groups.sql` (append-only apart from 007, which DROPS `saved_groups` by owner decision; see `db/schema/`) |
+| DB schema | `db/schema/001_init.sql` … `008_snapshot_authority.sql` (008 adds authoritative snapshot generations, immutable object references, and deferred cleanup; append-only apart from 007, which DROPS `saved_groups` by owner decision; see `db/schema/`) |

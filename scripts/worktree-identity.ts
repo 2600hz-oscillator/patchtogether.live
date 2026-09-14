@@ -120,6 +120,7 @@ export async function assertServerIsThisWorktree(
   baseUrl: string,
   repoRoot: string,
   context: string,
+  wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
 ): Promise<WorktreeIdentity> {
   const here = physical(repoRoot);
   // RETRY before refusing (#1632): the pre-write re-assert fires at the exact
@@ -136,7 +137,7 @@ export async function assertServerIsThisWorktree(
     console.error(
       `[${context}] identity probe attempt ${attempt}/3 failed (${cause})${attempt < 3 ? ' — retrying in 2s' : ''}`,
     );
-    if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
+    if (attempt < 3) await wait(2000);
   }
   if (id === null) {
     throw new Error(

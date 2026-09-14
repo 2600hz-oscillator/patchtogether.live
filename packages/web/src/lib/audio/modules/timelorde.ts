@@ -621,6 +621,7 @@ export const timelordeDef: AudioModuleDef = {
     // The player's own tempo, held for the duration of an external lock. See
     // BpmLockState above for the data-loss defect this closes.
     let bpmLock: BpmLockState = BPM_LOCK_UNLOCKED;
+    let followedBpm: number | null = null;
     function writeBpm(value: number): void {
       bpmParam?.setValueAtTime(value, ctx.currentTime);
       const live = livePatch.nodes[nodeId];
@@ -649,6 +650,7 @@ export const timelordeDef: AudioModuleDef = {
       if (!hasEdge) {
         const { state, restore } = externalBpmLockOnUnpatch(bpmLock);
         bpmLock = state;
+        followedBpm = null;
         if (restore !== null) writeBpm(restore);
       }
     }
@@ -697,7 +699,10 @@ export const timelordeDef: AudioModuleDef = {
           typeof storedRaw === 'number' ? storedRaw : (bpmParam?.value ?? 120);
         const step = externalBpmLockOnMeasure(bpmLock, { measuredBpm, storedBpm });
         bpmLock = step.state;
-        if (step.write !== null) writeBpm(step.write);
+        if (step.write !== null) {
+          followedBpm = step.write;
+          writeBpm(step.write);
+        }
       }
     };
 
@@ -933,11 +938,15 @@ export const timelordeDef: AudioModuleDef = {
         ['video_out', { analyser: videoTapAna, sampleRate: ctx.sampleRate, drawFrame }],
       ]),
       setParam(paramId, value) {
-        // ⚠ EVERY user tempo write lands here — the knob, the faceplate cell,
-        // TAP, the topbar clock surface — so this is the one seam that can see
-        // "the player re-set the tempo WHILE the follower owned it" and keep the
-        // stash honest. With no lock live it is a no-op (see …OnUserWrite).
-        if (paramId === 'bpm') bpmLock = externalBpmLockOnUserWrite(bpmLock, value);
+        if (paramId === 'bpm' && followedBpm !== null) {
+          // A stable external clock sends no new measurement message. Retain
+          // its tempo now and save user edits for when the cable is removed.
+          // Our own patch-store write also returns through the reconciler;
+          // that echo must not replace the player's stashed tempo.
+          if (value !== followedBpm) bpmLock = externalBpmLockOnUserWrite(bpmLock, value);
+          writeBpm(followedBpm);
+          return;
+        }
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {

@@ -54,12 +54,18 @@ let activeSharedClock: SharedClockHandle | null = null;
  *  constructed instances pick up a new epoch retroactively. */
 type LfoResyncListener = (kind: 'init' | 'resync' | 'reset') => void;
 const liveListeners = new Set<LfoResyncListener>();
+let activeResetUnsub: (() => void) | null = null;
 
 export function setActiveSharedClock(clock: SharedClockHandle | null): void {
+  activeResetUnsub?.();
+  activeResetUnsub = null;
   activeSharedClock = clock;
   // Push a fresh init to every live LFO so they pick up the new clock
   // (or fall back to free-running if clock is null).
   if (clock) {
+    activeResetUnsub = clock.onReset(() => {
+      for (const fn of liveListeners) fn('reset');
+    });
     for (const fn of liveListeners) fn('init');
   }
 }
@@ -279,20 +285,27 @@ const baseDef: AudioModuleDef = {
     // exactly like the pre-shared-clock behavior — there is no audible
     // regression for solo users.
     let resyncTimer: ReturnType<typeof setInterval> | null = null;
+    let appliedClockEpoch: number | null = null;
+    workletNode.port.onmessage = ({ data }: MessageEvent) => {
+      if (data?.type === 'clock-anchored') appliedClockEpoch = data.epoch_ms;
+    };
     const initFromClock = (kind: 'init' | 'resync' | 'reset') => {
       const clock = activeSharedClock;
-      if (!clock) return;
+      if (!clock || !clock.snapshot.converged) return;
       const epoch = clock.epoch_ms;
-      const sharedNow = clock.sharedTimeNow();
+      // currentTime is the rendering head, ahead of audible output. Use the
+      // browser's paired output/performance timestamp to align different
+      // devices at playback time, including contexts created after the epoch.
+      const stamp = ctx.getOutputTimestamp?.();
+      if (stamp && !stamp.performanceTime) return; // Audio has not started yet.
+      const sharedNow = stamp ? clock.sharedTimeAt(stamp.performanceTime!) : clock.sharedTimeNow();
       if (epoch === null || sharedNow === null) return;
-      // ctx.currentTime is the audio-thread "now" expressed in seconds;
-      // map it to shared-time-seconds via (sharedNow / 1000) being the
-      // shared time at the moment we read ctx.currentTime.
-      const audioOrigin_s = ctx.currentTime;
+      const audioOrigin_s = stamp ? stamp.contextTime! : ctx.currentTime;
       const messageType = kind === 'reset' ? 'init' : kind;
       workletNode.port.postMessage({
         type: messageType,
         epoch_ms: epoch,
+        sharedNow_ms: sharedNow,
         audioOrigin_s,
         smoothing_ms: kind === 'init' || kind === 'reset' ? 0 : RESYNC_SMOOTHING_MS,
       });
@@ -303,12 +316,10 @@ const baseDef: AudioModuleDef = {
     // attach → first epoch from heartbeat).
     const listener: LfoResyncListener = (kind) => initFromClock(kind);
     liveListeners.add(listener);
-    let resetUnsub: (() => void) | null = null;
     if (activeSharedClock) {
       // Try once now; if the clock hasn't converged yet we'll catch up via
       // the resync timer + the listener push.
       initFromClock('init');
-      resetUnsub = activeSharedClock.onReset(() => initFromClock('reset'));
     }
     // Periodic resync (drift compensation, plan §6) runs even when no
     // clock is active — it's a no-op in that case.
@@ -334,10 +345,12 @@ const baseDef: AudioModuleDef = {
       readParam(paramId) {
         return params.get(paramId)?.value;
       },
+      read(key) {
+        return key === 'clockEpoch' ? appliedClockEpoch : undefined;
+      },
       dispose() {
         if (resyncTimer !== null) clearInterval(resyncTimer);
         liveListeners.delete(listener);
-        resetUnsub?.();
         workletNode.disconnect();
         try { workletNode.port.close(); } catch { /* port may already be closed */ }
       },

@@ -1579,6 +1579,8 @@
       const dk = mod.KEY_FOR_KEYBOARD_CODE[code];
       if (dk === undefined) return;
       const env = encodeKey({
+        session: keyRelaySession,
+        seq: ++keyRelaySequence,
         kind: 'key',
         moduleId: id,
         srcUserId: me,
@@ -1606,6 +1608,8 @@
     if (!provider) return;
     const me = resolveLocalUserId();
     const env = encodeKey({
+      session: keyRelaySession,
+      seq: ++keyRelaySequence,
       kind: 'key',
       moduleId: id,
       srcUserId: me,
@@ -1628,6 +1632,8 @@
   // being shoved backward continuously with no key pressed. See
   // doom-presence.ts → collectIncomingKeyPushes.
   const keyRelayCursor: RelayCursor = new Map();
+  const keyRelaySession = crypto.randomUUID();
+  let keyRelaySequence = 0;
 
   function attachAwareness(): void {
     const provider = providerCtx.get();

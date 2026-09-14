@@ -261,7 +261,7 @@ export function buildPatchSnapshot(
 interface SnapshotBus {
   /** Latest snapshot. Recomputed lazily on first read after an update. */
   current(): PatchSnapshot;
-  /** Subscribe; receives the current snapshot synchronously then on every update. */
+  /** Subscribe; receives the current snapshot synchronously, then graph/data changes. */
   subscribe(listener: PatchSnapshotListener): () => void;
   /**
    * Swap the underlying (patch, ydoc) pair WITHOUT dropping existing
@@ -419,7 +419,8 @@ export function createSnapshotBus(opts: SubscribeOpts = {}): SnapshotBus {
 
   // One subscription to Yjs for the whole app, regardless of subscriber count.
   const onUpdate = (): void => {
-    emit();
+    // Layout, clock metadata and DOOM tic logs have independent consumers.
+    if (fullRebuild || dirtyNodeIds.size > 0 || dirtyEdgeIds.size > 0) emit();
   };
   doc.on('update', onUpdate);
   attachDeepObservers(doc);

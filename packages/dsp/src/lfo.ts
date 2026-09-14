@@ -23,12 +23,14 @@ const RESYNC_SMOOTH_SAMPLES_DEFAULT = 0; // updated when init message arrives
 interface InitMessage {
   type: 'init';
   epoch_ms: number;
+  sharedNow_ms: number;
   audioOrigin_s: number;
   smoothing_ms?: number;
 }
 interface ResyncMessage {
   type: 'resync';
   epoch_ms: number;
+  sharedNow_ms: number;
   audioOrigin_s: number;
   smoothing_ms?: number;
 }
@@ -62,6 +64,8 @@ class LfoProcessor extends AudioWorkletProcessor {
   // free-runs from phase=0 (legacy behavior).
   private epochMs: number | null = null;
   private audioOriginS: number = 0;
+  private sharedOriginMs = 0;
+  private pendingAnchor: 'init' | 'resync' | null = null;
 
   // Phase-correction smoothing: when a resync arrives we measure the
   // expected vs. actual phase at the next block boundary, then ramp the
@@ -80,6 +84,8 @@ class LfoProcessor extends AudioWorkletProcessor {
     if (msg.type === 'init') {
       this.epochMs = msg.epoch_ms;
       this.audioOriginS = msg.audioOrigin_s;
+      this.sharedOriginMs = msg.sharedNow_ms;
+      this.pendingAnchor = 'init';
       const sm = msg.smoothing_ms ?? 0;
       this.smoothSamplesTotal = Math.max(0, Math.round((sm * sampleRate) / 1000));
       // Snap immediately on init — there's no audio history to protect.
@@ -87,13 +93,16 @@ class LfoProcessor extends AudioWorkletProcessor {
       this.smoothDelta = 0;
       this.smoothSamplesRemaining = 0;
     } else if (msg.type === 'resync') {
+      this.pendingAnchor = this.epochMs === null ? 'init' : 'resync';
       this.epochMs = msg.epoch_ms;
       this.audioOriginS = msg.audioOrigin_s;
+      this.sharedOriginMs = msg.sharedNow_ms;
       const sm = msg.smoothing_ms ?? 200;
       this.smoothSamplesTotal = Math.max(1, Math.round((sm * sampleRate) / 1000));
       // Don't snap — handle in process() so the smoothing applies.
     } else if (msg.type === 'reset') {
       this.phase = 0;
+      this.pendingAnchor = null;
       this.smoothDelta = 0;
       this.smoothSamplesRemaining = 0;
     }
@@ -123,21 +132,22 @@ class LfoProcessor extends AudioWorkletProcessor {
     // a-rate because morphing audibly improves with smooth interpolation.
     const rateHeld = rateArr.length > 1 ? (rateArr[0] ?? 0) : (rateArr[0] ?? 0);
 
-    // If we have a shared-clock anchor and the worklet is mid-resync, the
-    // smoothing target is the phase we'd compute purely from epoch + rate.
-    // Pre-resync we just free-run. Compute smoothing setup once per block.
-    if (this.epochMs !== null && this.smoothSamplesRemaining === 0 && this.smoothSamplesTotal > 0) {
-      // Only schedule a smooth correction when the host signals via the
-      // resync message; the message handler set smoothSamplesRemaining
-      // back to 0 indirectly by leaving smoothDelta untouched. We
-      // detect a pending resync by checking if our local phase diverges
-      // from the shared-derived one beyond an epsilon.
+    // Apply each host anchor once, at the next block boundary. Between
+    // messages the oscillator free-runs, including external trigger resets.
+    if (this.epochMs !== null && this.pendingAnchor !== null) {
       const sharedPhaseTarget = this.sharedDerivedPhase(rateHeld);
+      if (this.pendingAnchor === 'init') {
+        this.phase = sharedPhaseTarget;
+        this.smoothSamplesRemaining = 0;
+      }
       const delta = wrappedPhaseDelta(this.phase, sharedPhaseTarget);
+      this.smoothSamplesRemaining = 0;
       if (Math.abs(delta) > 1e-7) {
         this.smoothDelta = delta;
         this.smoothSamplesRemaining = this.smoothSamplesTotal;
       }
+      this.pendingAnchor = null;
+      this.port.postMessage({ type: 'clock-anchored', epoch_ms: this.epochMs });
     }
 
     for (let i = 0; i < blockLen; i++) {
@@ -204,7 +214,7 @@ class LfoProcessor extends AudioWorkletProcessor {
     // sampleRate is set in worklet scope but we don't have currentTime
     // directly — derive it from currentFrame / sampleRate.
     const t = (currentFrame / sampleRate) - this.audioOriginS;
-    const sharedSec = t + this.epochMs / 1000;
+    const sharedSec = t + (this.sharedOriginMs - this.epochMs) / 1000;
     return ((sharedSec * rateHz) % 1 + 1) % 1;
   }
 }

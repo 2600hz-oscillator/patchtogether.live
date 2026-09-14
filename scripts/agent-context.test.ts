@@ -107,7 +107,7 @@ const surfaceDocs = (): Doc[] =>
  * protection this leg already provides.
  */
 function citedRecordPaths(text: string): string[] {
-  return [...text.matchAll(/(?:evidence|\.myrobots)\/[A-Za-z0-9._/-]+\.(?:md|html)/g)].map(
+  return [...text.matchAll(/(?<![A-Za-z0-9._-])(?:evidence|\.myrobots)\/[A-Za-z0-9._/-]+\.(?:md|html)/g)].map(
     (m) => m[0],
   );
 }
@@ -285,6 +285,9 @@ describe('agent context files describe the real tree', () => {
       '.myrobots/plans/gone.md',
     ]);
     expect(citedRecordPaths('evidence/ and .myrobots are directories, not records')).toEqual([]);
+    // A suffix in another directory name is not the repository's evidence tree.
+    expect(citedRecordPaths('docs/reviews/2026-09-13-adversarial-evidence/README.md')).toEqual([]);
+
   });
 
   // ── THE TREE-WIDE CITATION GATE IS DELETED (2026-08-23) ───────────────────

@@ -26,6 +26,7 @@ deployment target. Web resolves it via SvelteKit `$env/dynamic/private`
 | `db/schema/005_rackspace_mode.sql` | `rackspaces.mode` (superseded by 006) |
 | `db/schema/006_drop_rackspace_mode.sql` | drops `rackspaces.mode` |
 | `db/schema/007_drop_saved_groups.sql` | drops `saved_groups` — ⚠ **DESTRUCTIVE TO ROWS**, by owner decision |
+| `db/schema/008_snapshot_authority.sql` | authoritative snapshot generations, immutable object pointers, and retired-object cleanup queue |
 
 ⚠ **007 is this repo's first destructive migration, and it is a deliberate
 precedent.** Every user's saved group library is destroyed the moment it
@@ -46,13 +47,20 @@ applies a migration to a Neon tier. CI does run `scripts/apply-db-schema.sh`, bu
 only against its own ephemeral Postgres (`patchtogether_test`, in `ci.yml`,
 `collab-nightly.yml` and the flake-purge workflows) — never a Neon branch;
 `deploy.yml` and the nightly prod deploy ship code only. So
-applying a migration to a tier is a **manual, operator-run step** per Neon branch
-(`scripts/apply-db-schema.sh "<NEON_BRANCH_URL>"`, which reads the directory in
-filename order). Nothing in the tree records which tiers a given migration has
-reached, and the live-smoke probe cannot see an un-dropped column, so **verify
+applying a migration to an existing tier is a **manual, operator-run step** per
+Neon branch. Apply only the new migration with `psql -X -v ON_ERROR_STOP=1
+--single-transaction -f db/schema/<new-migration>.sql`, using that tier's connection.
+Do not replay `scripts/apply-db-schema.sh` against an existing live database:
+older migrations contain destructive statements. The directory-wide script is
+for disposable test databases and initial provisioning. The live-smoke probe
+cannot see an un-dropped column, so **verify
 against the branch itself** before assuming a migration is live — never infer it
 from the file being on `main`. When you do apply one, say so in the PR that lands
 it, naming the tiers.
+
+For migration 008, apply the schema before starting the updated relay. The
+snapshot format also requires draining old relay processes and completing the
+relay upgrade before shipping the new clock clients; see `db/README.md`.
 
 ### Persistence flow
 

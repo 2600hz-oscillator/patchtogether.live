@@ -1,36 +1,11 @@
-// Snapshot BLOB storage behind a small abstraction.
-//
-// Today a rack's Yjs snapshot is a bytea row in Postgres (db.ts). That's
-// fine at kB scale, but the design ceiling is ~25MB per rack (stack study
-// §8: "blobs in R2, pointer in Postgres") — megabyte blobs as hot-rewrite
-// rows bloat Neon storage/WAL for no benefit. This module keeps ONE call
-// site shape (load/store) and picks the backend at boot:
-//
-//   R2 configured (all four R2_* env vars) → blobs PUT/GET against
-//     Cloudflare R2's S3-compatible API (SigV4, ./r2-sigv4.ts).
-//     - load: R2 first; on 404 (or any R2 failure) fall back to the
-//       Postgres row — this is the transparent migration path for racks
-//       whose only snapshot predates R2 (including the template snapshot
-//       the web app seeds at rack creation — rackspaces.ts writes
-//       rack_snapshots directly and doesn't know about R2).
-//     - store: R2 first; on ANY failure fall back to the Postgres store —
-//       durability beats backend purity.
-//   R2 absent → exactly the current behavior (db.ts: Postgres when
-//     DATABASE_URL is set, else the in-memory dev/e2e map). Zero infra
-//     required to run this code.
-//
-// The update JOURNAL (journal.ts) stays in Postgres in both modes: journal
-// rows are small + short-lived (compacted every successful snapshot), the
-// exact shape relational storage is good at.
-//
-// NOTE deliberately NOT done here: deleting the R2 blob when a rack is
-// deleted (the web app's DELETE cascades the Postgres rows only). Orphaned
-// blobs cost fractions of a cent and a follow-up lifecycle rule/cleanup
-// job can reap them; wiring rack deletion through the relay is out of
-// scope for the durability slice.
-
-import { loadSnapshot, persistenceMode, storeSnapshot } from './db.js';
-import { EMPTY_PAYLOAD_HASH, amzTimestamp, payloadHash, signatureV4 } from './r2-sigv4.js';
+// Postgres records the authority of every new save. R2 objects are immutable;
+// a failed object write commits the same generation with inline database bytes.
+// Generation-zero records and the old mutable R2 key are merged during migration.
+import * as Y from "yjs";
+import { randomUUID } from 'node:crypto';
+import { loadSnapshotRecord, nextSnapshotGeneration, persistenceMode, storeSnapshotRecord,
+  retiredSnapshotObjects, forgetRetiredSnapshotObject } from './db.js';
+import { EMPTY_PAYLOAD_HASH, amzTimestamp, payloadHash, signatureV4 } from "./r2-sigv4.js";
 
 export type SnapshotStoreMode = 'memory' | 'postgres' | 'r2';
 
@@ -40,7 +15,7 @@ export interface SnapshotStore {
   /** Latest persisted state for a rack, or null when none exists yet. */
   load(rackId: string): Promise<Uint8Array | null>;
   /** Persist the full state. NEVER throws. Returns whether the state is
-   *  now durable — the journal-compaction gate (see db.ts storeSnapshot). */
+   *  now durable — the journal-compaction gate (see db.ts storeSnapshotRecord). */
   store(rackId: string, state: Uint8Array): Promise<boolean>;
 }
 
@@ -90,6 +65,20 @@ export type FetchLike = (
 
 const R2_TIMEOUT_MS = 10_000;
 
+// Order generation requests per rack across store instances. Pool connections
+// can complete nextval queries out of order; that must not give an older
+// captured document the newer generation. Object uploads still run concurrently.
+const generationQueues = new Map<string, Promise<void>>();
+function allocateGeneration(rackId: string): Promise<string> {
+  const next = (generationQueues.get(rackId) ?? Promise.resolve()).then(nextSnapshotGeneration);
+  const settled = next.then(() => {}, () => {});
+  generationQueues.set(rackId, settled);
+  void settled.then(() => {
+    if (generationQueues.get(rackId) === settled) generationQueues.delete(rackId);
+  });
+  return next;
+}
+
 export interface SnapshotStoreDeps {
   env?: Record<string, string | undefined>;
   fetchFn?: FetchLike;
@@ -105,26 +94,14 @@ export function createSnapshotStore(deps: SnapshotStoreDeps = {}): SnapshotStore
   const log = deps.log ?? ((level: 'log' | 'error', msg: string) => console[level](msg));
   const r2 = readR2Config(env);
 
-  if (!r2) {
-    // No R2 → exactly the current db.ts behavior (postgres or memory).
-    return {
-      mode: () => persistenceMode(),
-      load: (rackId) => loadSnapshot(rackId),
-      store: (rackId, state) => storeSnapshot(rackId, state),
-    };
-  }
-
-  // Narrowed alias — closures below outlive the null-check above, and TS
-  // doesn't carry the narrowing into them.
-  const cfg = r2;
-  const keyFor = (rackId: string): string => `${cfg.prefix}${encodeURIComponent(rackId)}`;
-
   async function r2Request(
-    method: 'GET' | 'PUT',
-    rackId: string,
+    method: 'GET' | 'PUT' | 'DELETE',
+    key: string,
     body?: Uint8Array,
   ): Promise<{ status: number; arrayBuffer(): Promise<ArrayBuffer> }> {
-    const url = new URL(`${cfg.endpoint}/${cfg.bucket}/${keyFor(rackId)}`);
+    if (!r2) throw new Error("Snapshot requires R2 configuration");
+    const cfg = r2;
+    const url = new URL(`${cfg.endpoint}/${cfg.bucket}/${key}`);
     const headers: Record<string, string> = {
       host: url.host,
       'x-amz-date': amzTimestamp(now()),
@@ -148,37 +125,81 @@ export function createSnapshotStore(deps: SnapshotStoreDeps = {}): SnapshotStore
     });
   }
 
+  async function readObject(key: string, allowMissing = false): Promise<Uint8Array | null> {
+    const res = await r2Request('GET', key);
+    if (res.status === 200) return new Uint8Array(await res.arrayBuffer());
+    if (allowMissing && res.status === 404) return null;
+    throw new Error(`Snapshot object unavailable: status=${res.status}`);
+  }
+
+  let lastCleanup = now().getTime();
+  let cleanupRunning = false;
+  async function cleanupRetiredObjects(): Promise<void> {
+    if (!r2 || cleanupRunning || now().getTime() - lastCleanup < 60_000) return;
+    cleanupRunning = true;
+    lastCleanup = now().getTime();
+    try {
+      // Drain in bounded pages rather than capping throughput at one page per
+      // minute. Only one request runs at a time; normal saves remain independent.
+      for (;;) {
+        const keys = await retiredSnapshotObjects();
+        if (keys.length === 0) break;
+        let failed = false;
+        for (const key of keys) {
+          const response = await r2Request('DELETE', key);
+          if ((response.status >= 200 && response.status < 300) || response.status === 404) {
+            await forgetRetiredSnapshotObject(key);
+          } else failed = true;
+        }
+        if (failed) break; // Retry failed deletes on the next cleanup, without spinning.
+      }
+    } catch (err) {
+      log('error', `[hocuspocus] retired snapshot cleanup deferred: ${(err as Error).message}`);
+    } finally {
+      cleanupRunning = false;
+    }
+  }
+
   return {
-    mode: () => 'r2',
+    mode: () => r2 ? 'r2' : persistenceMode(),
 
     async load(rackId) {
-      try {
-        const res = await r2Request('GET', rackId);
-        if (res.status === 200) {
-          return new Uint8Array(await res.arrayBuffer());
-        }
-        if (res.status !== 404) {
-          log('error', `[hocuspocus] r2 load status=${res.status} (falling back to postgres): doc=${rackId}`);
-        }
-      } catch (err) {
-        log('error', `[hocuspocus] r2 load FAILED (falling back to postgres): doc=${rackId} ${(err as Error).message}`);
-      }
-      // 404 (not migrated yet / fresh rack) or any R2 failure → the
-      // Postgres row is the fallback truth. Covers web-seeded snapshots.
-      return loadSnapshot(rackId);
+      const record = await loadSnapshotRecord(rackId);
+      if (record?.r2Key) return readObject(record.r2Key);
+      if (record && record.generation !== '0') return record.state;
+      if (!r2) return record?.state ?? null;
+      // Old deployments could save independently to either backend. Read both;
+      // an unavailable backend is not evidence that its edits do not exist.
+      const legacy = await readObject(`${r2.prefix}${encodeURIComponent(rackId)}`, true);
+      if (legacy && record) return Y.mergeUpdates([legacy, record.state]);
+      return legacy ?? record?.state ?? null;
     },
 
     async store(rackId, state) {
       try {
-        const res = await r2Request('PUT', rackId, state);
-        if (res.status >= 200 && res.status < 300) return true;
-        log('error', `[hocuspocus] r2 store status=${res.status} (falling back to postgres): doc=${rackId}`);
+        const generation = await allocateGeneration(rackId);
+        let r2Key: string | null = null;
+        if (r2) {
+          // The random suffix also protects immutable objects across database
+          // restores or cloned branches whose sequences can share values.
+          const key = `${r2.prefix}versions/${encodeURIComponent(rackId)}/${generation}-${randomUUID()}`;
+          try {
+            const res = await r2Request('PUT', key, state);
+            if (res.status >= 200 && res.status < 300) r2Key = key;
+            else log('error', `[hocuspocus] r2 store status=${res.status}: doc=${rackId}; saving inline`);
+          } catch (err) {
+            log('error', `[hocuspocus] r2 store failed: doc=${rackId}; saving inline: ${(err as Error).message}`);
+          }
+        }
+        const durable = await storeSnapshotRecord(rackId, {
+          generation, r2Key, state: r2Key ? new Uint8Array() : state,
+        });
+        if (durable) void cleanupRetiredObjects();
+        return durable;
       } catch (err) {
-        log('error', `[hocuspocus] r2 store FAILED (falling back to postgres): doc=${rackId} ${(err as Error).message}`);
+        log('error', `[hocuspocus] snapshot save failed: doc=${rackId} ${(err as Error).message}`);
+        return false;
       }
-      // Durability beats backend purity: a failed R2 write degrades to the
-      // battle-tested Postgres path (which itself never throws).
-      return storeSnapshot(rackId, state);
     },
   };
 }

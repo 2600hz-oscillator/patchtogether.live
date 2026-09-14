@@ -1,0 +1,33 @@
+// Temporary review instrument. No live DB or object-storage requests.
+import {it, expect, vi, beforeEach, afterEach} from 'vitest';
+import * as Y from 'yjs';
+import {writeFileSync} from 'node:fs';
+
+beforeEach(()=>{vi.resetModules();vi.stubEnv('DATABASE_URL','');});
+afterEach(()=>vi.unstubAllEnvs());
+
+it('reproduces a stale read after a durable fallback write',async()=>{
+  const {createSnapshotStore}=await import('./snapshot-store.js');
+  const db=await import('./db.js'); db._resetMemorySnapshots();
+  const doc=new Y.Doc();doc.getMap('rack').set('value','before');
+  const old=Y.encodeStateAsUpdate(doc);doc.getMap('rack').set('value','after');
+  const fresh=Y.encodeStateAsUpdate(doc);
+  const store=createSnapshotStore({env:{R2_ACCOUNT_ID:'review',R2_ACCESS_KEY_ID:'test',R2_SECRET_ACCESS_KEY:'test',R2_BUCKET:'test'},
+    log:()=>{},fetchFn:async(_url,req)=>({status:req.method==='PUT'?503:200,arrayBuffer:async()=>old.buffer as ArrayBuffer})});
+  const durable=await store.store('review',fresh);
+  const base=new Y.Doc();Y.applyUpdate(base,(await db.loadSnapshot('review'))!);
+  const loaded=new Y.Doc();Y.applyUpdate(loaded,(await store.load('review'))!);
+  const result={durable,fallbackValue:base.getMap('rack').get('value'),loadedValue:loaded.getMap('rack').get('value')};
+  console.log('PROBE snapshot_fallback',JSON.stringify(result));
+  writeFileSync('/tmp/inet-adversarial-review/snapshot-fallback-result.json',JSON.stringify(result,null,2));
+  doc.destroy();base.destroy();loaded.destroy();
+  expect(result).toEqual({durable:true,fallbackValue:'after',loadedValue:'before'});
+});
+
+it('no-R2 control round-trips the latest full snapshot',async()=>{
+  const {createSnapshotStore}=await import('./snapshot-store.js');
+  const store=createSnapshotStore({env:{}});
+  await store.store('review-control',new Uint8Array([1]));
+  await store.store('review-control',new Uint8Array([2]));
+  expect([...(await store.load('review-control'))!]).toEqual([2]);
+});

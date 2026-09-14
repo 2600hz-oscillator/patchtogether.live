@@ -1476,6 +1476,8 @@ jobs:
   # -----------------------------------------------------------------------
   collab:
     name: collab (@collab multi-context)
+    outputs:
+      critical: ${{ steps.multiplayer_critical.outcome == 'success' && steps.multiplayer_audit.outcome == 'success' && 'success' || 'failure' }}
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # 40 min ceiling, huge headroom: setup is ~3.2 min fixed (deps install
@@ -1656,13 +1658,29 @@ jobs:
       # `json` joins the reporter list so the FLAKE GATE (#1903) can read this
       # lane too. It writes to the file named by PLAYWRIGHT_JSON_OUTPUT_FILE and
       # therefore prints nothing — `list` remains the console output, unchanged.
+      # A compact required floor runs on this already-provisioned runner.
+      # The remaining collaboration suite retains its separate diagnostic result.
+      - name: Multiplayer output acceptance (audio, layers, DOOM)
+        id: multiplayer_critical
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/multiplayer-critical.json
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep "@multiplayer-critical" --workers=1 --retries=0 --reporter=list,json
+
+      - name: Reject skipped or flaky multiplayer acceptance
+        id: multiplayer_audit
+        run: |
+          flox activate -- node scripts/e2e-report-audit.mjs \
+            "${{ github.workspace }}/multiplayer-critical.json" --lane collab --fail-on-flaky
+
       - name: Run @collab specs (single non-sharded runner, html report)
         env:
           PLAYWRIGHT_HTML_OPEN: never
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/collab-report.json
         run: |
           flox activate -- npx --workspace e2e playwright test \
-            --grep "@collab|@capacity" \
+            --grep "@collab|@capacity" --grep-invert "@multiplayer-critical" \
             --workers=1 \
             --reporter=list,html,json
 
@@ -1684,9 +1702,8 @@ jobs:
       # named skip the budget admits (in-card-title's task #101 quarantine) may
       # appear; anything else exits 1 here.
       #
-      # ⚠ ARMED, NOT REQUIRED. `collab` is deliberately off the umbrella
-      # (informational, task #69), so a violation reddens THIS job and does not
-      # block the PR. Making it a merge gate is a separate owner decision.
+      # The remaining suite is diagnostic. The compact output acceptance above
+      # is required through the multiplayer result job.
       - name: Flake gate + skip budget (@collab)
         if: always()
         run: |
@@ -1708,7 +1725,9 @@ jobs:
           # `playwright test --reporter=html` writes to playwright-report/ in
           # the cwd; we ran with `--workspace e2e`, so that's
           # e2e/playwright-report/.
-          path: e2e/playwright-report
+          path: |
+            e2e/playwright-report
+            multiplayer-critical.json
           retention-days: 30
 
       - name: Upload Playwright test-results on failure (@collab)
@@ -2186,6 +2205,22 @@ jobs:
   # marked failed). The shell guard below fails the job if any needed job
   # didn't succeed.
   # -----------------------------------------------------------------------
+  multiplayer:
+    name: multiplayer correctness
+    if: always()
+    needs: collab
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require multiplayer output acceptance
+        env:
+          CRITICAL: ${{ needs.collab.outputs.critical }}
+        run: |
+          if [[ "$CRITICAL" != "success" ]]; then
+            echo "::error::Multiplayer output acceptance did not pass. See the collab job."
+            exit 1
+          fi
+
   ci:
     name: typecheck + unit + ART + E2E
     if: always()
@@ -2217,8 +2252,10 @@ jobs:
     # which stops describing a job the moment the job leaves `needs:`.
     # scripts/test-ledger.mjs parses the next line; test-ledger.test.ts asserts
     # every name here resolves to a real job, so a stale entry is RED.
+    # The full collab result is informational; its compact acceptance floor
+    # is required through the multiplayer result job above.
     # informational-off-umbrella: collab
-    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, behavioral-smoke]
+    needs: [actionlint, lint, typecheck, unit, dsp-build, build-web, art, build, e2e, multiplayer, webgl-smoke, webgl-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -2234,6 +2271,7 @@ jobs:
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
+          MULTIPLAYER: ${{ needs.multiplayer.result }}
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
           WEBGL_ATTEST: ${{ needs.webgl-attest.result }}
           BEHAVIORAL_SMOKE: ${{ needs.behavioral-smoke.result }}
@@ -2247,6 +2285,7 @@ jobs:
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
+          echo "multiplayer:   $MULTIPLAYER"
           echo "webgl-smoke:   $WEBGL_SMOKE"
           echo "webgl-attest:  $WEBGL_ATTEST"
           echo "behavioral-smoke: $BEHAVIORAL_SMOKE"
@@ -2308,6 +2347,7 @@ jobs:
              || "$ART" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
+             || "$MULTIPLAYER" != "success" \
              || "$WEBGL_SMOKE" != "success" \
              || "$WEBGL_ATTEST" != "success" \
              || "$BEHAVIORAL_SMOKE" != "success" ]]; then

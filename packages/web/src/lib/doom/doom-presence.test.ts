@@ -118,6 +118,18 @@ describe('collectIncomingKeyPushes — edge-triggered host relay (phantom-input 
     expect(collect(specStateWithKey(null), cursor)).toEqual([]);
   });
 
+  it('relays same-millisecond press and release with sequence identity, without duplicate replay', () => {
+    const cursor: RelayCursor = new Map();
+    const press = encodeKey({ ...key(0xaf, true, 100), session: 'one', seq: 1 });
+    const release = encodeKey({ ...key(0xaf, false, 100), session: 'one', seq: 2 });
+    expect(collect(specStateWithKey(press), cursor)).toEqual([{ doomKey: 0xaf, pressed: true }]);
+    expect(collect(specStateWithKey(release), cursor)).toEqual([{ doomKey: 0xaf, pressed: false }]);
+    expect(collect(specStateWithKey(press), cursor)).toEqual([]);
+    expect(collect(specStateWithKey(release), cursor)).toEqual([]);
+    const reconnected = encodeKey({ ...key(0xaf, true, 1), session: 'two', seq: 1 });
+    expect(collect(specStateWithKey(reconnected), cursor)).toEqual([{ doomKey: 0xaf, pressed: true }]);
+  });
+
   it('never relays the host its own client / own-authored envelopes', () => {
     const cursor: RelayCursor = new Map();
     // Host client carries a key field authored by the host itself.
