@@ -258,6 +258,7 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import { requestVideoPanic } from '$lib/video/panic-hook';
+import { createCrutchfield, CRUTCHFIELD_DEFAULTS, SENSOR_SEED_MAX, sensorSeed, type CrutchfieldParams } from '$lib/video/backdraft/crutchfield';
 // The bridge's own write cadence — the DELAY CLOCK freshness window is
 // expressed in ticks rather than re-deriving a millisecond figure.
 import { SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
@@ -478,9 +479,10 @@ export const BACKDRAFT_TEXTURE_UNITS = {
 
 /** TV MODE positions: 0 = OFF (the legacy composite), 1 = PURE TV (the
  *  bounded-screen nest, a strict contraction), 2 = CRITICAL (the same geometry
- *  with the auto-exposure servo, which is where the time lives). */
-export const BACKDRAFT_TV_MODE_COUNT = 3;
-export const BACKDRAFT_TV_MODE_LABELS = ['OFF', 'VIRTUAL CAMERA', 'CRITICAL'] as const;
+ *  with the auto-exposure servo), 3 = CRUTCHFIELD (separate monitor/camera histories). */
+// Append only: numeric mode values are stored in saved patches.
+export const BACKDRAFT_TV_MODE_LABELS = ['OFF', 'VIRTUAL CAMERA', 'CRITICAL', 'CRUTCHFIELD'] as const;
+export const BACKDRAFT_TV_MODE_COUNT = BACKDRAFT_TV_MODE_LABELS.length;
 
 /** Cycle the TV MODE — the card button and a tv_gate rising edge share this. */
 export function backdraftNextTvMode(mode: number): number {
@@ -1447,7 +1449,7 @@ void main() {
   outColor = vec4(clamp(outc, 0.0, 1.0), 1.0);
 }`;
 
-export interface BackdraftParams {
+export interface BackdraftParams extends CrutchfieldParams {
   mix: number;       // 0..1
   feedback: number;  // 0..BACKDRAFT_MAX_FEEDBACK
   delay: number;     // 0..BACKDRAFT_MAX_DELAY_MS (ms, default 16)
@@ -1495,9 +1497,9 @@ export interface BackdraftParams {
   // PURE TV — the bounded-screen (Crutchfield) mode. tvMode 0 is the exact-zero
   // no-op (the shader branch is skipped entirely). `tvGate` is the synthetic
   // raw-gate param the tv_gate CV bridge writes; a rising edge TOGGLES tvMode.
-  // 0 = OFF, 1 = PURE TV, 2 = CRITICAL. Discrete; the card button and the
+  // 0 = OFF, 1 = VIRTUAL CAMERA, 2 = CRITICAL, 3 = CRUTCHFIELD. The selector and the
   // tv_gate rising edge both CYCLE it.
-  tvMode: number;    // 0/1/2
+  tvMode: number;    // 0 OFF / 1 VIRTUAL CAMERA / 2 CRITICAL / 3 CRUTCHFIELD
   tvGate: number;    // 0..1 raw gate sample
   room: number;      // 0..1 — room/ambient light level OUTSIDE the screen
   bezel: number;     // 0..1 — screen-frame width (mapped to tb, floored)
@@ -1517,6 +1519,7 @@ export interface BackdraftParams {
 }
 
 const DEFAULTS: BackdraftParams = {
+  ...CRUTCHFIELD_DEFAULTS,
   mix: 0.5,
   feedback: 0.85,
   delay: 16,    // ~1 frame at 60fps — a tight, lively trail by default
@@ -3294,7 +3297,7 @@ export const backdraftDef: VideoModuleDef = {
           : `${BACKDRAFT_FLICKER_HZ[i]} Hz emission, beating against the 60 fps virtual camera.`,
       })) },
     // PURE TV — the bounded-screen (Crutchfield) mode. `tvMode` is a DISCRETE
-    // 3-position index (0=off, 1=PURE TV, 2=CRITICAL); the TV button and the
+    // 4-position index (0=off, 1=VIRTUAL CAMERA, 2=CRITICAL, 3=CRUTCHFIELD); the selector and the
     // tv_gate rising edge both cycle it. 0 is the exact-zero no-op: the shader
     // branch is skipped entirely and the legacy composite is untouched.
     // `options` DERIVED from BACKDRAFT_TV_MODE_LABELS — the SAME array the card
@@ -3314,6 +3317,16 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'bezel',    label: 'Bezel',    defaultValue: DEFAULTS.bezel,    min: 0,  max: 1,                     curve: 'linear' },
     { id: 'phosphor', label: 'Phos',     defaultValue: DEFAULTS.phosphor, min: 0,  max: 1,                     curve: 'linear' },
     { id: 'drive',    label: 'Drive',    defaultValue: DEFAULTS.drive,    min: 0,  max: 1,                     curve: 'linear' },
+    // Separate physical controls, inert in modes 0–2. Existing PHOS retains
+    // its saved meaning; these model distinct monitor and camera histories.
+    { id: 'focus', label: 'Defocus', defaultValue: DEFAULTS.focus, min: 0, max: 1, curve: 'linear' },
+    { id: 'sensorLag', label: 'Sensor lag', defaultValue: DEFAULTS.sensorLag, min: 0, max: 1, curve: 'linear', units: 's' },
+    { id: 'tubeDecay', label: 'Tube decay', defaultValue: DEFAULTS.tubeDecay, min: 0, max: 0.5, curve: 'linear', units: 's' },
+    { id: 'exposure', label: 'Exposure', defaultValue: DEFAULTS.exposure, min: 0, max: 4, curve: 'linear' },
+    { id: 'blackLevel', label: 'Brightness', defaultValue: DEFAULTS.blackLevel, min: -0.3, max: 0.3, curve: 'linear' },
+    { id: 'contrast', label: 'Contrast', defaultValue: DEFAULTS.contrast, min: 0, max: 3, curve: 'linear' },
+    { id: 'sensorVariation', label: 'Variation', defaultValue: DEFAULTS.sensorVariation, min: 0, max: 1, curve: 'linear' },
+    { id: 'sensorSeed', label: 'Sensor seed', defaultValue: DEFAULTS.sensorSeed, min: 0, max: SENSOR_SEED_MAX, curve: 'linear', format: (v) => String(sensorSeed(v)) },
     // VIRTUAL CAMERA ORIENTATION — bipolar joysticks, unipolar distance fader.
     { id: 'camTiltX', label: 'Tilt X',   defaultValue: DEFAULTS.camTiltX, min: -BACKDRAFT_CAM_TILT_RANGE, max: BACKDRAFT_CAM_TILT_RANGE, curve: 'linear' },
     { id: 'camTiltY', label: 'Tilt Y',   defaultValue: DEFAULTS.camTiltY, min: -BACKDRAFT_CAM_TILT_RANGE, max: BACKDRAFT_CAM_TILT_RANGE, curve: 'linear' },
@@ -3398,6 +3411,7 @@ export const backdraftDef: VideoModuleDef = {
       // Both axes of both pads are REQUIRED in `order` by the xyPads lint even
       // though the y axis folds into the x cell and never renders its own.
       'camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist',
+      'focus', 'sensorLag', 'tubeDecay', 'exposure', 'blackLevel', 'contrast', 'sensorVariation', 'sensorSeed',
     ],
 
     // ⚠ MANDATORY for a video def, and counter-intuitively so: the live picture
@@ -3435,6 +3449,8 @@ export const backdraftDef: VideoModuleDef = {
       zoom: 'fader', rotate: 'fader', offsetX: 'fader', offsetY: 'fader', pixelate: 'fader',
       room: 'fader', bezel: 'fader', phosphor: 'fader', drive: 'fader',
       camDist: 'fader',
+      focus: 'fader', sensorLag: 'fader', tubeDecay: 'fader', exposure: 'fader',
+      blackLevel: 'fader', contrast: 'fader', sensorVariation: 'fader',
     },
 
     // THE TWO JOYSTICKS. The card has always drawn these as 2-D pads; four
@@ -3504,6 +3520,11 @@ export const backdraftDef: VideoModuleDef = {
       // omitting it made the parity gate call the axis a dropped control. Both
       // authorings were red; the seam was the bug.
       { id: 'camera', label: 'virtual camera', controls: ['camTiltX', 'camTiltY', 'camPosX', 'camPosY', 'camDist'] },
+      { id: 'crutchfield', label: 'crutchfield', controls: ['focus', 'sensorLag', 'tubeDecay', 'exposure', 'blackLevel', 'contrast', 'sensorVariation', 'sensorSeed'],
+        clusters: [
+          { label: 'tube & lens', controls: ['focus', 'sensorLag', 'tubeDecay', 'exposure'] },
+          { label: 'response', controls: ['blackLevel', 'contrast', 'sensorVariation', 'sensorSeed'] },
+        ] },
     ],
 
     // No `title`, no `hint`, no band hints — owner ruling 2026-08-11: plain
@@ -3534,7 +3555,7 @@ export const backdraftDef: VideoModuleDef = {
   },
 
   docs: {
-    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-60). The fed-back frame is delayed (DELAY, 0-1000ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. A FLICKER control (OFF / 6 / 24 / 50 / 60 / 120 Hz) models the display's pulsed emission as the virtual camera actually captures it, and then models what the CAMERA does to it: the emission rate beats against the camera's 60 fps sampling, so the per-frame loop gain oscillates around unity instead of being constant, and light can build up over several frames and then fade away rather than pinning at white — with a rolling-shutter band crawling down the frame at the beat rate. The captured light then passes through the sensor's multi-frame charge storage (a low-pass on the BEAT, so fast beats become soft shimmer while slow ones keep their full swing) and its saturating shoulder (so the modulation stops acting where the image is already hot and reads as contour shimmer rather than a full-field flash). That is what makes the fast positions breathe instead of strobe. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card carries NO in-rack picture. It used to show a 320×240 display, and that display was the single biggest consumer of the faceplate\'s width and height; taking it out bought the module a narrower rack tier and taller faders, which is the better trade for a panel with this many controls. Feedback is still steered by watching it, so the output is one click away rather than always-on: the ⛶ OUTPUT button opens Full Frame (the card itself becomes a video panel in the rack), Full Screen, and Present-on-another-display, all of which grow the SAME surface — the button is now the only entry point, since there is no picture to right-click. For an arbitrarily-sized monitor, patch OUT into VIDEO OUT. The controls sit in two rows. Down the left of the first row are the discrete switches — MIRROR X / MIRROR Y, SHAPE and PURE GEO — with TV MODE, its fill/band readout and the OUTPUT button to their right and the six-position FLICKER switch beneath them; beside and below them run the labelled fader banks: LOOP (Mix/FB/Delay), COLOUR (Luma/Chroma/R/G/B), KEY (Lighten/Darken), GEOMETRY (Zoom/Rotate/Off X/Off Y/Pixelate), TV SCREEN (Room/Border/Phosphor/Drive — BORDER is the bezel, i.e. the screen frame's thickness) and VIRTUAL CAMERA, whose two 2-D pads steer the camera's TILT and POSITION with a DIST fader beside them. A control that does nothing in the current mode is DIMMED rather than hidden or disabled, so it stays draggable, resettable and MIDI-learnable and the card never changes height with the mode: the TV SCREEN bank dims while TV MODE is OFF (its title becomes a button that turns TV MODE on), and PURE GEO dims in PURE TV / CRITICAL, where SHAPE means only the screen's outline.`,
+    explanation: "BACKDRAFT sends its output through a delayed feedback loop. ZOOM, ROTATE and offsets compound on every pass; RGB, LUMA and CHROMA control the returned signal. OFF uses the original composite. VIRTUAL CAMERA photographs a bounded screen surrounded by the live input as room light. CRITICAL adds automatic exposure. CRUTCHFIELD models separate monitor emission and camera charge: the delayed signal drives a nonlinear CRT with scan lines, colour triads and RGB decay; a perspective lens and spatial diffusion image it onto a camera target with persistent charge, nonlinear sensitivity and imperfect colour separation. Monitor history stays on the screen and charge stays on the sensor. ZOOM can cross unity. The crutchfield tab sets Defocus, Sensor lag, Tube decay, Exposure, Brightness and Contrast. Variation and Sensor seed describe a fixed camera response; REROLL SENSOR changes the saved seed in one undoable action while the loop keeps running. Variation zero removes all seeded differences. PHOS and DRIVE retain their existing behavior in VIRTUAL CAMERA/CRITICAL and are inert in CRUTCHFIELD. Start with feedback near 1, zoom near 1.02 and a little rotation; adjust exposure and contrast to explore decay versus saturation. Inputs illuminate the room and reflect faintly from the screen. The model follows Crutchfield, Space-time dynamics in video feedback (1984), equations 4\u20135 and Appendix A. Chosen CRT gamma, raster profile, colour coupling, lens imperfections and extended decay ranges are engineering approximations, not a calibration of his equipment. One rendered frame represents a virtual 60 Hz field, matching the delay ring; a slow renderer slows the simulation. The ModuleShell dock keeps a live preview across tabs, with SCREEN, PANIC and OUTPUT controls.",
     inputs: {
       in_a: "Video source A. Crossfaded against IN B by MIX to form the live 'source' image that is re-injected each frame; unpatched it reads black.",
       in_b: "Video source B. The other end of the MIX crossfade (MIX=1 selects this input fully); unpatched it reads black.",
@@ -3560,9 +3581,9 @@ export const backdraftDef: VideoModuleDef = {
       mirror_y_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror Y kaleidoscope fold. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
       shape_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES the Shape mask to the next geometry (square → circle → pentagon → triangle → octagon → square). Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
       pure_geo_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES the Pure Geo masking space (screen-space crop ↔ zoomed-source crop). Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
-      tv_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES TV MODE (off → PURE TV → CRITICAL → off), so a clock can flip the module between the infinite-plane tunnel and the bounded-screen television. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
-      room: "CV (linear) that modulates the Room control — the light level OUTSIDE the TV screen in PURE TV / CRITICAL. A slow LFO here is Crutchfield's flashlight gesture (his rig needs external light to restart a dark screen). No effect while TV MODE is off.",
-      phosphor: "CV (linear) that modulates the Phos control, the one-frame image retention (camera charge storage) applied in place. No effect while TV MODE is off.",
+      tv_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES TV MODE (OFF → VIRTUAL CAMERA → CRITICAL → CRUTCHFIELD → OFF), so a clock can flip the module between the infinite-plane tunnel and the bounded-screen television. Edge-triggered, not a held level: the rising edge is detected as the value arrives from the patch bridge rather than sampled once per rendered frame, so a short 5ms trigger advances it exactly as reliably as a sustained gate, and holding the gate high advances it once and then leaves it alone.",
+      room: "CV (linear) that modulates the Room control — the room illumination in VIRTUAL CAMERA, CRITICAL and CRUTCHFIELD. In CRUTCHFIELD it also reflects faintly from the glass. A slow LFO here is Crutchfield's flashlight gesture (his rig needs external light to restart a dark screen). No effect while TV MODE is off.",
+      phosphor: "CV (linear) modulating the existing PHOS image-retention blend in VIRTUAL CAMERA and CRITICAL. Inert in CRUTCHFIELD.",
       cam_tilt_x: "CV (linear, bipolar) that modulates Tilt X — swings the virtual camera left/right of the screen's normal, keystoning the set horizontally. No effect while TV MODE is off.",
       cam_tilt_y: "CV (linear, bipolar) that modulates Tilt Y — swings the virtual camera above/below the screen's normal, keystoning it vertically. No effect while TV MODE is off.",
       cam_pos_x: "CV (linear, bipolar) that modulates Cam X — slides the virtual camera sideways in its own plane, out past the screen's borders at the extremes. No effect while TV MODE is off.",
@@ -3575,6 +3596,15 @@ export const backdraftDef: VideoModuleDef = {
       out: "The feedback-rendered video output: the crossfaded source composited with the processed, delayed, spatially-warped, mask-scaled copy of the previous output.",
     },
     controls: {
+      focus: "Defocus (0..1, CRUTCHFIELD only): widens spatial diffusion in the camera plane. Zero retains an intrinsic pickup limit of about 300 lines. Blur is in the loop and compounds across generations.",
+      sensorLag: "Sensor lag (0..1 s, CRUTCHFIELD only): camera charge-storage time constant. Default 0.333 s follows Appendix A\u2019s rough vidicon estimate; RGB lifetimes differ slightly. Zero removes memory. One time constant leaves about 37% after illumination stops.",
+      tubeDecay: "Tube decay (0..0.5 s, CRUTCHFIELD only): monitor-emission time constant, separate from camera charge. Default 0.025 s is a short display tail; higher values deliberately extend into persistent-tube territory. History stays on the screen as the camera moves.",
+      exposure: "Exposure (0..4, CRUTCHFIELD only): admitted light and sensitivity before nonlinear pickup. Zero closes the iris and lets sensor charge decay. Manual exposure; CRITICAL\u2019s automatic servo is not used.",
+      blackLevel: "Brightness (-0.3..0.3, CRUTCHFIELD only): monitor DC voltage offset before gamma. Adjusts black cutoff and can seed or extinguish feedback.",
+      contrast: "Contrast (0..3, CRUTCHFIELD only): monitor voltage gain around mid-grey, before clipping and CRT gamma. Together with exposure and RGB gain it changes the operating point and saturation.",
+      sensorVariation: "Variation (0..1, CRUTCHFIELD only): strength of fixed lens distortion, sensor sensitivity and local gamma variation. Default is subtle; high settings exaggerate imperfections. Zero makes every seed equivalent. This is fixed-pattern response, not animated noise.",
+      sensorSeed: "Sensor seed (0..65535, rounded, CRUTCHFIELD only): reproducible lens and sensor geometry. REROLL SENSOR chooses the next distinct camera, saves it with the patch and supports undo. Reseeding retains running history. Reloading reproduces the camera, not transient feedback history.",
+
       mix: "Mix (0..1, default 0.5): crossfade between IN A (0) and IN B (1) to form the live source image.",
       feedback: "FB / Feedback (0..2.0, default 0.85): per-frame feedback persistence. Above 1.0 gives runaway trails; near max (with a spatial transform active) it ramps into a pure recursive hall of mirrors. Each frame is clamped to [0,1] so it cannot blow out.",
       delay: "Delay (0..1000 ms, default 16): feedback tap delay, snapped to the nearest whole frame (~1 frame at default). The delay ring only allocates what the current delay needs and grows as you raise it (never shrinking back), so a big upward jump briefly restarts the trail while the deeper history fills. While DELAY CLK is patched this fader is ignored entirely (dimmed + CLK badge): the effective delay holds, then tracks the clock; unpatching hands control back to the fader at its current position.",
@@ -3600,11 +3630,11 @@ export const backdraftDef: VideoModuleDef = {
       shapeGate: "Shape Gate (0..1, default 0): hidden synthetic param the shape_gate CV bridge writes (raw gate swing). No faceplate knob; a rising edge cycles Shape.",
       pureGeoGate: "PureGeo Gate (0..1, default 0): hidden synthetic param the pure_geo_gate CV bridge writes (raw gate swing). No faceplate knob; a rising edge toggles Pure Geo.",
       flicker: "Flicker (discrete OFF / 6 / 24 / 50 / 60 / 120, default OFF): in PURE TV / CRITICAL this ALSO drives the virtual refresh — the line-by-line redraw seam that cascades through the nest (see TV Mode). Models a real display emitting light in PULSES rather than continuously, the camera integrating over an exposure window shorter than the pulse period, and the camera sampling at its own frame rate. The two rates BEAT, so the per-frame loop gain cycles above and below its own average instead of being constant — which is what lets pulses of light build up over several frames and then fade away rather than saturating to white and staying there. OFF is the exact no-op (the shader branch is skipped, output is bit-identical). The virtual camera runs at a fixed 60 fps, so the beat is: 6 Hz at the 6 position (below the camera rate, so no aliasing — the camera sees the pulsing DIRECTLY at 10 frames per cycle, the slowest and most obvious breathing); 24 Hz at 24 (2.5 frames per cycle, a fine fast texture); 10 Hz at 50 (6 frames per cycle — the classic look of filming a PAL monitor with an NTSC camera, and the best all-round build-and-fade); 0.06 Hz at 60 (the true NTSC field rate 60000/1001 = 59.94 Hz, a ~16.7-second slow swell — the slowly crawling hum bar you see filming a television); and 0.12 Hz at 120 (119.88 Hz, 2x NTSC — the rolling shutter fits almost exactly one full band cycle down the frame here, which cancels the whole-frame pulsing and leaves a PURE crawling band). Exact multiples of 60 would genlock to a constant gain and not move at all, which is why the 60 and 120 positions use the NTSC rates. A 90-degree shutter (1/240 s) sets how much of each pulse is caught, and the rolling shutter spreads the flicker phase down the frame so a soft light/dark band crawls vertically at the beat rate and feeds back through the loop. Two camera-side terms keep it watchable rather than strobing: the sensor's multi-frame charge storage is a LOW-PASS ON THE BEAT (it cuts 6/24/50 hard and passes 60/120 essentially untouched, so the fast positions shimmer and the slow ones breathe), and a saturating capture shoulder makes the response level-dependent so the modulation acts on midtone contours instead of flashing the whole field. The loop's average gain is held constant as you switch positions, so the FB control keeps meaning the same thing.",
-      tvMode: "TV Mode (discrete OFF / PURE TV / CRITICAL, default OFF): switches BACKDRAFT from an infinite feedback PLANE to a bounded SCREEN. OFF is the exact no-op — the shader branch is skipped and the classic composite is untouched. PURE TV builds the thing a camera pointed at a television actually sees: the previous frame is drawn, whole, inside a bezelled screen rectangle that fills 75% of the frame (set by ZOOM), and OUTSIDE that screen is the live input — so IN PURE TV YOUR INPUT IS THE ROOM, NOT THE PICTURE, and the picture is the feedback. Because each pass places the entire previous view (room, bezel and picture) inside the next screen, the image NESTS: about 11 resolved frames-within-frames, each 3/4 the size of the last and each dimmer, converging on a milky core at 20% of the room level. That nesting is forced by the geometry rather than tuned, which is why no combination of the old FEEDBACK/ZOOM controls could ever produce it — the old map adds the live input to EVERY pixel and clamps the previous frame across the whole plane, so there is no 'outside the TV' left to re-image. PURE TV is a strict contraction: it converges to a STILL nest, and motion in the room cascades inward one level per DELAY. CRITICAL keeps that geometry and adds the camera's AUTOMATIC EXPOSURE — a servo with memory that meters the frame it just captured and pushes its gain the other way. Because it integrates, it overshoots, and past the DRIVE midpoint the overshoot becomes a self-sustaining limit cycle: the picture blooms toward white, the servo hauls it back, and the correction propagates inward through the nest one level per DELAY as a travelling annulus. That is the mode for riding the edge of white-out. In BOTH TV modes the FLICKER control additionally drives a VIRTUAL REFRESH: a real set is redrawn line by line, so its face at any instant is a SEAM between two successive fields — new above the beam, previous below it — and a camera pointed at it catches that seam. Because the seam sits in the MONITOR's own raster rather than in the camera's frame, every nesting level re-photographs a screen that already has one, so level k carries k seams at k different ages and the refresh cascades inward through the whole nest. FLICKER's rate sets how fast the beam sweeps: the 60 position (the true NTSC field rate) leaves it creeping, which is the classic slow hum bar you see filming a television, while the 6 position races it down the frame several times a second. FLICKER OFF is the exact no-op — no beam, no seam, and the tap is unchanged. This is a different effect from FLICKER's rolling-shutter brightness band, which stays in SCREEN space because the shutter scans the sensor and not the scene: one changes a row's BRIGHTNESS, the other changes which FRAME the row came from. The TV button cycles the mode; tv_gate cycles it on a rising edge.",
+      tvMode: "OFF / VIRTUAL CAMERA / CRITICAL / CRUTCHFIELD. The fourth mode adds separate CRT emission and camera charge, spatial diffusion, nonlinear exposure and a reproducible sensor response. Existing mode numbers are unchanged; tv_gate cycles all four modes on rising edges.",
       tvGate: "TV Gate (0..1, default 0): hidden synthetic param the tv_gate CV bridge writes (raw gate swing). No faceplate knob; a rising edge cycles TV MODE.",
       room: "Room (0..1, default 1.0): the light level OUTSIDE the screen in PURE TV / CRITICAL — the live input at full strength plus a 5% ambient floor. The ambient floor is range-preserving, so even with nothing patched the mode still lights its own room and demonstrates its geometry. Turning ROOM down dims the set and the whole nest with it (the brightness cascade stays correctly ordered at every room level, rather than flattening or inverting as an absolute lift would). Inert while TV MODE is off.",
       bezel: "Bezel — labelled BORDER on the faceplate, because 'border thickness' is what people look for (0..1, default 0.5 = the shipped look, mid-travel): the THICKNESS of the set's border, in screen-local units, so a level-k bezel automatically lands 3/4-scaled — deeper borders shrink because they are IMAGES of the real one. The fader reaches EXACTLY 0 (a borderless screen) at the bottom and opens thicker than the default at the top. Worth knowing what 0 costs, because it is a real trade rather than a free option: the border is the only high-contrast boundary between one nesting level and the next, so at 0 the nest stops reading as frames-within-frames and becomes a smooth zoom. That is a legitimate look, it is simply not the one the mode is named for. Inert while TV MODE is off.",
-      phosphor: "Phos / Phosphor (0..1, default 0): one-frame image retention, applied IN PLACE (no transform) — the term that makes delay smear rather than step. Despite the name this is NOT phosphor: a colour TV's P22 phosphor retains about 4e-73 of a frame, which is nothing, and Crutchfield says so himself. The real integrator in a camera-at-a-TV rig is the CAMERA's charge storage, roughly 10 frames, and that is what this models. Level k has been through the filter k times, so deeper levels are older in proportion to k and blurrier in time in proportion to the square root of k. Unit DC gain, so it changes only the temporal smear and never the converged image. Tube ladder: 0 = colour TV (no inter-frame tail exists, and the honest default), 0.13 = P4 mono TV, 0.16 = P1 scope green, 0.86 = P39 radar, 1.0 = P7 dual-layer radar. Inert while TV MODE is off.",
+      phosphor: "Phos (0..1): existing in-place image retention in VIRTUAL CAMERA and CRITICAL. Unit DC gain softens motion but leaves a settled image unchanged. In CRUTCHFIELD use Sensor lag and Tube decay; PHOS is inert there.",
       drive: "Drive (0..1, default 0.5): CRITICAL's auto-exposure servo RATE — how hard the mode rides the edge of white-out. This is a time constant, not a gain, and the fader is geometric (equal steps are equal FACTORS, from 1 to 49 per frame) because a servo speed is scale-free; that also makes a linear CV ramp read as a smooth accelerando into instability rather than a cliff. The default 0.5 sits exactly ON the measured bifurcation. Below it the servo is a well-behaved regulator and the nest is dead still; above it the servo overshoots into a sustained limit cycle and the picture breathes — blooming toward white, being hauled back, and sending each correction inward through the nest one level per DELAY. The swing deepens monotonically with the knob. The exposure state is hard-clamped, which is what makes a white-out always recoverable: back DRIVE off and the nest returns. Ignored outside CRITICAL.",
       camTiltX: "Tilt X (-0.2..+0.2, default 0 = dead-on): VIRTUAL CAMERA ORIENTATION. Swings the camera left or right of the screen's normal while it keeps pointing the same way, so the set images as a TRAPEZOID rather than a rectangle — the far edge shorter than the near one. Because every pass re-photographs the pass before it, the keystone COMPOUNDS: the nest curls away toward the vanishing point instead of shrinking straight into the middle. Deep levels therefore go illegible sooner than they do dead-on; that is what an angled camera really does, not a defect. Re-aiming the camera also MOVES THE VANISHING POINT — the accumulation point of the frame-in-frame-in-frame is the fixed point of the map, so tilting re-composes the whole nest rather than just sliding the picture across the frame. And because the map is ITERATED, that re-composition RECURSES THROUGH THE FEEDBACK NETWORK: the move reaches level k only after k*DELAY frames, so a camera gesture travels inward through the nest exactly the way motion in the room and the refresh seam do. 0 is the exact dead-on default, where the map is the plain affine one and this control costs nothing.",
       camTiltY: "Tilt Y (-0.2..+0.2, default 0 = dead-on): the vertical half of the tilt joystick — swings the camera above or below the screen's normal, keystoning the set top-to-bottom. Combine with Tilt X to look in from a corner. 0 is dead-on.",
@@ -3758,6 +3788,8 @@ export const backdraftDef: VideoModuleDef = {
     const params: BackdraftParams = { ...DEFAULTS, ...(node.params as Partial<BackdraftParams>) };
     let head = 0;
     let framesElapsed = 0;
+    let crutchfield: ReturnType<typeof createCrutchfield> | null = null;
+    let wasCrutchfield = false;
 
     // Boot allocation: exactly what the spawn-time delay needs (the lazy
     // ring's whole point). TV+FLICKER's refresh tap pays for its extra slot
@@ -3867,7 +3899,7 @@ export const backdraftDef: VideoModuleDef = {
     // pureGeo. Same edge-detect convention as the mirror gates.
     const shapeGate = makeEdgeState();
     const pureGeoGate = makeEdgeState();
-    // TV MODE gate: a rising edge CYCLES OFF -> PURE TV -> CRITICAL -> OFF.
+    // TV MODE gate: a rising edge CYCLES OFF -> VIRTUAL CAMERA -> CRITICAL -> CRUTCHFIELD -> OFF.
     const tvGate = makeEdgeState();
     // PANIC gate: a rising edge fires the graph-side settings reset via the
     // panic hook (registered at engine boot; a bare factory in a unit test has
@@ -3942,6 +3974,35 @@ export const backdraftDef: VideoModuleDef = {
         const fbTex = framesElapsed >= delayFrames ? ring[tapIdx]!.texture : emptyTex;
 
         const dst = ring[head]!;
+        if (Math.round(params.tvMode) === 3) {
+          crutchfield ??= createCrutchfield(ctx);
+          if (!wasCrutchfield) crutchfield.reset();
+          wasCrutchfield = true;
+          crutchfield.draw({
+            ...params,
+            signal: fbTex, destination: dst,
+            a: aTex ?? emptyTex, b: bTex ?? emptyTex,
+            bGain: params.b,
+            lighten: lightenTex ?? emptyTex, darken: darkenTex ?? emptyTex,
+            light: params.lighten, dark: params.darken,
+            bezel: backdraftTvBezel(params.bezel),
+            // Unlike VIRTUAL CAMERA's always-smaller screen, this lens can
+            // zoom THROUGH unity (the expansion regime in Crutchfield).
+            camera: backdraftCamInverseHomography(
+              { tiltX: params.camTiltX, tiltY: params.camTiltY, posX: params.camPosX, posY: params.camPosY, dist: params.camDist },
+              params.zoom, backdraftTvRotationDeg(params.rotate),
+            ),
+            refresh: Math.round(params.flicker) > 0,
+            beam: backdraftTvBeam(params.flicker, frame.time),
+          });
+          surface.texture = dst.texture;
+          surface.fbo = dst.fbo;
+          head = (head + 1) % ring.length;
+          framesElapsed++;
+          return;
+        }
+        if (wasCrutchfield) crutchfield?.reset();
+        wasCrutchfield = false;
         g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(program);
@@ -4165,6 +4226,7 @@ export const backdraftDef: VideoModuleDef = {
         framesElapsed++;
       },
       dispose() {
+        crutchfield?.dispose();
         for (const r of ring) {
           gl.deleteFramebuffer(r.fbo);
           gl.deleteTexture(r.texture);

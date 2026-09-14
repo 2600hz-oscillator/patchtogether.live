@@ -430,10 +430,11 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     }
   });
 
-  it('N10b — the TV MODE gate CYCLES off -> PURE TV -> CRITICAL -> off', () => {
+  it('N10b — the TV MODE gate cycles all saved modes including CRUTCHFIELD', () => {
     expect(backdraftNextTvMode(0)).toBe(1);
     expect(backdraftNextTvMode(1)).toBe(2);
-    expect(backdraftNextTvMode(2)).toBe(0);
+    expect(backdraftNextTvMode(2)).toBe(3);
+    expect(backdraftNextTvMode(3)).toBe(0);
   });
 
   it('N-ZOOM — the fill remap is monotone and hits its documented anchors', () => {

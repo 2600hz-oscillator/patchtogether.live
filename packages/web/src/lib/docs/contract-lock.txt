@@ -202,18 +202,22 @@ backdraft in zoom cv param=zoom cvScale=linear
 backdraft out out video
 backdraft param b -1..2 linear default=1
 backdraft param bezel 0..1 linear default=0.5
+backdraft param blackLevel -0.3..0.3 linear default=0.08
 backdraft param camDist 0..1 linear default=0.5
 backdraft param camPosX -0.5..0.5 linear default=0
 backdraft param camPosY -0.5..0.5 linear default=0
 backdraft param camTiltX -0.2..0.2 linear default=0
 backdraft param camTiltY -0.2..0.2 linear default=0
 backdraft param chroma -1..2 linear default=1
+backdraft param contrast 0..3 linear default=1.2
 backdraft param darken 0..1 linear default=1
 backdraft param delay 0..1000 linear default=16
 backdraft param delayClock 0..1 linear default=0
 backdraft param drive 0..1 linear default=0.5
+backdraft param exposure 0..4 linear default=2
 backdraft param feedback 0..2 linear default=0.85
 backdraft param flicker 0..5 discrete default=0
+backdraft param focus 0..1 linear default=0.15
 backdraft param freeze 0..1 linear default=0
 backdraft param g -1..2 linear default=1
 backdraft param lighten 0..1 linear default=1
@@ -233,10 +237,14 @@ backdraft param pureGeoGate 0..1 linear default=0
 backdraft param r -1..2 linear default=1
 backdraft param room 0..1 linear default=1
 backdraft param rotate -30..30 linear default=0
+backdraft param sensorLag 0..1 linear default=0.333 unit=s
+backdraft param sensorSeed 0..65535 linear default=167
+backdraft param sensorVariation 0..1 linear default=0.15
 backdraft param shape 0..4 discrete default=0
 backdraft param shapeGate 0..1 linear default=0
+backdraft param tubeDecay 0..0.5 linear default=0.025 unit=s
 backdraft param tvGate 0..1 linear default=0
-backdraft param tvMode 0..2 discrete default=0
+backdraft param tvMode 0..3 discrete default=0
 backdraft param zoom 0.4..1.6 linear default=1
 bentbox meta domain=video
 bentbox in bloom_cv cv param=bloom cvScale=linear
