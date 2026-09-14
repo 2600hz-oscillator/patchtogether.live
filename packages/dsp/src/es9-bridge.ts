@@ -8,11 +8,17 @@
 //   inRing  (worker writes ← WebSocket)  → this worklet → 32 outputs
 //   16 inputs → this worklet → outRing   (worker drains → WebSocket)
 //
-// I/O map (one mono worklet index per jack, attenumix-style):
-//   inputs  0..7  = OUT 1..8 jacks (browser → ES-9 DC-coupled outs)
-//   inputs  8..15 = MIX 9..16 (browser → ES-9 USB outs 9-16, internal mixer)
-//   outputs 0..13 = IN 1..14 raw audio (ES-9 DC-coupled inputs, ±1 = ±10 V)
-//   outputs 14/15 = S/PDIF L/R raw audio (ES-9 USB inputs 15/16)
+// I/O map (one mono worklet index per jack, attenumix-style; the channel
+// map is the module's — es9.ts JACK_CHANNEL_BASE — and under the ES-9's
+// DEFAULT routing the physical jacks ride USB 9-16, not 1-8):
+//   inputs  0..7  = USB 1..8 feeds (browser → internal mixer/phones, S-PDIF,
+//                   ES-5 header; digital, always ×1)
+//   inputs  8..15 = OUT 1..8 jacks (browser → ES-9 DC-coupled outs,
+//                   class-scaled; audio/cv ±1 = ±5 V)
+//   outputs 0..13 = IN 1..14 audio (ES-9 DC-coupled inputs, ±1 = ±5 V —
+//                   the wire's ±10 V full scale reads as ±2.0)
+//   outputs 14/15 = S/PDIF L/R audio (ES-9 USB inputs 15/16; digital,
+//                   0 dBFS = 1.0, passed ×1)
 //   outputs 16..29 = IN 1..14 class-scaled CV twins (cv/pitch/gate per the
 //                    per-jack class param; see lib/es9-bridge-core.ts)
 //   outputs 30/31 = reserved (silent) — keeps the cv-twin index math
@@ -31,7 +37,8 @@ import {
   InScaler,
   RingIO,
   UnderrunFiller,
-  browserToHwSample,
+  outSample,
+  rawInSample,
   type RingSpec,
 } from './lib/es9-bridge-core';
 
@@ -66,7 +73,8 @@ interface ClassesMessage {
   type: 'classes';
   /** Per ES-9 INPUT channel (16 entries; 14/15 = S/PDIF, class ignored). */
   inClasses: number[];
-  /** Per ES-9 OUTPUT channel (16 entries; 8..15 = mix, class ignored). */
+  /** Per ES-9 OUTPUT channel (16 entries; 0..7 = USB 1-8 feeds, class
+   *  ignored — always ×1; 8..15 = the physical jacks, class-scaled). */
   outClasses: number[];
 }
 interface DetachMessage {
@@ -123,11 +131,17 @@ class Es9BridgeProcessor extends AudioWorkletProcessor {
       const got = this.inRing.read(frames, (ch, i, v) => {
         const raw = outputs[ch]?.[0];
         if (raw) {
-          raw[i] = v;
-          this.rawFill[ch]?.feed(v);
+          // Audio port: ±5 V → ±1 on a DC jack, ×1 on S/PDIF. The fade is
+          // fed the EMITTED (scaled) level so an underrun starts from it.
+          const r = rawInSample(ch, v);
+          raw[i] = r;
+          this.rawFill[ch]?.feed(r);
         }
         const twin = outputs[CV_TWIN_BASE + ch]?.[0];
         if (twin && ch < 14) {
+          // ⚠ The twin scales the WIRE value `v`, never the audio-scaled
+          // `r` — otherwise cv would be ×4, pitch ×20 and the gate comparator
+          // would trip at 1 V / 0.5 V instead of 2 V / 1 V.
           const scaled = this.scalers[ch]?.process(v) ?? v;
           twin[i] = scaled;
           this.cvFill[ch]?.feed(scaled);
@@ -154,7 +168,7 @@ class Es9BridgeProcessor extends AudioWorkletProcessor {
       this.outRing.write(frames, (ch, i) => {
         const src = inputs[ch]?.[0];
         if (!src) return 0;
-        return browserToHwSample(this.outClasses[ch] ?? CLASS_AUDIO, src[i] ?? 0);
+        return outSample(ch, this.outClasses[ch] ?? CLASS_AUDIO, src[i] ?? 0);
       });
     }
     // Ring full (worker gone / not draining): drop the block — the native

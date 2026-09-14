@@ -10,35 +10,91 @@ import {
   CLASS_CV,
   CLASS_GATE,
   CLASS_PITCH,
+  DC_INPUT_JACKS,
   FADE_FRAMES,
   GATE_OUT_LEVEL,
+  GATE_RISE,
+  GATE_FALL,
   InScaler,
+  JACK_CHANNEL_BASE,
+  NOMINAL_VOLTS,
   RingIO,
   UnderrunFiller,
+  VOLTS_FULL_SCALE,
   browserToHwSample,
   browserToHwScale,
   createRingSpec,
   hwToBrowserScale,
+  outSample,
+  rawInSample,
 } from './es9-bridge-core';
 
 describe('class scaling', () => {
   it('maps hardware volts onto app conventions (hw→browser)', () => {
-    expect(hwToBrowserScale(CLASS_AUDIO)).toBe(1);
+    // AUDIO is Eurorack nominal, the SAME scale as cv: ±5 V → ±1.0. It was
+    // ×1 (±10 V → ±1.0) until 2026-09-14, which landed every modular audio
+    // signal 6 dB under the internal modules (ADR-019).
+    expect(hwToBrowserScale(CLASS_AUDIO)).toBe(2);
     expect(hwToBrowserScale(CLASS_CV)).toBe(2);     // ±5 V → ±1
     expect(hwToBrowserScale(CLASS_PITCH)).toBe(10); // 1 V/oct → 1.0/oct
+    expect(hwToBrowserScale(CLASS_GATE)).toBe(1);   // comparator, no multiply
   });
 
   it('maps app conventions onto hardware volts (browser→hw)', () => {
-    expect(browserToHwScale(CLASS_AUDIO)).toBe(1);
+    expect(browserToHwScale(CLASS_AUDIO)).toBe(0.5); // ±1 → ±5 V
     expect(browserToHwScale(CLASS_CV)).toBe(0.5);
     expect(browserToHwScale(CLASS_PITCH)).toBeCloseTo(0.1, 12);
   });
 
   it('round-trips: a browser value out and back is identity per class', () => {
-    for (const cls of [CLASS_CV, CLASS_PITCH]) {
+    for (const cls of [CLASS_AUDIO, CLASS_CV, CLASS_PITCH]) {
       const v = 0.62;
       expect(browserToHwScale(cls) * hwToBrowserScale(cls) * v).toBeCloseTo(v, 12);
     }
+  });
+
+  it('the nominal and full-scale constants are the wire scale and the app scale, and stay apart', () => {
+    // App ±1.0 (audio) × NOMINAL_VOLTS = the volts at the jack; the wire's
+    // ±1.0 = VOLTS_FULL_SCALE. Their ratio IS the audio/cv multiplier.
+    expect(NOMINAL_VOLTS).toBe(5);
+    expect(VOLTS_FULL_SCALE).toBe(10);
+    expect(NOMINAL_VOLTS * hwToBrowserScale(CLASS_AUDIO)).toBe(VOLTS_FULL_SCALE);
+    // The gate conventions are physical volts on the WIRE and must not move
+    // with the audio convention: +5 V high, rise ≥ 2 V, fall < 1 V.
+    expect(GATE_OUT_LEVEL).toBe(0.5);
+    expect(GATE_RISE).toBe(0.2);
+    expect(GATE_FALL).toBe(0.1);
+  });
+
+  it('rawInSample: DC jacks 0..13 scale ×2, the S/PDIF pair 14/15 passes ×1', () => {
+    expect(DC_INPUT_JACKS).toBe(14);
+    for (let ch = 0; ch < DC_INPUT_JACKS; ch++) {
+      expect(rawInSample(ch, 0.5), `ch ${ch}`).toBeCloseTo(1.0, 12); // ±5 V → ±1
+      expect(rawInSample(ch, -0.25), `ch ${ch}`).toBeCloseTo(-0.5, 12);
+    }
+    for (const ch of [14, 15]) {
+      expect(rawInSample(ch, 0.5), `S/PDIF ch ${ch}`).toBe(0.5);       // 0 dBFS = 1.0
+      expect(rawInSample(ch, 1.0), `S/PDIF ch ${ch}`).toBe(1.0);
+    }
+  });
+
+  it('outSample: usb1-8 (channels 0..7) pass ×1 for EVERY class; jacks 8..15 are class-scaled', () => {
+    expect(JACK_CHANNEL_BASE).toBe(8);
+    for (let ch = 0; ch < JACK_CHANNEL_BASE; ch++) {
+      for (const cls of [CLASS_AUDIO, CLASS_CV, CLASS_PITCH, CLASS_GATE]) {
+        expect(outSample(ch, cls, 1.0), `usb ch ${ch} cls ${cls}`).toBe(1.0);
+        expect(outSample(ch, cls, 0.3), `usb ch ${ch} cls ${cls}`).toBe(0.3);
+      }
+    }
+    for (let ch = JACK_CHANNEL_BASE; ch < 16; ch++) {
+      expect(outSample(ch, CLASS_AUDIO, 1.0), `jack ch ${ch}`).toBe(0.5);   // ±1 → ±5 V
+      expect(outSample(ch, CLASS_CV, 1.0), `jack ch ${ch}`).toBe(0.5);
+      expect(outSample(ch, CLASS_PITCH, 1.0), `jack ch ${ch}`).toBeCloseTo(0.1, 12);
+      expect(outSample(ch, CLASS_GATE, 1.0), `jack ch ${ch}`).toBe(GATE_OUT_LEVEL);
+      expect(outSample(ch, CLASS_GATE, 0.49), `jack ch ${ch}`).toBe(0);
+      expect(outSample(ch, cls(ch), 0.3)).toBe(browserToHwSample(cls(ch), 0.3));
+    }
+    function cls(ch: number): number { return ch % 4; }
   });
 
   it('gate class emits 0 V / +5 V from the app 0|1 (GATE_HI threshold)', () => {
@@ -74,6 +130,8 @@ describe('InScaler gate hysteresis', () => {
 
   it('scales non-gate classes multiplicatively', () => {
     const s = new InScaler();
+    s.setClass(CLASS_AUDIO);
+    expect(s.process(0.5)).toBeCloseTo(1.0, 12);   // +5 V → +1 (same as cv)
     s.setClass(CLASS_CV);
     expect(s.process(0.5)).toBeCloseTo(1.0, 12);   // +5 V → +1
     s.setClass(CLASS_PITCH);

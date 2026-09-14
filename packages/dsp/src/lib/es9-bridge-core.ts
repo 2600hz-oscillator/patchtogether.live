@@ -5,15 +5,27 @@
 //
 // SIGNAL MODEL (see the native side: patchtogether.es9/docs/DESIGN.md). The
 // bridge app moves RAW hardware-full-scale floats — float ±1.0 ≙ ±10 V at the
-// ES-9's DC-coupled jacks — and this layer converts between hardware volts
-// and patchtogether's signal conventions per the user's per-jack CLASS:
+// ES-9's DC-coupled jacks (the WIRE scale; VOLTS_FULL_SCALE) — and this layer
+// converts between hardware volts and patchtogether's signal conventions per
+// the user's per-jack CLASS. The app's audio unity is Eurorack NOMINAL: ±1.0 in
+// the graph ≙ ±5 V at a DC-coupled jack (NOMINAL_VOLTS), the same scale as cv.
+// Before 2026-09-14 audio was ×1 (±1.0 ≙ ±10 V), which landed a ±5 V modular
+// signal at −6 dB and +4 dBu line gear at −15 dB under every internal module
+// (owner report: "es-9 is really really quiet"); see docs/adr/019.
 //
 //   class   hw → browser              browser → hw           app convention
-//   audio   ×1 (raw)                  ×1 (raw)               full-scale audio
+//   audio   ×2   (±5 V → ±1)          ×0.5  (±1 → ±5 V)      ±1.0 audio ≙ ±5 V (same scale as cv;
+//                                                            class still selects the underrun policy
+//                                                            and the port type)
 //   cv      ×2   (±5 V → ±1)          ×0.5  (±1 → ±5 V)      cv is bipolar ±1
 //   pitch   ×10  (1 V/oct → 1.0/oct)  ×0.1  (1.0/oct → 1 V)  pitch is 1.0/oct, 0 V ≙ C4
 //   gate    comparator w/ hysteresis  0/1 → 0 V/+5 V         gate is 0|1, GATE_HI = 0.5
 //           (rise ≥ 2 V, fall < 1 V)
+//
+// DIGITAL channels are the exception and pass ×1 in both directions, because
+// there 0 dBFS really is 1.0: the S/PDIF return (input channels 14/15) and the
+// USB 1-8 feeds (output channels 0-7: main/phones/S-PDIF/ES-5 under the ES-9's
+// default routing). `rawInSample` / `outSample` carry those jack-kind guards.
 //
 // The mirror-image ring implementation lives web-side in
 // $lib/audio/es9/es9-ring.ts (the bridge Worker's half). They are duplicated
@@ -33,8 +45,14 @@ export type SignalClass =
   | typeof CLASS_PITCH
   | typeof CLASS_GATE;
 
-/** Hardware full scale is ±10 V ≙ float ±1.0 (ES-9 nominal). */
+/** Hardware full scale is ±10 V ≙ float ±1.0 on the WIRE (ES-9 nominal —
+ *  the manual's "approximately ±10 V" for 0 dBFS; assumed, not yet metered —
+ *  the hardware-verify DC-meter step is the one place it can be pinned). */
 export const VOLTS_FULL_SCALE = 10;
+/** Eurorack nominal signal level: app ±1.0 ≙ ±5 V at a DC-coupled jack, for
+ *  BOTH the audio and the cv class. (The gate-high level below is a separate
+ *  convention that merely shares the number — do not fold them together.) */
+export const NOMINAL_VOLTS = 5;
 
 /** Gate comparator hysteresis, in hardware-float units: rise at ≥2 V,
  *  fall below 1 V — solid against slew/noise around a +5 V gate edge. */
@@ -49,19 +67,46 @@ export const FADE_FRAMES = 64;
 /** hw→browser multiplicative scale for non-gate classes. */
 export function hwToBrowserScale(cls: number): number {
   switch (cls) {
-    case CLASS_CV: return VOLTS_FULL_SCALE / 5;    // ±5 V → ±1
-    case CLASS_PITCH: return VOLTS_FULL_SCALE;     // 1 V/oct → 1.0/oct
-    default: return 1;                             // audio raw (gate: comparator)
+    case CLASS_AUDIO:
+    case CLASS_CV: return VOLTS_FULL_SCALE / NOMINAL_VOLTS; // ±5 V → ±1 (×2)
+    case CLASS_PITCH: return VOLTS_FULL_SCALE;              // 1 V/oct → 1.0/oct
+    default: return 1;                                      // gate: comparator
   }
 }
 
 /** browser→hw multiplicative scale for non-gate classes. */
 export function browserToHwScale(cls: number): number {
   switch (cls) {
-    case CLASS_CV: return 5 / VOLTS_FULL_SCALE;    // ±1 → ±5 V
-    case CLASS_PITCH: return 1 / VOLTS_FULL_SCALE; // 1.0/oct → 1 V/oct
+    case CLASS_AUDIO:
+    case CLASS_CV: return NOMINAL_VOLTS / VOLTS_FULL_SCALE; // ±1 → ±5 V (×0.5)
+    case CLASS_PITCH: return 1 / VOLTS_FULL_SCALE;          // 1.0/oct → 1 V/oct
     default: return 1;
   }
+}
+
+// ---- jack-kind guards --------------------------------------------------------
+// MIRRORS of the channel-map constants in
+// packages/web/src/lib/audio/modules/es9.ts (DC_INPUT_JACKS / JACK_CHANNEL_BASE)
+// — duplicated on purpose (see the header); the two must agree.
+
+/** ES-9 input channels 0..13 are the DC-coupled jacks; 14/15 are the S/PDIF
+ *  return (digital, 0 dBFS = 1.0, no volts to scale). */
+export const DC_INPUT_JACKS = 14;
+/** First ES-9 OUTPUT channel (0-based) that drives a physical DC-coupled jack
+ *  under the default routing (USB 9-16). Channels 0..7 feed the internal
+ *  mixer / phones / S-PDIF / ES-5 header — digital, always ×1. */
+export const JACK_CHANNEL_BASE = 8;
+
+/** One hw→browser sample for the RAW `in{n}` audio port. DC jacks scale
+ *  ±5 V → ±1 (the audio class); the S/PDIF pair passes ×1. */
+export function rawInSample(ch: number, v: number): number {
+  return ch < DC_INPUT_JACKS ? v * hwToBrowserScale(CLASS_AUDIO) : v;
+}
+
+/** One browser→hw sample for OUTPUT channel `ch`: usb1-8 (channels 0..7) pass
+ *  ×1 regardless of class; the physical jacks (8..15) are class-scaled. */
+export function outSample(ch: number, cls: number, v: number): number {
+  return ch < JACK_CHANNEL_BASE ? v : browserToHwSample(cls, v);
 }
 
 /** One browser→hw sample. Gate: anything at/above the app's GATE_HI (0.5)
