@@ -340,7 +340,9 @@ for (const note of NOTES) {
         const hz = spectralFundamental(new Float32Array(snap.samples), snap.sampleRate, note.hz);
         if (hz != null) cents.push(1200 * Math.log2(hz / note.hz));
       }
-      await page.waitForTimeout(90); // > the 2048-sample analyser span — fresh window each poll
+      // pacing: audio-out's terminal outputSnapshot tap is a 2048-sample analyser (audio-out.ts:317)
+      // = 43 ms at 48 kHz; 90 ms > one span, so every poll reads a fresh, non-overlapping window.
+      await page.waitForTimeout(90);
     }
     expect(polled, 'the terminal tap was polled').toBeGreaterThan(10);
     expect(cents.length, `the real clip→samsloop chain is AUDIBLE at the terminal output (measurable windows)`)
