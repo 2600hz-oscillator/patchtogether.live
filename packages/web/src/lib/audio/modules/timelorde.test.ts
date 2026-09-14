@@ -893,12 +893,40 @@ describe('timelordeDef.factory: the external-clock BPM lock is NON-DESTRUCTIVE',
     postMeasured(137);
     // The player turns the knob while the follower owns it (every user write —
     // knob, face cell, TAP, topbar surface — lands on setParam).
+    livePatch.nodes['timelorde-test']!.params.bpm = 90;
     handle.setParam?.('bpm', 90);
-    postMeasured(137); // the follower immediately takes the number back
+    // A steady external clock sends no further measurement message. The
+    // factory must retain its tempo without relying on hardware jitter.
+    expect(storedBpm()).toBe(137);
+    expect(handle.readParam?.('bpm')).toBe(137);
+    // The follower's own patch-store write returns through the reconciler.
+    // That echo must not replace the player's stashed 90 BPM.
+    handle.setParam?.('bpm', 137);
 
     unwireClockEdge();
     scanExternalFlag();
     expect(storedBpm(), 'the LATEST intent is restored, not the pre-lock 120').toBe(90);
+  });
+
+  it('a user write during dropout holds the last external tempo until unpatch', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    wireClockEdge();
+    scanExternalFlag();
+    postMeasured(137);
+    postMeasured(0);
+
+    livePatch.nodes['timelorde-test']!.params.bpm = 90;
+    handle.setParam?.('bpm', 90);
+    expect(storedBpm()).toBe(137);
+    expect(handle.readParam?.('bpm')).toBe(137);
+
+    unwireClockEdge();
+    scanExternalFlag();
+    expect(storedBpm()).toBe(90);
+    expect(handle.readParam?.('bpm')).toBe(90);
+    handle.setParam?.('bpm', 175);
+    expect(handle.readParam?.('bpm')).toBe(175);
   });
 
   it('NEGATIVE CONTROL: a rack that never had a clock cable is never written', async () => {
