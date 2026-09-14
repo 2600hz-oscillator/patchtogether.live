@@ -94,8 +94,9 @@ Reference chosen: ±5 V (Eurorack nominal, VCV's voltage standard, our cv
 class), not a line-level reference — see "Open owner decisions" for the
 numbers of the alternative. Line gear still lands at −9.2 dBFS (+4 dBu) /
 −21 dBFS (−10 dBV) after this change — a per-jack trim (bipolar,
-≈ −12..+24 dB, default 0, applied to the audio port only) is the follow-up,
-as a separate PR after hardware verification.
+≈ −12..+24 dB, default 0, applied to the audio port only) was the proposed
+follow-up. The owner chose a per-jack modular / line REFERENCE toggle instead,
+which shipped as ADR-020 and supersedes the trim.
 
 ## Consequences
 

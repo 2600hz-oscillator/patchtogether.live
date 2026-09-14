@@ -52,6 +52,7 @@ import { paintsReadout } from '$lib/ui/controls/knob-vocabulary-model';
 // see the entry itself for why eight identical enables are generated rather
 // than typed.
 import { MIXMSTRS_CHANNELS } from '$lib/audio/modules/mixmstrs';
+import { ES9_REF_PARAM_IDS } from '$lib/audio/modules/es9';
 // The spiro count spirographs' ACKNOWLEDGED_LATCHING entries are DERIVED from,
 // for the same reason as the mixmstrs channels — see the entry itself.
 import { SPIRO_COUNT_MAX, spiroParamId } from '$lib/video/modules/spirographs';
@@ -541,6 +542,20 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'linnstrument:keys_arp_latch',
     'linnstrument:pad_arp_latch',
     'linnstrument:join_policy',
+    // ES-9 `in{n}_ref` / `out{n}_ref`, 2026-09-14 (ADR-020, owner: "add a
+    // toggle on the card to set it to line per jack"). MODULAR (0, ±1.0 ≙
+    // ±5 V) vs LINE (1, ±1.0 ≙ +4 dBu) — which jack voltage the audio class
+    // means by unity.
+    //
+    // LATCHING, classified AT THE READ SITE. The worklet reads the ref as a
+    // plain per-sample level — `rawInSample(ch, v, ref)`, `InScaler.process`
+    // and `outSample(ch, cls, v, ref)` in packages/dsp — with no edge detector
+    // anywhere; it is a property of the GEAR on the jack, set once and left.
+    // A momentary render would snap a line-level jack back to modular the
+    // instant the pad was released, 9 dB down, which is the one behaviour
+    // nobody could use it for. DERIVED over the jack counts, mixmstrs-style,
+    // so a jack added upstream arrives already classified.
+    ...ES9_REF_PARAM_IDS.map((id) => `es9:${id}`),
     // SPECTROGRAPH, 2026-08-23 (cut B). `view` picks which COLORMAP the
     // on-surface preview pulls: COLOR (heat ramp) or B/W (inverted grayscale).
     //

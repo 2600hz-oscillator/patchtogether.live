@@ -36,7 +36,12 @@
 // NOMINAL — ±1.0 in the graph ≙ ±5 V at a DC-coupled jack, the same scale as
 // cv — so the worklet scales the audio port ×2 on the way in and ×0.5 on the
 // way out (ADR-019; until 2026-09-14 audio was ×1 and hardware arrived 6 dB
-// under every internal module). Because canConnect() forbids one port
+// under every internal module). Each DC jack ALSO carries a REFERENCE toggle
+// (`in{n}_ref` / `out{n}_ref`, modular | line; ADR-020, owner 2026-09-14
+// "add a toggle on the card to set it to line per jack"): under `line` the
+// audio class means ±1.0 ≙ +4 dBu (1.228 V RMS = 1.736 V peak), ×5.76 in and
+// ×0.174 out, so line-level gear reaches the same unity. Only the audio class
+// reads it; cv/pitch/gate carry volts. Because canConnect() forbids one port
 // serving both the audio and cv families, each hardware INPUT jack 1-14
 // exposes TWO ports — an `audio` port (±5 V → ±1.0) and a class-scaled `cv`
 // twin (cv ×2 = ±5 V→±1, the same scale; pitch ×10 = 1 V/oct→1.0/oct with
@@ -104,6 +109,22 @@ export const ES9_CLASS_OPTIONS: readonly ParamOption[] = ES9_CLASS_NAMES.map(
   (label, value) => ({ value, label }),
 );
 
+/** Per-jack audio REFERENCE — MUST mirror packages/dsp/src/lib/es9-bridge-core.ts
+ *  REF_MODULAR / REF_LINE (0 = modular: ±1.0 ≙ ±5 V, the default and
+ *  today's behaviour; 1 = line: ±1.0 ≙ +4 dBu = 1.736 V peak). Owner,
+ *  2026-09-14: "can we do eurorack nominal but add a toggle on the card to
+ *  set it to line per jack" (ADR-020). Only the AUDIO class reads it. */
+export const ES9_REF_MODULAR = 0;
+export const ES9_REF_LINE = 1;
+export const ES9_REF_NAMES = ['modular', 'line'] as const;
+/** The two references as a param ROSTER — derived like `ES9_CLASS_OPTIONS`
+ *  and for the same reason (a 2-option roster paints two captioned buttons at
+ *  the dock, not an anonymous switch). Dense: 2 options / 2 steps, so
+ *  `optionsExhaustive` must NOT be declared. */
+export const ES9_REF_OPTIONS: readonly ParamOption[] = ES9_REF_NAMES.map(
+  (label, value) => ({ value, label }),
+);
+
 const HW_CHANNELS = 16;
 const CV_TWIN_BASE = 16;
 /** DC-coupled input jacks (with cv twins); 15/16 are the S/PDIF return.
@@ -118,6 +139,16 @@ const DC_OUTPUT_JACKS = 8;
  *  mixer (main/phones), S/PDIF, and the ES-5 header. MIRRORED in
  *  packages/dsp/src/lib/es9-bridge-core.ts (JACK_CHANNEL_BASE). */
 const JACK_CHANNEL_BASE = 8;
+
+/** The 22 reference ids, DERIVED from the jack counts (never hand-listed):
+ *  es9.test.ts pins them equal to the `_ref` members of `es9Def.params` (the
+ *  literal lines below), and module-face-lint's ACKNOWLEDGED_LATCHING spreads
+ *  them. Sits after the jack counts on purpose — a `const` read before its
+ *  declaration is a TDZ ReferenceError at module load. */
+export const ES9_REF_PARAM_IDS: readonly string[] = [
+  ...Array.from({ length: DC_INPUT_JACKS }, (_, i) => `in${i + 1}_ref`),
+  ...Array.from({ length: DC_OUTPUT_JACKS }, (_, i) => `out${i + 1}_ref`),
+];
 
 /** Payload the card hands across on connect (null = detach). */
 export interface Es9AttachPayload {
@@ -152,6 +183,30 @@ export function es9ClassesFromParams(params: Record<string, number> | undefined)
     );
   }
   return { inClasses, outClasses };
+}
+
+/** Derive the worklet's 16-wide audio-REFERENCE arrays from the node's
+ *  params (sibling of `es9ClassesFromParams`; same channel map). Absent ids
+ *  default to modular, so a rack saved before ADR-020 reads exactly as it
+ *  did. The S/PDIF return (14/15) and the USB 1-8 feeds (0..7) are digital
+ *  and always emit modular here — the worklet's jack-kind guards ignore the
+ *  value on those channels anyway. */
+export function es9RefsFromParams(params: Record<string, number> | undefined): {
+  inRefs: number[];
+  outRefs: number[];
+} {
+  const p = params ?? {};
+  const inRefs: number[] = [];
+  const outRefs: number[] = [];
+  for (let c = 0; c < HW_CHANNELS; c++) {
+    inRefs.push(c < DC_INPUT_JACKS ? (p[`in${c + 1}_ref`] ?? ES9_REF_MODULAR) : ES9_REF_MODULAR);
+    outRefs.push(
+      c >= JACK_CHANNEL_BASE
+        ? (p[`out${c - JACK_CHANNEL_BASE + 1}_ref`] ?? ES9_REF_MODULAR)
+        : ES9_REF_MODULAR,
+    );
+  }
+  return { inRefs, outRefs };
 }
 
 /**
@@ -227,7 +282,7 @@ function inputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}`] =
-      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = ±1 → ±5 V, cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock).`;
+      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = ±1 → ±5 V, or ±1 → ±1.736 V with Out ${n} ref set to line for a line-level input; cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock).`;
   }
   const usbDefault: Record<number, string> = {
     1: 'the main outputs (via internal mix 1) and phones',
@@ -250,7 +305,7 @@ function outputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_INPUT_JACKS; n++) {
     docs[`in${n}`] =
-      `ES-9 hardware input jack ${n} as audio: float ±1.0 is ±5 V at the jack (Eurorack nominal, the same unity as every internal module; the jack's ±10 V full scale reads as ±2.0; +4 dBu line level reads about ±0.35, so line gear wants gain downstream). This is the audio-typed port — patch it to mixers, effects, AUDIO OUT, or a SCOPE.`;
+      `ES-9 hardware input jack ${n} as audio: float ±1.0 is ±5 V at the jack (Eurorack nominal, the same unity as every internal module; the jack's ±10 V full scale reads as ±2.0; +4 dBu line level reads about ±0.35 — or set In ${n} ref to line and +4 dBu reads ±1.0 instead). This is the audio-typed port — patch it to mixers, effects, AUDIO OUT, or a SCOPE.`;
     docs[`in${n}_cv`] =
       `ES-9 input jack ${n} as CV, scaled by the In ${n} class selector: cv maps ±5 V to the app's ±1 modulation range, pitch maps 1 V/oct onto the app's 1.0/oct (0 V ≙ C4), gate runs a 2 V/1 V hysteresis comparator and emits clean 0|1. Patch this twin into cv/pitch/gate inputs — e.g. a hardware Maths LFO into a filter's cutoff CV.`;
   }
@@ -265,11 +320,19 @@ function controlDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_INPUT_JACKS; n++) {
     docs[`in${n}_class`] =
-      `Signal class for input jack ${n}'s CV twin port (audio/cv/pitch/gate; default cv). Sets how hardware volts map onto app units on in${n}_cv: cv = ±5 V → ±1, pitch = 1 V/oct → 1.0/oct (0 V ≙ C4), gate = hysteresis comparator (rise ≥2 V, fall <1 V) → 0|1, audio = the same ±5 V → ±1 as the audio port (they differ only in how the twin fails on a stream hiccup: audio fades, cv holds). The audio in${n} port ignores this selector and always carries ±5 V → ±1.`;
+      `Signal class for input jack ${n}'s CV twin port (audio/cv/pitch/gate; default cv). Sets how hardware volts map onto app units on in${n}_cv: cv = ±5 V → ±1, pitch = 1 V/oct → 1.0/oct (0 V ≙ C4), gate = hysteresis comparator (rise ≥2 V, fall <1 V) → 0|1, audio = the same scaling as the audio port, ±5 V → ±1 or, with In ${n} ref set to line, 1.736 V → ±1 (they differ only in how the twin fails on a stream hiccup: audio fades, cv holds). The audio in${n} port ignores this selector and carries ±5 V → ±1, or ±1.736 V → ±1 with its ref set to line.`;
+  }
+  for (let n = 1; n <= DC_INPUT_JACKS; n++) {
+    docs[`in${n}_ref`] =
+      `Voltage reference for input jack ${n}'s AUDIO scaling (modular/line; default modular). modular: ±5 V at the jack reads ±1.0 (Eurorack nominal, the same unity as every internal module). line: +4 dBu (1.228 V RMS = 1.736 V peak) reads ±1.0, 9.2 dB of gain for line-level gear such as a mixer, interface or synth line out. Applies to the audio in${n} port and to in${n}_cv only when its class is audio; cv, pitch and gate twins carry volts and ignore it. Set it once for the gear on the jack and leave it.`;
   }
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}_class`] =
-      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = ±1 → ±5 V, the same scaling as cv) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
+      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = ±1 → ±5 V, the same scaling as cv, or ±1 → ±1.736 V with Out ${n} ref set to line) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
+  }
+  for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
+    docs[`out${n}_ref`] =
+      `Voltage reference for output jack ${n} when its class is audio (modular/line; default modular). modular: ±1.0 drives ±5 V at the jack (Eurorack nominal). line: ±1.0 drives ±1.736 V peak (+4 dBu), 9.2 dB down, for a line-level input such as a mixer channel or an interface line in. cv, pitch and gate classes carry volts and ignore it. Set it once for the gear on the jack and leave it.`;
   }
   docs['es9-connect-{n}'] =
     "Bring the hardware link up. Unlike a browser permission this is not a grant the page can ask for — the es9-bridge companion app has to be RUNNING on this machine, because Chromium can only reach an ES-9's first stereo pair through getUserMedia and cannot pick a channel range at all. The app owns CoreAudio's full 16-in/16-out and serves a localhost WebSocket; pressing CONNECT points this node at it. Until it answers, every jack on this module sits silent and harmless in the patch. The link belongs to the NODE, not to any view, so it survives collapsing the dock, switching surfaces and never opening this plate again — and pressing CONNECT on an already-live link simply restarts it at the engine's current sample rate, which is the one rate the ring may run at.";
@@ -285,7 +348,10 @@ function controlDocs(): Record<string, string> {
  * precede input classes: outputs default to audio, so hardware CV use requires
  * an explicit change; inputs already default to CV.
  *
- * Class selectors are grouped in rows of at most four to fit the dock. Keep
+ * GROUPED BY JACK, never by control type (owner ruling 2026-09-04): each
+ * jack's class selector and its modular/line ref toggle sit side by side, and
+ * a cluster is one PAIR of jacks (class, ref, class, ref — four cells), so
+ * column j means the same thing in every row of both console bands. Keep
  * jack-number captions: they distinguish otherwise identical controls.
  * The meter reads in1; the BRIDGE lamp distinguishes a disconnected bridge
  * from an unpatched, silent input.
@@ -298,11 +364,17 @@ export const ES9_FACE: ModuleFace = {
   order: [
     'es9-connect-{n}',
     'es9-disconnect-{n}',
-    'out1_class', 'out2_class', 'out3_class', 'out4_class',
-    'out5_class', 'out6_class', 'out7_class', 'out8_class',
-    'in1_class', 'in2_class', 'in3_class', 'in4_class', 'in5_class',
-    'in6_class', 'in7_class', 'in8_class', 'in9_class', 'in10_class',
-    'in11_class', 'in12_class', 'in13_class', 'in14_class',
+    'out1_class', 'out1_ref', 'out2_class', 'out2_ref',
+    'out3_class', 'out3_ref', 'out4_class', 'out4_ref',
+    'out5_class', 'out5_ref', 'out6_class', 'out6_ref',
+    'out7_class', 'out7_ref', 'out8_class', 'out8_ref',
+    'in1_class', 'in1_ref', 'in2_class', 'in2_ref',
+    'in3_class', 'in3_ref', 'in4_class', 'in4_ref',
+    'in5_class', 'in5_ref', 'in6_class', 'in6_ref',
+    'in7_class', 'in7_ref', 'in8_class', 'in8_ref',
+    'in9_class', 'in9_ref', 'in10_class', 'in10_ref',
+    'in11_class', 'in11_ref', 'in12_class', 'in12_ref',
+    'in13_class', 'in13_ref', 'in14_class', 'in14_ref',
   ],
   pages: [
     {
@@ -321,39 +393,53 @@ export const ES9_FACE: ModuleFace = {
       hint:
         'What each of the eight physical output jacks carries, which sets BOTH the voltage '
         + 'scaling on the way out (cv ±1 → ±5 V, pitch 1.0/oct → 1 V/oct, gate 0|1 → 0/+5 V, '
-        + 'audio ±1 → ±5 V) AND how the jack fails if the stream hiccups: cv and pitch HOLD '
-        + 'their last voltage, since a pitch collapsing to 0 V is a wrong note, while gate and '
-        + 'audio fall to zero, since a frozen gate is a stuck note or a stopped clock. They '
-        + 'default to audio, so sending a rack LFO to hardware means changing one.',
+        + 'audio ±1 → ±5 V, or ±1.736 V with the jack\'s ref on line: +4 dBu, for a line-level '
+        + 'input) AND how the jack fails if the stream hiccups: cv and pitch HOLD their last '
+        + 'voltage, since a pitch collapsing to 0 V is a wrong note, while gate and audio fall '
+        + 'to zero, since a frozen gate is a stuck note or a stopped clock. They default to '
+        + 'audio and modular, so sending a rack LFO to hardware means changing one.',
       controls: [
-        'out1_class', 'out2_class', 'out3_class', 'out4_class',
-        'out5_class', 'out6_class', 'out7_class', 'out8_class',
+        'out1_class', 'out1_ref', 'out2_class', 'out2_ref',
+        'out3_class', 'out3_ref', 'out4_class', 'out4_ref',
+        'out5_class', 'out5_ref', 'out6_class', 'out6_ref',
+        'out7_class', 'out7_ref', 'out8_class', 'out8_ref',
       ],
       clusters: [
-        { label: 'jacks 1-4', controls: ['out1_class', 'out2_class', 'out3_class', 'out4_class'] },
-        { label: 'jacks 5-8', controls: ['out5_class', 'out6_class', 'out7_class', 'out8_class'] },
+        { label: 'jacks 1-2', controls: ['out1_class', 'out1_ref', 'out2_class', 'out2_ref'] },
+        { label: 'jacks 3-4', controls: ['out3_class', 'out3_ref', 'out4_class', 'out4_ref'] },
+        { label: 'jacks 5-6', controls: ['out5_class', 'out5_ref', 'out6_class', 'out6_ref'] },
+        { label: 'jacks 7-8', controls: ['out7_class', 'out7_ref', 'out8_class', 'out8_ref'] },
       ],
     },
     {
       id: 'in',
-      label: 'in twins',
+      label: 'in jacks',
       hint:
-        'How each hardware input jack\'s CV TWIN maps volts onto app units — cv ±5 V → ±1, pitch '
-        + '1 V/oct → 1.0/oct with 0 V ≙ C4, gate through a 2 V / 1 V hysteresis comparator to a '
-        + 'clean 0|1, audio the same ±5 V → ±1 as cv (only the hiccup policy differs: audio fades, '
-        + 'cv holds). It changes the in{n}_cv port only; the audio in{n} port beside it always '
-        + 'carries ±1.0 ≙ ±5 V whatever this says, so a ±10 V signal reads ±2.0 there. cv is the '
-        + 'default because a modular patch into a rack param is the case this twin exists for.',
+        'Each hardware input jack\'s CV TWIN class — cv ±5 V → ±1, pitch 1 V/oct → 1.0/oct with '
+        + '0 V ≙ C4, gate through a 2 V / 1 V hysteresis comparator to a clean 0|1, audio the '
+        + 'same scale as the audio port (only the hiccup policy differs: audio fades, cv holds) — '
+        + 'beside the jack\'s REF: which volts the audio in{n} port reads as ±1.0. modular is '
+        + '±5 V ≙ ±1.0 (a ±10 V signal reads ±2.0); line is +4 dBu (1.736 V peak) ≙ ±1.0, for '
+        + 'line-level gear. The ref reaches the twin only when its class is audio; cv, pitch and '
+        + 'gate twins carry volts. cv and modular are the defaults because a modular patch into a '
+        + 'rack param is the case this twin exists for.',
       controls: [
-        'in1_class', 'in2_class', 'in3_class', 'in4_class', 'in5_class',
-        'in6_class', 'in7_class', 'in8_class', 'in9_class', 'in10_class',
-        'in11_class', 'in12_class', 'in13_class', 'in14_class',
+        'in1_class', 'in1_ref', 'in2_class', 'in2_ref',
+        'in3_class', 'in3_ref', 'in4_class', 'in4_ref',
+        'in5_class', 'in5_ref', 'in6_class', 'in6_ref',
+        'in7_class', 'in7_ref', 'in8_class', 'in8_ref',
+        'in9_class', 'in9_ref', 'in10_class', 'in10_ref',
+        'in11_class', 'in11_ref', 'in12_class', 'in12_ref',
+        'in13_class', 'in13_ref', 'in14_class', 'in14_ref',
       ],
       clusters: [
-        { label: 'jacks 1-4', controls: ['in1_class', 'in2_class', 'in3_class', 'in4_class'] },
-        { label: 'jacks 5-8', controls: ['in5_class', 'in6_class', 'in7_class', 'in8_class'] },
-        { label: 'jacks 9-12', controls: ['in9_class', 'in10_class', 'in11_class', 'in12_class'] },
-        { label: 'jacks 13-14', controls: ['in13_class', 'in14_class'] },
+        { label: 'jacks 1-2', controls: ['in1_class', 'in1_ref', 'in2_class', 'in2_ref'] },
+        { label: 'jacks 3-4', controls: ['in3_class', 'in3_ref', 'in4_class', 'in4_ref'] },
+        { label: 'jacks 5-6', controls: ['in5_class', 'in5_ref', 'in6_class', 'in6_ref'] },
+        { label: 'jacks 7-8', controls: ['in7_class', 'in7_ref', 'in8_class', 'in8_ref'] },
+        { label: 'jacks 9-10', controls: ['in9_class', 'in9_ref', 'in10_class', 'in10_ref'] },
+        { label: 'jacks 11-12', controls: ['in11_class', 'in11_ref', 'in12_class', 'in12_ref'] },
+        { label: 'jacks 13-14', controls: ['in13_class', 'in13_ref', 'in14_class', 'in14_ref'] },
       ],
     },
   ],
@@ -459,6 +545,34 @@ export const es9Def: AudioModuleDef = {
   { id: 'out6_class', label: 'Out 6 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
   { id: 'out7_class', label: 'Out 7 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
   { id: 'out8_class', label: 'Out 8 class', defaultValue: 0, min: 0, max: 3, curve: 'discrete', options: ES9_CLASS_OPTIONS },
+  // 0=modular 1=line — the audio REFERENCE per DC jack (ADR-020). NEW ids,
+  // all default 0 = modular = the ADR-019 behaviour, so no saved rack moves
+  // (audio-runtime contract: never re-interpret an existing id). Only the
+  // audio class reads it. LITERAL lines like the class rows above (the docs
+  // extractor is a regex); ES9_REF_PARAM_IDS is the derived twin the tests
+  // pin these against.
+  { id: 'in1_ref', label: 'In 1 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in2_ref', label: 'In 2 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in3_ref', label: 'In 3 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in4_ref', label: 'In 4 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in5_ref', label: 'In 5 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in6_ref', label: 'In 6 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in7_ref', label: 'In 7 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in8_ref', label: 'In 8 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in9_ref', label: 'In 9 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in10_ref', label: 'In 10 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in11_ref', label: 'In 11 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in12_ref', label: 'In 12 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in13_ref', label: 'In 13 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'in14_ref', label: 'In 14 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out1_ref', label: 'Out 1 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out2_ref', label: 'Out 2 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out3_ref', label: 'Out 3 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out4_ref', label: 'Out 4 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out5_ref', label: 'Out 5 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out6_ref', label: 'Out 6 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out7_ref', label: 'Out 7 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
+  { id: 'out8_ref', label: 'Out 8 ref', defaultValue: 0, min: 0, max: 1, curve: 'discrete', options: ES9_REF_OPTIONS },
   ],
 
   face: ES9_FACE,
@@ -478,7 +592,7 @@ export const es9Def: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: an audio port (±1.0 ≙ ±5 V, Eurorack nominal — the same unity as every internal module) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors (audio ±1.0 → ±5 V); cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate\'s BRIDGE lamp says whether it answered, and CONNECT is on the module\'s tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
+      "Patches a REAL Eurorack system into the rack, both directions, through an Expert Sleepers ES-9 and the es9-bridge native companion app (macOS; runs at ws://127.0.0.1:9209). All 16 hardware inputs and 16 USB output channels are individually patchable — audio AND CV, because the ES-9's jacks are DC-coupled: send a hardware Maths LFO into any cv input here, or send a patchtogether LFO out to a hardware VCA. Each hardware input jack 1-14 has two ports: an audio port (±1.0 ≙ ±5 V, Eurorack nominal — the same unity as every internal module — or ±1.0 ≙ +4 dBu line level with the jack's ref toggle set to line) and a class-scaled CV twin whose selector (audio/cv/pitch/gate) maps volts onto app conventions (±5 V→±1 cv, 1 V/oct→1.0/oct pitch with 0 V ≙ C4, clean 0|1 gates via a hysteresis comparator). The 8 hardware output jacks take audio or CV-family cables directly, inverse-scaled by their own class selectors (audio ±1.0 → ±5 V, or → ±1.736 V with the jack's ref on line); cv-ish outputs HOLD their last voltage if the connection hiccups (a CV snapping to 0 V would yank every patched hardware parameter), audio outputs fade. Audio never touches the main thread — a transport Worker owns the localhost WebSocket and SharedArrayBuffer rings feed the audio thread — so canvas jank can't glitch the hardware stream. Requires the native bridge app running (Chromium; the faceplate\'s BRIDGE lamp says whether it answered, and CONNECT is on the module\'s tile as well as its dock plate). Without it the module sits silent and harmless in the patch.",
     inputs: inputDocs(),
     outputs: outputDocs(),
     controls: controlDocs(),
@@ -512,10 +626,11 @@ export const es9Def: AudioModuleDef = {
     worklet.connect(pin, 0);
     pin.connect(ctx.destination);
 
-    // Initial per-jack classes from persisted params.
+    // Initial per-jack classes + audio references from persisted params (one
+    // per-jack config message; the worklet applies whichever fields are set).
     const pushClasses = (params: Record<string, number> | undefined) => {
       const { inClasses, outClasses } = es9ClassesFromParams(params);
-      worklet.port.postMessage({ type: 'classes', inClasses, outClasses });
+      worklet.port.postMessage({ type: 'classes', inClasses, outClasses, ...es9RefsFromParams(params) });
     };
     pushClasses(node.params);
 
@@ -559,10 +674,16 @@ export const es9Def: AudioModuleDef = {
       inputs: inputsMap,
       outputs: outputsMap,
       setParam(paramId, value) {
-        if (/^(in\d+|out\d+)_class$/.test(paramId)) {
+        // `_ref` edits reach the worklet through the same per-jack message;
+        // a ref id not admitted here would be silently dead after the first
+        // edit (the initial push only sees node.params).
+        if (/^(in\d+|out\d+)_(class|ref)$/.test(paramId)) {
           liveParams[paramId] = value;
           pushClasses(liveParams);
-          // ⚠ AND PUSH THE BRIDGE'S FAILURE POLICY. These are two different
+          if (!/_class$/.test(paramId)) return;
+          // ⚠ AND PUSH THE BRIDGE'S FAILURE POLICY (class edits only — the
+          // native HOLD/FADE policy is class-derived; a ref edit changes the
+          // scale, not the policy). These are two different
           // messages to two different consumers: `classes` reaches the
           // AudioWorklet's per-jack voltage scaling, `config` reaches the
           // NATIVE APP's underrun policy (HOLD vs FADE). Only the first used

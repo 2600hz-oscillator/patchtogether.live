@@ -5056,7 +5056,8 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // STILL HAD TWO FALSE CLAUSES — which is worth recording precisely because the
   // preceding ten were wrong in bulk and this one is not. "Zero params — the
   // surface IS the bridge control plane" is exactly right, and it is the reason
-  // these faces are two cells rather than es9's twenty-four. What it got wrong:
+  // these faces are two cells rather than es9's per-jack class + reference
+  // selectors. What it got wrong:
   //
   //   * "plugin picker with text filter (THE TYPED ENTRY)" — the filter is NOT
   //     a `ShellEntryCell`. That cell's probe requires a `node.data` observable,
