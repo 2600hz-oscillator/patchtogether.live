@@ -1,7 +1,7 @@
 // Protocol-faithful Node stub of the vst-bridge helper (control plane v1) —
 // the harness's Tier-A device layer, spawned through the REAL supervisor via
 // injected binary paths (plain node, no Electron). Spec of record:
-// patchtogether.nativeapps Sources/VSTBridgeCore/VSTProtocol.swift (session
+// apps/helpers/nativeapps/Sources/VSTBridgeCore/VSTProtocol.swift (session
 // model in its header) + vst-protocol.ts. Faithful here:
 //
 //   - loopback bind + the default Origin allowlist (403 otherwise),

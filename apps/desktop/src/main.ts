@@ -304,7 +304,8 @@ async function boot(): Promise<void> {
 // SIGINT and never read stdin, so a SIGKILL'd or crashed shell DOES orphan the
 // real es9/vst bridges on 9209/9309. That is precisely the stale-listener the
 // supervisor's port-ownership check now refuses to adopt; adding the guard to
-// the two helper repos is the remaining fix and lives in their commits.
+// the two in-tree helper packages (apps/helpers/es9, apps/helpers/nativeapps)
+// is the remaining fix.
 app.on('will-quit', () => {
   for (const sup of supervisors) sup.stop();
 });

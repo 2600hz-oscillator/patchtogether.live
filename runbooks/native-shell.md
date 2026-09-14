@@ -64,19 +64,60 @@ those cases. Hardware validation remains a manual review step.
 
 ## Native helpers
 
+The two Swift bridges live **in-tree** — `apps/helpers/es9` (es9-bridge) and
+`apps/helpers/nativeapps` (BridgeKit + vst-bridge) — folded in from their
+standalone repos with their history on 2026-09-14 (owner: "vst, es9 and etc
+should all be in main repo now as part of our native chromium app effort").
+There are no submodules to initialize; a helper change is an ordinary PR here.
+Each package keeps its own `README.md`, `LICENSE` (MIT) and `.gitignore`
+(`.build/`); `apps/helpers/nativeapps/CLAUDE.md` is that package's own agent
+notes — the root `AGENTS.md` remains the authority.
+
 ```sh
-flox activate -- task helpers:build       # macOS only
+flox activate -- task helpers:build       # macOS only — compiles ONLY, nothing starts
 ```
 
-Initializes the two submodules and runs `swift build -c release` in each, plus
-`make -C tools/pt-ptz`.
+Runs `swift build -c release` in each package, plus `make -C tools/pt-ptz`.
+`apps/desktop/src/main.ts` (`resolveHelperBinary`) spawns the built binaries
+from `apps/helpers/<pkg>/.build/release/` when the shell runs unpackaged.
+
+### Starting and stopping the bridges by hand
+
+```sh
+flox activate -- task helpers:start                      # both, detached (es9 9209, vst 9309)
+flox activate -- task helpers:es9:start -- --synthetic   # one, with flags (no ES-9 needed)
+flox activate -- task helpers:vst:start
+flox activate -- task helpers:status                     # listening? which PID? ours? log path
+flox activate -- task helpers:stop                       # both; helpers:es9:stop / helpers:vst:stop for one
+```
+
+`scripts/helpers.sh` runs the **built** binary detached (`nohup`), building a
+missing one first, and keeps the PID, port and log under `.helpers/`
+(gitignored, like `.dev-server/`). `start` prints the harness
+(`http://127.0.0.1:<port>/`) and protocol (`ws://127.0.0.1:<port>/ws`) URLs
+once the socket is bound, and **refuses** — naming the PID — when something
+already listens on the port; ports come from `--port N` in the args, else
+`PT_HELPER_ES9_PORT` / `PT_HELPER_VST_PORT` (the same seam the shell reads),
+else 9209/9309. `stop` sends SIGINT to the recorded PID (both bridges handle
+it), escalates TERM → KILL on a bounded wait, then verifies the port is free;
+with no PID file it falls back to the port's listener **only when that
+listener's executable is this checkout's helper** — anyone else's bridge (the
+owner's hardware test, a sibling worktree) is named, not killed
+(`HELPERS_FORCE=1` overrides). A start without a stop is the foot-gun the es9
+README warns about: a bridge that outlives its terminal is reparented to
+launchd and keeps holding the port and the ES-9.
 
 ### Secrets gate — run before EVERY push of new or rewritten helper history
 
-The helper repos are public. Run this per repo, at the time of the push; never
-cite a previous run as the record.
+This repo is public, and so are the two standalone helper repos the packages
+were imported from (frozen at the import commits; archiving them is an owner
+action). Run this at the time of the push; never cite a previous run as the
+record.
 
-1. `flox activate -- git -C <repo> log -p --all > <scratch>/audit.txt`, then grep
+1. `flox activate -- git log -p -- apps/helpers > <scratch>/audit.txt` for
+   history written in-tree (the pre-fold history sits behind the second parent
+   of each `chore(helpers): fold …` merge and was audited at the fold; in a
+   standalone repo use `log -p --all`), then grep
    for keys, tokens, passwords, `.env`, PEM blocks, serial numbers, absolute home
    paths, and user identifiers/emails.
 2. Repeat the grep over the working tree, including untracked files

@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ES-9 bridge harness</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #14161a; color: #d8dce2; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header { padding: 10px 16px; background: #1b1e24; border-bottom: 1px solid #2a2e36; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  header b { color: #fff; }
+  .pill { padding: 2px 8px; border-radius: 10px; background: #2a2e36; }
+  .pill.ok { background: #14532d; color: #bbf7d0; }
+  .pill.bad { background: #7f1d1d; color: #fecaca; }
+  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; max-width: 1400px; }
+  section { background: #1b1e24; border: 1px solid #2a2e36; border-radius: 8px; padding: 12px; }
+  section h2 { margin: 0 0 10px; font-size: 13px; color: #93c5fd; text-transform: uppercase; letter-spacing: .08em; }
+  .full { grid-column: 1 / -1; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { padding: 2px 6px; text-align: left; white-space: nowrap; }
+  th { color: #8b93a1; font-weight: normal; }
+  .meter { width: 110px; height: 9px; background: #0d0f12; border-radius: 4px; overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22c55e, #eab308 80%, #ef4444); transition: width 90ms linear; }
+  .val { width: 74px; display: inline-block; text-align: right; color: #9ca3af; }
+  button, select, input[type=range] { background: #2a2e36; color: #d8dce2; border: 1px solid #3a3f4a; border-radius: 5px; padding: 3px 8px; font: inherit; }
+  button:hover { background: #343946; cursor: pointer; }
+  button.on { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+  canvas { width: 100%; height: 180px; background: #0d0f12; border-radius: 6px; display: block; }
+  .muted { color: #6b7280; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+</style>
+</head>
+<body>
+<header>
+  <b>ES-9 bridge harness</b>
+  <span id="conn" class="pill bad">disconnected</span>
+  <span id="dev" class="pill">—</span>
+  <span>rtt <span id="rtt" class="muted">—</span></span>
+  <span>ctx <span id="ctxrate" class="muted">—</span></span>
+  <span>buf <span id="occ" class="muted">—</span></span>
+  <span>xruns <span id="xruns" class="muted">—</span></span>
+  <button id="startAudio">start audio</button>
+</header>
+<main>
+  <section class="full">
+    <h2>Scope <span class="muted" id="scopeInfo"></span></h2>
+    <div class="row">
+      channel <select id="scopeCh"></select>
+      window <select id="scopeWin">
+        <option value="0.05">50 ms</option>
+        <option value="0.2">200 ms</option>
+        <option value="2" selected>2 s</option>
+        <option value="8">8 s</option>
+      </select>
+      <span class="muted">±1.0 float = ±10 V at the jacks</span>
+      <span id="scopeVal" class="val"></span>
+    </div>
+    <canvas id="scope" width="1320" height="180"></canvas>
+  </section>
+
+  <section>
+    <h2>ES-9 inputs → browser</h2>
+    <div class="row muted">subscribe = stream this channel here (scope/monitor)</div>
+    <table id="inputs"></table>
+  </section>
+
+  <section>
+    <h2>Browser → ES-9 outputs</h2>
+    <div class="row muted">generator runs in-page; mode cv = hold-on-underrun, bit-transparent</div>
+    <table id="outputs"></table>
+    <div class="row">
+      <b>Loopback latency test:</b>
+      out <select id="latOut"></select> → patch cable → in <select id="latIn"></select>
+      <button id="latGo">measure</button>
+      <span id="latResult" class="muted">—</span>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+// ---------------------------------------------------------------- protocol
+const HDR = 20, TYPE_AUDIO = 0x01, FLAG_PLANAR = 0x01;
+
+function encodeBlock(seq, sampleTime, mask, frames, planes) {
+  const nCh = planes.length;
+  const buf = new ArrayBuffer(HDR + nCh * frames * 4);
+  const dv = new DataView(buf);
+  dv.setUint8(0, TYPE_AUDIO); dv.setUint8(1, FLAG_PLANAR);
+  dv.setUint16(2, seq & 0xffff, true);
+  dv.setBigUint64(4, BigInt(sampleTime), true);
+  dv.setUint32(12, mask >>> 0, true);
+  dv.setUint16(16, frames, true); dv.setUint16(18, 0, true);
+  let off = HDR;
+  for (const p of planes) { new Float32Array(buf, off, frames).set(p.subarray(0, frames)); off += frames * 4; }
+  return buf;
+}
+
+function decodeBlock(buf) {
+  const dv = new DataView(buf);
+  if (buf.byteLength < HDR || dv.getUint8(0) !== TYPE_AUDIO) return null;
+  const mask = dv.getUint32(12, true), frames = dv.getUint16(16, true);
+  const chans = [];
+  for (let c = 0; c < 32; c++) if (mask & (1 << c)) chans.push(c);
+  if (buf.byteLength !== HDR + chans.length * frames * 4) return null;
+  const planes = new Map();
+  let off = HDR;
+  for (const c of chans) { planes.set(c, new Float32Array(buf, off, frames)); off += frames * 4; }
+  return { frames, planes };
+}
+
+// ---------------------------------------------------------------- state
+let ws = null, info = null, ctx = null, workletNode = null;
+let seq = 0, sentSamples = 0, genAcc = 0, lastGenTime = 0;
+const subs = new Set([0, 1]);          // subscribed input channels
+let monitorL = 0, monitorR = 1;        // channels sent to speakers
+const gens = new Map();                // outCh -> {kind, level, phase, mode}
+let latState = null;
+
+const $ = id => document.getElementById(id);
+const el = (tag, html) => { const e = document.createElement(tag); e.innerHTML = html; return e; };
+
+// ---------------------------------------------------------------- scope
+const scopeBuf = new Float32Array(1 << 18);   // decimated samples, ring
+let scopeWrite = 0, scopeDecim = 4, scopeCount = 0, lastSampleVal = 0;
+
+function scopePush(plane) {
+  for (let i = 0; i < plane.length; i += scopeDecim) {
+    scopeBuf[scopeWrite++ & (scopeBuf.length - 1)] = plane[i];
+  }
+  scopeCount += plane.length;
+  lastSampleVal = plane[plane.length - 1];
+}
+
+function drawScope() {
+  const cv = $("scope"), g = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  g.fillStyle = "#0d0f12"; g.fillRect(0, 0, W, H);
+  g.strokeStyle = "#23272f";
+  g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  if (info) {
+    const winSec = parseFloat($("scopeWin").value);
+    const rate = ctx ? ctx.sampleRate : 48000;
+    const n = Math.min(Math.floor(winSec * rate / scopeDecim), scopeBuf.length);
+    g.strokeStyle = "#4ade80"; g.lineWidth = 1.5; g.beginPath();
+    for (let x = 0; x < W; x++) {
+      const idx = scopeWrite - n + Math.floor(x / W * n);
+      const v = scopeBuf[idx & (scopeBuf.length - 1)];
+      const y = H / 2 - v * (H / 2 - 6);
+      if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    $("scopeVal").textContent = lastSampleVal.toFixed(4) + " (" + (lastSampleVal * 10).toFixed(2) + " V)";
+  }
+  requestAnimationFrame(drawScope);
+}
+requestAnimationFrame(drawScope);
+
+// ---------------------------------------------------------------- audio out (monitor) worklet
+const workletSrc = `
+class BridgeMonitor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.cap = 1 << 15;                  // 32768-sample ring per side
+    this.l = new Float32Array(this.cap);
+    this.r = new Float32Array(this.cap);
+    this.w = 0; this.rd = 0;
+    this.target = 2048;                  // ~43 ms at 48 k
+    this.port.onmessage = (e) => {
+      const { l, r } = e.data;
+      for (let i = 0; i < l.length; i++) {
+        if (this.w - this.rd >= this.cap) break;   // full: drop newest
+        this.l[this.w & (this.cap - 1)] = l[i];
+        this.r[this.w & (this.cap - 1)] = r[i];
+        this.w++;
+      }
+      // Way over target (scheduling burp): slip forward to re-center.
+      if (this.w - this.rd > this.target * 3) this.rd = this.w - this.target;
+    };
+  }
+  process(_inputs, outputs) {
+    const oL = outputs[0][0], oR = outputs[0][1] || outputs[0][0];
+    for (let i = 0; i < oL.length; i++) {
+      if (this.rd < this.w) {
+        oL[i] = this.l[this.rd & (this.cap - 1)];
+        oR[i] = this.r[this.rd & (this.cap - 1)];
+        this.rd++;
+      } else { oL[i] = 0; oR[i] = 0; }
+    }
+    return true;
+  }
+}
+registerProcessor("bridge-monitor", BridgeMonitor);
+`;
+
+async function startAudio() {
+  if (ctx) return;
+  ctx = new AudioContext({ latencyHint: "interactive" });
+  const url = URL.createObjectURL(new Blob([workletSrc], { type: "application/javascript" }));
+  await ctx.audioWorklet.addModule(url);
+  workletNode = new AudioWorkletNode(ctx, "bridge-monitor", { outputChannelCount: [2] });
+  workletNode.connect(ctx.destination);
+  $("ctxrate").textContent = ctx.sampleRate + " Hz";
+  $("startAudio").classList.add("on");
+  $("startAudio").textContent = "audio running";
+  connect();
+}
+$("startAudio").onclick = startAudio;
+
+// ---------------------------------------------------------------- websocket
+function connect() {
+  ws = new WebSocket("ws://" + location.host + "/ws");
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    $("conn").textContent = "connected"; $("conn").className = "pill ok";
+    ws.send(JSON.stringify({ type: "hello", rate: ctx.sampleRate, name: "harness" }));
+  };
+  ws.onclose = () => {
+    $("conn").textContent = "disconnected"; $("conn").className = "pill bad";
+    info = null;
+    setTimeout(() => { if (ctx) connect(); }, 1500);
+  };
+  ws.onmessage = (e) => {
+    if (typeof e.data === "string") { handleControl(JSON.parse(e.data)); return; }
+    const block = decodeBlock(e.data);
+    if (!block) return;
+    handleAudio(block);
+  };
+}
+
+function handleControl(msg) {
+  if (msg.type === "deviceInfo") {
+    info = msg;
+    $("dev").textContent = msg.name + " " + msg.inputChannels + "×" + msg.outputChannels + " @ " + msg.rate + " Hz";
+    buildTables();
+    sendConfig();
+    lastGenTime = performance.now();
+    setInterval(genTick, 10);
+    setInterval(() => ws && ws.readyState === 1 &&
+      ws.send(JSON.stringify({ type: "ping", t: performance.now() })), 2000);
+  } else if (msg.type === "meters") {
+    updateMeters(msg);
+  } else if (msg.type === "pong") {
+    $("rtt").textContent = (performance.now() - msg.t).toFixed(1) + " ms";
+  } else if (msg.type === "status") {
+    if (msg.state === "busy") $("dev").textContent = "BUSY: " + (msg.detail || "");
+  }
+}
+
+function handleAudio(block) {
+  const sc = parseInt($("scopeCh").value || "0");
+  if (block.planes.has(sc)) scopePush(block.planes.get(sc));
+  if (workletNode) {
+    const l = block.planes.get(monitorL), r = block.planes.get(monitorR);
+    if (l || r) {
+      const n = block.frames;
+      const L = l ? Float32Array.from(l) : new Float32Array(n);
+      const R = r ? Float32Array.from(r) : (l ? Float32Array.from(l) : new Float32Array(n));
+      workletNode.port.postMessage({ l: L, r: R }, [L.buffer, R.buffer]);
+    }
+  }
+  if (latState && latState.phase === "armed") {
+    const p = block.planes.get(latState.inCh);
+    if (p) for (let i = 0; i < p.length; i++) {
+      if (Math.abs(p[i]) > 0.25) {
+        $("latResult").textContent = (performance.now() - latState.t0).toFixed(1) +
+          " ms round trip (browser → ES-9 out → cable → ES-9 in → browser)";
+        latState = null;
+        sendConfig();     // release the claimed output channel
+        break;
+      }
+    }
+    if (latState && performance.now() - latState.t0 > 4000) {
+      $("latResult").textContent = "no signal — check the patch cable";
+      latState = null;
+      sendConfig();
+    }
+  }
+}
+
+// ---------------------------------------------------------------- config
+function sendConfig() {
+  if (!ws || ws.readyState !== 1 || !info) return;
+  let inputMask = 0; for (const c of subs) inputMask |= 1 << c;
+  let outputMask = 0; const modes = {};
+  for (const [c, gen] of gens) if (gen.kind !== "off") {
+    outputMask |= 1 << c;
+    modes[String(c)] = gen.mode;
+  }
+  if (latState) { outputMask |= 1 << latState.outCh; modes[String(latState.outCh)] = "audio"; }
+  ws.send(JSON.stringify({ type: "config", inputMask, outputMask, outputModes: modes }));
+}
+
+// ---------------------------------------------------------------- generators
+function genTick() {
+  if (!ws || ws.readyState !== 1 || !info || !ctx) return;
+  const now = performance.now();
+  genAcc += (now - lastGenTime) / 1000 * ctx.sampleRate;
+  lastGenTime = now;
+  let n = Math.floor(genAcc);
+  if (n <= 0) return;
+  if (n > 4096) { n = 4096; genAcc = 0; }  // tab was throttled: drop the backlog
+  else genAcc -= n;                        // (backlogged max-blocks would overfill the jitter buffer)
+
+  const active = [...gens.entries()].filter(([, g]) => g.kind !== "off");
+  const impulse = latState && latState.phase === "fire" ? latState : null;
+  if (!active.length && !impulse) { sentSamples += n; return; }
+
+  let mask = 0; const planes = [];
+  const chans = new Set(active.map(([c]) => c));
+  if (impulse) chans.add(impulse.outCh);
+  const sorted = [...chans].sort((a, b) => a - b);
+  for (const c of sorted) {
+    const p = new Float32Array(n);
+    const g = gens.get(c);
+    if (g && g.kind !== "off") {
+      const f = { sine440: 440, sine1k: 1000, lfo05: 0.5, lfo2: 2 }[g.kind];
+      for (let i = 0; i < n; i++) {
+        if (g.kind === "dc") { p[i] = g.level; continue; }
+        p[i] = Math.sin(2 * Math.PI * g.phase) * g.level;
+        g.phase += f / ctx.sampleRate;
+        if (g.phase >= 1) g.phase -= 1;
+      }
+    }
+    if (impulse && c === impulse.outCh) {
+      const len = Math.min(Math.floor(ctx.sampleRate * 0.002), n);
+      for (let i = 0; i < len; i++) p[i] = 0.9;
+      impulse.phase = "armed";
+      impulse.t0 = performance.now();
+    }
+    mask |= 1 << c;
+    planes.push(p);
+  }
+  ws.send(encodeBlock(seq++, sentSamples, mask, n, planes));
+  sentSamples += n;
+}
+
+// ---------------------------------------------------------------- UI build
+function buildTables() {
+  const inT = $("inputs"), outT = $("outputs");
+  inT.innerHTML = "<tr><th></th><th>label</th><th>meter</th><th>dBFS</th><th>sub</th><th>mon L</th><th>mon R</th></tr>";
+  outT.innerHTML = "<tr><th></th><th>label</th><th>gen</th><th>lvl</th><th>mode</th><th>meter</th><th>dBFS</th></tr>";
+  const scopeSel = $("scopeCh"), latIn = $("latIn"), latOut = $("latOut");
+  scopeSel.innerHTML = latIn.innerHTML = latOut.innerHTML = "";
+
+  for (let c = 0; c < info.inputChannels; c++) {
+    const tr = el("tr",
+      `<td class="muted">${c + 1}</td><td>${info.inputLabels[c]}</td>` +
+      `<td><div class="meter"><i id="im${c}"></i></div></td><td class="val" id="imv${c}">—</td>` +
+      `<td><button id="sub${c}" class="${subs.has(c) ? "on" : ""}">sub</button></td>` +
+      `<td><button id="monL${c}" class="${monitorL === c ? "on" : ""}">L</button></td>` +
+      `<td><button id="monR${c}" class="${monitorR === c ? "on" : ""}">R</button></td>`);
+    inT.appendChild(tr);
+    $("sub" + c).onclick = () => { subs.has(c) ? subs.delete(c) : subs.add(c); $("sub" + c).classList.toggle("on"); sendConfig(); };
+    $("monL" + c).onclick = () => { monitorL = c; refreshMon(); };
+    $("monR" + c).onclick = () => { monitorR = c; refreshMon(); };
+    scopeSel.appendChild(el("option", `${c + 1}: ${info.inputLabels[c]}`)).value = c;
+    latIn.appendChild(el("option", `${c + 1}`)).value = c;
+  }
+  for (let c = 0; c < info.outputChannels; c++) {
+    gens.set(c, { kind: "off", level: 0.5, phase: 0, mode: "cv" });
+    const tr = el("tr",
+      `<td class="muted">${c + 1}</td><td>${info.outputLabels[c]}</td>` +
+      `<td><select id="gen${c}"><option value="off">off</option><option value="sine440">sine 440</option>` +
+      `<option value="sine1k">sine 1k</option><option value="lfo05">LFO 0.5 Hz</option>` +
+      `<option value="lfo2">LFO 2 Hz</option><option value="dc">DC</option></select></td>` +
+      `<td><input id="lvl${c}" type="range" min="-1" max="1" step="0.01" value="0.5" style="width:80px"></td>` +
+      `<td><select id="mode${c}"><option value="cv">cv</option><option value="audio">audio</option></select></td>` +
+      `<td><div class="meter"><i id="om${c}"></i></div></td><td class="val" id="omv${c}">—</td>`);
+    outT.appendChild(tr);
+    $("gen" + c).onchange = (e) => { gens.get(c).kind = e.target.value; sendConfig(); };
+    $("lvl" + c).oninput = (e) => { gens.get(c).level = parseFloat(e.target.value); };
+    $("mode" + c).onchange = (e) => { gens.get(c).mode = e.target.value; sendConfig(); };
+    latOut.appendChild(el("option", `${c + 1}`)).value = c;
+  }
+  $("scopeCh").onchange = () => { const c = parseInt($("scopeCh").value); if (!subs.has(c)) { subs.add(c); $("sub" + c)?.classList.add("on"); sendConfig(); } };
+}
+
+function refreshMon() {
+  for (let c = 0; c < info.inputChannels; c++) {
+    $("monL" + c).className = monitorL === c ? "on" : "";
+    $("monR" + c).className = monitorR === c ? "on" : "";
+  }
+  if (!subs.has(monitorL)) { subs.add(monitorL); $("sub" + monitorL).classList.add("on"); }
+  if (!subs.has(monitorR)) { subs.add(monitorR); $("sub" + monitorR).classList.add("on"); }
+  sendConfig();
+}
+
+function updateMeters(m) {
+  const pct = db => Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+  m.inputRMS.forEach((db, c) => {
+    const bar = $("im" + c), v = $("imv" + c);
+    if (bar) { bar.style.width = pct(db) + "%"; v.textContent = db <= -119 ? "-inf" : db.toFixed(1); }
+  });
+  m.outputRMS.forEach((db, c) => {
+    const bar = $("om" + c), v = $("omv" + c);
+    if (bar) { bar.style.width = pct(db) + "%"; v.textContent = db <= -119 ? "-inf" : db.toFixed(1); }
+  });
+  $("occ").textContent = m.outputBufferFrames + " f";
+  $("xruns").textContent = m.underruns + "/" + m.overruns;
+}
+
+$("latGo").onclick = () => {
+  if (!info) return;
+  latState = { phase: "fire", outCh: parseInt($("latOut").value), inCh: parseInt($("latIn").value) };
+  const c = latState.inCh;
+  if (!subs.has(c)) { subs.add(c); $("sub" + c)?.classList.add("on"); }
+  $("latResult").textContent = "…";
+  sendConfig();
+};
+</script>
+</body>
+</html>
