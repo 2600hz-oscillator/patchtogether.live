@@ -37,11 +37,16 @@
 //               (one-shot = play once; loop = start/restart the loop) from
 //               the window edge (start for forward playback, end-1 for
 //               reverse).
-//     rate_cv   CV → rate AudioParam. ±1 V CV maps to ±1 in rate units, so
-//               a ±1V LFO swings the rate by ±100% — combined with the
-//               slider this can run between −2 (full-left slider + −1 V CV)
-//               and +3 (full-right slider + +1 V CV); the worklet clamps
-//               to its declared [−3, +3] range.
+//     pitch_cv  1V/oct TRANSPOSE (the kickdrum/snaredrum/tomtom `pitch_cv`
+//               convention): a SIGNAL into worklet input 1, read raw per
+//               sample and applied as rate × 2^V. 0 V = C4 = as recorded;
+//               +1 V doubles the playback rate, −1 V halves it. This is the
+//               jack a clip-launcher lane auto-patches its PITCH to.
+//     rate_cv   CV → rate AudioParam through the LINEAR cvScale LUT: ±1 V
+//               sweeps ±halfSpan = ±2 rate units (`cv-scale.ts`), clamped
+//               to the param's [−2, +2] before it reaches the worklet's own
+//               [−3, +3] ceiling. It is ADDITIVE varispeed (reverse, freeze,
+//               tape-stop) — pitch_cv multiplies on top of it.
 //   outputs:
 //     out       Mono audio.
 //
@@ -1166,6 +1171,14 @@ export const samsloopDef: AudioModuleDef = {
 
   inputs: [
     { id: 'trig',       type: 'gate', edge: 'trigger' },
+    // 1V/oct TRANSPOSE (the kickdrum/snaredrum/tomtom `pitch_cv` convention):
+    // a SIGNAL into worklet input 1, read raw per sample and applied as
+    // rate × 2^V. NO paramTarget / cvScale on purpose — an AudioParam path sums
+    // (knob + V) and is not 1V/oct (C3 would freeze the cursor). Unpatched =
+    // 0 V = ×1. `resolveClipWiring` finds it by SHAPE (type cv, no paramTarget,
+    // a `pitch` id word), which is what makes a clip-launcher lane patch its
+    // PITCH here alongside gate→trig.
+    { id: 'pitch_cv',   type: 'cv' },
     { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
     // ⚠ WINDOW CV, AND `depth: 1` IS LOAD-BEARING RATHER THAN DECORATIVE. It
     // means "a full natural-range sweep", and now that the window is a FRACTION
@@ -1193,8 +1206,10 @@ export const samsloopDef: AudioModuleDef = {
   ],
   params: [
     // Slider value: ±2 maps to ±2× playback. Default = 1 (forward unity).
-    // The CV sums into the AudioParam through the linear cvScale, so a
-    // ±1V LFO swings the rate by ±1 unit on top of the slider value.
+    // The CV sums into the AudioParam through the linear cvScale LUT, so a
+    // ±1V LFO swings the rate by ±2 units (halfSpan of −2..2) on top of the
+    // slider value, clamped to the range. pitch_cv MULTIPLIES the result
+    // by 2^V inside the worklet — it is not part of this param.
     { id: 'rate',  label: 'Rate',
       defaultValue: SAMSLOOP_RATE_RANGE.defaultValue,
       min: SAMSLOOP_RATE_RANGE.min, max: SAMSLOOP_RATE_RANGE.max,
@@ -1322,8 +1337,10 @@ export const samsloopDef: AudioModuleDef = {
     inputs: {
       trig:
         "Rising-edge trigger that STARTS playback per the current MODE: in one-shot mode it plays the cropped window through once; in loop mode it starts the loop (and a re-trigger restarts it from the window edge — START for forward, END for reverse). Works alongside the faceplate's TRIGGER button. While idle (no trigger yet) the module is silent.",
+      pitch_cv:
+        "1V/oct pitch input (0 V = C4): multiplies the playback rate by 2^V on top of RATE and rate_cv — a clip note one octave up plays the sample at 2×, one octave down at half; the sign of RATE (direction) is untouched. Unpatched = as recorded. This is the jack a clip-launcher lane auto-patches its PITCH to.",
       rate_cv:
-        "CV that offsets the RATE param (linear): ±1 V swings the playback rate by ±1 unit on top of the slider, so an LFO here does pitch/speed wobble, tape-stop, or reverse sweeps. The summed rate is clamped to the worklet's [−3, +3] range; crossing zero flips playback direction.",
+        "CV that offsets the RATE param (linear): ±1 V swings the playback rate by ±2 units (half the −2..+2 range) on top of the slider, clamped to ±2, so an LFO here does speed wobble, tape-stop, or reverse sweeps. The worklet's own ceiling is [−3, +3]; crossing zero flips playback direction. pitch_cv then multiplies the result by 2^V.",
       start_cv:
         "CV that moves the START of the playback window. Because the window is a FRACTION of the sample rather than a frame count, a full-depth sweep here walks START from the sample's beginning to its far end whatever its length — an LFO scrubs the loop's in-point, an envelope drags it open. It is a BIAS on the knob, not an absolute position: the player sets a window and the CV moves it from there. START is resolved AFTER END (see end_cv), so driving START past END collapses the window onto END rather than pushing it open.",
       end_cv:
@@ -1338,7 +1355,7 @@ export const samsloopDef: AudioModuleDef = {
     },
     controls: {
       rate:
-        "Varispeed playback RATE (−2..+2, default +1 = forward unity). Positive plays forward, negative plays in REVERSE; |value| is the speed (2 = 2× / +1 octave, 0.5 = half / −1 octave). Center (+1) is the no-op unity speed. CV via the rate_cv input (summed, clamped to ±3).",
+        "Varispeed playback RATE (−2..+2, default +1 = forward unity). Positive plays forward, negative plays in REVERSE; |value| is the speed (2 = 2× / +1 octave, 0.5 = half / −1 octave). Center (+1) is the no-op unity speed. CV via the rate_cv input (summed through the linear LUT, ±2 units, clamped to the range; the worklet's own ceiling is ±3). A patched pitch_cv multiplies the result by 2^V (1V/oct), which is how a clip-launcher note transposes the loop.",
       mode:
         "Playback MODE: LOOP (1, default) = a trigger starts a continuous loop that keeps going (re-trigger restarts it); ONE-SHOT (0) = a trigger plays the window through once and returns to idle/silent.",
       start:
@@ -1374,10 +1391,12 @@ export const samsloopDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // 1 input slot for the trig gate; rate CV rides into the AudioParam
-    // through the engine's cvScale routing (same pattern as macrooscillator).
+    // Input 0 = trig gate, input 1 = pitch_cv 1V/oct SIGNAL (read raw per
+    // sample in the worklet, rate × 2^V — the kickdrum shape). rate/start/end
+    // CV ride into their AudioParams through the engine's cvScale routing
+    // (same pattern as macrooscillator).
     const workletNode = createWorkletNode(node, ctx, 'samsloop', {
-      numberOfInputs: 1,
+      numberOfInputs: 2,
       numberOfOutputs: 1,
       outputChannelCount: [1],
       // ⚠ THE POLY WIDTH CROSSES THE PACKAGE BOUNDARY AS DATA, not as a second
@@ -1624,6 +1643,10 @@ export const samsloopDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['trig',       { node: workletNode, input: 0 }],
+        // ⚠ `input: 1` IS LOAD-BEARING. pitch_cv is a SIGNAL (no `param:`) and
+        // `input: 0` would sum the volts into TRIG and manufacture strikes at
+        // V ≥ 0.5 (TRIG_THRESHOLD). `samsloop-cv-contract.test.ts` pins this.
+        ['pitch_cv',   { node: workletNode, input: 1 }],
         // ⚠ EVERY `paramTarget` PORT MUST PUBLISH ITS AudioParam HERE, and the
         // failure mode is silent by design. `AudioEngine.addEdge` reads `param`
         // to decide whether a cable is MODULATION or SIGNAL; with it absent it

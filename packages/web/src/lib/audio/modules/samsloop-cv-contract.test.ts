@@ -85,6 +85,30 @@ describe('samsloop CV contract — the def and the factory agree', () => {
     expect(dangling, 'a paramTarget names no real param').toEqual([]);
   });
 
+  it('pitch_cv is a SIGNAL into worklet input 1 — no `param:`, and the node has two inputs', () => {
+    // The 1V/oct jack is the kickdrum shape: raw volts into their own worklet
+    // input, read per sample as rate × 2^V. Two things must hold in the
+    // factory source for the def's `{ id: 'pitch_cv', type: 'cv' }` to mean
+    // that: (1) the map entry names `input: 1` with NO `param:` (with a
+    // `param:` addEdge would route it as MODULATION and sum it into an
+    // AudioParam — additive, not 1V/oct); (2) the node is built with
+    // `numberOfInputs: 2`, because `input: 0` would sum the volts into TRIG and
+    // manufacture strikes at V ≥ 0.5 (TRIG_THRESHOLD).
+    const src = factoryInputsSource();
+    const port = (samsloopDef.inputs ?? []).find((p) => p.id === 'pitch_cv');
+    expect(port, 'the def declares pitch_cv').toBeDefined();
+    expect(port?.type).toBe('cv');
+    expect(port?.paramTarget, 'pitch_cv must NOT be a paramTarget port').toBeUndefined();
+    expect(port?.cvScale, 'pitch_cv must NOT carry a cvScale').toBeUndefined();
+    expect(src).toMatch(/\['pitch_cv',\s*\{\s*node:\s*workletNode,\s*input:\s*1\s*\}\]/);
+    expect(src).toMatch(/numberOfInputs:\s*2/);
+    // NEGATIVE CONTROL on the predicate: an entry with `param:` or `input: 0`
+    // must not satisfy the same regex.
+    const strict = /\['pitch_cv',\s*\{\s*node:\s*workletNode,\s*input:\s*1\s*\}\]/;
+    expect(strict.test(`['pitch_cv', { node: workletNode, input: 1, param: params.get('rate')! }],`)).toBe(false);
+    expect(strict.test(`['pitch_cv', { node: workletNode, input: 0 }],`)).toBe(false);
+  });
+
   it('NEGATIVE CONTROL: the source probe really reads the factory map', () => {
     // "Found no offenders" and "looked at nothing" are the same output
     // otherwise — the blind-gate rule. Anchored on the port that was ALREADY

@@ -8,9 +8,11 @@
 // note source, so nobody noticed the real MIDI-LANE→module chain was dead. What
 // it forbids is engine-direct testing, not a particular cable type.
 //
-// samsloop declares NO `poly` port and NO `pitch` input. Its voices are STRUCK
-// BY GATE EDGES on `trig` (`edge: 'trigger'`), so the real default-mode source
-// chain for this module is a real sequencer's TRIGGER output into that jack.
+// samsloop declares NO `poly` port; its 1V/oct is the drum-convention
+// `pitch_cv` (a `cv` signal, rate × 2^V), proven on the REAL clip-launcher
+// chain in samsloop-clip-lane-pitch.spec.ts. Its voices are STRUCK BY GATE
+// EDGES on `trig` (`edge: 'trigger'`), so the real default-mode source chain
+// for THIS spec is a real sequencer's TRIGGER output into that jack.
 // The kria-clocked cartesian chain replaces POLYSEQZ (deleted 2026-08-24) as
 // here for a second reason: it needs no MIDI hardware and no WebMIDI mock, so
 // this spec measures the module rather than the runner's device permissions.

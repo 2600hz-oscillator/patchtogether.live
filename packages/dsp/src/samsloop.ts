@@ -13,8 +13,21 @@
 //             full left     = −2.0 (reverse 2×)
 //             rate = 0      → playback FROZEN
 //             rate < 0      → cursor walks BACKWARDS
-//             CV ±1 V sums on top, so two ±1 V LFOs at full deflection can
-//             still push the rate as low as ±3.
+//             rate_cv sums on top through the host's linear LUT (±1 V =
+//             ±2 units, clamped to the param's ±2); the ±3 ceiling here is
+//             the worklet's own guard, not a reachable knob+CV value.
+//   - pitch_cv (audio-rate input 1, 1V/oct, 0 V = C4): a raw SIGNAL, never an
+//           AudioParam. Read per sample and applied as
+//             step = rate × 2^V × rateScale
+//           so +1 V doubles the playback rate and −1 V halves it, on top of
+//           whatever the rate knob/CV produced. It is a POSITIVE multiplier,
+//           so the knob's sign still decides direction (reverse stays
+//           reverse, frozen stays frozen). Unpatched (absent or 0 V) = ×1 —
+//           bit-identical to the pre-pitch_cv output. The pow() is recomputed
+//           only when V CHANGES (a held clip note costs nothing per sample),
+//           clamped to ±PITCH_OCTAVE_GUARD as a runaway guard, and a
+//           non-finite V reads as 0 V (a NaN cursor would survive the loop
+//           wrap until the next retrigger).
 //
 // Sample-rate compensation: the cursor advances by
 // `rate * (bufferRate / contextRate)` per output sample, so rate=1.0 plays
@@ -27,7 +40,7 @@
 //   - mode  (AudioParam, 0=one-shot, 1=loop). Discrete; we round inside.
 //   - start (AudioParam, sample-index lower bound; clamped to [0, len-1]).
 //   - end   (AudioParam, sample-index upper bound; clamped to [start+1, len]).
-//   - trig  (audio-rate input, rising edge STARTS playback per the current
+//   - trig  (audio-rate input 0, rising edge STARTS playback per the current
 //           mode and resets the read-cursor to the window edge — start (or
 //           end-1 if rate is negative). A gate can start/retrigger the
 //           sample without uploading it again.).
@@ -69,6 +82,12 @@ interface TriggerMessage {
 type SamsloopMessage = LoadSampleMessage | ResetMessage | TriggerMessage;
 
 const TRIG_THRESHOLD = 0.5;
+
+/** Runaway guard on pitch_cv, in OCTAVES — not a musical clamp. MIDI 127 at
+ *  a clip's OCT +2 is (127 − 60) / 12 + 2 = +7.58 oct, so every legal note
+ *  stays inside it; what it stops is a mispatched audio cable (or a DC
+ *  offset of hundreds of volts) driving `Math.pow` to Infinity. */
+const PITCH_OCTAVE_GUARD = 8;
 
 /** How often the playhead is published to the main thread, in Hz.
  *
@@ -141,6 +160,10 @@ class SamsloopProcessor extends AudioWorkletProcessor {
   private pendingTrigger = false;
   /** Trigger edge detection. */
   private lastTrig = 0;
+  /** The last pitch_cv volt seen, and 2^V for it — cached so the pow() runs
+   *  only when the volt CHANGES, which for a held clip note is never. */
+  private lastPitchV = 0;
+  private lastPitchMul = 1;
   /** Samples remaining until the next playhead publish. Counted DOWN per block
    *  against the block size, so the cadence is wall-clock stable regardless of
    *  how many render quanta the host chooses to run. */
@@ -274,6 +297,9 @@ class SamsloopProcessor extends AudioWorkletProcessor {
     const endArr = parameters.end!;
     const polyArr = parameters.poly!;
     const trigIn = inputs[0]?.[0];
+    // pitch_cv — 1V/oct SIGNAL on input 1. Absent (nothing patched, or a host
+    // that built the node with one input) reads as 0 V = ×1.
+    const pitchIn = inputs[1]?.[0];
 
     // k-rate params: read once per block.
     const mode = Math.round(modeArr[0] ?? 1); // 0=one-shot, 1=loop
@@ -356,7 +382,18 @@ class SamsloopProcessor extends AudioWorkletProcessor {
       }
 
       const rate = rateArr.length > 1 ? (rateArr[i] ?? 1) : (rateArr[0] ?? 1);
-      const step = rate * this.rateScale;
+      // 1V/oct transpose: step = rate × 2^V × rateScale. The multiplier is
+      // positive, so direction stays the knob's. `Number.isFinite` is required
+      // — Math.max/min PROPAGATE NaN, and a NaN cursor survives the `% winLen`
+      // wrap below until the next retrigger.
+      const v = pitchIn ? (pitchIn[i] ?? 0) : 0;
+      if (v !== this.lastPitchV) {
+        this.lastPitchV = v;
+        this.lastPitchMul = Number.isFinite(v)
+          ? Math.pow(2, Math.max(-PITCH_OCTAVE_GUARD, Math.min(PITCH_OCTAVE_GUARD, v)))
+          : 1;
+      }
+      const step = rate * this.lastPitchMul * this.rateScale;
 
       // ⚠ VOICES SUM, THEY DO NOT AVERAGE. Dividing by the active count would
       // make every voice quieter the moment a second one starts — a duck on
