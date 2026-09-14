@@ -6522,6 +6522,39 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // on the unit models plus the simulated-device legs in `trails.spec.ts`, and
   // the owner's hardware is the only instrument that closes the rest.
   'trails',
+  // ── LINNSTRUMENT (2026-09-14) — the FIFTH MIDI binder, and the first whose
+  //    second surface is THREE PADS ───────────────────────────────────────────
+  //
+  // Promoted WITH its face in the same diff (owner face-loop instruction:
+  // fix + face, one PR). The joystick shape, three times: NO `xyPads`, the
+  // six retained axes rank as ordinary knob cells, and the extension's
+  // `fullViewBody` paints the three DOM pads above them — every pad drag is a
+  // reducer intent through `linnstrument-cell-actions.ts`, never a second
+  // writer. CONNECT ranks first for the trails/midiclock reason (inert until
+  // Web MIDI consents; compact cap of 3). CENTER and PANIC are reducer intents
+  // probed as engine-message auditions — a `param` probe would fail on a
+  // correct CENTER of a fresh node.
+  //
+  // ⚠ WHAT PROMOTION DOES NOT TOUCH: the source subscription, the selection
+  // reducer, the six ConstantSources, the two poly buses, the MPE voice tables
+  // and both arp transports are in the FACTORY (`linnstrument-runtime.ts`)
+  // and run with no surface mounted. No `node.data` write is made from a
+  // gesture — the pads and the hardware finger reach `node.params` through
+  // coalesced `createCcCommit` pumps (the write-storm rule). The only
+  // `node.data` key is the OPT-IN D15 `targets` map, written from the target
+  // picker through `mutateNode`.
+  //
+  // ⚠ ZERO GPU ATTEST: `domain: 'audio'`, the body is DOM (no canvas), and
+  // nothing under `lib/video/**` moves. The contract DOES move — a new def,
+  // eight ports, twenty-six params and three families — which is a
+  // `docs:accept`, not an attest.
+  //
+  // ⚠ WHAT NO GATE IN THIS TREE CAN SEE: no CI runner has a LinnStrument on
+  // USB or a granted MIDI origin, and no LinnStrument was connected while this
+  // was built (the design record's own limit). Every vector the unit layer
+  // proves is SYNTHETIC; the audible proof is WP-D's e2e on the simulated
+  // device; the hardware audition is the owner's.
+  'linnstrument',
   // ── ARCHIVIST (2026-09-02) — THE INTERNET ARCHIVE SEARCH BROWSER ─────────
   //
   // One ranked param (`gain`, a fader — unity at the midpoint of a 0..2
