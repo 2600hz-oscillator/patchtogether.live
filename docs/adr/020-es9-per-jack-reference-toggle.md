@@ -45,7 +45,9 @@ LINE_NOMINAL_VOLTS_RMS  = 0.774597 × 10^(4/20)         = 1.22765 V RMS   (+4 dB
 LINE_NOMINAL_VOLTS_PEAK = 1.22765 × √2                 = 1.73616 V peak  (a sine's peak)
 ```
 
-(ADR-019's "1.737 V" was rounded one ulp high; the constant is the derivation.)
+(ADR-019's "1.737 V" is a decimal-rounding artefact — 1.22765 rounded to 1.228
+before ×√2 gives 1.7366 → 1.737; the exact product is 1.73616. The constant is
+the derivation.)
 Against `NOMINAL_VOLTS = 5` that is a 20·log10(5 / 1.73616) = **9.19 dB** gap.
 
 ### Multipliers (wire ±1.0 ≙ ±10 V, `VOLTS_FULL_SCALE`)

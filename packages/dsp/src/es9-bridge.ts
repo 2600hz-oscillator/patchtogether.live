@@ -14,8 +14,9 @@
 //   inputs  0..7  = USB 1..8 feeds (browser → internal mixer/phones, S-PDIF,
 //                   ES-5 header; digital, always ×1)
 //   inputs  8..15 = OUT 1..8 jacks (browser → ES-9 DC-coupled outs,
-//                   class-scaled; audio/cv ±1 = ±5 V, or ±1.736 V under a
-//                   jack's line ref)
+//                   class-scaled; audio ±1 = ±5 V, or ±1.736 V under the
+//                   jack's line ref — cv ±1 = ±5 V regardless of ref, and
+//                   pitch/gate carry volts)
 //   outputs 0..13 = IN 1..14 audio (ES-9 DC-coupled inputs, ±1 = ±5 V —
 //                   the wire's ±10 V full scale reads as ±2.0 — or ±1.736 V
 //                   = ±1 under a jack's line ref)

@@ -76,10 +76,11 @@ export const DBU_REF_VOLTS_RMS = Math.sqrt(0.6);
 /** Pro line nominal is +4 dBu: 0.774597 × 10^(4/20) = 1.22765 V RMS. */
 export const LINE_NOMINAL_VOLTS_RMS = DBU_REF_VOLTS_RMS * 10 ** (4 / 20);
 /** A sine's peak is RMS × √2: 1.22765 × 1.41421 = 1.73616 V peak. This is the
- *  jack voltage that reads ±1.0 under REF_LINE. (ADR-019 rounded it to
- *  "1.737 V" — one ulp high; the constant here is the derivation, not the
- *  rounding.) Against the ±5 V modular reference that is a
- *  20·log10(5 / 1.73616) = 9.19 dB gap: line in is ×5.76 on the wire, line
+ *  jack voltage that reads ±1.0 under REF_LINE. (ADR-019's "1.737 V" is a
+ *  decimal-rounding artefact: 1.22765 rounded to 1.228 before ×√2 gives
+ *  1.7366 → 1.737; the exact product is 1.73616. The constant here is the
+ *  derivation, not the rounding.) Against the ±5 V modular reference that is
+ *  a 20·log10(5 / 1.73616) = 9.19 dB gap: line in is ×5.76 on the wire, line
  *  out ×0.174 — both DERIVED below from this constant and VOLTS_FULL_SCALE,
  *  never typed. */
 export const LINE_NOMINAL_VOLTS_PEAK = LINE_NOMINAL_VOLTS_RMS * Math.SQRT2;
