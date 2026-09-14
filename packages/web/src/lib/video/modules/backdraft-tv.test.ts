@@ -6,12 +6,10 @@
 // e2e only has to show that the GPU renders the same thing.
 // `toybox-feedback.ts` (tunnelTap / simulateTunnel) is the precedent.
 
-import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   BACKDRAFT_FLICKER_COUNT,
   BACKDRAFT_FLICKER_KNEE,
-  BACKDRAFT_MAX_EFFECT_SCALE,
   BACKDRAFT_MAX_FEEDBACK,
   BACKDRAFT_ZOOM_MIN,
   BACKDRAFT_ZOOM_MAX,
