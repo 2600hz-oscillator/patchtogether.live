@@ -104,5 +104,8 @@ release checks remain distinct from these behavioral measurements.
 Local validation: the changed unit tests and all five GPU/face scenarios passed
 three consecutive runs. Type checking, module-face lint, module documentation
 and the regenerated parameter contract passed. The contract diff contains only
-the eight added Backdraft controls and the appended TV-mode value. A fresh full
-WebGL release attestation is still required before shipping.
+the eight added Backdraft controls and the appended TV-mode value. Full real-GPU
+attestation passed on the PR branch: 252 tests, zero failures or recovered
+retries, and three existing skips. The five new scenarios also passed under
+SwiftShader. Linux visual capture and owner review are separate from these
+behavioral measurements.
