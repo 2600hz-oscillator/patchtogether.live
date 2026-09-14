@@ -1,15 +1,30 @@
 # ADR-019: ES-9 audio unity is ±5 V (Eurorack nominal), not the ±10 V full scale
 
-- Status: Proposed (owner decision — the saved-rack re-interpretation needs the
-  owner's explicit yes; see Consequences)
+- Status: Accepted (owner, 2026-09-14 — answers quoted under "Owner decisions")
 - Date: 2026-09-14
 - Deciders: project owner
 - Tags: dsp, semantics, es9, hardware
 - Related: ADR-004 (CV range convention — leaves audio LEVEL undefined)
 
-## Open owner decisions (read first)
+## Owner decisions (2026-09-14, verbatim)
 
-**This ADR fixes HALF of the report.** Modular (±5 V) audio reaches parity
+Put to the owner as three questions; the answers, verbatim:
+
+1. Reference (±5 V Eurorack nominal vs +4 dBu line): **"can we do euroraxk
+   nominal but add a toggle on the card to set it to line per jack"** — so
+   this ADR's ±5 V reference stands, and the line-gear half of the report is
+   answered by a PER-JACK modular/line reference toggle on the face (a new
+   id per jack, default = modular, so no saved rack moves), built as the
+   follow-up PR rather than the dB trim proposed below.
+2. Saved racks: **"Re-interpret (Recommended)"** — the audio class's existing
+   value is re-interpreted as described under Consequences; no `audio_ref`
+   switch.
+3. The two new tests (dsp worklet unit test, `es9` ART level-parity
+   scenario): **"Approve both (Recommended)"**.
+
+The questions as they were put, kept for the record:
+
+**This ADR fixed HALF of the report at the time it was written.** Modular (±5 V) audio reaches parity
 with the internal mixer; **line-level gear is still quiet after it**: +4 dBu
 lands at 0.35 peak (−9.2 dBFS), −10 dBV at 0.09 (−21 dBFS). Line gear only
 reaches parity with the per-jack trim follow-up (below), or with a different
@@ -41,8 +56,7 @@ reference than the one chosen here. Two yes/no answers are needed on the PR:
    nobody would ever set back to 0. Rejected here; available if the answer to
    the re-interpretation is no.
 
-Status moves to Accepted only when the owner's answers are quoted on the PR
-and in this section.
+Status moved to Accepted on the answers quoted at the top of this section.
 
 ## Context
 

@@ -29,7 +29,7 @@ just enough.
 | 016 | [Model the cause, and state every deliberate divergence](016-model-the-cause-state-the-divergence.md) | Accepted                 |
 | 017 | [Decline the tidiness changes that cost behaviour or evidence](017-decline-tidiness-that-costs-behaviour.md) | Accepted (one item overturned) |
 | 018 | [Moog clone provenance — own code, clean-room, no port](018-moog-clone-provenance.md) | Accepted (source record lost) |
-| 019 | [ES-9 audio unity is ±5 V (Eurorack nominal), not the ±10 V full scale](019-es9-audio-nominal-level.md) | Proposed (owner decision) |
+| 019 | [ES-9 audio unity is ±5 V (Eurorack nominal), not the ±10 V full scale](019-es9-audio-nominal-level.md) | Accepted |
 
 ## What goes in an ADR
 
