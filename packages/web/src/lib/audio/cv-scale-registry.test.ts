@@ -196,6 +196,14 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // trigger edge inside the worklet (a latch input, not a knob modulator —
   // no paramTarget), so cvScale doesn't apply.
   kickdrum: ['pitch_cv', 'accent_in'],
+  // SAMSLOOP pitch_cv: V/oct consumed directly by the worklet as its own
+  // audio-rate node input 1 (step = rate × 2^pitch_cv per-sample — an additive
+  // AudioParam cvScale would NOT be 1V/oct: knob 1 + (−1 V) would FREEZE the
+  // cursor instead of playing an octave down). Same shape as kickdrum.pitch_cv
+  // / dx7.pitch_cv; it is the jack a clip-launcher lane auto-patches PITCH to
+  // (ADR 004's "1V/oct is a signal, never a scaled param" addendum lives in
+  // this comment — the drum rows above are the precedent).
+  samsloop: ['pitch_cv'],
   // SNARE DRUM pitch_cv / accent_in / roll_speed_cv: all consumed DIRECTLY by
   // the worklet as its own audio-rate node inputs, not AudioParams — pitch_cv is
   // V/oct (tune × 2^pitch_cv per-sample; an additive AudioParam cvScale would

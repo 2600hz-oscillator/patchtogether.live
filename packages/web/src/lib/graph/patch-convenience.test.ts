@@ -393,6 +393,32 @@ describe('drum pitch→v/oct fix — live registry', () => {
     }
   });
 
+  it('samsloop maps the clip PITCH to its 1V/oct pitch_cv AND the gate to trig (monoPitchGate) — never to rate_cv', () => {
+    // The owner sentence: "samsloop dropped into a clip launcher lane should
+    // autoconnect its speed setting to the pitch cv, as well (gates and audio
+    // already work)". The def now carries a drum-convention `pitch_cv`
+    // (type cv, no paramTarget, a `pitch` id word), so the SAME shape
+    // predicate that enrols kickdrum enrols samsloop — no resolver edit.
+    const d = liveDef('samsloop');
+    expect(d, 'samsloop not found in registry').toBeDefined();
+    const wiring = resolveClipWiring(d!);
+    expect(wiring?.mode, 'samsloop must pitch-wire, not gate-only').toBe('monoPitchGate');
+    expect(wiring?.pitchInPort).toBe('pitch_cv');
+    expect(wiring?.gateInPort).toBe('trig');
+    expect(wiring?.velInPort).toBeUndefined();
+    // NEGATIVE: the additive rate_cv (paramTarget: 'rate') is NEVER the pitch
+    // target — knob + V is not 1V/oct (C3 would freeze the cursor).
+    expect(wiring?.pitchInPort).not.toBe('rate_cv');
+    const plan = planClipControl(d!, 1)!;
+    expect(plan).toHaveLength(2);
+    expect(plan).toContainEqual({
+      fromPortId: 'pitch1', toPortId: 'pitch_cv', sourceType: 'polyPitchGate', targetType: 'cv',
+    });
+    expect(plan).toContainEqual({
+      fromPortId: 'gate1', toPortId: 'trig', sourceType: 'gate', targetType: 'gate',
+    });
+  });
+
   it('clap (no v/oct input) stays gate-only — the clip only TRIGGERS it', () => {
     const d = liveDef('clap');
     expect(d, 'clap not found').toBeDefined();

@@ -2723,6 +2723,7 @@ samsloop meta domain=audio
 samsloop in audio_l_in audio
 samsloop in audio_r_in audio
 samsloop in end_cv cv param=end cvScale=linear:1
+samsloop in pitch_cv cv
 samsloop in rate_cv cv param=rate cvScale=linear
 samsloop in start_cv cv param=start cvScale=linear:1
 samsloop in trig gate edge=trigger
