@@ -129,6 +129,9 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
 
   it('claims EXACTLY these bands — a new one is a baseline dispatch, not a diff to accept', () => {
     expect(claimed()).toEqual([
+      // The Crutchfield tab stacks two groups of four physical controls.
+      // Its four-column grid was reviewed with the new mode's face capture.
+      'backdraft/crutchfield=4',
       // ⚠ THE SECOND BAND CLUSTERED PURELY TO FIT THE CAPTURE BOX, and it is
       // the moog960 argument one entry down applied to a WIDER cell. es9's
       // eight OUT-JACK class switches are SEGMENTED cells painting FOUR option
@@ -305,6 +308,8 @@ describe('console grid — which SHIPPED bands it claims (derived membership)', 
       if (consoleBands.length === 1) singles.push(def.type);
     }
     expect(singles.sort(), 'the roster must still contain single-console-band faces').toEqual([
+      // Crutchfield is Backdraft's only console band; other tabs keep their own layout.
+      'backdraft',
       // es9's `out` band is its only console band. The `in` band holds the
       // SAME cell fourteen times and is clustered 4/4/4/2 — ragged, so the
       // rule refuses it — and `bridge` carries no clusters at all. So the

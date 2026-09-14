@@ -1197,7 +1197,7 @@ export const FACES = [
   },
   {
     type: 'backdraft',
-    pages: 7,
+    pages: 8,
     videoFaceWhy:
       'the dock faceplate mounts a fullViewBody extension that blits the live video engine every ' +
       'rAF; the compact tile is static today but is pinned the same way so a future lane picture ' +

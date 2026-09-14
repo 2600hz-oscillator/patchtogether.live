@@ -30,6 +30,7 @@
   import { patch } from '$lib/graph/store';
   import { mutateNode } from '$lib/graph/mutate';
   import { backdraftPanic } from './panic';
+  import { rerollBackdraftSensor } from './reroll-sensor';
   import { createFullscreen } from '../use-fullscreen.svelte';
   import { createFullFrame } from '../use-full-frame.svelte';
   import { attachRenderLease } from '../use-render-lease.svelte';
@@ -61,6 +62,10 @@
   // (the engine is not a reactive store).
   let engineW = $state<number>(ENGINE_W);
   let engineH = $state<number>(ENGINE_H);
+  // Gate-driven mode changes live in the engine until reflected by a control.
+  // Read them on the existing preview tick; never write per-frame graph state.
+  let liveTvMode = $state<number | undefined>(undefined);
+  let crutchfieldOn = $derived(Math.round(liveTvMode ?? patch.nodes[nodeId]?.params.tvMode ?? 0) === 3);
 
   // TRUE fullscreen: the wrap IS the fullscreen element.
   const fs = createFullscreen();
@@ -225,6 +230,7 @@
       try { videoEngine = e.getDomain<VideoEngine>('video'); } catch { /* not ready */ }
     }
     if (videoEngine) {
+      liveTvMode = videoEngine.readParam(nodeId, 'tvMode');
       const ew = videoEngine.canvas.width || ENGINE_W;
       const eh = videoEngine.canvas.height || ENGINE_H;
       if (ew !== engineW) engineW = ew;
@@ -319,6 +325,16 @@
       title="PANIC — reset every control to its default in one undoable step. Nothing patched changes: cables stay, and a CV source keeps modulating its control around the restored default."
       onclick={() => backdraftPanic(nodeId)}
     >PANIC</button>
+
+    {#if crutchfieldOn}
+      <button
+        type="button"
+        class="bd-out-btn nodrag"
+        data-testid="backdraft-reroll-sensor"
+        title="Reroll the lens and sensor response. The seed is saved with the patch; undo restores the previous camera."
+        onclick={() => rerollBackdraftSensor(nodeId)}
+      >REROLL SENSOR</button>
+    {/if}
 
     <div class="bd-btn-row">
       <button

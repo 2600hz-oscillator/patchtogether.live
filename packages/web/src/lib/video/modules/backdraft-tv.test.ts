@@ -6,12 +6,10 @@
 // e2e only has to show that the GPU renders the same thing.
 // `toybox-feedback.ts` (tunnelTap / simulateTunnel) is the precedent.
 
-import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   BACKDRAFT_FLICKER_COUNT,
   BACKDRAFT_FLICKER_KNEE,
-  BACKDRAFT_MAX_EFFECT_SCALE,
   BACKDRAFT_MAX_FEEDBACK,
   BACKDRAFT_ZOOM_MIN,
   BACKDRAFT_ZOOM_MAX,
@@ -430,10 +428,11 @@ describe('BACKDRAFT PURE TV — the contraction contract', () => {
     }
   });
 
-  it('N10b — the TV MODE gate CYCLES off -> PURE TV -> CRITICAL -> off', () => {
+  it('N10b — the TV MODE gate cycles all saved modes including CRUTCHFIELD', () => {
     expect(backdraftNextTvMode(0)).toBe(1);
     expect(backdraftNextTvMode(1)).toBe(2);
-    expect(backdraftNextTvMode(2)).toBe(0);
+    expect(backdraftNextTvMode(2)).toBe(3);
+    expect(backdraftNextTvMode(3)).toBe(0);
   });
 
   it('N-ZOOM — the fill remap is monotone and hits its documented anchors', () => {
