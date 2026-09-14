@@ -28,9 +28,12 @@
 // OUT is the liveness gate (observe UNTIL audible, cap bounds the failure);
 // the pitch is the MEDIAN spectral fundamental over ≥ 12 terminal snapshots,
 // bracketed ±6 % around the expected note (the voice-pitch-accuracy shape), to
-// the same 6 ¢ real-chain tolerance. The scope is added to the patch IN PLACE
-// (a Y.Doc transact, never `spawnPatch`, which clears the rack and with it the
-// pinned trio this spec exists to drive).
+// the same 6 ¢ real-chain tolerance. The snapshots are gathered INSIDE THE
+// PAGE and paced on the AUDIO CLOCK (`measureTerminalCents` says why: a
+// per-window protocol round trip is what a starved 2-core runner cannot
+// afford, and it was the instrument — never the chain — that went red). The
+// scope is added to the patch IN PLACE (a Y.Doc transact, never `spawnPatch`,
+// which clears the rack and with it the pinned trio this spec exists to drive).
 
 import { test, expect } from './_fixtures';
 import type { Page } from '@playwright/test';
@@ -55,6 +58,31 @@ const AUDIBLE_FLOOR = 0.01;
 const AUDIBLE_CAP_MS = 8_000;
 /** Full-window observation for the SILENCE leg — no early exit. */
 const SILENCE_WINDOW_MS = 600;
+/** Non-overlapping terminal windows the pitch median wants (the GATE the
+ *  in-page sampler exits on), the floor the assertion holds it to, and the
+ *  CAP that bounds the failure when they never come (NOT the gate). */
+const PITCH_WINDOWS = 30;
+const PITCH_WINDOWS_MIN = 12;
+const PITCH_CAP_MS = 12_000;
+/** The in-page sampler's tick — readScopePeakOverWindow's cadence. A window is
+ *  ACCEPTED on the audio clock (below), never on this interval. */
+const PITCH_TICK_MS = 20;
+/** Local reproduction of a starved CI main thread: `E2E_CPU_THROTTLE=20`
+ *  applies CDP CPU throttling to the page (the backdraft-clocked-delay.spec.ts
+ *  method). The renderer slows; the AUDIO clock does not — exactly the shape
+ *  of e2e shard 9 in run 34889596109, where this file's C4 and C5 legs went
+ *  red on a 2-core runner while a real-GPU Mac passed 18/18. Never set on CI. */
+const CPU_THROTTLE = Number(process.env.E2E_CPU_THROTTLE ?? '1');
+
+/** Applied AFTER the boot and the sample load, as backdraft does after its
+ *  baseline: shard 9 did not starve the boot (`waitForPinnedTrio` took 2.6 s
+ *  there) and BOOT_MS is its own budget — what starved was the MEASUREMENT,
+ *  and that is the phase this throttles. No-op at the default rate 1. */
+async function starveMainThread(page: Page): Promise<void> {
+  if (CPU_THROTTLE <= 1) return;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
+}
 
 /** The loaded sample's own pitch, and the notes that transpose it. */
 const SAMPLE_HZ = 220;
@@ -206,6 +234,14 @@ async function loadSine(page: Page, sl: string): Promise<void> {
   });
   await expect(pane.getByTestId('shell-cell-samsloop-wav-input-status'))
     .toContainText(/loaded \d+ samples/i, { timeout: 15_000 });
+  // The pane was only the upload path. Close it (whole-view Escape — the
+  // multi-video-playback.spec.ts gesture) BEFORE anything is measured: its
+  // body redraws the waveform on EVERY rAF frame, folding all 176 k samples
+  // into 512 columns each time (SamsloopOutputBody.svelte → foldWaveformColumns),
+  // main-thread work that is not under test and that a starved runner cannot
+  // spare. The sample lives on the node, not the pane; closing it stops nothing.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid="dock-fullview-pane"]')).toHaveCount(0);
 }
 
 /** A scope on the samsloop's OUT, added IN PLACE (never spawnPatch — that
@@ -232,61 +268,160 @@ async function addScopeOn(page: Page, sl: string): Promise<void> {
   await waitForMounted(page, ['sc']);
 }
 
-/** Hann-windowed Goertzel magnitude at `f` (voice-pitch-accuracy.spec.ts). */
-function goertzelMag(buf: Float32Array, f: number, sr: number): number {
-  const coeff = 2 * Math.cos((2 * Math.PI * f) / sr);
-  const n = buf.length;
-  let s1 = 0;
-  let s2 = 0;
-  for (let i = 0; i < n; i++) {
-    const hann = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
-    const s0 = buf[i]! * hann + coeff * s1 - s2;
-    s2 = s1;
-    s1 = s0;
-  }
-  return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - coeff * s1 * s2));
+interface TerminalPitchRead {
+  /** Cents off the expected note for every MEASURABLE (non-silent) window. */
+  cents: number[];
+  /** Fresh, non-overlapping windows READ off the tap, measurable or not. */
+  windows: number;
+  ticks: number;
+  elapsedMs: number;
+  /** How far AudioContext.currentTime advanced while we looked — a stalled
+   *  clock, a starved sampler and a silent chain must print differently. */
+  clockAdvancedSec: number;
+  maxTickGapMs: number;
+  spanMs: number;
 }
 
-/** Peak of |X(f)| within ±6 % of `around` — coarse 1 Hz sweep, then a 0.02 Hz
- *  refinement. Null when the window is too quiet to mean anything. */
-function spectralFundamental(buf: Float32Array, sr: number, around: number): number | null {
-  let energy = 0;
-  for (let i = 0; i < buf.length; i++) energy += buf[i]! * buf[i]!;
-  if (Math.sqrt(energy / buf.length) < 0.002) return null;
-  const lo = around * 0.94;
-  const hi = around * 1.06;
-  let best = around;
-  let bestMag = -1;
-  for (let f = lo; f <= hi; f += 1) {
-    const m = goertzelMag(buf, f, sr);
-    if (m > bestMag) { bestMag = m; best = f; }
-  }
-  const fineLo = Math.max(lo, best - 1.5);
-  const fineHi = Math.min(hi, best + 1.5);
-  for (let f = fineLo; f <= fineHi; f += 0.02) {
-    const m = goertzelMag(buf, f, sr);
-    if (m > bestMag) { bestMag = m; best = f; }
-  }
-  return best;
-}
-
-/** One terminal analyser snapshot off AUDIO OUT (the limiter tap). */
-async function readOutputSnapshot(
+/** Up to PITCH_WINDOWS non-overlapping terminal windows off AUDIO OUT's
+ *  `outputSnapshot` tap, gathered INSIDE ONE page.evaluate and reduced to
+ *  their spectral fundamentals in the page once the gathering is done.
+ *
+ *  WHY IN-PAGE, WHY THE AUDIO CLOCK (run 34889596109, e2e shard 9): the first
+ *  cut of this loop lived in Node — one protocol round trip per window that
+ *  shipped 2048 floats as JSON, then a 90 ms wall-clock sleep "longer than the
+ *  analyser span". Every window it read was audible; it simply could not read
+ *  twelve of them inside its 12 s cap on the 2-core runner, where each round
+ *  trip took 300–670 ms and each 90 ms sleep 160–370 ms (11 iterations in all
+ *  four traces; ×20 CDP CPU throttling reproduces it locally at 9–10). The
+ *  subject was fine; the instrument was starved. Now the Float32Array never
+ *  crosses the protocol boundary, and a window is accepted on OBSERVED state:
+ *  AudioContext.currentTime has advanced one full analyser span plus one
+ *  render quantum since the previous accepted read, so none of the frames the
+ *  tap reports can belong to that window (the tap is a 2048-sample analyser,
+ *  audio-out.ts:317). A tick does only the read, the RMS gate and a copy — the
+ *  Goertzel sweep runs after the loop, off the pacing path — so a starved main
+ *  thread costs the sampler ticks, never windows it could have taken. The cap
+ *  bounds the failure; the gate is the measurable count reaching PITCH_WINDOWS. */
+async function measureTerminalCents(
   page: Page,
   outNodeId: string,
-): Promise<{ samples: number[]; sampleRate: number } | null> {
-  return page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: unknown, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, unknown> };
-    };
-    const eng = w.__engine?.();
-    const node = w.__patch.nodes[id];
-    if (!eng || !node) return null;
-    const snap = eng.read(node, 'outputSnapshot') as { samples: Float32Array; sampleRate: number } | undefined;
-    if (!snap) return null;
-    return { samples: Array.from(snap.samples), sampleRate: snap.sampleRate };
-  }, outNodeId);
+  aroundHz: number,
+): Promise<TerminalPitchRead> {
+  return page.evaluate(
+    async ({ id, around, want, capMs, tickMs }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: unknown, k: string) => unknown;
+          hasDomain?: (d: string) => boolean;
+          getDomain?: (d: string) => { ctx?: { currentTime: number } };
+        } | null;
+        __patch: { nodes: Record<string, unknown> };
+      };
+      const eng = w.__engine?.();
+      const node = w.__patch.nodes[id];
+      const ctx = eng?.hasDomain?.('audio') ? eng.getDomain?.('audio')?.ctx : undefined;
+      if (!eng || !node || !ctx) {
+        return { cents: [], windows: 0, ticks: 0, elapsedMs: 0, clockAdvancedSec: 0, maxTickGapMs: 0, spanMs: 0 };
+      }
+
+      /** Hann-windowed Goertzel magnitude at `f` (voice-pitch-accuracy.spec.ts). */
+      const goertzelMag = (buf: Float32Array, hann: Float32Array, f: number, sr: number): number => {
+        const coeff = 2 * Math.cos((2 * Math.PI * f) / sr);
+        let s1 = 0;
+        let s2 = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const s0 = buf[i]! * hann[i]! + coeff * s1 - s2;
+          s2 = s1;
+          s1 = s0;
+        }
+        return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - coeff * s1 * s2));
+      };
+      /** Peak of |X(f)| within ±6 % of `around` — coarse 1 Hz sweep, then a
+       *  0.02 Hz refinement. */
+      const spectralFundamental = (buf: Float32Array, hann: Float32Array, sr: number): number => {
+        const lo = around * 0.94;
+        const hi = around * 1.06;
+        let best = around;
+        let bestMag = -1;
+        for (let f = lo; f <= hi; f += 1) {
+          const m = goertzelMag(buf, hann, f, sr);
+          if (m > bestMag) { bestMag = m; best = f; }
+        }
+        const fineLo = Math.max(lo, best - 1.5);
+        const fineHi = Math.min(hi, best + 1.5);
+        for (let f = fineLo; f <= fineHi; f += 0.02) {
+          const m = goertzelMag(buf, hann, f, sr);
+          if (m > bestMag) { bestMag = m; best = f; }
+        }
+        return best;
+      };
+
+      return await new Promise<TerminalPitchRead>((resolve) => {
+        const t0 = performance.now();
+        const clock0 = ctx.currentTime;
+        /** Measurable windows, COPIED off the tap's shared buffer. */
+        const held: Float32Array[] = [];
+        let sampleRate = 0;
+        let windows = 0;
+        let ticks = 0;
+        let lastTickAt = t0;
+        let maxTickGapMs = 0;
+        let lastAcceptedClock = Number.NEGATIVE_INFINITY;
+        let spanSec = 0;
+
+        const finish = (): void => {
+          clearInterval(timer);
+          const elapsedMs = performance.now() - t0;
+          const clockAdvancedSec = ctx.currentTime - clock0;
+          const n = held[0]?.length ?? 0;
+          const hann = new Float32Array(n);
+          for (let i = 0; i < n; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
+          const cents = held.map(
+            (buf) => 1200 * Math.log2(spectralFundamental(buf, hann, sampleRate) / around),
+          );
+          resolve({ cents, windows, ticks, elapsedMs, clockAdvancedSec, maxTickGapMs, spanMs: spanSec * 1000 });
+        };
+
+        const tick = (): void => {
+          const at = performance.now();
+          ticks += 1;
+          const gap = at - lastTickAt;
+          if (gap > maxTickGapMs) maxTickGapMs = gap;
+          lastTickAt = at;
+          // OBSERVED pacing: the audio clock has moved a whole span since the
+          // last accepted read, so the tap now holds a window that shares no
+          // frame with it. The tick interval is never what accepts a window.
+          const now = ctx.currentTime;
+          if (now - lastAcceptedClock >= spanSec) {
+            const snap = eng.read(node, 'outputSnapshot') as
+              | { samples: Float32Array; sampleRate: number }
+              | undefined;
+            if (snap && snap.samples.length >= 1024) {
+              // One analyser span + one render quantum (128 frames).
+              spanSec = (snap.samples.length + 128) / snap.sampleRate;
+              sampleRate = snap.sampleRate;
+              lastAcceptedClock = now;
+              windows += 1;
+              // Measurable = not too quiet to mean anything (the RMS floor the
+              // Node-side estimator used). The copy is the whole per-tick cost.
+              let energy = 0;
+              for (let i = 0; i < snap.samples.length; i++) energy += snap.samples[i]! * snap.samples[i]!;
+              if (Math.sqrt(energy / snap.samples.length) >= 0.002) held.push(snap.samples.slice());
+            }
+          }
+          if (held.length >= want) {
+            finish();
+            return;
+          }
+          if (at - t0 >= capMs) finish();
+        };
+
+        const timer = setInterval(tick, tickMs);
+        tick();
+      });
+    },
+    { id: outNodeId, around: aroundHz, want: PITCH_WINDOWS, capMs: PITCH_CAP_MS, tickMs: PITCH_TICK_MS },
+  );
 }
 
 test.beforeEach(async ({ page }) => {
@@ -318,6 +453,7 @@ for (const note of NOTES) {
     test.setTimeout(90_000);
     const sl = await dropSamsloopInLane1(page);
     await loadSine(page, sl);
+    await starveMainThread(page);
     await addScopeOn(page, sl);
     await seedAndRun(page, 0, note.midi);
 
@@ -329,32 +465,27 @@ for (const note of NOTES) {
       `the lane samsloop must SOUND at ${note.name} — ${describeScopeWindow(live)}`,
     ).toBeGreaterThan(AUDIBLE_FLOOR);
 
-    // Then the pitch: MEDIAN spectral fundamental over the terminal tap.
-    const cents: number[] = [];
-    let polled = 0;
-    const deadline = Date.now() + 12_000;
-    while (cents.length < 30 && Date.now() < deadline) {
-      const snap = await readOutputSnapshot(page, PINNED_OUT);
-      polled += 1;
-      if (snap && snap.samples.length >= 1024) {
-        const hz = spectralFundamental(new Float32Array(snap.samples), snap.sampleRate, note.hz);
-        if (hz != null) cents.push(1200 * Math.log2(hz / note.hz));
-      }
-      // pacing: audio-out's terminal outputSnapshot tap is a 2048-sample analyser (audio-out.ts:317)
-      // = 43 ms at 48 kHz; 90 ms > one span, so every poll reads a fresh, non-overlapping window.
-      await page.waitForTimeout(90);
-    }
-    expect(polled, 'the terminal tap was polled').toBeGreaterThan(10);
-    expect(cents.length, `the real clip→samsloop chain is AUDIBLE at the terminal output (measurable windows)`)
-      .toBeGreaterThanOrEqual(12);
-    cents.sort((a, b) => a - b);
+    // Then the pitch: MEDIAN spectral fundamental over the terminal tap —
+    // gathered in the page, one window per analyser span OF THE AUDIO CLOCK.
+    const m = await measureTerminalCents(page, PINNED_OUT, note.hz);
+    const vitals =
+      `${m.cents.length} measurable of ${m.windows} windows read, ticks=${m.ticks}, ` +
+      `elapsed=${m.elapsedMs.toFixed(0)}ms, audio clock +${m.clockAdvancedSec.toFixed(2)}s, ` +
+      `span=${m.spanMs.toFixed(1)}ms, maxTickGap=${m.maxTickGapMs.toFixed(0)}ms`;
+    expect(m.windows, `the terminal tap was polled — ${vitals}`).toBeGreaterThan(10);
+    expect(
+      m.cents.length,
+      `the real clip→samsloop chain is AUDIBLE at the terminal output (measurable windows) — ${vitals}`,
+    ).toBeGreaterThanOrEqual(PITCH_WINDOWS_MIN);
+    const cents = m.cents.slice().sort((a, b) => a - b);
     const median = cents[cents.length >> 1]!;
     // The measurement, on the record (the line reporter prints test stdout).
     console.log(
       `[samsloop-clip-lane-pitch] ${note.name} midi=${note.midi} expect=${note.hz.toFixed(2)}Hz ` +
-        `median=${median.toFixed(2)}c windows=${cents.length}/${polled} ` +
+        `median=${median.toFixed(2)}c windows=${cents.length}/${m.windows} ` +
         `iqr=${(cents[(cents.length * 3) >> 2]! - cents[cents.length >> 2]!).toFixed(2)}c ` +
-        `liveness.peak=${live.peak.toFixed(3)} after ${live.elapsedMs.toFixed(0)}ms`,
+        `liveness.peak=${live.peak.toFixed(3)} after ${live.elapsedMs.toFixed(0)}ms ` +
+        `clock+${m.clockAdvancedSec.toFixed(2)}s in ${m.elapsedMs.toFixed(0)}ms`,
     );
     expect(
       Math.abs(median),
