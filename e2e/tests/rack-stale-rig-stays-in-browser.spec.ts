@@ -471,9 +471,21 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
       w.console.filter((c) => /\[reconciler\] skipping edge/.test(c.text)),
       'no edge was skipped',
     ).toEqual([]);
+    // Two console errors are the ENVIRONMENT, not the product, and both are
+    // modelled above rather than tolerated here: the es9-bridge socket is
+    // refused because no helper runs (the BRIDGE lamp asserts that in words),
+    // and CI's runner has no audio device, so Chromium logs "The AudioContext
+    // encountered an error from the audio device or the WebAudio renderer" and
+    // suspends the context — the exact event the suspend → gate → resume leg
+    // above exercises on purpose (run 34970354093, shard 11, is where it
+    // landed in this list). Anything else on the error channel is a defect.
     const unexpectedErrors = w.console
       .filter((c) => c.type === 'error')
-      .filter((c) => !/ws:\/\/127\.0\.0\.1:9209|WebSocket connection/.test(c.text));
-    expect(unexpectedErrors, 'the only console error is the refused es9-bridge socket').toEqual([]);
+      .filter((c) => !/ws:\/\/127\.0\.0\.1:9209|WebSocket connection/.test(c.text))
+      .filter((c) => !/AudioContext encountered an error from the audio device/.test(c.text));
+    expect(
+      unexpectedErrors,
+      "the only console errors are the refused es9-bridge socket and CI's audio-device error",
+    ).toEqual([]);
   });
 });
