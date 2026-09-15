@@ -9,7 +9,8 @@
 //                                   │                              ─▶ D15 mirroring
 //                                   └─▶ mpe-state (keys | pad)  ─▶ two poly buses
 //                                                                ─▶ expression lanes
-//   scheduler clock ──▶ two arp adapters ─▶ the same two buses
+//                                                                ─▶ 3 × N expression jacks per region
+//   scheduler clock ──▶ two arp adapters ─▶ the same two buses (+ lane 0's jacks)
 //
 // ONE REDUCER FOR EVERY ORIGIN. Hardware edges, the DOM pads, the ranked
 // cells and patch hydration all go through `reduceControls`
@@ -45,12 +46,20 @@
 // A pad at exact centre now mirrors exact 0 and the retained value is the
 // mirrored value.
 //
-// ⚠ NO EXPRESSION JACKS (D14 is a graph-wide `polyCv` change the owner has
-// not ruled on): per-lane velocity / pressure / timbre / bend are kept here
-// ALIGNED to the allocator lanes and exposed through `read(node,'card-api')
-// .expression(region)` so a test can assert alignment — the STATE half of
-// the package's V15 ("observer control": pressure → level at a jack); its
-// audible half stays deferred on D14.
+// EXPRESSION JACKS (F03, owner ruling 2026-09-15 "a build"). Per-lane
+// velocity / pressure / timbre / bend are kept here ALIGNED to the allocator
+// lanes (`LaneExpression`, `read(node,'card-api').expression(region)`, the
+// STATE half of V15) AND, for the first `LINN_EXPRESSION_LANES` lanes of each
+// region, written to one ConstantSource per (region, dim, lane) — ordinary
+// `cv` jacks `<region>_<vel|press|timbre><n>`, lane-aligned with the region's
+// `polyPitchGate` bus, so `keys_press3` describes the voice on `keys_poly`
+// lane 3 (PENTEMELODICA `voice3`). Every write lands at the SAME `at` as the
+// lane's pitch / gate. On the JACK velocity is 0..1 latched at the start,
+// pressure is 0..1 and returns to 0 when the finger lifts (a lifted finger
+// exerts none), timbre is BIPOLAR 2·t − 1 (CC74 64 → 0, so an unsqueezed
+// cable into a ±cutoff_cv is a no-op and "unpatched" reads like "resting
+// finger"); the card-api keeps timbre 0..1. D14's `polyCv` cable + breakout
+// (per-voice mono pitch/gate) stays unbuilt: no new graph-wide type.
 //
 // TIMESTAMPS. `RuntimeEvent.time` is read as PERFORMANCE SECONDS
 // (`MIDIMessageEvent.timeStamp / 1000` — the device layer's default domain,
@@ -91,7 +100,7 @@ import {
   type MpeState,
   type MpeVoice,
 } from '$lib/midi/mpe-state';
-import { DEFAULT_LINN_PROFILE } from '$lib/midi/linnstrument/profile';
+import { DEFAULT_LINN_PROFILE, EXPRESSION_DIMS, expressionPortId, LINN_EXPRESSION_LANES } from '$lib/midi/linnstrument/profile';
 import {
   createSelectionState,
   intentsFromRuntimeEvent,
@@ -130,6 +139,13 @@ export const selectorParamId = (s: SelectorId): string => `sel_${s}`;
 export const positionParamId = (s: SelectorId, axis: Axis): string => `pos_${s}_${axis}`;
 export const cvPortId = (s: SelectorId, axis: Axis): string => `${s}_${axis}`;
 export const polyPortId = (r: MusicalRegion): string => `${r}_poly`;
+/** The expression-jack vocabulary lives beside the lane cap in profile.ts
+ *  (plain data the docs manifest can import too); re-exported here so the
+ *  def and the tests read one module for every port id. */
+export { EXPRESSION_DIMS, expressionPortId, type ExpressionDim } from '$lib/midi/linnstrument/profile';
+/** The JACK value of a 0..1 timbre: bipolar, 0 at CC74 64 (the resting
+ *  finger), so an unsqueezed cable into a bipolar cutoff CV is a no-op. */
+export const timbreJack = (t: number): number => (Number.isFinite(t) ? Math.min(1, Math.max(-1, 2 * t - 1)) : 0);
 export const rootParamId = (r: MusicalRegion): string => `${r}_root`;
 export type ArpParamKey = 'on' | 'dir' | 'div' | 'range' | 'latch';
 export const arpParamId = (r: MusicalRegion, k: ArpParamKey): string => `${r}_arp_${k}`;
@@ -286,7 +302,19 @@ interface RegionRuntime {
   lanes: LaneExpression[];
   /** Touch id → note, for the arp's provenance and re-assertion. */
   held: Map<number, number>;
+  /** The expression JACKS: port id → ConstantSource, one per (dim, lane <
+   *  LINN_EXPRESSION_LANES). A lane with no entry plays on the bus only. */
+  expr: Map<string, ConstantSourceNode>;
 }
+
+/** What `writeLane` puts on a lane's expression jacks, in JACK units. */
+interface ExprWrite {
+  vel?: number;
+  press?: number;
+  timbre?: number;
+}
+/** A voice's expression as jack values (timbre bipolar, the rest 0..1). */
+const jackValues = (e: { velocity: number; pressure: number; timbre: number }): Required<ExprWrite> => ({ vel: e.velocity, press: e.pressure, timbre: timbreJack(e.timbre) });
 
 function freshLane(lane: number): LaneExpression {
   return { lane, voice: null, note: null, gate: 0, velocity: 0, pressure: 0, timbre: 0.5, bend: 0, pitchCv: 0, owner: null };
@@ -382,6 +410,17 @@ export async function createLinnstrumentRuntime(
     arp.attach(sender);
     const lanes: LaneExpression[] = [];
     for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) lanes.push(freshLane(i));
+    // The expression jacks — exactly like the six XY sources: a started
+    // ConstantSource at rest (0 on every dim; timbre 0 IS the resting finger).
+    const expr = new Map<string, ConstantSourceNode>();
+    for (const dim of EXPRESSION_DIMS) {
+      for (let lane = 0; lane < LINN_EXPRESSION_LANES; lane++) {
+        const c = ctx.createConstantSource();
+        c.offset.value = 0;
+        c.start();
+        expr.set(expressionPortId(region, dim, lane), c);
+      }
+    }
     return {
       region,
       mpe: createMpeState({ lanes: profile.lanesPerRegion, epoch: selection.epoch }),
@@ -389,6 +428,7 @@ export async function createLinnstrumentRuntime(
       arp,
       lanes,
       held: new Map(),
+      expr,
     };
   }
   function applyArpParams(region: MusicalRegion): void {
@@ -505,6 +545,9 @@ export async function createLinnstrumentRuntime(
       for (const ev of panicMpe(r.mpe, now)) applyVoiceEvent(r, ev);
       takeBus(r, now);
       for (const lane of r.lanes) lane.gate = 0;
+      // Every expression jack to rest: PANIC is the all-notes-off, and a
+      // latched velocity or timbre is a note's, not the module's.
+      for (const src of r.expr.values()) src.offset.setValueAtTime(0, now);
     }
     // XY, selection and the pointer are RETAINED (ui-specification.md:20).
   }
@@ -535,17 +578,22 @@ export async function createLinnstrumentRuntime(
     if (ev.kind === 'voice_start') {
       Object.assign(lane, { voice: v.id, note: v.note, velocity: v.velocity, pressure: v.pressure, timbre: v.timbre, bend: v.bend, pitchCv: midiToVOct(v.note + v.bend), owner: null });
       lane.gate = 1;
-      if (!r.arp.enabled) writeLane(r, v.lane, lane.pitchCv, 1, at);
+      // vel LATCHED, press and timbre initialised — all at the gate's `at`.
+      if (!r.arp.enabled) writeLane(r, v.lane, lane.pitchCv, 1, at, jackValues(v));
       r.arp.touchStart(v.id, v.note, { velocity: v.velocity, pressure: v.pressure, timbre: v.timbre, bend: v.bend });
       return;
     }
     if (ev.kind === 'voice_expression') {
-      if (lane.voice !== v.id) return; // stale: this lane was stolen (V10)
+      if (lane.voice !== v.id) return; // stale: this lane was stolen (V10) — NOTHING reaches a jack
       lane.pressure = v.pressure;
       lane.timbre = v.timbre;
       lane.bend = v.bend;
       lane.pitchCv = midiToVOct(v.note + v.bend);
-      if (!r.arp.enabled) writeLane(r, v.lane, lane.pitchCv, null, at);
+      const live = { press: v.pressure, timbre: timbreJack(v.timbre) };
+      if (!r.arp.enabled) writeLane(r, v.lane, lane.pitchCv, null, at, live);
+      // In arp mode lane 0 is the arp's, and it carries the OWNING finger's
+      // live expression (the docs' promise for `keys_arp_on`).
+      else if (r.lanes[0]!.owner === v.id) writeExpr(r, 0, live, at);
       r.arp.touchExpression(v.id, { pressure: v.pressure, timbre: v.timbre, bend: v.bend });
       return;
     }
@@ -555,13 +603,25 @@ export async function createLinnstrumentRuntime(
     lane.gate = 0;
     lane.voice = null;
     lane.owner = null;
-    if (!r.arp.enabled) writeLane(r, v.lane, null, 0, at);
+    // A lifted finger exerts no pressure; vel and timbre are RETAINED until
+    // the lane is reassigned (design.md "define release tails explicitly").
+    if (!r.arp.enabled) writeLane(r, v.lane, null, 0, at, { press: 0 });
   }
-  function writeLane(r: RegionRuntime, lane: number, pitch: number | null, gate: 0 | 1 | null, at: number): void {
+  function writeLane(r: RegionRuntime, lane: number, pitch: number | null, gate: 0 | 1 | null, at: number, expr?: ExprWrite): void {
     const slot = r.sender.voices[lane];
     if (!slot) return;
     if (pitch !== null) slot.pitchSrc.offset.setValueAtTime(pitch, at);
     if (gate !== null) slot.gateSrc.offset.setValueAtTime(gate, at);
+    if (expr) writeExpr(r, lane, expr, at);
+  }
+  /** The lane's expression jacks, at the same `at` as its pitch / gate. A
+   *  lane ≥ LINN_EXPRESSION_LANES has no jack and this is a no-op for it. */
+  function writeExpr(r: RegionRuntime, lane: number, expr: ExprWrite, at: number): void {
+    for (const dim of EXPRESSION_DIMS) {
+      const v = expr[dim];
+      if (v === undefined) continue;
+      r.expr.get(expressionPortId(r.region, dim, lane))?.offset.setValueAtTime(v, at);
+    }
   }
   /**
    * THE BUS CHANGES OWNER (arp on, arp off, PANIC, a session reset): every
@@ -579,13 +639,20 @@ export async function createLinnstrumentRuntime(
       slot.gateSrc.offset.cancelScheduledValues(now);
       slot.gateSrc.offset.setValueAtTime(0, now);
     }
+    // The same F05 shape on the expression jacks: whatever the old owner
+    // queued past `now` is dropped, and with the gates closed no finger is
+    // pressing — pressure to 0 now (vel / timbre retain, like a release).
+    for (const [id, src] of r.expr) {
+      src.offset.cancelScheduledValues(now);
+      if (id.startsWith(`${r.region}_press`)) src.offset.setValueAtTime(0, now);
+    }
   }
   function reassertVoices(r: RegionRuntime): void {
     const now = ctx.currentTime;
     for (const v of activeVoices(r.mpe)) {
       const lane = laneOf(r, v);
       lane.gate = 1;
-      writeLane(r, v.lane, midiToVOct(v.note + v.bend), 1, now);
+      writeLane(r, v.lane, midiToVOct(v.note + v.bend), 1, now, jackValues(v));
     }
   }
 
@@ -652,6 +719,10 @@ export async function createLinnstrumentRuntime(
       if (!r.arp.enabled) continue;
       const played = r.arp.service(input);
       if (!played.length) continue;
+      // Lane 0's jacks follow EVERY step at the step's own `at` (the arp
+      // schedules ahead of the tick), so the jack changes with the note the
+      // bus plays, not when the scheduler happened to run.
+      for (const step of played) writeExpr(r, 0, jackValues(step.expression), step.at);
       const last = played[played.length - 1]!;
       const lane = r.lanes[0]!;
       Object.assign(lane, {
@@ -752,6 +823,7 @@ export async function createLinnstrumentRuntime(
     outputs: new Map<string, { node: AudioNode; output: number }>([
       ...[...cvSources.entries()].map(([id, src]) => [id, { node: src as AudioNode, output: 0 }] as const),
       ...LINN_REGIONS.map((r) => [polyPortId(r), { node: regions[r].sender.output as AudioNode, output: 0 }] as const),
+      ...LINN_REGIONS.flatMap((r) => [...regions[r].expr.entries()].map(([id, src]) => [id, { node: src as AudioNode, output: 0 }] as const)),
     ]),
     setParam(paramId, value) {
       setParam(paramId, value);
@@ -776,7 +848,8 @@ export async function createLinnstrumentRuntime(
         regions[region].arp.attach(null);
         regions[region].sender.dispose();
       }
-      for (const src of cvSources.values()) {
+      const sources = [...cvSources.values(), ...LINN_REGIONS.flatMap((r) => [...regions[r].expr.values()])];
+      for (const src of sources) {
         try {
           src.stop();
         } catch {
@@ -785,6 +858,7 @@ export async function createLinnstrumentRuntime(
         src.disconnect();
       }
       cvSources.clear();
+      for (const r of LINN_REGIONS) regions[r].expr.clear();
     },
   };
 }

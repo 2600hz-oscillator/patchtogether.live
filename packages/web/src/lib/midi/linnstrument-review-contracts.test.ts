@@ -13,6 +13,8 @@
 //   R05  F08  EXTRAS OFF darkens the actual outgoing control-column frame
 //   R06  F07  a stalled tick never stacks arp attacks on one instant
 //   R08  F05  ARP off drops the arp's queued pitch before the handover
+//   R09  F03  a finger's pressure / timbre / velocity reach ITS lane's jacks
+//             (owner ruling 2026-09-15: "a build")
 //
 // R07 ("overlapping vertical row handoff keeps the XY pad responsive") is NOT
 // here: the review's H01 reproduced it (Y stays −0.75) but the mechanism is the
@@ -165,4 +167,30 @@ it('R08 leaving ARP cancels future arp pitches before reasserting held voices', 
   const pitch = (r.handle.outputs.get('keys_poly')!.node as unknown as Merger).inputs.get(0)!.offset;
   expect(pitch.at(1.5)).toBe(-2); // restored C2
   expect(pitch.at(1.6), 'old future E2 automation must not retune the restored C2 voice').toBe(-2);
+});
+
+it('R09 real wire bytes: Z, Y and velocity of the finger on lane k land on lane k\'s jacks and nowhere else; the lift clears pressure only', async () => {
+  const r = await rig();
+  const jack = (id: string) => (r.handle.outputs.get(id)!.node as unknown as Constant).offset;
+  r.sim.send([0x90, 1, 100]); // wire col 1 = app col 0, row 0 → keys lane 0, velocity 100
+  r.sim.send([0x90, 2, 60]); // lane 1
+  expect(jack('keys_vel1').at(2)).toBeCloseTo(100 / 127);
+  expect(jack('keys_vel2').at(2)).toBeCloseTo(60 / 127);
+  expect(jack('keys_press1').at(2)).toBe(0);
+  expect(jack('keys_timbre1').at(2)).toBe(0);
+  const lane1Writes = jack('keys_press2').events.length + jack('keys_timbre2').events.length;
+  const padWrites = jack('pad_press1').events.length;
+  r.sim.send([0xa0, 1, 100]); // poly pressure = Z on the row channel, keyed by cell
+  r.sim.send([0xb0, 1 + 64, 127]); // CC (wire col + 64) = Y → timbre 1 → jack +1
+  expect(jack('keys_press1').at(2)).toBeCloseTo(100 / 127);
+  expect(jack('keys_timbre1').at(2)).toBe(1);
+  expect(jack('keys_press2').events.length + jack('keys_timbre2').events.length, 'lane 1\'s jacks saw nothing of lane 0\'s finger').toBe(lane1Writes);
+  expect(jack('keys_press2').at(2)).toBe(0);
+  expect(jack('keys_timbre2').at(2)).toBe(0);
+  expect(jack('pad_press1').events.length, 'the pad bus is untouched').toBe(padWrites);
+  r.sim.send([0x80, 1, 0]);
+  expect(jack('keys_press1').at(2)).toBe(0);
+  expect(jack('keys_vel1').at(2), 'velocity retained until the lane is reassigned').toBeCloseTo(100 / 127);
+  expect(jack('keys_timbre1').at(2), 'timbre retained').toBe(1);
+  expect(r.api.state().active.keys).toBe(1);
 });
