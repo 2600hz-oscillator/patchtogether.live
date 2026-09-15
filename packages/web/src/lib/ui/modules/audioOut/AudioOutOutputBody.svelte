@@ -1,6 +1,6 @@
 <script lang="ts">
   // THE AUDIO OUT dock full-view body: the terminal stereo meter, plus the
-  // output-device picker.
+  // output-device picker in its own DEVICE band beneath it.
   //
   // ⚠ WHY THE TWO ARE ONE SURFACE. They are the two halves of the only question
   // a player asks this module: WHERE IS MY SOUND GOING, and IS IT ALRIGHT WHEN
@@ -45,9 +45,33 @@
   //
   // ⚠ THE DRAW LOOP IS VISIBILITY-GATED by construction: `onMeterFrame` is the
   // shared rAF that skips off-screen subscribers. There is no second loop here.
+  //
+  // ⚠ THE PICKER IS THE FLEET'S OWN ROSTER CHIP, NOT A NATIVE `<select>`, and
+  // that is the owner's 2026-09-15 defect fixed rather than styled over: "this
+  // button sizes itself terribly, I have to make it small and even if small it
+  // can't really be seen. needs better placement." A `<select>`'s intrinsic
+  // width is its LONGEST OPTION — the machine's own device names — inside a
+  // `width: max-content` plate, so the plate was as wide as the runner's
+  // hardware was called, the 🎧 tray host transform-scaled the whole face down
+  // to fit, and at 50 % the picker's 0.65 rem text was unreadable. The chip is
+  // `Selector` — the SAME primitive `ModuleShell` mounts for a dock `selector`
+  // cell (`hero`, one captioned row) — so it scales with the face like every
+  // other cell, contributes only the hero chip's floor to the plate's width
+  // (see the CSS), ellipsises the current name inside whatever width the plate
+  // has, and opens the roster as a portaled, viewport-clamped list. It writes
+  // the SAME binding through the same `setOutputDevice` seam.
+  //
+  // ⚠ AND IT IS DELIBERATELY NOT A `selector` SHELL CELL. `module-face-lint`
+  // requires every declared `controlFamilies` entry to be RANKED in
+  // `face.order`, and a ranked family renders on the COMPACT LANE TILE of every
+  // added instance — an OS-device dropdown on the one face that should be
+  // narrowest, with a baseline full of machine-specific text. The def says so
+  // at length. The body reuses the cell's primitive, not its registration.
   import { patch } from '$lib/graph/store';
   import { onMeterFrame } from '$lib/ui/meter-frame';
   import { useEngine } from '$lib/audio/engine-context';
+  import { Selector } from '$lib/ui/controls';
+  import { pickerRosterFrom } from '$lib/audio/output-device-model';
   import type { ModuleNode } from '$lib/graph/types';
   import {
     AUDIO_OUT_METER_FLOOR_DB,
@@ -91,6 +115,9 @@
 
   let devices = $derived(outputDeviceRoster());
   let options = $derived(outputDeviceOptions(devices));
+  /** What the chip paints — the roster, or one named placeholder so an empty
+   *  enumeration is a chip that says `(no outputs)` rather than a blank one. */
+  let roster = $derived(pickerRosterFrom(options));
   let picked = $derived(outputDeviceValue(node, devices));
   /** `'unsupported'` | `'no-devices'` | null — TWO causes, and the card could
    *  tell them apart in neither its disabled state nor its notice. */
@@ -254,26 +281,30 @@
     <canvas bind:this={canvasEl} data-testid="audioout-face-canvas"></canvas>
   </div>
 
-  <label class="device">
-    <span class="tag">out</span>
-    <select
-      data-testid="audioout-face-device-select"
-      data-block={block ?? 'none'}
-      value={picked}
-      disabled={block !== null}
-      aria-label="output device"
-      aria-valuetext={pickerText}
-      onchange={(e) => setOutputDevice(nodeId, (e.currentTarget as HTMLSelectElement).value)}
-    >
-      {#if options.length === 0}
-        <option value="">(no outputs)</option>
-      {:else}
-        {#each options as o (o.value)}
-          <option value={o.value}>{o.label}</option>
-        {/each}
-      {/if}
-    </select>
-  </label>
+  <!-- THE DEVICE BAND — the picker in its OWN captioned row under the meter,
+       not a tag squeezed beside it. The caption is the band's name (a section
+       label, permitted resting text); the chip is the fleet's `Selector` at
+       hero size, the exact mount `ModuleShell` gives a dock `selector` cell.
+       `data-block` and `aria-valuetext` ride the chip so the two dead causes
+       stay distinguishable on the same element the specs already read.
+       `wheelCycles={false}`: a stray scroll over the 🎧 tray must not hop the
+       rack's sound between speakers and headphones — the `<select>` never did. -->
+  <div class="device" data-testid="audioout-face-device-band">
+    <span class="band-cap">device</span>
+    <div class="device-row">
+      <Selector
+        value={picked}
+        options={roster}
+        onchange={(v) => setOutputDevice(nodeId, String(v))}
+        hero
+        disabled={block !== null}
+        wheelCycles={false}
+        testid="audioout-face-device-select"
+        data-block={block ?? 'none'}
+        aria-valuetext={pickerText}
+      />
+    </div>
+  </div>
 
   <!-- ⚠ TRANSIENT, NOT RESTING. This element does not exist unless a pick was
        REJECTED — feedback on a gesture, the same shape the platform's own file
@@ -324,35 +355,58 @@
     border-radius: 3px;
     background: #0a0c10;
   }
+  /* THE DEVICE BAND. The caption is typeset exactly as `ModuleShell`'s
+     `.page-label` is — the 0.62 rem / 800 / uppercased header every dock
+     section band gets — so this row reads as a band OF the face rather than a
+     widget parked on it. Mirrored rather than shared because the shell's rule
+     is component-scoped; the values are the shell's, not this body's. */
   .device {
     display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 0.65rem;
-    color: var(--text-dim);
+    flex-direction: column;
+    gap: 6px;
     width: 100%;
     min-width: 0;
   }
-  .tag {
+  .band-cap {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-family: ui-monospace, monospace;
-    font-size: 0.6rem;
+    color: var(--text-dim, #9aa3ad);
   }
-  .device select {
+  /* ⚠ THE CHIP MUST NOT SIZE THE PLATE, and that is the defect this band
+     replaces. `.faceplate-body` is `width: max-content`, and the native
+     `<select>` this was contributed its LONGEST OPTION — the machine's own
+     device names — so the plate was a function of what the runner's hardware
+     was called, and the 🎧 tray host then transform-scaled the whole face down
+     to fit it. `flex-basis: 0` + `width: 0` make the chip contribute NOTHING to
+     the plate's intrinsic width beyond the floor; the floor is the hero chip's
+     own 168 px (`.selector.hero`), the number every dock roster cell already
+     contributes, so it is deterministic whatever the machine is called. Inside
+     whatever width the plate turns out to have the chip then fills the row and
+     ELLIPSISES the current name; the full name is the chip's `title` and every
+     name is legible in the portaled list. `AudioInSourceControls` carries the
+     same basis-0 fix on its picker, with the measurement. */
+  .device-row {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+  }
+  .device-row :global(.selector-wrap) {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 168px;
+  }
+  .device-row :global(.selector.hero) {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .device-row :global(.selector .val) {
     flex: 1 1 auto;
     min-width: 0;
-    background: #151a21;
-    color: var(--text);
-    border: 1px solid #3a4048;
-    border-radius: 3px;
-    padding: 2px 4px;
-    font-size: 0.65rem;
-    font-family: ui-monospace, monospace;
-  }
-  .device select:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sink-err {
     font-size: 0.6rem;

@@ -226,11 +226,18 @@
       // picker / live preview) are the same case: they float outside the
       // anchor, and working the hosted card's device dropdown must not
       // close the cameras menu (which would hide the host mid-pick).
+      // A face SELECTOR chip's roster is the same case again: `Selector`
+      // portals its list AND its dismiss backdrop to <body>, so picking an
+      // output device in the 🎧 tray's audio-out face — or clicking away to
+      // dismiss the list — is a pointerdown outside every anchor. Without this
+      // the tray slammed shut on every device pick, which the native
+      // `<select>` it replaced never did (its popup was the OS's, not the DOM's).
       if (
         t.closest('.ctx-overlay') ||
         t.closest('[data-testid="control-context-menu"]') ||
         t.closest('[data-testid="port-context-menu"]') ||
-        t.closest('[data-wf-camera-host]')
+        t.closest('[data-wf-camera-host]') ||
+        t.closest('[data-selector-menu]')
       ) {
         return;
       }

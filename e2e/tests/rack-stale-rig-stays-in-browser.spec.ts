@@ -335,9 +335,14 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
 
     // ── 3b. AUDIO OUT — the master-sink picker, written AND applied ────────
     await userClick(page, page.getByTestId('workflow-topbar-slot-audio-io'));
-    const sinkSelect = page.getByTestId('workflow-io-audioout-host').getByTestId('audioout-face-device-select');
-    await expect(sinkSelect).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await sinkSelect.selectOption(SINK_B);
+    // The picker is the face's roster CHIP, not a native `<select>`: click it,
+    // then the portaled option carrying the sink's id — BOTH through
+    // `userClick`, because this is exactly the step after which the audio gate
+    // remounts (see the header), and `selectOption` needed no pointer at all.
+    const sinkChip = page.getByTestId('workflow-io-audioout-host').getByTestId('audioout-face-device-select');
+    await expect(sinkChip).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await userClick(page, sinkChip);
+    await userClick(page, page.locator(`[role="listbox"] [role="option"][data-value="${SINK_B}"]`));
     await expect
       .poll(async () => ((await rig(page)).audioOut as { outputDeviceId?: string })?.outputDeviceId, {
         message: 'the in-rack audio-out picker writes the rig store',

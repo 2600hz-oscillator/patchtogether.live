@@ -36,6 +36,7 @@
 // shell spec.
 
 import { test, expect, type Page } from './_fixtures';
+import { pickSelectorValue } from './_helpers';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { awaitReceiver, describeReceiver, requirePresentFrame } from '../_helpers/present';
 
@@ -571,14 +572,16 @@ test.describe('NATIVE-SHELL PART-3 — rig bindings survive a reload / File→Ne
     await bootEngine(page);
 
     // Open the 🎧 panel and pick the fake sink through the pinned audio-out
-    // face's real device select (scoped to the io host, which also mounts the
-    // faceplate elsewhere) → the pick lands in the store and is applied.
+    // face's real device picker (scoped to the io host, which also mounts the
+    // faceplate elsewhere) → the pick lands in the store and is applied. The
+    // picker is the face's roster CHIP, not a native `<select>`: click it, then
+    // the portaled option carrying the sink's id.
     await page.getByTestId('workflow-topbar-slot-audio-io').click();
-    const select = page
+    const chip = page
       .getByTestId('workflow-io-audioout-host')
       .getByTestId('audioout-face-device-select');
-    await expect(select).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await select.selectOption(SINK_DEVICE_B);
+    await expect(chip).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await pickSelectorValue(page, chip, SINK_DEVICE_B);
 
     // The pick landed in the store, was applied to the context, and is NOT on
     // the synced node.data.
