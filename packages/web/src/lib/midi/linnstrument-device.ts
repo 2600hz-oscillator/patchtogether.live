@@ -854,9 +854,10 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
  * follow it), then the READ — the one message the instrument answers whether
  * or not the entry changed anything (header: TWO things can bring that message
  * back) — and a fresh reply window. The bind sends it once; an EXPLICIT
- * CONNECT sends it again while the mode is unconfirmed, reported OFF or the
- * instrument was silent (`connectLinnstrument`), which is the recovery every
- * one of those status lines instructs. The roster refresh (`resolvePorts`)
+ * CONNECT on an ALREADY-BOUND port sends it again while the mode is
+ * unconfirmed, reported OFF or the instrument was silent
+ * (`connectLinnstrument`), which is the recovery every one of those status
+ * lines instructs. The roster refresh (`resolvePorts`)
  * never does: a rig echo or a hot-plug of an unrelated port must not re-enter
  * the mode on a healthy instrument.
  */
@@ -968,17 +969,21 @@ function adoptAccess(a: LinnAccessLike): void {
  *
  * MUST be called synchronously from a user gesture — an `await` above the
  * request spends the activation and Chromium refuses to prompt. Safe to call
- * again: with access held it re-resolves the roster, and when the bound
+ * again: with access held it re-resolves the roster, and when an ALREADY-BOUND
  * instrument has not confirmed User Firmware Mode (unconfirmed, reported OFF,
  * or silent) it RE-SENDS the mode request with a new reply window and repaints
  * — the "press CONNECT again" every one of those status lines instructs. A
- * confirmed instrument is left alone. NEVER THROWS. Returns true only when a
- * port is actually bound.
+ * port that this call's own roster pass was the first to bind has just had
+ * the request sent by the bind, once; a confirmed instrument is left alone.
+ * NEVER THROWS. Returns true only when a port is actually bound.
  */
 export async function connectLinnstrument(request?: LinnRequestFn): Promise<boolean> {
   if (access) {
+    // The binding object is replaced by every bind (`bindLinnstrument`), so
+    // identity across the roster pass is "was bound before this gesture".
+    const before = bound;
     resolvePorts();
-    if (bound && !userModeEntered) {
+    if (bound && bound === before && !userModeEntered) {
       requestUserMode();
       led.painted.clear();
       led.scheduleFlush();

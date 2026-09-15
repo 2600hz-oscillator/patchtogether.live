@@ -811,6 +811,30 @@ describe('F02 — an explicit CONNECT performs the recovery its status line inst
     }
   });
 
+  it('a first bind via CONNECT sends the mode request exactly once', async () => {
+    // Granted, nothing bound (the shell's shape: only a rig pick binds), and
+    // the pick then reaches the store WITHOUT an echo to the device layer — a
+    // fresh store instance it never subscribed to — so the next CONNECT's own
+    // roster pass is the first to bind the port. The bind's request must not
+    // be followed by the retry's: one entry, one read, one set of enables.
+    setNativeAvailableForTests(true);
+    const sim = await installSimulatedLinnstrument({ bind: false });
+    expect(linnstrumentStatus().kind).toBe('unbound');
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(0);
+    const store = new RigBindingStore(memBackend({ ...emptyRigBindings(), linnstrument: { deviceId: sim.inputId } }));
+    setRigBindingsForTests(store);
+    await store.whenReady();
+    expect(sim.attached()).toBe(false); // the pick is in the store; no echo reached the layer
+    expect(await connectLinnstrument()).toBe(true);
+    await flush();
+    expect(modeRequest(sim.writes())).toEqual({ entries: 1, reads: 1, enables: DEFAULT_LINN_PROFILE.rows });
+    expect(linnstrumentStatus()).toMatchObject({ kind: 'bound', userMode: false, reply: 'pending' });
+    // The port is now ALREADY bound and unconfirmed: the next CONNECT is the F02 retry.
+    sim.clearWrites();
+    expect(await connectLinnstrument()).toBe(true);
+    expect(modeRequest(sim.writes())).toEqual({ entries: 1, reads: 1, enables: DEFAULT_LINN_PROFILE.rows });
+  });
+
   it('CONFIRMED → CONNECT is idempotent: no re-entry, no session, no repaint; and a roster refresh never re-sends', async () => {
     const sim = await confirmedSim();
     const sessions = events.filter((e) => e.kind === 'session').length;

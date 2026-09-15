@@ -178,11 +178,17 @@
     // says what to do on the instrument (linnstrument-device.ts header).
     void $linnstrumentMidiVersion;
     const device = linnstrumentStatus();
+    // Three unconfirmed readings, each true to what the instrument DID:
+    // SILENT — nothing came back over USB; ANSWERED — it spoke, and said OFF
+    // (it left the mode, or refused the entry); PENDING — the request is out
+    // and the reply window is still open.
     const mode = snap.session.userMode
       ? 'user firmware mode confirmed by the instrument'
       : device.kind === 'bound' && device.reply === 'silent'
         ? device.message
-        : 'user firmware mode requested, not yet confirmed by the instrument';
+        : device.kind === 'bound' && device.reply === 'answered'
+          ? 'the instrument answered: user firmware mode is off — press CONNECT to request it again'
+          : 'user firmware mode requested, not yet confirmed by the instrument';
     return `${src}, ${mode}, session ${snap.session.epoch}`;
   });
   function regionDetail(region: 'keys' | 'pad'): string {
