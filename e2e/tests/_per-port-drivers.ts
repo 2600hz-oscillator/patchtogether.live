@@ -902,6 +902,16 @@ const DRIVERS: Record<string, PerPortDriver> = {
   //     cell (15, 7) = 36 + 15 + 5·7 = 86, pad cell (24, 7) = 60 + 7 + 5·7 = 102.
   //     `pad_root` starts the pad at C4 by default, so the pad cell is chosen
   //     by the same arithmetic, not by luck.
+  //   * <region>_vel1..N / _press1..N / _timbre1..N (F03) — one jack per bus
+  //     LANE, so N fingers must be DOWN on each region, each with a velocity
+  //     (Note On, default 100 → 0.79), a Z above 0 (→ press > 0) and a Y off
+  //     64 (timbre is BIPOLAR around CC 64: y 100 → +0.57) — all 3·N·2 jacks
+  //     then read non-zero DC. N is read from the def in the page
+  //     (`__moduleSpecs`), never typed here. Lanes fill in touch order, so the
+  //     k-th touch on a region is lane k − 1. The keys row 7 keeps every cell
+  //     far above C4 (86 − i); the pad's first touch stays (24, 7) so the R
+  //     pair still moves through the reducer, and the extra pad fingers on
+  //     row 7 (17 + i) are ignored by the pointer policy but are voices.
   linnstrument: {
     params: {
       pos_r_x: 0.7, pos_r_y: 0.5,
@@ -916,6 +926,7 @@ const DRIVERS: Record<string, PerPortDriver> = {
             touch: (col: number, row: number, o?: { velocity?: number; x?: number; y?: number; z?: number }) => void;
             ackUserMode: (on?: boolean) => void;
           };
+          __moduleSpecs?: { type: string; outputs: { id: string }[] }[];
         };
         if (!w.__linnstrumentTestInstall) return;
         await w.__linnstrumentTestInstall();
@@ -925,17 +936,24 @@ const DRIVERS: Record<string, PerPortDriver> = {
         // once User Mode is CONFIRMED (raw-decode.ts) — unconfirmed, the bytes
         // below are music and reach no voice.
         sim.ackUserMode(true);
-        // keys_poly: a held key well above C4 (lane 0 pitch ≈ +2.17 V).
-        sim.touch(15, 7, { x: 3000, z: 90 });
+        // How many lanes have expression jacks: DERIVED from the def the page
+        // published, so a widened cap widens the driver by construction.
+        const lanes = (w.__moduleSpecs ?? []).find((s) => s.type === 'linnstrument')?.outputs.filter((o) => /^keys_press\d+$/.test(o.id)).length ?? 1;
+        // keys_poly: held keys well above C4 (lane 0 pitch ≈ +2.17 V), one per
+        // expression lane, each with Z and a Y off centre.
+        for (let i = 0; i < lanes; i++) sim.touch(15 - i, 7, { x: 3000, y: 100, z: 90 });
         // pad_poly + the selected R pair: raw X near the pad's right edge under
         // the profile's whole-device prior (u ≈ 0.95 → R X ≈ +0.9); CC Y 100 on
         // the TOP row — v spans the whole pad height, (7 + 100/127) / 8 ≈ 0.97
         // → R Y ≈ +0.95 (surface-map.ts padUV); lane 0 pitch ≈ +3.5 V.
         sim.touch(24, 7, { x: 4200, y: 100, z: 80 });
+        // …then the other pad lanes (the pointer is already owned; these are
+        // voices only), on row 7 from the pad's left column.
+        for (let i = 0; i + 1 < lanes; i++) sim.touch(17 + i, 7, { x: 3000, y: 100, z: 80 });
       });
     },
     note:
-      'LINNSTRUMENT: install the simulated LinnStrument via __linnstrumentTestInstall (the REAL connect + User-Mode bind path), seed the six retained pos_* params off-centre (joystick precedent — only the selected R pair follows a finger), then hold one keys cell and one pad cell far above C4 so keys_poly / pad_poly carry a non-zero lane-0 pitch and the pad finger moves R through the real reducer',
+      'LINNSTRUMENT: install the simulated LinnStrument via __linnstrumentTestInstall (the REAL connect + User-Mode bind path), seed the six retained pos_* params off-centre (joystick precedent — only the selected R pair follows a finger), then hold one keys cell and one pad cell per expression lane (count read from the def in the page) far above C4, each with Z > 0 and Y ≠ 64, so keys_poly / pad_poly carry a non-zero lane-0 pitch, every vel/press/timbre jack reads non-zero DC, and the pad finger moves R through the real reducer',
   },
 
   // ───── MIDI LANE — mock requestMIDIAccess + send note-on + CCs ─────
