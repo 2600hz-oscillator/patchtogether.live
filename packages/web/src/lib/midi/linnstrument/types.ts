@@ -104,15 +104,23 @@ export interface LinnLightingRoles {
   played: keyof LinnPalette;
 }
 
-/** What the MODULE tells the source to light the keys and the pad with: ITS
- *  roots and ITS scale (the `keys_root` / `pad_root` / `scale` params), so
- *  the lights can never disagree with the notes the runtime derives (WP-C
- *  open item 3c). `scale` undefined = chromatic — only the roots are
- *  landmarks; nothing is out of scale (keyboard-map.ts `noteRole`). */
+/** What the MODULE tells the source to light with: ITS roots and ITS scale
+ *  for the keys and the pad (the `keys_root` / `pad_root` / `scale` params),
+ *  so the lights can never disagree with the notes the runtime derives (WP-C
+ *  open item 3c), and whether ITS lower five control cells are live
+ *  (`extra_controls`, D17) so the control column can never stay lit for a
+ *  cell the module has made inert (2026-09-15 review F08: the runtime's
+ *  profile flipped while the writer kept a profile of its own). `scale`
+ *  undefined = chromatic — only the roots are landmarks; nothing is out of
+ *  scale (keyboard-map.ts `noteRole`). */
 export interface LinnLighting {
   keysRoot: number;
   padRoot: number;
   scale: ScaleName | undefined;
+  /** The lower five control cells (ARP / HOLD / OCT− / OCT+ / PANIC) are
+   *  enabled: lit orange when true, `off` when false — the same switch that
+   *  makes them inert in the reducer. */
+  extraControls: boolean;
 }
 
 export interface LinnProfile {

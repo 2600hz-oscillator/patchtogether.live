@@ -76,7 +76,7 @@
 // prefixes would remove it from CI entirely and look like ordinary bookkeeping.
 
 import { test, expect } from './_fixtures';
-import { type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopePeakOverWindow, describeScopeWindow } from './_module-coverage-helpers';
 import { pollScopeBandAmp, sampleScopeRms } from '../_helpers/scope-poll';
@@ -212,6 +212,19 @@ async function sim<K extends keyof LinnSim>(page: Page, method: K, ...args: Para
     },
     { method, args: args as unknown[] },
   );
+}
+
+/** Open a node's dock faceplate, scoped BY NODE (launchpad-face.spec.ts's
+ *  shape: an unscoped dock locator keeps resolving after the occupant swaps). */
+async function openDock(page: Page, nodeId: string): Promise<Locator> {
+  const shell = page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="module-shell"]`);
+  await expect(shell).toBeVisible();
+  await shell.getByTestId('shell-open-dock').click();
+  const dockShell = page
+    .getByTestId('dock-full-view')
+    .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${nodeId}"]`);
+  await expect(dockShell).toBeVisible();
+  return dockShell;
 }
 
 /** The module's live runtime snapshot — `read(node, 'state')`. */
@@ -655,6 +668,16 @@ test('@linnstrument CONNECT with NO rig pick binds the simulated port by NAME, r
     });
   expect(await pick(), 'no rig pick to start with').toBeNull();
 
+  // ── THE LINK LAMP'S THREE LOOKS (2026-09-15 review caution: "LINK lit but
+  // the instrument unchanged" must not recur). Dark before a bind; AMBER
+  // (`warn`) once a port is bound but the instrument has NOT confirmed User
+  // Firmware Mode; the domain accent only on the instrument's own answer. The
+  // dock body is where the lamp lives, so open it before the connect.
+  const dock = await openDock(page, 'ln');
+  const link = dock.getByTestId('linnstrument-face-led-link-ln');
+  await expect(link, 'DARK with no port bound').toHaveAttribute('data-lit', '0');
+  await expect(link).toHaveAttribute('aria-label', /no LinnStrument bound/);
+
   // The connect: bound with no explicit bind — the port matched by name.
   expect(await installSim(page), 'connect alone attaches the LinnStrument port').toBe(true);
   const st = await sim(page, 'status');
@@ -662,6 +685,22 @@ test('@linnstrument CONNECT with NO rig pick binds the simulated port by NAME, r
   expect(st.boundPortName).toBe('LinnStrument MIDI');
   expect(containsRun(await sim(page, 'writes'), USER_MODE_ON), 'User Firmware Mode entry left on the paired output').toBe(true);
   await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state), { message: 'the runtime sees the session' }).toBe('connected');
+
+  // Bound, mode REQUESTED, nothing answered: lit AMBER, never the accent.
+  await expect(link, 'lit — a port is bound').toHaveAttribute('data-lit', '1');
+  await expect(link, 'AMBER — the instrument has not confirmed the mode').toHaveClass(/\bwarn\b/);
+  await expect(link).toHaveAttribute('aria-label', /requested, not yet confirmed/);
+  // The instrument's OWN NRPN 245 answer is the only thing that turns it accent.
+  await sim(page, 'ackUserMode', true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode), { message: 'the runtime sees the confirmation' }).toBe(true);
+  await expect(link, 'ACCENT — confirmed by the instrument').not.toHaveClass(/\bwarn\b/);
+  await expect(link).toHaveAttribute('data-lit', '1');
+  await expect(link).toHaveAttribute('aria-label', /confirmed by the instrument/);
+  // …and an answer of OFF is a FAULT the lamp shows the same way as pending.
+  await sim(page, 'ackUserMode', false);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode), { message: 'the runtime sees the instrument leave the mode' }).toBe(false);
+  await expect(link, 'AMBER again — the instrument reports OFF').toHaveClass(/\bwarn\b/);
+  await expect(link).toHaveAttribute('data-lit', '1');
   // …and RECORDED: the by-name path wrote the rig store (the explicit path never does).
   await expect.poll(pick, { message: 'the bound port is remembered in the per-machine rig store' }).toBe('sim-linnstrument-in');
 

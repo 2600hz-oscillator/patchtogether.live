@@ -11,7 +11,6 @@
 //   R03  F01  PANIC forgets a released, latched arp pool
 //   R04  F06  an unchanged mode answer acknowledges, never invalidates
 //   R05  F08  EXTRAS OFF darkens the actual outgoing control-column frame
-//             (Builder B's finding — the LED writer's profile; red until it lands)
 //   R06  F07  a stalled tick never stacks arp attacks on one instant
 //   R08  F05  ARP off drops the arp's queued pitch before the handover
 //
@@ -24,9 +23,11 @@
 // ownership to a remaining contact.
 //
 // The per-layer halves of these contracts live next to their code:
-// raw-decode.test.ts (F04, F06), linnstrument-device.test.ts (F02, F04, F06),
-// linnstrument-arp.test.ts (F01, F07), linnstrument.test.ts (F01, F05); the
-// audible half of R03 is e2e/tests/linnstrument-panic-audible.spec.ts.
+// raw-decode.test.ts (F04, F06), linnstrument-device.test.ts (F02, F04, F06,
+// F08), linnstrument-arp.test.ts (F01, F07), linnstrument.test.ts (F01, F05,
+// F08, F09), graph-param-dispatch.test.ts (F09); the audible half of R03 is
+// e2e/tests/linnstrument-panic-audible.spec.ts and the LINK lamp's three looks
+// are e2e/tests/linnstrument.spec.ts (CONNECT).
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createLinnstrumentRuntime, type LinnstrumentCardApi } from '$lib/audio/modules/linnstrument-runtime';
 import { createLinnArp } from '$lib/audio/modules/linnstrument-arp';

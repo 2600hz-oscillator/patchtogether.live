@@ -218,6 +218,34 @@ export function deliverCcToGraph(nodeId: string, paramId: string, ccValue: numbe
   return true;
 }
 
+/** A value in the param's own units → clamped to the DEF's range. The
+ *  non-finite case resolves to `min` rather than NaN — the same "never let a
+ *  bad number reach the graph" stance `ccToValue`'s 0..127 clamp takes. */
+function clampToRange(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  return Math.max(lo, Math.min(hi, value));
+}
+
+/**
+ * Deliver a FULL-PRECISION value, already in `(nodeId, paramId)`'s own units,
+ * THROUGH THE GRAPH — the same pump as `deliverCcToGraph` (transient engine
+ * write per message, coalesced durable commit, the gesture's last value always
+ * lands) with no 7-bit hop. For an in-app source that already holds the real
+ * number (a LinnStrument pad mirroring into a joystick's ±1 `pos_x`, review
+ * F09: centre 0 became CC 64 = +0.0079), quantising to a CC and scaling back
+ * would throw away precision the target can represent. The value is clamped to
+ * the def's range, so this path cannot write outside the contract either.
+ * Returns true when delivered, false when the target could not be resolved.
+ */
+export function deliverValueToGraph(nodeId: string, paramId: string, value: number): boolean {
+  const target = resolveCcTarget(nodeId, paramId);
+  if (!target) return false;
+  pumpFor(nodeId, paramId).push(clampToRange(value, target.min, target.max));
+  return true;
+}
+
 /**
  * Deliver an inbound NOTE on/off to a declared `gate` INPUT port through the
  * engine — the same `setGateInput` seam <PatchPanel>'s gate rows drive, which

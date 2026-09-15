@@ -29,10 +29,21 @@
 // when a knob cell, a MIDI CC, a collaborator or a reload moves them.
 // `keys_root` / `pad_root` re-derive each touch's note from its LOCAL cell
 // (`keyboardCellToMidi`, D09), so the module's own roots win over whatever
-// profile the device layer mapped with — and the SAME roots, with `scale`,
-// are published to the source (`publishLinnstrumentLighting`) so the keys /
-// pad LEDs are lit from what the runtime plays, never from the device's
-// profile (WP-C open item 3c). The arp params feed the two adapters.
+// profile the device layer mapped with — and the SAME roots, with `scale`
+// and the `extra_controls` switch, are published to the source
+// (`publishLinnstrumentLighting`) so the keys / pad LEDs and the lower five
+// control lights are lit from what the runtime plays and accepts, never
+// from the device's profile (WP-C open item 3c; 2026-09-15 review F08 — the
+// writer's own profile kept the five lit after EXTRAS OFF). The arp params
+// feed the two adapters.
+//
+// JOYSTICK MIRRORING (D15, opt-in) hands the reducer's retained pair to the
+// bound joystick's `pos_x` / `pos_y` at FULL PRECISION through
+// `deliverValueToGraph` — the same pump `deliverCcToGraph` uses (transient
+// engine write + coalesced durable commit), minus the 7-bit hop: the review's
+// F09 measured centre 0 landing as CC 64 = +0.0079 and ~0.016 steps.
+// A pad at exact centre now mirrors exact 0 and the retained value is the
+// mirrored value.
 //
 // ⚠ NO EXPRESSION JACKS (D14 is a graph-wide `polyCv` change the owner has
 // not ruled on): per-lane velocity / pressure / timbre / bend are kept here
@@ -69,7 +80,7 @@ import { createMidiScheduler, type MidiScheduler } from '$lib/audio/midi-timing'
 import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
 import { getCcBatcher } from '$lib/ui/controls/cc-batch-store';
 import type { CcBatcher } from '$lib/ui/controls/cc-commit-batch';
-import { deliverCcToGraph } from '$lib/midi/graph-param-dispatch';
+import { deliverValueToGraph } from '$lib/midi/graph-param-dispatch';
 import {
   activeVoices,
   applyTouch,
@@ -225,8 +236,9 @@ export interface LinnstrumentRuntimeDeps {
   /** `node.data.targets` read live from the graph (deletion-safe: a missing
    *  node or key is simply unbound). */
   readTargets?: (nodeId: string) => LinnTargets;
-  /** The mirroring write. Default: `deliverCcToGraph`. */
-  deliverCc?: (nodeId: string, paramId: string, cc: number) => boolean;
+  /** The mirroring write, a full-precision value in the target param's own
+   *  range. Default: `deliverValueToGraph`. */
+  deliverValue?: (nodeId: string, paramId: string, value: number) => boolean;
   /** TIMELORDE bpm. Default: read the transport node off the live graph. */
   bpm?: () => number;
   /** Tick source. Default: the shared scheduler clock. */
@@ -266,10 +278,6 @@ function liveTargets(nodeId: string): LinnTargets {
   return out;
 }
 
-/** Bipolar −1..1 → the 7-bit value `deliverCcToGraph` scales against the
- *  target's own −1..1 range (joystick.ts:74-78). */
-export const bipolarToCc = (v: number): number => Math.round(((clampBipolar(v) + 1) / 2) * 127);
-
 interface RegionRuntime {
   region: MusicalRegion;
   mpe: MpeState;
@@ -296,7 +304,7 @@ export async function createLinnstrumentRuntime(
   const params: Record<string, number> = { ...(node.params ?? {}) };
   const commitParam = deps.commitParam ?? ((id, pid, v) => setNodeParam(id, pid, v));
   const readTargets = deps.readTargets ?? liveTargets;
-  const deliverCc = deps.deliverCc ?? deliverCcToGraph;
+  const deliverValue = deps.deliverValue ?? deliverValueToGraph;
   const bpm = deps.bpm ?? timelordeBpm;
   const clock = deps.clock ?? getSchedulerClock();
   const nowMs = deps.nowMs ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
@@ -315,11 +323,17 @@ export async function createLinnstrumentRuntime(
     };
   }
   let profile = buildProfile();
-  /** The lighting the source paints keys / pad with — THIS node's roots and
-   *  scale, re-published whenever they change (and on every session, so a
-   *  re-bound device is lit from the module, not the profile). */
+  /** The lighting the source paints with — THIS node's roots and scale for
+   *  the keys / pad, and ITS `extra_controls` switch for the lower five
+   *  control cells — re-published whenever any of them changes (and on every
+   *  session, so a re-bound device is lit from the module, not the profile). */
   function lighting(): LinnLighting {
-    return { keysRoot: profile.keysRoot, padRoot: profile.padRoot, scale: scaleFromParam(params[SCALE_PARAM]) };
+    return {
+      keysRoot: profile.keysRoot,
+      padRoot: profile.padRoot,
+      scale: scaleFromParam(params[SCALE_PARAM]),
+      extraControls: profile.extraControlsEnabled,
+    };
   }
   publishLinnstrumentLighting(lighting());
 
@@ -439,11 +453,12 @@ export async function createLinnstrumentRuntime(
         params[positionParamId(s, 'y')] = n.y;
         pumpFor(positionParamId(s, 'x')).push(n.x);
         pumpFor(positionParamId(s, 'y')).push(n.y);
-        // D15 (RECOMMENDATION, opt-in): mirror into a bound joystick's pos_x/pos_y.
+        // D15 (RECOMMENDATION, opt-in): mirror into a bound joystick's
+        // pos_x/pos_y — the pair itself, never a 7-bit rounding of it (F09).
         const target = targets[s];
         if (target) {
-          deliverCc(target, 'pos_x', bipolarToCc(n.x));
-          deliverCc(target, 'pos_y', bipolarToCc(n.y));
+          deliverValue(target, 'pos_x', n.x);
+          deliverValue(target, 'pos_y', n.y);
         }
       }
       if (prev.mask[s] !== next.mask[s]) {

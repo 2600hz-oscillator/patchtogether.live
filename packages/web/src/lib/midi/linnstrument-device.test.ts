@@ -32,6 +32,7 @@ import {
   musicalFrame,
   linnstrumentDiagnostics,
   linnstrumentMidiVersion,
+  linnstrumentProfile,
   linnstrumentStatus,
   linnstrumentTimeDomain,
   listLinnstrumentPorts,
@@ -596,11 +597,53 @@ describe('the LED writer paints acknowledged state and never decides', () => {
   });
 
   it('extra controls OFF leaves the lower five unlit (D17 is a recommendation, not a ruling)', () => {
-    const p = { ...DEFAULT_LINN_PROFILE, extraControlsEnabled: false };
+    const P = DEFAULT_LINN_PROFILE;
     const column = (frame: ReturnType<typeof ledFrame>) => frame.filter((c) => c.wireCol === CONTROL_WIRE_COL && c.ledRow <= 4);
-    expect(column(ledFrame(createSelectionState(p), p))).toHaveLength(5);
-    expect(column(ledFrame(createSelectionState(p), p)).every((c) => c.color === p.palette.off)).toBe(true);
-    expect(column(ledFrame(createSelectionState(DEFAULT_LINN_PROFILE), DEFAULT_LINN_PROFILE)).every((c) => c.color === DEFAULT_LINN_PROFILE.palette.orange)).toBe(true);
+    const off = { ...lightingFromProfile(P), extraControls: false };
+    expect(column(ledFrame(createSelectionState(P), P, off))).toHaveLength(5);
+    expect(column(ledFrame(createSelectionState(P), P, off)).every((c) => c.color === P.palette.off)).toBe(true);
+    expect(column(ledFrame(createSelectionState(P), P)).every((c) => c.color === P.palette.orange)).toBe(true);
+    // F08: the switch is the MODULE's lighting, never the writer's profile — a
+    // profile that says enabled cannot re-light what the module turned off,
+    // and the profile's own flag only reaches the frame through
+    // `lightingFromProfile` (the pre-publish fallback).
+    const enabledProfile = { ...P, extraControlsEnabled: true };
+    expect(column(ledFrame(createSelectionState(P), enabledProfile, off)).every((c) => c.color === P.palette.off)).toBe(true);
+    expect(lightingFromProfile({ ...P, extraControlsEnabled: false }).extraControls).toBe(false);
+  });
+
+  it('F08 — EXTRAS OFF darkens the five hardware control lights ON THE WIRE, through the same publish as the roots', async () => {
+    // The review: the runtime flipped its profile on `extra_controls` while the
+    // writer read a module-global profile with `extraControlsEnabled: true`, so
+    // no off-cell CC20/21/22 frames were ever sent (R05, 3/3). The module's
+    // switch now rides `publishLinnstrumentLighting`, the ONE path the writer
+    // paints from.
+    const sim = await confirmedSim();
+    ackFrom(createSelectionState(DEFAULT_LINN_PROFILE));
+    await flush();
+    const lower = (writes: number[][]) => paintedCells(writes).filter((c) => c.wireCol === CONTROL_WIRE_COL && c.ledRow <= 4).sort((a, b) => a.ledRow - b.ledRow);
+    expect(lower(sim.writes()).map((c) => c.color), 'the bind paints the five orange (extras default ON)').toEqual(Array(5).fill(DEFAULT_LINN_PROFILE.palette.orange));
+    sim.clearWrites();
+    publishLinnstrumentLighting({ ...lightingFromProfile(DEFAULT_LINN_PROFILE), extraControls: false });
+    await flush();
+    const dark = lower(sim.writes());
+    expect(dark.map((c) => c.ledRow)).toEqual([0, 1, 2, 3, 4]);
+    expect(dark.map((c) => c.color)).toEqual(Array(5).fill(DEFAULT_LINN_PROFILE.palette.off));
+    // Only the five moved: the selector cells and every musical cell diff to nothing.
+    expect(paintedCells(sim.writes())).toHaveLength(5);
+    // …and the writer's own profile still says enabled — it is not consulted.
+    expect(linnstrumentProfile().extraControlsEnabled).toBe(true);
+    // Back ON re-lights exactly the five.
+    sim.clearWrites();
+    publishLinnstrumentLighting({ ...lightingFromProfile(DEFAULT_LINN_PROFILE), extraControls: true });
+    await flush();
+    expect(lower(sim.writes()).map((c) => c.color)).toEqual(Array(5).fill(DEFAULT_LINN_PROFILE.palette.orange));
+    expect(paintedCells(sim.writes())).toHaveLength(5);
+    // An identical publish paints nothing (the diff, not a repaint).
+    sim.clearWrites();
+    publishLinnstrumentLighting({ ...lightingFromProfile(DEFAULT_LINN_PROFILE), extraControls: true });
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([]);
   });
 });
 
@@ -627,7 +670,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
   });
 
   it('a scale darkens the out-of-scale cells and leaves them PLAYABLE (the frame is lights only)', () => {
-    const frame = musicalFrame(P, { keysRoot: 36, padRoot: 60, scale: 'major' });
+    const frame = musicalFrame(P, { keysRoot: 36, padRoot: 60, scale: 'major', extraControls: true });
     expect(at(frame, 0, 0).color).toBe(P.palette.cyan); // C
     expect(at(frame, 1, 0).color).toBe(P.palette.off); // C# — out of C major, dark
     expect(at(frame, 2, 0).color).toBe(P.palette.green); // D
@@ -638,7 +681,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
   });
 
   it('a cell whose note leaves MIDI is off; a played cell is white on top of its role', () => {
-    const high = musicalFrame(P, { keysRoot: 96, padRoot: 60, scale: undefined });
+    const high = musicalFrame(P, { keysRoot: 96, padRoot: 60, scale: undefined, extraControls: true });
     expect(at(high, 15, 7).color).toBe(P.palette.off); // 96 + 15 + 35 = 146
     expect(at(high, 0, 0).color).toBe(P.palette.cyan); // 96
     const played = musicalFrame(P, lightingFromProfile(P), [{ col: 0, row: 0 }, { col: 18, row: 3 }]);
@@ -685,7 +728,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     // root + c + 5r, so which cells are roots never depends on the root); the
     // discriminator between the module's lighting and the profile's chromatic
     // fallback is the SCALE.
-    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: 'major' });
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: 'major', extraControls: true });
     const sim = await installSimulatedLinnstrument();
     await flush();
     const first = paintedCells(sim.writes());
@@ -694,7 +737,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     expect(first.find((c) => c.wireCol === 2 && c.ledRow === 0)!.color).toBe(P.palette.off); // app (1,0) = 37, C# — out of C major, NOT the chromatic fallback's green
     expect(first.find((c) => c.wireCol === 3 && c.ledRow === 0)!.color).toBe(P.palette.green); // app (2,0) = 38, D
     sim.clearWrites();
-    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined, extraControls: true });
     await flush();
     const cells = paintedCells(sim.writes());
     expect(cells.length).toBeGreaterThan(0);
@@ -704,7 +747,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     expect(cells.find((c) => c.wireCol === 3 && c.ledRow === 0)).toBeUndefined(); // D was green in both
     // An identical publish repaints nothing.
     sim.clearWrites();
-    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined, extraControls: true });
     await flush();
     expect(paintedCells(sim.writes())).toEqual([]);
   });

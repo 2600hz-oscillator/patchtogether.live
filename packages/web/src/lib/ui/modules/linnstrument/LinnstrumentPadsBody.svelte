@@ -157,7 +157,16 @@
   }
 
   // ── Lamps ──
+  //
+  // LINK has THREE looks, not two (2026-09-15 review caution — "LINK lit but
+  // the instrument unchanged" must not recur): DARK while no port is bound;
+  // AMBER (`warn`) while a port is bound but the instrument has NOT confirmed
+  // User Firmware Mode — requested and pending, reported OFF, or silent over
+  // USB — and the domain ACCENT only once the instrument's own NRPN 245 answer
+  // says ON. The colour is the whole visual; which of the three pending/fault
+  // cases it is stays in `detail`, never a text node.
   let linkLit = $derived(!!snap && snap.session.state !== 'disconnected');
+  let linkTone = $derived<'accent' | 'warn'>(!!snap && snap.session.userMode ? 'accent' : 'warn');
   let linkDetail = $derived.by(() => {
     if (!snap) return 'engine not up yet';
     if (snap.session.state === 'disconnected') return 'no LinnStrument bound — CONNECT grants Web MIDI and binds the port named like a LinnStrument (in the native shell: the one picked on rig setup)';
@@ -253,7 +262,7 @@
   </div>
 
   <div class="row">
-    <StatusLed caption="LINK" lit={linkLit} tone="accent" detail={linkDetail} testid="linnstrument-face-led-link-{nodeId}" />
+    <StatusLed caption="LINK" lit={linkLit} tone={linkTone} detail={linkDetail} testid="linnstrument-face-led-link-{nodeId}" />
     <StatusLed caption="KEYS" lit={keysLit} tone="accent" detail={regionDetail('keys')} testid="linnstrument-face-led-keys-{nodeId}" />
     <StatusLed caption="PAD" lit={padLit} tone="accent" detail={regionDetail('pad')} testid="linnstrument-face-led-pad-{nodeId}" />
   </div>

@@ -14,8 +14,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { linnstrumentDef } from './linnstrument';
+import { joystickDef } from './joystick';
 import {
-  bipolarToCc,
   createLinnstrumentRuntime,
   cvPortId,
   polyPortId,
@@ -28,6 +28,10 @@ import {
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { __resetLinnstrumentSourceForTest, setLinnstrumentSource } from '$lib/midi/linnstrument/source-registry';
+import { deliverValueToGraph, flushGraphCcCommits } from '$lib/midi/graph-param-dispatch';
+import { setActiveEngine } from '$lib/audio/engine-ref';
+import { patch } from '$lib/graph/store';
+import '$lib/audio/modules'; // side-effect: register the audio defs, so the graph seam can resolve `joystick.pos_x`
 import type { LinnLighting, LinnstrumentSource, RuntimeEvent, RuntimeEventListener, SelectionState, SessionEvent } from '$lib/midi/linnstrument/types';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { ModuleNode } from '$lib/graph/types';
@@ -168,7 +172,7 @@ interface Rig {
   commits: { id: string; value: number }[];
   /** The LAST committed value per param — what a save would persist. */
   persisted: () => Record<string, number>;
-  deliveries: { nodeId: string; paramId: string; cc: number }[];
+  deliveries: { nodeId: string; paramId: string; value: number }[];
   ticks: Set<() => void>;
   tick: (nowMs: number, audioTime?: number) => void;
 }
@@ -184,8 +188,8 @@ async function build(params: Record<string, number> = {}, opts: Partial<Linnstru
   const handle = await createLinnstrumentRuntime(ctx, makeNode(params), {
     commitParam: (_n, id, value) => commits.push({ id, value }),
     readTargets: () => opts.targets ?? {},
-    deliverCc: (nodeId, paramId, cc) => {
-      deliveries.push({ nodeId, paramId, cc });
+    deliverValue: (nodeId, paramId, value) => {
+      deliveries.push({ nodeId, paramId, value });
       return opts.deliverOk ?? true;
     },
     bpm: () => 120,
@@ -695,21 +699,51 @@ describe('linnstrument runtime — the arps own their bus while on', () => {
 
   it('LIGHTING (D09): the runtime publishes ITS roots and scale to the source, on build and on every change', async () => {
     const r = await rig({ keys_root: 48, pad_root: 72, scale: 1 });
-    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 48, padRoot: 72, scale: 'major' });
-    expect(r.api.state().lighting).toEqual({ keysRoot: 48, padRoot: 72, scale: 'major' });
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 48, padRoot: 72, scale: 'major', extraControls: true });
+    expect(r.api.state().lighting).toEqual({ keysRoot: 48, padRoot: 72, scale: 'major', extraControls: true });
     r.handle.setParam!('scale', 0);
-    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 48, padRoot: 72, scale: undefined });
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 48, padRoot: 72, scale: undefined, extraControls: true });
     r.sim.emit(edge(r.sim, 'octave_up', true)); // OCT+ on the instrument moves keys_root → the lights follow the MODULE
-    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 60, padRoot: 72, scale: undefined });
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 60, padRoot: 72, scale: undefined, extraControls: true });
     r.handle.setParam!('scale', 99); // out of roster → chromatic, never a throw
     expect(r.sim.lights.at(-1)!.scale).toBeUndefined();
+  });
+
+  it('F08: EXTRAS OFF is PUBLISHED on the lighting path the source paints from — the writer never keeps a switch of its own', async () => {
+    // The review (2026-09-15 F08): the runtime's profile flipped on
+    // `extra_controls` while the device's LED writer read a module-global
+    // profile with `extraControlsEnabled: true`, so the five hardware control
+    // lights stayed orange after the cells had gone inert. The module's switch
+    // now rides `LinnLighting.extraControls`, the SAME publish the roots and
+    // scale ride, and the control-column frame reads it there (the wire half is
+    // linnstrument-device.test.ts 'F08 —'; the cross-layer probe is
+    // linnstrument-review-contracts.test.ts R05).
+    const r = await rig();
+    expect(r.sim.lights.at(-1)!.extraControls).toBe(true);
+    const published = r.sim.lights.length;
+    r.handle.setParam!('extra_controls', 0);
+    expect(r.sim.lights.length, 'the param change itself publishes').toBe(published + 1);
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 36, padRoot: 60, scale: undefined, extraControls: false });
+    expect(r.api.state().lighting.extraControls).toBe(false);
+    // The switch is ONE switch: the cells the writer darkens are the cells the
+    // reducer has made inert (D17), so light and liveness cannot disagree.
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0));
+    r.sim.emit(edge(r.sim, 'panic', true));
+    expect(r.api.state().active.keys, 'the darkened PANIC cell is also inert').toBe(1);
+    r.handle.setParam!('extra_controls', 1);
+    expect(r.sim.lights.at(-1)!.extraControls).toBe(true);
+    r.sim.emit(edge(r.sim, 'panic', true));
+    expect(r.api.state().active.keys, 'the re-lit PANIC cell is live again').toBe(0);
+    // A hydrated OFF publishes OFF from the first frame (a reload, a collaborator's rack).
+    const off = await rig({ extra_controls: 0 });
+    expect(off.sim.lights.at(-1)!.extraControls).toBe(false);
   });
 });
 
 // ── D15 mirroring, dispose, and "no UI" ───────────────────────────────────
 
 describe('linnstrument runtime — targets, disposal and headless operation', () => {
-  it('D15 is OPT-IN: unbound by default, and a bound target receives pos_x/pos_y as 7-bit through the graph seam', async () => {
+  it('D15 is OPT-IN: unbound by default, and a bound target receives pos_x/pos_y as the PAIR ITSELF through the graph seam (F09: no 7-bit hop)', async () => {
     const unbound = await rig({ sel_r: 1 });
     unbound.sim.emit(pointer(unbound.sim, 1, 'down', 1, 1));
     expect(unbound.deliveries).toEqual([]);
@@ -717,10 +751,75 @@ describe('linnstrument runtime — targets, disposal and headless operation', ()
     const bound = await rig({ sel_r: 1 }, { targets: { r: 'joy-1' } });
     bound.sim.emit(pointer(bound.sim, 1, 'down', 1, 0));
     expect(bound.deliveries).toEqual([
-      { nodeId: 'joy-1', paramId: 'pos_x', cc: 127 },
-      { nodeId: 'joy-1', paramId: 'pos_y', cc: 0 },
+      { nodeId: 'joy-1', paramId: 'pos_x', value: 1 },
+      { nodeId: 'joy-1', paramId: 'pos_y', value: -1 },
     ]);
-    expect(bipolarToCc(0)).toBe(64);
+    // The review's F09 measurement: centre 0 arrived as CC 64 = +0.007874 and
+    // every step was ~0.01575. The mirrored value IS the retained pair — exact
+    // zero at the centre, and a value between two 7-bit steps is not rounded.
+    bound.deliveries.length = 0;
+    bound.sim.emit(pointer(bound.sim, 1, 'move', 0.5, 0.5));
+    expect(bound.deliveries).toEqual([
+      { nodeId: 'joy-1', paramId: 'pos_x', value: 0 },
+      { nodeId: 'joy-1', paramId: 'pos_y', value: 0 },
+    ]);
+    expect(Object.is(bound.deliveries[0]!.value, 0), 'exact +0, not a rounded centre').toBe(true);
+    bound.deliveries.length = 0;
+    bound.sim.emit(pointer(bound.sim, 1, 'move', 0.505, 0.4975));
+    const x = 0.505 * 2 - 1; // 0.01 — between CC 64 (+0.0079) and CC 65 (+0.0236)
+    const y = 0.4975 * 2 - 1; // −0.005 — below a 7-bit step
+    expect(bound.deliveries).toEqual([
+      { nodeId: 'joy-1', paramId: 'pos_x', value: x },
+      { nodeId: 'joy-1', paramId: 'pos_y', value: y },
+    ]);
+    expect(bound.deliveries.map((d) => d.value)).toEqual([cvValue(bound.handle, 'r_x'), cvValue(bound.handle, 'r_y')]);
+  });
+
+  it('F09 end to end: the pair lands on a REAL joystick\'s four CVs and its persisted pos_x/pos_y at full precision, with exact 0 at the centre and the release value retained', async () => {
+    // The real graph seam (`deliverValueToGraph` → the shared CC pump →
+    // engine.setParam transient + setNodeParam durable) against the real
+    // joystick factory on the live store — the layer the D15 unit above
+    // replaces with a recorder. Skipped here on purpose: nothing.
+    const JOY = 'f09-joystick';
+    const ctx = makeCtx();
+    const joy = await joystickDef.factory(ctx, { id: JOY, type: 'joystick', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: {} } as unknown as ModuleNode);
+    patch.nodes[JOY] = { id: JOY, type: 'joystick', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: {} } as unknown as ModuleNode;
+    // A PatchEngine double: `setParam(node, id, v)` is the one call the
+    // transient leg makes, and it reaches the real handle.
+    setActiveEngine({ setParam: (node: ModuleNode, id: string, v: number) => joy.setParam?.(id, v) } as never);
+    const cv = (port: string) => (joy.outputs.get(port)!.node as unknown as FakeConstantSourceNode).offset.value;
+    const persisted = (id: string) => (patch.nodes[JOY] as ModuleNode).params?.[id];
+    try {
+      const r = await rig({ sel_r: 1 }, { targets: { r: JOY }, deliverValue: deliverValueToGraph });
+      // Off-centre, between 7-bit steps: the four CVs are the pair and its negation, exactly.
+      r.sim.emit(pointer(r.sim, 1, 'down', 0.505, 0.4975));
+      const x = 0.505 * 2 - 1;
+      const y = 0.4975 * 2 - 1;
+      expect([cv('x'), cv('y'), cv('nx'), cv('ny')]).toEqual([x, y, -x, -y]);
+      expect([cvValue(r.handle, 'r_x'), cvValue(r.handle, 'r_y')], 'the source pair').toEqual([x, y]);
+      // Exact centre: 0, not +0.007874 (CC 64) — on the CVs and, after the
+      // coalesced settle, on the persisted params.
+      r.sim.emit(pointer(r.sim, 1, 'move', 0.5, 0.5));
+      expect([cv('x'), cv('y'), cv('nx'), cv('ny')].map((v) => Object.is(v, 0) || Object.is(v, -0))).toEqual([true, true, true, true]);
+      // The retained value: the last sample before release is what the
+      // joystick keeps, on its CVs and in the store (joystick #1963 "1 - persist").
+      r.sim.emit(pointer(r.sim, 1, 'move', 0.8, 0.3));
+      r.sim.emit(pointer(r.sim, 1, 'up', 0.8, 0.3));
+      const rx = 0.8 * 2 - 1;
+      const ry = 0.3 * 2 - 1;
+      expect([cv('x'), cv('y'), cv('nx'), cv('ny')]).toEqual([rx, ry, -rx, -ry]);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect([persisted('pos_x'), persisted('pos_y')], 'the durable commit is the same number').toEqual([rx, ry]);
+      expect([cvValue(r.handle, 'r_x'), cvValue(r.handle, 'r_y')]).toEqual([rx, ry]);
+      // Negative control for the instrument: had the hop still been 7-bit, the
+      // centre sample would have persisted as CC 64's value.
+      expect(-1 + (64 / 127) * 2).not.toBe(0);
+    } finally {
+      setActiveEngine(null);
+      joy.dispose();
+      if (patch.nodes[JOY]) delete patch.nodes[JOY];
+    }
   });
 
   it('a DELETED target is a declined delivery, never a throw or a dangling write', async () => {
