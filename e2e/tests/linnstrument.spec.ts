@@ -145,6 +145,17 @@ const USER_MODE_ON: number[][] = [
   [0xb0, 101, 127],
   [0xb0, 100, 127],
 ];
+/** NRPN 299 = 245: the bind's "what mode are you in?" read — the firmware
+ *  answers it whether or not the entry changed anything (an instrument that
+ *  was ALREADY in User Mode echoes nothing on the entry itself). */
+const USER_MODE_READ: number[][] = [
+  [0xb0, 99, 2],
+  [0xb0, 98, 43],
+  [0xb0, 6, 1],
+  [0xb0, 38, 117],
+  [0xb0, 101, 127],
+  [0xb0, 100, 127],
+];
 function containsRun(writes: number[][], seq: number[][]): boolean {
   for (let i = 0; i + seq.length <= writes.length; i++) {
     if (seq.every((m, j) => writes[i + j]?.length === m.length && m.every((b, k) => writes[i + j]?.[k] === b))) return true;
@@ -327,11 +338,13 @@ test('@linnstrument keys → CUBE poly → audible: silence-first, an UNBOUND de
   expect(await sim(page, 'bind'), 'bindLinnstrument() resolves the sim port').toBe(true);
   expect(await sim(page, 'attached'), 'the input claim holds the handler').toBe(true);
   expect(containsRun(await sim(page, 'writes'), USER_MODE_ON), 'NRPN 245 = 1 was written to the instrument').toBe(true);
+  expect(containsRun(await sim(page, 'writes'), USER_MODE_READ), 'and the mode was READ back (NRPN 299 = 245) so an already-in-User-Mode instrument still answers').toBe(true);
   await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state), { message: 'the runtime sees the session' }).toBe('connected');
   //     The write proves nothing about the instrument: the mode is REQUESTED
   //     until its own NRPN 245 notification comes back (design.md:188).
   expect((await sim(page, 'status')).userMode, 'userMode is not inferred from our write').toBe(false);
   expect((await linnState(page, 'ln'))?.session.userMode, 'nor is the session\'s').toBe(false);
+  //     The sim's echo rides channel 9, exactly as the firmware's does.
   await sim(page, 'ackUserMode', true);
   expect((await sim(page, 'status')).userMode, 'the readback confirms User Firmware Mode').toBe(true);
   await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode), { message: 'the runtime sees the confirmation' }).toBe(true);

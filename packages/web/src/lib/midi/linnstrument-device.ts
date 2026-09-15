@@ -5,11 +5,32 @@
 //
 // ── USER MODE IS CONFIRMED, NEVER INFERRED (design.md:188, :300) ───────────
 // Binding WRITES the NRPN 245 entry; `userMode` (status and session) turns
-// true only when the instrument's own NRPN 245 notification comes back
-// through the decoder. Until then the status says "requested" — a successful
-// write proves the port accepted bytes, not that the instrument changed mode.
-// No LinnStrument was connected while this was built, so the readback path
-// has run only against the simulated device's `ackUserMode()`.
+// true only when an NRPN 245 message comes back from the instrument through
+// the decoder. Until then the status says "requested" — a successful write
+// proves the port accepted bytes, not that the instrument changed mode.
+//
+// TWO things can bring that message back, and the bind asks for BOTH
+// (firmware sources, rogerlinndesign/linnstrument-firmware @ master):
+//   · the ECHO — `changeUserFirmwareMode()` (ls_settings.ino:2411) sends
+//     `midiSendNRPN(245, userFirmwareActive, 9)` on every ACTUAL transition,
+//     i.e. on MIDI channel 9 (status 0xB8). It returns early with NO echo when
+//     the instrument is already in the requested mode (line 2412), which is
+//     exactly the state a page death leaves behind — so the echo alone would
+//     leave a re-connected instrument "requested" forever.
+//   · the READ — NRPN 299 is "query the value of a parameter" (ls_midi.ino
+//     `case 299: sendNrpnParameter(value, channel)`); asking for 245 makes the
+//     instrument answer NRPN 245 = <current mode> on the channel the question
+//     came in on, whether or not the mode changed. The bind writes the entry,
+//     the row enables, then this read, so a healthy instrument answers within
+//     milliseconds in every state.
+// Neither arriving inside `LINN_REPLY_WINDOW_MS` is REPORTED as such
+// (`status.reply === 'silent'`): the one observable difference between a
+// LinnStrument that heard us and one whose USB side is dead (2026-09-15: a
+// LinnStrument 200 that enumerated fine on USB, accepted every byte at the
+// CoreMIDI level and answered NOTHING — no echo, no read reply, no LED change —
+// because nothing reaches the firmware's UART when its MIDI I/O global setting
+// routes it to the DIN jacks, ls_midi.ino:77 `applyMidiIo`). A late reply still
+// confirms; the verdict never gates painting.
 //
 // A DIRECT browser adapter, not the native bridge the design package
 // recommends (design.md:168 "an alternative transport implementation"): User
@@ -66,14 +87,22 @@
 //     fact from `mapSurface`'s touch tracking, not a decision). The pad finger
 //     IS the XY pointer, so its mark is the pointer light.
 //
-// ── HARDWARE-VERIFY ITEMS (no LinnStrument was connected; design.md C02/C03)
-//   · the USB product string (`LINNSTRUMENT_PORT_PATTERN` is deliberately loose)
-//   · the per-row axis-enable CC numbers and their channel (`CC_ROW_*`)
-//   · NRPN 245 readback on entry and what a page death leaves behind — the
-//     manual mode-exit procedure stays in the runbook (design.md:304)
-//   · LED colour ids are fixed-palette APPROXIMATIONS (D18); the lighting
-//     ROLES (root cyan / scale tone green / played white) are the design's
-//     starting points "after physical review" — profile data, one word each
+// ── HARDWARE-VERIFY LEDGER (design.md C02/C03) ─────────────────────────────
+//   VERIFIED 2026-09-15 against a LinnStrument 200 on macOS CoreMIDI and the
+//   firmware sources:
+//   · the USB product string is exactly "LinnStrument MIDI" (manufacturer
+//     "Roger Linn Design"), one input and one output of that name
+//   · the per-row enables are CC 9/10/11/12 with the ROW as the 0-based MIDI
+//     channel (ls_midi.ino:450-468 `midiChannel < NUMROWS`), reset on entry
+//     (ls_settings.ino:2421-2426) — so they must follow the entry, as here
+//   · the LED registers are CC 20 (column, 0 = the control switches, 1..25 the
+//     playing surface) / CC 21 (row, 0 = bottom) / CC 22 (colour id; 7 = BLACK
+//     renders as off, ls_leds.ino:363) on any channel (ls_midi.ino:478-500)
+//   · the mode echo is NRPN 245 on channel 9 and only on an actual transition;
+//     NRPN 299 reads the mode back in every state (header above)
+//   STILL OPEN — the LED colour ROLES (root cyan / scale tone green / played
+//   white, D18) are approximations awaiting the owner's eye, and the manual
+//   mode-exit procedure after a page death stays in the runbook (design.md:304).
 //
 // ⚠ PLAIN `.ts`, NOT `.svelte.ts` (trails-device.ts:20-24): audio defs may
 // import this file and the ART node vitest loads every def with no Svelte
@@ -129,20 +158,39 @@ import type {
 /**
  * How a LinnStrument names itself on the MIDI bus.
  *
- * ⚠ HARDWARE-VERIFY. The class-compliant port is believed to read
- * "LinnStrument MIDI"; the match is loose on purpose (any case, any suffix,
- * the WinMM `MIDIIN2 (LinnStrument MIDI)` shape included). If the real string
- * carries no "linnstrument", this is the one line that changes.
+ * VERIFIED 2026-09-15: the class-compliant port reads "LinnStrument MIDI" on
+ * macOS. The match stays loose on purpose (any case, any suffix, the WinMM
+ * `MIDIIN2 (LinnStrument MIDI)` shape included).
  */
 export const LINNSTRUMENT_PORT_PATTERN = /linnstrument/i;
 
 /** Per-row User Firmware Mode data enables — CC on the ROW's channel, value
  *  0/1 (firmware `user_firmware_mode.md`, pinned in design.md:188 "configure
- *  each row's slide/X/Y/Z flags explicitly"). ⚠ HARDWARE-VERIFY numbers. */
+ *  each row's slide/X/Y/Z flags explicitly"; ls_midi.ino:450-468). */
 export const CC_ROW_SLIDE_ENABLE = 9;
 export const CC_ROW_X_ENABLE = 10;
 export const CC_ROW_Y_ENABLE = 11;
 export const CC_ROW_Z_ENABLE = 12;
+
+/** NRPN 299 = "send me the value of parameter N" (ls_midi.ino `case 299:
+ *  sendNrpnParameter(value, channel)`). The answer is NRPN N = value on the
+ *  channel the question used. */
+export const NRPN_READ_PARAMETER = 299;
+
+/** The MIDI channel (0-based) the firmware's spontaneous mode echo uses:
+ *  `midiSendNRPN(245, userFirmwareActive, 9)` (ls_settings.ino:2428). */
+export const USER_MODE_ECHO_CHANNEL = 8;
+
+/** How long a bound instrument may stay silent after the bind's write + read
+ *  before the status says so. A LinnStrument answers the read within
+ *  milliseconds; this is generous on purpose and it GATES NOTHING — a late
+ *  answer still confirms, and painting never waits for it. */
+export const LINN_REPLY_WINDOW_MS = 2000;
+
+/** What has come back since the bind wrote the mode entry and the read:
+ *  `pending` (nothing yet, window open), `answered` (an NRPN 245 arrived —
+ *  echo or read answer), `silent` (the window closed on nothing). */
+export type LinnReplyState = 'pending' | 'answered' | 'silent';
 
 /** LED cell registers: column (wire 1..25), row (0..7), colour id. The three
  *  are SHARED firmware registers, hence the serialized writer. */
@@ -169,9 +217,16 @@ export function encodeUserFirmwareMode(on: boolean): number[][] {
   return encodeNrpn(NRPN_USER_FIRMWARE_MODE, on ? 1 : 0);
 }
 
+/** NRPN 299 = 245: "tell me whether you are in User Firmware Mode". The
+ *  instrument answers NRPN 245 = 0/1 on this channel, changed mode or not. */
+export function encodeUserFirmwareModeRead(): number[][] {
+  return encodeNrpn(NRPN_READ_PARAMETER, NRPN_USER_FIRMWARE_MODE);
+}
+
 /** Slide / X / Y / Z enables for every row of the profile. The firmware
- *  RESETS these on a mode transition (design.md:188), so they are re-sent on
- *  every bind and after every readback. */
+ *  RESETS these on entry (ls_settings.ino:2421-2426, design.md:188), so they
+ *  follow the entry on every bind and are re-sent once more when the
+ *  instrument reports the transition. */
 export function encodeRowAxisEnables(profile: LinnProfile): number[][] {
   const out: number[][] = [];
   for (let row = 0; row < profile.rows; row++) {
@@ -209,10 +264,15 @@ export interface LinnstrumentStatus {
   readonly portNames: readonly string[];
   /** The bound input's name, or null. */
   readonly boundPortName: string | null;
-  /** True only after the instrument's OWN NRPN 245 notification reported
-   *  User Firmware Mode ON — never inferred from our write (design.md:188).
-   *  False again when a readback says the mode was left. */
+  /** True only after the instrument's OWN NRPN 245 message reported User
+   *  Firmware Mode ON — its echo or its answer to our read, never inferred
+   *  from our write (design.md:188). False again when it says the mode was
+   *  left. */
   readonly userMode: boolean;
+  /** Whether the instrument has said ANYTHING since the bind (header: TWO
+   *  things can bring that message back). `silent` is the one verdict that
+   *  separates "heard us" from "USB side dead". */
+  readonly reply: LinnReplyState;
   readonly epoch: number;
 }
 
@@ -263,6 +323,8 @@ let connectInFlight = false;
 let simulated = false;
 let bound: Bound | null = null;
 let userModeEntered = false;
+let reply: LinnReplyState = 'pending';
+let replyTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubRig: (() => void) | null = null;
 let pagehideArmed = false;
 /** The browser's bind-by-name policy (header: WHO WRITES THE PICK). Always on
@@ -321,7 +383,7 @@ export function listLinnstrumentPorts(): LinnstrumentPort[] {
 export function linnstrumentStatus(): LinnstrumentStatus {
   const portNames = [...new Set(listLinnstrumentPorts().map((p) => p.name))].sort();
   const boundPortName = bound ? (bound.input.name ?? bound.inputId) : null;
-  const base = { portNames, boundPortName, userMode: userModeEntered, epoch: rawState.epoch };
+  const base = { portNames, boundPortName, userMode: userModeEntered, reply, epoch: rawState.epoch };
   if (accessKind === 'unsupported') {
     return { kind: 'unsupported', message: midiOutcomeMessage({ kind: 'unsupported' }), ...base };
   }
@@ -344,9 +406,13 @@ export function linnstrumentStatus(): LinnstrumentStatus {
   if (bound) {
     const mode = userModeEntered
       ? 'User Firmware Mode confirmed by the instrument, streaming cells.'
-      : bound.output
-        ? "User Firmware Mode requested (NRPN 245); waiting for the instrument's own mode notification — nothing is inferred from the write."
-        : 'no paired output port, so User Firmware Mode could not be requested; the instrument stays in its own mode.';
+      : !bound.output
+        ? 'no paired output port, so User Firmware Mode could not be requested; the instrument stays in its own mode.'
+        : reply === 'silent'
+          ? `User Firmware Mode requested (NRPN 245) and read back (NRPN 299), but the instrument answered NOTHING over USB within ${LINN_REPLY_WINDOW_MS / 1000} s — its LEDs will not have changed either. On the LinnStrument hold GLOBAL SETTINGS and check the MIDI I/O column: the bottom cell (USB) must be lit, not the one above it (MIDI jacks); if it already is, re-seat the USB cable. Then press CONNECT again.`
+          : reply === 'answered'
+            ? 'the instrument answered and reports User Firmware Mode OFF — it left the mode, or refused the request. Press CONNECT again to re-enter it.'
+            : "User Firmware Mode requested (NRPN 245) and read back (NRPN 299); waiting for the instrument's own answer — nothing is inferred from the write.";
     // Several LinnStruments on the bus: the first by name was bound, the rest
     // are NAMED here (the Push 2 shape: autoBind takes the first pair; the
     // status line is where the others show).
@@ -656,15 +722,21 @@ function onFrame(ev: MidiEventLike): void {
   rawState = r.state;
   publishRaw(r.events);
   // THE READBACK is the only thing that flips `userMode` (design.md:188 "do
-  // not infer hardware readiness from a successful write alone"). EVERY mode
-  // notification resets the firmware's axis enables — the readback of our
-  // own entry included — so one saying "User Mode on" re-arms them and
-  // repaints from acknowledged state; one saying "off" (the instrument left
-  // the mode under us) is reported as such.
+  // not infer hardware readiness from a successful write alone"). The
+  // firmware resets its axis enables on ENTRY, so the notification that
+  // reports the transition to "on" re-arms them and repaints from
+  // acknowledged state; one saying "off" (the instrument left the mode under
+  // us) is reported as such.
   const mode = r.events.filter((e): e is Extract<typeof e, { kind: 'mode' }> => e.kind === 'mode').at(-1);
   if (mode) {
+    // The instrument spoke: whichever of the echo and the read answer this is,
+    // the reply window is settled. A healthy instrument sends BOTH on a fresh
+    // entry (echo on channel 9, then the answer on the read's channel), so
+    // the enables + repaint happen on the TRANSITION only, not on every "on".
+    settleReply('answered');
+    const entered = mode.userMode && !userModeEntered;
     userModeEntered = mode.userMode;
-    if (mode.userMode) {
+    if (entered) {
       sendAll(encodeRowAxisEnables(profile));
       led.painted.clear();
     }
@@ -678,6 +750,33 @@ function onFrame(ev: MidiEventLike): void {
 }
 
 // ── Bind / unbind ─────────────────────────────────────────────────────────
+
+/** Open the reply window: the bind has just written the entry and the read. */
+function armReplyWindow(): void {
+  if (replyTimer !== null) clearTimeout(replyTimer);
+  reply = 'pending';
+  replyTimer = setTimeout(() => {
+    replyTimer = null;
+    if (!bound || reply !== 'pending') return;
+    reply = 'silent';
+    try {
+      console.warn('[linnstrument] no answer from the instrument over USB inside', LINN_REPLY_WINDOW_MS, 'ms —', linnstrumentStatus().message);
+    } catch {
+      /* diagnostic only */
+    }
+    bump();
+  }, LINN_REPLY_WINDOW_MS);
+}
+
+/** Close the reply window with a verdict (`answered`) or reset it (`pending`
+ *  on release). */
+function settleReply(next: LinnReplyState): void {
+  if (replyTimer !== null) {
+    clearTimeout(replyTimer);
+    replyTimer = null;
+  }
+  reply = next;
+}
 
 function pairedOutput(input: MidiInputLike): MidiOutputLike | null {
   if (!access) return null;
@@ -727,9 +826,15 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
   mapState = createSurfaceMapState();
   led.painted.clear();
 
+  // Entry, enables (the firmware resets them on entry, so they follow it),
+  // then the READ — the one message the instrument answers whether or not the
+  // entry changed anything (header: TWO things can bring that message back).
   sendAll(encodeUserFirmwareMode(true));
   sendAll(encodeRowAxisEnables(profile));
+  sendAll(encodeUserFirmwareModeRead());
   userModeEntered = false;
+  if (output) armReplyWindow();
+  else settleReply('pending');
 
   publishRaw(rc.events, 'connected');
   led.scheduleFlush();
@@ -753,6 +858,7 @@ function releaseBound(restore: boolean): void {
   rawState = rc.state;
   bound = null;
   userModeEntered = false;
+  settleReply('pending');
   led.painted.clear();
   publishRaw(rc.events, 'disconnected');
   mapState = createSurfaceMapState();
@@ -915,9 +1021,12 @@ export interface SimulatedLinnstrument {
   release(col: number, row: number, velocity?: number): void;
   /** The documented transfer transaction: CC119 source, Note On dest, Note Off source. */
   slide(fromCol: number, toCol: number, row: number): void;
-  /** Echo the NRPN 245 readback the firmware emits on a mode transition —
-   *  the ONLY thing that turns `status().userMode` true. */
-  ackUserMode(on?: boolean): void;
+  /** The instrument's NRPN 245 message — the ONLY thing that turns
+   *  `status().userMode` true. By default the firmware's spontaneous ECHO on
+   *  channel 9 (`USER_MODE_ECHO_CHANNEL`); pass `channel` 0 for the shape of
+   *  its answer to the bind's NRPN 299 read (sent on channel 1). The sim never
+   *  answers on its own: a test that wants "the instrument spoke" says so. */
+  ackUserMode(on?: boolean, channel?: number): void;
   /** Every message the app sent to the output, oldest first. */
   writes(): number[][];
   clearWrites(): void;
@@ -1020,8 +1129,8 @@ export async function installSimulatedLinnstrument(
       send([0x90 | row, wire(toCol), 100]);
       send([0x80 | row, wire(fromCol), 0]);
     },
-    ackUserMode(on = true) {
-      for (const m of encodeNrpn(NRPN_USER_FIRMWARE_MODE, on ? 1 : 0)) send(m);
+    ackUserMode(on = true, channel = USER_MODE_ECHO_CHANNEL) {
+      for (const m of encodeNrpn(NRPN_USER_FIRMWARE_MODE, on ? 1 : 0, channel)) send(m);
     },
     writes: () => writes.map((w) => [...w]),
     clearWrites() {
@@ -1058,6 +1167,7 @@ export function __resetLinnstrumentForTest(): void {
   simulated = false;
   autoBindWithoutRig = true;
   userModeEntered = false;
+  settleReply('pending');
   unsubRig?.();
   unsubRig = null;
   pagehideArmed = false;

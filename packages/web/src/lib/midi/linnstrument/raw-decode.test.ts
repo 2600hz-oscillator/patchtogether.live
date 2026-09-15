@@ -215,6 +215,18 @@ describe('raw-decode: epoch invalidation', () => {
     expect(r1.state.nrpn.size).toBe(0);
   });
 
+  it("the firmware's own echo rides CHANNEL 9 (0xB8, ls_settings.ino `midiSendNRPN(245, …, 9)`) — a channel beyond the eight rows is still a mode notification", () => {
+    const r0 = feed(createRawDecodeState(), [[0x90, 3, 100]]);
+    const r1 = feed(r0.state, [[0xb8, 99, 1], [0xb8, 98, 117], [0xb8, 6, 0], [0xb8, 38, 1], [0xb8, 101, 127], [0xb8, 100, 127]]);
+    expect(kinds(r1.events)).toEqual(['cell_up', 'mode']);
+    expect(r1.events[1]).toMatchObject({ kind: 'mode', userMode: true, epoch: 2 });
+    // …and the answer to an NRPN 299 read comes back on the ASKING channel
+    // with the current value: the same notification, value 0 = mode off.
+    const r2 = feed(r1.state, [[0xb0, 99, 1], [0xb0, 98, 117], [0xb0, 6, 0], [0xb0, 38, 0], [0xb0, 101, 127], [0xb0, 100, 127]]);
+    expect(kinds(r2.events)).toEqual(['mode']);
+    expect(r2.events[0]).toMatchObject({ kind: 'mode', userMode: false, epoch: 3 });
+  });
+
   it('a different NRPN parameter completes silently and CC6/38 for column 6 resume their X meaning', () => {
     const { events } = feed(createRawDecodeState(), [
       [0xb0, 99, 1], [0xb0, 98, 118], [0xb0, 6, 0], [0xb0, 38, 1], // NRPN 246
