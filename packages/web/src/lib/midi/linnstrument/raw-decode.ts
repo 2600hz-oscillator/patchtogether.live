@@ -12,7 +12,16 @@
 //   Poly pressure, column note                Z; zero is a valid held pressure
 //   CC119 = source col, Note On dest,
 //     Note Off source                         horizontal transfer: SAME touch id
-//   NRPN 245 (CC99/98/6/38)                   mode notification → new epoch
+//   NRPN 245 (CC99/98/6/38)                   mode notification → new epoch on a
+//                                             TRANSITION; an unchanged answer
+//                                             is an acknowledgement, no epoch
+//
+// THE MODE GATES THE CELL VOCABULARY. Until the instrument has CONFIRMED User
+// Firmware Mode (`state.userMode`, set only by its own NRPN 245 answer) the
+// bytes above are ordinary musical MIDI — a Note On 17 on channel 8 is a note,
+// not the R selector — so everything except NRPN management traffic is
+// rejected `mode_unconfirmed`. Bound-but-unconfirmed is therefore as inert as
+// unbound, and a confirmed OFF stays inert until a fresh entry is confirmed.
 //
 // Reference: `.myrobots/linnstrument-mpe/research/design.md:176-190`; the
 // exploratory spike's `surface.ts:135-143` was read for the CC band arithmetic
@@ -81,11 +90,14 @@ export interface RawDecodeResult {
 /** Cell address key: row-major over wire columns. */
 export const cellKey = (col: number, row: number): number => row * 32 + col;
 
-export function createRawDecodeState(epoch: Epoch = 1): RawDecodeState {
+/** `userMode` starts UNCONFIRMED (false): only the instrument's own NRPN 245
+ *  answer turns it on. A pure-pipeline test of the cell vocabulary starts
+ *  from a confirmed state explicitly. */
+export function createRawDecodeState(epoch: Epoch = 1, userMode = false): RawDecodeState {
   return {
     epoch,
     nextTouch: 1,
-    userMode: false,
+    userMode,
     contacts: new Map(),
     transfers: new Map(),
     nrpn: new Map(),
@@ -113,7 +125,7 @@ export function reconnectRawDecode(state: RawDecodeState, time: number, userMode
     events.push({ kind: 'cell_up', epoch: state.epoch, touch: c.touch, col: c.col, row: c.row, releaseVelocity: 0, reason: 'session', time });
   }
   const epoch = state.epoch + 1;
-  events.push({ kind: 'mode', epoch, userMode, time });
+  events.push({ kind: 'mode', epoch, userMode, changed: true, time });
   return {
     state: { ...state, epoch, userMode, contacts: new Map(), transfers: new Map(), nrpn: new Map() },
     events,
@@ -158,6 +170,10 @@ export function decodePhysicalMidi(state: RawDecodeState, bytes: ArrayLike<numbe
     const nrpnResult = decodeNrpn(state, row, a, b, raw, time);
     if (nrpnResult) return nrpnResult;
   }
+
+  // Everything below is User-Mode cell vocabulary (header: THE MODE GATES THE
+  // CELL VOCABULARY). Unconfirmed, OFF or silent: these bytes are music.
+  if (!state.userMode) return reject(state, 'mode_unconfirmed', raw, time);
 
   if (row >= LINN_ROWS) return reject(state, 'row_out_of_range', raw, time);
   const epoch = state.epoch;
@@ -328,8 +344,15 @@ function decodeNrpn(state: RawDecodeState, channel: number, cc: number, value: n
   nrpn.delete(channel);
   const next = { ...state, nrpn };
   if (parameter === NRPN_USER_FIRMWARE_MODE) {
-    const result = reconnectRawDecode(next, time, data !== 0);
-    return result;
+    const userMode = data !== 0;
+    // An answer that reports the mode the decoder already holds is an
+    // ACKNOWLEDGEMENT (the 299 read's answer after the entry echo, a repeated
+    // read): the instrument did not change under us, so no contact ends and
+    // no epoch opens. Only a real transition invalidates touch ownership.
+    if (userMode === state.userMode) {
+      return { state: next, events: [{ kind: 'mode', epoch: state.epoch, userMode, changed: false, time }] };
+    }
+    return reconnectRawDecode(next, time, userMode);
   }
   return { state: next, events: [] };
 }

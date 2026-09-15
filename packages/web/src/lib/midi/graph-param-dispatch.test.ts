@@ -26,6 +26,7 @@ import {
   resolveCcTarget,
   splitBindingKey,
   deliverCcToGraph,
+  deliverValueToGraph,
   flushGraphCcCommits,
 } from './graph-param-dispatch';
 import {
@@ -348,6 +349,67 @@ describe('#1727 · graph-resolved MIDI delivery — runtime, against the REAL st
       } finally {
         unregisterSetter(NODE, subject.param.id);
       }
+    });
+  });
+
+  describe('deliverValueToGraph — the FULL-PRECISION sibling (2026-09-15 LinnStrument review F09)', () => {
+    // The LinnStrument pad mirrored its retained ±1 pair into a joystick's
+    // `pos_x` / `pos_y` by rounding to a CC and letting this path scale it
+    // back: centre 0 arrived as CC 64 = +0.007874, every step ~0.01575. An
+    // in-app source that already holds the real number takes this door —
+    // the SAME pump (transient + coalesced durable), no 7-bit hop.
+    const JOY = 'gpd-test-joystick';
+    beforeEach(() => {
+      patch.nodes[JOY] = node(JOY, 'joystick');
+    });
+    afterEach(() => {
+      flushGraphCcCommits();
+      drop(JOY);
+    });
+    const posX = () => (patch.nodes[JOY] as ModuleNode).params?.pos_x;
+
+    it('writes the value ITSELF — exact 0 at the centre, and a value between two 7-bit steps unrounded', async () => {
+      expect(deliverValueToGraph(JOY, 'pos_x', 0)).toBe(true);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect(posX()).toBe(0);
+      expect(Object.is(posX(), 0)).toBe(true);
+      // The number the CC hop would have produced for the same centre — the review's measurement.
+      expect(ccValueToParamValue(64, -1, 1)).toBeCloseTo(0.007874, 6);
+      expect(ccValueToParamValue(64, -1, 1)).not.toBe(0);
+
+      const between = 0.01; // CC 64 → +0.0079, CC 65 → +0.0236: no CC holds it
+      deliverValueToGraph(JOY, 'pos_x', between);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect(posX()).toBe(between);
+    });
+
+    it('clamps to the DEF\'s range and resolves a non-finite value to the floor, so the graph never sees a number the contract forbids', async () => {
+      deliverValueToGraph(JOY, 'pos_x', 5);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect(posX()).toBe(1);
+      deliverValueToGraph(JOY, 'pos_x', -5);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect(posX()).toBe(-1);
+      deliverValueToGraph(JOY, 'pos_x', Number.NaN);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect(posX()).toBe(-1);
+    });
+
+    it('a stream COALESCES to its last value (the same pump as the CC path), and DECLINES the same targets', async () => {
+      for (const v of [0.1, 0.2, 0.3, 0.4]) deliverValueToGraph(JOY, 'pos_y', v);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect((patch.nodes[JOY] as ModuleNode).params?.pos_y).toBe(0.4);
+      expect(deliverValueToGraph('no-such-node', 'pos_x', 0.5)).toBe(false);
+      expect(deliverValueToGraph(JOY, '__not_a_declared_param__', 0.5)).toBe(false);
+      flushGraphCcCommits();
+      await Promise.resolve();
+      expect((patch.nodes[JOY] as ModuleNode).params?.['__not_a_declared_param__']).toBeUndefined();
     });
   });
 

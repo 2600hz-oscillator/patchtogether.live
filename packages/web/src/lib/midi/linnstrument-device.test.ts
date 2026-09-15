@@ -32,6 +32,7 @@ import {
   musicalFrame,
   linnstrumentDiagnostics,
   linnstrumentMidiVersion,
+  linnstrumentProfile,
   linnstrumentStatus,
   linnstrumentTimeDomain,
   listLinnstrumentPorts,
@@ -95,6 +96,18 @@ const vector = (id: string) => {
   return v;
 };
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+/** The sim, bound AND confirmed: the instrument's own NRPN 245 echo has come
+ *  back, so the cell vocabulary decodes (raw-decode.ts "THE MODE GATES THE
+ *  CELL VOCABULARY"). The bind's and the echo's paint have been flushed and
+ *  cleared so a test's `writes()` start at what IT caused. */
+async function confirmedSim(opts: Parameters<typeof installSimulatedLinnstrument>[0] = {}): Promise<SimulatedLinnstrument> {
+  const sim = await installSimulatedLinnstrument(opts);
+  sim.ackUserMode(true);
+  await flush();
+  sim.clearWrites();
+  events.length = 0;
+  return sim;
+}
 
 function memBackend(initial: RigBindings = emptyRigBindings()): RigStoreBackend & { saved: RigBindings[] } {
   const saved: RigBindings[] = [];
@@ -400,7 +413,7 @@ describe('the apply step: the RIG binding decides the port', () => {
 
 describe('V01 geometry on the real onmidimessage path', () => {
   it('wire columns 1 / 17 / 25 land in keys (0,0), control R and pad (24,7)', async () => {
-    const sim = await installSimulatedLinnstrument();
+    const sim = await confirmedSim();
     const v = vector('V01');
     v.bytes.forEach((m, i) => sim.send(m, 1000 + i));
     const surface = events.filter((e) => e.kind !== 'session');
@@ -428,8 +441,7 @@ describe('V01 geometry on the real onmidimessage path', () => {
     const ctx = { currentTime: 10 };
     setLinnstrumentAudioClock(ctx, { nowMs: () => 5000 });
     expect(linnstrumentTimeDomain()).toBe('audio');
-    const sim = await installSimulatedLinnstrument();
-    events.length = 0;
+    const sim = await confirmedSim();
     // performance.now() is 5000 ms; the event was stamped 4990 → lag 10 ms,
     // so the projection is timestamp + offset + the SHARED 25 ms lookahead.
     sim.send([0x90 | 3, 20, 100], 4990);
@@ -447,8 +459,7 @@ describe('V01 geometry on the real onmidimessage path', () => {
 
   it('without an audio clock, time is performance seconds', async () => {
     expect(linnstrumentTimeDomain()).toBe('performance');
-    const sim = await installSimulatedLinnstrument();
-    events.length = 0;
+    const sim = await confirmedSim();
     sim.send([0x90, 1, 100], 1234);
     expect(events[0]!.time).toBeCloseTo(1.234, 9);
   });
@@ -456,9 +467,7 @@ describe('V01 geometry on the real onmidimessage path', () => {
 
 describe('V11 boundary — the slide transaction survives the device layer', () => {
   it('a keys-origin slide into the selector column ends the gesture and never toggles or paints', async () => {
-    const sim = await installSimulatedLinnstrument();
-    sim.clearWrites();
-    events.length = 0;
+    const sim = await confirmedSim();
     const v = vector('V11');
     v.bytes.forEach((m, i) => sim.send(m, 1000 + i));
     expect(events.filter((e) => e.kind === 'control_edge')).toHaveLength(0);
@@ -471,8 +480,7 @@ describe('V11 boundary — the slide transaction survives the device layer', () 
   });
 
   it('a slide INSIDE the keys region keeps the touch id and never re-attacks', async () => {
-    const sim = await installSimulatedLinnstrument();
-    events.length = 0;
+    const sim = await confirmedSim();
     sim.touch(3, 2);
     const touch = (events[0] as { touch: number }).touch;
     sim.slide(3, 4, 2);
@@ -486,17 +494,20 @@ describe('V11 boundary — the slide transaction survives the device layer', () 
 });
 
 describe('V14 epoch — rejected bytes never reach the source registry', () => {
-  it('a stale queued Note Off after the NRPN 245 readback is rejected and counted, not published', async () => {
-    const sim = await installSimulatedLinnstrument();
+  it('a stale queued Note Off after an NRPN 245 TRANSITION is rejected and counted, not published', async () => {
+    const sim = await confirmedSim();
     sim.send([0x90, 3, 100], 1000); // a held cell
     const epochBefore = linnstrumentStatus().epoch;
     events.length = 0;
     sim.clearWrites();
-    sim.ackUserMode(true); // the firmware's mode notification → new session
+    // The instrument left the mode and came back (a power-cycle shape): two
+    // transitions, two sessions; the held cell ended on the first.
+    sim.ackUserMode(false);
+    sim.ackUserMode(true);
     expect(events.filter((e) => e.kind === 'touch_end' && e.reason === 'session')).toHaveLength(1);
-    expect(events.filter((e) => e.kind === 'session' && e.state === 'mode_changed')).toHaveLength(1);
-    expect(linnstrumentStatus().epoch).toBe(epochBefore + 1);
-    // The readback resets the axis enables (design.md:188) → re-armed.
+    expect(events.filter((e) => e.kind === 'session' && e.state === 'mode_changed')).toHaveLength(2);
+    expect(linnstrumentStatus().epoch).toBe(epochBefore + 2);
+    // The readback resets the axis enables (design.md:188) → re-armed on the entry.
     expect(sim.writes().some((m) => m[1] === CC_ROW_X_ENABLE)).toBe(true);
 
     const published = events.length;
@@ -523,8 +534,7 @@ describe('the LED writer paints acknowledged state and never decides', () => {
   const ackFrom = (state: SelectionState) => publishLinnstrumentSelection(state);
 
   it('a hardware selector press paints NOTHING until the reducer acknowledges it', async () => {
-    const sim = await installSimulatedLinnstrument();
-    sim.clearWrites();
+    const sim = await confirmedSim();
     sim.touch(16, 7); // the R cell
     await flush();
     expect(events.some((e) => e.kind === 'control_edge' && e.control === 'r')).toBe(true);
@@ -587,11 +597,53 @@ describe('the LED writer paints acknowledged state and never decides', () => {
   });
 
   it('extra controls OFF leaves the lower five unlit (D17 is a recommendation, not a ruling)', () => {
-    const p = { ...DEFAULT_LINN_PROFILE, extraControlsEnabled: false };
+    const P = DEFAULT_LINN_PROFILE;
     const column = (frame: ReturnType<typeof ledFrame>) => frame.filter((c) => c.wireCol === CONTROL_WIRE_COL && c.ledRow <= 4);
-    expect(column(ledFrame(createSelectionState(p), p))).toHaveLength(5);
-    expect(column(ledFrame(createSelectionState(p), p)).every((c) => c.color === p.palette.off)).toBe(true);
-    expect(column(ledFrame(createSelectionState(DEFAULT_LINN_PROFILE), DEFAULT_LINN_PROFILE)).every((c) => c.color === DEFAULT_LINN_PROFILE.palette.orange)).toBe(true);
+    const off = { ...lightingFromProfile(P), extraControls: false };
+    expect(column(ledFrame(createSelectionState(P), P, off))).toHaveLength(5);
+    expect(column(ledFrame(createSelectionState(P), P, off)).every((c) => c.color === P.palette.off)).toBe(true);
+    expect(column(ledFrame(createSelectionState(P), P)).every((c) => c.color === P.palette.orange)).toBe(true);
+    // F08: the switch is the MODULE's lighting, never the writer's profile — a
+    // profile that says enabled cannot re-light what the module turned off,
+    // and the profile's own flag only reaches the frame through
+    // `lightingFromProfile` (the pre-publish fallback).
+    const enabledProfile = { ...P, extraControlsEnabled: true };
+    expect(column(ledFrame(createSelectionState(P), enabledProfile, off)).every((c) => c.color === P.palette.off)).toBe(true);
+    expect(lightingFromProfile({ ...P, extraControlsEnabled: false }).extraControls).toBe(false);
+  });
+
+  it('F08 — EXTRAS OFF darkens the five hardware control lights ON THE WIRE, through the same publish as the roots', async () => {
+    // The review: the runtime flipped its profile on `extra_controls` while the
+    // writer read a module-global profile with `extraControlsEnabled: true`, so
+    // no off-cell CC20/21/22 frames were ever sent (R05, 3/3). The module's
+    // switch now rides `publishLinnstrumentLighting`, the ONE path the writer
+    // paints from.
+    const sim = await confirmedSim();
+    ackFrom(createSelectionState(DEFAULT_LINN_PROFILE));
+    await flush();
+    const lower = (writes: number[][]) => paintedCells(writes).filter((c) => c.wireCol === CONTROL_WIRE_COL && c.ledRow <= 4).sort((a, b) => a.ledRow - b.ledRow);
+    expect(lower(sim.writes()).map((c) => c.color), 'the bind paints the five orange (extras default ON)').toEqual(Array(5).fill(DEFAULT_LINN_PROFILE.palette.orange));
+    sim.clearWrites();
+    publishLinnstrumentLighting({ ...lightingFromProfile(DEFAULT_LINN_PROFILE), extraControls: false });
+    await flush();
+    const dark = lower(sim.writes());
+    expect(dark.map((c) => c.ledRow)).toEqual([0, 1, 2, 3, 4]);
+    expect(dark.map((c) => c.color)).toEqual(Array(5).fill(DEFAULT_LINN_PROFILE.palette.off));
+    // Only the five moved: the selector cells and every musical cell diff to nothing.
+    expect(paintedCells(sim.writes())).toHaveLength(5);
+    // …and the writer's own profile still says enabled — it is not consulted.
+    expect(linnstrumentProfile().extraControlsEnabled).toBe(true);
+    // Back ON re-lights exactly the five.
+    sim.clearWrites();
+    publishLinnstrumentLighting({ ...lightingFromProfile(DEFAULT_LINN_PROFILE), extraControls: true });
+    await flush();
+    expect(lower(sim.writes()).map((c) => c.color)).toEqual(Array(5).fill(DEFAULT_LINN_PROFILE.palette.orange));
+    expect(paintedCells(sim.writes())).toHaveLength(5);
+    // An identical publish paints nothing (the diff, not a repaint).
+    sim.clearWrites();
+    publishLinnstrumentLighting({ ...lightingFromProfile(DEFAULT_LINN_PROFILE), extraControls: true });
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([]);
   });
 });
 
@@ -618,7 +670,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
   });
 
   it('a scale darkens the out-of-scale cells and leaves them PLAYABLE (the frame is lights only)', () => {
-    const frame = musicalFrame(P, { keysRoot: 36, padRoot: 60, scale: 'major' });
+    const frame = musicalFrame(P, { keysRoot: 36, padRoot: 60, scale: 'major', extraControls: true });
     expect(at(frame, 0, 0).color).toBe(P.palette.cyan); // C
     expect(at(frame, 1, 0).color).toBe(P.palette.off); // C# — out of C major, dark
     expect(at(frame, 2, 0).color).toBe(P.palette.green); // D
@@ -629,7 +681,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
   });
 
   it('a cell whose note leaves MIDI is off; a played cell is white on top of its role', () => {
-    const high = musicalFrame(P, { keysRoot: 96, padRoot: 60, scale: undefined });
+    const high = musicalFrame(P, { keysRoot: 96, padRoot: 60, scale: undefined, extraControls: true });
     expect(at(high, 15, 7).color).toBe(P.palette.off); // 96 + 15 + 35 = 146
     expect(at(high, 0, 0).color).toBe(P.palette.cyan); // 96
     const played = musicalFrame(P, lightingFromProfile(P), [{ col: 0, row: 0 }, { col: 18, row: 3 }]);
@@ -646,9 +698,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
   });
 
   it('on the wire: a keys touch paints its cell white, a slide moves the mark, a release restores the role — through the diff', async () => {
-    const sim = await installSimulatedLinnstrument();
-    await flush();
-    sim.clearWrites();
+    const sim = await confirmedSim();
     sim.touch(3, 2);
     await flush();
     expect(paintedCells(sim.writes())).toEqual([{ wireCol: 4, ledRow: 2, color: P.palette.white }]);
@@ -678,7 +728,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     // root + c + 5r, so which cells are roots never depends on the root); the
     // discriminator between the module's lighting and the profile's chromatic
     // fallback is the SCALE.
-    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: 'major' });
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: 'major', extraControls: true });
     const sim = await installSimulatedLinnstrument();
     await flush();
     const first = paintedCells(sim.writes());
@@ -687,7 +737,7 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     expect(first.find((c) => c.wireCol === 2 && c.ledRow === 0)!.color).toBe(P.palette.off); // app (1,0) = 37, C# — out of C major, NOT the chromatic fallback's green
     expect(first.find((c) => c.wireCol === 3 && c.ledRow === 0)!.color).toBe(P.palette.green); // app (2,0) = 38, D
     sim.clearWrites();
-    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined, extraControls: true });
     await flush();
     const cells = paintedCells(sim.writes());
     expect(cells.length).toBeGreaterThan(0);
@@ -697,9 +747,184 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     expect(cells.find((c) => c.wireCol === 3 && c.ledRow === 0)).toBeUndefined(); // D was green in both
     // An identical publish repaints nothing.
     sim.clearWrites();
-    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined, extraControls: true });
     await flush();
     expect(paintedCells(sim.writes())).toEqual([]);
+  });
+});
+
+// ── MODE OWNERSHIP (the 2026-09-15 adversarial review: F02, F04, F06) ──────
+
+describe('F02 — an explicit CONNECT performs the recovery its status line instructs', () => {
+  /** The three writes a mode request is: entry, the 8×4 row enables, the read. */
+  const modeRequest = (w: number[][]) => ({
+    entries: containsRun(w, USER_MODE_ON),
+    reads: containsRun(w, USER_MODE_READ),
+    enables: w.filter((m) => m[1] === CC_ROW_X_ENABLE).length,
+  });
+
+  it('bound, the instrument reports OFF → CONNECT re-sends entry + enables + read and re-opens the reply window', async () => {
+    const sim = await installSimulatedLinnstrument();
+    sim.ackUserMode(false); // a refused entry, read back as 0
+    await flush();
+    expect(linnstrumentStatus()).toMatchObject({ kind: 'bound', userMode: false, reply: 'answered' });
+    expect(linnstrumentStatus().message).toMatch(/Press CONNECT again/);
+    sim.clearWrites();
+    expect(await connectLinnstrument()).toBe(true);
+    await flush();
+    const w = sim.writes();
+    expect(modeRequest(w)).toEqual({ entries: 1, reads: 1, enables: DEFAULT_LINN_PROFILE.rows });
+    // Entry → enables → read, the bind's order, and a fresh window.
+    expect(w.findIndex((m) => m[1] === 99 && m[2] === 1)).toBeLessThan(w.map((m) => m[1]).lastIndexOf(CC_ROW_Z_ENABLE));
+    expect(w.map((m) => m[1]).lastIndexOf(CC_ROW_Z_ENABLE)).toBeLessThan(w.findIndex((m) => m[1] === 99 && m[2] === 2));
+    expect(linnstrumentStatus().reply).toBe('pending');
+    // The whole surface is repainted for the entry the retry asks for.
+    expect(paintedCells(w)).toHaveLength(MUSICAL_CELLS);
+    // The instrument now answers ON: confirmed, one session, no second entry.
+    sim.clearWrites();
+    sim.ackUserMode(true);
+    expect(linnstrumentStatus()).toMatchObject({ userMode: true, reply: 'answered' });
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(0);
+  });
+
+  it('bound and SILENT → CONNECT re-sends and re-arms the window; still unconfirmed (pending) → it re-sends too', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sim = await installSimulatedLinnstrument();
+      await vi.advanceTimersByTimeAsync(LINN_REPLY_WINDOW_MS);
+      expect(linnstrumentStatus().reply).toBe('silent');
+      sim.clearWrites();
+      expect(await connectLinnstrument()).toBe(true);
+      expect(modeRequest(sim.writes())).toEqual({ entries: 1, reads: 1, enables: DEFAULT_LINN_PROFILE.rows });
+      expect(linnstrumentStatus().reply).toBe('pending');
+      // The new window closes on its own again if nothing comes back.
+      await vi.advanceTimersByTimeAsync(LINN_REPLY_WINDOW_MS);
+      expect(linnstrumentStatus().reply).toBe('silent');
+      // Pending (inside the window, nothing yet): an impatient second press also re-sends.
+      sim.clearWrites();
+      await connectLinnstrument();
+      expect(modeRequest(sim.writes()).entries).toBe(1);
+      expect(linnstrumentStatus().reply).toBe('pending');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a first bind via CONNECT sends the mode request exactly once', async () => {
+    // Granted, nothing bound (the shell's shape: only a rig pick binds), and
+    // the pick then reaches the store WITHOUT an echo to the device layer — a
+    // fresh store instance it never subscribed to — so the next CONNECT's own
+    // roster pass is the first to bind the port. The bind's request must not
+    // be followed by the retry's: one entry, one read, one set of enables.
+    setNativeAvailableForTests(true);
+    const sim = await installSimulatedLinnstrument({ bind: false });
+    expect(linnstrumentStatus().kind).toBe('unbound');
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(0);
+    const store = new RigBindingStore(memBackend({ ...emptyRigBindings(), linnstrument: { deviceId: sim.inputId } }));
+    setRigBindingsForTests(store);
+    await store.whenReady();
+    expect(sim.attached()).toBe(false); // the pick is in the store; no echo reached the layer
+    expect(await connectLinnstrument()).toBe(true);
+    await flush();
+    expect(modeRequest(sim.writes())).toEqual({ entries: 1, reads: 1, enables: DEFAULT_LINN_PROFILE.rows });
+    expect(linnstrumentStatus()).toMatchObject({ kind: 'bound', userMode: false, reply: 'pending' });
+    // The port is now ALREADY bound and unconfirmed: the next CONNECT is the F02 retry.
+    sim.clearWrites();
+    expect(await connectLinnstrument()).toBe(true);
+    expect(modeRequest(sim.writes())).toEqual({ entries: 1, reads: 1, enables: DEFAULT_LINN_PROFILE.rows });
+  });
+
+  it('CONFIRMED → CONNECT is idempotent: no re-entry, no session, no repaint; and a roster refresh never re-sends', async () => {
+    const sim = await confirmedSim();
+    const sessions = events.filter((e) => e.kind === 'session').length;
+    expect(await connectLinnstrument()).toBe(true);
+    await flush();
+    expect(sim.writes()).toHaveLength(0);
+    expect(events.filter((e) => e.kind === 'session')).toHaveLength(sessions);
+    expect(linnstrumentStatus()).toMatchObject({ userMode: true, reply: 'answered' });
+    // The instrument reports OFF; a rig-store echo (the non-gesture path) is
+    // still only a roster refresh — nothing re-enters the mode.
+    sim.ackUserMode(false);
+    sim.clearWrites();
+    rigBindings().setLinnstrument({ deviceId: sim.inputId });
+    await flush();
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(0);
+    expect(linnstrumentStatus().userMode).toBe(false);
+  });
+});
+
+describe('F04 — the cell vocabulary decodes only once the instrument has CONFIRMED User Mode', () => {
+  it('bound-but-UNCONFIRMED (the write left, nothing came back): cell bytes are rejected, no touch, no edge, no paint', async () => {
+    const sim = await installSimulatedLinnstrument();
+    await flush();
+    sim.clearWrites();
+    events.length = 0;
+    expect(linnstrumentStatus()).toMatchObject({ kind: 'bound', userMode: false, reply: 'pending' });
+    const before = linnstrumentDiagnostics().rejected;
+    sim.send([0x97, 17, 100]); // ordinary Note On 17 on channel 8 — the R cell in User Mode
+    sim.touch(3, 2);
+    sim.move(3, 2, { x: 3000, z: 90 });
+    await flush();
+    expect(events).toHaveLength(0);
+    expect(linnstrumentDiagnostics().rejected).toBe(before + 5); // note + note + lo + hi + z
+    expect(paintedCells(sim.writes())).toEqual([]);
+    // …and this is distinct from UNBOUND: here a handler IS attached and the
+    // bytes DO reach the decoder; they are rejected by the mode, not lost.
+    expect(sim.attached()).toBe(true);
+  });
+
+  it('confirmed OFF after being ON: the same bytes are music again; a confirmed ON re-opens them', async () => {
+    const sim = await confirmedSim();
+    sim.send([0x97, 17, 100]);
+    expect(events.filter((e) => e.kind === 'control_edge')).toHaveLength(1);
+    sim.send([0x87, 17, 0]);
+    events.length = 0;
+    sim.ackUserMode(false); // the instrument left the mode
+    events.length = 0;
+    sim.send([0x97, 17, 100]);
+    sim.send([0x87, 17, 0]);
+    expect(events.filter((e) => e.kind === 'control_edge')).toHaveLength(0);
+    sim.ackUserMode(true);
+    events.length = 0;
+    sim.send([0x97, 17, 100]);
+    expect(events.filter((e) => e.kind === 'control_edge')).toHaveLength(1);
+  });
+});
+
+describe('F06 — an unchanged mode answer acknowledges; only a transition invalidates touch ownership', () => {
+  for (const order of ['echo then read', 'read then echo'] as const) {
+    it(`${order}: a press, expression and release between the two answers keep ONE touch, one epoch, no session`, async () => {
+      const sim = await installSimulatedLinnstrument();
+      const [first, second] = order === 'echo then read' ? [USER_MODE_ECHO_CHANNEL, 0] : [0, USER_MODE_ECHO_CHANNEL];
+      sim.ackUserMode(true, first); // the transition
+      await flush();
+      const epoch = linnstrumentStatus().epoch;
+      events.length = 0;
+      sim.clearWrites();
+      sim.touch(3, 2, { z: 40 });
+      const touch = (events[0] as { touch: number }).touch;
+      sim.ackUserMode(true, second); // the same mode, read back
+      await flush();
+      expect(linnstrumentStatus()).toMatchObject({ epoch, userMode: true, reply: 'answered' });
+      expect(events.filter((e) => e.kind === 'session')).toHaveLength(0);
+      expect(events.filter((e) => e.kind === 'touch_end')).toHaveLength(0);
+      expect(sim.writes().filter((m) => m[1] === CC_ROW_X_ENABLE)).toHaveLength(0); // no re-arm for an ack
+      sim.move(3, 2, { z: 90 });
+      expect(events.at(-1)).toMatchObject({ kind: 'touch_expression', touch, pressure: 90 / 127, epoch });
+      sim.release(3, 2);
+      expect(events.at(-1)).toMatchObject({ kind: 'touch_end', touch, reason: 'release', epoch });
+    });
+  }
+
+  it('a real transition under a held finger still ends it with reason session (the V14 guarantee is intact)', async () => {
+    const sim = await confirmedSim();
+    sim.touch(3, 2);
+    const touch = (events[0] as { touch: number }).touch;
+    const epoch = linnstrumentStatus().epoch;
+    sim.ackUserMode(false);
+    expect(events.filter((e) => e.kind === 'touch_end')).toEqual([expect.objectContaining({ touch, reason: 'session' })]);
+    expect(linnstrumentStatus().epoch).toBe(epoch + 1);
   });
 });
 

@@ -96,6 +96,9 @@ export function mapSurface(state: SurfaceMapState, raw: RawEvent, profile: LinnP
   if (raw.kind === 'rejected') return { state, events };
 
   if (raw.kind === 'mode') {
+    // An unchanged answer (the read's echo of a mode already known) is not a
+    // session: the touches it would end are still down and still owned.
+    if (!raw.changed) return { state, events };
     return {
       state: createSurfaceMapState(),
       events: [{ kind: 'session', epoch, state: 'mode_changed', userMode: raw.userMode, time }],

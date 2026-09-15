@@ -235,6 +235,34 @@ describe('linnstrument arp — latch snapshot and cancellation', () => {
     expect(arp.snapshot().effective).toEqual([]);
   });
 
+  it('F01: reset FORGETS a latched pool (PANIC) — nothing plays on the next tick; cancel keeps it (arp off → on resumes)', () => {
+    const sink = recorder();
+    const arp = createLinnArp({ params: { latch: true } });
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.touchEnd(1); // released: the engine froze [60]
+    drive(arp, 1);
+    expect(sink.steps).toHaveLength(1);
+    // cancel: the pool survives — the next service re-anchors and plays it.
+    arp.cancel(20);
+    expect(arp.snapshot()).toMatchObject({ running: true, effective: [60] });
+    expect(arp.service({ nowMs: 5000, audioTime: 5, bpm: BPM })).toHaveLength(1);
+    // reset: the pool, the provenance and the touch are gone.
+    arp.reset(30);
+    expect(sink.silenced.at(-1)).toBe(30);
+    expect(arp.snapshot()).toMatchObject({ running: false, held: [], effective: [], playing: null, owner: null });
+    const before = sink.steps.length;
+    for (let i = 0; i < 4; i++) expect(arp.service({ nowMs: 6000 + i * STEP_MS, audioTime: 6 + i * 0.5, bpm: BPM })).toEqual([]);
+    expect(sink.steps.length).toBe(before);
+    // A late release of the forgotten touch is a no-op; a fresh press latches anew.
+    arp.touchEnd(1);
+    arp.touchStart(2, 64);
+    arp.touchEnd(2);
+    expect(arp.snapshot().effective).toEqual([64]);
+    expect(arp.service({ nowMs: 9000, audioTime: 9, bpm: BPM }).map((p) => p.note)).toEqual([64]);
+  });
+
   it('a long stall re-anchors instead of replaying every missed step', () => {
     const sink = recorder();
     const arp = createLinnArp();
@@ -244,6 +272,157 @@ describe('linnstrument arp — latch snapshot and cancellation', () => {
     arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM });
     const played = arp.service({ nowMs: 1000 + 60 * STEP_MS, audioTime: 31, bpm: BPM });
     expect(played.length).toBe(1);
+  });
+});
+
+describe('linnstrument arp — the late-step policy (F07): one step per service, distinct instants, a real gate-low interval', () => {
+  /** Every attack strictly after the previous attack's gate-down, by at least one render quantum. */
+  function assertRealLowIntervals(steps: Step[]): void {
+    for (let i = 1; i < steps.length; i++) {
+      const prevOff = steps[i - 1]!.at + steps[i - 1]!.gateOffSec;
+      expect(steps[i]!.at, `attack ${i} at ${steps[i]!.at} after the previous gate-down at ${prevOff}`).toBeGreaterThanOrEqual(prevOff + 128 / 48000);
+    }
+    expect(new Set(steps.map((s) => s.at)).size, 'no two attacks share an instant').toBe(steps.length);
+  }
+
+  it('a moderate stall (three steps due) plays ONE step at now + lookahead and re-anchors the grid to now', () => {
+    const sink = recorder();
+    const arp = createLinnArp({ params: { divisionIndex: 1 } }); // 4× at 120 bpm = 125 ms
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.touchStart(2, 64);
+    arp.touchStart(3, 67);
+    arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM }); // 60 at 1.025; next due 1125
+    const late = arp.service({ nowMs: 1400, audioTime: 1.4, bpm: BPM }); // 1125, 1250, 1375 all due
+    expect(late.map((p) => p.note)).toEqual([64]); // the NEXT note, once — nothing skipped, nothing burst
+    expect(late[0]!.at).toBeCloseTo(1.425, 9);
+    // Re-anchored: the following step is 125 ms after the stalled service, not on the old grid (1500).
+    expect(arp.service({ nowMs: 1500, audioTime: 1.5, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 1524, audioTime: 1.524, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 1525, audioTime: 1.525, bpm: BPM }).map((p) => p.note)).toEqual([67]);
+    assertRealLowIntervals(sink.steps);
+  });
+
+  it('NEGATIVE CONTROL: assertRealLowIntervals fails on an attack inside the previous gate-high, and on a shared instant', () => {
+    const mk = (at: number, gateOffSec: number): Step => ({ at, gateOffSec, lanes: [] });
+    expect(() => assertRealLowIntervals([mk(1.025, 0.0625), mk(1.05, 0.0625)])).toThrow();
+    expect(() => assertRealLowIntervals([mk(1.025, 0.0625), mk(1.025, 0.0625)])).toThrow();
+    expect(() => assertRealLowIntervals([mk(1.025, 0.0625), mk(1.15, 0.0625)])).not.toThrow(); // 1.15 ≥ 1.0875 + one quantum
+  });
+
+  // The window the first repair left open: a tick late by MORE than the step's
+  // gate-low slot but LESS than a step. One step is due, so the old rule kept
+  // the grid — and the following on-grid attack landed inside the note it had
+  // just scheduled (4× at 120 bpm: attacks 1.250 and 1.275 against a gate-down
+  // at 1.3125, a −37.5 ms "low" interval; 1× default: 1.825 and 2.025 against
+  // 2.075, −50 ms). Distinct timestamps, no edge — a legato retune.
+  it('4× tick 100 ms late (a three-tick stall, one step due): the grid re-anchors; the next attack is after the gate-down', () => {
+    const sink = recorder();
+    const arp = createLinnArp({ params: { divisionIndex: 1 } }); // 125 ms step, gate-high 62.5 ms
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM }); // 1.025; next due 1125
+    expect(arp.service({ nowMs: 1225, audioTime: 1.225, bpm: BPM })).toHaveLength(1); // 100 ms late → 1.250, gate-down 1.3125
+    // The old grid point (1250) is INSIDE that note: nothing plays there, nor on any tick before 1350.
+    expect(arp.service({ nowMs: 1250, audioTime: 1.25, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 1349, audioTime: 1.349, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 1350, audioTime: 1.35, bpm: BPM })).toHaveLength(1); // 1.375 — a real 62.5 ms low
+    expect(sink.steps.map((s) => s.at).map((t) => Math.round(t * 1e6) / 1e6)).toEqual([1.025, 1.25, 1.375]);
+    assertRealLowIntervals(sink.steps);
+  });
+
+  it('1× (the default) tick 300 ms late: the grid re-anchors; the old grid point inside the gate-high is skipped', () => {
+    const sink = recorder();
+    const arp = createLinnArp(); // 500 ms step, gate-high 250 ms
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM }); // 1.025; next due 1500
+    expect(arp.service({ nowMs: 1800, audioTime: 1.8, bpm: BPM })).toHaveLength(1); // 1.825, gate-down 2.075
+    expect(arp.service({ nowMs: 2000, audioTime: 2, bpm: BPM })).toEqual([]); // the old grid point, inside the note
+    expect(arp.service({ nowMs: 2299, audioTime: 2.299, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 2300, audioTime: 2.3, bpm: BPM })).toHaveLength(1); // 2.325 — a real 250 ms low
+    expect(sink.steps.map((s) => s.at).map((t) => Math.round(t * 1e6) / 1e6)).toEqual([1.025, 1.825, 2.325]);
+    assertRealLowIntervals(sink.steps);
+  });
+
+  it('the boundary: lateness up to step − gate-high − one quantum keeps the grid; one more ms re-anchors', () => {
+    const Q_MS = (128 / 48000) * 1000; // 2.667 ms
+    const stepMs = 125;
+    const gateHighMs = 62.5;
+    const maxLate = stepMs - gateHighMs - Q_MS; // 59.83 ms
+    for (const [late, keeps] of [[Math.floor(maxLate), true], [Math.ceil(maxLate) + 1, false]] as const) {
+      const sink = recorder();
+      const arp = createLinnArp({ params: { divisionIndex: 1 } });
+      arp.attach(sink);
+      arp.setEnabled(true);
+      arp.touchStart(1, 60);
+      arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM }); // next due 1125
+      expect(arp.service({ nowMs: 1125 + late, audioTime: (1125 + late) / 1000, bpm: BPM })).toHaveLength(1);
+      // Kept grid: next at 1250. Re-anchored: next at 1125 + late + 125.
+      const nextOnOldGrid = arp.service({ nowMs: 1250, audioTime: 1.25, bpm: BPM }).length;
+      expect(nextOnOldGrid, `late ${late} ms`).toBe(keeps ? 1 : 0);
+      if (!keeps) expect(arp.service({ nowMs: 1250 + late, audioTime: (1250 + late) / 1000, bpm: BPM })).toHaveLength(1);
+      assertRealLowIntervals(sink.steps);
+    }
+  });
+
+  it('an in-time tick (exactly one step due, small jitter) keeps its grid — jitter does not drift the pattern', () => {
+    const sink = recorder();
+    const arp = createLinnArp({ params: { divisionIndex: 1 } });
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM });
+    // Ticks 7 ms late every step: each plays once, and the grid stays 1125, 1250, …
+    for (let i = 1; i <= 4; i++) expect(arp.service({ nowMs: 1000 + i * 125 + 7, audioTime: 1 + i * 0.125 + 0.007, bpm: BPM })).toHaveLength(1);
+    expect(arp.service({ nowMs: 1624, audioTime: 1.624, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 1625, audioTime: 1.625, bpm: BPM })).toHaveLength(1);
+    assertRealLowIntervals(sink.steps);
+  });
+
+  it('a tempo change mid-run: the step period follows the bpm, still one attack per due step, real low intervals', () => {
+    const sink = recorder();
+    const arp = createLinnArp();
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.service({ nowMs: 1000, audioTime: 1, bpm: 120 }); // next due 1500
+    arp.service({ nowMs: 1500, audioTime: 1.5, bpm: 120 }); // next due 2000
+    // Halve the tempo: the next step is still due at 2000; after it, steps are 1000 ms apart.
+    expect(arp.service({ nowMs: 1999, audioTime: 1.999, bpm: 60 })).toEqual([]);
+    expect(arp.service({ nowMs: 2000, audioTime: 2, bpm: 60 })).toHaveLength(1);
+    expect(sink.steps.at(-1)!.gateOffSec).toBeCloseTo(0.5, 9); // half of the new 1 s step
+    expect(arp.service({ nowMs: 2500, audioTime: 2.5, bpm: 60 })).toEqual([]);
+    expect(arp.service({ nowMs: 3000, audioTime: 3, bpm: 60 })).toHaveLength(1);
+    // Double it again: a grid point 1 s away is now MORE than one 500 ms step late → one step, re-anchored.
+    expect(arp.service({ nowMs: 4000, audioTime: 4, bpm: 120 })).toHaveLength(1);
+    expect(arp.service({ nowMs: 4499, audioTime: 4.499, bpm: 120 })).toEqual([]);
+    expect(arp.service({ nowMs: 4500, audioTime: 4.5, bpm: 120 })).toHaveLength(1);
+    assertRealLowIntervals(sink.steps);
+  });
+
+  it('a division change mid-run (1× → 8×): the shorter period takes effect without a burst; 8× → 1× without a stall', () => {
+    const sink = recorder();
+    const arp = createLinnArp({ params: { divisionIndex: 3 } }); // 1× = 500 ms
+    arp.attach(sink);
+    arp.setEnabled(true);
+    arp.touchStart(1, 60);
+    arp.service({ nowMs: 1000, audioTime: 1, bpm: BPM }); // next due 1500
+    arp.setParams({ divisionIndex: 0 }); // 8× = 62.5 ms
+    // The old grid point (1500) is 8 new steps away when the tick lands on it: ONE step, re-anchored.
+    expect(arp.service({ nowMs: 1500, audioTime: 1.5, bpm: BPM })).toHaveLength(1);
+    let played = 0;
+    for (let ms = 1525; ms <= 1750; ms += 25) played += arp.service({ nowMs: ms, audioTime: ms / 1000, bpm: BPM }).length;
+    expect(played).toBe(4); // 1562.5, 1625, 1687.5, 1750 — one per 62.5 ms, no double-scheduling on the 25 ms tick
+    arp.setParams({ divisionIndex: 3 }); // back to 1×: next due 1812.5, then every 500 ms
+    expect(arp.service({ nowMs: 1800, audioTime: 1.8, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 1825, audioTime: 1.825, bpm: BPM })).toHaveLength(1);
+    expect(arp.service({ nowMs: 2300, audioTime: 2.3, bpm: BPM })).toEqual([]);
+    expect(arp.service({ nowMs: 2325, audioTime: 2.325, bpm: BPM })).toHaveLength(1);
+    assertRealLowIntervals(sink.steps);
   });
 });
 

@@ -914,12 +914,17 @@ const DRIVERS: Record<string, PerPortDriver> = {
           __linnstrumentTestInstall?: (o?: { bind?: boolean }) => Promise<boolean>;
           __linnstrumentSim?: {
             touch: (col: number, row: number, o?: { velocity?: number; x?: number; y?: number; z?: number }) => void;
+            ackUserMode: (on?: boolean) => void;
           };
         };
         if (!w.__linnstrumentTestInstall) return;
         await w.__linnstrumentTestInstall();
         const sim = w.__linnstrumentSim;
         if (!sim) return;
+        // The instrument's own NRPN 245 echo: the cell vocabulary decodes only
+        // once User Mode is CONFIRMED (raw-decode.ts) — unconfirmed, the bytes
+        // below are music and reach no voice.
+        sim.ackUserMode(true);
         // keys_poly: a held key well above C4 (lane 0 pitch ≈ +2.17 V).
         sim.touch(15, 7, { x: 3000, z: 90 });
         // pad_poly + the selected R pair: raw X near the pad's right edge under
