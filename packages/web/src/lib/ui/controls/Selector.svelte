@@ -7,6 +7,7 @@
   // MIDI-assignable (a learned CC sweeps the roster) + right-click opens the
   // ControlContextMenu; a NON-numeric preset roster is selection-only.
   import type { KnobCurve } from '$lib/graph/types';
+  import type { HTMLAttributes } from 'svelte/elements';
   import { onDestroy, onMount, untrack } from 'svelte';
   import ControlContextMenu from './ControlContextMenu.svelte';
   import { makeMidiAssignable } from './midi-assignable.svelte';
@@ -21,7 +22,17 @@
 
   type Val = number | string;
 
-  interface Props {
+  /**
+   * ⚠ THE REST OF THE ATTRIBUTES LAND ON THE CHIP. A host that has a STATE to
+   * name which this primitive has no vocabulary for — audioOut's device roster
+   * is dead for one of TWO reasons, and its specs read `data-block` and
+   * `aria-valuetext` off the picker to tell them apart — stamps it here rather
+   * than the primitive learning every host's states. Spread FIRST, so nothing
+   * a host passes can shadow the chip's own role, class, handlers or label.
+   * `onchange` is omitted because this component's `onchange` is the roster
+   * commit, not the DOM form event of the same name.
+   */
+  interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'onchange'> {
     /** Current selected value (a param number, or a preset key). */
     value: Val;
     /** The option roster shown in the dropdown. */
@@ -46,6 +57,13 @@
      *  from — e.g. the shell's family cells). */
     testid?: string;
     disabled?: boolean;
+    /** Step the roster on a plain wheel over the chip (the default, and what
+     *  every param roster wants: a filter mode is cheap to flick through).
+     *  `false` for a roster whose entry has SIDE EFFECTS outside the patch —
+     *  audioOut's output DEVICE re-routes the AudioContext on every step, and a
+     *  stray scroll over the 🎧 tray must not hop the sound between speakers
+     *  and headphones. The native `<select>` it replaced never cycled either. */
+    wheelCycles?: boolean;
   }
 
   let {
@@ -60,6 +78,8 @@
     compact = false,
     testid,
     disabled = false,
+    wheelCycles = true,
+    ...rest
   }: Props = $props();
 
   // MIDI applies only to a numeric roster addressed by a param.
@@ -143,7 +163,7 @@
     else if (e.key === 'ArrowUp') { e.preventDefault(); onchange(cycleOptionValue(value, options, -1)); }
   }
   function onWheel(e: WheelEvent) {
-    if (disabled || open) return;
+    if (!wheelCycles || disabled || open) return;
     e.preventDefault();
     onchange(cycleOptionValue(value, options, e.deltaY < 0 ? +1 : -1));
   }
@@ -163,6 +183,7 @@
 
 <div class="selector-wrap" class:midi-learning={midi.learning} class:midi-bound={!!midi.binding}>
   <div
+    {...rest}
     bind:this={chipEl}
     class="selector nodrag"
     class:hero
@@ -172,6 +193,7 @@
     tabindex={disabled ? -1 : 0}
     aria-haspopup="listbox"
     aria-expanded={open}
+    aria-disabled={disabled ? 'true' : undefined}
     aria-label={label ? `${label}: ${shownLabel}` : shownLabel}
     data-testid={testid ?? (paramId ? `control-${paramId}` : undefined)}
     title={shownTitle ?? (compact && label ? `${label}: ${shownLabel}` : shownTitle)}
@@ -186,7 +208,10 @@
   </div>
 
   {#if open}
-    <div use:portal>
+    <!-- `data-selector-menu` marks the PORTALED subtree — list and backdrop —
+         so an outside-pointerdown closer that hosts this chip (the workflow
+         topbar's menus) can tell "working the roster" from "clicked away". -->
+    <div use:portal data-selector-menu>
       <!-- transparent backdrop closes the menu on any outside click -->
       <button class="backdrop" type="button" aria-label="close" onclick={() => (open = false)}></button>
       <ul class="menu" use:clampMenu={{ x: menuX, y: menuY, flip: false }} role="listbox">
@@ -198,6 +223,7 @@
               class:on={opt.value === value}
               role="option"
               aria-selected={opt.value === value}
+              data-value={opt.value}
               title={opt.title}
               onclick={() => choose(opt.value)}
             >{opt.label}</button>

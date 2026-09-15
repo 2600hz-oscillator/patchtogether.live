@@ -636,6 +636,24 @@ export function canvasNode(page: Page, id: string) {
 }
 
 /**
+ * Pick an entry in a face SELECTOR chip by its option VALUE.
+ *
+ * A face's roster control is the RACKLINE popup primitive (`Selector.svelte`),
+ * not a native `<select>`, so `selectOption` does not apply: click the chip,
+ * then the PORTALED `role="option"` whose `data-value` is the id. Keyed by
+ * value rather than by label so a spec that installed fake devices keeps
+ * addressing them by the ids it installed — exactly what `selectOption(id)`
+ * did on the `<select>` this replaced. The option locator is page-scoped on
+ * purpose: the list is portaled to `<body>`, outside the chip's host.
+ */
+export async function pickSelectorValue(page: Page, chip: Locator, value: string): Promise<void> {
+  await chip.click();
+  const option = page.locator(`[role="listbox"] [role="option"][data-value="${value}"]`);
+  await expect(option, `the roster must list an option whose value is "${value}"`).toBeVisible();
+  await option.click();
+}
+
+/**
  * Every LANE TILE's LOD tier attribute, **scoped to the main canvas**.
  *
  * ⚠ THIS EXISTS BECAUSE A BARE `document.querySelectorAll('[data-shell-tier]')`

@@ -162,7 +162,12 @@ export const audioOutDef: AudioModuleDef = {
     //
     //   2. THE OUTPUT DEVICE PICKER — an `enumerateDevices()` roster plus the
     //      `setSinkId` support/error states, which are neither params nor node
-    //      data with a roster the def could declare.
+    //      data with a roster the def could declare. Painted by the fleet's own
+    //      `Selector` chip in a captioned DEVICE band under the meter — the
+    //      primitive a dock `selector` cell mounts, not its registration (see
+    //      the next note) and never a native `<select>`, whose intrinsic width
+    //      is its longest option and sized the plate by the machine's device
+    //      names (owner, 2026-09-15: "this button sizes itself terribly").
     //
     // ⚠ (2) IS WHY THIS MODULE'S migration disposition WAS `bespoke-surface`,
     // and the body is exactly the answer that entry was asking for. It is also
@@ -219,7 +224,7 @@ export const audioOutDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "The terminal stereo output — where the patch reaches your speakers. It takes two mono inputs (L and R), each routed to one side of the stereo bus, following the Eurorack convention that every cable is mono and you patch both sides for stereo. Mental model: the last module in the chain; whatever you wire into L and R is what you hear. Two always-on safety stages sit between your signal and the hardware: a 5 Hz DC-blocking high-pass (inaudible, but it stops slow DC drift from a feedback loop or a misrouted LFO from stressing your speakers) and a master brickwall limiter with a -1 dBFS ceiling. The limiter looks ahead 2 ms, so anything that stays under the ceiling passes through at exactly unity — it does not compress, colour or pump your low end — and anything above it is turned down by just enough to reach the ceiling, which is what stops a runaway patch clipping the device. The card also lets you choose the output device on browsers that support it. There are no outputs — this is a sink.",
+      "The terminal stereo output — where the patch reaches your speakers. It takes two mono inputs (L and R), each routed to one side of the stereo bus, following the Eurorack convention that every cable is mono and you patch both sides for stereo. Mental model: the last module in the chain; whatever you wire into L and R is what you hear. Two always-on safety stages sit between your signal and the hardware: a 5 Hz DC-blocking high-pass (inaudible, but it stops slow DC drift from a feedback loop or a misrouted LFO from stressing your speakers) and a master brickwall limiter with a -1 dBFS ceiling. The limiter looks ahead 2 ms, so anything that stays under the ceiling passes through at exactly unity — it does not compress, colour or pump your low end — and anything above it is turned down by just enough to reach the ceiling, which is what stops a runaway patch clipping the device. On browsers that support it, the DEVICE band under the meter (in the dock full view and the headphones tray) picks which output device the rack plays through: click it to open the list of outputs the browser can see and choose one. The pick is per-machine — it never rides the shared patch, is not undoable, and survives a reload. There are no outputs — this is a sink.",
     inputs: {
       L: "Left-channel audio to the speakers. Patch a mono source here for the left side; for a stereo source wire both L and R.",
       R: "Right-channel audio to the speakers. Leave it unpatched for a mono signal in L, or wire the right side of a stereo source here.",

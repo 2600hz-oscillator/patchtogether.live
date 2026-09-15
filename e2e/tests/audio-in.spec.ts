@@ -382,13 +382,16 @@ test.describe('WORKFLOW audio I/O surface (🎧 always-on pinned AUDIO IN/OUT)',
     await expect(
       panel.locator('[data-testid="workflow-io-audioin-host"] [data-testid="audioin-face-device"]'),
     ).toBeVisible();
-    // Output side: the device dropdown, or the setSinkId-unsupported notice.
+    // Output side: the device picker CHIP naming something (a device, or the
+    // `(no outputs)` placeholder), or the setSinkId-unsupported notice. The
+    // picker is the face's roster chip, not a native `<select>`, so the probe
+    // reads its painted name rather than an `options` collection.
     await page.waitForFunction(() => {
       const host = document.querySelector('[data-testid="workflow-io-audioout-host"]');
       if (!host) return false;
-      const sel = host.querySelector('[data-testid="audioout-face-device-select"]') as HTMLSelectElement | null;
+      const chip = host.querySelector('[data-testid="audioout-face-device-select"]');
       const notice = host.querySelector('[data-testid="audioout-setsinkid-notice"]');
-      return (sel !== null && sel.options.length > 0) || notice !== null;
+      return (chip !== null && (chip.textContent ?? '').trim().length > 0) || notice !== null;
     }, undefined, { timeout: 5_000 });
 
     // The hosted FACE body reaches `streaming` (fake mic, pre-granted) —
@@ -501,30 +504,30 @@ test.describe('AUDIO OUT device dropdown', () => {
     ]);
     await expect(page.locator('.svelte-flow__node:has([data-shell-type="audioOut"])')).toBeVisible();
 
-    // The device select lives on the DOCK face body on the default shell.
+    // The device picker lives on the DOCK face body on the default shell — the
+    // face's roster CHIP (`Selector`), not a native `<select>`.
     await page.evaluate(
       (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
       'ao',
     );
-    const select = page.locator('[data-testid="audioout-face-device-select"]');
-    await expect(select).toBeVisible();
+    const chip = page.locator('[data-testid="audioout-face-device-select"]');
+    await expect(chip).toBeVisible();
 
     // Under --use-fake-device-for-media-stream + microphone permission
     // pre-granted, enumerateDevices returns at least one audiooutput
     // entry (Chromium synthesizes a fake speaker too). On platforms
-    // where it doesn't, we accept zero options and instead assert the
-    // setSinkId-unavailable notice is shown — the spec's "graceful
-    // degrade on Firefox" path.
+    // where it doesn't, the chip names the `(no outputs)` placeholder
+    // instead, or the setSinkId-unavailable notice is shown — the spec's
+    // "graceful degrade on Firefox" path. Either way the chip NAMES
+    // something; a blank chip is the failure.
     await page.waitForFunction(() => {
-      const el = document.querySelector(
-        '[data-testid="audioout-face-device-select"]',
-      ) as HTMLSelectElement | null;
+      const el = document.querySelector('[data-testid="audioout-face-device-select"]');
       const notice = document.querySelector(
         '[data-testid="audioout-setsinkid-notice"]',
       );
-      // Pass condition: either at least one option, OR the notice is
+      // Pass condition: the chip paints a name, OR the notice is
       // rendered (browser lacks setSinkId entirely).
-      return (el && el.options.length > 0) || notice !== null;
+      return (el !== null && (el.textContent ?? '').trim().length > 0) || notice !== null;
     }, undefined, { timeout: 5_000 });
   });
 });

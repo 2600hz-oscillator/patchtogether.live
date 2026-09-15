@@ -16,16 +16,21 @@
 // but vfpga-runner is VRT-exempt (live preview + scopes), so this asserts behaviour,
 // not a baseline. Mirrors the P3 composite spec.
 
-import { test, expect } from './_fixtures';
+import { test, expect, creditSetupBudget } from './_fixtures';
 import { type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 const BENT = ['macroblock-mosh', 'tmds-sparkle', 'scaler-glitch'] as const;
 
-/** OUTPUT canvas pixel stats (mean luma, non-black fraction, spatial variance). */
+/** The OUTPUT thumb — `locator.evaluate` waits for it to be attached and is
+ *  strict, so a read on a missing or duplicated well fails on its own. */
+const OUTPUT_THUMB = '.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]';
+
+/** OUTPUT canvas pixel stats (mean luma, non-black fraction, spatial variance) —
+ *  ONE read of the current frame. For "wait until it shows a picture" use
+ *  `readOutput` / `pollStats`, which accumulate in the page. */
 async function outputStats(page: Page): Promise<{ mean: number; nonZeroFrac: number; variance: number } | null> {
-  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
-  await expect(canvas, 'videoOut tile thumb mounted').toHaveCount(1);
+  const canvas = page.locator(OUTPUT_THUMB);
   return canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -42,22 +47,123 @@ async function outputStats(page: Page): Promise<{ mean: number; nonZeroFrac: num
   });
 }
 
-/** A subsampled greyscale fingerprint of the OUTPUT (one luma byte per 64 bytes) —
- *  a renderer-tolerant SPATIAL signature; position-sensitive, so a geometric bend
- *  (mosh smear / scaler stretch / char-slip) that rearranges pixels reads DISTINCT. */
-async function outputFingerprint(page: Page): Promise<number[] | null> {
-  const canvas = page.locator('.svelte-flow__node[data-id="out"] [data-testid="video-tile-thumb"]');
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const data = ctx.getImageData(0, 0, c.width, c.height).data;
-    const out: number[] = [];
-    for (let i = 0; i < data.length; i += 64) {
-      out.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3);
-    }
-    return out;
-  });
+/** What one in-page OUTPUT read returns, over ONE round trip. */
+interface OutputRead {
+  /** Stats of the frame the read settled on (null only when the well has no 2D context). */
+  stats: { mean: number; nonZeroFrac: number; variance: number } | null;
+  /** A subsampled greyscale fingerprint of that SAME frame (one luma byte per
+   *  64 bytes) — a renderer-tolerant SPATIAL signature; position-sensitive, so
+   *  a geometric bend (mosh smear / scaler stretch / char-slip) that rearranges
+   *  pixels reads DISTINCT. Same positions `observeOutputDelta` samples. */
+  fingerprint: number[] | null;
+  /** Did ink (nonZeroFrac > INK_FRAC) arrive inside the frame budget? */
+  inked: boolean;
+  /** Animation frames consumed and wall-clock elapsed — for the assertion message. */
+  frames: number;
+  elapsedMs: number;
+}
+
+/** The "a picture has arrived" floor `pollStats` has always used: more than 5 %
+ *  of the subsampled pixels above luma 8. Below it the well is still the thumb's
+ *  own #050608 fill (luma 6.3), not a picture. */
+const INK_FRAC = 0.05;
+
+/** ANIMATION FRAMES the OUTPUT thumb gets to show ink after a hot-swap.
+ *
+ *  Sized by the same construction as `MOUNT_FRAME_BUDGET` (`_helpers.ts`): the
+ *  wall-clock gate this replaces was 50 samples x 150 ms = 7.5 s, which is 450
+ *  frames on a healthy 60 fps renderer, and the measured need is ONE read — ink
+ *  is present on the first sample in every CI trace of this file, green and red
+ *  alike. Frames rather than ms because a starved SwiftShader shard runs at
+ *  roughly 2 fps (INFERRED from run 35014395097, shard 3: a click's two-rAF
+ *  stability check took 1.2 s), so the same 7.5 s would be ~15 frames there
+ *  and 450 here — a different bound on every runner. The engine renders once per rAF
+ *  (`engine.ts` ensureLoop) and the thumb repaints on rAF throttled to
+ *  VIDEO_THUMB_FPS, so frames are the unit the wait actually consumes. When rAF
+ *  stalls outright the test budget bounds it — the contract `waitFrames`
+ *  documents. */
+const OUTPUT_PAINT_FRAMES = 450;
+
+/**
+ * Read the OUTPUT canvas IN THE PAGE: wait, one sample per animation frame,
+ * until the picture carries ink; let it settle `settleFrames` more frames; then
+ * return the stats AND fingerprint of that ONE frame — all over ONE round trip.
+ *
+ * ── why (the successor to #1988's `observeOutputDelta` move) ──────────────
+ *
+ * `pollStats` was the LAST Playwright-side sampler in this file: up to 50 x
+ * (`outputStats` -> `waitForTimeout(150)`), where `outputStats` itself opened
+ * with an `expect(...).toHaveCount(1)` round trip, and the reference capture
+ * was four trips in a row — count, stats, `waitForTimeout(300)`, fingerprint.
+ * On a healthy runner every one of those returns on its first sample. On CI
+ * each round trip costs ~1 s on a green day and ~2 s on a bad one — run
+ * 35014395097 (PR #2401, shard 3) killed the macroblock-mosh and tmds-sparkle
+ * legs at 60 s with NOTHING hung: the shard ran 1.93x slower than main's
+ * previous run across all 38 of its files (3091 vs 1603 test-seconds; every
+ * file over 4 s on the green run was 1.25-2.44x), and this test is ~26 round trips, each a sample the page
+ * has to schedule on the same thread as the three SwiftShader pipelines it is
+ * measuring (the three per-program legs are co-scheduled on three of the four
+ * workers on green runs and red runs alike). That is the poll-starves-its-
+ * subject class, CLAUDE.md rule 5, and the repair is the same as #1988's:
+ * accumulate in the page, bound in frames, report the count.
+ *
+ * The MEASURED QUANTITIES are unchanged — `outputStats`' arithmetic and the
+ * fingerprint's every-64th-byte subsampling — only where they run has moved.
+ * `settleFrames` replaces `waitForTimeout(300) // settle a couple frames`: two
+ * rAFs is the shared `settle()` definition of "applied AND painted"
+ * (`e2e/_helpers/frames.ts`), the same intent now counted instead of timed.
+ *
+ * A run that never inks still returns its real (dark) stats with the frame
+ * count, so the floors below fail with numbers rather than a bare timeout; and
+ * `inked` is asserted on the REFERENCE read, because a reference that is the
+ * thumb's own dark fill would make every bend read "distinct" from it — the
+ * assertion-satisfied-by-nothing class.
+ */
+async function readOutput(page: Page, opts: { settleFrames: number }): Promise<OutputRead> {
+  const canvas = page.locator(OUTPUT_THUMB);
+  return canvas.evaluate(
+    (el, { settleFrames, maxFrames, inkFrac }) =>
+      new Promise<OutputRead>((resolve) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        const t0 = performance.now();
+        if (!ctx) {
+          resolve({ stats: null, fingerprint: null, inked: false, frames: 0, elapsedMs: 0 });
+          return;
+        }
+        // `outputStats`' stride (every 16 bytes) and `outputFingerprint`'s
+        // (every 64 bytes) in ONE pass over the same frame.
+        const read = (): { stats: NonNullable<OutputRead['stats']>; fingerprint: number[] } => {
+          const data = ctx.getImageData(0, 0, c.width, c.height).data;
+          let n = 0, sum = 0, sumSq = 0, nonZero = 0;
+          const fp: number[] = [];
+          for (let i = 0; i < data.length; i += 16) {
+            const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+            sum += v; sumSq += v * v; n++;
+            if (v > 8) nonZero++;
+            if (i % 64 === 0) fp.push(v);
+          }
+          const mean = sum / n;
+          return { stats: { mean, nonZeroFrac: nonZero / n, variance: sumSq / n - mean * mean }, fingerprint: fp };
+        };
+        let frames = 0;
+        let inked = false;
+        let settleLeft = settleFrames;
+        const tick = (): void => {
+          frames++;
+          const cur = read();
+          if (!inked && cur.stats.nonZeroFrac > inkFrac) inked = true;
+          else if (inked) settleLeft--;
+          if ((inked && settleLeft <= 0) || frames >= maxFrames) {
+            resolve({ ...cur, inked, frames, elapsedMs: performance.now() - t0 });
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    { settleFrames: opts.settleFrames, maxFrames: OUTPUT_PAINT_FRAMES, inkFrac: INK_FRAC },
+  );
 }
 
 /** Mean absolute per-sample difference of two fingerprints (0 = identical), 0..255. */
@@ -210,23 +316,59 @@ async function loadPreset(page: Page, nodeId: string, _vfpga: string, name: stri
   await expect(cell.locator('.val')).toHaveText(name);
 }
 
+/** Wait for a picture on OUTPUT and return its stats — the same INK_FRAC floor
+ *  and the same arithmetic as ever, now one round trip (see `readOutput`).
+ *  Asserts readability only, as before; the callers own the floors. */
 async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: number; variance: number }> {
-  let stats = await outputStats(page);
-  for (let i = 0; i < 50 && (!stats || stats.nonZeroFrac <= 0.05); i++) {
-    await page.waitForTimeout(150);
-    stats = await outputStats(page);
-  }
-  expect(stats, 'OUTPUT canvas readable + non-black').not.toBeNull();
-  return stats!;
+  const r = await readOutput(page, { settleFrames: 0 });
+  expect(
+    r.stats,
+    `OUTPUT canvas readable — [instrument] inked=${r.inked} frames=${r.frames} ms=${Math.round(r.elapsedMs)}`,
+  ).not.toBeNull();
+  return r.stats!;
 }
 
 test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   for (const program of BENT) {
     test(`${program}: bends the smpte source into distinct non-black output`, async ({ page, rack, errorWatch }) => {
-      // Two pure-GL vfpga-runners + an OUTPUT compile fast even on SwiftShader,
-      // but give headroom for boot + spawn + first-frame settle + the hot-swap.
+      // A FAILURE BOUND, not the gate: no assertion in this leg is about
+      // latency, so none of them should fail on it.
+      //
+      // MEASURED on CI, this file's three per-program legs co-scheduled on
+      // three of the shard's four workers (how the planner lays the file out
+      // on green runs and red runs alike), mosh / tmds / scaler:
+      //   main run 34974425643, shard 3 (green):  34.0 / 30.2 / 38.3 s
+      //   PR   run 35014395097, shard 3 (red):    66.2 / 65.8 / 61.9 s
+      // Identical spec, identical shard bins. The red shard ran 1.93x slower
+      // than the green one across ALL 38 of its files, so the two legs that
+      // died were the two that landed on the wrong side of a line all three
+      // straddle at ~2x — scaler-glitch PASSED at 61.9 s reported. Where the
+      // 60 s went, off the failing trace: boot + spawn 7.6 s; the two
+      // shell-type checks 2.9 s; the reference `loadPreset` 14.0 s (two clicks
+      // at ~5.3 s each: resolve, stability, scroll, hit-target, click — ~5 CDP
+      // steps at ~1 s a step); reference stats + settle + fingerprint 8.6 s;
+      // the bent `loadPreset` 14.7 s; bent stats 5.6 s; and the axe fell 3.7 s
+      // into `observeOutputDelta`. Nothing hung and nothing early-exited late;
+      // every step paid 1-2 s of transport.
+      //
+      // Locally the same legs cost 4.8 / 2.4 / 2.3 s (real GPU), 5.6 / 3.0 /
+      // 2.8 s (E2E_SWIFTSHADER=1), 5.8 / 3.2 / 3.0 s at E2E_CPU_THROTTLE=4 and
+      // 6.2 / 3.5 / 3.4 s at x8: the CDP throttle reaches the renderer MAIN
+      // THREAD, and this test's cost is not there — it is frame time
+      // (SwiftShader raster in the GPU process) plus starved CDP transport,
+      // which the throttle does not model. Three co-scheduled SwiftShader
+      // workers reach 7.7 / 8.0 / 8.3 s. CI's own two runs are the measurement.
+      //
+      // The number is NOT raised — this file's `observeOutputDelta` header
+      // rejects that in writing. Two things change instead: the last
+      // Playwright-side sampler moves into the page (`readOutput`), and the
+      // ARRANGE phase — boot, spawn, the reference capture — is credited back
+      // at the arrange/act boundary (#1648, `creditSetupBudget`), so the act +
+      // assert phase gets the 60 s it declares regardless of what a loaded
+      // shard charged for setup. On the red trace that is ~32 s credited
+      // against a ~28 s act + assert phase; a hang in setup still dies at 60 s.
       test.setTimeout(60_000);
-
+      const setupAt = Date.now();
 
       await spawnPatch(
         page,
@@ -249,10 +391,19 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
       // of the src smpte bars at the same settings). Capture that, then swap to the
       // bent program and require the spatial fingerprint to DIFFER.
       await loadPreset(page, 'bent', 'smpte-bars', 'SMPTE bars');
-      await pollStats(page);
-      await page.waitForTimeout(300); // settle a couple frames so the reference is stable
-      const refFp = await outputFingerprint(page);
-      expect(refFp, 'reference fingerprint').not.toBeNull();
+      // Ink, then two settle frames (the shared `settle()` definition), then the
+      // fingerprint of that frame — ONE round trip; see `readOutput`.
+      const ref = await readOutput(page, { settleFrames: 2 });
+      expect(
+        ref.inked && ref.fingerprint !== null,
+        `reference (un-bent smpte-bars) shows a picture — [instrument] inked=${ref.inked} ` +
+          `nonZeroFrac=${ref.stats?.nonZeroFrac.toFixed(3)} frames=${ref.frames} ms=${Math.round(ref.elapsedMs)}`,
+      ).toBe(true);
+      const refFp = ref.fingerprint!;
+      // ARRANGE ends here. What precedes this line is engine boot, three
+      // mounts and a reference capture; what follows is the hot-swap under
+      // test and its assertions. Credited, not widened (#1648).
+      creditSetupBudget(setupAt, 'spawnPatch (engine boot) + reference capture');
 
       // Now load the BENT program and assert structure + distinctness.
       await loadPreset(page, 'bent', program, program);
@@ -470,7 +621,13 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
   // render loop survives many frames with NO console errors AND (where the JS-heap
   // API is available — Chromium) that the heap does not grow unboundedly.
   test('macroblock-mosh: sustained feedback does not leak (FBOs swapped in place)', async ({ page, rack, errorWatch }) => {
+    // Same bound and the same accounting as the per-program legs above: on
+    // run 35014395097's shard 3 this leg PASSED at 49.8 s of 60 (29.3 s on the
+    // green run), with the whole cost in boot + spawn + one `loadPreset` +
+    // first paint. The soak below is what this leg measures and is untouched;
+    // the setup in front of it is credited (#1648).
     test.setTimeout(60_000);
+    const setupAt = Date.now();
 
     await spawnPatch(
       page,
@@ -487,6 +644,7 @@ test.describe('vfpga P4 early-HD-era bent VFPGAs', () => {
     );
     await loadPreset(page, 'bent', 'macroblock-mosh', 'macroblock-mosh');
     await pollStats(page);
+    creditSetupBudget(setupAt, 'spawnPatch (engine boot) + macroblock-mosh load + first paint');
 
     const heapApi = await page.evaluate(() => 'memory' in performance);
     const heap0 = heapApi ? await page.evaluate(() => (performance as unknown as { memory: { usedJSHeapSize: number } }).memory.usedJSHeapSize) : 0;

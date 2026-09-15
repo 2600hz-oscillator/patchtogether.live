@@ -195,6 +195,30 @@ test.describe('audioOut faceplate — the bespoke body', () => {
     // half of the promotion.
     await expect(host.getByTestId('audioout-device-select')).toHaveCount(0);
 
+    // ⚠ WORKING THE ROSTER MUST NOT SHUT THE TRAY. The chip portals its list
+    // and its dismiss backdrop to <body>, and the topbar closes its menus on
+    // any document pointerdown outside an allow-list — so the first draft of
+    // the chip slammed the 🎧 panel shut on every device pick, which the
+    // native `<select>` never did (its popup was the OS's, not the DOM's).
+    // Re-picking the CURRENT entry is a no-op write (`Selector.choose` skips
+    // an unchanged value), so this exercises the gesture without re-routing
+    // the runner's audio. A blocked chip does not open, hence the branch.
+    const chip = host.getByTestId('audioout-face-device-select');
+    if ((await chip.getAttribute('data-block')) === 'none') {
+      await chip.click();
+      const list = page.locator('[role="listbox"]');
+      await expect(list).toBeVisible();
+      await expect(panel, 'opening the roster keeps the tray open').toHaveAttribute('data-open', 'true');
+      await list.locator('[role="option"][aria-selected="true"]').click();
+      await expect(list).toHaveCount(0);
+      await expect(panel, 'picking from the roster keeps the tray open').toHaveAttribute('data-open', 'true');
+      await chip.click();
+      await expect(list).toBeVisible();
+      await page.locator('button.backdrop[aria-label="close"]').click();
+      await expect(list).toHaveCount(0);
+      await expect(panel, 'dismissing the roster keeps the tray open').toHaveAttribute('data-open', 'true');
+    }
+
     expect(realErrors(errors), `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
 
@@ -211,23 +235,33 @@ test.describe('audioOut faceplate — the bespoke body', () => {
     await gotoDefaultShell(page, 'none');
     const pane = await openFacedOut(page, 'L');
 
+    // ⚠ ASSERT ON THE SAMPLE THE POLL ACCEPTED, never on a fresh read after it.
+    // The first draft polled `.not.toBe('silent')` and then re-read the meter
+    // for the shape assertions — two samples of a LIVE signal, and under CPU
+    // contention the second came back `silent` on a frame the oscillator had
+    // dropped (measured locally with a second Chromium hogging the machine).
+    // The poll now waits for the WHOLE claim and keeps the text it passed on.
+    let text = '';
     await expect
-      .poll(() => meterText(pane), {
-        message:
-          'the terminal meter must leave the silent state once a real oscillator is patched into ' +
-          'L — if it never does, the body is not reading the engine',
-        timeout: BOOT_MS,
-      })
-      .not.toBe('silent');
-
-    const text = (await meterText(pane))!;
+      .poll(
+        async () => {
+          text = (await meterText(pane)) ?? '';
+          return text;
+        },
+        {
+          message:
+            'the terminal meter must report LEFT audible once a real oscillator is patched into ' +
+            'L — if it never does, the body is not reading the engine',
+          timeout: BOOT_MS,
+        },
+      )
+      .toMatch(/^left -?\d+(\.\d)? dBFS/);
     // LEFT is audible, RIGHT is at the floor. A mono-key meter reports ONE
     // number and could not produce this pair at all.
-    expect(text, `meter aria-valuetext: ${text}`).toMatch(/^left -?\d+(\.\d)? dBFS/);
     expect(
       text,
       'nothing is patched into R, so the right bar must read the floor — a mono downmix would ' +
-        'have shown the same (halved) level on both',
+        `have shown the same (halved) level on both (meter aria-valuetext: ${text})`,
     ).toContain('right silent');
 
     // NOTHING NUMERIC IS PAINTED. The measurement is in `aria-valuetext` and
@@ -262,16 +296,26 @@ test.describe('audioOut faceplate — the bespoke body', () => {
     await gotoDefaultShell(page, 'none');
     const pane = await openFacedOut(page, 'both');
 
+    // Same discipline as the leg above: the poll waits for the WHOLE claim —
+    // left audible AND no `silent` anywhere in the sentence — and the
+    // assertion reads the sample the poll accepted, not a fresh one.
+    let text = '';
     await expect
-      .poll(() => meterText(pane), { timeout: BOOT_MS })
-      .not.toBe('silent');
-    const text = (await meterText(pane))!;
+      .poll(
+        async () => {
+          text = (await meterText(pane)) ?? '';
+          return /^left -?\d+(\.\d)? dBFS/.test(text) && !text.includes('silent');
+        },
+        {
+          message:
+            'both channels are fed, so the meter must report LEFT audible with NEITHER side at the ' +
+            'floor — this is the leg that moves if the body ever regresses to one shared reading',
+          timeout: BOOT_MS,
+        },
+      )
+      .toBe(true);
     expect(text, `meter aria-valuetext: ${text}`).toMatch(/^left -?\d+(\.\d)? dBFS/);
-    expect(
-      text,
-      'both channels are fed, so NEITHER may read the floor — this is the leg that moves if the ' +
-        'body ever regresses to one shared reading',
-    ).not.toContain('silent');
+    expect(text, `meter aria-valuetext: ${text}`).not.toContain('silent');
 
     expect(realErrors(errors), `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });
@@ -376,6 +420,94 @@ test.describe('audioOut faceplate — the bespoke body', () => {
       painted,
       `the face must not paint the support/no-devices sentence (found: "${painted}")`,
     ).not.toMatch(/unavailable in this browser|no output devices found/);
+
+    expect(realErrors(errors), `pageerrors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('the PICKER is the face\'s own roster chip in its own band — sized by the plate, never by the device names', async ({
+    page,
+  }) => {
+    // THE OWNER'S DEFECT (2026-09-15, the 🎧 tray at 50 %): "this button sizes
+    // itself terribly, I have to make it small and even if small it can't
+    // really be seen. needs better placement." The picker was a native
+    // `<select>`, whose intrinsic width is its LONGEST OPTION — the machine's
+    // own device names — inside a `width: max-content` plate, so the plate was
+    // as wide as the runner's hardware was called and the tray host scaled the
+    // whole face down to fit it. Pinned here as the claims the unit lane
+    // cannot see: no `<select>` is mounted in the body; the picker is the
+    // fleet's roster chip in a captioned band of its own; the chip lies INSIDE
+    // the body's box and the body does not overflow it; and, when operable, a
+    // click opens the roster with one entry per enumerated output.
+    const errors = collectErrors(page);
+    await gotoDefaultShell(page, 'none');
+    const pane = await openFacedOut(page, 'L');
+    const body = pane.getByTestId('audioout-output-body');
+
+    await expect(
+      body.locator('select'),
+      'the picker must not be a native <select> — that is the control that sized itself by its options',
+    ).toHaveCount(0);
+    const chip = pane.getByTestId('audioout-face-device-select');
+    await expect(chip).toBeVisible();
+    await expect(chip, 'the picker is the Selector chip').toHaveAttribute('aria-haspopup', 'listbox');
+    await expect(
+      pane.getByTestId('audioout-face-device-band'),
+      'the picker sits in its own captioned band, not beside the meter',
+    ).toBeVisible();
+
+    // ⚠ GEOMETRY, IN CSS PX, FROM THE SAME ORIGIN. The chip's box must lie
+    // inside the body's, and the body must not scroll horizontally — a chip
+    // that had widened the plate would show up as the body being wider than
+    // its host, which `.dock-ext-body { overflow-x: auto }` would then SCROLL
+    // rather than report.
+    const geo = await body.evaluate((el: Element) => {
+      const b = el.getBoundingClientRect();
+      const c = el
+        .querySelector('[data-testid="audioout-face-device-select"]')!
+        .getBoundingClientRect();
+      const host = el.closest('[data-testid="face-full-view-body"]') as HTMLElement | null;
+      return {
+        bodyL: b.left,
+        bodyR: b.right,
+        chipL: c.left,
+        chipR: c.right,
+        chipH: c.height,
+        hostScrollW: host?.scrollWidth ?? -1,
+        hostClientW: host?.clientWidth ?? -1,
+      };
+    });
+    expect(geo.chipL, `chip left ${geo.chipL} vs body left ${geo.bodyL}`).toBeGreaterThanOrEqual(geo.bodyL - 0.5);
+    expect(geo.chipR, `chip right ${geo.chipR} vs body right ${geo.bodyR}`).toBeLessThanOrEqual(geo.bodyR + 0.5);
+    expect(geo.chipH, 'the chip has a real box (a hero chip, not a collapsed row)').toBeGreaterThan(20);
+    expect(
+      geo.hostScrollW,
+      `the extension body must not overflow its host (scroll ${geo.hostScrollW} vs client ${geo.hostClientW})`,
+    ).toBeLessThanOrEqual(geo.hostClientW);
+
+    // OPENS ON CLICK when operable: a portaled listbox with one entry per
+    // enumerated `audiooutput`. A BLOCKED chip is inert by design (disabled
+    // chips do not open), so the branch is capability-independent rather than
+    // a mid-test skip — the same shape the state leg above uses.
+    const block = await chip.getAttribute('data-block');
+    if (block === 'none') {
+      const enumerated = await page.evaluate(async () => {
+        const all = await navigator.mediaDevices.enumerateDevices();
+        return all.filter((d) => d.kind === 'audiooutput').length;
+      });
+      await chip.click();
+      const list = page.locator('[role="listbox"]');
+      await expect(list).toBeVisible();
+      await expect(
+        list.locator('[role="option"]'),
+        'one roster entry per enumerated output device',
+      ).toHaveCount(enumerated);
+      await page.locator('button.backdrop[aria-label="close"]').click();
+      await expect(list).toHaveCount(0);
+    } else {
+      await expect(chip).toBeDisabled();
+      await chip.click({ force: true });
+      await expect(page.locator('[role="listbox"]'), 'a blocked chip must not open').toHaveCount(0);
+    }
 
     expect(realErrors(errors), `pageerrors: ${errors.join(' | ')}`).toEqual([]);
   });

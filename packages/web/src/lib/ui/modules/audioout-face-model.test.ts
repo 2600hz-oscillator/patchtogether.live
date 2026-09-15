@@ -40,6 +40,7 @@ import {
   outputDeviceLabelFrom,
   outputDeviceValueFrom,
   pickerBlockFrom,
+  pickerRosterFrom,
   pickerValueTextFrom,
 } from '$lib/audio/output-device-model';
 import {
@@ -297,6 +298,21 @@ describe('audioOut picker — the TWO DEAD CAUSES the card could not tell apart'
   it('a live picker is not blocked, and names the device rather than a state word', () => {
     expect(pickerBlockFrom(true, one.length)).toBeNull();
     expect(pickerValueTextFrom(null, 'Studio Monitors')).toBe('Studio Monitors');
+  });
+
+  it('the CHIP roster never goes blank: an empty enumeration still yields one named entry', () => {
+    // `Selector` paints `String(value)` when its options are empty, and the
+    // value in that state is `''` — a chip with nothing on it, which is the
+    // "did the body mount at all" ambiguity the meter's drawn idle field exists
+    // to remove. The placeholder is an OPTION NAME (permitted resting text) and
+    // the same string the native `<select>` showed; the REASON stays on
+    // `aria-valuetext`, where the two dead causes are told apart (above).
+    expect(pickerRosterFrom([])).toEqual([{ value: '', label: '(no outputs)' }]);
+    // A live roster passes through with the FULL name on `title`, which is
+    // what a chip that ellipsises a long device name shows on hover.
+    expect(pickerRosterFrom([{ value: 'usb-es9', label: 'ES-9 (Expert Sleepers)' }])).toEqual([
+      { value: 'usb-es9', label: 'ES-9 (Expert Sleepers)', title: 'ES-9 (Expert Sleepers)' },
+    ]);
   });
 
   it('the saved id wins over the browser default, and an empty save falls back', () => {
