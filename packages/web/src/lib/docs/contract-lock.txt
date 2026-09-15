@@ -1540,6 +1540,41 @@ lines param fmDepth 0..1 linear default=0
 lines param orient 0..1 linear default=0
 lines param phase 0..1 linear default=0
 lines param thickness 0..1 linear default=0.35
+linnstrument meta domain=audio
+linnstrument out b_x cv
+linnstrument out b_y cv
+linnstrument out g_x cv
+linnstrument out g_y cv
+linnstrument out keys_poly polyPitchGate
+linnstrument out pad_poly polyPitchGate
+linnstrument out r_x cv
+linnstrument out r_y cv
+linnstrument param extra_controls 0..1 discrete default=1
+linnstrument param join_policy 0..1 discrete default=0
+linnstrument param keys_arp_dir 0..2 discrete default=0
+linnstrument param keys_arp_div 0..6 discrete default=3
+linnstrument param keys_arp_latch 0..1 discrete default=0
+linnstrument param keys_arp_on 0..1 discrete default=0
+linnstrument param keys_arp_range 0..2 discrete default=0
+linnstrument param keys_root 0..96 discrete default=36 unit=midi
+linnstrument param pad_arp_dir 0..2 discrete default=0
+linnstrument param pad_arp_div 0..6 discrete default=3
+linnstrument param pad_arp_latch 0..1 discrete default=0
+linnstrument param pad_arp_on 0..1 discrete default=0
+linnstrument param pad_arp_range 0..2 discrete default=0
+linnstrument param pad_root 0..96 discrete default=60 unit=midi
+linnstrument param pos_b_x -1..1 linear default=0
+linnstrument param pos_b_y -1..1 linear default=0
+linnstrument param pos_g_x -1..1 linear default=0
+linnstrument param pos_g_y -1..1 linear default=0
+linnstrument param pos_r_x -1..1 linear default=0
+linnstrument param pos_r_y -1..1 linear default=0
+linnstrument param sel_b 0..1 discrete default=0
+linnstrument param sel_g 0..1 discrete default=0
+linnstrument param sel_r 0..1 discrete default=1
+linnstrument family linnstrument-center kind=other prefix=linnstrument-center
+linnstrument family linnstrument-connect kind=other prefix=linnstrument-connect
+linnstrument family linnstrument-panic kind=other prefix=linnstrument-panic
 livecode meta domain=audio
 livecode family livecode-run kind=other prefix=livecode-run
 loopback meta domain=video maxInstances=2

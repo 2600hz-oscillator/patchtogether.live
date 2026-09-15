@@ -81,6 +81,9 @@ import { CELLSHADE_BAND_STEPS } from '$lib/video/modules/cellshade';
 // The four controller-slot indices `padIndex` selects — derived from the def's
 // own `min`/`max` span, so the exemption cannot outlive the roster it names.
 import { GAMEPAD_SLOT_OPTIONS } from '$lib/audio/modules/gamepad';
+// The arp division / octave-range tables the LINNSTRUMENT's per-region arp
+// params bind their rosters to — see that entry for why they are derived.
+import { ARP_DIVISION_LABELS, ARP_OCTAVE_RANGE_LABELS } from '$lib/audio/arp-engine';
 // ⚠ THE DEF ITSELF, not an exported roster constant. mappy is in the WebGL
 // attest basis, where an exported constant moves the content hash and an
 // accessor does not — and reading the live `options` is also the stronger form
@@ -344,6 +347,38 @@ describe('face readouts — the resting decimal is REMOVED, not hidden', () => {
  * is four lines of the same two predicates whenever it needs re-running.
  */
 const NUMERIC_LABEL_EXEMPTIONS: readonly { type: string; param: string; label: string; why: string }[] = [
+  // ── LINNSTRUMENT · `keys_arp_div` / `pad_arp_div` / `keys_arp_range` /
+  //    `pad_arp_range` (2026-09-14) ──────────────────────────────────────────
+  //
+  // DERIVED FROM THE ENGINE'S OWN TABLES, the cvBuddy form: the def binds each
+  // roster to `ARP_DIVISION_LABELS` / `ARP_OCTAVE_RANGE_LABELS` (arp-engine.ts,
+  // never re-typed), so the labels here are those tables filtered to the ones
+  // that read as numbers — `8x 4x 2x 1x` and `1 oct` — and a table edit moves
+  // both sides at once. `1/2 1/4 1/8` and `+1..-1 +2..-2` are not numeric to
+  // the gate and need no entry; listing them would be dead entries the anchor
+  // leg refuses.
+  //
+  // WHY THE NUMBER IS THE NAME: an arp RATE is called by its multiple of the
+  // beat — a player says "run it at 2x", the Launchpad's KEYS view paints the
+  // same table — and "1 oct" is the octave range's own name (the other two
+  // positions are ranges, and their names are ranges). Inventing words
+  // ("double", "single") would be the vocabulary-invention the moog904c
+  // review declined. What is painted is the state's NAME from the engine's
+  // table, not a reading of the dial.
+  ...(['keys', 'pad'] as const).flatMap((region) => [
+    ...ARP_DIVISION_LABELS.filter((l) => looksNumeric(l)).map((label) => ({
+      type: 'linnstrument',
+      param: `${region}_arp_div`,
+      label,
+      why: `ARP RATE — "${label}" is the division's name in the engine's own table (a multiple of the beat), not a reading of the dial.`,
+    })),
+    ...ARP_OCTAVE_RANGE_LABELS.filter((l) => looksNumeric(l)).map((label) => ({
+      type: 'linnstrument',
+      param: `${region}_arp_range`,
+      label,
+      why: `ARP OCTAVE RANGE — "${label}" is the range's name in the engine's own table; its siblings are ranges and are named as ranges.`,
+    })),
+  ]),
   // ── CV BUDDY / CV BUDDY MINI · `ppqn` (2026-08-21, Q52) ──────────────────
   //
   // ⚠ DERIVED FROM THE ROSTER, not typed out seven times per kind, and that is

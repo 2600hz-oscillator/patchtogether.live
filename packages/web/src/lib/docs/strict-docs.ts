@@ -267,6 +267,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // WebMIDI into twelve CV/gate jacks plus a divided clock. New module — ships
   // with co-located docs.
   'trails',
+  // LINNSTRUMENT (2026-09-14): a LinnStrument 200 in User Firmware Mode as a
+  // fourths keyboard, a control column and an XY/MPE pad — six retained
+  // joystick CVs and two poly buses. New module — ships with co-located docs.
+  'linnstrument',
   'clockedRunner',
   'livecode',
   // Batch 13 — heavy synth voices, effects & utilities (near the end of the
