@@ -23,7 +23,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { installMidiOutCapture } from '../_helpers/midi';
-import { BOOT_MS } from '../_helpers/boot-budget';
+import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { applyCpuThrottle } from '../_helpers/cpu-throttle';
 import {
   SHELL_COLUMN_W,
   COLUMN_BASELINE_Y,
@@ -326,6 +327,8 @@ test.describe('workflow channel columns', () => {
   // render-smoke seam removes the contention with no assertion weakened.
   test.beforeEach(async ({ page }) => {
     await installRenderSmokeHooks(page);
+    // Local repro of a hot shard: `E2E_CPU_THROTTLE=8 task e2e:one -- tests/workflow-channel-columns.spec.ts`.
+    await applyCpuThrottle(page);
   });
 
   test('palette-drop into columns 1/2/3 wires clip-control + tail send + automation lane', async ({ page }) => {
@@ -832,6 +835,20 @@ test.describe('workflow channel columns', () => {
     // on `data.midiOutChannel` and only DEFAULTS from the lane. This drives the
     // REAL palette-drop + the REAL card <select>, and asserts the lane +
     // clip-tap edge set is BYTE-IDENTICAL across the change.
+    //
+    // ⚠ BOUND, NOT A BUDGET RAISE — the shared `SLOW_BOOT_TEST_TIMEOUT_MS`
+    // (boot-budget.ts), the same bound 140 other sites carry. This is the one
+    // test in the file that sits ON the bare 30 s default on CI: 29.6 s on a
+    // GREEN main (run 34899578737, 98.7% of the budget, every sibling in this
+    // describe ≤ 26.5 s), then 33.8 s → killed on the timings re-pin of #2396
+    // (run 34901768153, shard 7, beside `workflow-shell` whose cost had
+    // doubled to 102.8 CPU-s) with all 30 of its actions complete — five real
+    // clicks at 2.1-3.1 s each with the video engine already idled — and the
+    // final `orderOf` read in flight. The retry passed at 30.6 s. Nothing here
+    // waits on a correlate; the cost is five REAL selector-cell clicks on a
+    // loaded 4-worker runner, which no assertion in this test claims a latency
+    // for. Lane cost stays gauged by `--global-timeout`.
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await installMidiOutCapture(page);
     await page.goto('/rack');
     await waitForPinnedTrio(page);
