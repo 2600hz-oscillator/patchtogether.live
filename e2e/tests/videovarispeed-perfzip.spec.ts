@@ -18,7 +18,7 @@
 // Fixtures are SMALL + committed: e2e/fixtures/av-clip.webm + tiny.png.
 
 //
-// ── ⚠ PER-TEST BOUND, NOT A BUDGET RAISE (2026-09-05) ──────────────────────
+// ── ⚠ PER-FILE BOUND, NOT A BUDGET RAISE (2026-09-05, whole file 2026-09-14) ─
 //
 // This file timed out on CI inside a plain action — `locator.waitFor`, 30 s (an API the boot-budget note calls out as having NO timeout of its own) — while passing
 // locally in 6.9 s. The action carries no timeout of its own, so it is
@@ -31,11 +31,25 @@
 // unchanged. Lane COST stays gauged by `--global-timeout`, which is a separate
 // instrument and is untouched here — raising this failure bound cannot hide a
 // cost regression.
+//
+// ⚠ THE BOUND IS THE FILE'S, NOT ONE TEST'S. The 2026-09-05 fix put it on the
+// first test only, and the timings re-pin of #2396 (run 34901768153, shard 11)
+// measured exactly what that omission costs. Both tests ran beside three
+// concurrent `faceplate-platform` tests (1936 CPU-s, the suite's heaviest
+// file): the bounded sibling went 33.1 s → 59.0 s and PASSED; this file's
+// second test — the same shape with twice the media — went 17.3 s → 33.8 s and
+// 34.4 s, killed at the bare default on BOTH attempts with every one of its 25
+// actions complete (the slowest, `__perfZip.export()`, 4.4 s), two assertions
+// short of the end. Same shard, same neighbours, same 2× slowdown; the only
+// difference between the survivor and the casualty was the bound.
 
 import { test, expect, type Page } from '@playwright/test';
 import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { applyCpuThrottle } from '../_helpers/cpu-throttle';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+
+test.describe.configure({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 
 const AV_FIXTURE = fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url));
 const IMG_FIXTURE = fileURLToPath(new URL('../fixtures/tiny.png', import.meta.url));
@@ -47,8 +61,11 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await applyCpuThrottle(page);
+  // No `networkidle` wait: it is a CORRELATE of boot, not the cause, and cost
+  // 1.7-1.9 s of the budget on the hot shard above. `spawnPatch` waits on the
+  // app's own `__ensureEngine` hook, which is the state the tests need.
   await page.goto('/rack?seed=none');
-  await page.waitForLoadState('networkidle');
   return errors;
 }
 
@@ -104,7 +121,6 @@ async function openPicPane(page: import('@playwright/test').Page, id: string): P
 
 test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
   test('restores the videovarispeed video + picturebox image after a new rack', async ({ page }) => {
-    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     const errors = await setup(page);
 
     await spawnPatch(page, [

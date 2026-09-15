@@ -35,9 +35,15 @@
 
 import { test, expect } from './_fixtures';
 import { spawnPatch } from './_helpers';
+import { applyCpuThrottle } from '../_helpers/cpu-throttle';
 import type { Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
+
+// Local repro of a hot shard: `E2E_CPU_THROTTLE=8 task e2e:one -- tests/automation-cv-record.spec.ts`.
+test.beforeEach(async ({ page }) => {
+  await applyCpuThrottle(page);
+});
 
 const CP = 'cp';
 const BD = 'bd';
@@ -350,6 +356,35 @@ async function isLane0Armed(page: Page): Promise<boolean> {
   });
 }
 
+/** Shrink the video engine's drawing buffer to a thumbnail. This spec reads
+ *  ONLY the engine's `mix` param — never a pixel — but the rack it spawns
+ *  composites BACKDRAFT → videoOut at the full 1024×768 every rAF, and on a
+ *  software rasterizer that raster is what the page's frame rate waits on.
+ *  Every actionability-checked `click()` then waits on several of those
+ *  frames: measured on the first red head of #2396 (run 34901768153, shard 1,
+ *  the shard's first test, beside three other BACKDRAFT specs + blood-ingame)
+ *  7.8-10.5 s PER CLICK — five clicks = 46 s of a 120 s budget, killed at
+ *  125.5 s; the same test was already 102.5 s on a GREEN main (34899578737).
+ *  Reproduced locally (utility QoS + 20 busy loops, 10-core Mac): clicks
+ *  12.8 / 20.1 / 17.7 s, killed at 120 s inside the fourth.
+ *
+ *  ⚠ The compositor-pause seam (`installRenderSmokeHooks`) is NOT available
+ *  here: `tickCvBridges()` runs inside `stepInner()` (engine.ts), so idling
+ *  the loop would stop the very bridge under test. Shrinking the buffer keeps
+ *  every step — and the bridge tick, the take, the loop-back — live and
+ *  removes only the raster cost no assertion observes; it is the same
+ *  `setResolution` seam backdraft-crutchfield.spec.ts uses for its decay
+ *  probe. The pad→bridge→param path is resolution-independent by
+ *  construction (a uniform, not a texel). */
+async function shrinkVideoBuffer(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => { setResolution: (w: number, h: number) => boolean } };
+    };
+    w.__engine().getDomain('video').setResolution(64, 48);
+  });
+}
+
 /** The shared patch: clipplayer + gamepad (audio) → BACKDRAFT.mix (video cv
  *  bridge) → videoOut. The fake pad must be installed BEFORE the gamepad
  *  module spawns (its rAF poll adopts it on the next tick). */
@@ -380,6 +415,7 @@ async function spawnOwnerPatch(page: Page): Promise<void> {
       },
     ],
   );
+  await shrinkVideoBuffer(page);
   // The pad grid + arm row live in the dock face on the default shell.
   await page.evaluate(
     (id) => (globalThis as unknown as { __openDockFullView: (id: string) => void }).__openDockFullView(id),
