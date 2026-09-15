@@ -37,8 +37,8 @@
 // later click was "intercepted" by it for the rest of the budget (206 retries)
 // — the spec assumed the gate was gone for good after the first gesture. Two
 // fixture changes, no product change and no timeout:
-//   · every click goes through `userClick`: a real user, seeing "Click anywhere
-//     to enable audio", clicks it — so does the spec — then clicks the target;
+//   · every click went through a `userClick` that clicked the gate first if it
+//     was up, then the target (superseded by the gate HANDLER — second head);
 //   · the mechanism is now a DETERMINISTIC leg (the context is suspended on
 //     purpose after the audio-out step: the gate must return and one click
 //     must resume audio), so the recovery path is asserted, not hoped for;
@@ -49,8 +49,29 @@
 //     the capture session's state, the ES-9 lamp is DOM, the LinnStrument
 //     proof is MIDI bytes — so idling the raster removes only cost.
 // Local repro of a hot shard: `E2E_CPU_THROTTLE=8 task e2e:one -- tests/rack-stale-rig-stays-in-browser.spec.ts`.
+//
+// ── THE SECOND CI HEAD (run 35022011949, e2e shard 11, attempt 1) ─────────
+// The same overlay, one step earlier: `workflow-topbar-slot-audio-io` retried
+// for the whole 450 s budget with `<div data-testid="audio-gate"> intercepts
+// pointer events` on every attempt. `userClick` was a CHECK-THEN-CLICK: it
+// read `gate.count()`, saw 0, and clicked the target — and the audio-device
+// error is ASYNCHRONOUS, so the gate mounted after the check and before (or
+// during) the target's click; from then on the target click retried behind
+// the overlay for ever and nothing ever clicked the overlay. No window
+// between "check" and "click" is small enough: the fixture has to answer the
+// overlay from INSIDE the click's own retry loop, which is what Playwright's
+// `page.addLocatorHandler` is for (`installAudioGateHandler` below) — before
+// every actionability check and every auto-waiting assertion check, if the
+// gate is visible, the handler clicks it first: the user's hand on the
+// overlay, wherever in the flow it comes back. The deterministic leg (3b')
+// reads the gate's return with a plain `count()` (an auto-waiting locator
+// assertion would run the handler first and click the overlay away before
+// its own check) and proves that ONE ordinary click on the rack resumes
+// audio THROUGH the handler. CI's audio-device error itself has no local
+// repro — no runner-side knob produces it — so the handler is correct by
+// construction (Playwright's documented overlay mechanism) plus that leg.
 
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { canvasPane, revealInPane } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { applyCpuThrottle } from '../_helpers/cpu-throttle';
@@ -110,9 +131,11 @@ interface Watch {
   console: ConsoleLine[];
   pageErrors: string[];
   navigations: string[];
+  /** Clicks the audio-gate locator handler made on the overlay (see `installAudioGateHandler`). */
+  gateHandlerClicks: number;
 }
 function watchPage(page: Page): Watch {
-  const w: Watch = { console: [], pageErrors: [], navigations: [] };
+  const w: Watch = { console: [], pageErrors: [], navigations: [], gateHandlerClicks: 0 };
   page.on('console', (m) => w.console.push({ type: m.type(), text: m.text() }));
   page.on('pageerror', (e) => w.pageErrors.push(e.message));
   page.on('framenavigated', (f) => {
@@ -152,21 +175,65 @@ function audioState(page: Page): Promise<string> {
 const GATE = '[data-testid="audio-gate"]';
 
 /**
- * A click the way a USER clicks. The product re-mounts the full-screen
- * "Click anywhere to enable audio" gate whenever the AudioContext stops
- * running (a browser suspend, CI's audio-device error — see the header); a
- * user then clicks it and carries on. So: if the gate is up, click it and wait
- * for audio to run, THEN click the target. Every interaction below goes
- * through here, so no click can be left "intercepted" by the overlay.
+ * THE USER'S HAND ON THE AUDIO GATE (the second CI head — see the header).
+ * The product re-mounts the full-screen "Click anywhere to enable audio"
+ * overlay whenever the AudioContext stops running (a browser suspend, CI's
+ * audio-device error), at a moment no spec can predict; a user then clicks it
+ * and carries on. Playwright runs this handler before every actionability
+ * check and every auto-waiting assertion check while the gate is visible, so
+ * no click below can be left "intercepted" by the overlay — including a gate
+ * that mounts between a check and a click, which is exactly how the
+ * check-then-click `userClick` this replaces lost the second CI head.
+ *
+ *   · Playwright's DEFAULT wait-after, on purpose: after the handler's click
+ *     the action waits for the overlay to be HIDDEN (the resume completing)
+ *     and only then proceeds. ⚠ Not `noWaitAfter` — that retries the action
+ *     while the resume is still in flight (`gate.busy`, overlay still up),
+ *     re-runs the handler, and the handler's click then auto-waits on an
+ *     overlay that unmounts underneath it: `element was detached from the
+ *     DOM, retrying` … for the whole test budget. The deterministic leg (3b')
+ *     failed 3/3 exactly that way at ×1 before this was the default.
+ *   · a device that refuses the resume keeps the overlay up (`gate.error`
+ *     in the subtitle), so the wait-after runs out the action's budget with
+ *     `waiting for getByTestId('audio-gate') to be hidden` in the call log —
+ *     the product's failure, named, not a silent hang.
+ *   · THE OVERLAY THAT IS THERE NOW, OR NOTHING: `page.$` does not wait, and
+ *     an element handle's click throws `Element is not attached to the DOM`
+ *     the moment the overlay unmounts under it — where a LOCATOR click logs
+ *     `element was detached from the DOM, retrying`, auto-waits for the
+ *     overlay to COME BACK, and spends the blocked action's whole budget.
+ *     Not hypothetical: at ×8 the eager boot mounts the gate for a beat and
+ *     resumes the context ITSELF, and `mountRack` after `goto` went 3/3 red
+ *     with a locator click here (`toBeVisible` on the topbar, 30 s, with
+ *     `found getByTestId('audio-gate'), intercepting action` in its log).
+ *   · the click lands at the overlay's top-left, never its centre: the
+ *     overlay is z-index 1000 and the only chrome above it is a portaled menu
+ *     (a `Selector` listbox, z 2001) anchored near its trigger — a gate that
+ *     comes back with the audio-out listbox open must still be clickable —
+ *     and what sits under that corner is the banner's heading, so the
+ *     hit-target check has nothing else to name.
+ *
+ * ⚠ With the handler installed, never `gate.click()` from the spec body: the
+ * pre-check would run the handler (which clicks the gate away) and the click
+ * would then auto-wait for an overlay that is gone. Read the gate with
+ * `count()` / `page.evaluate` and let an ordinary action do the clicking.
+ *
+ * `w.gateHandlerClicks` counts the handler's clicks: the deterministic leg
+ * asserts on it, and a RED run's evidence carries it.
  */
-async function userClick(page: Page, target: Locator): Promise<void> {
-  const gate = page.locator(GATE);
-  if ((await gate.count()) > 0) {
-    await gate.click();
-    await expect.poll(() => audioState(page), { message: 'the gate click resumed audio', timeout: SLOW_BOOT_TEST_TIMEOUT_MS }).toBe('running');
-    await expect(gate, 'the overlay is gone once audio runs').toHaveCount(0);
-  }
-  await target.click();
+async function installAudioGateHandler(page: Page, w: Watch): Promise<void> {
+  await page.addLocatorHandler(page.getByTestId('audio-gate'), async () => {
+    const el = await page.$(GATE);
+    if (!el) return;
+    try {
+      await el.click({ position: { x: 12, y: 12 } });
+      w.gateHandlerClicks += 1;
+    } catch (e) {
+      if (!/not attached to the DOM/.test(String(e))) throw e;
+    } finally {
+      await el.dispose();
+    }
+  });
 }
 
 /**
@@ -247,6 +314,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
           pageErrors: watch.pageErrors,
           reconcilerDomainWarnings: watch.console.filter((c) => /no engine registered for domain/.test(c.text)).map((c) => c.text),
           consoleErrors: watch.console.filter((c) => c.type === 'error').map((c) => c.text),
+          gateHandlerClicks: watch.gateHandlerClicks,
         },
         null,
         2,
@@ -295,6 +363,10 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     });
     watch = watchPage(page);
     const w = watch;
+    // The gate handler goes in BEFORE the first in-rack action (header: the
+    // second CI head) — from here on, any click or auto-waiting assertion the
+    // overlay blocks clicks the overlay first.
+    await installAudioGateHandler(page, w);
 
     // ── 1. LOAD /rack: it mounts and stays ─────────────────────────────────
     await page.goto('/rack');
@@ -306,11 +378,11 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     await mountRack(page); // still here after the gesture
 
     // ── 3a. CAMERA — the slot picker in the rack, writing the rig store ────
-    await userClick(page, page.getByTestId('workflow-topbar-slot-cameras'));
+    await page.getByTestId('workflow-topbar-slot-cameras').click();
     await expect(page.getByTestId('workflow-cameras-panel')).toHaveAttribute('data-open', 'true');
     const row = page.locator(`[data-testid="workflow-camera-row"][data-node-id="${CAM_SLOT}"]`);
     await expect(row).toHaveCount(1);
-    await userClick(page, row.getByTestId('workflow-camera-source'));
+    await row.getByTestId('workflow-camera-source').click();
     const host = page.locator(`[data-testid="workflow-camera-host"][data-node-id="${CAM_SLOT}"]`);
     await expect(host).toHaveAttribute('data-shown', 'true', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     const camSelect = host.getByTestId('cameraInput-tile-device-select');
@@ -330,19 +402,20 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     await expect(host.getByTestId('cameraInput-tile-lamp')).toHaveAttribute('data-lamp', 'streaming', {
       timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
     });
-    await userClick(page, page.getByTestId('workflow-topbar-slot-cameras'));
+    await page.getByTestId('workflow-topbar-slot-cameras').click();
     await expect(page.getByTestId('workflow-cameras-panel')).toHaveAttribute('data-open', 'false');
 
     // ── 3b. AUDIO OUT — the master-sink picker, written AND applied ────────
-    await userClick(page, page.getByTestId('workflow-topbar-slot-audio-io'));
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
     // The picker is the face's roster CHIP, not a native `<select>`: click it,
-    // then the portaled option carrying the sink's id — BOTH through
-    // `userClick`, because this is exactly the step after which the audio gate
-    // remounts (see the header), and `selectOption` needed no pointer at all.
+    // then the portaled option carrying the sink's id — BOTH real pointer
+    // clicks the gate handler covers, because this is exactly the step around
+    // which the audio gate remounts (see the header), and `selectOption`
+    // needed no pointer at all.
     const sinkChip = page.getByTestId('workflow-io-audioout-host').getByTestId('audioout-face-device-select');
     await expect(sinkChip).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
-    await userClick(page, sinkChip);
-    await userClick(page, page.locator(`[role="listbox"] [role="option"][data-value="${SINK_B}"]`));
+    await sinkChip.click();
+    await page.locator(`[role="listbox"] [role="option"][data-value="${SINK_B}"]`).click();
     await expect
       .poll(async () => ((await rig(page)).audioOut as { outputDeviceId?: string })?.outputDeviceId, {
         message: 'the in-rack audio-out picker writes the rig store',
@@ -355,27 +428,39 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
         timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
       })
       .toBe(SINK_B);
-    await userClick(page, page.getByTestId('workflow-topbar-slot-audio-io'));
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
 
     // ── 3b'. THE BROWSER STOPS THE CONTEXT (the first CI head, deterministic) ─
     // CI's audio-device error left the context `suspended`; the product's
     // answer is the gate coming back, and a user's answer is one click. Both
     // are asserted here on purpose, so the recovery path is part of the
-    // scenario rather than a race the fixture hopes never to see.
+    // scenario rather than a race the fixture hopes never to see — and the
+    // click is the GATE HANDLER's (the second CI head), so the mechanism every
+    // click in this spec relies on is exercised here, not hoped for.
     await page.evaluate(() => {
       const w = window as unknown as { __engine: () => { getDomain: (d: string) => { ctx: AudioContext } } };
       return w.__engine().getDomain('audio').ctx.suspend();
     });
     await expect.poll(() => audioState(page), { message: 'the context is suspended' }).toBe('suspended');
-    const gate = page.locator(GATE);
-    await expect(gate, 'the product re-mounts the audio gate when audio stops').toBeVisible({
-      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
-    });
-    // ONE click on the overlay → `gate.resume()` → `ctx.resume()`. The poll's
-    // received value carries the overlay's own subtitle, so a failure names the
-    // gate's reason ("Starting audio…" = a resume still in flight / stalled, an
-    // error string = the browser refused the resume) instead of a bare state.
-    await gate.click();
+    // The gate's return is read with `count()` — a plain query, never an
+    // auto-waiting locator assertion: `expect(gate).toBeVisible()` would run
+    // the handler FIRST, click the overlay away, and fail its own check.
+    await expect
+      .poll(() => page.locator(GATE).count(), {
+        message: 'the product re-mounts the audio gate when audio stops',
+        timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+      })
+      .toBe(1);
+    // ONE ordinary click on the rack — the audio-io slot, the neighbouring
+    // step's own target. Its actionability check finds the overlay; the
+    // handler clicks it (`gate.resume()` → `ctx.resume()`); the slot click
+    // lands once the overlay is gone, and the panel opening proves it landed.
+    // The poll's received value carries the overlay's own subtitle, so a
+    // failure names the gate's reason ("Starting audio…" = a resume still in
+    // flight / stalled, an error string = the browser refused the resume)
+    // instead of a bare state.
+    const handlerClicksBefore = w.gateHandlerClicks;
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
     await expect
       .poll(
         async () => {
@@ -389,6 +474,12 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
         { message: 'one click on the gate resumes audio', timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
       )
       .toMatch(/^running \| gate: unmounted$/);
+    expect(w.gateHandlerClicks, 'the gate handler is what clicked the overlay').toBeGreaterThan(handlerClicksBefore);
+    await expect(page.getByTestId('workflow-io-panel'), 'and the click behind it landed').toHaveAttribute('data-open', 'true', {
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    });
+    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    await expect(page.getByTestId('workflow-io-panel')).toHaveAttribute('data-open', 'false', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     await mountRack(page);
 
     // ── 3c. ES-9 — the CONNECT cell on the tile, with the bridge REFUSED ───
@@ -399,8 +490,8 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     // The tile sits below the reserved slots; pan the flow so it is inside the
     // pane (Playwright's own scroll is undone by the canvas — _helpers.ts).
     await revealInPane(page, es9Lane);
-    await userClick(page, es9Connect);
-    await userClick(page, es9Lane.locator('[data-testid="module-shell"]').getByTestId('shell-open-dock'));
+    await es9Connect.click();
+    await es9Lane.locator('[data-testid="module-shell"]').getByTestId('shell-open-dock').click();
     const es9Dock = page
       .getByTestId('dock-full-view')
       .locator(`[data-testid="module-shell"][data-shell-tier="dock"][data-shell-node="${ES9_NODE}"]`);
@@ -417,7 +508,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     // intercepted by the drawer's tabrail (seen at ×8 CPU throttle).
     // (The close button is in the full view's window-controls header, a sibling
     // of the module shell — scope to the full view, not the shell.)
-    await userClick(page, page.getByTestId('dock-full-view').getByTestId('faceplate-close'));
+    await page.getByTestId('dock-full-view').getByTestId('faceplate-close').click();
     await expect(page.getByTestId('dock-full-view')).toHaveCount(0);
     await mountRack(page);
 
@@ -426,7 +517,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     const linnConnect = linnLane.getByTestId('shell-cell-linnstrument-connect');
     await expect(linnConnect).toHaveCount(1);
     await revealInPane(page, linnLane);
-    await userClick(page, linnConnect);
+    await linnConnect.click();
     await expect
       .poll(async () => ((await rig(page)).linnstrument as { deviceId?: string } | undefined)?.deviceId, {
         message: 'CONNECT from the face, with NO rig pick, binds the LinnStrument port and records it in the rig store',
