@@ -76,6 +76,33 @@ export function outputDeviceOptionsFrom(
   }));
 }
 
+/** One entry of the roster the picker CHIP shows. `title` is the FULL name, for
+ *  a chip that ellipsises its label — absent on the empty-roster placeholder. */
+export interface PickerRosterEntry {
+  value: string;
+  label: string;
+  title?: string;
+}
+
+/**
+ * The roster the picker CHIP paints: the device options as they are, or — for
+ * an EMPTY enumeration — one named placeholder, so the chip never renders
+ * blank.
+ *
+ * `Selector` paints `String(value)` when its options are empty, and the value
+ * in that state is `''`: a chip with nothing on it, which is the "did the body
+ * mount at all" ambiguity the meter's drawn idle field exists to remove. The
+ * placeholder is an OPTION NAME (permitted resting text) and the same string
+ * the old `<select>` showed; the REASON the roster is empty stays on
+ * `aria-valuetext`, where the two dead causes are told apart.
+ */
+export function pickerRosterFrom(
+  options: readonly { value: string; label: string }[],
+): PickerRosterEntry[] {
+  if (options.length === 0) return [{ value: '', label: '(no outputs)' }];
+  return options.map((o) => ({ value: o.value, label: o.label, title: o.label }));
+}
+
 /**
  * The picker's `aria-valuetext` — the ONLY surface on which the two dead causes
  * are distinguishable, and unpainted by design.
