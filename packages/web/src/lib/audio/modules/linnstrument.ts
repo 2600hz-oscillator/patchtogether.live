@@ -178,8 +178,10 @@ export const LINNSTRUMENT_FACE: ModuleFace = {
       id: 'surface',
       label: 'surface',
       hint:
-        'CONNECT is the one-time Web-MIDI grant plus the bind of any port named like a '
-        + 'LinnStrument; until then every jack rests. CENTER returns the SELECTED pairs to '
+        'CONNECT is the one-time Web-MIDI grant plus the bind of the port named like a '
+        + 'LinnStrument (the first by name if several; in the native shell, the one picked on '
+        + 'rig setup); the bound port is remembered on this computer. Until then every jack '
+        + 'rests. CENTER returns the SELECTED pairs to '
         + '(0, 0); PANIC closes every note on both buses and keeps the pairs where they are. '
         + 'EXTRAS lights the lower five control cells (ARP, HOLD, OCT−, OCT+, PANIC); JOIN '
         + 'decides how a pair that becomes selected mid-gesture catches up with the finger; '
@@ -316,7 +318,7 @@ export const linnstrumentDef: AudioModuleDef = {
     },
     controls: {
       'linnstrument-connect-{n}':
-        "The gesture that makes the module do anything at all. A browser shows no MIDI port until it has consented, and it only asks when a click asks it to — so before this the module has no device to read, every jack rests, and the three pads on the face are the only way to move the joysticks. Pressing it grants access (one prompt, once per origin), binds the port named like a LinnStrument that was picked on the preflight page, and asks the instrument to enter User Firmware Mode so its cells report raw touches rather than notes — the LINK lamp reports the mode as confirmed only once the instrument's own mode notification comes back, never from the request alone; unbinding asks it to restore its own mode. Loading a patch containing this module never raises the prompt by itself, and which port is bound is remembered on this computer, not in the patch.",
+        "The gesture that makes the module do anything at all. A browser shows no MIDI port until it has consented, and it only asks when a click asks it to — so before this the module has no device to read, every jack rests, and the three pads on the face are the only way to move the joysticks. Pressing it grants access (one prompt, once per origin), binds the port named like a LinnStrument (the first by name when several are present, the others named in the status line; in the native shell, the port picked on rig setup), remembers it on this computer so the next CONNECT binds the same one, and asks the instrument to enter User Firmware Mode so its cells report raw touches rather than notes — the LINK lamp reports the mode as confirmed only once the instrument's own mode notification comes back, never from the request alone; unbinding asks it to restore its own mode. Loading a patch containing this module never raises the prompt by itself, and which port is bound is remembered on this computer, not in the patch.",
       'linnstrument-center-{n}':
         "Returns every SELECTED joystick pair to (0, 0) — the pairs whose toggles are on — and leaves the others where they are. It does not move the finger or change how the pad is read: the next sample from a finger on the pad moves the selected pairs again from the centre.",
       'linnstrument-panic-{n}':

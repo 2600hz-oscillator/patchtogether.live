@@ -159,7 +159,7 @@
   let linkLit = $derived(!!snap && snap.session.state !== 'disconnected');
   let linkDetail = $derived.by(() => {
     if (!snap) return 'engine not up yet';
-    if (snap.session.state === 'disconnected') return 'no LinnStrument bound — CONNECT grants Web MIDI and binds the port picked on preflight';
+    if (snap.session.state === 'disconnected') return 'no LinnStrument bound — CONNECT grants Web MIDI and binds the port named like a LinnStrument (in the native shell: the one picked on rig setup)';
     const src = snap.source ? `${snap.source.id} (${snap.source.kind})` : 'unnamed source';
     // `userMode` is the instrument's OWN readback (NRPN 245), never our write.
     return `${src}, ${snap.session.userMode ? 'user firmware mode confirmed by the instrument' : 'user firmware mode requested, not yet confirmed by the instrument'}, session ${snap.session.epoch}`;

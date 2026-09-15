@@ -4,66 +4,18 @@
 // half; the REAL supervisors + the electron-store round-trip live in
 // apps/desktop/e2e/preflight-helpers.spec.ts (Tier-A Electron harness).
 //
-// The fake bridge mirrors the preload contract exactly: nativeAvailable()→true
-// (so `nativeAvailable()` takes the shell branch AND the rig store picks the
-// bridge backend), command() resolves the {ok,result}|{ok,error} envelope, and
+// The fake bridge (`installFakeShell`, e2e/_helpers/preflight-devices.ts — the
+// SAME stub every pre-flight spec boots under, since /preflight is shell-only)
+// mirrors the preload contract exactly: nativeAvailable()→true (so
+// `nativeAvailable()` takes the shell branch AND the rig store picks the bridge
+// backend), command() resolves the {ok,result}|{ok,error} envelope, and
 // onEvent() delivers live `helpers.status` pushes. That is enough to drive every
 // shell-gated branch the pre-flight has, without an Electron process.
 //
 // ARMED WITH errorWatch.
 
 import { test, expect, type Page } from './_fixtures';
-import { clearRigStoreOnce, readRig } from '../_helpers/preflight-devices';
-
-type HelperMode = 'ok' | 'fail';
-
-/** Install a fake ptNative BEFORE boot. `mode` decides how helpers.status
- *  answers: 'ok' → es9 running / ptz stopped(binary not found); 'fail' → a
- *  retryable error envelope (the shape the retry affordance keys off). */
-async function installFakeShell(page: Page, mode: HelperMode): Promise<void> {
-  await page.addInitScript((mode) => {
-    const w = window as unknown as {
-      ptNative: unknown;
-      __ptCalls: string[];
-      __fireHelper: (s: unknown) => void;
-    };
-    w.__ptCalls = [];
-    let helperCb: ((p: unknown) => void) | null = null;
-    const okStatus = {
-      ok: true,
-      result: {
-        current: [
-          { id: 'es9', state: 'running', pid: 4242, port: 9209, attempt: 0, delayMs: null, detail: null, ts: 1 },
-          { id: 'ptz', state: 'stopped', pid: null, port: null, attempt: 0, delayMs: null, detail: 'binary not found', ts: 1 },
-        ],
-        history: [],
-      },
-    };
-    w.ptNative = {
-      nativeAvailable: () => true,
-      shellVersion: () => '0.0.0-test',
-      bridgeVersion: () => 1,
-      command: (op: string) => {
-        w.__ptCalls.push(op);
-        if (op === 'helpers.status') {
-          return mode === 'ok'
-            ? Promise.resolve(okStatus)
-            : Promise.resolve({ ok: false, error: { code: 'internal', message: 'transient', retryable: true } });
-        }
-        // bindings.get / bindings.set / preflight.done all succeed.
-        return Promise.resolve({ ok: true, result: op === 'bindings.get' ? {} : {} });
-      },
-      cancel: () => {},
-      onEvent: (topic: string, cb: (p: unknown) => void) => {
-        if (topic === 'helpers.status') helperCb = cb;
-        return () => {
-          helperCb = null;
-        };
-      },
-    };
-    w.__fireHelper = (s: unknown) => helperCb?.(s);
-  }, mode);
-}
+import { clearRigStoreOnce, installFakeShell, readRig } from '../_helpers/preflight-devices';
 
 async function gotoPreflight(page: Page): Promise<void> {
   await page.goto('/preflight');
@@ -81,7 +33,7 @@ test.describe('PRE-FLIGHT shell rows — ES-9 / PTZ helper presence', () => {
     errorWatch,
   }) => {
     await clearRigStoreOnce(page);
-    await installFakeShell(page, 'ok');
+    await installFakeShell(page, { helpers: 'ok' });
     await gotoPreflight(page);
 
     // Initial helpers.status → the row paints the helper STATE.
@@ -108,7 +60,7 @@ test.describe('PRE-FLIGHT shell rows — ES-9 / PTZ helper presence', () => {
     errorWatch,
   }) => {
     await clearRigStoreOnce(page);
-    await installFakeShell(page, 'fail');
+    await installFakeShell(page, { helpers: 'fail' });
     await gotoPreflight(page);
 
     // The command failed with error.retryable=true → the retry button appears.
@@ -134,7 +86,7 @@ test.describe('PRE-FLIGHT shell rows — ES-9 / PTZ helper presence', () => {
 
   test('the ES-9 config select writes setEs9 through the bridge', async ({ page, errorWatch }) => {
     await clearRigStoreOnce(page);
-    await installFakeShell(page, 'ok');
+    await installFakeShell(page, { helpers: 'ok' });
     await gotoPreflight(page);
 
     await page.getByTestId('preflight-es9-config').selectOption('always');

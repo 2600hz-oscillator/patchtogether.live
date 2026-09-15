@@ -56,6 +56,7 @@ import {
   type RigStoreBackend,
 } from '$lib/graph/device-slot-bindings';
 import { TIMESTAMP_LOOKAHEAD_S } from '$lib/audio/midi-timing';
+import { setNativeAvailableForTests } from '$lib/platform/native';
 
 const USER_MODE_ON = encodeUserFirmwareMode(true);
 const USER_MODE_OFF = encodeUserFirmwareMode(false);
@@ -111,6 +112,7 @@ afterEach(() => {
   __resetLinnstrumentForTest();
   __resetLinnstrumentSourceForTest();
   setRigBindingsForTests(null);
+  setNativeAvailableForTests(null);
   vi.restoreAllMocks();
 });
 
@@ -229,6 +231,9 @@ describe('bind: the sim device reaches the REAL claim and User Firmware Mode goe
 
 describe('the apply step: the RIG binding decides the port', () => {
   it('connect with a rig binding binds THAT port; a rig pick while connected binds live; clearing it releases', async () => {
+    // The /preflight pick flow is the SHELL's (owner ruling 2026-09-15): in a
+    // browser the layer binds by name and "clearing the pick" does not exist.
+    setNativeAvailableForTests(true);
     const sim = await installSimulatedLinnstrument({ bind: false });
     expect(linnstrumentStatus().kind).toBe('unbound');
     expect(sim.attached()).toBe(false);
@@ -275,6 +280,19 @@ describe('the apply step: the RIG binding decides the port', () => {
     expect(linnstrumentStatus().kind).toBe('bound');
     expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(1);
     expect(linnstrumentStatus().epoch).toBeGreaterThan(epochBefore);
+  });
+
+  it('under the SHELL a connect with NO rig pick binds nothing on its own — the /preflight pick is the authority', async () => {
+    setNativeAvailableForTests(true);
+    const sim = await installSimulatedLinnstrument({ bind: false });
+    expect(linnstrumentStatus().kind).toBe('unbound');
+    expect(linnstrumentStatus().message).toMatch(/rig setup \(\/preflight\)/);
+    expect(sim.attached()).toBe(false);
+    expect(rigBindings().getLinnstrument()).toBeNull();
+    // Even the explicit sim bind (what a test does) records NO pick: only the
+    // operator's /preflight choice writes the shell's store.
+    expect(bindLinnstrument(sim.inputId)).toBe(true);
+    expect(rigBindings().getLinnstrument()).toBeNull();
   });
 
   it('a factory-style consumer never prompts: subscribing costs nothing and connect is the only gate', () => {
@@ -587,5 +605,93 @@ describe('the LED writer lights the KEYS and the PAD from the module\'s roots an
     publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
     await flush();
     expect(paintedCells(sim.writes())).toEqual([]);
+  });
+});
+
+// ── THE BROWSER BINDS BY NAME (owner ruling 2026-09-15) ─────────────────────
+//
+// /preflight is a native-shell feature; on the web the face's CONNECT is the
+// whole gesture. `installSimulatedLinnstrument()` IS `connectLinnstrument()`
+// against an in-memory access, so every leg below is the real connect path:
+// the /linnstrument/i match, the claim, the NRPN 245 entry, and the rig-store
+// write that makes the next CONNECT after a reload bind the same port.
+describe('the browser binds by NAME when there is no rig pick', () => {
+  it('connect alone binds the LinnStrument port, enters User Firmware Mode, and RECORDS the pick in the rig store', async () => {
+    const backend = memBackend();
+    setRigBindingsForTests(new RigBindingStore(backend));
+    expect(rigBindings().getLinnstrument()).toBeNull();
+    const sim = await installSimulatedLinnstrument();
+    // Bound through resolvePorts (viaRig), not the sim's explicit fallback:
+    // the discriminator is the RECORDED pick — the explicit path never writes.
+    expect(linnstrumentStatus().kind).toBe('bound');
+    expect(linnstrumentStatus().boundPortName).toBe(sim.portName);
+    expect(sim.attached()).toBe(true);
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(1);
+    expect(rigBindings().getLinnstrument()).toEqual({ deviceId: sim.inputId });
+    expect(backend.saved.at(-1)?.linnstrument).toEqual({ deviceId: sim.inputId });
+    // The recorded pick re-enters resolvePorts through the rig subscription:
+    // ONE entry transaction, one session — idempotent.
+    await flush();
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(1);
+    expect(events.filter((e) => e.kind === 'session' && e.state === 'connected')).toHaveLength(1);
+  });
+
+  it('a recorded port that is GONE while another LinnStrument is present re-binds by name and re-records', async () => {
+    const store = new RigBindingStore(memBackend({ cameras: {}, outputs: {}, linnstrument: { deviceId: 'stale-port-id' } }));
+    setRigBindingsForTests(store);
+    await store.whenReady();
+    const sim = await installSimulatedLinnstrument();
+    expect(linnstrumentStatus().kind).toBe('bound');
+    expect(sim.attached()).toBe(true);
+    expect(rigBindings().getLinnstrument()).toEqual({ deviceId: sim.inputId });
+  });
+
+  it('several LinnStrument ports: the FIRST by name is bound and the others are named in the status line', async () => {
+    const sim = await installSimulatedLinnstrument({ decoyPortName: 'LinnStrument MIDI 2' });
+    expect(linnstrumentStatus().kind).toBe('bound');
+    expect(linnstrumentStatus().boundPortName).toBe('LinnStrument MIDI');
+    expect(linnstrumentStatus().portNames).toEqual(['LinnStrument MIDI', 'LinnStrument MIDI 2']);
+    expect(linnstrumentStatus().message).toMatch(/not bound: LinnStrument MIDI 2/);
+    expect(rigBindings().getLinnstrument()).toEqual({ deviceId: sim.inputId });
+  });
+
+  it('a decoy that does NOT match the pattern is never bound and never named', async () => {
+    const sim = await installSimulatedLinnstrument({ decoyPortName: 'Ableton Push 2 Live Port' });
+    expect(linnstrumentStatus().boundPortName).toBe(sim.portName);
+    expect(linnstrumentStatus().message).not.toMatch(/Push 2/);
+    expect(listLinnstrumentPorts().map((p) => p.name)).toEqual(['LinnStrument MIDI']);
+  });
+
+  it('the sim\'s { bind: false } switches the bind-by-name OFF: a granted-but-UNBOUND access stays possible as a negative control', async () => {
+    const sim = await installSimulatedLinnstrument({ bind: false });
+    expect(linnstrumentStatus().kind).toBe('unbound');
+    expect(linnstrumentStatus().message).toMatch(/Press CONNECT to bind/);
+    expect(sim.attached()).toBe(false);
+    expect(rigBindings().getLinnstrument()).toBeNull();
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(0);
+    // A plug event does not bind either — the knob is for the sim's lifetime.
+    sim.unplug();
+    sim.plug();
+    expect(sim.attached()).toBe(false);
+    // …and uninstall restores the product policy for the next install.
+    sim.uninstall();
+    const again = await installSimulatedLinnstrument();
+    expect(again.attached()).toBe(true);
+    expect(rigBindings().getLinnstrument()).toEqual({ deviceId: again.inputId });
+  });
+
+  it('a hot-plug AFTER connect binds by name in the browser (CONNECT was the gesture; the port arrived later)', async () => {
+    const sim = await installSimulatedLinnstrument({ bind: false });
+    // Re-arm the product policy without re-connecting: a fresh sim with the
+    // default option re-uses the same connect path, so drive the plug through it.
+    sim.uninstall();
+    const late = await installSimulatedLinnstrument();
+    late.unplug();
+    expect(late.attached()).toBe(false);
+    expect(linnstrumentStatus().kind).toBe('no-port');
+    late.plug();
+    expect(late.attached()).toBe(true);
+    expect(linnstrumentStatus().kind).toBe('bound');
+    expect(rigBindings().getLinnstrument()).toEqual({ deviceId: late.inputId });
   });
 });

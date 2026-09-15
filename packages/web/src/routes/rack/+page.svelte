@@ -9,6 +9,7 @@
   import { getOrCreateLocalScratchId } from '$lib/storage/local-scratch';
   import { rigBindings } from '$lib/graph/device-slot-bindings';
   import { evaluateRigRelaunch } from '$lib/graph/rig-relaunch-guard';
+  import { nativeAvailable } from '$lib/platform/native';
 
   // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the scratch
   // canvas at `/rack` doesn't mount the client <ClerkProvider> — that would
@@ -211,7 +212,17 @@
   // absence — so the ~hundreds of ordinary /rack e2e specs, whose rig is empty,
   // are unaffected. Fire-and-forget after the store's first load; a bounce
   // simply navigates away and this component tears down.
+  //
+  // ⚠ NATIVE SHELL ONLY (owner ruling 2026-09-15). A plain browser has no
+  // rig-setup page: every device binds IN THE RACK and a stale camera/display
+  // binding is simply re-picked there. Running this in the browser stranded
+  // dev in a /rack → /preflight → "enter rack" → /preflight loop and tore the
+  // eagerly-booted engine down under its own reconcile pass (the "no engine
+  // registered for domain" console lines). Gated here AND inside
+  // `evaluateRigRelaunch` (rig-relaunch-guard.ts), so neither side can bounce
+  // the web alone.
   onMount(() => {
+    if (!nativeAvailable()) return;
     let cancelled = false;
     void rigBindings()
       .whenReady()

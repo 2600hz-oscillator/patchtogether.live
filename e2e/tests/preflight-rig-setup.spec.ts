@@ -4,21 +4,30 @@
 // rig store when a device is picked. The store write is asserted via the
 // `__rigBindings` hook the /preflight route publishes under testHooksEnabled().
 //
-// Covered here (the browser-capable classes + the browser launch swap +
-// pre-flight persistence):
+// ⚠ /preflight IS SHELL-ONLY (owner ruling 2026-09-15): the web binds every
+// device IN THE RACK, so a plain browser is redirected to /rack before the
+// page mounts. Every row test therefore boots under the fake shell
+// (`installFakeShell` — `window.ptNative` with the bridge-backed rig store
+// persisted like electron-store, and `preflight.done` performing the window
+// swap), and the PLAIN-BROWSER leg at the bottom proves the redirect.
+//
+// Covered here (the shell's rows + the launch swap + pre-flight persistence):
 //   * displays  → getScreenDetails double → setOutput
 //   * cameras   → enumerateDevices/getUserMedia double → setCamera (+ the grant
 //                 gesture that de-redacts labels)
 //   * push2 / launchpad / ptz → the shared WebMIDI double (installMidiDeviceMock),
 //                 named so the real device modules' presence predicates match
 //   * gamepad   → navigator.getGamepads double → setGamepad
-//   * ES-9 in a plain browser → "native shell only"
-//   * enter rack → goto('/rack'); a bind SURVIVES a reload (localStorage backend)
+//   * the panel SCROLLS on a short shell window
+//   * enter rack → preflight.done → /rack; a bind SURVIVES a reload (the
+//                 bridge store, persisted)
+//   * a PLAIN BROWSER never sees the page: /preflight lands on /rack
 //
 // The ES-9 / PTZ HELPER presence, the retryable retry affordance and the
 // electron-store round-trip are shell concerns — they live in
-// apps/desktop/e2e/preflight-helpers.spec.ts. The bound-device-MISSING bounce
-// and the bind→enter→LIVE-camera leg live in preflight-relaunch-guard.spec.ts.
+// preflight-shell-helpers.spec.ts (renderer lane) and
+// apps/desktop/e2e/preflight-helpers.spec.ts (Tier-A). The bound-device-MISSING
+// bounce and the bind→enter→LIVE-camera leg live in preflight-relaunch-guard.spec.ts.
 //
 // ARMED WITH errorWatch (the page-error guard every shell/face spec carries).
 
@@ -26,6 +35,8 @@ import { test, expect, type Page } from './_fixtures';
 import { installMidiDeviceMock } from '../_helpers/midi';
 import {
   clearRigStoreOnce,
+  installFakeShell,
+  FAKE_SHELL_SWAP_KEY,
   installFakeScreens,
   installFakeCameras,
   installFakeGamepad,
@@ -33,6 +44,7 @@ import {
   disposeFakeCameras,
   type FakeScreen,
 } from '../_helpers/preflight-devices';
+import { SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 
 const SCREENS: FakeScreen[] = [
   { label: 'Built-in Retina', isInternal: true, width: 3024, height: 1964, devicePixelRatio: 2 },
@@ -72,6 +84,7 @@ async function gotoPreflight(page: Page): Promise<void> {
 test.describe('STAGE-1 pre-flight — per-slot rig setup', () => {
   test.beforeEach(async ({ page }) => {
     await clearRigStoreOnce(page);
+    await installFakeShell(page);
     await installFakeScreens(page, SCREENS);
     await installFakeCameras(page, CAMERAS, { labelsRedactedUntilGrant: true });
     await installMidiDeviceMock(page, { outputs: MIDI_OUTPUTS, inputs: MIDI_INPUTS });
@@ -203,22 +216,49 @@ test.describe('STAGE-1 pre-flight — per-slot rig setup', () => {
     errorWatch.assertClean();
   });
 
-  test('ES-9 in a plain browser shows "native shell only"', async ({ page, errorWatch }) => {
+  test('the panel SCROLLS on a short shell window — every row and ENTER stay reachable', async ({ page, errorWatch }) => {
+    // The owner could not scroll the page and had to shrink the window:
+    // global.css pins `html, body { overflow: hidden }` for the rack canvas, so
+    // the panel must be its own scroll container. A viewport far shorter than
+    // the eight sections is the shape that clipped.
+    await page.setViewportSize({ width: 900, height: 420 });
     await gotoPreflight(page);
-    await expect(page.getByTestId('preflight-es9-state')).toHaveText(/native shell only/i);
+    const panel = page.getByTestId('preflight-panel');
+    const metrics = await panel.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      overflowY: getComputedStyle(el).overflowY,
+    }));
+    expect(metrics.scrollHeight, 'the content is taller than the viewport (the scenario)').toBeGreaterThan(metrics.clientHeight);
+    expect(metrics.overflowY).toBe('auto');
+    // A wheel gesture over the panel actually moves it (the body cannot scroll).
+    await panel.hover();
+    await page.mouse.wheel(0, 4000);
+    await expect
+      .poll(() => panel.evaluate((el) => el.scrollTop), { message: 'the panel scrolled under the wheel' })
+      .toBeGreaterThan(0);
+    // The ENTER button — the very last row — is clickable without resizing.
+    const enter = page.getByTestId('preflight-enter');
+    await enter.scrollIntoViewIfNeeded();
+    await expect(enter).toBeInViewport();
     errorWatch.assertClean();
   });
 
-  test('enter rack navigates to /rack in the browser (no shell bridge)', async ({ page, errorWatch }) => {
+  test('enter rack hands off through preflight.done and lands on /rack (an unbound rig does not bounce)', async ({ page, errorWatch }) => {
     await gotoPreflight(page);
     await page.getByTestId('preflight-enter').click();
     await page.waitForURL(/\/rack(\?|$)/, { timeout: 30_000 });
-    // An unbound rig does not bounce back — the rack stays.
+    // The shell performed the swap (a NEW document — the fake bridge leaves the
+    // fact in sessionStorage) — and an unbound rig does not bounce back.
+    expect(
+      await page.evaluate((k) => sessionStorage.getItem(k), FAKE_SHELL_SWAP_KEY),
+      'the swap went through the bridge, not a client goto',
+    ).toBe('preflight.done');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
     errorWatch.assertClean();
   });
 
-  test('a pre-flight bind SURVIVES a reload (localStorage round-trip)', async ({ page, errorWatch }) => {
+  test('a pre-flight bind SURVIVES a reload (the shell\'s persisted bindings store)', async ({ page, errorWatch }) => {
     await gotoPreflight(page);
     await page.getByTestId('preflight-cameras-grant').click();
     const sel = page.getByTestId('preflight-camera-select').and(page.locator('[data-slot="cam1"]'));
@@ -228,7 +268,8 @@ test.describe('STAGE-1 pre-flight — per-slot rig setup', () => {
       .poll(async () => ((await readRig(page)).cameras as Record<string, { deviceId?: string }>)?.cam1?.deviceId)
       .toBe('cam-a');
 
-    // ── THE RELOAD — a fresh document + a store re-hydrated from localStorage.
+    // ── THE RELOAD — a fresh document + a store re-hydrated through
+    // `bindings.get` from the shell's persisted store.
     await page.reload();
     await expect(page.getByTestId('preflight-panel')).toBeVisible();
     await page.waitForFunction(
@@ -243,6 +284,41 @@ test.describe('STAGE-1 pre-flight — per-slot rig setup', () => {
       .toEqual({ deviceId: 'cam-a', deviceLabel: 'Studio Cam A' });
     // And the control reflects it (the select is on the persisted value).
     await expect(sel).toHaveValue('cam-a');
+    errorWatch.assertClean();
+  });
+});
+
+// ── THE PLAIN-BROWSER LEG: no ptNative, no rig-setup page ────────────────────
+//
+// The web product binds in the rack. A browser that navigates to /preflight —
+// a bookmark, a typed URL, an old link — lands on /rack before anything of the
+// setup screen paints. The row tests above are the positive control (the same
+// doubles, under the fake shell, render the page).
+test.describe('PRE-FLIGHT in a PLAIN browser — the route is shell-only', () => {
+  test.beforeEach(async ({ page }) => {
+    await clearRigStoreOnce(page);
+    await installFakeScreens(page, SCREENS);
+    await installFakeCameras(page, CAMERAS);
+    await installMidiDeviceMock(page, { outputs: MIDI_OUTPUTS, inputs: MIDI_INPUTS });
+  });
+  test.afterEach(async ({ page }) => {
+    await disposeFakeCameras(page);
+  });
+
+  test('/preflight redirects to /rack before the panel mounts', async ({ page, errorWatch }) => {
+    const mounted: string[] = [];
+    page.on('framenavigated', (f) => {
+      if (f === page.mainFrame()) mounted.push(f.url());
+    });
+    await page.goto('/preflight');
+    await page.waitForURL(/\/rack(\?|$)/, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await expect(page.getByTestId('preflight-panel')).toHaveCount(0);
+    expect(
+      await page.evaluate(() => (globalThis as unknown as { __preflightReady?: boolean }).__preflightReady),
+      'the page component never ran its onMount',
+    ).toBeUndefined();
+    expect(mounted.some((u) => /\/rack(\?|$)/.test(u)), `landed on /rack — ${mounted.join(' → ')}`).toBe(true);
     errorWatch.assertClean();
   });
 });

@@ -24,10 +24,28 @@
 // the ~hundreds of ordinary /rack e2e specs: an UNBOUND rig gathers no evidence
 // (evaluateRigRelaunch short-circuits) and can never prompt or bounce.
 //
+// ── ⚠ NATIVE SHELL ONLY (owner ruling 2026-09-15) ───────────────────────────
+//
+// `/preflight` is a shell feature — there is nothing to bounce TO in a plain
+// browser, where every device binds in the rack (the slot pickers, the
+// audio-out picker, the CONNECT cells). The guard shipped in #2374 ran in the
+// browser as well, and a camera or display the operator had bound FROM THE
+// RACK that was absent at the next mount bounced dev to /preflight, whose
+// "enter rack" re-ran the same guard on the same store and bounced straight
+// back (rack/+page.svelte). Worse, the bounce tore Canvas down under the
+// eager-boot reconcile pass of a restored video rack, so every remaining node
+// and edge logged "no engine registered for domain" (Canvas.svelte onDestroy
+// disposes the engine; engine.ts dispose() clears the domain map). So
+// `evaluateRigRelaunch` is a NO-OP outside the shell: no evidence is gathered,
+// no device API is touched, `{ bounce: false }` is returned. The pure planner
+// below is unchanged; the shell's Tier-A harness and the shell-stubbed e2e
+// still exercise the bounce.
+//
 // PURE planner + thin impure gatherers, the device-slots.ts convention: every
 // decision is a unit test against plain fixtures; only the three enumerators
 // touch the browser, each guarded so an import chain never throws.
 
+import { nativeAvailable } from '$lib/platform/native';
 import { describeScreen, resolveScreens, type ScreenDescriptor } from '$lib/ui/modules/screen-identity';
 import {
   CAMERA_SLOT_NAMES,
@@ -222,6 +240,9 @@ export async function gatherHelperStates(): Promise<Record<string, string> | nul
  * `{ bounce: false }` — the state every non-preflight e2e spec is in.
  */
 export async function evaluateRigRelaunch(bindings: RigBindings): Promise<RelaunchDecision> {
+  // A plain browser has no /preflight to bounce to (see the header): keep the
+  // rack, and touch no device API on the way out.
+  if (!nativeAvailable()) return { bounce: false, reason: null };
   const needCameras = CAMERA_SLOT_NAMES.some((s) => bindings.cameras[s]);
   const needScreens = OUTPUT_SLOT_NAMES.some((s) => bindings.outputs[s]);
   const needHelpers = !!(bindings.es9 || bindings.ptz);

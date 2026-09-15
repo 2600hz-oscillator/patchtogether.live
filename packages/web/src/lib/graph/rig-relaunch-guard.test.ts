@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { planRelaunchBounce, type RigPresenceEvidence } from './rig-relaunch-guard';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { evaluateRigRelaunch, planRelaunchBounce, type RigPresenceEvidence } from './rig-relaunch-guard';
 import { emptyRigBindings, type RigBindings } from './device-slot-bindings';
+import { setNativeAvailableForTests } from '$lib/platform/native';
 
 const SCREEN_A = {
   label: 'Built-in Retina',
@@ -159,5 +160,73 @@ describe('planRelaunchBounce', () => {
     expect(d.bounce).toBe(true);
     expect(d.reason).toContain('cam1');
     expect(d.reason).toContain('output1');
+  });
+});
+
+// ── THE GUARD IS A NATIVE-SHELL FEATURE (owner ruling 2026-09-15) ────────────
+//
+// `evaluateRigRelaunch` is the impure wrapper the /rack route calls. In a plain
+// browser it must be a NO-OP — return "keep" AND gather no evidence, because a
+// browser has no /preflight to bounce to and every device binds in the rack.
+// Both legs are instrumented: the negative control proves the device APIs are
+// never touched on the web; the positive control proves the SAME rig, under the
+// shell, still gathers and still bounces — so a green here is not a guard that
+// stopped working everywhere.
+describe('evaluateRigRelaunch — shell-only', () => {
+  const STALE = (): RigBindings =>
+    rig({
+      cameras: { cam1: { deviceId: 'gone', deviceLabel: 'Old Cam' } },
+      outputs: { output1: { screen: SCREEN_B } },
+      es9: {},
+    });
+  // A live screen in the `ScreenDetailed` shape (devicePixelRatio, not dpr).
+  const LIVE_INTERNAL = { label: 'Built-in Retina', isInternal: true, width: 3024, height: 1964, devicePixelRatio: 2, left: 0, top: 0 };
+
+  afterEach(() => {
+    setNativeAvailableForTests(null);
+    vi.unstubAllGlobals();
+  });
+
+  it('NEGATIVE CONTROL — in a plain browser a fully bound, fully ABSENT rig keeps the rack and touches no device API', async () => {
+    setNativeAvailableForTests(false);
+    const enumerateDevices = vi.fn(async () => [{ kind: 'videoinput', deviceId: 'other', label: 'Other Cam' }]);
+    const getScreenDetails = vi.fn(async () => ({ screens: [LIVE_INTERNAL] }));
+    const command = vi.fn(async () => ({ ok: true, result: { current: [{ id: 'es9', state: 'stopped' }], history: [] } }));
+    vi.stubGlobal('navigator', { mediaDevices: { enumerateDevices } });
+    vi.stubGlobal('getScreenDetails', getScreenDetails);
+    vi.stubGlobal('ptNative', { command });
+
+    const d = await evaluateRigRelaunch(STALE());
+    expect(d).toEqual({ bounce: false, reason: null });
+    expect(enumerateDevices).not.toHaveBeenCalled();
+    expect(getScreenDetails).not.toHaveBeenCalled();
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it('POSITIVE CONTROL — under the shell the same rig gathers every leg and bounces on the absences', async () => {
+    setNativeAvailableForTests(true);
+    const enumerateDevices = vi.fn(async () => [{ kind: 'videoinput', deviceId: 'other', label: 'Other Cam' }]);
+    const getScreenDetails = vi.fn(async () => ({ screens: [LIVE_INTERNAL] }));
+    const command = vi.fn(async () => ({ ok: true, result: { current: [{ id: 'es9', state: 'stopped' }], history: [] } }));
+    vi.stubGlobal('navigator', { mediaDevices: { enumerateDevices } });
+    vi.stubGlobal('getScreenDetails', getScreenDetails);
+    vi.stubGlobal('ptNative', { command });
+
+    const d = await evaluateRigRelaunch(STALE());
+    expect(d.bounce).toBe(true);
+    expect(d.reason).toContain('cam1');
+    expect(d.reason).toContain('output1');
+    expect(d.reason).toContain('ES-9');
+    expect(enumerateDevices).toHaveBeenCalledTimes(1);
+    expect(getScreenDetails).toHaveBeenCalledTimes(1);
+    expect(command).toHaveBeenCalledWith('helpers.status');
+  });
+
+  it('under the shell an UNBOUND rig still short-circuits (no prompt on an ordinary mount)', async () => {
+    setNativeAvailableForTests(true);
+    const enumerateDevices = vi.fn(async () => []);
+    vi.stubGlobal('navigator', { mediaDevices: { enumerateDevices } });
+    expect(await evaluateRigRelaunch(emptyRigBindings())).toEqual({ bounce: false, reason: null });
+    expect(enumerateDevices).not.toHaveBeenCalled();
   });
 });

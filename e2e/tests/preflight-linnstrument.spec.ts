@@ -11,18 +11,23 @@
 //   3. THE APPLY STEP IS THE DEVICE LAYER'S: the pick alone puts the instrument
 //      into User Firmware Mode — the NRPN 245 transaction leaves the paired
 //      OUTPUT port with no further click. (linnstrument-device.ts resolvePorts)
-//   4. THE BINDING LIVES IN THE RIG (ADR-011): it is in localStorage
-//      `pt:rig-bindings:v1`, survives a reload, and is ABSENT from the Y.Doc
-//      after entering the rack — a shared patch never carries a port id.
+//   4. THE BINDING LIVES IN THE RIG (ADR-011): it is in the shell's persisted
+//      bindings store (the fake bridge's electron-store stand-in), survives a
+//      reload, and is ABSENT from the Y.Doc after entering the rack — a shared
+//      patch never carries a port id.
+//
+// ⚠ SHELL-ONLY (owner ruling 2026-09-15): /preflight exists only under the
+// native shell, so this spec boots under `installFakeShell`. Under the shell
+// the /preflight PICK is the authority (no pick → unbound); in a plain browser
+// the LinnStrument binds from its face's CONNECT by name — that leg lives in
+// linnstrument.spec.ts and rack-stale-rig-stays-in-browser.spec.ts.
 //
 // The bytes are what the firmware documentation says; no LinnStrument was
 // connected (the package's C02/C03). ARMED WITH errorWatch.
 
 import { test, expect, type Page } from './_fixtures';
 import { installMidiDeviceMock, grantMidiNow, readMidiOutCaptured } from '../_helpers/midi';
-import { clearRigStoreOnce, readRig } from '../_helpers/preflight-devices';
-
-const RIG_LS_KEY = 'pt:rig-bindings:v1';
+import { clearRigStoreOnce, installFakeShell, readRig, FAKE_SHELL_STORE_KEY } from '../_helpers/preflight-devices';
 const LINN_IN = 'linn-in';
 const LINN_OUT = 'linn-out';
 const PORT_NAME = 'LinnStrument MIDI';
@@ -63,16 +68,19 @@ async function gotoPreflight(page: Page): Promise<void> {
   await settlePreflight(page);
 }
 
-async function readRigFromLocalStorage(page: Page): Promise<Record<string, unknown> | null> {
+/** The shell's persisted bindings store, read the way electron-store would be
+ *  read back — through the fake bridge's storage, never the app's cache. */
+async function readRigFromShellStore(page: Page): Promise<Record<string, unknown> | null> {
   return page.evaluate((key) => {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
-  }, RIG_LS_KEY);
+  }, FAKE_SHELL_STORE_KEY);
 }
 
 test.describe('PRE-FLIGHT — the LinnStrument row binds through the rig, never the patch', () => {
   test.beforeEach(async ({ page }) => {
     await clearRigStoreOnce(page);
+    await installFakeShell(page);
     await installMidiDeviceMock(page, {
       inputs: [
         { id: LINN_IN, name: PORT_NAME },
@@ -137,11 +145,11 @@ test.describe('PRE-FLIGHT — the LinnStrument row binds through the rig, never 
     // NEGATIVE CONTROL — the decoy output received nothing.
     expect(await readMidiOutCaptured(page, 'push2-out')).toEqual([]);
 
-    // THE BINDING LIVES IN localStorage under the rig key…
-    const ls = await readRigFromLocalStorage(page);
+    // THE BINDING LIVES IN the shell's persisted store…
+    const ls = await readRigFromShellStore(page);
     expect(ls?.linnstrument).toEqual({ deviceId: LINN_IN });
 
-    // …survives a reload (the store re-hydrates from the same key)…
+    // …survives a reload (the store re-hydrates through bindings.get)…
     await page.reload();
     await settlePreflight(page);
     await expect
@@ -201,7 +209,7 @@ test.describe('PRE-FLIGHT — the LinnStrument row binds through the rig, never 
         return containsRun(bytes, [[0xb0, 99, 1], [0xb0, 98, 117], [0xb0, 6, 0], [0xb0, 38, 0]]);
       }, { message: 'clearing the pick sends the User Firmware Mode exit', timeout: 10_000 })
       .toBe(true);
-    expect((await readRigFromLocalStorage(page))?.linnstrument).toBeUndefined();
+    expect((await readRigFromShellStore(page))?.linnstrument).toBeUndefined();
     errorWatch.assertClean();
   });
 });
