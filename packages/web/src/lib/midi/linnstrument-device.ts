@@ -732,7 +732,9 @@ function onFrame(ev: MidiEventLike): void {
     // The instrument spoke: whichever of the echo and the read answer this is,
     // the reply window is settled. A healthy instrument sends BOTH on a fresh
     // entry (echo on channel 9, then the answer on the read's channel), so
-    // the enables + repaint happen on the TRANSITION only, not on every "on".
+    // the enables + repaint happen on the TRANSITION only, not on every "on"
+    // — and the decoder publishes an unchanged answer as `changed: false`,
+    // which ends no contact, opens no epoch and resets no runtime.
     settleReply('answered');
     const entered = mode.userMode && !userModeEntered;
     userModeEntered = mode.userMode;
@@ -826,15 +828,7 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
   mapState = createSurfaceMapState();
   led.painted.clear();
 
-  // Entry, enables (the firmware resets them on entry, so they follow it),
-  // then the READ — the one message the instrument answers whether or not the
-  // entry changed anything (header: TWO things can bring that message back).
-  sendAll(encodeUserFirmwareMode(true));
-  sendAll(encodeRowAxisEnables(profile));
-  sendAll(encodeUserFirmwareModeRead());
-  userModeEntered = false;
-  if (output) armReplyWindow();
-  else settleReply('pending');
+  requestUserMode();
 
   publishRaw(rc.events, 'connected');
   led.scheduleFlush();
@@ -846,6 +840,27 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
   }
   bump();
   return true;
+}
+
+/**
+ * THE MODE REQUEST: entry, enables (the firmware resets them on entry, so they
+ * follow it), then the READ — the one message the instrument answers whether
+ * or not the entry changed anything (header: TWO things can bring that message
+ * back) — and a fresh reply window. The bind sends it once; an EXPLICIT
+ * CONNECT sends it again while the mode is unconfirmed, reported OFF or the
+ * instrument was silent (`connectLinnstrument`), which is the recovery every
+ * one of those status lines instructs. The roster refresh (`resolvePorts`)
+ * never does: a rig echo or a hot-plug of an unrelated port must not re-enter
+ * the mode on a healthy instrument.
+ */
+function requestUserMode(): void {
+  if (!bound) return;
+  sendAll(encodeUserFirmwareMode(true));
+  sendAll(encodeRowAxisEnables(profile));
+  sendAll(encodeUserFirmwareModeRead());
+  userModeEntered = false;
+  if (bound.output) armReplyWindow();
+  else settleReply('pending');
 }
 
 /** Tear the binding down. `restore` sends the User Mode exit; false when the
@@ -946,12 +961,22 @@ function adoptAccess(a: LinnAccessLike): void {
  *
  * MUST be called synchronously from a user gesture — an `await` above the
  * request spends the activation and Chromium refuses to prompt. Safe to call
- * again: with access held it just re-resolves. NEVER THROWS. Returns true
- * only when a port is actually bound.
+ * again: with access held it re-resolves the roster, and when the bound
+ * instrument has not confirmed User Firmware Mode (unconfirmed, reported OFF,
+ * or silent) it RE-SENDS the mode request with a new reply window and repaints
+ * — the "press CONNECT again" every one of those status lines instructs. A
+ * confirmed instrument is left alone. NEVER THROWS. Returns true only when a
+ * port is actually bound.
  */
 export async function connectLinnstrument(request?: LinnRequestFn): Promise<boolean> {
   if (access) {
     resolvePorts();
+    if (bound && !userModeEntered) {
+      requestUserMode();
+      led.painted.clear();
+      led.scheduleFlush();
+      bump();
+    }
     return bound !== null;
   }
   if (connectInFlight) return false;

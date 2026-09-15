@@ -388,13 +388,14 @@ export async function createLinnstrumentRuntime(
     const on = num(params[arpParamId(region, 'on')], 0) >= 0.5;
     if (on !== r.arp.enabled) {
       r.arp.setEnabled(on);
+      const now = ctx.currentTime;
       if (on) {
         // The arp owns the bus now: drop the direct voice writes.
-        r.sender.silence(ctx.currentTime);
+        takeBus(r, now);
         for (const lane of r.lanes) lane.gate = 0;
       } else {
         // Hand the bus back: re-assert what is physically held.
-        r.sender.silence(ctx.currentTime);
+        takeBus(r, now);
         reassertVoices(r);
       }
       notify();
@@ -480,9 +481,14 @@ export async function createLinnstrumentRuntime(
     const now = ctx.currentTime;
     for (const region of LINN_REGIONS) {
       const r = regions[region];
-      r.arp.cancel(now);
+      // The arp FORGETS — touches, provenance and the latched set — before the
+      // voices end, so a finger that is still down (or a pool a lifted finger
+      // left latched) has nothing the next tick can restart (F01: `cancel`
+      // kept the pool; with every finger released `panicMpe` had no voice to
+      // end and the latched note came back one tick later).
+      r.arp.reset(now);
       for (const ev of panicMpe(r.mpe, now)) applyVoiceEvent(r, ev);
-      r.sender.silence(now);
+      takeBus(r, now);
       for (const lane of r.lanes) lane.gate = 0;
     }
     // XY, selection and the pointer are RETAINED (ui-specification.md:20).
@@ -542,6 +548,23 @@ export async function createLinnstrumentRuntime(
     if (pitch !== null) slot.pitchSrc.offset.setValueAtTime(pitch, at);
     if (gate !== null) slot.gateSrc.offset.setValueAtTime(gate, at);
   }
+  /**
+   * THE BUS CHANGES OWNER (arp on, arp off, PANIC, a session reset): every
+   * event the previous owner queued past `now` — PITCH as well as gate — is
+   * dropped and the gates close now. `PolySender.silence` cancels gates only,
+   * which is what every sequencer wants of it and stays untouched; here a
+   * step the arp scheduled inside the lookahead would otherwise survive the
+   * handover and retune the voice the direct path re-asserts a moment later
+   * (F05: ARP off at 1.500 s left the arp's E2 at 1.525 s on lane 0 and the
+   * restored C2 became E2).
+   */
+  function takeBus(r: RegionRuntime, now: number): void {
+    for (const slot of r.sender.voices) {
+      slot.pitchSrc.offset.cancelScheduledValues(now);
+      slot.gateSrc.offset.cancelScheduledValues(now);
+      slot.gateSrc.offset.setValueAtTime(0, now);
+    }
+  }
   function reassertVoices(r: RegionRuntime): void {
     const now = ctx.currentTime;
     for (const v of activeVoices(r.mpe)) {
@@ -571,7 +594,7 @@ export async function createLinnstrumentRuntime(
         for (const ev of resetMpe(r.mpe, now)) applyVoiceEvent(r, ev, now);
         r.mpe.epoch = event.epoch;
         r.arp.reset(now);
-        r.sender.silence(now);
+        takeBus(r, now);
         for (const lane of r.lanes) Object.assign(lane, freshLane(lane.lane));
       }
       dispatch({ kind: 'session', epoch: event.epoch });

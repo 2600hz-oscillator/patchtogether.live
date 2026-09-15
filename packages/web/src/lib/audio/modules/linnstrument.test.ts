@@ -92,6 +92,19 @@ function laneValue(handle: AudioDomainNodeHandle, port: string, lane: number, ki
 function laneEvents(handle: AudioDomainNodeHandle, port: string, lane: number, kind: 'pitch' | 'gate'): Recorded[] {
   return laneSource(handle, port, lane, kind).offset.events;
 }
+/** What an AudioParam would HOLD at audio time `t` given the recorded
+ *  timeline: a `cancel` at c drops every earlier-recorded `set` at ≥ c, then
+ *  the value is the last surviving `set` at ≤ t. The initial 0 stands in for
+ *  the source's default. */
+function laneValueAt(handle: AudioDomainNodeHandle, port: string, lane: number, kind: 'pitch' | 'gate', t: number): number {
+  const live: { value: number; time: number }[] = [];
+  for (const e of laneEvents(handle, port, lane, kind)) {
+    if (e.kind === 'cancel') {
+      for (let i = live.length - 1; i >= 0; i--) if (live[i]!.time >= e.time) live.splice(i, 1);
+    } else live.push({ value: e.value!, time: e.time });
+  }
+  return live.filter((e) => e.time <= t).sort((a, b) => a.time - b.time).at(-1)?.value ?? 0;
+}
 
 // ── A simulated source on the registry seam ───────────────────────────────
 
@@ -577,6 +590,78 @@ describe('linnstrument runtime — the arps own their bus while on', () => {
     r.tick(2500, 11.5);
     expect(r.api.state().arp.keys.held, 'panic ended the voices').toEqual([]);
     expect(laneEvents(r.handle, 'keys_poly', 0, 'pitch').length).toBe(before);
+  });
+
+  it('F01: PANIC under HOLD with every finger released leaves NOTHING for the next tick to resurrect — on both regions; XY and selection stay', async () => {
+    const r = await rig({ keys_arp_on: 1, keys_arp_latch: 1, pad_arp_on: 1, pad_arp_latch: 1, sel_r: 1, pos_r_x: 0.6, pos_r_y: -0.2 });
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0));
+    r.sim.emit(touchStart(r.sim, 2, 'pad', 0, 0));
+    r.tick(1000, 1);
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    r.sim.emit(touchEnd(r.sim, 2, 'pad'));
+    // The real latch precondition: no finger, both arps still running on a frozen pool.
+    expect(r.api.state().active).toEqual({ keys: 0, pad: 0 });
+    expect(r.api.state().arp.keys).toMatchObject({ running: true, held: [], effective: [36] });
+    expect(r.api.state().arp.pad).toMatchObject({ running: true, held: [], effective: [60] });
+    r.api.dispatch({ kind: 'panic' });
+    for (const port of ['keys_poly', 'pad_poly'] as const) expect(laneValueAt(r.handle, port, 0, 'gate', 1), `${port} closes now`).toBe(0);
+    expect(r.api.state().arp.keys).toMatchObject({ running: false, effective: [], playing: null });
+    expect(r.api.state().arp.pad).toMatchObject({ running: false, effective: [], playing: null });
+    // Later ticks: nothing is scheduled on either bus after the PANIC.
+    const recorded = { keys_poly: laneEvents(r.handle, 'keys_poly', 0, 'gate').length, pad_poly: laneEvents(r.handle, 'pad_poly', 0, 'gate').length };
+    for (let i = 1; i <= 8; i++) r.tick(1000 + i * 250, 1 + i * 0.25);
+    for (const port of ['keys_poly', 'pad_poly'] as const) {
+      expect(laneEvents(r.handle, port, 0, 'gate').slice(recorded[port])).toEqual([]);
+      expect(laneValueAt(r.handle, port, 0, 'gate', 3.1)).toBe(0);
+    }
+    // Retention is independent of PANIC (ui-specification.md:20).
+    expect(r.api.selection().pairs.r).toEqual({ x: 0.6, y: -0.2 });
+    expect(r.api.selection().mask.r).toBe(true);
+    // A finger still DOWN at PANIC is forgotten too: its later release is a
+    // no-op, and a fresh press starts a fresh latched pool (PANIC ≠ arp off).
+    r.sim.emit(touchStart(r.sim, 3, 'keys', 4, 0));
+    r.api.dispatch({ kind: 'panic' });
+    r.tick(4000, 4);
+    expect(r.api.state().arp.keys).toMatchObject({ running: false, effective: [] });
+    r.sim.emit(touchEnd(r.sim, 3, 'keys'));
+    r.tick(4250, 4.25);
+    expect(laneValueAt(r.handle, 'keys_poly', 0, 'gate', 4.3)).toBe(0);
+    r.sim.emit(touchStart(r.sim, 4, 'keys', 7, 0));
+    r.tick(4500, 4.5);
+    expect(r.api.state().arp.keys).toMatchObject({ running: true, effective: [43] });
+    expect(laneValueAt(r.handle, 'keys_poly', 0, 'gate', 4.526)).toBe(1);
+  });
+
+  it('F05: ARP off drops the step the arp had queued inside the lookahead — the re-asserted voice keeps its pitch past the old horizon', async () => {
+    const r = await rig({ keys_arp_on: 1, keys_arp_div: 3 }); // 1× at 120 bpm = 500 ms steps
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0)); // 36 → −2 V, direct lane 0
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0)); // 40 → −1.667 V, direct lane 1
+    r.tick(1000, 1); // step 1: 36 on lane 0 at 1.025
+    r.tick(1500, 1.5); // step 2: 40 on lane 0 at 1.525 — queued 25 ms ahead
+    expect(laneEvents(r.handle, 'keys_poly', 0, 'pitch').some((e) => e.kind === 'set' && e.time === 1.525)).toBe(true);
+    r.handle.setParam('keys_arp_on', 0);
+    // The handover at 1.5: the held C2 is re-asserted on lane 0 and E2 on lane 1…
+    expect(laneValueAt(r.handle, 'keys_poly', 0, 'pitch', 1.5)).toBe(midiToVOct(36));
+    expect(laneValueAt(r.handle, 'keys_poly', 1, 'pitch', 1.5)).toBe(midiToVOct(40));
+    expect(laneValueAt(r.handle, 'keys_poly', 0, 'gate', 1.5)).toBe(1);
+    expect(laneValueAt(r.handle, 'keys_poly', 1, 'gate', 1.5)).toBe(1);
+    // …and AFTER the old lookahead horizon nothing the arp queued survives:
+    // lane 0 is still C2 and its gate is still high (the arp's gate-down at
+    // 1.275 is history; its queued 1.525 attack and 1.775 release are gone).
+    for (const t of [1.53, 1.6, 1.8, 2.5]) {
+      expect(laneValueAt(r.handle, 'keys_poly', 0, 'pitch', t), `lane 0 pitch at ${t}`).toBe(midiToVOct(36));
+      expect(laneValueAt(r.handle, 'keys_poly', 0, 'gate', t), `lane 0 gate at ${t}`).toBe(1);
+    }
+    // Later ticks with the arp off schedule nothing more.
+    const n = laneEvents(r.handle, 'keys_poly', 0, 'pitch').length;
+    r.tick(2000, 2);
+    r.tick(2500, 2.5);
+    expect(laneEvents(r.handle, 'keys_poly', 0, 'pitch').length).toBe(n);
+    // The mirror transition (ARP on) drops the direct path's queued writes the
+    // same way: a voice scheduled ahead of the switch cannot re-gate the bus.
+    r.sim.emit(touchStart(r.sim, 3, 'keys', 7, 0));
+    r.handle.setParam('keys_arp_on', 1);
+    expect(laneValueAt(r.handle, 'keys_poly', 2, 'gate', 2.5)).toBe(0);
   });
 
   it('D17: the lower control cells flip the keys arp, HOLD and the octave as PARAM commits', async () => {

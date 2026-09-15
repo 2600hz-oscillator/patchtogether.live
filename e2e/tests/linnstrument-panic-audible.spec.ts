@@ -1,79 +1,34 @@
-// ═════════ THE REAL-SOURCE-CHAIN GATE FOR THE LINNSTRUMENT MODULE ═════════
+// ═════════ PANIC vs A LATCHED ARP — AT THE REAL CUBE AUDIO OUTPUT ═════════
 //
-// AGENTS.md rule 8: a poly or MIDI module ships an e2e wiring the REAL
-// default-mode source through the module to an AUDIBLE-OUTPUT assertion.
-// Driving the engine class directly, or asserting only that an edge
-// materialised, has shipped modules that were green and silent.
-//
-// Nothing in these chains is stubbed except the USB cable:
+// The audible half of the 2026-09-15 review's F01 (contracts: R03 in
+// packages/web/src/lib/midi/linnstrument-review-contracts.test.ts). The chain
+// is the module's real default-mode source chain (AGENTS.md rule 8):
 //
 //   [simulated LinnStrument, User Firmware Mode bytes on the wire]
-//     → linnstrument.keys_poly → CUBE.poly ; CUBE.L → SCOPE.ch1        (keys, arp)
-//     → linnstrument.r_x → VCA.cv ; analogVco.sine → VCA.audio → SCOPE (pad)
+//     → connectLinnstrument() → decodePhysicalMidi → mapSurface → registry
+//     → linnstrument runtime (arp, latch) → keys_poly → CUBE.poly → CUBE.L → SCOPE
 //
-// `__linnstrumentTestInstall` (Canvas.svelte) installs an in-memory MIDIAccess
-// whose input/output pair is NAMED like the instrument and runs the REAL
-// `connectLinnstrument()` against it: the /linnstrument/i port match, the
-// shared `createMidiInputClaim` handler slot, the NRPN 245 User-Mode entry on
-// the OUTPUT, `decodePhysicalMidi` → `mapSurface`, the source-registry fan-out,
-// the runtime's selection reducer and MPE voice allocator, and the LED writer
-// all execute. Every driver call spells the real bytes (Note On per cell on the
-// ROW channel, CC X lo/hi pairs, CC Y, poly pressure Z) from the same constant
-// table the decoder reads.
+// THE DEFECT IT PINS. With the keys arp ON and HOLD (latch) ON, one key is
+// pressed and RELEASED: the arp keeps walking the latched pool with no voice
+// alive. PANIC from the control column (the D17 recommendation's bottom cell)
+// then reached `arp.cancel()`, which cleared the playing marker and the step
+// clock but KEPT the latched pool; `panicMpe` had no live voice to end; and the
+// next scheduler tick re-anchored the clock and played the note again. Three
+// runs read a post-PANIC peak of 0.9998 / RMS 0.635 against a 0.01 floor.
 //
-// ── WHAT IS ASSERTED, PER ACCEPTANCE VECTOR ─────────────────────────────────
-//   V01/V14  the +1 wire column and the epoch gate are on the real path (the
-//            unbound-device control: a touch on an unbound port is not a voice).
-//   V05      the retained pair survives save → fresh page → load, asserted AT
-//            THE JACK (audio through the VCA after load), not as node presence
-//            — the samsloop-load-audible precedent.
-//   V06      a horizontal X move on a held key is a REAL pitch movement on the
-//            lane: a new band appears at the bent frequency.
-//   V12      the keys arp SEQUENCES a held chord: two distinct pitches sound
-//            over time on the bus, at a real voice output.
-//   V13      two touches on one pitch are refcounted: releasing one keeps the
-//            note in the arp's held set; releasing both drops it.
-//   D13      two keys at two pitches → two frequencies at the output at once
-//            (poly identity: two contacts are two voices — decision-register
-//            D13; the package's vector corpus has no V-number for this).
-//   V16      "stopped source": silence-first over a FULL window with no Note
-//            On while a known positive reference later reads nonzero — the
-//            silence-first + audible-key pair below IS that vector.
-//   V15      "observer control": pressure (Z) and timbre (Y) reach the voice's
-//            expression LANE. ⚠ STATE HALF ONLY. The vector's audible claim
-//            (unpatch the pressure path → level modulation disappears) needs
-//            an expression jack, and none ships: D14 (`polyCv`) is a
-//            graph-wide change the owner has not ruled on, so the two poly
-//            buses carry PITCH + GATE only and per-lane pressure / timbre are
-//            read through `read(node, 'card-api').expression(region)`. V15's
-//            audible half stays DEFERRED (vectors.ts records the WP-D
-//            deferral; it is not resolved here) and is deliberately not faked
-//            by patching a scalar somewhere else.
-//   MODE     `userMode` on the status and the session is the instrument's OWN
-//            NRPN 245 readback: false after the bind's write, true only once
-//            the (simulated) instrument echoes the notification.
-//   PANIC    the control-column PANIC cell (D17 recommendation, `extra_controls`
-//            default ON) closes every voice on the bus within the cap.
+// WHAT IS ASSERTED, IN ORDER
+//   * NEGATIVE CONTROL first, over a full window: the patched chain is silent
+//     before any device exists;
+//   * POSITIVE CONTROL: the latched arp is audible after the finger has lifted
+//     (`active.keys` 0, `arp.keys.running` true — the real latch precondition);
+//   * PANIC: one full window absorbs CUBE's declared 0.2 s release tail and
+//     the analyser ring, then a SECOND 1.2 s window — long enough for several
+//     125 ms arp steps — must stay under the floor (sample twice, assert on
+//     the second). The runtime snapshot is logged with the readings.
 //
-// ── NEGATIVE CONTROLS, PERMANENT ────────────────────────────────────────────
-//   * silence-first over a FULL window before any device exists;
-//   * a device that is GRANTED but UNBOUND: a touch reaches no voice, no audio;
-//   * the unselected G pair holds 0 at its own jack while the finger moves R;
-//   * a band that must be ABSENT is measured over a full window before the key
-//     that would produce it lands;
-//   * every silence assertion samples TWICE and asserts on the SECOND window,
-//     so a frozen analyser buffer cannot read as liveness.
-//
-// ── THE OBSERVATION IS A BOUNDED CONDITION ──────────────────────────────────
-// Every "does it sound?" leg observes UNTIL audible with a cap that BOUNDS THE
-// FAILURE (the adsr-poly-midilane argument: a gated voice cannot sound until
-// the main-thread scheduler ticks, and how many ticks fit in a wall-clock
-// window is a property of the runner). Silence legs watch the whole window.
-// Test timeouts scale with the number of capture windows, never a flat value.
-//
-// ⚠ FILENAME: `linnstrument.spec.ts` matches none of WEBGL_HEAVY_GLOBS, so it
-// runs in the sharded `e2e` matrix job. A name colliding with one of those
-// prefixes would remove it from CI entirely and look like ordinary bookkeeping.
+// ⚠ FILENAME: `linnstrument-panic-audible.spec.ts` matches none of
+// e2e/webgl-heavy-globs.ts, so it runs in the sharded `e2e` matrix. A name
+// colliding with one of those prefixes would remove it from CI entirely.
 
 import { test, expect } from './_fixtures';
 import { type Page } from '@playwright/test';
@@ -178,7 +133,7 @@ interface LinnSnapshot {
   session: { state: string; epoch: number; userMode: boolean };
   selection: { mask: Record<'r' | 'g' | 'b', boolean>; pairs: Record<'r' | 'g' | 'b', { x: number; y: number }> };
   active: { keys: number; pad: number };
-  arp: { keys: { enabled: boolean; running: boolean; held: number[]; playing: number | null } };
+  arp: { keys: { enabled: boolean; running: boolean; params: { latch: boolean }; held: number[]; effective: number[]; playing: number | null } };
 }
 interface Lane {
   lane: number;
@@ -302,27 +257,64 @@ async function buildKeysChain(page: Page, linnParams: Record<string, number> = {
   await expect(page.locator('.svelte-flow__node:has([data-shell-type="linnstrument"])')).toHaveCount(1);
 }
 
-test('@adversarial-linn PANIC stops a released latched note at the real CUBE audio output', async ({ page, rack, errorWatch }) => {
+test('@linnstrument PANIC stops a released, latched arp note at the real CUBE audio output', async ({ page, rack, errorWatch }) => {
   void rack;
   test.setTimeout(timeoutFor(6));
   await buildKeysChain(page, { keys_arp_on: 1, keys_arp_latch: 1, keys_arp_div: 1 });
+  // NEGATIVE CONTROL, full window: nothing exists yet, the chain is silent.
   const empty = await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  expect(empty.polls, 'the SCOPE was actually sampled').toBeGreaterThan(0);
   expect(empty.peak, describeScopeWindow(empty)).toBeLessThan(CUBE_FLOOR);
   expect(await installSim(page)).toBe(true);
   await sim(page, 'ackUserMode', true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode)).toBe(true);
+  // POSITIVE CONTROL: press, and the latched arp is audible AFTER the release —
+  // no live voice, the arp running on a frozen pool (the real latch precondition).
   await sim(page, 'touch', KEY_A.col, KEY_A.row, { x: 500 });
-  const positive = await readScopePeakOverWindow(page, 'scp', 1500, { untilRms: CUBE_FLOOR, untilNonzeroSamples: 50 });
+  const positive = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, { untilRms: CUBE_FLOOR, untilNonzeroSamples: 50 });
   expect(positive.rms, describeScopeWindow(positive)).toBeGreaterThan(CUBE_FLOOR);
   await sim(page, 'release', KEY_A.col, KEY_A.row);
-  expect((await linnState(page, 'ln'))?.active.keys).toBe(0);
-  expect((await linnState(page, 'ln'))?.arp.keys.running).toBe(true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.active.keys)).toBe(0);
+  expect((await linnState(page, 'ln'))?.arp.keys, 'released, latched, still walking').toMatchObject({ running: true, params: { latch: true }, held: [], effective: [cellNote(KEY_A.col, KEY_A.row)] });
+  const stillPlaying = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, { untilRms: CUBE_FLOOR, untilNonzeroSamples: 50 });
+  expect(stillPlaying.rms, `the latched note sounds with no finger down — ${describeScopeWindow(stillPlaying)}`).toBeGreaterThan(CUBE_FLOOR);
+
+  // PANIC from the control column: the wire → control_edge → the reducer's
+  // panic effect → the runtime. The STATE half first: the arp has forgotten
+  // its pool, so no later tick has anything to play (F01's mechanism).
   await sim(page, 'touch', CONTROL_COL, PANIC_ROW);
   await sim(page, 'release', CONTROL_COL, PANIC_ROW);
-  // One full observation absorbs the declared 0.2 s release tail and old ring.
-  await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  const afterPanic = await linnState(page, 'ln');
+  expect(afterPanic?.arp.keys, 'PANIC forgets the latched pool').toMatchObject({ running: false, held: [], effective: [], playing: null });
+  expect(afterPanic?.active.keys).toBe(0);
+
+  // THE AUDIBLE HALF — a bounded condition, then a full window (the sibling
+  // spec's settledSilence shape). CUBE's gate closes NOW but its per-voice
+  // envelope rings out: the release is an exponential TIME CONSTANT
+  // (adsr-env.ts `value *= exp(-1 / (sr * release))`), so 0.2 s reaches the
+  // 0.01 floor only after ~4.5τ ≈ 0.9 s plus the analyser ring — measured
+  // here as 0.61 → 0.16 → 0.018 → 0.0006 over consecutive 200 ms polls, and
+  // ~0.06 peak still standing a full 600 ms window after PANIC. A fixed
+  // absorption window therefore cannot tell a tail from a restart; this can:
+  // a restarted arp NEVER reaches the floor and fails at the cap, a stuck gate
+  // (sustain 0.9) never reaches it either, only a closing gate does. Then the
+  // SECOND window — 1.2 s, nearly ten 125 ms arp steps — must stay under the
+  // floor (sample twice, assert on the second).
+  const settling: number[] = [];
+  await expect
+    .poll(
+      async () => {
+        const hi = (await sampleScopeRms(page, 'scp', 10, 20)).hi;
+        settling.push(hi);
+        return hi;
+      },
+      { timeout: AUDIBLE_CAP_MS, message: 'PANIC — the output must reach silence within the cap (a restarted arp never does)' },
+    )
+    .toBeLessThan(CUBE_FLOOR);
   const after = await readScopePeakOverWindow(page, 'scp', 1200);
-  console.log('ADVERSARIAL_AUDIO', JSON.stringify({ empty, positive, after, state: await linnState(page, 'ln') }));
-  expect(after.polls).toBeGreaterThan(0);
-  expect(after.peak, `PANIC must stay silent through further arp ticks: ${describeScopeWindow(after)}`).toBeLessThan(CUBE_FLOOR);
+  console.log('PANIC_AUDIO', JSON.stringify({ empty, positive, stillPlaying, settling: settling.map((v) => +v.toFixed(4)), after, state: await linnState(page, 'ln') }));
+  expect(after.polls, 'the SCOPE was sampled across the whole post-PANIC window').toBeGreaterThan(0);
+  expect(after.peak, `PANIC must STAY silent through further arp ticks: ${describeScopeWindow(after)}`).toBeLessThan(CUBE_FLOOR);
+  expect((await linnState(page, 'ln'))?.arp.keys, 'and the arp is still stopped at the end of the window').toMatchObject({ running: false, effective: [] });
   errorWatch.assertClean();
 });

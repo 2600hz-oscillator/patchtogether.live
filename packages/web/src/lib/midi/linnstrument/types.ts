@@ -172,7 +172,12 @@ export type RawRejection =
   | 'no_contact'
   | 'duplicate_press'
   | 'unmapped_cc'
-  | 'malformed_slide';
+  | 'malformed_slide'
+  /** User-Mode cell vocabulary (a note = a column, a CC = a coordinate) while
+   *  the instrument has NOT confirmed User Firmware Mode — unconfirmed, OFF or
+   *  silent. In any other mode those same bytes are ordinary musical MIDI and
+   *  must not become cell presses. Management traffic (NRPN) still decodes. */
+  | 'mode_unconfirmed';
 
 export type RawEvent =
   | { kind: 'cell_down'; epoch: Epoch; touch: TouchId; col: number; row: number; velocity: number; time: number }
@@ -184,8 +189,12 @@ export type RawEvent =
   | { kind: 'cell_z'; epoch: Epoch; touch: TouchId; col: number; row: number; z: number; time: number }
   /** A completed horizontal transfer: same touch, new column, no new attack. */
   | { kind: 'cell_slide'; epoch: Epoch; touch: TouchId; fromCol: number; toCol: number; row: number; time: number }
-  /** Firmware mode notification (NRPN 245 readback). */
-  | { kind: 'mode'; epoch: Epoch; userMode: boolean; time: number }
+  /** Firmware mode notification (NRPN 245 readback). `changed` says whether
+   *  it REPORTED A TRANSITION (the epoch advanced, every contact ended) or
+   *  merely acknowledged the mode the decoder already knew — the second
+   *  answer of a healthy entry (echo on channel 9, then the 299 read's answer)
+   *  invalidates nothing. */
+  | { kind: 'mode'; epoch: Epoch; userMode: boolean; changed: boolean; time: number }
   | { kind: 'rejected'; epoch: Epoch; reason: RawRejection; bytes: readonly number[]; time: number };
 
 // ── Surface events (APPLICATION coordinates, region-attributed) ───────────

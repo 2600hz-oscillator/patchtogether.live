@@ -10,7 +10,7 @@ import type { LinnProfile, RuntimeEvent } from './types';
 
 /** Bytes → raw → surface, threading both states. */
 function run(messages: number[][], profile: LinnProfile = DEFAULT_LINN_PROFILE): RuntimeEvent[] {
-  let raw: RawDecodeState = createRawDecodeState();
+  let raw: RawDecodeState = createRawDecodeState(1, true); // the instrument has confirmed User Mode
   let map: SurfaceMapState = createSurfaceMapState();
   const out: RuntimeEvent[] = [];
   messages.forEach((m, i) => {
@@ -161,11 +161,20 @@ describe('surface-map: pointer, expression and boundaries', () => {
     ]);
   });
 
-  it('a mode notification resets tracking and becomes a session event; prior touches end with reason session', () => {
-    const events = run([[0x90, 3, 100], [0xb0, 99, 1], [0xb0, 98, 117], [0xb0, 6, 0], [0xb0, 38, 1]]);
+  it('a mode TRANSITION resets tracking and becomes a session event; prior touches end with reason session', () => {
+    // ON → OFF: the instrument left the mode under a held finger.
+    const events = run([[0x90, 3, 100], [0xb0, 99, 1], [0xb0, 98, 117], [0xb0, 6, 0], [0xb0, 38, 0]]);
     expect(kinds(events)).toEqual(['touch_start', 'touch_end', 'session']);
     expect(events[1]).toMatchObject({ reason: 'session' });
-    expect(events[2]).toMatchObject({ state: 'mode_changed', userMode: true, epoch: 2 });
+    expect(events[2]).toMatchObject({ state: 'mode_changed', userMode: false, epoch: 2 });
+  });
+
+  it('an UNCHANGED mode answer is not a session: the held touch keeps its tracking and its id (F06)', () => {
+    // ON → ON (the 299 read's answer after the echo): nothing ends, and the
+    // later release closes the SAME touch as an ordinary release.
+    const events = run([[0x90, 3, 100], [0xb0, 99, 1], [0xb0, 98, 117], [0xb0, 6, 0], [0xb0, 38, 1], [0xb0, 101, 127], [0xb0, 100, 127], [0xa0, 3, 40], [0x80, 3, 0]]);
+    expect(kinds(events)).toEqual(['touch_start', 'touch_expression', 'touch_end']);
+    expect(events[2]).toMatchObject({ touch: 1, reason: 'release', epoch: 1 });
   });
 
   it('rejected raw events map to nothing', () => {

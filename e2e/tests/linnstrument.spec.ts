@@ -475,9 +475,12 @@ test('@linnstrument a pad finger opens a real VCA on R X while G X holds shut; t
   const beforeG = await readScopePeakOverWindow(page, 'scp-g', SILENCE_WINDOW_MS);
   expect(beforeG.rms, `G X at rest must keep its VCA closed — ${describeScopeWindow(beforeG)}`).toBeLessThan(VCA_FLOOR);
 
-  // (2) The device, through the real connect + bind path.
+  // (2) The device, through the real connect + bind path — and the
+  //     instrument's own mode echo: cell bytes are music until it confirms.
   expect(await installSim(page), 'simulated LinnStrument installed + attached (needs VITE_E2E_HOOKS)').toBe(true);
   await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state)).toBe('connected');
+  await sim(page, 'ackUserMode', true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode)).toBe(true);
   const mask = (await linnState(page, 'ln'))?.selection.mask;
   expect(mask, 'D08 recommendation hydrated: R selected, G and B not').toEqual({ r: true, g: false, b: false });
 
@@ -565,6 +568,8 @@ test('@linnstrument keys arp — a held chord is SEQUENCED to audible notes (V12
 
   expect(await installSim(page), 'simulated LinnStrument installed + attached (needs VITE_E2E_HOOKS)').toBe(true);
   await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state)).toBe('connected');
+  await sim(page, 'ackUserMode', true); // cell bytes are music until the instrument confirms
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode)).toBe(true);
 
   // (2) HOLD a three-note chord (no release) → the held set fills and the arp
   //     runs. The direct voice writes are swallowed; only the arp sounds.

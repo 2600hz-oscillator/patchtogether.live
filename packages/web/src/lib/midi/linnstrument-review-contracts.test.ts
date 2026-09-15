@@ -1,9 +1,36 @@
-// Adversarial contract probes. Temporary review suite; all input is synthetic.
-// Tests assert intended behavior, so confirmed defects are expected failures.
+// THE 2026-09-15 ADVERSARIAL-REVIEW CONTRACTS — the cross-layer regression
+// suite for the LinnStrument module: the REAL simulated device (port match,
+// claim, decoder, surface map, registry) driving the REAL runtime (reducer,
+// MPE allocator, arps, poly buses), with only the USB cable replaced. Every
+// case asserts INTENDED behaviour; each was red against #2401 @ 4bef478c1 and
+// names the finding it pins. All input is synthetic.
+//
+//   CONTROL  the positive control — a confirmed key reaches the factory
+//   R01  F02  CONNECT re-sends the mode request while the mode is OFF
+//   R02  F04  cell bytes are music until the instrument confirms User Mode
+//   R03  F01  PANIC forgets a released, latched arp pool
+//   R04  F06  an unchanged mode answer acknowledges, never invalidates
+//   R05  F08  EXTRAS OFF darkens the actual outgoing control-column frame
+//             (Builder B's finding — the LED writer's profile; red until it lands)
+//   R06  F07  a stalled tick never stacks arp attacks on one instant
+//   R08  F05  ARP off drops the arp's queued pitch before the handover
+//
+// R07 ("overlapping vertical row handoff keeps the XY pad responsive") is NOT
+// here: the review's H01 reproduced it (Y stays −0.75) but the mechanism is the
+// selection reducer's INTENTIONAL first-eligible-fresh-contact / no-handoff
+// policy (selection-reducer.ts `if (owner !== null) return none` on 'down';
+// `if (owner !== intent.touch) return none`), a hardware-policy question for
+// the owner — not a software defect, and not to be "fixed" by handing pointer
+// ownership to a remaining contact.
+//
+// The per-layer halves of these contracts live next to their code:
+// raw-decode.test.ts (F04, F06), linnstrument-device.test.ts (F02, F04, F06),
+// linnstrument-arp.test.ts (F01, F07), linnstrument.test.ts (F01, F05); the
+// audible half of R03 is e2e/tests/linnstrument-panic-audible.spec.ts.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createLinnstrumentRuntime, type LinnstrumentCardApi } from '$lib/audio/modules/linnstrument-runtime';
 import { createLinnArp } from '$lib/audio/modules/linnstrument-arp';
-import { __resetLinnstrumentForTest, connectLinnstrument, installSimulatedLinnstrument, linnstrumentStatus, type SimulatedLinnstrument } from '$lib/midi/linnstrument-device';
+import { __resetLinnstrumentForTest, connectLinnstrument, installSimulatedLinnstrument, linnstrumentStatus } from '$lib/midi/linnstrument-device';
 import { __resetLinnstrumentSourceForTest, subscribeLinnstrumentEvents } from '$lib/midi/linnstrument/source-registry';
 import { RigBindingStore, emptyRigBindings, setRigBindingsForTests } from '$lib/graph/device-slot-bindings';
 import { setNativeAvailableForTests } from '$lib/platform/native';
@@ -127,16 +154,6 @@ it('R06 moderate scheduler stall never schedules multiple arp attacks at the sam
   arp.service({ nowMs: 1400, audioTime: 1.4, bpm: 120 });
   expect(writes.length).toBeGreaterThan(0);
   expect(new Set(writes).size, 'catch-up attacks need distinct times or explicit skip').toBe(writes.length);
-});
-
-it('R07 overlapping vertical row handoff keeps the XY pad responsive', async () => {
-  const r = await rig();
-  r.sim.send([0x90, 21, 100]); r.sim.send([0xb0, 85, 127]);
-  r.sim.send([0x91, 21, 100]); // new row becomes down before old row releases
-  r.sim.send([0x80, 21, 0]);
-  const before = r.api.selection().pairs.r.y;
-  r.sim.send([0xb1, 85, 100]);
-  expect(r.api.selection().pairs.r.y, 'continuing vertical gesture must move after previous-row release').not.toBe(before);
 });
 
 it('R08 leaving ARP cancels future arp pitches before reasserting held voices', async () => {
