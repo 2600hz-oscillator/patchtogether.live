@@ -249,12 +249,19 @@ describe('every refusal is VISIBLE, sig-stamped, and writes nothing', () => {
       },
     });
     expect(ok).toBe(false);
-    expect(samsloopTransformStatus(ID, resolveSamsloopSource({ sample: newer })?.signature ?? '')).toBeNull();
-    // The refusal was stamped with the PRESSED signature, which is gone — it
-    // is invisible by design; the newer sample is what survived.
+    // The refusal is stamped with the LIVE signature — the newer sample's —
+    // so the player SEES it over the sample that is there now. Stamping it
+    // with the pressed signature (gone by definition) was a refusal nobody
+    // could see: a dead button for the 0.2–0.4 s a peer write can land in.
+    expect(samsloopTransformStatus(ID, sigOf())?.text).toBe(SAMSLOOP_TRANSFORM_SAMPLE_CHANGED);
+    expect(samsloopTransformStatus(ID, sigOf())?.phase).toBe('refused');
+    expect(sigOf()).toBe(resolveSamsloopSource({ sample: newer })?.signature);
+    // The newer sample is what survived, byte for byte.
     expect(dataOf().sample?.bytesB64).toBe(newer.bytesB64);
     expect(dataOf().sample?.recordedAt).toBe(1);
-    void SAMSLOOP_TRANSFORM_SAMPLE_CHANGED;
+    // And a press on the newer sample works: the line retires with its stamp.
+    expect(await normalizeSamsloopSample(ID, deps)).toBe(true);
+    expect(samsloopTransformStatus(ID, sigOf())?.phase).toBe('done');
   });
 });
 

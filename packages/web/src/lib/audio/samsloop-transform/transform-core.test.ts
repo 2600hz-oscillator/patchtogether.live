@@ -200,7 +200,9 @@ describe('transform-core — the DENOISE marker', () => {
       const on = t % 0.6 < 0.35; // 5 syllables, gaps between
       let v = 0;
       if (on) for (const f of [220, 660, 1100]) v += 0.2 * Math.sin(2 * Math.PI * f * t);
-      x[i] = v + 0.01 * rnd() * 2; // ≈ −41 dBFS white hiss
+      // ≈ −41 dBFS white hiss, plus a +0.01 DC offset (= the hiss RMS): the
+      // face runs DENOISE before NORMALIZE, so the offset is still there.
+      x[i] = v + 0.01 * rnd() * 2 + 0.01;
     }
     return x;
   }
@@ -211,8 +213,8 @@ describe('transform-core — the DENOISE marker', () => {
     if (!den.ok) return;
     expect(den.sample.denoised).toBe(true);
     if (den.stats.kind === 'denoise') {
-      expect(den.stats.reductionDb).toBeGreaterThan(6);
-      expect(den.stats.noiseFloorDb).toBeLessThan(-30);
+      expect(den.stats.reductionDb).toBeGreaterThan(9);
+      expect(den.stats.noiseFloorDb, 'the floor is the hiss, not the offset').toBeLessThan(-36);
     }
     const norm = runSamsloopTransform({
       id: 12,
@@ -223,5 +225,8 @@ describe('transform-core — the DENOISE marker', () => {
     expect(norm.ok).toBe(true);
     if (!norm.ok) return;
     expect(norm.sample.denoised, 'the marker survives a normalize').toBe(true);
+    if (norm.stats.kind === 'normalize') {
+      expect(norm.stats.dcOffset, 'DENOISE left the offset for NORMALIZE to remove and report').toBeCloseTo(0.01, 3);
+    }
   });
 });

@@ -148,14 +148,16 @@ export function seededNoise(seed: number): () => number {
   };
 }
 
-/** Segment RMS / peak of the PERSISTED `sample` bytes, decoded in-page at the
- *  record's own bit depth — the exact bytes the worklet plays. `segments`
- *  are [startSec, endSec] pairs; returns dBFS per segment plus the peak. */
+/** Segment AC RMS (the segment's own mean removed — a DC offset is not
+ *  hiss, and DENOISE leaves it in place for NORMALIZE) / peak / mean of the
+ *  PERSISTED `sample` bytes, decoded in-page at the record's own bit depth —
+ *  the exact bytes the worklet plays. `segments` are [startSec, endSec]
+ *  pairs; returns dBFS per segment plus the peak and the mean. */
 export async function readSamplePcmStats(
   page: Page,
   nodeId: string,
   segments: Array<[number, number]>,
-): Promise<{ peak: number; peakDb: number; segDb: number[]; frames: number } | null> {
+): Promise<{ peak: number; peakDb: number; mean: number; segDb: number[]; frames: number } | null> {
   return await page.evaluate(
     ({ id, segments }) => {
       const w = globalThis as unknown as {
@@ -178,22 +180,65 @@ export async function readSamplePcmStats(
       const read = (i: number): number =>
         s.bits === 16 ? view.getInt16(i * stride, true) / 0x7fff : ((view.getUint8(i * stride) << 24) >> 24) / 0x7f;
       let peak = 0;
-      for (let i = 0; i < frames; i++) peak = Math.max(peak, Math.abs(read(i)));
+      let sum = 0;
+      for (let i = 0; i < frames; i++) {
+        const v = read(i);
+        peak = Math.max(peak, Math.abs(v));
+        sum += v;
+      }
       const segDb = segments.map(([a, b]) => {
         const i0 = Math.max(0, Math.floor(a * s.rate));
         const i1 = Math.min(frames, Math.floor(b * s.rate));
         let acc = 0;
+        let m = 0;
         for (let i = i0; i < i1; i++) {
           const v = read(i);
           acc += v * v;
+          m += v;
         }
-        const rms = Math.sqrt(acc / Math.max(1, i1 - i0));
+        const n = Math.max(1, i1 - i0);
+        const rms = Math.sqrt(Math.max(0, acc / n - (m / n) ** 2));
         return 20 * Math.log10(Math.max(rms, 1e-9));
       });
-      return { peak, peakDb: 20 * Math.log10(Math.max(peak, 1e-9)), segDb, frames };
+      return { peak, peakDb: 20 * Math.log10(Math.max(peak, 1e-9)), mean: sum / Math.max(1, frames), segDb, frames };
     },
     { id: nodeId, segments },
   );
+}
+
+/** The SAME statistics as `readSamplePcmStats`, read in Node from a WAV
+ *  `buildTestWav` built — the "before" reading for an UPLOAD, which is not
+ *  yet a `sample` record until a transform writes one. Same int16 / 0x7fff
+ *  decode, same AC RMS, so the two are comparable to the quantization step. */
+export function wavPcmStats(
+  wav: Buffer,
+  segments: Array<[number, number]>,
+): { peak: number; peakDb: number; mean: number; segDb: number[]; frames: number } {
+  const rate = wav.readUInt32LE(24);
+  const frames = (wav.length - 44) >> 1;
+  const read = (i: number): number => wav.readInt16LE(44 + i * 2) / 0x7fff;
+  let peak = 0;
+  let sum = 0;
+  for (let i = 0; i < frames; i++) {
+    const v = read(i);
+    peak = Math.max(peak, Math.abs(v));
+    sum += v;
+  }
+  const segDb = segments.map(([a, b]) => {
+    const i0 = Math.max(0, Math.floor(a * rate));
+    const i1 = Math.min(frames, Math.floor(b * rate));
+    let acc = 0;
+    let m = 0;
+    for (let i = i0; i < i1; i++) {
+      const v = read(i);
+      acc += v * v;
+      m += v;
+    }
+    const n = Math.max(1, i1 - i0);
+    const rms = Math.sqrt(Math.max(0, acc / n - (m / n) ** 2));
+    return 20 * Math.log10(Math.max(rms, 1e-9));
+  });
+  return { peak, peakDb: 20 * Math.log10(Math.max(peak, 1e-9)), mean: sum / Math.max(1, frames), segDb, frames };
 }
 
 /** How many pixels of the dock body's waveform canvas are LIT (not the

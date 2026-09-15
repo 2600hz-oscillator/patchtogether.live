@@ -17,6 +17,7 @@ import {
   DENOISE_MIN_SPREAD_DB,
   denoiseSample,
   denoiseSampleWithFloor,
+  denoiseSpreadDb,
   denoiseStftSize,
 } from './samsloop-denoise';
 import { RealFft } from './real-fft';
@@ -130,6 +131,50 @@ export function pinkNoise(len: number, rmsDb: number, seed: number): Float32Arra
   return out;
 }
 
+/** White noise HIGH-PASSED above `hz` (spectral mask), scaled to the requested RMS — a sibilant's shape. */
+export function hpNoise(len: number, hz: number, rmsDb: number, seed: number): Float32Array {
+  const n = 2 ** Math.ceil(Math.log2(len));
+  const buf = new Float32Array(n);
+  buf.set(whiteNoise(len, 0, seed));
+  const fft = new RealFft(n);
+  const re = new Float32Array(n / 2 + 1);
+  const im = new Float32Array(n / 2 + 1);
+  fft.forward(buf, re, im);
+  const kLo = Math.ceil((hz / SR) * n);
+  for (let k = 0; k < kLo; k++) {
+    re[k] = 0;
+    im[k] = 0;
+  }
+  fft.inverse(re, im, buf);
+  const out = buf.subarray(0, len).slice();
+  const cur = rms(out);
+  const want = 10 ** (rmsDb / 20);
+  for (let i = 0; i < len; i++) out[i] = (out[i]! / cur) * want;
+  return out;
+}
+
+/** `x` with a constant offset added. */
+export function withDc(x: Float32Array, dc: number): Float32Array {
+  const out = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) out[i] = x[i]! + dc;
+  return out;
+}
+
+/** Five evenly spaced syllables over the 3 s take whose GAPS are `gapFraction` of it. */
+export function scheduleWithGaps(gapFraction: number, syllables = 5): Array<[number, number]> {
+  const period = SECONDS / syllables;
+  const on = period * (1 - gapFraction);
+  const out: Array<[number, number]> = [];
+  for (let k = 0; k < syllables; k++) out.push([k * period + (period - on) / 2, k * period + (period + on) / 2]);
+  return out;
+}
+
+export function mean(x: Float32Array): number {
+  let acc = 0;
+  for (let i = 0; i < x.length; i++) acc += x[i]!;
+  return acc / Math.max(1, x.length);
+}
+
 export function add(a: Float32Array, b: Float32Array): Float32Array {
   const out = new Float32Array(a.length);
   for (let i = 0; i < a.length; i++) out[i] = a[i]! + b[i]!;
@@ -174,19 +219,41 @@ export function bandDb(x: Float32Array, lo: number, hi: number): number {
   return 10 * Math.log10(acc);
 }
 
-/** RMS over the gaps between syllables, 50 ms inside each edge. */
-export function gapRms(x: Float32Array): number {
+/** AC RMS (the segment's own mean removed — a DC offset is not hiss) over the
+ *  gaps between syllables, 50 ms inside each edge. */
+export function gapRms(x: Float32Array, schedule: ReadonlyArray<readonly [number, number]> = SYLLABLES): number {
   let acc = 0;
+  let sum = 0;
   let cnt = 0;
-  for (let s = 0; s < SYLLABLES.length - 1; s++) {
-    const i0 = Math.round((SYLLABLES[s]![1] + 0.05) * SR);
-    const i1 = Math.round((SYLLABLES[s + 1]![0] - 0.05) * SR);
+  for (let s = 0; s < schedule.length - 1; s++) {
+    const i0 = Math.round((schedule[s]![1] + 0.05) * SR);
+    const i1 = Math.round((schedule[s + 1]![0] - 0.05) * SR);
     for (let i = i0; i < i1; i++) {
       acc += x[i]! * x[i]!;
+      sum += x[i]!;
       cnt++;
     }
   }
-  return Math.sqrt(acc / cnt);
+  const m = sum / cnt;
+  return Math.sqrt(Math.max(0, acc / cnt - m * m));
+}
+
+/** RMS over the given segments (dB), the segment mean removed. */
+export function segmentsDb(x: Float32Array, segments: ReadonlyArray<readonly [number, number]>): number {
+  let acc = 0;
+  let sum = 0;
+  let cnt = 0;
+  for (const [t0, t1] of segments) {
+    const i0 = Math.round(t0 * SR);
+    const i1 = Math.round(t1 * SR);
+    for (let i = i0; i < i1; i++) {
+      acc += x[i]! * x[i]!;
+      sum += x[i]!;
+      cnt++;
+    }
+  }
+  const m = sum / cnt;
+  return 10 * Math.log10(Math.max(1e-30, acc / cnt - m * m));
 }
 
 describe('denoiseStftSize', () => {
@@ -278,6 +345,154 @@ describe('denoiseSample — vocal + hiss', () => {
     let moved = 0;
     for (let i = 0; i < LEN; i++) moved = Math.max(moved, Math.abs(real[i]! - noisy[i]!));
     expect(moved).toBeGreaterThan(1e-3);
+  });
+});
+
+describe('denoiseSample — a DC offset is not hiss (the face runs DENOISE before NORMALIZE)', () => {
+  const clean = synthVocal();
+  const hiss = whiteNoise(LEN, -40, 2); // RMS 0.01
+  // The reviewer's finding on this PR: with the offset left in the frames,
+  // +0.01 (= the hiss RMS) refused the take as a pad and +0.005 halved the
+  // gap drop. Every row here is ≥ the hiss RMS.
+  it.each([0.01, 0.02, 0.05])('vocal + white −40 dBFS + DC %s: allowed, gaps drop > 9 dB (AC), the offset SURVIVES for NORMALIZE to report', (dc) => {
+    const noisy = withDc(add(clean, hiss), dc);
+    const y = noisy.slice();
+    const r = denoiseSample(y, SR);
+    expect(r, `spread ${denoiseSpreadDb(noisy, SR).toFixed(2)} dB`).toMatchObject({ ok: true });
+    if (!r.ok) return;
+    expect(r.reductionDb).toBeGreaterThan(9);
+    const gapDrop = db(gapRms(noisy) / gapRms(y));
+    expect(gapDrop, 'the hiss in the gaps, not the offset, is what dropped').toBeGreaterThan(9);
+    expect(gapDrop).toBeLessThan(12.1);
+    expect(mean(y), 'the offset is put back — NORMALIZE removes and reports it').toBeCloseTo(dc, 4);
+    expect(r.noiseFloorDb, 'the floor readout is the HISS, not the offset').toBeLessThan(-37);
+    expect(r.noiseFloorDb).toBeGreaterThan(-41);
+    for (const [f] of FORMANTS) {
+      const want = bandDb(clean, f - 150, f + 150);
+      const got = bandDb(y, f - 150, f + 150);
+      expect(Math.abs(got - want)).toBeLessThan(1);
+    }
+  });
+
+  it('NEGATIVE CONTROL: the same take with NO offset reads the same spread within 0.5 dB', () => {
+    const flat = denoiseSpreadDb(add(clean, hiss), SR);
+    const offset = denoiseSpreadDb(withDc(add(clean, hiss), 0.05), SR);
+    expect(flat).toBeGreaterThan(DENOISE_MIN_SPREAD_DB);
+    expect(Math.abs(flat - offset)).toBeLessThan(0.5);
+  });
+});
+
+describe('the spread guard — equal-weight per-frame percentiles, the table at DENOISE_MIN_SPREAD_DB', () => {
+  const clean = synthVocal();
+  const white40 = whiteNoise(LEN, -40, 2);
+
+  it('every REFUSED row sits ≥ 1 dB under the line and every ALLOWED row ≥ 1 dB over it, each printed', () => {
+    const refused: Array<[string, Float32Array]> = [
+      ['pad', synthPad()],
+      ['pad ±2 % vibrato', synthPad(0.02)],
+      ['pad + white −40', add(synthPad(), white40)],
+      ['pure white −40', white40],
+      ['pure pink −40', pinkNoise(LEN, -40, 4)],
+      ['clean vocal (5 syllables)', clean],
+      // The clean case the p95 top would have ALLOWED (8.4 dB): ten syllable
+      // edges into digital silence are a thin tail of gated frames, not a floor.
+      ['clean vocal (10 syllables, 40 % gaps)', synthVocal(scheduleWithGaps(0.4, 10))],
+      ['vowel, no pauses, + white −40', add(synthVocal([[0.05, 2.95]]), whiteNoise(LEN, -40, 23))],
+    ];
+    const allowed: Array<[string, Float32Array]> = [
+      ['vocal + white −30', add(clean, whiteNoise(LEN, -30, 1))],
+      ['vocal + white −40', add(clean, white40)],
+      ['vocal + white −50', add(clean, whiteNoise(LEN, -50, 3))],
+      ['vocal + pink −40', add(clean, pinkNoise(LEN, -40, 4))],
+      ['vocal + white −40 + DC 0.05', withDc(add(clean, white40), 0.05)],
+      ['38 %-duty phrase + white −40', add(synthVocal(scheduleWithGaps(0.62)), white40)],
+      ['13 %-duty phrase + white −40', add(synthVocal(scheduleWithGaps(0.87)), white40)],
+    ];
+    const lines: string[] = [];
+    const failures: string[] = [];
+    for (const [label, x] of refused) {
+      const s = denoiseSpreadDb(x, SR);
+      lines.push(`REFUSED ${label}: ${s.toFixed(2)}`);
+      if (!(s < DENOISE_MIN_SPREAD_DB - 1)) failures.push(`${label} ${s.toFixed(2)} not under ${DENOISE_MIN_SPREAD_DB - 1}`);
+    }
+    for (const [label, x] of allowed) {
+      const s = denoiseSpreadDb(x, SR);
+      lines.push(`ALLOWED ${label}: ${s.toFixed(2)}`);
+      if (!(s > DENOISE_MIN_SPREAD_DB + 1)) failures.push(`${label} ${s.toFixed(2)} not over ${DENOISE_MIN_SPREAD_DB + 1}`);
+    }
+    console.log(`[denoise spread table]\n${lines.join('\n')}`);
+    expect(failures).toEqual([]);
+  });
+
+  it('GAP-FRACTION BOUNDARY: 5 syllables — 40…15 % gaps allowed, 12 % and under refused, and the refusal is where the profile is compromised', () => {
+    const rows: string[] = [];
+    const failures: string[] = [];
+    for (const gap of [0.4, 0.3, 0.25, 0.2, 0.15, 0.12, 0.1, 0.05]) {
+      const c = synthVocal(scheduleWithGaps(gap));
+      const noisy = add(c, white40);
+      const s = denoiseSpreadDb(noisy, SR);
+      const y = noisy.slice();
+      expect(denoiseSampleWithFloor(y, SR, DENOISE_FLOOR).ok).toBe(true); // guard OFF: what the gate WOULD do
+      const snrGain = snrDb(y, c) - snrDb(noisy, c);
+      const formantMove = Math.max(
+        ...FORMANTS.map(([f]) => Math.abs(bandDb(y, f - 150, f + 150) - bandDb(c, f - 150, f + 150))),
+      );
+      rows.push(
+        `gaps ${(gap * 100).toFixed(0)} %: spread ${s.toFixed(2)} dB, SNR gain ${snrGain.toFixed(2)} dB, worst formant move ${formantMove.toFixed(2)} dB`,
+      );
+      if (gap >= 0.15) {
+        if (!(s > DENOISE_MIN_SPREAD_DB)) failures.push(`gaps ${gap}: a working denoise must be ALLOWED (${s.toFixed(2)})`);
+        if (!(formantMove < 0.5)) failures.push(`gaps ${gap}: the voice must hold (${formantMove.toFixed(2)})`);
+        if (!(snrGain > 2)) failures.push(`gaps ${gap}: SNR gain ${snrGain.toFixed(2)}`);
+      } else {
+        if (!(s < DENOISE_MIN_SPREAD_DB)) failures.push(`gaps ${gap}: the compromised profile must be REFUSED (${s.toFixed(2)})`);
+        if (!(snrGain < 2)) failures.push(`gaps ${gap}: refused, yet the SNR gain was ${snrGain.toFixed(2)} — the line is in the wrong place`);
+      }
+    }
+    console.log(`[denoise gap boundary, 5 syllables]\n${rows.join('\n')}`);
+    expect(failures).toEqual([]);
+  });
+
+  it('GAP-FRACTION BOUNDARY: 10 syllables — 20 % allowed, 12 % refused, 15 % printed as the line', () => {
+    const rows: string[] = [];
+    const failures: string[] = [];
+    for (const gap of [0.2, 0.15, 0.12]) {
+      const s = denoiseSpreadDb(add(synthVocal(scheduleWithGaps(gap, 10)), white40), SR);
+      rows.push(`gaps ${(gap * 100).toFixed(0)} %: spread ${s.toFixed(2)} dB`);
+      if (gap === 0.2 && !(s > DENOISE_MIN_SPREAD_DB + 1)) failures.push(`gaps 20 %: ${s.toFixed(2)}`);
+      if (gap === 0.12 && !(s < DENOISE_MIN_SPREAD_DB - 1)) failures.push(`gaps 12 %: ${s.toFixed(2)}`);
+    }
+    console.log(`[denoise gap boundary, 10 syllables]\n${rows.join('\n')}`);
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('denoiseSample — what the docs sentence promises about consonants', () => {
+  // Vowels −12 dBFS, sibilants (HP noise > 4.5 kHz) −30 dBFS, hiss −40 dBFS:
+  // a spectral gate with a −12 dB floor leaves the tonal body alone and turns
+  // a consonant that sits within ~10 dB of the hiss DOWN with it. The docs
+  // say so; this pins the number the sentence is written from.
+  it('the vowels hold within 0.3 dB; a −30 dBFS sibilant over −40 dBFS hiss loses 0.5–3 dB (the documented lisp)', () => {
+    const vowelSched: Array<[number, number]> = [[0.1, 0.4], [0.7, 1.0], [1.3, 1.6], [1.9, 2.2]];
+    const sibSched: Array<[number, number]> = [[0.42, 0.55], [1.02, 1.15], [1.62, 1.75], [2.22, 2.35]];
+    const vowels = synthVocal(vowelSched);
+    for (let i = 0; i < LEN; i++) vowels[i] = vowels[i]! * (10 ** (-12 / 20) / 0.5);
+    const sib = hpNoise(LEN, 4500, -30, 41);
+    const sibilants = new Float32Array(LEN);
+    for (const [t0, t1] of sibSched) {
+      for (let i = Math.round(t0 * SR); i < Math.round(t1 * SR); i++) sibilants[i] = sib[i]!;
+    }
+    const clean = add(vowels, sibilants);
+    const noisy = add(clean, whiteNoise(LEN, -40, 2));
+    const y = noisy.slice();
+    const r = denoiseSample(y, SR);
+    expect(r.ok).toBe(true);
+    const vowelMove = segmentsDb(y, vowelSched) - segmentsDb(noisy, vowelSched);
+    const sibMove = segmentsDb(y, sibSched) - segmentsDb(noisy, sibSched);
+    console.log(`[denoise consonants] vowel move ${vowelMove.toFixed(2)} dB, sibilant move ${sibMove.toFixed(2)} dB`);
+    expect(Math.abs(vowelMove)).toBeLessThan(0.3);
+    expect(sibMove).toBeLessThan(-0.5);
+    expect(sibMove).toBeGreaterThan(-3);
   });
 });
 

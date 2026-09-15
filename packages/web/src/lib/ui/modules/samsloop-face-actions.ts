@@ -513,7 +513,7 @@ export function samsloopTransformRefusalText(
     case 'already-full-scale':
       return 'Already at full scale (0 dBFS peak, no DC offset) — nothing to normalize.';
     case 'no-steady-noise-floor':
-      return 'No steady noise floor found — this sample has no gaps where hiss stands alone (a pad, a drone, or a clean take). Sample untouched.';
+      return 'No steady noise floor found — this sample has too few gaps where hiss stands alone (a pad, a drone, a clean take, or a phrase whose pauses are under a sixth of it). Sample untouched.';
     case 'too-short':
       return 'Too short to denoise — the sample needs about a third of a second of audio.';
     case 'not-finite':
@@ -659,6 +659,7 @@ export async function transformSamsloopSample(
     // ⚠ ONE TRANSACTION, UNTRACKED ORIGIN, SIGNATURE RE-CHECKED INSIDE IT.
     let written: string | null = null;
     let stale = false;
+    let liveSig = sigAtPress;
     undoManager.stopCapturing();
     mutateNode(
       nodeId,
@@ -668,6 +669,7 @@ export async function transformSamsloopSample(
         const cur = resolveSamsloopSource(ld)?.signature ?? 'empty';
         if (cur !== sigAtPress) {
           stale = true;
+          liveSig = cur;
           return;
         }
         clearSamsloopUploadKeys(ld as Record<string, unknown>);
@@ -678,7 +680,16 @@ export async function transformSamsloopSample(
       },
       { origin: SAMSLOOP_TRANSFORM_ORIGIN },
     );
-    if (stale || written === null) return refuse(SAMSLOOP_TRANSFORM_SAMPLE_CHANGED);
+    if (stale || written === null) {
+      // ⚠ STAMPED WITH THE LIVE SIGNATURE, NOT THE PRESSED ONE. The body paints
+      // an entry only while its stamp is the live signature, and in this
+      // branch the pressed one is by definition gone — `refuse()` here would
+      // be a refusal nobody can see (the reviewer's finding on this PR). The
+      // sentence is about the sample that is there NOW: press again on it.
+      setSamsloopTransformStatus(nodeId, { phase: 'refused', text: SAMSLOOP_TRANSFORM_SAMPLE_CHANGED, sig: liveSig });
+      recordAudition({ nodeId, seam, delivered: true });
+      return false;
+    }
 
     setSamsloopTransformStatus(nodeId, {
       phase: 'done',

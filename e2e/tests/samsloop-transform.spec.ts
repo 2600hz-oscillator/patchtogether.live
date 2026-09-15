@@ -14,16 +14,25 @@
 // "no steady noise floor found".
 //
 // ── WHAT THIS PINS, AND WHY BYTES-PRESENCE WOULD NOT ────────────────────────
+//   ⚠ IN THE FACE'S ORDER: DENOISE FIRST, THEN NORMALIZE — the order the
+//   sample page ranks them in and the docs prescribe. The first cut of this
+//   spec pressed NORMALIZE first, and that hid a defect the reviewer found:
+//   the DC offset this fixture carries defeated DENOISE (read as signal in
+//   bins 0–3, the take was refused as a pad) and only NORMALIZE's offset
+//   removal, run first, made the leg pass. Now the offset is STILL THERE when
+//   DENOISE runs, as it is for a player.
 //   1. A quiet, hissy, DC-offset vocal-shaped upload (built here, no new
-//      fixture) plays QUIETLY (positive control), NORMALIZE rewrites it as a
-//      `sample` record at full scale, and the TRIGGER then produces a peak
-//      near 1.0 at the terminal scope — the LOUDER buffer reached the worklet
-//      (evidence P3: presence is not liveness). The status line says the dB.
-//   2. DENOISE on that take drops the hiss in the GAPS between syllables by
-//      a stated dB while the syllables stay within a dB (decoded in-page from
-//      the bytes the worklet plays), the status line says the floor, the
-//      module is still audible, and a SECOND press refuses ("already
-//      denoised").
+//      fixture) plays QUIETLY (positive control). DENOISE rewrites it as a
+//      `sample` record: the hiss in the GAPS between syllables drops by a
+//      stated dB while the syllables stay within a dB (decoded in-page from
+//      the bytes the worklet plays, AC — the offset removed per segment), the
+//      OFFSET SURVIVES (it is NORMALIZE's to remove and report), the status
+//      line says the floor, and the take is still quiet and audible.
+//   2. NORMALIZE then lifts it to full scale, reports the +0.01 offset DENOISE
+//      left for it, and the TRIGGER produces a peak near 1.0 at the terminal
+//      scope — the LOUDER buffer reached the worklet (evidence P3: presence is
+//      not liveness). A SECOND DENOISE refuses ("already denoised"): the
+//      marker rode through the normalize.
 //   3. The transformed sample SURVIVES a save → fresh-page → load: audible
 //      again, bytes identical, and the waveform paints the same picture.
 //   4. Refusals reach the PLAYER: a silent upload → "silent"; a pad → "no
@@ -47,6 +56,7 @@ import {
   readSamplePcmStats,
   readWaveformLitPixels,
   seededNoise,
+  wavPcmStats,
 } from './_samsloop-helpers';
 
 const RATE = 24_000;
@@ -211,19 +221,21 @@ async function sampleHash(page: Page, id: string): Promise<number> {
 }
 
 test.describe('SAMSLOOP normalize + denoise', () => {
-  test('quiet hissy upload: NORMALIZE → audible at full scale; DENOISE → gaps drop; second DENOISE refuses; survives reload', async ({ page }) => {
+  test('quiet hissy upload: DENOISE → gaps drop, offset kept; NORMALIZE → audible at full scale; second DENOISE refuses; survives reload', async ({ page }) => {
     test.setTimeout(120_000); // four scope windows, a worker STFT and a reload on a SwiftShader runner
     const errors = await setupPage(page);
     await spawnPatch(page, nodes(), edges());
     const pane = await openSamsloopPane(page, 's');
-    await uploadWav(pane, hissyVocalWav(), 'quiet-hissy-vocal.wav');
+    const wav = hissyVocalWav();
+    await uploadWav(pane, wav, 'quiet-hissy-vocal.wav');
     await openSamplePage(page);
 
     const normalize = transformCell(pane, 'normalize');
     const denoise = transformCell(pane, 'denoise');
     await expect(denoise, 'DENOISE is on the faceplate').toBeVisible();
     await expect(normalize, 'NORMALIZE is on the faceplate').toBeVisible();
-    // DENOISE precedes NORMALIZE in the DOM — the processing order.
+    // DENOISE precedes NORMALIZE in the DOM — the processing order, and the
+    // order this spec presses them in.
     const keys = await pane.locator('[data-cell-key^="samsloop-"]').evaluateAll((els) =>
       els.map((e) => e.getAttribute('data-cell-key')),
     );
@@ -234,13 +246,16 @@ test.describe('SAMSLOOP normalize + denoise', () => {
 
     // ── POSITIVE CONTROL: the take plays, and it is QUIET ──────────────────
     const quietPeak = await triggerThenMeasure(page, pane, 0.02);
-    expect(quietPeak, `quiet before normalize (peak ${quietPeak.toFixed(3)})`).toBeLessThan(0.3);
+    expect(quietPeak, `quiet before any transform (peak ${quietPeak.toFixed(3)})`).toBeLessThan(0.3);
 
-    // ── NORMALIZE ────────────────────────────────────────────────────────
-    await normalize.click();
+    // ── DENOISE FIRST, on the take AS UPLOADED (offset and all) ──────────
+    const before = wavPcmStats(wav, [...SYLLABLES, ...GAPS]);
+    expect(before.mean, 'the fixture carries the offset').toBeCloseTo(DC, 3);
+    const gapsBefore = before.segDb.slice(SYLLABLES.length);
+    const vowelsBefore = before.segDb.slice(0, SYLLABLES.length);
+    await denoise.click();
     await expect(status).toHaveAttribute('data-phase', 'done', { timeout: 30_000 });
-    await expect(status).toContainText(/normalized \+\d+\.\d dB/);
-    await expect(status).toContainText(/dc \+0\.01/); // the offset removed
+    await expect(status).toContainText(/denoised −\d+\.\d dB in the gaps, floor −\d+ dBFS/);
     await expect(status).toContainText(/written 16-bit mono @ 24\.0 kHz/);
 
     const rec = await readSample(page, 's');
@@ -248,6 +263,7 @@ test.describe('SAMSLOOP normalize + denoise', () => {
     expect(rec!.bits).toBe(16);
     expect(rec!.channels).toBe(1);
     expect(rec!.rate).toBe(RATE);
+    expect(rec!.durationSec).toBeCloseTo(SECONDS, 2);
     const uploadKeys = await page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: Record<string, unknown> }> } };
       const d = w.__patch.nodes['s']?.data ?? {};
@@ -255,47 +271,57 @@ test.describe('SAMSLOOP normalize + denoise', () => {
     });
     expect(uploadKeys, 'the upload keys are gone (EXPORT now ships a WAV)').toEqual([]);
 
-    const afterNorm = await readSamplePcmStats(page, 's', [...SYLLABLES, ...GAPS]);
-    expect(afterNorm!.peak, 'peak on full scale').toBeGreaterThan(0.999);
-
-    // AUDIBLE, LOUDER: the rewritten buffer reached the worklet.
-    const loudPeak = await triggerThenMeasure(page, pane, 0.5);
-    expect(loudPeak, `full-scale after normalize (peak ${loudPeak.toFixed(3)})`).toBeGreaterThan(0.5);
-    expect(loudPeak / Math.max(quietPeak, 1e-6), 'the gain reached the output').toBeGreaterThan(3);
-
-    // ── DENOISE ──────────────────────────────────────────────────────────
-    const gapsBefore = afterNorm!.segDb.slice(SYLLABLES.length);
-    const vowelsBefore = afterNorm!.segDb.slice(0, SYLLABLES.length);
-    await denoise.click();
-    await expect(status).toHaveAttribute('data-phase', 'done', { timeout: 30_000 });
-    await expect(status).toContainText(/denoised −\d+\.\d dB in the gaps, floor −\d+ dBFS/);
-    await expect
-      .poll(async () => (await readSample(page, 's'))?.durationSec ?? 0, { message: 'a new record' })
-      .toBeCloseTo(SECONDS, 2);
-
     const afterDen = await readSamplePcmStats(page, 's', [...SYLLABLES, ...GAPS]);
     const gapsAfter = afterDen!.segDb.slice(SYLLABLES.length);
     const vowelsAfter = afterDen!.segDb.slice(0, SYLLABLES.length);
     const gapDrop = gapsBefore.map((b, i) => b - gapsAfter[i]!);
     const vowelMove = vowelsBefore.map((b, i) => Math.abs(b - vowelsAfter[i]!));
-    const measured =
-      `quiet peak ${quietPeak.toFixed(3)} → normalized peak ${loudPeak.toFixed(3)}; ` +
-      `gap drop dB ${gapDrop.map((v) => v.toFixed(1)).join(', ')}; ` +
-      `vowel move dB ${vowelMove.map((v) => v.toFixed(2)).join(', ')}; ` +
-      `status "${await status.textContent()}"`;
-    test.info().annotations.push({ type: 'denoise', description: measured });
-    console.log(`[samsloop-transform] ${measured}`);
+    const denoiseLine = await status.textContent();
     for (const d of gapDrop) expect(d, 'hiss in the gap drops ≥ 6 dB').toBeGreaterThan(6);
     for (const m of vowelMove) expect(m, 'the syllable stays within 1.5 dB').toBeLessThan(1.5);
+    expect(afterDen!.mean, 'DENOISE leaves the offset for NORMALIZE').toBeCloseTo(DC, 3);
+    expect(afterDen!.peak, 'DENOISE did not change the level').toBeLessThan(0.3);
     const denoised = await page.evaluate(() => {
       const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { sample?: { denoised?: boolean } } }> } };
       return w.__patch.nodes['s']?.data?.sample?.denoised;
     });
     expect(denoised, 'the record carries the marker').toBe(true);
 
-    // Still audible after the second rewrite.
-    const stillLoud = await triggerThenMeasure(page, pane, 0.5);
-    expect(stillLoud).toBeGreaterThan(0.5);
+    // Still audible, still quiet: the denoised buffer reached the worklet.
+    const stillQuiet = await triggerThenMeasure(page, pane, 0.02);
+    expect(stillQuiet).toBeLessThan(0.3);
+
+    // ── NORMALIZE, on the denoised record ────────────────────────────────
+    const hashAfterDenoise = await sampleHash(page, 's');
+    await normalize.click();
+    await expect(status).toHaveAttribute('data-phase', 'done', { timeout: 30_000 });
+    await expect(status).toContainText(/normalized \+\d+\.\d dB/);
+    await expect(status).toContainText(/dc \+0\.01/); // the offset DENOISE kept, removed here
+    await expect(status).toContainText(/written 16-bit mono @ 24\.0 kHz/);
+    await expect.poll(() => sampleHash(page, 's'), { message: 'a new record' }).not.toBe(hashAfterDenoise);
+
+    const afterNorm = await readSamplePcmStats(page, 's', [...SYLLABLES, ...GAPS]);
+    expect(afterNorm!.peak, 'peak on full scale').toBeGreaterThan(0.999);
+    expect(Math.abs(afterNorm!.mean), 'the offset is gone').toBeLessThan(0.001);
+    const carried = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: { sample?: { denoised?: boolean } } }> } };
+      return w.__patch.nodes['s']?.data?.sample?.denoised;
+    });
+    expect(carried, 'the marker rides through the normalize').toBe(true);
+
+    // AUDIBLE, LOUDER: the rewritten buffer reached the worklet.
+    const loudPeak = await triggerThenMeasure(page, pane, 0.5);
+    expect(loudPeak, `full-scale after normalize (peak ${loudPeak.toFixed(3)})`).toBeGreaterThan(0.5);
+    expect(loudPeak / Math.max(quietPeak, 1e-6), 'the gain reached the output').toBeGreaterThan(3);
+
+    const measured =
+      `quiet peak ${quietPeak.toFixed(3)} → denoised peak ${stillQuiet.toFixed(3)} → normalized peak ${loudPeak.toFixed(3)}; ` +
+      `gap drop dB ${gapDrop.map((v) => v.toFixed(1)).join(', ')}; ` +
+      `vowel move dB ${vowelMove.map((v) => v.toFixed(2)).join(', ')}; ` +
+      `offset after denoise ${afterDen!.mean.toFixed(4)}; ` +
+      `denoise status "${denoiseLine}"; normalize status "${await status.textContent()}"`;
+    test.info().annotations.push({ type: 'transform', description: measured });
+    console.log(`[samsloop-transform] ${measured}`);
 
     // ── A SECOND DENOISE REFUSES, and writes nothing ──────────────────────
     const hashBefore = await sampleHash(page, 's');
