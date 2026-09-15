@@ -47,6 +47,7 @@
   import { SELECTORS, type SelectorId } from '$lib/midi/linnstrument/types';
   import { positionParamId, selectorParamId } from '$lib/audio/modules/linnstrument-runtime';
   import type { LinnstrumentSnapshot } from '$lib/audio/modules/linnstrument';
+  import { linnstrumentMidiVersion, linnstrumentStatus } from '$lib/midi/linnstrument-device';
   import {
     linnstrumentApi,
     linnstrumentFlush,
@@ -162,7 +163,18 @@
     if (snap.session.state === 'disconnected') return 'no LinnStrument bound — CONNECT grants Web MIDI and binds the port named like a LinnStrument (in the native shell: the one picked on rig setup)';
     const src = snap.source ? `${snap.source.id} (${snap.source.kind})` : 'unnamed source';
     // `userMode` is the instrument's OWN readback (NRPN 245), never our write.
-    return `${src}, ${snap.session.userMode ? 'user firmware mode confirmed by the instrument' : 'user firmware mode requested, not yet confirmed by the instrument'}, session ${snap.session.epoch}`;
+    // The device layer's status carries the one verdict the session cannot:
+    // whether the instrument has answered AT ALL since the bind — its
+    // `reply === 'silent'` names a LinnStrument whose USB side is dead and
+    // says what to do on the instrument (linnstrument-device.ts header).
+    void $linnstrumentMidiVersion;
+    const device = linnstrumentStatus();
+    const mode = snap.session.userMode
+      ? 'user firmware mode confirmed by the instrument'
+      : device.kind === 'bound' && device.reply === 'silent'
+        ? device.message
+        : 'user firmware mode requested, not yet confirmed by the instrument';
+    return `${src}, ${mode}, session ${snap.session.epoch}`;
   });
   function regionDetail(region: 'keys' | 'pad'): string {
     if (!snap) return 'engine not up yet';

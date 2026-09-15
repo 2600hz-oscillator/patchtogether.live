@@ -23,7 +23,10 @@ import {
   CC_ROW_Z_ENABLE,
   connectLinnstrument,
   encodeUserFirmwareMode,
+  encodeUserFirmwareModeRead,
   installSimulatedLinnstrument,
+  LINN_REPLY_WINDOW_MS,
+  USER_MODE_ECHO_CHANNEL,
   ledFrame,
   lightingFromProfile,
   musicalFrame,
@@ -60,6 +63,8 @@ import { setNativeAvailableForTests } from '$lib/platform/native';
 
 const USER_MODE_ON = encodeUserFirmwareMode(true);
 const USER_MODE_OFF = encodeUserFirmwareMode(false);
+/** NRPN 299 = 245 — "what mode are you in?" (ls_midi.ino `case 299`). */
+const USER_MODE_READ = encodeUserFirmwareModeRead();
 
 /** Does `writes` contain `seq` as a contiguous run? */
 function containsRun(writes: number[][], seq: number[][]): number {
@@ -133,12 +138,17 @@ describe('bind: the sim device reaches the REAL claim and User Firmware Mode goe
     const sim = await installSimulatedLinnstrument();
     expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(1); // the request left…
     expect(linnstrumentStatus().userMode).toBe(false); // …and proves nothing yet
+    expect(linnstrumentStatus().reply).toBe('pending');
     expect(linnstrumentStatus().message).toMatch(/requested/);
     expect(linnstrumentStatus().message).not.toMatch(/confirmed/);
     const epoch = linnstrumentStatus().epoch;
 
+    // The firmware's spontaneous echo rides CHANNEL 9 (0xB8), not the row
+    // channel we wrote on — the sim's default (ls_settings.ino:2428).
     sim.ackUserMode(true);
+    expect(USER_MODE_ECHO_CHANNEL).toBe(8);
     expect(linnstrumentStatus().userMode).toBe(true);
+    expect(linnstrumentStatus().reply).toBe('answered');
     expect(linnstrumentStatus().message).toMatch(/confirmed by the instrument/);
     expect(linnstrumentStatus().epoch).toBe(epoch + 1);
     expect(events.filter((e) => e.kind === 'session').at(-1)).toMatchObject({ state: 'mode_changed', userMode: true });
@@ -147,7 +157,7 @@ describe('bind: the sim device reaches the REAL claim and User Firmware Mode goe
     sim.ackUserMode(false);
     expect(linnstrumentStatus().userMode).toBe(false);
     expect(events.filter((e) => e.kind === 'session').at(-1)).toMatchObject({ state: 'mode_changed', userMode: false });
-    expect(linnstrumentStatus().message).toMatch(/requested/);
+    expect(linnstrumentStatus().message).toMatch(/reports User Firmware Mode OFF/);
 
     // Unbind clears it; a re-bind starts unconfirmed again.
     sim.ackUserMode(true);
@@ -155,6 +165,91 @@ describe('bind: the sim device reaches the REAL claim and User Firmware Mode goe
     expect(linnstrumentStatus().userMode).toBe(false);
     bindLinnstrument(sim.inputId);
     expect(linnstrumentStatus().userMode).toBe(false);
+    expect(linnstrumentStatus().reply).toBe('pending');
+  });
+
+  it('the bind READS the mode back (NRPN 299 = 245) after the enables, and the answer on the read channel confirms it too — an instrument ALREADY in User Mode echoes nothing (ls_settings.ino:2412)', async () => {
+    const sim = await installSimulatedLinnstrument();
+    const w = sim.writes();
+    expect(USER_MODE_READ).toEqual([
+      [0xb0, 99, 2], [0xb0, 98, 43], [0xb0, 6, 1], [0xb0, 38, 117], [0xb0, 101, 127], [0xb0, 100, 127],
+    ]);
+    expect(containsRun(w, USER_MODE_READ)).toBe(1);
+    // Entry → enables → read, in that order, and the read before any LED cell.
+    const entryAt = w.findIndex((m) => m[1] === 99 && m[2] === 1);
+    const lastEnableAt = w.map((m) => m[1]).lastIndexOf(CC_ROW_Z_ENABLE);
+    const readAt = w.findIndex((m) => m[1] === 99 && m[2] === 2);
+    const firstLedAt = w.findIndex((m) => m[1] === CC_LED_COLUMN);
+    expect(entryAt).toBeLessThan(lastEnableAt);
+    expect(lastEnableAt).toBeLessThan(readAt);
+    expect(firstLedAt === -1 || readAt < firstLedAt).toBe(true);
+
+    // The firmware answers a read on the channel it was asked on (channel 1
+    // here), with the CURRENT mode — the shape an already-in-User-Mode
+    // instrument produces when the entry itself changed nothing.
+    sim.ackUserMode(true, 0);
+    expect(linnstrumentStatus().userMode).toBe(true);
+    expect(linnstrumentStatus().reply).toBe('answered');
+    expect(events.filter((e) => e.kind === 'session').at(-1)).toMatchObject({ state: 'mode_changed', userMode: true });
+  });
+
+  it('a healthy fresh entry answers TWICE (echo on 9, then the read on 1): one repaint, one re-arm of the enables, not two', async () => {
+    const sim = await installSimulatedLinnstrument();
+    await flush(); // the bind's own paint
+    sim.clearWrites();
+    sim.ackUserMode(true); // the echo: a transition → enables + full repaint
+    await flush();
+    const afterEcho = sim.writes();
+    expect(afterEcho.filter((m) => m[1] === CC_ROW_X_ENABLE)).toHaveLength(DEFAULT_LINN_PROFILE.rows);
+    expect(paintedCells(afterEcho)).toHaveLength(MUSICAL_CELLS);
+    sim.clearWrites();
+    sim.ackUserMode(true, 0); // the read's answer: same state → nothing to re-send
+    await flush();
+    expect(sim.writes()).toHaveLength(0);
+    expect(linnstrumentStatus().userMode).toBe(true);
+  });
+
+  it('an instrument that answers NOTHING inside the reply window is named as silent, with the MIDI I/O guidance; a late answer still confirms', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sim = await installSimulatedLinnstrument();
+      expect(linnstrumentStatus().reply).toBe('pending');
+      let bumps = 0;
+      const off = linnstrumentMidiVersion.subscribe(() => void bumps++);
+      const before = bumps;
+      await vi.advanceTimersByTimeAsync(LINN_REPLY_WINDOW_MS - 1);
+      expect(linnstrumentStatus().reply).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      const st = linnstrumentStatus();
+      expect(st.kind).toBe('bound');
+      expect(st.reply).toBe('silent');
+      expect(st.userMode).toBe(false);
+      expect(st.message).toMatch(/answered NOTHING over USB/);
+      expect(st.message).toMatch(/MIDI I\/O/);
+      expect(st.message).toMatch(/USB/);
+      expect(st.message).toMatch(/CONNECT again/);
+      expect(warn).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bumps).toBeGreaterThan(before); // the face is told
+      off();
+      // The verdict never gates anything: the paint went out at bind time…
+      expect(paintedCells(sim.writes())).toHaveLength(MUSICAL_CELLS);
+      // …and a late answer confirms exactly as an early one would.
+      sim.ackUserMode(true);
+      expect(linnstrumentStatus().reply).toBe('answered');
+      expect(linnstrumentStatus().userMode).toBe(true);
+      expect(linnstrumentStatus().message).toMatch(/confirmed by the instrument/);
+      // An unbind inside the window closes it without a verdict.
+      unbindLinnstrument();
+      bindLinnstrument(sim.inputId);
+      unbindLinnstrument();
+      await vi.advanceTimersByTimeAsync(LINN_REPLY_WINDOW_MS * 2);
+      expect(linnstrumentStatus().reply).toBe('pending');
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('captures the six-message NRPN 245 entry transaction, reset included, then every row axis enable', async () => {
