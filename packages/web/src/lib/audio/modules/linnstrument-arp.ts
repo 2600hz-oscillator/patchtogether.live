@@ -43,17 +43,23 @@
 //   Launchpad's `serviceArp`) at the TIMELORDE bpm the caller reads; the step
 //   period comes from `arpStepPeriod` so the division table is the engine's.
 //
-//   THE LATE-STEP POLICY. A service call plays AT MOST ONE step. When a stalled
-//   tick (a busy main thread, a backgrounded tab, a division that just got
-//   much shorter) finds more than one step due, the backlog is NOT replayed:
-//   the next note in sequence plays once at `audioTime + lookahead` and the
-//   step clock re-anchors to now. Replaying the backlog at one instant stacks
-//   every attack on the same audio time — a gate written 1, 0, 1 at one
-//   timestamp is not an edge at all (review F07: a 400 ms stall at a 125 ms
-//   division scheduled three steps on one timestamp); replaying it at
-//   distinct future instants plays a burst nobody asked for. Skipping
-//   nothing and shifting the grid keeps every note of the pattern and the
-//   real gate-low interval between attacks.
+//   THE LATE-STEP POLICY. A service call plays AT MOST ONE step, always at
+//   `audioTime + lookahead`. The step grid is KEPT only while the tick's
+//   lateness still leaves a real gate-low interval before the next grid
+//   point — i.e. lateness ≤ step − gate-high − one render quantum, the
+//   ordinary 25 ms tick jitter. Any later — a busy main thread, a
+//   backgrounded tab, a division that just got much shorter, whether one
+//   step is due or several — and the step clock re-anchors to now. The
+//   backlog is never replayed: replaying it at one instant stacks every
+//   attack on the same audio time (a gate written 1, 0, 1 at one timestamp
+//   is not an edge at all — review F07: a 400 ms stall at a 125 ms division
+//   scheduled three steps on one timestamp); replaying it at distinct future
+//   instants plays a burst nobody asked for; and keeping the grid on a tick
+//   late by more than the gate-low slot lands the next attack INSIDE the
+//   note just scheduled — distinct timestamps, but a legato retune with no
+//   edge (the review's follow-up: 100 ms late at 4× gave a −37.5 ms "low"
+//   interval). Skipping nothing and shifting the grid keeps every note of
+//   the pattern and a real gate-low interval between attacks.
 //
 // PURE + engine-free: the sink is an interface, so the adapter is unit-tested
 // with a recording fake and the module wires a real `createPolySender`.
@@ -243,20 +249,24 @@ export function createLinnArp(opts: LinnArpOptions = {}): LinnArpWithSink {
       const now = input.nowMs;
       if (nextStepMs === 0) nextStepMs = now;
       if (now < nextStepMs) return played;
-      // THE LATE-STEP POLICY (header): more than one step due means a stalled
-      // tick — re-anchor the grid to now and play the next note ONCE. The
-      // in-time case (exactly one step due) keeps its grid.
-      if (now - nextStepMs >= stepMs) nextStepMs = now;
+      const stepS = stepMs / 1000;
+      // A REAL gate-low interval: high for `gateRatio` of the step, and
+      // never so long that the low part vanishes.
+      const gateOffSec = Math.max(MIN_GATE_LOW_S, Math.min(stepS - MIN_GATE_LOW_S, stepS * gateRatio));
+      // THE LATE-STEP POLICY (header): the grid is kept only while this tick's
+      // lateness still leaves a real gate-low interval before the NEXT grid
+      // point — the attack scheduled now goes down at `+gateOffSec`, and the
+      // next attack must land at least one render quantum after that. Any
+      // later (which includes every "more than one step due" stall) and the
+      // grid re-anchors to now; the next note plays ONCE either way.
+      const maxLateMs = stepMs - gateOffSec * 1000 - MIN_GATE_LOW_S * 1000;
+      if (now - nextStepMs > maxLateMs) nextStepMs = now;
       const step = arpAdvance(state);
       state = step.state;
       if (step.noteOn !== undefined) {
         const owner = ownerOf(step.noteOn);
         const expr = owner ? owner.expression : DEFAULT_EXPRESSION;
         const at = input.audioTime + lookaheadS;
-        const stepS = stepMs / 1000;
-        // A REAL gate-low interval: high for `gateRatio` of the step, and
-        // never so long that the low part vanishes.
-        const gateOffSec = Math.max(MIN_GATE_LOW_S, Math.min(stepS - MIN_GATE_LOW_S, stepS * gateRatio));
         const lanes: { pitch: number; gate: 0 | 1 }[] = [];
         for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) lanes.push({ pitch: 0, gate: 0 });
         lanes[lane] = { pitch: midiToVOct(step.noteOn + expr.bend), gate: 1 };
