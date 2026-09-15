@@ -31,11 +31,23 @@
 // ── WHERE THE BINDING LIVES ────────────────────────────────────────────────
 // The port pick is a property of the RIG, never the patch (ADR-011,
 // records/ui-specification.md "device ownership is local"): it is read from
-// `rigBindings().getLinnstrument()` (device-slot-bindings.ts) and written on
-// /preflight. THE APPLY STEP IS HERE: `connectLinnstrument()` resolves the
-// bound port and binds it, and a later rig change re-applies live, so no
-// Canvas restore pass has to know this device exists. This file never writes
-// `node.data` or the Y.Doc.
+// `rigBindings().getLinnstrument()` (device-slot-bindings.ts). THE APPLY STEP
+// IS HERE: `connectLinnstrument()` resolves the port and binds it, and a later
+// rig change re-applies live, so no Canvas restore pass has to know this
+// device exists. This file never writes `node.data` or the Y.Doc.
+//
+// WHO WRITES THE PICK depends on the platform (owner ruling 2026-09-15 — the
+// web binds everything IN THE RACK; /preflight is a native-shell feature):
+//   · BROWSER: the face's CONNECT is the whole gesture. With no rig pick the
+//     layer binds the port named like a LinnStrument (`LINNSTRUMENT_PORT_PATTERN`;
+//     the first by name when several are present, the others named in the
+//     status line) and RECORDS it in the rig store, so the next CONNECT after a
+//     reload binds the same port. A remembered port that is gone while another
+//     LinnStrument is present re-binds by name and re-records — the pick on
+//     the web is only ever a memory of the last bind, never an operator choice.
+//     This supersedes the earlier "no auto-bind without a preflight pick" rule.
+//   · SHELL: the pick made on /preflight is the authority, exactly as before —
+//     no pick means unbound, and "— none —" stays meaningful.
 //
 // ── WHAT THE LED WRITER IS AND IS NOT ──────────────────────────────────────
 // It PAINTS and never decides. Three inputs, one serialized writer owning
@@ -78,6 +90,7 @@ import {
   type MidiSchedulerCtx,
 } from '$lib/audio/midi-timing';
 import { rigBindings } from '$lib/graph/device-slot-bindings';
+import { nativeAvailable } from '$lib/platform/native';
 import {
   createRawDecodeState,
   decodePhysicalMidi,
@@ -252,6 +265,10 @@ let bound: Bound | null = null;
 let userModeEntered = false;
 let unsubRig: (() => void) | null = null;
 let pagehideArmed = false;
+/** The browser's bind-by-name policy (header: WHO WRITES THE PICK). Always on
+ *  for the product; the simulated device's `{ bind: false }` switches it off so
+ *  a test can hold a granted-but-UNBOUND access as its negative control. */
+let autoBindWithoutRig = true;
 
 let profile: LinnProfile = DEFAULT_LINN_PROFILE;
 let rawState: RawDecodeState = createRawDecodeState(1);
@@ -314,10 +331,13 @@ export function linnstrumentStatus(): LinnstrumentStatus {
   if (accessKind === 'no-prompt') {
     return { kind: 'no-prompt', message: midiOutcomeMessage({ kind: 'no-prompt' }), ...base };
   }
+  const shell = nativeAvailable();
   if (accessKind === 'idle') {
     return {
       kind: 'idle',
-      message: 'Not connected. CONNECT asks the browser for MIDI and looks for a LinnStrument.',
+      message: shell
+        ? 'Not connected. CONNECT asks for MIDI and binds the LinnStrument picked on rig setup (/preflight).'
+        : 'Not connected. CONNECT asks the browser for MIDI and binds the port named like a LinnStrument.',
       ...base,
     };
   }
@@ -327,14 +347,24 @@ export function linnstrumentStatus(): LinnstrumentStatus {
       : bound.output
         ? "User Firmware Mode requested (NRPN 245); waiting for the instrument's own mode notification — nothing is inferred from the write."
         : 'no paired output port, so User Firmware Mode could not be requested; the instrument stays in its own mode.';
-    return { kind: 'bound', message: `Bound to ${boundPortName} — ${mode}`, ...base };
+    // Several LinnStruments on the bus: the first by name was bound, the rest
+    // are NAMED here (the Push 2 shape: autoBind takes the first pair; the
+    // status line is where the others show).
+    const b = bound;
+    const others = listLinnstrumentPorts()
+      .filter((p) => p.inputId !== b.inputId)
+      .map((p) => p.name);
+    const rest = others.length ? ` Other LinnStrument ports present, not bound: ${others.join(', ')}.` : '';
+    return { kind: 'bound', message: `Bound to ${boundPortName} — ${mode}${rest}`, ...base };
   }
   const wanted = rigBindings().getLinnstrument()?.deviceId ?? null;
   if (portNames.length === 0) {
     return {
       kind: 'no-port',
       message: wanted
-        ? `MIDI is granted but the bound LinnStrument port (${wanted}) is not present. Plug it in — it re-binds automatically — or pick another on rig setup (/preflight).`
+        ? shell
+          ? `MIDI is granted but the bound LinnStrument port (${wanted}) is not present. Plug it in — it re-binds automatically — or pick another on rig setup (/preflight).`
+          : `MIDI is granted but the LinnStrument port bound last time (${wanted}) is not present. Plug it in — CONNECT binds any port named like a LinnStrument.`
         : 'MIDI is granted but no port named "LinnStrument" is present. Connect the instrument over USB; it appears as a class-compliant MIDI device.',
       ...base,
     };
@@ -342,8 +372,12 @@ export function linnstrumentStatus(): LinnstrumentStatus {
   return {
     kind: 'unbound',
     message: wanted
-      ? `MIDI is granted; the bound port (${wanted}) is not among ${portNames.join(', ')}. Pick a present port on rig setup (/preflight).`
-      : `MIDI is granted and ${portNames.join(', ')} is present. Pick it on rig setup (/preflight) to bind — binding enters User Firmware Mode on the instrument.`,
+      ? shell
+        ? `MIDI is granted; the bound port (${wanted}) is not among ${portNames.join(', ')}. Pick a present port on rig setup (/preflight).`
+        : `MIDI is granted; the port bound last time (${wanted}) is not among ${portNames.join(', ')}. Press CONNECT to bind ${portNames[0]}.`
+      : shell
+        ? `MIDI is granted and ${portNames.join(', ')} is present. Pick it on rig setup (/preflight) to bind — binding enters User Firmware Mode on the instrument.`
+        : `MIDI is granted and ${portNames.join(', ')} is present. Press CONNECT to bind it — binding enters User Firmware Mode on the instrument.`,
     ...base,
   };
 }
@@ -745,20 +779,50 @@ function resolvePorts(): void {
     return;
   }
   const wanted = rigBindings().getLinnstrument()?.deviceId ?? null;
+  // The BROWSER binds by name (header: WHO WRITES THE PICK); the shell honours
+  // the operator's /preflight pick and nothing else.
+  const bindByName = !nativeAvailable() && autoBindWithoutRig;
   if (wanted) {
     const input = access.inputs.get(wanted) ?? null;
     if (input && isLinnPort(input)) {
       if (!bound || bound.input !== input || bound.output !== pairedOutput(input)) bindLinnstrument(wanted, { viaRig: true });
       else bound.viaRig = true;
+    } else if (bindByName && autoBindByName()) {
+      // The remembered port is gone but another LinnStrument is here: bound
+      // by name and re-recorded (the web pick is a memory, not a choice).
     } else if (bound && bound.inputId === wanted) {
       releaseBound(false);
     }
+  } else if (bindByName && autoBindByName()) {
+    // Bound (or kept) by name and recorded — nothing else to do.
   } else if (bound?.viaRig) {
     releaseBound(true);
   } else if (bound && !isLinnPort(bound.input)) {
     releaseBound(false);
   }
   bump();
+}
+
+/**
+ * THE BROWSER'S BIND. Keep a live binding if there is one, else bind the first
+ * LinnStrument-named port (by name — stable across reloads), then RECORD the
+ * bound port in the rig store so the next CONNECT binds the same one. Returns
+ * false when no LinnStrument port is present. The store write re-enters
+ * `resolvePorts` through the rig subscription; that pass sees the pick bound
+ * and only marks it `viaRig`, so the recursion is one level and idempotent.
+ */
+function autoBindByName(): boolean {
+  if (!access) return false;
+  const ports = listLinnstrumentPorts();
+  if (ports.length === 0) return false;
+  const keep = bound && isLinnPort(bound.input) ? ports.find((p) => p.inputId === bound!.inputId) : undefined;
+  const chosen = keep ?? ports[0]!;
+  if (!keep && !bindLinnstrument(chosen.inputId, { viaRig: true })) return false;
+  if (bound) bound.viaRig = true;
+  if (rigBindings().getLinnstrument()?.deviceId !== chosen.inputId) {
+    rigBindings().setLinnstrument({ deviceId: chosen.inputId });
+  }
+  return true;
 }
 
 function adoptAccess(a: LinnAccessLike): void {
@@ -866,7 +930,12 @@ export interface SimulatedLinnstrument {
 
 export interface SimulatedLinnstrumentOptions {
   portName?: string;
-  /** Bind explicitly after connecting when the rig names no port. Default true. */
+  /** Default true: the connect runs the real bind path — by name in a browser
+   *  (the pick is recorded in the rig store), or explicitly when nothing bound
+   *  it (the shell, where only a rig pick binds). `false` switches the
+   *  browser's bind-by-name OFF for the life of the sim and binds nothing: the
+   *  granted-but-UNBOUND negative control. `sim.bind()` / `bindLinnstrument`
+   *  still take the real explicit path. */
   bind?: boolean;
   /** A port that must NOT match — the negative control. */
   decoyPortName?: string;
@@ -907,6 +976,7 @@ export async function installSimulatedLinnstrument(
   }
   const simAccess: LinnAccessLike = { inputs, outputs, onstatechange: null };
   simulated = true;
+  autoBindWithoutRig = opts.bind !== false;
   await connectLinnstrument(async () => simAccess);
   if (opts.bind !== false && !bound && access === simAccess) bindLinnstrument(inputId);
 
@@ -969,6 +1039,7 @@ export async function installSimulatedLinnstrument(
         setLinnstrumentSource(null);
       }
       simulated = false;
+      autoBindWithoutRig = true;
       bump();
     },
   };
@@ -985,6 +1056,7 @@ export function __resetLinnstrumentForTest(): void {
   accessMessage = '';
   connectInFlight = false;
   simulated = false;
+  autoBindWithoutRig = true;
   userModeEntered = false;
   unsubRig?.();
   unsubRig = null;

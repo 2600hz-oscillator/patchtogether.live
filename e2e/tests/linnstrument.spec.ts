@@ -610,3 +610,52 @@ test('@linnstrument keys arp — a held chord is SEQUENCED to audible notes (V12
 
   errorWatch.assertClean();
 });
+
+// ── THE WEB BINDS FROM THE FACE (owner ruling 2026-09-15) ──────────────────
+//
+// /preflight is a native-shell feature. In a browser the module's CONNECT is
+// the whole gesture: the layer binds the port named like a LinnStrument with
+// NO rig pick and RECORDS it on this machine, so a reload + CONNECT binds the
+// same port. `installSimulatedLinnstrument()` IS `connectLinnstrument()`
+// against an in-memory access (the same seam the ranked CONNECT cell reaches),
+// so the bind below is the real by-name path; the discriminator against the
+// sim's explicit-bind fallback is the RECORDED pick, which only the by-name
+// path writes.
+test('@linnstrument CONNECT with NO rig pick binds the simulated port by NAME, records the pick on this machine, and the pick survives a reload', async ({
+  page,
+  rack,
+  errorWatch,
+}) => {
+  void rack;
+  test.setTimeout(timeoutFor(2));
+  await spawnPatch(page, [{ id: 'ln', type: 'linnstrument', position: { x: 60, y: 60 }, domain: 'audio' }]);
+  await expect(page.locator('.svelte-flow__node:has([data-shell-type="linnstrument"])')).toHaveCount(1);
+  const pick = () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as { __rigBindings?: () => { linnstrument?: { deviceId?: string } } };
+      return w.__rigBindings?.()?.linnstrument?.deviceId ?? null;
+    });
+  expect(await pick(), 'no rig pick to start with').toBeNull();
+
+  // The connect: bound with no explicit bind — the port matched by name.
+  expect(await installSim(page), 'connect alone attaches the LinnStrument port').toBe(true);
+  const st = await sim(page, 'status');
+  expect(st.kind).toBe('bound');
+  expect(st.boundPortName).toBe('LinnStrument MIDI');
+  expect(containsRun(await sim(page, 'writes'), USER_MODE_ON), 'User Firmware Mode entry left on the paired output').toBe(true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state), { message: 'the runtime sees the session' }).toBe('connected');
+  // …and RECORDED: the by-name path wrote the rig store (the explicit path never does).
+  await expect.poll(pick, { message: 'the bound port is remembered in the per-machine rig store' }).toBe('sim-linnstrument-in');
+
+  // The pick is a property of THIS MACHINE, not the patch: a reload keeps it
+  // (localStorage) with no device present — the next CONNECT binds it again.
+  await page.reload({ waitUntil: 'networkidle' });
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: 30_000 });
+  expect(await page.evaluate(() => typeof (globalThis as unknown as { __linnstrumentSim?: unknown }).__linnstrumentSim), 'no device survives the reload').toBe('undefined');
+  await expect.poll(pick, { message: 'the pick survived the reload' }).toBe('sim-linnstrument-in');
+  // The same port id comes back → CONNECT binds THAT port through the rig pick.
+  expect(await installSim(page), 'after the reload, connect re-binds the remembered port').toBe(true);
+  expect((await sim(page, 'status')).boundPortName).toBe('LinnStrument MIDI');
+  expect(containsRun(await sim(page, 'writes'), USER_MODE_ON)).toBe(true);
+  errorWatch.assertClean();
+});

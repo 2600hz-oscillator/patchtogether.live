@@ -5,10 +5,12 @@
   // (screen-identity, the camera enumerate/getUserMedia pattern, the push2 /
   // launchpad / ptz-midi rosters); this screen never reinvents enumeration.
   //
-  // Two backends behind the store: under the native shell it round-trips through
-  // the `bindings.*` bridge ops (electron-store on disk); in a plain browser it
-  // falls back to localStorage. So the same panel drives both, and "enter rack"
-  // hands off through `preflight.done` (shell) or a client navigation (browser).
+  // ⚠ SHELL-ONLY. `+page.ts` redirects a plain browser to /rack before this
+  // component mounts (owner ruling 2026-09-15: the web binds every device in
+  // the rack). Under the shell the store round-trips through the `bindings.*`
+  // bridge ops (electron-store on disk) and "enter rack" hands off through
+  // `preflight.done`; the localStorage backend and the `goto('/rack')` fallback
+  // below only ever run under a test double of the bridge.
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { nativeAvailable } from '$lib/platform/native';
@@ -707,7 +709,15 @@
 
 <style>
   .preflight {
-    min-height: 100vh;
+    /* THE PAGE MUST SCROLL. global.css pins `html, body { overflow: hidden }`
+     * for the rack canvas, so a `min-height: 100vh` column here was simply
+     * CLIPPED on a short shell window (the owner had to shrink the window to
+     * reach the lower rows and the ENTER button). The panel is therefore its
+     * own scroll container: viewport-tall, overflow-y: auto. */
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 2rem;
     background: #0d0f14;
     color: #e7e9ee;

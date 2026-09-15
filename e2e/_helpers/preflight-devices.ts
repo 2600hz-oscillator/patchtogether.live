@@ -13,6 +13,15 @@
 import type { Page } from '@playwright/test';
 
 const RIG_LS_KEY = 'pt:rig-bindings:v1';
+/** Where `installFakeShell`'s `bindings.*` ops persist — a localStorage stand-in
+ *  for the shell's electron-store, so a bind SURVIVES a reload under the stub the
+ *  way it survives a relaunch under the real shell. Never read by the app: the
+ *  app only ever sees it through the fake bridge. */
+export const FAKE_SHELL_STORE_KEY = 'pt:fake-shell:bindings:v1';
+/** sessionStorage key the fake shell writes when `preflight.done` performed the
+ *  window swap — the landing document's proof that the hand-off went through
+ *  the bridge, not a client `goto`. */
+export const FAKE_SHELL_SWAP_KEY = 'pt:fake-shell:last-swap';
 
 /**
  * Clear the per-machine rig store ONCE per test, on the first page load, gated
@@ -21,37 +30,49 @@ const RIG_LS_KEY = 'pt:rig-bindings:v1';
  * bind+assert pass vacuously.
  */
 export async function clearRigStoreOnce(page: Page): Promise<void> {
-  await page.addInitScript((key) => {
-    try {
-      const ss = (globalThis as unknown as { sessionStorage?: Storage }).sessionStorage;
-      const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
-      if (ss && ls && !ss.getItem('__rigTestCleared')) {
-        ls.removeItem(key);
-        ss.setItem('__rigTestCleared', '1');
+  await page.addInitScript(
+    ({ key, shellKey }) => {
+      try {
+        const ss = (globalThis as unknown as { sessionStorage?: Storage }).sessionStorage;
+        const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
+        if (ss && ls && !ss.getItem('__rigTestCleared')) {
+          ls.removeItem(key);
+          ls.removeItem(shellKey); // the fake shell's electron-store stand-in (installFakeShell)
+          ss.setItem('__rigTestCleared', '1');
+        }
+      } catch {
+        /* private mode / partial window */
       }
-    } catch {
-      /* private mode / partial window */
-    }
-  }, RIG_LS_KEY);
+    },
+    { key: RIG_LS_KEY, shellKey: FAKE_SHELL_STORE_KEY },
+  );
 }
 
 /** Seed the rig store directly in localStorage BEFORE boot — the shape a prior
- *  pre-flight session left on disk. Used by the relaunch-guard spec to arrive at
- *  /rack already-bound without driving the whole UI. Runs after clearRigStoreOnce
- *  so it wins. */
+ *  session left on disk. Used to arrive at /rack already-bound without driving
+ *  the whole UI. Runs after clearRigStoreOnce so it wins.
+ *
+ *  ⚠ ONCE PER TEST (a sessionStorage sentinel, like clearRigStoreOnce): the init
+ *  script re-runs on every document, and a seed that re-applied on a reload
+ *  would silently overwrite whatever the rack itself wrote in between — the
+ *  exact thing a "bind in the rack, reload, still bound" leg is measuring. */
 export async function seedRigStore(page: Page, bindings: unknown): Promise<void> {
   await page.addInitScript(
-    ({ key, value }) => {
+    ({ key, shellKey, value }) => {
       try {
-        (globalThis as unknown as { localStorage?: Storage }).localStorage?.setItem(
-          key,
-          JSON.stringify(value),
-        );
+        const ss = (globalThis as unknown as { sessionStorage?: Storage }).sessionStorage;
+        const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
+        if (!ss || !ls || ss.getItem('__rigTestSeeded')) return;
+        // Both backends: the browser's own key AND the fake shell's persisted
+        // store, so a seed reads the same whether or not installFakeShell ran.
+        ls.setItem(key, JSON.stringify(value));
+        ls.setItem(shellKey, JSON.stringify(value));
+        ss.setItem('__rigTestSeeded', '1');
       } catch {
         /* private mode */
       }
     },
-    { key: RIG_LS_KEY, value: bindings },
+    { key: RIG_LS_KEY, shellKey: FAKE_SHELL_STORE_KEY, value: bindings },
   );
 }
 
@@ -232,4 +253,145 @@ export async function disposeFakeCameras(page: Page): Promise<void> {
       (globalThis as unknown as { __fakeCamRig?: { dispose(): void } }).__fakeCamRig?.dispose();
     })
     .catch(() => {});
+}
+
+// ── THE FAKE NATIVE SHELL ─────────────────────────────────────────────────────
+//
+// `/preflight` is SHELL-ONLY and the `/rack` relaunch guard runs only under the
+// shell, so every pre-flight spec boots under this stub: a `window.ptNative`
+// that mirrors the preload contract exactly (apps/desktop/src/preload.ts) —
+// `nativeAvailable()` → true (so `nativeAvailable()` takes the shell branch AND
+// the rig store picks the bridge backend), `command()` RESOLVES the
+// `{ok,result}|{ok,error}` envelope, `onEvent()` delivers live `helpers.status`
+// pushes. `bindings.get/set` persist in localStorage under FAKE_SHELL_STORE_KEY
+// (the electron-store stand-in) and `preflight.done` performs the shell's window
+// swap (`win.loadURL('/rack')`, main.ts) as a plain navigation. That is enough
+// to drive every shell-gated branch without an Electron process; the REAL
+// supervisors + electron-store round-trip live in apps/desktop/e2e.
+
+export type FakeHelperMode = 'ok' | 'fail';
+
+export interface FakeShellOptions {
+  /** How `helpers.status` answers: 'ok' → es9 running / ptz stopped (binary not
+   *  found); 'fail' → a RETRYABLE error envelope (the shape the pre-flight retry
+   *  affordance keys off). Default 'ok'. */
+  helpers?: FakeHelperMode;
+}
+
+/** Install the fake shell BEFORE boot (re-runs on every navigation, so the
+ *  stub survives a reload / the preflight.done swap). Exposes `__ptCalls` (every
+ *  op issued, in order) and `__fireHelper(status)` (a live helpers.status push). */
+export async function installFakeShell(page: Page, opts: FakeShellOptions = {}): Promise<void> {
+  await page.addInitScript(
+    ({ mode, storeKey, swapKey }) => {
+      const w = window as unknown as {
+        ptNative: unknown;
+        __ptCalls: string[];
+        __fireHelper: (s: unknown) => void;
+      };
+      w.__ptCalls = [];
+      let helperCb: ((p: unknown) => void) | null = null;
+      const okStatus = {
+        ok: true,
+        result: {
+          current: [
+            { id: 'es9', state: 'running', pid: 4242, port: 9209, attempt: 0, delayMs: null, detail: null, ts: 1 },
+            { id: 'ptz', state: 'stopped', pid: null, port: null, attempt: 0, delayMs: null, detail: 'binary not found', ts: 1 },
+          ],
+          history: [],
+        },
+      };
+      const readStore = (): unknown => {
+        try {
+          const raw = localStorage.getItem(storeKey);
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return {};
+        }
+      };
+      const writeStore = (v: unknown): void => {
+        try {
+          localStorage.setItem(storeKey, JSON.stringify(v ?? {}));
+        } catch {
+          /* private mode */
+        }
+      };
+      w.ptNative = {
+        nativeAvailable: () => true,
+        shellVersion: () => '0.0.0-test',
+        bridgeVersion: () => 1,
+        command: (op: string, payload?: unknown) => {
+          w.__ptCalls.push(op);
+          if (op === 'helpers.status') {
+            return mode === 'ok'
+              ? Promise.resolve(okStatus)
+              : Promise.resolve({ ok: false, error: { code: 'internal', message: 'transient', retryable: true } });
+          }
+          if (op === 'bindings.get') return Promise.resolve({ ok: true, result: readStore() });
+          if (op === 'bindings.set') {
+            writeStore(payload);
+            return Promise.resolve({ ok: true, result: {} });
+          }
+          if (op === 'preflight.done') {
+            // The shell swaps the SAME window from /preflight to /rack. The
+            // swap is a new document (this closure's `__ptCalls` dies with the
+            // old one), so the fact of the swap is left in sessionStorage
+            // under FAKE_SHELL_SWAP_KEY for the landing page's spec to read.
+            try {
+              sessionStorage.setItem(swapKey, 'preflight.done');
+            } catch {
+              /* private mode */
+            }
+            queueMicrotask(() => location.assign('/rack'));
+            return Promise.resolve({ ok: true, result: {} });
+          }
+          return Promise.resolve({ ok: true, result: {} });
+        },
+        cancel: () => {},
+        onEvent: (topic: string, cb: (p: unknown) => void) => {
+          if (topic === 'helpers.status') helperCb = cb;
+          return () => {
+            helperCb = null;
+          };
+        },
+      };
+      w.__fireHelper = (s: unknown) => helperCb?.(s);
+    },
+    { mode: opts.helpers ?? 'ok', storeKey: FAKE_SHELL_STORE_KEY, swapKey: FAKE_SHELL_SWAP_KEY },
+  );
+}
+
+/**
+ * Add `audiooutput` entries to whatever `enumerateDevices` is already installed
+ * (installFakeCameras, or the real one) and make `AudioContext.setSinkId`
+ * feature-detect as SUPPORTED, recording the id it was last called with on
+ * `__appliedSink` — the in-rack audio-out picker's write is observable through
+ * the rig store, and its APPLY through that recorder. Install BEFORE boot,
+ * AFTER installFakeCameras.
+ */
+export async function installFakeAudioSinks(
+  page: Page,
+  sinks: { deviceId: string; label: string }[],
+): Promise<void> {
+  await page.addInitScript((list) => {
+    const g = globalThis as unknown as {
+      __appliedSink: string | null;
+      navigator: Navigator;
+      AudioContext?: { prototype: { setSinkId?: (id: string) => Promise<void> } };
+    };
+    g.__appliedSink = null;
+    const md = g.navigator.mediaDevices as { enumerateDevices: () => Promise<unknown[]> };
+    const inner = md.enumerateDevices.bind(md);
+    md.enumerateDevices = async () => [
+      ...(await inner()),
+      ...list.map((s) => ({ deviceId: s.deviceId, kind: 'audiooutput', label: s.label, groupId: 'g-sink' })),
+    ];
+    const proto = g.AudioContext?.prototype;
+    if (proto) {
+      proto.setSinkId = function (id: string): Promise<void> {
+        g.__appliedSink = id;
+        return Promise.resolve();
+      };
+    }
+  }, sinks);
 }
