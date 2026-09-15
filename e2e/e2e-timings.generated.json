@@ -1,6 +1,6 @@
 {
   "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
-  "_source": "blob-report artifacts of ci.yml run 34899578737 (2591 tests, 427 files, 26244 CPU-s)",
+  "_source": "blob-report artifacts of ci.yml run 34899578737 (2591 tests, 427 files, 26244 CPU-s) + linnstrument.spec.ts / preflight-linnstrument.spec.ts from the branch pin (ci.yml run 34912091642) — merge of #2396 into #2398",
   "files": {
     "4plexer.spec.ts": 24.5,
     "acidwarp-face-screen.spec.ts": 40.9,
@@ -193,6 +193,7 @@
     "launchpad-scene-repeats.spec.ts": 15.1,
     "layers-survive-card-collapse.spec.ts": 29.7,
     "lfo-face.spec.ts": 29.2,
+    "linnstrument.spec.ts": 38.1,
     "live-glyphs.spec.ts": 11.5,
     "livecode.spec.ts": 32,
     "load-patch.spec.ts": 3.8,
@@ -271,6 +272,7 @@
     "picturebox-limits.spec.ts": 0,
     "poly-chord.spec.ts": 17.4,
     "pong.spec.ts": 14.7,
+    "preflight-linnstrument.spec.ts": 15.4,
     "preflight-relaunch-guard.spec.ts": 12,
     "preflight-rig-setup.spec.ts": 13.3,
     "preflight-shell-helpers.spec.ts": 3.6,

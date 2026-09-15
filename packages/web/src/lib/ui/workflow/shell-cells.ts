@@ -205,6 +205,7 @@ import {
 import { midiclockConnect } from '$lib/ui/modules/midiclock-cell-actions';
 import { ptzcamConnect } from '$lib/ui/modules/ptzcam-cell-actions';
 import { trailsConnect } from '$lib/ui/modules/trails-cell-actions';
+import { linnstrumentCenter, linnstrumentConnect, linnstrumentPanic } from '$lib/ui/modules/linnstrument-cell-actions';
 import { es9Connect, es9Disconnect } from '$lib/ui/modules/es9-cell-actions';
 import { vstConnect, vstDisconnect } from '$lib/ui/modules/vst-cell-actions';
 import {
@@ -2969,6 +2970,53 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { trailsConnect(nodeId); },
+    },
+  },
+
+  // ── LINNSTRUMENT — the FIFTH binder's grant, plus two REDUCER INTENTS ────
+  //
+  // CONNECT is the trails argument verbatim: the module is inert until the
+  // browser consents, `faceTierCap` caps a glyph-less compact tile at 3, so
+  // the gesture ranks FIRST. It reaches the device layer through the
+  // runtime's connector seam (`setLinnstrumentConnector`), which the device
+  // layer registers into; the action records `delivered: false` when nothing
+  // is registered or this node's handle is not up, rather than claiming.
+  //
+  // CENTER and PANIC are not params and not `node.data`: each is a
+  // `ControlIntent` dispatched into the runtime's selection reducer — the
+  // same reducer the hardware finger and the DOM pads feed — so the probe is
+  // an AUDITION on the engine-message seam (the press resolved this node's
+  // card-api and dispatched). A `param` probe would be WRONG for CENTER: on a
+  // fresh node the selected pairs already rest at (0, 0), so a correct press
+  // changes no param and the probe would fail on a live control. ⚠ The three
+  // cells share one seam; the parity sweep reads the ledger SINCE its own
+  // press, so each cell is proven by its own record.
+  linnstrument: {
+    'linnstrument-connect-{n}': {
+      kind: 'action',
+      label: 'Connect LinnStrument',
+      title:
+        'Grant this site access to Web MIDI (one-time per origin), bind the LinnStrument picked '
+        + 'on preflight and ask it to enter User Firmware Mode',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { linnstrumentConnect(nodeId); },
+    },
+    'linnstrument-center-{n}': {
+      kind: 'action',
+      label: 'Center',
+      title: 'Return every SELECTED joystick pair to (0, 0); unselected pairs and the finger are left alone',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { linnstrumentCenter(nodeId); },
+    },
+    'linnstrument-panic-{n}': {
+      kind: 'action',
+      label: 'Panic',
+      title: 'Close every note on both buses now and cancel both arpeggiators; the joystick pairs are kept',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'engine-message' } },
+      onFire: (nodeId) => { linnstrumentPanic(nodeId); },
     },
   },
 

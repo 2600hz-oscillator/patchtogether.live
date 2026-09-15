@@ -82,6 +82,15 @@ export interface PtzBinding {
   deviceId: string;
 }
 
+/** A LinnStrument pick — the User-Mode INPUT port id; the device layer pairs
+ *  the output by name (midi/linnstrument-device.ts). Mirrors `PtzBinding`:
+ *  one optional record, `deviceId` required. Lives HERE, off the Y.Doc, per
+ *  ADR-011 — a port id is machine-local and a shared patch must not carry it
+ *  (records/ui-specification.md: device ownership is local, not patch state). */
+export interface LinnstrumentBinding {
+  deviceId: string;
+}
+
 /** A gamepad pick. Keyed on the browser `Gamepad.id` string (the only stable
  *  handle the Gamepad API exposes — its numeric `index` is a per-connection slot
  *  that rotates as pads are plugged/unplugged, so it is a HINT, not identity).
@@ -105,6 +114,7 @@ export interface RigBindings {
   launchpad?: LaunchpadBinding;
   ptz?: PtzBinding;
   gamepad?: GamepadBinding;
+  linnstrument?: LinnstrumentBinding;
 }
 
 /** Engine liveness follows local hardware bindings, never stale node.data. */
@@ -158,6 +168,11 @@ export function normalizeRigBindings(raw: unknown): RigBindings {
   }
   if (r.ptz && typeof (r.ptz as PtzBinding).deviceId === 'string') {
     out.ptz = { deviceId: (r.ptz as PtzBinding).deviceId };
+  }
+  // A malformed record (no string deviceId) is DROPPED, like ptz — the failure
+  // mode of a bad binding is "device unbound", never a crash or a stale id.
+  if (r.linnstrument && typeof (r.linnstrument as LinnstrumentBinding).deviceId === 'string') {
+    out.linnstrument = { deviceId: (r.linnstrument as LinnstrumentBinding).deviceId };
   }
   if (r.gamepad && typeof (r.gamepad as GamepadBinding).id === 'string') {
     const gp = r.gamepad as GamepadBinding;
@@ -340,6 +355,9 @@ export class RigBindingStore {
   getGamepad(): GamepadBinding | null {
     return this.cache.gamepad ?? null;
   }
+  getLinnstrument(): LinnstrumentBinding | null {
+    return this.cache.linnstrument ?? null;
+  }
 
   setCamera(slot: CameraSlotName, binding: CameraBinding | null): void {
     this.mutate((c) => {
@@ -389,6 +407,12 @@ export class RigBindingStore {
       else delete c.gamepad;
     });
   }
+  setLinnstrument(binding: LinnstrumentBinding | null): void {
+    this.mutate((c) => {
+      if (binding) c.linnstrument = binding;
+      else delete c.linnstrument;
+    });
+  }
 
   /** Fire `cb` on any change — local mutation or external. Returns unsubscribe.
    *  Not called for the initial state; call a getter first if you need it. */
@@ -426,6 +450,7 @@ function cloneRig(b: RigBindings): RigBindings {
     launchpad: b.launchpad ? { ...b.launchpad } : undefined,
     ptz: b.ptz ? { ...b.ptz } : undefined,
     gamepad: b.gamepad ? { ...b.gamepad } : undefined,
+    linnstrument: b.linnstrument ? { ...b.linnstrument } : undefined,
   };
 }
 
