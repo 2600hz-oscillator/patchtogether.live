@@ -12,7 +12,15 @@
 //                   keys root 36 / pad root 60, the lower five control cells
 //                   ARP / HOLD / OCT− / OCT+ / PANIC (D17 — `extra_controls` is
 //                   the switch), joystick mirroring (D15 — `node.data.targets`,
-//                   opt-in, default unbound).
+//                   opt-in, default unbound), the LED lighting ROLES (root
+//                   cyan / scale tone green / played white — profile data,
+//                   hardware-verify, D18).
+//   LIGHTING        the D09 ruling's other half: `scale` (default chromatic)
+//                   with the two roots lights the keys and the pad on the
+//                   instrument — root, in-scale, out-of-scale (still
+//                   playable) and a played mark — because User Firmware Mode
+//                   switches the stock lighting off. The device paints from
+//                   THIS node's roots, so lights and notes cannot disagree.
 //   NOT BUILT       D14 expression jacks: `polyCv` is a graph-wide change and
 //                   the per-voice-scalar fallback is equally unruled, so the
 //                   two poly buses carry PITCH + GATE only and per-lane
@@ -39,7 +47,7 @@ import {
   ARP_OCTAVE_RANGES,
 } from '$lib/audio/arp-engine';
 import { RECOMMENDED_KEYS_ROOT, RECOMMENDED_PAD_ROOT } from '$lib/midi/linnstrument/profile';
-import { createLinnstrumentRuntime, LINN_ROOT_MAX, LINN_ROOT_MIN } from './linnstrument-runtime';
+import { createLinnstrumentRuntime, LINN_ROOT_MAX, LINN_ROOT_MIN, LINN_SCALE_OPTIONS } from './linnstrument-runtime';
 import { ARP_DIRECTIONS } from './linnstrument-arp';
 
 export type {
@@ -151,6 +159,7 @@ export const LINNSTRUMENT_FACE: ModuleFace = {
     'linnstrument-panic-{n}',
     'extra_controls',
     'join_policy',
+    'scale',
     'keys_root',
     'keys_arp_on',
     'keys_arp_dir',
@@ -173,8 +182,10 @@ export const LINNSTRUMENT_FACE: ModuleFace = {
         + 'LinnStrument; until then every jack rests. CENTER returns the SELECTED pairs to '
         + '(0, 0); PANIC closes every note on both buses and keeps the pairs where they are. '
         + 'EXTRAS lights the lower five control cells (ARP, HOLD, OCT−, OCT+, PANIC); JOIN '
-        + 'decides how a pair that becomes selected mid-gesture catches up with the finger.',
-      controls: ['linnstrument-connect-{n}', 'linnstrument-center-{n}', 'linnstrument-panic-{n}', 'extra_controls', 'join_policy'],
+        + 'decides how a pair that becomes selected mid-gesture catches up with the finger; '
+        + "SCALE lights the keys and the pad on the instrument (root, in scale, out of scale) — "
+        + 'it never changes what a cell plays.',
+      controls: ['linnstrument-connect-{n}', 'linnstrument-center-{n}', 'linnstrument-panic-{n}', 'extra_controls', 'join_policy', 'scale'],
     },
     {
       id: 'r',
@@ -267,6 +278,9 @@ export const linnstrumentDef: AudioModuleDef = {
         { value: 1, label: 'PICKUP', title: 'A newly selected pair waits until the finger passes within pickup range of where it rests' },
       ],
     },
+    // D09 (owner ruling): the scale affects LIGHTING, not playability. Roster
+    // bound to the tree's SCALE_NAMES; 0 = chromatic, the tree's absent scale.
+    { id: 'scale', label: 'scale', defaultValue: 0, min: 0, max: LINN_SCALE_OPTIONS.length - 1, curve: 'discrete', options: LINN_SCALE_OPTIONS },
     rootParam('keys_root', 'keys root', RECOMMENDED_KEYS_ROOT, 'midi'),
     ...arpParams('keys', 'keys'),
     rootParam('pad_root', 'pad root', RECOMMENDED_PAD_ROOT, 'midi'),
@@ -286,7 +300,7 @@ export const linnstrumentDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A LinnStrument 200 played into the rack as three instruments at once. The playing surface is split into a 16 by 8 keyboard on the left, laid out in fourths like the instrument's own default (one semitone per column, five per row, so the same shape is the same chord anywhere), a single column of eight control cells, and an 8 by 8 pad on the right. The keyboard and the pad are each a polyphonic MPE instrument with their own note bus: every finger is its own voice with its own pitch slide, pressure and vertical timbre, and two fingers on the same pitch stay two voices. The pad is also the rack's joystick hand. Three of the control cells are the R, G and B toggles, each an independent switch — any of the eight combinations is legal — and the first finger to land on the pad moves every joystick that is currently selected, as one coherent X/Y pair per sample; lifting the finger leaves each pair exactly where it was, and a joystick that is not selected simply keeps its last pair. That is what the six CV jacks carry: three retained X/Y pairs, bipolar, held between gestures and stored in the patch like a knob, so they survive a reload. The lower five control cells are ARP, HOLD, OCT−, OCT+ and PANIC for the keyboard, and each region has an arpeggiator that walks whatever is held there in time with TIMELORDE. Mental model: a keyboard, a pad, and three joysticks you can pick up and put down with one hand, with the rack hearing all of it at once. The device binds through CONNECT (the one-time Web MIDI grant); which port is bound is a setting of this computer, not of the patch. Nothing that a finger does is streamed into the saved patch: touches, pressures and voices are live engine state, and only the six retained pairs and the switches are stored. The three pads on the dock faceplate are the same three joysticks — drag one to move it, whether or not the hardware is connected — and they go through exactly the same selection logic as the instrument, so the face, the CV and the lights on the device can never disagree. No expression jacks are offered yet: pressure, timbre and velocity per voice are kept aligned to the note bus lanes inside the module and wait on a rack-wide poly-CV cable decision.",
+      "A LinnStrument 200 played into the rack as three instruments at once. The playing surface is split into a 16 by 8 keyboard on the left, laid out in fourths like the instrument's own default (one semitone per column, five per row, so the same shape is the same chord anywhere), a single column of eight control cells, and an 8 by 8 pad on the right. The keyboard and the pad are each a polyphonic MPE instrument with their own note bus: every finger is its own voice with its own pitch slide, pressure and vertical timbre, and two fingers on the same pitch stay two voices. The pad is also the rack's joystick hand. Three of the control cells are the R, G and B toggles, each an independent switch — any of the eight combinations is legal — and the first finger to land on the pad moves every joystick that is currently selected, as one coherent X/Y pair per sample; lifting the finger leaves each pair exactly where it was, and a joystick that is not selected simply keeps its last pair. That is what the six CV jacks carry: three retained X/Y pairs, bipolar, held between gestures and stored in the patch like a knob, so they survive a reload. The lower five control cells are ARP, HOLD, OCT−, OCT+ and PANIC for the keyboard, and each region has an arpeggiator that walks whatever is held there in time with TIMELORDE. Mental model: a keyboard, a pad, and three joysticks you can pick up and put down with one hand, with the rack hearing all of it at once. The device binds through CONNECT (the one-time Web MIDI grant); which port is bound is a setting of this computer, not of the patch. Nothing that a finger does is streamed into the saved patch: touches, pressures and voices are live engine state, and only the six retained pairs and the switches are stored. The three pads on the dock faceplate are the same three joysticks — drag one to move it, whether or not the hardware is connected — and they go through exactly the same selection logic as the instrument, so the face, the CV and the lights on the device can never disagree. Because User Firmware Mode switches the instrument's own lighting off, the module lights it: on the keyboard and the pad every root is cyan, every other note of the chosen SCALE green, out-of-scale cells dark but still playable, a cell under a finger white, and the control column shows which of R, G and B are on — all painted from this module's own roots, so the lights and the notes cannot disagree. No expression jacks are offered yet: pressure, timbre and velocity per voice are kept aligned to the note bus lanes inside the module and wait on a rack-wide poly-CV cable decision.",
     inputs: {},
     outputs: {
       r_x: "The R joystick's retained horizontal position as bipolar CV, −1 at the pad's left edge through 0 at its centre to +1 at the right. It follows the pad finger while R is selected, holds the last value when the finger lifts or R is deselected, and is stored in the patch.",
@@ -302,7 +316,7 @@ export const linnstrumentDef: AudioModuleDef = {
     },
     controls: {
       'linnstrument-connect-{n}':
-        "The gesture that makes the module do anything at all. A browser shows no MIDI port until it has consented, and it only asks when a click asks it to — so before this the module has no device to read, every jack rests, and the three pads on the face are the only way to move the joysticks. Pressing it grants access (one prompt, once per origin), binds the port named like a LinnStrument that was picked on the preflight page, and puts the instrument into User Firmware Mode so its cells report raw touches rather than notes; unbinding restores the instrument's own mode. Loading a patch containing this module never raises the prompt by itself, and which port is bound is remembered on this computer, not in the patch.",
+        "The gesture that makes the module do anything at all. A browser shows no MIDI port until it has consented, and it only asks when a click asks it to — so before this the module has no device to read, every jack rests, and the three pads on the face are the only way to move the joysticks. Pressing it grants access (one prompt, once per origin), binds the port named like a LinnStrument that was picked on the preflight page, and asks the instrument to enter User Firmware Mode so its cells report raw touches rather than notes — the LINK lamp reports the mode as confirmed only once the instrument's own mode notification comes back, never from the request alone; unbinding asks it to restore its own mode. Loading a patch containing this module never raises the prompt by itself, and which port is bound is remembered on this computer, not in the patch.",
       'linnstrument-center-{n}':
         "Returns every SELECTED joystick pair to (0, 0) — the pairs whose toggles are on — and leaves the others where they are. It does not move the finger or change how the pad is read: the next sample from a finger on the pad moves the selected pairs again from the centre.",
       'linnstrument-panic-{n}':
@@ -325,6 +339,8 @@ export const linnstrumentDef: AudioModuleDef = {
         "Whether the lower five cells of the control column do anything. ON gives the keyboard an ARP toggle, a HOLD toggle, OCT− and OCT+ (which move KEYS ROOT by an octave) and a PANIC cell; OFF leaves those five cells inert and unlit, so a hand resting on the column cannot change a setting. The R, G and B toggles at the top of the column are always live. The assignment of those five is the design's recommendation, kept switchable so it can be changed without touching the patch format.",
       join_policy:
         "How a joystick that becomes selected while a finger is already on the pad catches up. JUMP moves its pair to the very next finger sample, so it snaps to the hand at once. PICKUP leaves its pair where it rests until the finger passes within a small radius of that point, then takes it along — the soft-takeover behaviour a hardware fader uses so a switch cannot cause a jump in the CV. A pair that is selected before the finger lands always follows from the first sample either way.",
+      scale:
+        "Which notes the instrument's lights treat as in the scale, on both the keyboard and the pad: every root of the region is cyan, every other scale note green, and anything outside the scale is dark. It changes only the lights — every cell still plays its chromatic note, so an out-of-scale cell is dark and playable. CHROMATIC treats every note as in scale, leaving the roots as the only landmarks. The scale is relative to each region's own root.",
       keys_root:
         "The MIDI note at the keyboard's bottom-left cell, from which every other cell is one semitone per column and five per row. The default 36 (C2) puts middle C on the fourth row. OCT− and OCT+ on the instrument's control column move it by twelve. A cell whose note would fall outside the MIDI range simply does not sound.",
       keys_arp_on:

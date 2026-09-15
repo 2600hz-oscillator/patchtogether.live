@@ -161,7 +161,8 @@
     if (!snap) return 'engine not up yet';
     if (snap.session.state === 'disconnected') return 'no LinnStrument bound — CONNECT grants Web MIDI and binds the port picked on preflight';
     const src = snap.source ? `${snap.source.id} (${snap.source.kind})` : 'unnamed source';
-    return `${src}, ${snap.session.userMode ? 'user firmware mode' : 'stock mode'}, session ${snap.session.epoch}`;
+    // `userMode` is the instrument's OWN readback (NRPN 245), never our write.
+    return `${src}, ${snap.session.userMode ? 'user firmware mode confirmed by the instrument' : 'user firmware mode requested, not yet confirmed by the instrument'}, session ${snap.session.epoch}`;
   });
   function regionDetail(region: 'keys' | 'pad'): string {
     if (!snap) return 'engine not up yet';

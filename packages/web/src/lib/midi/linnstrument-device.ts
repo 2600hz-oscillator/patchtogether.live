@@ -1,7 +1,15 @@
 // THE LINNSTRUMENT DEVICE LAYER — one Web MIDI binding for the whole app that
-// puts a LinnStrument into User Firmware Mode, runs every raw frame through
-// the pure WP-A pipeline (`decodePhysicalMidi` → `mapSurface`) and publishes
-// the resulting RuntimeEvents through the shared source registry.
+// asks a LinnStrument to enter User Firmware Mode, runs every raw frame
+// through the pure WP-A pipeline (`decodePhysicalMidi` → `mapSurface`) and
+// publishes the resulting RuntimeEvents through the shared source registry.
+//
+// ── USER MODE IS CONFIRMED, NEVER INFERRED (design.md:188, :300) ───────────
+// Binding WRITES the NRPN 245 entry; `userMode` (status and session) turns
+// true only when the instrument's own NRPN 245 notification comes back
+// through the decoder. Until then the status says "requested" — a successful
+// write proves the port accepted bytes, not that the instrument changed mode.
+// No LinnStrument was connected while this was built, so the readback path
+// has run only against the simulated device's `ackUserMode()`.
 //
 // A DIRECT browser adapter, not the native bridge the design package
 // recommends (design.md:168 "an alternative transport implementation"): User
@@ -30,20 +38,30 @@
 // `node.data` or the Y.Doc.
 //
 // ── WHAT THE LED WRITER IS AND IS NOT ──────────────────────────────────────
-// It PAINTS ACKNOWLEDGED reducer state (design.md:154 "the module returns an
-// authoritative state revision used for LEDs") and never decides: a selector
-// press on the hardware produces a `control_edge` event and NOTHING on the
-// wire until the runtime's reducer acknowledges it through `onSelection`.
-// One serialized writer owns the CC20/21/22 coordinate registers
-// (design.md:296 — interleaving two painters colours the wrong cell); frames
-// are diffed and coalesced within one microtask.
+// It PAINTS and never decides. Three inputs, one serialized writer owning
+// the CC20/21/22 coordinate registers (design.md:296 — interleaving two
+// painters colours the wrong cell); frames are diffed and coalesced within
+// one microtask:
+//   · the CONTROL COLUMN from ACKNOWLEDGED reducer state (design.md:154 "the
+//     module returns an authoritative state revision used for LEDs"): a
+//     selector press on the hardware produces a `control_edge` event and
+//     NOTHING on the wire until the runtime acknowledges it via `onSelection`;
+//   · the KEYS and PAD regions from the module's roots + scale (`onLighting`,
+//     the D09 lighting half: root / in-scale / out-of-scale through the tree's
+//     `noteRole`) — User Firmware Mode switches the stock surface lighting off
+//     globally (design.md:68), so without this the instrument is dark;
+//   · a PLAYED mark on each cell a finger is physically down on (a surface
+//     fact from `mapSurface`'s touch tracking, not a decision). The pad finger
+//     IS the XY pointer, so its mark is the pointer light.
 //
 // ── HARDWARE-VERIFY ITEMS (no LinnStrument was connected; design.md C02/C03)
 //   · the USB product string (`LINNSTRUMENT_PORT_PATTERN` is deliberately loose)
 //   · the per-row axis-enable CC numbers and their channel (`CC_ROW_*`)
 //   · NRPN 245 readback on entry and what a page death leaves behind — the
 //     manual mode-exit procedure stays in the runbook (design.md:304)
-//   · LED colour ids are fixed-palette APPROXIMATIONS (D18)
+//   · LED colour ids are fixed-palette APPROXIMATIONS (D18); the lighting
+//     ROLES (root cyan / scale tone green / played white) are the design's
+//     starting points "after physical review" — profile data, one word each
 //
 // ⚠ PLAIN `.ts`, NOT `.svelte.ts` (trails-device.ts:20-24): audio defs may
 // import this file and the ART node vitest loads every def with no Svelte
@@ -78,10 +96,13 @@ import {
   type SurfaceMapState,
 } from './linnstrument/surface-map';
 import { DEFAULT_LINN_PROFILE } from './linnstrument/profile';
+import { keyboardCellToMidi, noteRole } from '$lib/audio/modules/keyboard-map';
 import { setLinnstrumentSource } from './linnstrument/source-registry';
 import type {
   ControlName,
+  LinnLighting,
   LinnProfile,
+  MusicalRegion,
   LinnstrumentSource,
   RawEvent,
   RuntimeEvent,
@@ -175,8 +196,9 @@ export interface LinnstrumentStatus {
   readonly portNames: readonly string[];
   /** The bound input's name, or null. */
   readonly boundPortName: string | null;
-  /** True once the device layer has ENTERED User Mode on the bound output. A
-   *  readback from the instrument is reported through the session events. */
+  /** True only after the instrument's OWN NRPN 245 notification reported
+   *  User Firmware Mode ON — never inferred from our write (design.md:188).
+   *  False again when a readback says the mode was left. */
   readonly userMode: boolean;
   readonly epoch: number;
 }
@@ -300,11 +322,12 @@ export function linnstrumentStatus(): LinnstrumentStatus {
     };
   }
   if (bound) {
-    return {
-      kind: 'bound',
-      message: `Bound to ${boundPortName} — User Firmware Mode, streaming cells.`,
-      ...base,
-    };
+    const mode = userModeEntered
+      ? 'User Firmware Mode confirmed by the instrument, streaming cells.'
+      : bound.output
+        ? "User Firmware Mode requested (NRPN 245); waiting for the instrument's own mode notification — nothing is inferred from the write."
+        : 'no paired output port, so User Firmware Mode could not be requested; the instrument stays in its own mode.';
+    return { kind: 'bound', message: `Bound to ${boundPortName} — ${mode}`, ...base };
   }
   const wanted = rigBindings().getLinnstrument()?.deviceId ?? null;
   if (portNames.length === 0) {
@@ -435,6 +458,9 @@ const deviceSource: LinnstrumentSource = {
   onSelection(state) {
     led.ack(state);
   },
+  onLighting(lighting) {
+    led.light(lighting);
+  },
 };
 
 // ── Output ────────────────────────────────────────────────────────────────
@@ -460,10 +486,17 @@ function sendAll(messages: readonly number[][]): void {
  */
 const led = {
   lastAck: null as SelectionState | null,
+  /** The module's roots + scale; null until a module publishes (then the
+   *  profile's roots, chromatic). Kept across re-binds. */
+  lighting: null as LinnLighting | null,
   painted: new Map<string, number>(),
   flushQueued: false,
   ack(state: SelectionState): void {
     led.lastAck = state;
+    led.scheduleFlush();
+  },
+  light(lighting: LinnLighting): void {
+    led.lighting = lighting;
     led.scheduleFlush();
   },
   scheduleFlush(): void {
@@ -475,8 +508,8 @@ const led = {
     });
   },
   flush(): void {
-    if (!bound?.output || !led.lastAck) return;
-    for (const cell of ledFrame(led.lastAck, profile)) {
+    if (!bound?.output) return;
+    for (const cell of ledFrame(led.lastAck, profile, led.lighting ?? lightingFromProfile(profile), playedCells(mapState))) {
       const key = `${cell.wireCol},${cell.ledRow}`;
       if (led.painted.get(key) === cell.color) continue;
       sendAll(encodeLedCell(cell.wireCol, cell.ledRow, cell.color));
@@ -492,11 +525,35 @@ export interface LedCell {
   color: number;
 }
 
+/** An application cell a finger is down on. */
+export interface PlayedCell {
+  col: number;
+  row: number;
+}
+
+/** The lighting a source falls back on before any module has published:
+ *  the profile's roots, chromatic (only the roots are landmarks). */
+export function lightingFromProfile(p: LinnProfile): LinnLighting {
+  return { keysRoot: p.keysRoot, padRoot: p.padRoot, scale: undefined };
+}
+
+/** The keys / pad cells a live touch is on — the column it is CURRENTLY on
+ *  after an in-region slide, at its row. Ended (inert) touches and control
+ *  touches are not played cells. */
+export function playedCells(state: SurfaceMapState): PlayedCell[] {
+  const out: PlayedCell[] = [];
+  for (const t of state.touches.values()) {
+    if (t.ended || (t.region !== 'keys' && t.region !== 'pad')) continue;
+    out.push({ col: t.col, row: t.row });
+  }
+  return out;
+}
+
 /** The control-column frame acknowledged state implies. Selector cells show
  *  their colour when selected and `off` otherwise; the lower five are lit
  *  only while `extraControlsEnabled` (D17 recommendation). Colour ids are
  *  the profile palette — fixed-firmware APPROXIMATIONS (D18). Pure. */
-export function ledFrame(state: SelectionState, p: LinnProfile): LedCell[] {
+export function controlColumnFrame(state: SelectionState, p: LinnProfile): LedCell[] {
   const controls = p.regions.controls;
   const wireCol = appColToWireCol(controls.left);
   const colourOf = (name: ControlName): number => {
@@ -510,6 +567,51 @@ export function ledFrame(state: SelectionState, p: LinnProfile): LedCell[] {
     .sort((a, b) => b.ledRow - a.ledRow);
 }
 
+/** The keys and pad frames: each cell by its NOTE ROLE against that region's
+ *  root and the scale (the tree's `noteRole` — D09 owner ruling: scale
+ *  affects lighting, not playability, so an out-of-scale cell is `off` yet
+ *  plays), a cell outside MIDI `off`, and a cell a finger is down on the
+ *  `played` colour on top. Roles map to palette ids through
+ *  `p.lighting` (D18 approximations). Pure. */
+export function musicalFrame(p: LinnProfile, lighting: LinnLighting, played: readonly PlayedCell[] = []): LedCell[] {
+  const down = new Set(played.map((c) => `${c.col},${c.row}`));
+  const cells: LedCell[] = [];
+  for (const region of ['keys', 'pad'] as MusicalRegion[]) {
+    const rect = p.regions[region];
+    const root = region === 'keys' ? lighting.keysRoot : lighting.padRoot;
+    for (let localRow = rect.height - 1; localRow >= 0; localRow--) {
+      for (let localCol = 0; localCol < rect.width; localCol++) {
+        const col = rect.left + localCol;
+        const row = rect.bottom + localRow;
+        const note = keyboardCellToMidi(localCol, localRow, root, p.semisPerCol, p.semisPerRow);
+        let role: keyof LinnProfile['lighting'] | 'off';
+        if (down.has(`${col},${row}`)) role = 'played';
+        else if (note < 0 || note > 127) role = 'off';
+        else {
+          const r = noteRole(note, root, lighting.scale);
+          role = r === 'root' ? 'root' : r === 'inscale' ? 'inScale' : 'outScale';
+        }
+        const color = role === 'off' ? p.palette.off : p.palette[p.lighting[role]];
+        cells.push({ wireCol: appColToWireCol(col), ledRow: appRowToLedRow(row), color });
+      }
+    }
+  }
+  return cells;
+}
+
+/** The whole frame the writer diffs against what is painted: the control
+ *  column first (design.md:296 "prioritize control-state changes") — only
+ *  once the runtime has acknowledged a state, never before — then the two
+ *  musical regions. Pure. */
+export function ledFrame(
+  state: SelectionState | null,
+  p: LinnProfile,
+  lighting: LinnLighting = lightingFromProfile(p),
+  played: readonly PlayedCell[] = [],
+): LedCell[] {
+  return [...(state ? controlColumnFrame(state, p) : []), ...musicalFrame(p, lighting, played)];
+}
+
 // ── Input ─────────────────────────────────────────────────────────────────
 
 /** ONE stable handler reference so the claim recognises its own slot. */
@@ -519,12 +621,24 @@ function onFrame(ev: MidiEventLike): void {
   const r = decodePhysicalMidi(rawState, ev.data, time);
   rawState = r.state;
   publishRaw(r.events);
-  // EVERY mode notification resets the firmware's axis enables (design.md:188)
-  // — the readback of our own entry included — so a readback saying "User
-  // Mode on" re-arms them and repaints from acknowledged state.
-  if (r.events.some((e) => e.kind === 'mode' && e.userMode)) {
-    sendAll(encodeRowAxisEnables(profile));
-    led.painted.clear();
+  // THE READBACK is the only thing that flips `userMode` (design.md:188 "do
+  // not infer hardware readiness from a successful write alone"). EVERY mode
+  // notification resets the firmware's axis enables — the readback of our
+  // own entry included — so one saying "User Mode on" re-arms them and
+  // repaints from acknowledged state; one saying "off" (the instrument left
+  // the mode under us) is reported as such.
+  const mode = r.events.filter((e): e is Extract<typeof e, { kind: 'mode' }> => e.kind === 'mode').at(-1);
+  if (mode) {
+    userModeEntered = mode.userMode;
+    if (mode.userMode) {
+      sendAll(encodeRowAxisEnables(profile));
+      led.painted.clear();
+    }
+    led.scheduleFlush();
+    bump();
+  } else if (r.events.some((e) => e.kind === 'cell_down' || e.kind === 'cell_up' || e.kind === 'cell_slide')) {
+    // A contact changed cell: the played marks move. Expression alone never
+    // repaints (the frame would diff to nothing; skip the work).
     led.scheduleFlush();
   }
 }
@@ -550,7 +664,7 @@ function armPagehide(): void {
 }
 
 /**
- * Bind ONE input (by id) and enter User Firmware Mode on its paired output.
+ * Bind ONE input (by id) and REQUEST User Firmware Mode on its paired output.
  * Idempotent for the same port objects: a second call re-sends nothing and
  * publishes nothing. Returns false when the id does not resolve to a live
  * LinnStrument port on the current access.
@@ -572,14 +686,16 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
   inputClaim.attachOnly([input], onFrame);
 
   // A fresh session: stale contacts end, the epoch advances, the map restarts.
-  const rc = reconnectRawDecode(rawState, nowTime(), true);
+  // `userMode: false` — the session is CONNECTED, the mode is REQUESTED; the
+  // instrument's NRPN 245 readback (`onFrame`) is what confirms it.
+  const rc = reconnectRawDecode(rawState, nowTime(), false);
   rawState = rc.state;
   mapState = createSurfaceMapState();
   led.painted.clear();
 
   sendAll(encodeUserFirmwareMode(true));
   sendAll(encodeRowAxisEnables(profile));
-  userModeEntered = output !== null;
+  userModeEntered = false;
 
   publishRaw(rc.events, 'connected');
   led.scheduleFlush();
@@ -735,7 +851,8 @@ export interface SimulatedLinnstrument {
   release(col: number, row: number, velocity?: number): void;
   /** The documented transfer transaction: CC119 source, Note On dest, Note Off source. */
   slide(fromCol: number, toCol: number, row: number): void;
-  /** Echo the NRPN 245 readback the firmware emits on a mode transition. */
+  /** Echo the NRPN 245 readback the firmware emits on a mode transition —
+   *  the ONLY thing that turns `status().userMode` true. */
   ackUserMode(on?: boolean): void;
   /** Every message the app sent to the output, oldest first. */
   writes(): number[][];
@@ -879,6 +996,7 @@ export function __resetLinnstrumentForTest(): void {
   scheduler = null;
   lastSession = { kind: 'session', epoch: 0, state: 'disconnected', userMode: false, time: 0 };
   led.lastAck = null;
+  led.lighting = null;
   led.painted.clear();
   led.flushQueued = false;
   diagnostics.rejected = 0;

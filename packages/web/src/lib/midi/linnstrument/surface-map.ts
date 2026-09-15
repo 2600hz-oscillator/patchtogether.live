@@ -38,6 +38,9 @@ interface TrackedTouch {
   control: ControlName | null;
   /** App column of the fresh press. */
   originCol: number;
+  /** App column the touch is on NOW — moves with an in-region slide (the
+   *  played LED mark follows it; the voice keeps its origin note). */
+  col: number;
   row: number;
   note: number | null;
   /** A touch that crossed out of its region (or never mapped) is inert. */
@@ -105,7 +108,7 @@ export function mapSurface(state: SurfaceMapState, raw: RawEvent, profile: LinnP
     const col = wireColToAppCol(raw.col);
     const row = raw.row;
     const region = regionAt(profile, col, row);
-    const tracked: TrackedTouch = { region, control: null, originCol: col, row, note: null, ended: false, x: null, y: null, z: 0 };
+    const tracked: TrackedTouch = { region, control: null, originCol: col, col, row, note: null, ended: false, x: null, y: null, z: 0 };
     if (region === 'keys' || region === 'pad') {
       const { localCol, localRow } = localOf(profile, region, col, row);
       const root = region === 'keys' ? profile.keysRoot : profile.padRoot;
@@ -161,6 +164,7 @@ export function mapSurface(state: SurfaceMapState, raw: RawEvent, profile: LinnP
     const toCol = wireColToAppCol(raw.toCol);
     const destRegion = regionAt(profile, toCol, raw.row);
     if ((t.region === 'keys' || t.region === 'pad') && destRegion === t.region) {
+      touches.set(raw.touch, { ...t, col: toCol });
       events.push({ kind: 'touch_slide', epoch, touch: raw.touch, region: t.region, fromCol: wireColToAppCol(raw.fromCol), toCol, row: raw.row, time });
       return { state: { touches }, events };
     }

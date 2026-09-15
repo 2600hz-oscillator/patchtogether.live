@@ -29,13 +29,17 @@
 // when a knob cell, a MIDI CC, a collaborator or a reload moves them.
 // `keys_root` / `pad_root` re-derive each touch's note from its LOCAL cell
 // (`keyboardCellToMidi`, D09), so the module's own roots win over whatever
-// profile the device layer mapped with. The arp params feed the two adapters.
+// profile the device layer mapped with — and the SAME roots, with `scale`,
+// are published to the source (`publishLinnstrumentLighting`) so the keys /
+// pad LEDs are lit from what the runtime plays, never from the device's
+// profile (WP-C open item 3c). The arp params feed the two adapters.
 //
 // ⚠ NO EXPRESSION JACKS (D14 is a graph-wide `polyCv` change the owner has
 // not ruled on): per-lane velocity / pressure / timbre / bend are kept here
 // ALIGNED to the allocator lanes and exposed through `read(node,'card-api')
-// .expression(region)` so a test can assert alignment (V15/V16 state half);
-// the audible half is WP-D's.
+// .expression(region)` so a test can assert alignment — the STATE half of
+// the package's V15 ("observer control": pressure → level at a jack); its
+// audible half stays deferred on D14.
 //
 // TIMESTAMPS. `RuntimeEvent.time` is read as PERFORMANCE SECONDS
 // (`MIDIMessageEvent.timeStamp / 1000` — the device layer's default domain,
@@ -58,6 +62,8 @@ import { setNodeParam } from '$lib/graph/mutate';
 import { createPolySender, POLY_CHANNEL_PAIRS, type PolySender } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
+import { SCALE_NAMES } from '$lib/audio/modules/clip-types';
+import type { ScaleName } from '$lib/mike/music-theory';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createMidiScheduler, type MidiScheduler } from '$lib/audio/midi-timing';
 import { createCcCommit, type CcCommit } from '$lib/ui/controls/cc-commit';
@@ -84,12 +90,14 @@ import {
 import {
   getLinnstrumentSource,
   linnstrumentSessionSnapshot,
+  publishLinnstrumentLighting,
   publishLinnstrumentSelection,
   subscribeLinnstrumentEvents,
 } from '$lib/midi/linnstrument/source-registry';
 import {
   SELECTORS,
   type ControlIntent,
+  type LinnLighting,
   type LinnProfile,
   type MusicalRegion,
   type ReducerEffect,
@@ -116,6 +124,18 @@ export type ArpParamKey = 'on' | 'dir' | 'div' | 'range' | 'latch';
 export const arpParamId = (r: MusicalRegion, k: ArpParamKey): string => `${r}_arp_${k}`;
 export const EXTRA_CONTROLS_PARAM = 'extra_controls';
 export const JOIN_POLICY_PARAM = 'join_policy';
+/** The LIGHTING scale (D09 owner ruling: scale affects lighting, not
+ *  playability). Option 0 = chromatic (the tree's ABSENT scale: only the
+ *  roots are landmarks), then `SCALE_NAMES` in the KEYS-view order. */
+export const SCALE_PARAM = 'scale';
+export const LINN_SCALE_OPTIONS: readonly { value: number; label: string }[] = [
+  { value: 0, label: 'chromatic' },
+  ...SCALE_NAMES.map((name, i) => ({ value: i + 1, label: name })),
+];
+export function scaleFromParam(v: unknown): ScaleName | undefined {
+  const i = Math.round(num(v, 0));
+  return i >= 1 && i <= SCALE_NAMES.length ? SCALE_NAMES[i - 1] : undefined;
+}
 
 /** Root range: 0..96 keeps every derived note inside MIDI on both regions
  *  (keys: root + 15 + 35 ≤ 127 needs root ≤ 77; anything higher simply drops
@@ -158,6 +178,8 @@ export interface LinnstrumentSnapshot {
   session: SessionEvent;
   source: { id: string; kind: string } | null;
   selection: SelectionState;
+  /** What the keys / pad LEDs are lit from: this node's roots and scale. */
+  lighting: LinnLighting;
   active: Record<MusicalRegion, number>;
   arp: Record<MusicalRegion, LinnArpSnapshot>;
   counters: LinnstrumentCounters;
@@ -293,6 +315,13 @@ export async function createLinnstrumentRuntime(
     };
   }
   let profile = buildProfile();
+  /** The lighting the source paints keys / pad with — THIS node's roots and
+   *  scale, re-published whenever they change (and on every session, so a
+   *  re-bound device is lit from the module, not the profile). */
+  function lighting(): LinnLighting {
+    return { keysRoot: profile.keysRoot, padRoot: profile.padRoot, scale: scaleFromParam(params[SCALE_PARAM]) };
+  }
+  publishLinnstrumentLighting(lighting());
 
   // ── Selection state, hydrated from the persisted params ──
   let selection: SelectionState = createSelectionState(profile);
@@ -546,11 +575,13 @@ export async function createLinnstrumentRuntime(
         for (const lane of r.lanes) Object.assign(lane, freshLane(lane.lane));
       }
       dispatch({ kind: 'session', epoch: event.epoch });
+      publishLinnstrumentLighting(lighting());
       notify();
       return;
     }
     if (event.kind === 'pointer' || event.kind === 'control_edge') {
-      for (const intent of intentsFromRuntimeEvent(event)) dispatch(intent);
+      // `profile` gates the hardware PANIC cell with the other four (D17).
+      for (const intent of intentsFromRuntimeEvent(event, profile)) dispatch(intent);
       return;
     }
     const r = regions[event.region];
@@ -626,6 +657,12 @@ export async function createLinnstrumentRuntime(
     if (fromRuntime) pumpFor(paramId).push(value);
     if (paramId === rootParamId('keys') || paramId === rootParamId('pad') || paramId === EXTRA_CONTROLS_PARAM || paramId === JOIN_POLICY_PARAM) {
       profile = buildProfile();
+      publishLinnstrumentLighting(lighting());
+      notify();
+      return;
+    }
+    if (paramId === SCALE_PARAM) {
+      publishLinnstrumentLighting(lighting());
       notify();
       return;
     }
@@ -648,6 +685,7 @@ export async function createLinnstrumentRuntime(
       session,
       source: src ? { id: src.id, kind: src.kind } : null,
       selection,
+      lighting: lighting(),
       active: { keys: regions.keys.mpe.voices.size, pad: regions.pad.mpe.voices.size },
       arp: { keys: regions.keys.arp.snapshot(), pad: regions.pad.arp.snapshot() },
       counters: { ...counters },

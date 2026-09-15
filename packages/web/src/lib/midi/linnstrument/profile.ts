@@ -14,7 +14,7 @@
 //
 // ⚠ PLAIN `.ts`, no runes (trails-device.ts:20-24).
 
-import type { LinnProfile, Region, RegionRect, SelectorId } from './types';
+import type { LinnLightingRoles, LinnProfile, Region, RegionRect, SelectorId } from './types';
 
 /** RECOMMENDATION, not a ruling (`corrected_geometry`, D03). The request said
  *  16×16, which cannot fit an eight-row instrument; the package INFERS
@@ -49,6 +49,13 @@ export const RECOMMENDED_PAD_ROOT = 60;
 /** RECOMMENDATION (D08): R on, G/B off. A three-bit mask (D04 ruling: the
  *  bits are independent — this is the value 0b001, not "radio position 0"). */
 export const RECOMMENDED_DEFAULT_MASK: Record<SelectorId, boolean> = { r: true, g: false, b: false };
+
+/** RECOMMENDATION + ⚠ HARDWARE-VERIFY (design.md lighting table, D18): root
+ *  cyan; other scale tones green ("green or lime after physical review");
+ *  out-of-scale off — still playable, D09 owner ruling: scale affects
+ *  LIGHTING, not playability; a played cell white ("white or pink, auditioned
+ *  on device"). Palette keys: a physical review edits one word per role. */
+export const RECOMMENDED_LIGHTING_ROLES: LinnLightingRoles = { root: 'cyan', inScale: 'green', outScale: 'off', played: 'white' };
 
 /** `polyCv_extension` (D14) is a GRAPH change and has no profile switch — the
  *  runtime keeps per-lane expression internally until the owner rules. */
@@ -105,6 +112,7 @@ export const DEFAULT_LINN_PROFILE: LinnProfile = {
     lime: 10,
     pink: 11,
   },
+  lighting: RECOMMENDED_LIGHTING_ROLES,
 };
 
 /** Which region an application cell belongs to, or null when it lands

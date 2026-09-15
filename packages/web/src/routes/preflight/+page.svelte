@@ -239,8 +239,9 @@
   // ── LINNSTRUMENT ──────────────────────────────────────────────────────────
   // The Push 2 pattern: the status store → enumerate; the pick writes the rig
   // store and NOTHING else here — the device layer's own rig subscription
-  // applies it (enters User Firmware Mode on the picked port live), so this
-  // screen never owns a device. sysex:false seam (NRPN/CC only).
+  // applies it (REQUESTS User Firmware Mode on the picked port live; the
+  // instrument's own NRPN 245 readback confirms it), so this screen never
+  // owns a device. sysex:false seam (NRPN/CC only).
   let linnPorts = $derived.by(() => {
     $linnstrumentMidiVersion;
     return linnstrumentHasAccess() ? listLinnstrumentPorts() : [];

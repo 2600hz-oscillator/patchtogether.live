@@ -200,13 +200,19 @@ export function reduceAll(state: SelectionState, intents: readonly ControlIntent
 
 /** Translate a runtime event into the intents it carries for THIS reducer.
  *  Touch starts/ends/expression are voice events, not selection intents, and
- *  map to nothing here. */
-export function intentsFromRuntimeEvent(event: RuntimeEvent): ControlIntent[] {
+ *  map to nothing here.
+ *
+ *  The HARDWARE PANIC cell is one of the lower five (D17) and is gated here,
+ *  at the translation from the wire, by `profile.extraControlsEnabled`: with
+ *  the switch OFF the cell is inert as well as unlit, like the other four.
+ *  The `{ kind: 'panic' }` INTENT itself stays ungated — the face's PANIC
+ *  cell dispatches it directly and is always live. */
+export function intentsFromRuntimeEvent(event: RuntimeEvent, profile: LinnProfile): ControlIntent[] {
   switch (event.kind) {
     case 'control_edge': {
       const c = event.control;
       if (c === 'r' || c === 'g' || c === 'b') return [{ kind: 'selector_edge', selector: c, down: event.down, epoch: event.epoch }];
-      if (c === 'panic') return event.down ? [{ kind: 'panic' }] : [];
+      if (c === 'panic') return event.down && profile.extraControlsEnabled ? [{ kind: 'panic' }] : [];
       return [{ kind: 'extra_control', control: c, down: event.down, epoch: event.epoch }];
     }
     case 'pointer':

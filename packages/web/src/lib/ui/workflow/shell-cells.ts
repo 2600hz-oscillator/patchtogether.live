@@ -2969,7 +2969,7 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       label: 'Connect LinnStrument',
       title:
         'Grant this site access to Web MIDI (one-time per origin), bind the LinnStrument picked '
-        + 'on preflight and put it into User Firmware Mode',
+        + 'on preflight and ask it to enter User Firmware Mode',
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { linnstrumentConnect(nodeId); },

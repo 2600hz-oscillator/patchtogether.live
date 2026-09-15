@@ -33,15 +33,25 @@
 //            over time on the bus, at a real voice output.
 //   V13      two touches on one pitch are refcounted: releasing one keeps the
 //            note in the arp's held set; releasing both drops it.
-//   V15      two keys at two pitches → two frequencies at the output at once.
-//   V16      pressure (Z) and timbre (Y) reach the voice's expression lane.
-//            ⚠ STATE ONLY. No expression jack ships: D14 (`polyCv`) is a
+//   D13      two keys at two pitches → two frequencies at the output at once
+//            (poly identity: two contacts are two voices — decision-register
+//            D13; the package's vector corpus has no V-number for this).
+//   V16      "stopped source": silence-first over a FULL window with no Note
+//            On while a known positive reference later reads nonzero — the
+//            silence-first + audible-key pair below IS that vector.
+//   V15      "observer control": pressure (Z) and timbre (Y) reach the voice's
+//            expression LANE. ⚠ STATE HALF ONLY. The vector's audible claim
+//            (unpatch the pressure path → level modulation disappears) needs
+//            an expression jack, and none ships: D14 (`polyCv`) is a
 //            graph-wide change the owner has not ruled on, so the two poly
 //            buses carry PITCH + GATE only and per-lane pressure / timbre are
-//            read through `read(node, 'card-api').expression(region)`. The
-//            audible half of V16 (level and spectrum moving with Z and Y) is
-//            OWNER-BLOCKED on D14 and is deliberately not faked here by
-//            patching a scalar somewhere else.
+//            read through `read(node, 'card-api').expression(region)`. V15's
+//            audible half stays DEFERRED (vectors.ts records the WP-D
+//            deferral; it is not resolved here) and is deliberately not faked
+//            by patching a scalar somewhere else.
+//   MODE     `userMode` on the status and the session is the instrument's OWN
+//            NRPN 245 readback: false after the bind's write, true only once
+//            the (simulated) instrument echoes the notification.
 //   PANIC    the control-column PANIC cell (D17 recommendation, `extra_controls`
 //            default ON) closes every voice on the bus within the cap.
 //
@@ -149,6 +159,8 @@ interface LinnSim {
   bind(): boolean;
   attached(): boolean;
   writes(): number[][];
+  /** The simulated instrument's NRPN 245 mode notification — the only thing that confirms User Mode. */
+  ackUserMode(on?: boolean): void;
   status(): { kind: string; portNames: string[]; boundPortName: string | null; userMode: boolean };
 }
 interface LinnSnapshot {
@@ -205,7 +217,7 @@ async function linnState(page: Page, nodeId: string): Promise<LinnSnapshot | nul
   }, nodeId);
 }
 
-/** The per-lane expression the runtime keeps aligned to the bus (V15/V16 state). */
+/** The per-lane expression the runtime keeps aligned to the bus (V15's state half). */
 async function keysLanes(page: Page, nodeId: string): Promise<Lane[]> {
   return page.evaluate((id) => {
     const w = globalThis as unknown as {
@@ -316,6 +328,14 @@ test('@linnstrument keys → CUBE poly → audible: silence-first, an UNBOUND de
   expect(await sim(page, 'attached'), 'the input claim holds the handler').toBe(true);
   expect(containsRun(await sim(page, 'writes'), USER_MODE_ON), 'NRPN 245 = 1 was written to the instrument').toBe(true);
   await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state), { message: 'the runtime sees the session' }).toBe('connected');
+  //     The write proves nothing about the instrument: the mode is REQUESTED
+  //     until its own NRPN 245 notification comes back (design.md:188).
+  expect((await sim(page, 'status')).userMode, 'userMode is not inferred from our write').toBe(false);
+  expect((await linnState(page, 'ln'))?.session.userMode, 'nor is the session\'s').toBe(false);
+  await sim(page, 'ackUserMode', true);
+  expect((await sim(page, 'status')).userMode, 'the readback confirms User Firmware Mode').toBe(true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.userMode), { message: 'the runtime sees the confirmation' }).toBe(true);
+  await expect.poll(() => linnState(page, 'ln').then((s) => s?.session.state)).toBe('mode_changed');
 
   // (4) THE AUDIBLE ASSERTION. One key — real Note On + a CC X lo/hi pair on
   //     the row channel — is a voice on the bus, and CUBE gates it open.
@@ -326,7 +346,7 @@ test('@linnstrument keys → CUBE poly → audible: silence-first, an UNBOUND de
   const lanesA = await keysLanes(page, 'ln');
   expect(lanesA.map((l) => l.note), 'one gated lane, at the cell\'s note').toEqual([cellNote(KEY_A.col, KEY_A.row)]);
 
-  // (5) V15 — TWO PITCHES. The first key's fundamental is present; the second
+  // (5) D13 — TWO PITCHES, TWO VOICES. The first key's fundamental is present; the second
   //     key's is ABSENT over a full window BEFORE it lands (the band's own
   //     negative control), then present once it does — while the first stays.
   const fA = hz(cellNote(KEY_A.col, KEY_A.row));
@@ -344,8 +364,9 @@ test('@linnstrument keys → CUBE poly → audible: silence-first, an UNBOUND de
     [cellNote(KEY_A.col, KEY_A.row), cellNote(KEY_B.col, KEY_B.row)].sort(),
   );
 
-  // (6) V16 — Z and Y reach the lane (STATE; the audible half is D14-blocked,
-  //     see the header). Z is poly pressure on the row channel, Y is CC (col+64).
+  // (6) V15 — Z and Y reach the lane (the STATE half; the audible half is
+  //     D14-blocked and stays deferred, see the header). Z is poly pressure on
+  //     the row channel, Y is CC (col+64).
   await sim(page, 'move', KEY_A.col, KEY_A.row, { z: 100, y: 120 });
   await expect
     .poll(async () => (await keysLanes(page, 'ln')).find((l) => l.note === cellNote(KEY_A.col, KEY_A.row))?.pressure ?? -1, {

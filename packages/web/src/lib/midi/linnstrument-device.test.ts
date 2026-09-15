@@ -25,6 +25,8 @@ import {
   encodeUserFirmwareMode,
   installSimulatedLinnstrument,
   ledFrame,
+  lightingFromProfile,
+  musicalFrame,
   linnstrumentDiagnostics,
   linnstrumentMidiVersion,
   linnstrumentStatus,
@@ -37,6 +39,7 @@ import {
 import {
   __resetLinnstrumentSourceForTest,
   getLinnstrumentSource,
+  publishLinnstrumentLighting,
   publishLinnstrumentSelection,
   subscribeLinnstrumentEvents,
 } from './linnstrument/source-registry';
@@ -67,6 +70,19 @@ function containsRun(writes: number[][], seq: number[][]): number {
 }
 const ledWrites = (writes: number[][]): number[][] =>
   writes.filter((w) => w[0] === 0xb0 && (w[1] === CC_LED_COLUMN || w[1] === CC_LED_ROW || w[1] === CC_LED_COLOR));
+/** The cells the LED writes paint, as contiguous CC20/21/22 triples. */
+function paintedCells(writes: number[][]): { wireCol: number; ledRow: number; color: number }[] {
+  const w = ledWrites(writes);
+  const out: { wireCol: number; ledRow: number; color: number }[] = [];
+  for (let i = 0; i + 2 < w.length; i += 3) {
+    expect([w[i]![1], w[i + 1]![1], w[i + 2]![1]]).toEqual([CC_LED_COLUMN, CC_LED_ROW, CC_LED_COLOR]); // never interleaved
+    out.push({ wireCol: w[i]![2]!, ledRow: w[i + 1]![2]!, color: w[i + 2]![2]! });
+  }
+  return out;
+}
+const CONTROL_WIRE_COL = DEFAULT_LINN_PROFILE.regions.controls.left + 1;
+const controlCells = (writes: number[][]) => paintedCells(writes).filter((c) => c.wireCol === CONTROL_WIRE_COL);
+const MUSICAL_CELLS = DEFAULT_LINN_PROFILE.regions.keys.width * DEFAULT_LINN_PROFILE.regions.keys.height + DEFAULT_LINN_PROFILE.regions.pad.width * DEFAULT_LINN_PROFILE.regions.pad.height;
 const vector = (id: string) => {
   const v = ACCEPTANCE_VECTORS.find((x) => x.id === id);
   if (!v) throw new Error(`no vector ${id}`);
@@ -106,8 +122,37 @@ describe('bind: the sim device reaches the REAL claim and User Firmware Mode goe
     expect(listLinnstrumentPorts().map((p) => p.inputId)).toEqual([sim.inputId]); // the decoy never matches
     expect(getLinnstrumentSource()?.kind).toBe('simulated');
     const sessions = events.filter((e) => e.kind === 'session');
-    expect(sessions.at(-1)).toMatchObject({ kind: 'session', state: 'connected', userMode: true });
+    // Connected, mode REQUESTED: `userMode` is the instrument's readback, not our write.
+    expect(sessions.at(-1)).toMatchObject({ kind: 'session', state: 'connected', userMode: false });
     expect(sessions.at(-1)!.epoch).toBeGreaterThan(0);
+  });
+
+  it('User Firmware Mode is CONFIRMED by the NRPN 245 readback, never inferred from the write (design.md:188)', async () => {
+    const sim = await installSimulatedLinnstrument();
+    expect(containsRun(sim.writes(), USER_MODE_ON)).toBe(1); // the request left…
+    expect(linnstrumentStatus().userMode).toBe(false); // …and proves nothing yet
+    expect(linnstrumentStatus().message).toMatch(/requested/);
+    expect(linnstrumentStatus().message).not.toMatch(/confirmed/);
+    const epoch = linnstrumentStatus().epoch;
+
+    sim.ackUserMode(true);
+    expect(linnstrumentStatus().userMode).toBe(true);
+    expect(linnstrumentStatus().message).toMatch(/confirmed by the instrument/);
+    expect(linnstrumentStatus().epoch).toBe(epoch + 1);
+    expect(events.filter((e) => e.kind === 'session').at(-1)).toMatchObject({ state: 'mode_changed', userMode: true });
+
+    // The instrument leaving the mode under us is reported, not papered over.
+    sim.ackUserMode(false);
+    expect(linnstrumentStatus().userMode).toBe(false);
+    expect(events.filter((e) => e.kind === 'session').at(-1)).toMatchObject({ state: 'mode_changed', userMode: false });
+    expect(linnstrumentStatus().message).toMatch(/requested/);
+
+    // Unbind clears it; a re-bind starts unconfirmed again.
+    sim.ackUserMode(true);
+    unbindLinnstrument();
+    expect(linnstrumentStatus().userMode).toBe(false);
+    bindLinnstrument(sim.inputId);
+    expect(linnstrumentStatus().userMode).toBe(false);
   });
 
   it('captures the six-message NRPN 245 entry transaction, reset included, then every row axis enable', async () => {
@@ -127,8 +172,13 @@ describe('bind: the sim device reaches the REAL claim and User Firmware Mode goe
     const entryAt = w.findIndex((m) => m[1] === 99);
     const enableAt = w.findIndex((m) => m[1] === CC_ROW_SLIDE_ENABLE);
     expect(entryAt).toBeLessThan(enableAt);
-    // No LED write happens on bind: nothing has been acknowledged yet.
-    expect(ledWrites(w)).toHaveLength(0);
+    // On bind the writer lights the KEYS and the PAD (User Mode switches the
+    // stock lighting off) but NO control cell: nothing has been acknowledged.
+    await flush();
+    const painted = paintedCells(sim.writes());
+    expect(controlCells(sim.writes())).toHaveLength(0);
+    expect(painted).toHaveLength(MUSICAL_CELLS);
+    expect(ledWrites(w).length).toBeGreaterThan(0);
   });
 
   it('a second bind of the same port is idempotent — no second entry, no second session', async () => {
@@ -303,7 +353,8 @@ describe('V11 boundary — the slide transaction survives the device layer', () 
     expect(events.filter((e) => e.kind === 'touch_end')).toEqual([
       expect.objectContaining({ region: 'keys', reason: 'boundary' }),
     ]);
-    expect(ledWrites(sim.writes())).toHaveLength(0);
+    await flush();
+    expect(controlCells(sim.writes())).toHaveLength(0); // the selector column is never painted by a slide into it
   });
 
   it('a slide INSIDE the keys region keeps the touch id and never re-attacks', async () => {
@@ -372,8 +423,10 @@ describe('the LED writer paints acknowledged state and never decides', () => {
     expect(ledWrites(sim.writes())).toHaveLength(0); // coalesced: nothing yet in this tick
     await flush();
     const w = ledWrites(sim.writes());
-    // One contiguous CC20/21/22 triple per control cell of the frame.
-    const frame = ledFrame(state, DEFAULT_LINN_PROFILE);
+    // One contiguous CC20/21/22 triple per CONTROL cell of the frame — the
+    // musical cells were painted on bind and diff to nothing.
+    const frame = ledFrame(state, DEFAULT_LINN_PROFILE).filter((c) => c.wireCol === CONTROL_WIRE_COL);
+    expect(frame).toHaveLength(Object.keys(DEFAULT_LINN_PROFILE.controlRows).length);
     expect(w).toHaveLength(frame.length * 3);
     for (const cell of frame) {
       expect(containsRun(w, [[0xb0, CC_LED_COLUMN, cell.wireCol], [0xb0, CC_LED_ROW, cell.ledRow], [0xb0, CC_LED_COLOR, cell.color]])).toBe(1);
@@ -422,8 +475,117 @@ describe('the LED writer paints acknowledged state and never decides', () => {
 
   it('extra controls OFF leaves the lower five unlit (D17 is a recommendation, not a ruling)', () => {
     const p = { ...DEFAULT_LINN_PROFILE, extraControlsEnabled: false };
-    const frame = ledFrame(createSelectionState(p), p);
-    expect(frame.filter((c) => c.ledRow <= 4).every((c) => c.color === p.palette.off)).toBe(true);
-    expect(ledFrame(createSelectionState(DEFAULT_LINN_PROFILE), DEFAULT_LINN_PROFILE).filter((c) => c.ledRow <= 4).every((c) => c.color === DEFAULT_LINN_PROFILE.palette.orange)).toBe(true);
+    const column = (frame: ReturnType<typeof ledFrame>) => frame.filter((c) => c.wireCol === CONTROL_WIRE_COL && c.ledRow <= 4);
+    expect(column(ledFrame(createSelectionState(p), p))).toHaveLength(5);
+    expect(column(ledFrame(createSelectionState(p), p)).every((c) => c.color === p.palette.off)).toBe(true);
+    expect(column(ledFrame(createSelectionState(DEFAULT_LINN_PROFILE), DEFAULT_LINN_PROFILE)).every((c) => c.color === DEFAULT_LINN_PROFILE.palette.orange)).toBe(true);
+  });
+});
+
+describe('the LED writer lights the KEYS and the PAD from the module\'s roots and scale (D09: lighting, not playability)', () => {
+  const P = DEFAULT_LINN_PROFILE;
+  const at = (frame: ReturnType<typeof musicalFrame>, col: number, row: number) => frame.find((c) => c.wireCol === col + 1 && c.ledRow === row)!;
+
+  it('chromatic (the default): every root of the region is cyan, everything else green; keys and pad each against THEIR root', () => {
+    const frame = musicalFrame(P, lightingFromProfile(P));
+    expect(frame).toHaveLength(MUSICAL_CELLS);
+    // keys root 36 at (0,0): +1 per column, +5 per row (D09).
+    expect(at(frame, 0, 0).color).toBe(P.palette.cyan); // 36
+    expect(at(frame, 1, 0).color).toBe(P.palette.green); // 37 — chromatic: in scale
+    expect(at(frame, 12, 0).color).toBe(P.palette.cyan); // 48
+    expect(at(frame, 2, 2).color).toBe(P.palette.cyan); // 36 + 2 + 10 = 48
+    expect(at(frame, 7, 1).color).toBe(P.palette.cyan); // 36 + 7 + 5 = 48
+    // pad root 60 at app (17,0) — the pad's OWN root, not the keyboard's continuation.
+    expect(at(frame, 17, 0).color).toBe(P.palette.cyan); // 60
+    expect(at(frame, 18, 0).color).toBe(P.palette.green); // 61
+    expect(at(frame, 19, 2).color).toBe(P.palette.cyan); // 60 + 2 + 10 = 72
+    // Never a control-column cell, never a wire column outside 1..25.
+    expect(frame.some((c) => c.wireCol === CONTROL_WIRE_COL)).toBe(false);
+    expect(frame.every((c) => c.wireCol >= 1 && c.wireCol <= 25 && c.ledRow >= 0 && c.ledRow <= 7)).toBe(true);
+  });
+
+  it('a scale darkens the out-of-scale cells and leaves them PLAYABLE (the frame is lights only)', () => {
+    const frame = musicalFrame(P, { keysRoot: 36, padRoot: 60, scale: 'major' });
+    expect(at(frame, 0, 0).color).toBe(P.palette.cyan); // C
+    expect(at(frame, 1, 0).color).toBe(P.palette.off); // C# — out of C major, dark
+    expect(at(frame, 2, 0).color).toBe(P.palette.green); // D
+    expect(at(frame, 4, 0).color).toBe(P.palette.green); // E
+    expect(at(frame, 5, 0).color).toBe(P.palette.green); // F
+    expect(at(frame, 6, 0).color).toBe(P.palette.off); // F#
+    expect(at(frame, 18, 0).color).toBe(P.palette.off); // pad 61 = C# against the pad's C root
+  });
+
+  it('a cell whose note leaves MIDI is off; a played cell is white on top of its role', () => {
+    const high = musicalFrame(P, { keysRoot: 96, padRoot: 60, scale: undefined });
+    expect(at(high, 15, 7).color).toBe(P.palette.off); // 96 + 15 + 35 = 146
+    expect(at(high, 0, 0).color).toBe(P.palette.cyan); // 96
+    const played = musicalFrame(P, lightingFromProfile(P), [{ col: 0, row: 0 }, { col: 18, row: 3 }]);
+    expect(at(played, 0, 0).color).toBe(P.palette.white);
+    expect(at(played, 18, 3).color).toBe(P.palette.white);
+    expect(at(played, 1, 0).color).toBe(P.palette.green);
+  });
+
+  it('the roles are PROFILE DATA (hardware-verify, D18): swapping a role word repaints without touching the writer', () => {
+    const lime = { ...P, lighting: { ...P.lighting, inScale: 'lime' as const, played: 'pink' as const } };
+    const frame = musicalFrame(lime, lightingFromProfile(lime), [{ col: 2, row: 0 }]);
+    expect(at(frame, 1, 0).color).toBe(P.palette.lime);
+    expect(at(frame, 2, 0).color).toBe(P.palette.pink);
+  });
+
+  it('on the wire: a keys touch paints its cell white, a slide moves the mark, a release restores the role — through the diff', async () => {
+    const sim = await installSimulatedLinnstrument();
+    await flush();
+    sim.clearWrites();
+    sim.touch(3, 2);
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([{ wireCol: 4, ledRow: 2, color: P.palette.white }]);
+    sim.clearWrites();
+    sim.move(3, 2, { z: 90, y: 30 }); // expression alone repaints nothing
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([]);
+    sim.slide(3, 4, 2);
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([
+      { wireCol: 4, ledRow: 2, color: at(musicalFrame(P, lightingFromProfile(P)), 3, 2).color },
+      { wireCol: 5, ledRow: 2, color: P.palette.white },
+    ]);
+    sim.clearWrites();
+    sim.release(4, 2);
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([{ wireCol: 5, ledRow: 2, color: at(musicalFrame(P, lightingFromProfile(P)), 4, 2).color }]);
+    // A control-column touch is not a played cell: nothing painted until an ack.
+    sim.clearWrites();
+    sim.touch(16, 0);
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([]);
+  });
+
+  it('the module\'s lighting wins over the profile: published BEFORE the source exists it is replayed on install, and a later publish repaints the diff', async () => {
+    // On a fourths grid the ROOT pattern is root-invariant (cell (c,r) is
+    // root + c + 5r, so which cells are roots never depends on the root); the
+    // discriminator between the module's lighting and the profile's chromatic
+    // fallback is the SCALE.
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: 'major' });
+    const sim = await installSimulatedLinnstrument();
+    await flush();
+    const first = paintedCells(sim.writes());
+    expect(first).toHaveLength(MUSICAL_CELLS);
+    expect(first.find((c) => c.wireCol === 1 && c.ledRow === 0)!.color).toBe(P.palette.cyan); // app (0,0) = 36, the root
+    expect(first.find((c) => c.wireCol === 2 && c.ledRow === 0)!.color).toBe(P.palette.off); // app (1,0) = 37, C# — out of C major, NOT the chromatic fallback's green
+    expect(first.find((c) => c.wireCol === 3 && c.ledRow === 0)!.color).toBe(P.palette.green); // app (2,0) = 38, D
+    sim.clearWrites();
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
+    await flush();
+    const cells = paintedCells(sim.writes());
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.length).toBeLessThan(MUSICAL_CELLS); // a diff, not a full repaint
+    expect(cells.find((c) => c.wireCol === 2 && c.ledRow === 0)!.color).toBe(P.palette.green); // 37 is in scale again
+    expect(cells.find((c) => c.wireCol === 1 && c.ledRow === 0)).toBeUndefined(); // the root was cyan in both frames: not in the diff
+    expect(cells.find((c) => c.wireCol === 3 && c.ledRow === 0)).toBeUndefined(); // D was green in both
+    // An identical publish repaints nothing.
+    sim.clearWrites();
+    publishLinnstrumentLighting({ keysRoot: 36, padRoot: 60, scale: undefined });
+    await flush();
+    expect(paintedCells(sim.writes())).toEqual([]);
   });
 });

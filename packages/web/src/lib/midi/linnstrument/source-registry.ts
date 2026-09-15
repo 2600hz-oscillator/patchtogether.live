@@ -6,6 +6,8 @@
 //                                                      face mounted
 //   runtime       →  publishLinnstrumentSelection(s)   ACKNOWLEDGED reducer
 //                                                      state for the LED writer
+//   runtime       →  publishLinnstrumentLighting(l)    the module's roots and
+//                                                      scale for keys / pad LEDs
 //
 // One app-wide source at a time (one physical LinnStrument, one User-Mode
 // owner — design.md:168 "not a second simultaneous owner"). Replacing the
@@ -16,11 +18,14 @@
 //
 // ⚠ Plain `.ts`, no runes; module-level state like the trails singleton.
 
-import type { LinnstrumentSource, RuntimeEvent, RuntimeEventListener, SelectionState, SessionEvent } from './types';
+import type { LinnLighting, LinnstrumentSource, RuntimeEvent, RuntimeEventListener, SelectionState, SessionEvent } from './types';
 
 let source: LinnstrumentSource | null = null;
 let unsubscribeSource: (() => void) | null = null;
 let lastSession: SessionEvent = { kind: 'session', epoch: 0, state: 'disconnected', userMode: false, time: 0 };
+/** Retained so a source installed AFTER the module published (rack loads,
+ *  then CONNECT) lights the keys with the module's roots, not the profile's. */
+let lastLighting: LinnLighting | null = null;
 const listeners = new Set<RuntimeEventListener>();
 
 function fanOut(event: RuntimeEvent): void {
@@ -49,6 +54,7 @@ export function setLinnstrumentSource(next: LinnstrumentSource | null): void {
   if (next) {
     unsubscribeSource = next.subscribe(fanOut);
     fanOut(next.snapshot());
+    if (lastLighting) next.onLighting?.(lastLighting);
   }
 }
 
@@ -76,6 +82,14 @@ export function publishLinnstrumentSelection(state: SelectionState): void {
   source?.onSelection?.(state);
 }
 
+/** Hand the module's roots and scale to the source for keys / pad lighting
+ *  (the D09 lighting half). Retained for a later source; last publisher wins,
+ *  as for the selection. */
+export function publishLinnstrumentLighting(lighting: LinnLighting): void {
+  lastLighting = lighting;
+  source?.onLighting?.(lighting);
+}
+
 export function linnstrumentSessionSnapshot(): SessionEvent {
   return source ? source.snapshot() : lastSession;
 }
@@ -87,4 +101,5 @@ export function __resetLinnstrumentSourceForTest(): void {
   source = null;
   listeners.clear();
   lastSession = { kind: 'session', epoch: 0, state: 'disconnected', userMode: false, time: 0 };
+  lastLighting = null;
 }

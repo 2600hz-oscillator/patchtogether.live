@@ -38,7 +38,7 @@ function execute(vector: AcceptanceVector): Run {
       mapState = m.state;
       for (const s of m.events) {
         run.surface.push(s);
-        selection = reduceAll(selection, intentsFromRuntimeEvent(s), profile).state;
+        selection = reduceAll(selection, intentsFromRuntimeEvent(s, profile), profile).state;
         if (s.kind === 'session') {
           run.voiceEvents.keys.push(...resetMpe(mpe.keys, s.time));
           run.voiceEvents.pad.push(...resetMpe(mpe.pad, s.time));

@@ -217,12 +217,22 @@ describe('selection-reducer: Center, Panic, hydrate, epoch', () => {
   });
 
   it('intentsFromRuntimeEvent: control edges, pointer and session map; voice events map to nothing', () => {
-    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'r', down: true, time: 0 })).toEqual([{ kind: 'selector_edge', selector: 'r', down: true, epoch: 1 }]);
-    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'panic', down: true, time: 0 })).toEqual([{ kind: 'panic' }]);
-    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'panic', down: false, time: 0 })).toEqual([]);
-    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'octave_up', down: true, time: 0 })).toEqual([{ kind: 'extra_control', control: 'octave_up', down: true, epoch: 1 }]);
-    expect(intentsFromRuntimeEvent({ kind: 'pointer', epoch: 1, touch: 4, phase: 'move', u: 0.1, v: 0.2, pressure: 0, time: 0 })).toEqual([{ kind: 'pointer', touch: 4, phase: 'move', u: 0.1, v: 0.2, epoch: 1 }]);
-    expect(intentsFromRuntimeEvent({ kind: 'touch_start', epoch: 1, touch: 4, region: 'pad', col: 17, row: 0, localCol: 0, localRow: 0, note: 60, velocity: 100, time: 0 })).toEqual([]);
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'r', down: true, time: 0 }, P)).toEqual([{ kind: 'selector_edge', selector: 'r', down: true, epoch: 1 }]);
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'panic', down: true, time: 0 }, P)).toEqual([{ kind: 'panic' }]);
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'panic', down: false, time: 0 }, P)).toEqual([]);
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'octave_up', down: true, time: 0 }, P)).toEqual([{ kind: 'extra_control', control: 'octave_up', down: true, epoch: 1 }]);
+    expect(intentsFromRuntimeEvent({ kind: 'pointer', epoch: 1, touch: 4, phase: 'move', u: 0.1, v: 0.2, pressure: 0, time: 0 }, P)).toEqual([{ kind: 'pointer', touch: 4, phase: 'move', u: 0.1, v: 0.2, epoch: 1 }]);
+    expect(intentsFromRuntimeEvent({ kind: 'touch_start', epoch: 1, touch: 4, region: 'pad', col: 17, row: 0, localCol: 0, localRow: 0, note: 60, velocity: 100, time: 0 }, P)).toEqual([]);
+  });
+
+  it('D17 OFF: the HARDWARE panic cell is inert with the other four — no intent leaves the wire translation; the face intent is ungated', () => {
+    const off: LinnProfile = { ...P, extraControlsEnabled: false };
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'panic', down: true, time: 0 }, off)).toEqual([]);
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'keyboard_arp', down: true, time: 0 }, off)).toEqual([{ kind: 'extra_control', control: 'keyboard_arp', down: true, epoch: 1 }]);
+    expect(reduceControls(createSelectionState(off), { kind: 'extra_control', control: 'keyboard_arp', down: true }, off).effects).toEqual([]);
+    // The selectors above the five stay live, and a DISPATCHED panic (the face's cell) still fires.
+    expect(intentsFromRuntimeEvent({ kind: 'control_edge', epoch: 1, control: 'r', down: true, time: 0 }, off)).toHaveLength(1);
+    expect(reduceControls(createSelectionState(off), { kind: 'panic' }, off).effects).toEqual([{ kind: 'panic' }]);
   });
 });
 

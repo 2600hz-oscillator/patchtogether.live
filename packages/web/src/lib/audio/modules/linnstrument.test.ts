@@ -28,7 +28,7 @@ import {
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { __resetLinnstrumentSourceForTest, setLinnstrumentSource } from '$lib/midi/linnstrument/source-registry';
-import type { LinnstrumentSource, RuntimeEvent, RuntimeEventListener, SelectionState, SessionEvent } from '$lib/midi/linnstrument/types';
+import type { LinnLighting, LinnstrumentSource, RuntimeEvent, RuntimeEventListener, SelectionState, SessionEvent } from '$lib/midi/linnstrument/types';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { ModuleNode } from '$lib/graph/types';
 
@@ -98,6 +98,7 @@ function laneEvents(handle: AudioDomainNodeHandle, port: string, lane: number, k
 interface Sim extends LinnstrumentSource {
   emit(ev: RuntimeEvent): void;
   acks: SelectionState[];
+  lights: LinnLighting[];
   epoch: number;
 }
 function makeSim(epoch = 1): Sim {
@@ -107,6 +108,7 @@ function makeSim(epoch = 1): Sim {
     kind: 'simulated',
     epoch,
     acks: [],
+    lights: [],
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
@@ -116,6 +118,9 @@ function makeSim(epoch = 1): Sim {
     },
     onSelection(state) {
       sim.acks.push(state);
+    },
+    onLighting(l) {
+      sim.lights.push(l);
     },
     emit(ev) {
       for (const fn of [...listeners]) fn(ev);
@@ -423,7 +428,7 @@ describe('linnstrument runtime — V05 save/reload retention', () => {
   });
 });
 
-// ── Voices → buses, with lane alignment (V10 / V14 / V15 / V16 state half) ─
+// ── Voices → buses, with lane alignment (V10 / V14; V15's STATE half) ──────
 
 describe('linnstrument runtime — voices, lanes and expression alignment', () => {
   it('a keys touch opens lane 0 at (root − 60)/12 with the gate high; release closes it', async () => {
@@ -591,6 +596,28 @@ describe('linnstrument runtime — the arps own their bus while on', () => {
     off.sim.emit(edge(off.sim, 'keyboard_arp', true));
     expect(off.persisted().keys_arp_on).toBeUndefined();
     expect(off.api.state().arp.keys.enabled).toBe(false);
+    // …PANIC included: a hand resting on the column cannot close the voices.
+    off.sim.emit(touchStart(off.sim, 1, 'keys', 0, 0));
+    expect(laneValue(off.handle, 'keys_poly', 0, 'gate')).toBe(1);
+    off.sim.emit(edge(off.sim, 'panic', true));
+    expect(laneValue(off.handle, 'keys_poly', 0, 'gate')).toBe(1);
+    expect(off.api.state().active.keys).toBe(1);
+    // The FACE's PANIC cell is not one of the five: it dispatches the intent directly and still fires.
+    off.api.dispatch({ kind: 'panic' });
+    expect(laneValue(off.handle, 'keys_poly', 0, 'gate')).toBe(0);
+    expect(off.api.state().active.keys).toBe(0);
+  });
+
+  it('LIGHTING (D09): the runtime publishes ITS roots and scale to the source, on build and on every change', async () => {
+    const r = await rig({ keys_root: 48, pad_root: 72, scale: 1 });
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 48, padRoot: 72, scale: 'major' });
+    expect(r.api.state().lighting).toEqual({ keysRoot: 48, padRoot: 72, scale: 'major' });
+    r.handle.setParam!('scale', 0);
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 48, padRoot: 72, scale: undefined });
+    r.sim.emit(edge(r.sim, 'octave_up', true)); // OCT+ on the instrument moves keys_root → the lights follow the MODULE
+    expect(r.sim.lights.at(-1)).toEqual({ keysRoot: 60, padRoot: 72, scale: undefined });
+    r.handle.setParam!('scale', 99); // out of roster → chromatic, never a throw
+    expect(r.sim.lights.at(-1)!.scale).toBeUndefined();
   });
 });
 

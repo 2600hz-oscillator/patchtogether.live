@@ -17,6 +17,8 @@
 // ⚠ PLAIN `.ts`, no runes: audio defs import this file and the ART workspace's
 // node vitest loads every def with no Svelte compiler (trails-device.ts:20-24).
 
+import type { ScaleName } from '$lib/mike/music-theory';
+
 // ── Geometry ──────────────────────────────────────────────────────────────
 
 /** A region of the playing surface as a rectangle in APPLICATION coordinates
@@ -90,6 +92,29 @@ export interface LinnPalette {
   pink: number;
 }
 
+/** Which palette entry each LIGHTING ROLE of the two musical regions uses
+ *  (design.md lighting table: root cyan, other scale tones "green or lime
+ *  after physical review", out-of-scale off but still playable — D09 —,
+ *  played "white or pink, auditioned on device"). Palette KEYS, so a physical
+ *  review changes one word per role. ⚠ HARDWARE-VERIFY (D18). */
+export interface LinnLightingRoles {
+  root: keyof LinnPalette;
+  inScale: keyof LinnPalette;
+  outScale: keyof LinnPalette;
+  played: keyof LinnPalette;
+}
+
+/** What the MODULE tells the source to light the keys and the pad with: ITS
+ *  roots and ITS scale (the `keys_root` / `pad_root` / `scale` params), so
+ *  the lights can never disagree with the notes the runtime derives (WP-C
+ *  open item 3c). `scale` undefined = chromatic — only the roots are
+ *  landmarks; nothing is out of scale (keyboard-map.ts `noteRole`). */
+export interface LinnLighting {
+  keysRoot: number;
+  padRoot: number;
+  scale: ScaleName | undefined;
+}
+
 export interface LinnProfile {
   /** Physical playing surface (LinnStrument 200: 25 × 8). */
   columns: number;
@@ -118,6 +143,8 @@ export interface LinnProfile {
   lanesPerRegion: number;
   calibration: LinnCalibration;
   palette: LinnPalette;
+  /** Palette entry per lighting role of the keys / pad regions (D18 approximations). */
+  lighting: LinnLightingRoles;
 }
 
 // ── Identity ──────────────────────────────────────────────────────────────
@@ -305,4 +332,7 @@ export interface LinnstrumentSource {
    *  source paints; it never decides (design.md:154). Optional so a stock-MPE
    *  source without LED ownership can omit it. */
   onSelection?(state: SelectionState): void;
+  /** The module's roots and scale for keys / pad LIGHTING (the D09 lighting
+   *  half). Optional for the same reason as `onSelection`. */
+  onLighting?(lighting: LinnLighting): void;
 }

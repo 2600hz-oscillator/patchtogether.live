@@ -1569,6 +1569,7 @@ linnstrument param pos_g_x -1..1 linear default=0
 linnstrument param pos_g_y -1..1 linear default=0
 linnstrument param pos_r_x -1..1 linear default=0
 linnstrument param pos_r_y -1..1 linear default=0
+linnstrument param scale 0..6 discrete default=0
 linnstrument param sel_b 0..1 discrete default=0
 linnstrument param sel_g 0..1 discrete default=0
 linnstrument param sel_r 0..1 discrete default=1
