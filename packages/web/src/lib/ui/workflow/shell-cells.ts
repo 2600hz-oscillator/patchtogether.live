@@ -114,6 +114,8 @@ import {
 import { SAMSLOOP_RATE_LANDMARKS } from '$lib/audio/modules/samsloop';
 import {
   downloadSamsloopSample,
+  denoiseSamsloopSample,
+  normalizeSamsloopSample,
   loadSamsloopAudioFile,
   samsloopBitsOptions,
   samsloopBitsValue,
@@ -1255,6 +1257,32 @@ const SHELL_CELLS: Record<string, Record<string, ShellCell>> = {
       mode: 'trigger',
       probe: { effect: { kind: 'audition', seam: 'engine-message' } },
       onFire: (nodeId) => { toggleSamsloopRecord(nodeId); },
+    },
+
+    // The two IN-PLACE TRANSFORMS (owner, 2026-09-11). DENOISE ranks before
+    // NORMALIZE on the page because that is the processing order — a floor
+    // profiled AFTER a gain change is the same floor, but a normalize AFTER a
+    // denoise lands the peak on the cleaned take. Both are fire-and-forget
+    // (`saveFrametableFile`'s shape): the outcome lands on the status seam the
+    // dock body paints, not on the return. ⚠ Their seams are their OWN
+    // (`sample-normalize` / `sample-denoise`, audition-ledger.ts): a transform
+    // reaches no engine and no file, and one shared seam would let a probe on
+    // either button be satisfied by the other. NOT UNDOABLE — export first.
+    'samsloop-denoise-{n}': {
+      kind: 'action',
+      label: 'denoise',
+      title: 'Remove steady background noise or tape hiss from the sample (rewrites it in place — not undoable, export first)',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'sample-denoise' } },
+      onFire: (nodeId) => { void denoiseSamsloopSample(nodeId); },
+    },
+    'samsloop-normalize-{n}': {
+      kind: 'action',
+      label: 'normalize',
+      title: 'Remove DC offset and raise the sample peak to 0 dBFS (rewrites it in place — not undoable, export first)',
+      mode: 'trigger',
+      probe: { effect: { kind: 'audition', seam: 'sample-normalize' } },
+      onFire: (nodeId) => { void normalizeSamsloopSample(nodeId); },
     },
 
     // Export the sample — the recording as a WAV, or an upload's ORIGINAL bytes
