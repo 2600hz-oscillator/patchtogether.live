@@ -52,6 +52,7 @@ describe('normalizeRigBindings', () => {
       push: { deviceId: 'push2' },
       ptz: { deviceId: 'ptz1' },
       gamepad: { id: 'Xbox Wireless Controller', index: 0 },
+      linnstrument: { deviceId: 'linn-in' },
       es9: { pushPolicy: 'always' },
       bogus: 42,
     });
@@ -64,7 +65,27 @@ describe('normalizeRigBindings', () => {
     expect(out.push?.deviceId).toBe('push2');
     expect(out.ptz?.deviceId).toBe('ptz1');
     expect(out.gamepad).toEqual({ id: 'Xbox Wireless Controller', index: 0 });
+    expect(out.linnstrument).toEqual({ deviceId: 'linn-in' });
     expect(out.es9?.pushPolicy).toBe('always');
+  });
+
+  it('linnstrument: round-trips a well-formed record and DROPS a malformed one', () => {
+    // The ptz discipline (device-slot-bindings.ts): a string deviceId is the
+    // whole contract; anything else is unbound, never a crash or a stale id.
+    expect(normalizeRigBindings({ linnstrument: { deviceId: 'linn-in' } }).linnstrument).toEqual({
+      deviceId: 'linn-in',
+    });
+    // Extra keys are stripped — only the contract survives a load.
+    expect(normalizeRigBindings({ linnstrument: { deviceId: 'linn-in', mode: 'x' } }).linnstrument).toEqual({
+      deviceId: 'linn-in',
+    });
+    expect(normalizeRigBindings({ linnstrument: { deviceId: 42 } }).linnstrument).toBeUndefined();
+    expect(normalizeRigBindings({ linnstrument: { id: 'linn-in' } }).linnstrument).toBeUndefined();
+    expect(normalizeRigBindings({ linnstrument: 'linn-in' }).linnstrument).toBeUndefined();
+    expect(normalizeRigBindings({ linnstrument: null }).linnstrument).toBeUndefined();
+    // A JSON round-trip (the localStorage backend's shape) keeps it.
+    const back = normalizeRigBindings(JSON.parse(JSON.stringify(normalizeRigBindings({ linnstrument: { deviceId: 'linn-in' } }))));
+    expect(back.linnstrument).toEqual({ deviceId: 'linn-in' });
   });
 
   it('keeps a gamepad id without an index and drops one with no id', () => {
@@ -113,6 +134,20 @@ describe('RigBindingStore', () => {
     expect(backend.saved.at(-1)?.gamepad?.id).toBe('Xbox Wireless Controller');
     store.setGamepad(null);
     expect(store.getGamepad()).toBeNull();
+
+    // LinnStrument singleton — get/set/clear + persist, and the CLONE the
+    // store hands out is a copy (mutating a snapshot cannot reach the cache).
+    expect(store.getLinnstrument()).toBeNull();
+    store.setLinnstrument({ deviceId: 'linn-in' });
+    expect(store.getLinnstrument()).toEqual({ deviceId: 'linn-in' });
+    expect(backend.saved.at(-1)?.linnstrument).toEqual({ deviceId: 'linn-in' });
+    const before = store.snapshot();
+    store.setLinnstrument({ deviceId: 'linn-in-2' });
+    expect(before.linnstrument?.deviceId).toBe('linn-in'); // the old snapshot is untouched
+    expect(store.snapshot().linnstrument?.deviceId).toBe('linn-in-2');
+    store.setLinnstrument(null);
+    expect(store.getLinnstrument()).toBeNull();
+    expect(backend.saved.at(-1)?.linnstrument).toBeUndefined();
     store.dispose();
   });
 

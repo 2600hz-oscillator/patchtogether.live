@@ -234,6 +234,13 @@ const SUBSCRIBER_LEDGER: Record<string, SubscriberRow> = {
     messages: '14-bit CC (0xB0), note on/off (0x90/0x80) and MIDI real-time clock/start/stop (0xF8/0xFA/0xFB/0xFC)',
     why: "scoped to every LIVE input whose name matches /trails/i — a Bela Trails advertises one port per interface and Windows' WinMM driver duplicates the name, so the claim attaches to each matching port object rather than to one id. ONE claim owns them and fans frames out to every `trails` node in the rack, because `onmidimessage` is a single slot and per-module claims would evict each other (the PT-PTZ two-module measurement). The decoder ignores any MIDI channel outside the eight the axis map names, so foreign traffic on a same-named port cannot move a jack.",
   },
+  'midi/linnstrument-device.ts': {
+    ports: 'named-device',
+    device: 'name-match',
+    channel: 'none',
+    messages: 'User Firmware Mode only: note on/off (cell press/release, note = wire column), CC 1..25 / 33..57 / 65..89 (X hi/lo, local Y), CC119 (slide), poly pressure (Z), NRPN 245 readback; everything else is rejected by the decoder and counted',
+    why: "scoped to the ONE input the RIG names (rigBindings().getLinnstrument(), picked on /preflight) and only when its name matches /linnstrument/i; attachOnly([input]) so a re-target releases only its own slot. The channel nibble is a ROW in User Mode, not a MIDI channel, so there is no channel gate by construction — decodePhysicalMidi rejects any status outside the raw-mode vocabulary and a rejection never reaches the source registry.",
+  },
   'audio/ptz-midi.ts': {
     ports: 'named-device',
     device: 'name-match',
