@@ -875,6 +875,64 @@ const DRIVERS: Record<string, PerPortDriver> = {
       'TRAILS: install the simulated Bela Trails via __trailsTestInstall, then drive BOTH modes on all four channels — a held CC touch (x1..y4 + g1..g4) and a held note-mode strike plus a second step (poly1..poly4, whose lanes only exist in note mode, and trig1..trig4, which fire per STEP). Notes are pitched away from C4 so the V/oct lanes are non-zero. (clock exempt — 5 ms one-shot)',
   },
 
+  // ───── LINNSTRUMENT — install the simulated LinnStrument + hold a key and a pad finger ─────
+  //
+  // The trails shape, one instrument over: no `pageSetup` mock. The app's own
+  // `__linnstrumentTestInstall` hook (Canvas.svelte, VITE_E2E_HOOKS) builds an
+  // in-memory MIDIAccess whose input/output pair is NAMED like the hardware
+  // and runs the REAL `connectLinnstrument()` against it — the /linnstrument/i
+  // port match, the `createMidiInputClaim` slot, the NRPN 245 User-Mode entry
+  // on the output, `decodePhysicalMidi` → `mapSurface`, the source registry and
+  // the module runtime's reducer / MPE allocator all execute here. `touch()`
+  // spells the real User-Mode bytes (Note On on the ROW channel, CC X lo/hi,
+  // CC Y, poly pressure Z).
+  //
+  // EIGHT outputs, two kinds:
+  //   * r_x r_y g_x g_y b_x b_y — the three RETAINED XY pairs. Every pair rests
+  //     at (0, 0) and only a SELECTED pair follows a finger (R alone by the D08
+  //     default), so all six are SEEDED off-centre through their persisted
+  //     params (the joystick precedent — `pos_*` is what save/load retains).
+  //     Distinct per axis so a cross-wired jack reads WRONG, not merely alive.
+  //     The pad finger below then moves the selected R pair to (≈+0.9, ≈+0.95)
+  //     — a real reducer transition on top of the seed — while G and B keep
+  //     theirs.
+  //   * keys_poly / pad_poly — one Note On per bus, held for the window. A
+  //     poly→SCOPE edge reads lane-0 PITCH as DC, so both cells sit far above
+  //     C4 (0 V would be indistinguishable from a bus that never moved): keys
+  //     cell (15, 7) = 36 + 15 + 5·7 = 86, pad cell (24, 7) = 60 + 7 + 5·7 = 102.
+  //     `pad_root` starts the pad at C4 by default, so the pad cell is chosen
+  //     by the same arithmetic, not by luck.
+  linnstrument: {
+    params: {
+      pos_r_x: 0.7, pos_r_y: 0.5,
+      pos_g_x: -0.6, pos_g_y: 0.4,
+      pos_b_x: 0.3, pos_b_y: -0.8,
+    },
+    postSpawn: async (page) => {
+      await page.evaluate(async () => {
+        const w = globalThis as unknown as {
+          __linnstrumentTestInstall?: (o?: { bind?: boolean }) => Promise<boolean>;
+          __linnstrumentSim?: {
+            touch: (col: number, row: number, o?: { velocity?: number; x?: number; y?: number; z?: number }) => void;
+          };
+        };
+        if (!w.__linnstrumentTestInstall) return;
+        await w.__linnstrumentTestInstall();
+        const sim = w.__linnstrumentSim;
+        if (!sim) return;
+        // keys_poly: a held key well above C4 (lane 0 pitch ≈ +2.17 V).
+        sim.touch(15, 7, { x: 3000, z: 90 });
+        // pad_poly + the selected R pair: raw X near the pad's right edge under
+        // the profile's whole-device prior (u ≈ 0.95 → R X ≈ +0.9); CC Y 100 on
+        // the TOP row — v spans the whole pad height, (7 + 100/127) / 8 ≈ 0.97
+        // → R Y ≈ +0.95 (surface-map.ts padUV); lane 0 pitch ≈ +3.5 V.
+        sim.touch(24, 7, { x: 4200, y: 100, z: 80 });
+      });
+    },
+    note:
+      'LINNSTRUMENT: install the simulated LinnStrument via __linnstrumentTestInstall (the REAL connect + User-Mode bind path), seed the six retained pos_* params off-centre (joystick precedent — only the selected R pair follows a finger), then hold one keys cell and one pad cell far above C4 so keys_poly / pad_poly carry a non-zero lane-0 pitch and the pad finger moves R through the real reducer',
+  },
+
   // ───── MIDI LANE — mock requestMIDIAccess + send note-on + CCs ─────
   //
   // Drives pitch_cv / gate / velocity_cv (sustained note-on) + cc_a (CC1)
