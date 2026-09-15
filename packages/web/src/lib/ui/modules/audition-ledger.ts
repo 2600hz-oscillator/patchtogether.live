@@ -85,12 +85,26 @@ import { testHooksEnabled } from '$lib/dev/test-hooks';
  * exact aliasing `manual-press` was split out to prevent, one seam over.
  * `delivered: false` is recorded when there is nothing to export.
  */
+/**
+ * `sample-normalize` / `sample-denoise` are the SIXTH and SEVENTH members, for
+ * samsloop's two in-place transforms. Like `file-export` they reach no engine
+ * and no worklet — the press re-decodes `node.data`, runs the dsp core in a
+ * worker and writes a fresh `sample` record — so `engine-message` would make
+ * the ledger describe something that did not happen. They are TWO members and
+ * not one `sample-transform`: a probe watching DENOISE on a node would
+ * otherwise be satisfied by a NORMALIZE press on the same node, which is the
+ * aliasing every split here exists to prevent. `delivered: true` with a false
+ * return on a sample-less node is the `file-export` rule (the seam was
+ * reached; there was no subject); `delivered: false` only when no node.
+ */
 export type AuditionSeam =
   | 'manual-strike'
   | 'manual-gate'
   | 'engine-message'
   | 'manual-press'
-  | 'file-export';
+  | 'file-export'
+  | 'sample-normalize'
+  | 'sample-denoise';
 
 export interface AuditionRecord {
   /** Monotonic, so a probe can ask "since I looked" without clock skew. */
