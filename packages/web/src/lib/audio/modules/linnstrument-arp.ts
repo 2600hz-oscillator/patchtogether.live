@@ -74,6 +74,7 @@ import {
   type ArpState,
 } from '$lib/audio/arp-engine';
 import { midiToVOct } from '$lib/audio/note-entry';
+import { MPE_TIMBRE_REST } from '$lib/midi/mpe-state';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 
 /** The touch identity the module hands us — the same generation id that keys
@@ -138,6 +139,11 @@ export interface LinnArp {
   touchStart(touch: ArpTouchId, note: number, expression?: Partial<ArpExpression>): void;
   touchExpression(touch: ArpTouchId, expression: Partial<ArpExpression>): void;
   touchEnd(touch: ArpTouchId): void;
+  /** Seconds a step is scheduled ahead of `service`'s `audioTime`. Read it to
+   *  place a write of your OWN on the same grid the steps land on — anything
+   *  at `audioTime + lookaheadS` is at or past every step this arp has already
+   *  queued, so it cannot be undone by one still sitting in the lookahead. */
+  readonly lookaheadS: number;
   /** Drive the transport: schedules AT MOST ONE step per call (header: THE
    *  LATE-STEP POLICY). Returns the steps it played. */
   service(input: ArpServiceInput): ArpPlayed[];
@@ -169,7 +175,7 @@ const DEFAULT_GATE_RATIO = 0.5;
  *  zero even at the 8× division of a fast tempo. */
 const MIN_GATE_LOW_S = 128 / 48000;
 
-const DEFAULT_EXPRESSION: ArpExpression = { velocity: 0.8, pressure: 0, timbre: 0.5, bend: 0 };
+const DEFAULT_EXPRESSION: ArpExpression = { velocity: 0.8, pressure: 0, timbre: MPE_TIMBRE_REST, bend: 0 };
 
 interface HeldTouch {
   touch: ArpTouchId;
@@ -209,6 +215,7 @@ export function createLinnArp(opts: LinnArpOptions = {}): LinnArpWithSink {
     get enabled() {
       return enabled;
     },
+    lookaheadS,
     touchStart(touch, note, expression) {
       if (!Number.isFinite(note)) return;
       const m = Math.round(note);

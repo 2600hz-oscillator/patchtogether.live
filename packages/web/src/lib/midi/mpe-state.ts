@@ -34,6 +34,17 @@ import { createVoiceAllocator, type VoiceAllocator } from '$lib/audio/poly-alloc
 import { midiToVOct } from '$lib/audio/note-entry';
 import type { Epoch, SurfaceEvent } from './linnstrument/types';
 
+/**
+ * CC 74's REST BYTE, normalised — the timbre a finger reads before it has
+ * moved vertically, and what a channel's cache resets to. The wire value is a
+ * BYTE and its neutral is 64, so the normalised rest is 64/127 ≈ 0.5039, NOT
+ * the midpoint 0.5 of the 0..1 normalisation. Every rest default here and
+ * every bipolar re-centring downstream reads this one constant: a literal 0.5
+ * put a resting finger 0.0079 off centre on the LinnStrument's bipolar timbre
+ * jack, which the module docs promised was exactly 0 (2026-09-15 review).
+ */
+export const MPE_TIMBRE_REST = 64 / 127;
+
 export interface MpeVoice {
   /** Generation id: the allocator key. */
   id: number;
@@ -393,7 +404,7 @@ export function applyTouch(state: MpeState, event: SurfaceEvent): MpeEvent[] {
       state.counters.rejected++;
       return events;
     }
-    startVoice(state, event.touch, null, event.note, clamp01(event.velocity / 127), { bend: 0, pressure: 0, timbre: 0.5 }, time, events);
+    startVoice(state, event.touch, null, event.note, clamp01(event.velocity / 127), { bend: 0, pressure: 0, timbre: MPE_TIMBRE_REST }, time, events);
     return events;
   }
   const v = state.voices.get(event.touch);

@@ -31,6 +31,10 @@
 import { explainInputPort, explainOutputPort, type ExplainPort } from './io-explain';
 import { MODULE_DOCS } from './module-docs.generated';
 import type { ModuleDocs } from '$lib/graph/types';
+// Plain data (no engine import): the LinnStrument's expression-jack ids are
+// DERIVED from the same lane cap the def spreads, so the doc page cannot
+// drift from the def when the cap moves.
+import { expressionPortIds as linnstrumentExpressionPortIds } from '$lib/midi/linnstrument/profile';
 
 // ⚠ THE `!*.test.ts` EXCLUSION IS LOAD-BEARING, not tidiness. `?raw` inlines
 // each matched file's SOURCE TEXT into the bundle, and 179 audio + 68 video
@@ -1325,6 +1329,19 @@ function readModule(file: string, rawSrc: string): RawModule | null {
       outs.push({ id: `audio${i}R`, type: 'audio' });
     }
     out.outputs = outs;
+  }
+
+  // linnstrument's 36 expression jacks are a SPREAD after eight literal
+  // outputs (`...expressionOutputs()`, F03) — the literal extractor sees the
+  // eight and not the spread. Derive the rest from the def's own source of
+  // truth (profile.ts: lane cap × dims × regions) rather than typing them;
+  // module-manifest.test.ts's "manifest input/output ids match def" sweep
+  // pins the two in step.
+  if (out.type === 'linnstrument') {
+    const seen = new Set(out.outputs.map((p) => p.id));
+    for (const { id } of linnstrumentExpressionPortIds()) {
+      if (!seen.has(id)) out.outputs.push({ id, type: 'cv' });
+    }
   }
 
   return out;

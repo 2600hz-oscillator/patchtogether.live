@@ -18,13 +18,19 @@ import { joystickDef } from './joystick';
 import {
   createLinnstrumentRuntime,
   cvPortId,
+  EXPRESSION_DIMS,
+  expressionPortId,
   polyPortId,
   positionParamId,
   selectorParamId,
   setLinnstrumentConnector,
+  timbreJack,
+  type ExpressionDim,
   type LinnstrumentCardApi,
   type LinnstrumentRuntimeDeps,
 } from './linnstrument-runtime';
+import { LINN_EXPRESSION_LANES } from '$lib/midi/linnstrument/profile';
+import { MPE_TIMBRE_REST } from '$lib/midi/mpe-state';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { __resetLinnstrumentSourceForTest, setLinnstrumentSource } from '$lib/midi/linnstrument/source-registry';
@@ -288,9 +294,31 @@ describe('linnstrument def — the contract the runtime implements', () => {
     expect(byId.get('extra_controls')!.defaultValue).toBe(1);
   });
 
-  it('D14: NO expression jacks ship — the buses are pitch + gate only', () => {
+  it('F03: exactly 3 × LINN_EXPRESSION_LANES × 2 expression jacks, `cv`, lane-numbered, lowercase, each a { node, output: 0 } source at rest 0 with a doc sentence; the buses stay pitch + gate only', async () => {
     expect(linnstrumentDef.outputs.filter((o) => o.type === 'polyPitchGate').length).toBe(2);
-    expect(linnstrumentDef.outputs.some((o) => /press|timbre|vel/.test(o.id))).toBe(false);
+    const jacks = linnstrumentDef.outputs.filter((o) => /^(keys|pad)_(vel|press|timbre)\d+$/.test(o.id));
+    expect(jacks.length).toBe(3 * LINN_EXPRESSION_LANES * 2);
+    expect(linnstrumentDef.outputs.length, 'additive: the eight original jacks plus the expression jacks').toBe(8 + jacks.length);
+    const r = await rig();
+    for (const region of ['keys', 'pad'] as const) {
+      for (const dim of EXPRESSION_DIMS) {
+        for (let lane = 0; lane < LINN_EXPRESSION_LANES; lane++) {
+          const id = expressionPortId(region, dim, lane);
+          const port = linnstrumentDef.outputs.find((o) => o.id === id);
+          expect(port?.type, id).toBe('cv');
+          expect(port?.label, id).toBe(`${region} ${dim} ${lane + 1}`);
+          expect(port?.label).toBe(port?.label?.toLowerCase());
+          expect(linnstrumentDef.docs?.outputs?.[id]?.length ?? 0, `${id} is documented`).toBeGreaterThan(80);
+          expect(r.handle.outputs.get(id), id).toMatchObject({ output: 0 });
+          expect(cvValue(r.handle, id), `${id} rests at 0`).toBe(0);
+        }
+        // Lane N+1 has no jack: the lanes beyond the cap play on the bus only.
+        expect(linnstrumentDef.outputs.some((o) => o.id === expressionPortId(region, dim, LINN_EXPRESSION_LANES))).toBe(false);
+      }
+    }
+    // No param was added or renumbered, and no input: saved racks are untouched.
+    expect(linnstrumentDef.params.map((p) => p.id)).not.toContain(expect.stringMatching(/vel|press|timbre/));
+    expect(linnstrumentDef.inputs).toEqual([]);
   });
 });
 
@@ -869,5 +897,300 @@ describe('linnstrument runtime — targets, disposal and headless operation', ()
     expect(r.api.state().session.state).toBe('disconnected');
     expect(laneValue(r.handle, 'keys_poly', 0, 'gate')).toBe(0);
     expect(r.api.state().active.keys).toBe(0);
+  });
+});
+
+// ── The expression jacks (F03, owner ruling 2026-09-15 "a build") ──────────
+//
+// One ConstantSource per (region, dim, lane < LINN_EXPRESSION_LANES), written
+// at the SAME `at` as the lane's pitch / gate. The fake records every write,
+// so ORDER and TIME are pinned, not just the value the source ends up holding.
+
+function exprSource(handle: AudioDomainNodeHandle, region: 'keys' | 'pad', dim: ExpressionDim, lane: number): FakeConstantSourceNode {
+  const src = handle.outputs.get(expressionPortId(region, dim, lane))?.node as unknown as FakeConstantSourceNode | undefined;
+  if (!src) throw new Error(`no jack ${expressionPortId(region, dim, lane)}`);
+  return src;
+}
+const sets = (src: FakeConstantSourceNode): Recorded[] => src.offset.events.filter((e) => e.kind === 'set');
+const lastSet = (src: FakeConstantSourceNode): Recorded | undefined => sets(src).at(-1);
+
+describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
+  it('voice_start on lane k writes vel (latched), press 0 and timbre 0 at the SAME time as the pitch; lane k+1 is untouched', async () => {
+    const r = await rig();
+    // The session the registry replays on subscribe is a bus handover (press
+    // → 0 on every jack); everything below is counted from AFTER it.
+    const before = (region: 'keys' | 'pad', dim: ExpressionDim, lane: number) => sets(exprSource(r.handle, region, dim, lane)).length;
+    const baseline = Object.fromEntries((['keys', 'pad'] as const).flatMap((rg) => EXPRESSION_DIMS.map((dim) => [`${rg}:${dim}`, before(rg, dim, rg === 'keys' ? 1 : 0)] as const)));
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    const pitchAt = laneEvents(r.handle, 'keys_poly', 0, 'pitch').at(-1)!.time;
+    const gateAt = laneEvents(r.handle, 'keys_poly', 0, 'gate').at(-1)!.time;
+    expect(gateAt).toBe(pitchAt);
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))).toEqual({ kind: 'set', value: 100 / 127, time: pitchAt });
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))).toEqual({ kind: 'set', value: 0, time: pitchAt });
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))).toEqual({ kind: 'set', value: timbreJack(MPE_TIMBRE_REST), time: pitchAt });
+    expect(timbreJack(MPE_TIMBRE_REST)).toBe(0);
+    for (const dim of EXPRESSION_DIMS) {
+      expect(before('keys', dim, 1), `keys lane 1 ${dim} saw no write`).toBe(baseline[`keys:${dim}`]);
+      expect(before('pad', dim, 0), `the pad bus's jacks saw no write`).toBe(baseline[`pad:${dim}`]);
+    }
+    // A second finger lands on lane 1 with its OWN velocity.
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 3, 0, 40));
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 1))?.value).toBeCloseTo(40 / 127);
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))?.value, 'lane 0 keeps its own latched velocity').toBeCloseTo(100 / 127);
+  });
+
+  it('voice_expression writes press and timbre on THAT lane at its own time; timbre is bipolar on the jack (1 → +1, 0.25 → −0.51) and 0..1 on the card-api; vel is NOT rewritten', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0));
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 3, 0));
+    const velWrites = sets(exprSource(r.handle, 'keys', 'vel', 1)).length;
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.75, timbre: 1 }));
+    const pitchAt = laneEvents(r.handle, 'keys_poly', 1, 'pitch').at(-1)!.time;
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 1))).toEqual({ kind: 'set', value: 0.75, time: pitchAt });
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))).toEqual({ kind: 'set', value: 1, time: pitchAt });
+    expect(sets(exprSource(r.handle, 'keys', 'vel', 1)).length, 'velocity is latched: no write on expression').toBe(velWrites);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'lane 0 is untouched (per voice, not broadcast)').toBe(0);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(0);
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { timbre: 0.25 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBeCloseTo(timbreJack(0.25));
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { timbre: 0 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBe(-1);
+    // The card-api keeps the 0..1 convention (V15's state pin in the e2e).
+    expect(r.api.expression('keys')[1]).toMatchObject({ pressure: 0.75, timbre: 0 });
+    expect(r.api.expression('keys')[0]).toMatchObject({ pressure: 0, timbre: MPE_TIMBRE_REST });
+  });
+
+  it('the timbre jack is centred on CC 74\'s REST BYTE: y 64 → EXACTLY 0, y 127 → +1, y 0 → −1', async () => {
+    // The wire normalises the Y byte as `raw.y / 127` (surface-map.ts:199), so
+    // the jack must re-centre on the BYTE 64. `2·t − 1` centred it on the 0..1
+    // midpoint — y 63.5, a byte the instrument cannot send — and left the real
+    // rest byte at +0.0079, while the jack docs promise "an unpatched jack and
+    // a resting finger read alike" (2026-09-15 review).
+    expect(timbreJack(64 / 127)).toBe(0);
+    expect(timbreJack(MPE_TIMBRE_REST)).toBe(0);
+    expect(timbreJack(127 / 127)).toBe(1);
+    expect(timbreJack(0 / 127)).toBe(-1);
+    // The bottom half spans 64 bytes against the top's 63, so ONLY the last
+    // byte clamps — every other byte is a distinct value.
+    expect(timbreJack(1 / 127)).toBe(-1);
+    expect(timbreJack(2 / 127)).toBeGreaterThan(-1);
+    expect(timbreJack(0.5), 'the 0..1 midpoint is NOT the rest byte').toBeCloseTo(-0.0079, 4);
+    expect(timbreJack(Number.NaN)).toBe(0);
+    // …and that exact 0 is what the runtime writes for a finger that has not
+    // moved vertically: at the voice start, and again when byte 64 arrives.
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value, 'the rest before any Y byte').toBe(0);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { timbre: 64 / 127 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value, 'CC 74 at 64').toBe(0);
+    expect(r.api.expression('keys')[0]!.timbre, 'the card-api keeps the raw 0..1 off the wire (V15)').toBeCloseTo(64 / 127, 10);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { timbre: 127 / 127 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { timbre: 0 / 127 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(-1);
+  });
+
+  it('V10: a stolen touch\'s stale expression writes NOTHING on the jack', async () => {
+    const r = await rig();
+    for (let i = 1; i <= POLY_CHANNEL_PAIRS; i++) r.sim.emit(touchStart(r.sim, i, 'keys', i % 16, 0));
+    r.sim.emit(touchStart(r.sim, 17, 'keys', 3, 2)); // steals lane 0 from touch 1
+    const press0 = sets(exprSource(r.handle, 'keys', 'press', 0)).length;
+    const timbre0 = sets(exprSource(r.handle, 'keys', 'timbre', 0)).length;
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 1, timbre: 1 }));
+    expect(sets(exprSource(r.handle, 'keys', 'press', 0)).length).toBe(press0);
+    expect(sets(exprSource(r.handle, 'keys', 'timbre', 0)).length).toBe(timbre0);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the newcomer\'s pressure stands').toBe(0);
+    // …and the stolen touch's release writes nothing either (press stays the newcomer's).
+    r.sim.emit(touchExpr(r.sim, 17, 'keys', { pressure: 0.6 }));
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.6);
+  });
+
+  it('voice_end writes press 0 with the gate-low and RETAINS vel and timbre until the lane is reassigned', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 90));
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.5, timbre: 0.75 }));
+    const velWrites = sets(exprSource(r.handle, 'keys', 'vel', 0)).length;
+    const timbreWrites = sets(exprSource(r.handle, 'keys', 'timbre', 0)).length;
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    const gateAt = laneEvents(r.handle, 'keys_poly', 0, 'gate').at(-1)!;
+    expect(gateAt.value).toBe(0);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))).toEqual({ kind: 'set', value: 0, time: gateAt.time });
+    expect(sets(exprSource(r.handle, 'keys', 'vel', 0)).length).toBe(velWrites);
+    expect(sets(exprSource(r.handle, 'keys', 'timbre', 0)).length).toBe(timbreWrites);
+    expect(exprSource(r.handle, 'keys', 'vel', 0).offset.value).toBeCloseTo(90 / 127);
+    expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBeCloseTo(timbreJack(0.75));
+    // The lane is reassigned: every dimension is re-initialised before it opens.
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 1, 0, 30));
+    expect(exprSource(r.handle, 'keys', 'vel', 0).offset.value).toBeCloseTo(30 / 127);
+    expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBe(0);
+    expect(exprSource(r.handle, 'keys', 'press', 0).offset.value).toBe(0);
+  });
+
+  it('a touch on a lane at or beyond LINN_EXPRESSION_LANES plays on the bus and has no jack to write — no throw', async () => {
+    const r = await rig();
+    for (let i = 1; i <= LINN_EXPRESSION_LANES + 1; i++) r.sim.emit(touchStart(r.sim, i, 'keys', i % 16, 0));
+    const beyond = LINN_EXPRESSION_LANES; // lane index N is the (N+1)th finger
+    expect(laneValue(r.handle, 'keys_poly', beyond, 'gate')).toBe(1);
+    expect(r.handle.outputs.has(expressionPortId('keys', 'press', beyond))).toBe(false);
+    r.sim.emit(touchExpr(r.sim, LINN_EXPRESSION_LANES + 1, 'keys', { pressure: 1 }));
+    expect(r.api.expression('keys')[beyond]!.pressure).toBe(1);
+    r.sim.emit(touchEnd(r.sim, LINN_EXPRESSION_LANES + 1, 'keys'));
+    expect(laneValue(r.handle, 'keys_poly', beyond, 'gate')).toBe(0);
+  });
+
+  it('PANIC: every expression source on both regions gets a cancel at now, then rest 0 — vel and timbre included; XY stays', async () => {
+    const r = await rig({ sel_r: 1, pos_r_x: 0.4 });
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.9, timbre: 1 }));
+    r.sim.emit(touchStart(r.sim, 2, 'pad', 0, 0, 100));
+    r.ctx.currentTime = 5;
+    r.api.dispatch({ kind: 'panic' });
+    for (const region of ['keys', 'pad'] as const) {
+      for (const dim of EXPRESSION_DIMS) {
+        for (let lane = 0; lane < LINN_EXPRESSION_LANES; lane++) {
+          const ev = exprSource(r.handle, region, dim, lane).offset.events;
+          const cancel = ev.findIndex((e) => e.kind === 'cancel' && e.time === 5);
+          expect(cancel, `${region} ${dim} ${lane}: cancelled at now`).toBeGreaterThanOrEqual(0);
+          const after = ev.slice(cancel + 1);
+          expect(after.at(-1), `${region} ${dim} ${lane}: rest 0 after the cancel`).toEqual({ kind: 'set', value: 0, time: 5 });
+        }
+      }
+    }
+    expect(cvValue(r.handle, 'r_x')).toBeCloseTo(0.4);
+  });
+
+  it('ARP: on takes the bus (cancel on every jack, press → 0); a tick writes lane 0\'s vel / press / timbre at the step\'s OWN `at`; the owning finger\'s live expression follows on lane 0; off re-asserts the held voices\' expression', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100)); // lane 0
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 50)); // lane 1
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.8, timbre: 1 }));
+    r.ctx.currentTime = 1;
+    r.handle.setParam('keys_arp_on', 1);
+    for (let lane = 0; lane < LINN_EXPRESSION_LANES; lane++) {
+      for (const dim of EXPRESSION_DIMS) expect(exprSource(r.handle, 'keys', dim, lane).offset.events.some((e) => e.kind === 'cancel' && e.time === 1), `${dim} ${lane} cancelled at the handover`).toBe(true);
+      expect(lastSet(exprSource(r.handle, 'keys', 'press', lane))).toEqual({ kind: 'set', value: 0, time: 1 });
+    }
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 1))?.value, 'vel retains across the handover').toBeCloseTo(50 / 127);
+    // Step 1 at 1.025 (lookahead): the arp plays the lowest note — touch 1's.
+    r.tick(1000, 1);
+    const stepAt = laneEvents(r.handle, 'keys_poly', 0, 'pitch').at(-1)!.time;
+    expect(stepAt).toBeCloseTo(1.025, 6);
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))).toEqual({ kind: 'set', value: 100 / 127, time: stepAt });
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))).toEqual({ kind: 'set', value: 0, time: stepAt });
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))).toEqual({ kind: 'set', value: 0, time: stepAt });
+    expect(r.api.expression('keys')[0]!.owner).toBe(1);
+    // The owning finger squeezes: lane 0's jacks follow it, lane 1's do not.
+    const press1 = sets(exprSource(r.handle, 'keys', 'press', 1)).length;
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.7 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.7);
+    expect(sets(exprSource(r.handle, 'keys', 'press', 1)).length, 'the direct lane is the arp\'s now: no write').toBe(press1);
+    // The OTHER finger squeezes: not the owner of the playing step, so nothing.
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.1 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.7);
+    // Step 2 at 1.525: touch 2's note, with touch 2's expression (vel 50, press 0.1, timbre +1).
+    r.tick(1500, 1.5);
+    const step2 = laneEvents(r.handle, 'keys_poly', 0, 'pitch').at(-1)!.time;
+    expect(step2).toBeCloseTo(1.525, 6);
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))).toEqual({ kind: 'set', value: 50 / 127, time: step2 });
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.time).toBe(step2);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.1);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))).toEqual({ kind: 'set', value: 1, time: step2 });
+    // ARP off at 1.5: the queued 1.525 step is dropped (F05) and the held
+    // voices' expression is re-asserted lane for lane at now.
+    r.handle.setParam('keys_arp_on', 0);
+    for (const dim of EXPRESSION_DIMS) expect(exprSource(r.handle, 'keys', dim, 0).offset.events.some((e) => e.kind === 'cancel' && e.time === 1.5)).toBe(true);
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))).toEqual({ kind: 'set', value: 100 / 127, time: 1.5 });
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.7);
+    expect(lastSet(exprSource(r.handle, 'keys', 'vel', 1))).toEqual({ kind: 'set', value: 50 / 127, time: 1.5 });
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 1))?.value).toBeCloseTo(0.1);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBe(1);
+  });
+
+  it('arp ownership never replaces direct finger identity, including after arp-off', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 50));
+    r.handle.setParam('keys_arp_on', 1);
+    r.tick(1000, 1);
+    r.tick(1500, 1.5); // lane 0 now plays finger 2, whose allocator lane is 1
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.9, timbre: 1 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBe(0);
+    r.tick(2000, 2); // finger 1 must retain the squeeze made during finger 2's step
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.9);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(1);
+    r.tick(2500, 2.5); // leave the output owned by finger 2 at handover
+    r.handle.setParam('keys_arp_on', 0);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.3 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.3);
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBe(0);
+    expect(laneValue(r.handle, 'keys_poly', 0, 'gate')).toBe(0);
+    expect(laneValue(r.handle, 'keys_poly', 1, 'gate')).toBe(1);
+  });
+
+  it('arp owner lift clears pressure while another finger remains held', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 80));
+    r.handle.setParam('keys_arp_on', 1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.8 }));
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.2 }));
+    r.tick(1000, 1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.9 }));
+    expect(r.api.expression('keys')[0]!.pressure).toBeCloseTo(0.9);
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBe(0);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))!.time).toBeGreaterThanOrEqual(1.025);
+    r.tick(1500, 1.5);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.2);
+  });
+
+  it('arp mode: the last lift returns lane 0 press to 0', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.ctx.currentTime = 1;
+    r.handle.setParam('keys_arp_on', 1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.8, timbre: 1 }));
+    r.tick(1000, 1);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the step carries the owning finger\'s pressure').toBeCloseTo(0.8);
+    const velWrites = sets(exprSource(r.handle, 'keys', 'vel', 0)).length;
+    const timbreWrites = sets(exprSource(r.handle, 'keys', 'timbre', 0)).length;
+    // The last finger lifts. Its pressure clears at the scheduled release,
+    // after any step already queued inside the arp lookahead.
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the owning lift clears pressure').toBe(0);
+    r.tick(1200, 1.2);
+    const settled = lastSet(exprSource(r.handle, 'keys', 'press', 0));
+    expect(settled?.value, 'the pool emptied: press returns to 0').toBe(0);
+    expect(settled?.time, 'past every press already queued').toBeGreaterThanOrEqual(1.025);
+    expect(sets(exprSource(r.handle, 'keys', 'vel', 0)).length, 'vel retains, like a release').toBe(velWrites);
+    expect(sets(exprSource(r.handle, 'keys', 'timbre', 0)).length, 'timbre retains, like a release').toBe(timbreWrites);
+    expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBe(1);
+    // ONCE, not once a tick.
+    const pressWrites = sets(exprSource(r.handle, 'keys', 'press', 0)).length;
+    r.tick(1400, 1.4);
+    r.tick(1600, 1.6);
+    expect(sets(exprSource(r.handle, 'keys', 'press', 0)).length, 'an idle arp does not re-write the rest').toBe(pressWrites);
+    // A new finger re-arms it: the step carries ITS pressure, and the next
+    // empty pool settles that one too.
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 60));
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.4 }));
+    r.tick(1800, 1.8);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.4);
+    r.sim.emit(touchEnd(r.sim, 2, 'keys'));
+    r.tick(2000, 2);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'and again on the next empty pool').toBe(0);
+  });
+
+  it('dispose stops and disconnects every expression source', async () => {
+    const r = await build();
+    const srcs = (['keys', 'pad'] as const).flatMap((region) => EXPRESSION_DIMS.flatMap((dim) => Array.from({ length: LINN_EXPRESSION_LANES }, (_, lane) => exprSource(r.handle, region, dim, lane))));
+    expect(srcs.length).toBe(3 * LINN_EXPRESSION_LANES * 2);
+    r.handle.dispose();
+    for (const s of srcs) {
+      expect(s.stop).toHaveBeenCalled();
+      expect(s.disconnect).toHaveBeenCalled();
+    }
   });
 });

@@ -4,7 +4,13 @@
 // green run is known to be a run the instrument could have failed.
 
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DEFAULT_LINN_PROFILE } from './profile';
+
+/** packages/web/src/lib/midi/linnstrument → <repo>/e2e/tests */
+const REPO_E2E_TESTS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..', '..', 'e2e', 'tests');
 import { createRawDecodeState, decodePhysicalMidi, reconnectRawDecode, type RawDecodeState } from './raw-decode';
 import { createSurfaceMapState, mapSurface, type SurfaceMapState } from './surface-map';
 import { createSelectionState, intentsFromRuntimeEvent, persistedSelection, reduceAll } from './selection-reducer';
@@ -131,6 +137,7 @@ function check(vector: AcceptanceVector, run: Run, e: VectorExpectation): string
       return (e.count === undefined ? n >= 1 : n === e.count) ? [] : [`voice_event ${e.event}${e.reason ? `/${e.reason}` : ''}: ${n} matches`];
     }
     case 'deferred':
+    case 'audible':
       return [];
   }
 }
@@ -152,10 +159,22 @@ describe('acceptance vectors: corpus shape', () => {
     }
   });
 
-  it('exactly V12, V13, V15 and V16 defer a claim to a later WP — and each still asserts state here', () => {
+  it('exactly V12, V13 and V16 defer a claim to a later WP — and each still asserts state here', () => {
     const deferred = ACCEPTANCE_VECTORS.filter((v) => v.expected.some((e) => e.kind === 'deferred'));
-    expect(deferred.map((v) => v.id)).toEqual(['V12', 'V13', 'V15', 'V16']);
+    expect(deferred.map((v) => v.id)).toEqual(['V12', 'V13', 'V16']);
     for (const v of deferred) expect(v.expected.filter((e) => e.kind !== 'deferred').length).toBeGreaterThan(0);
+  });
+
+  it('V15 alone names the e2e spec that owns its audible half — and that spec exists', () => {
+    const audible = ACCEPTANCE_VECTORS.filter((v) => v.expected.some((e) => e.kind === 'audible'));
+    expect(audible.map((v) => v.id)).toEqual(['V15']);
+    for (const v of audible) {
+      expect(v.expected.filter((e) => e.kind !== 'audible').length).toBeGreaterThan(0);
+      for (const e of v.expected) {
+        if (e.kind !== 'audible') continue;
+        expect(existsSync(join(REPO_E2E_TESTS, e.spec)), `${v.id}: ${e.spec} must exist under e2e/tests/`).toBe(true);
+      }
+    }
   });
 });
 
