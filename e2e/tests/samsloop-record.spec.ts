@@ -169,77 +169,82 @@ test.describe('SAMSLOOP audio-input record', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
-  test('a RECORDED sample PLAYS — record → trigger → audible at the output', async ({ page }) => {
-    // THE P0 REGRESSION LOCK. NOISE → samsloop.audio_l_in (the record chain)
-    // and samsloop.out → SCOPE.ch1 (the playback chain), in one patch, so the
-    // recorder's write and the player's read are joined by a cable rather than
-    // by an assumption.
-    const errors = await setupPage(page);
-    await spawnPatch(
-      page,
-      [
-        { id: 'n',   type: 'noise',    position: { x: 100, y: 200 } },
-        { id: 's',   type: 'samsloop', position: { x: 400, y: 200 }, domain: 'audio', params: { mode: 1 } },
-        { id: 'scp', type: 'scope',    position: { x: 800, y: 200 }, domain: 'audio' },
-      ],
-      [
-        { id: 'e1', from: { nodeId: 'n', portId: 'white' }, to: { nodeId: 's', portId: 'audio_l_in' },
-          sourceType: 'noise', targetType: 'samsloop' },
-        { id: 'e2', from: { nodeId: 's', portId: 'out' }, to: { nodeId: 'scp', portId: 'ch1' },
-          sourceType: 'audio', targetType: 'audio' },
-      ],
-    );
+  for (const inputPort of ['audio_l_in', 'audio_r_in'] as const) {
+    test.describe(inputPort, () => {
+      test('a RECORDED sample PLAYS — record → trigger → audible at the output', async ({ page }) => {
+        // THE P0 REGRESSION LOCK. NOISE → the selected REC input (the record chain)
+        // and samsloop.out → SCOPE.ch1 (the playback chain), in one patch, so the
+        // recorder's write and the player's read are joined by a cable rather than
+        // by an assumption.
+        const errors = await setupPage(page);
+        await spawnPatch(
+          page,
+          [
+            { id: 'n',   type: 'noise',    position: { x: 100, y: 200 } },
+            { id: 's',   type: 'samsloop', position: { x: 400, y: 200 }, domain: 'audio', params: { mode: 1 } },
+            { id: 'scp', type: 'scope',    position: { x: 800, y: 200 }, domain: 'audio' },
+          ],
+          [
+            { id: 'e1', from: { nodeId: 'n', portId: 'white' }, to: { nodeId: 's', portId: inputPort },
+              sourceType: 'noise', targetType: 'samsloop' },
+            { id: 'e2', from: { nodeId: 's', portId: 'out' }, to: { nodeId: 'scp', portId: 'ch1' },
+              sourceType: 'audio', targetType: 'audio' },
+          ],
+        );
 
-    // (a) NEGATIVE CONTROL, BEFORE. Nothing recorded yet and no trigger, so
-    //     the output must be silent. Without this leg a leaky patch (noise
-    //     bleeding to the scope through some other route) would make the
-    //     post-trigger assertion pass for the wrong reason — which is exactly
-    //     the failure mode that let the silent recorder ship.
-    const beforeRec = await readScopePeakOverWindow(page, 'scp', 400);
-    expect(
-      beforeRec.peak,
-      `pre-record peak ${beforeRec.peak} — samsloop must be silent with no sample and no trigger`,
-    ).toBeLessThan(0.02);
+        // (a) NEGATIVE CONTROL, BEFORE. Nothing recorded yet and no trigger, so
+        //     the output must be silent. Without this leg a leaky patch (noise
+        //     bleeding to the scope through some other route) would make the
+        //     post-trigger assertion pass for the wrong reason — which is exactly
+        //     the failure mode that let the silent recorder ship.
+        const beforeRec = await readScopePeakOverWindow(page, 'scp', 400);
+        expect(
+          beforeRec.peak,
+          `pre-record peak ${beforeRec.peak} — samsloop must be silent with no sample and no trigger`,
+        ).toBeLessThan(0.02);
 
-    // (b) Record ~700 ms of noise (dock REC cell + registry probe).
-    const pane = await openSamsloopPane(page, 's');
-    const rec = pane.getByTestId('shell-cell-samsloop-rec');
-    await expect(rec).toBeVisible();
-    await rec.click();
-    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
-    await page.waitForTimeout(700);
-    await rec.click();
-    await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
+        // (b) Record ~700 ms of noise (dock REC cell + registry probe).
+        const pane = await openSamsloopPane(page, 's');
+        const rec = pane.getByTestId('shell-cell-samsloop-rec');
+        await expect(rec).toBeVisible();
+        await rec.click();
+        await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC arms' }).toBe(true);
+        await page.waitForTimeout(700);
+        await rec.click();
+        await expect.poll(() => samsloopIsRecording(page, 's'), { message: 'REC stops' }).toBe(false);
 
-    // The bytes landed — asserted here too so a failure below is diagnosable
-    // as "recorded but does not play" rather than "did not record".
-    const sample = await readSample(page, 's');
-    expect(sample, 'nothing was recorded — the failure below would be about the wrong thing').not.toBeNull();
-    expect(sample!.bytesLen).toBeGreaterThan(0);
+        // The bytes landed — asserted here too so a failure below is diagnosable
+        // as "recorded but does not play" rather than "did not record".
+        const sample = await readSample(page, 's');
+        expect(sample, 'nothing was recorded — the failure below would be about the wrong thing').not.toBeNull();
+        expect(sample!.bytesLen).toBeGreaterThan(0);
+        expect(sample!.channels, 'the default mono encoder must retain either input').toBe(1);
 
-    // (c) NEGATIVE CONTROL, MIDDLE. SAMSLOOP is idle-by-default: a loaded
-    //     sample does NOT auto-play. So it must STILL be silent here, which
-    //     also proves the audible reading in (d) comes from the TRIGGER and
-    //     not from the record tap leaking into the output.
-    await page.waitForTimeout(600); // the factory polls node.data every 200 ms
-    const loaded = await readScopePeakOverWindow(page, 'scp', 500);
-    expect(
-      loaded.peak,
-      `post-record pre-trigger peak ${loaded.peak} — a loaded sample must stay idle`,
-    ).toBeLessThan(0.02);
+        // (c) NEGATIVE CONTROL, MIDDLE. SAMSLOOP is idle-by-default: a loaded
+        //     sample does NOT auto-play. So it must STILL be silent here, which
+        //     also proves the audible reading in (d) comes from the TRIGGER and
+        //     not from the record tap leaking into the output.
+        await page.waitForTimeout(600); // the factory polls node.data every 200 ms
+        const loaded = await readScopePeakOverWindow(page, 'scp', 500);
+        expect(
+          loaded.peak,
+          `post-record pre-trigger peak ${loaded.peak} — a loaded sample must stay idle`,
+        ).toBeLessThan(0.02);
 
-    // (d) THE ASSERTION THE MODULE SHIPPED WITHOUT: trigger it and listen.
-    //     Renderer-tolerant — a max-held peak over a window with a generous
-    //     floor, because the claim is "audible vs silent", not a level.
-    await pane.getByTestId('shell-cell-samsloop-trigger').click();
-    const playing = await readScopePeakOverWindow(page, 'scp', 1500);
-    expect(
-      playing.peak,
-      `post-trigger peak ${playing.peak} over ${playing.polls} polls — a recorded sample MUST play`,
-    ).toBeGreaterThan(0.05);
+        // (d) THE ASSERTION THE MODULE SHIPPED WITHOUT: trigger it and listen.
+        //     Renderer-tolerant — a max-held peak over a window with a generous
+        //     floor, because the claim is "audible vs silent", not a level.
+        await pane.getByTestId('shell-cell-samsloop-trigger').click();
+        const playing = await readScopePeakOverWindow(page, 'scp', 1500);
+        expect(
+          playing.peak,
+          `post-trigger peak ${playing.peak} over ${playing.polls} polls — a recorded sample MUST play`,
+        ).toBeGreaterThan(0.05);
 
-    expect(errors, errors.join('; ')).toEqual([]);
-  });
+        expect(errors, errors.join('; ')).toEqual([]);
+      });
+    });
+  }
 
   test('max-seconds readout reflects settings, at the rate the machine can produce', async ({ page }) => {
     // ⚠ REWRITTEN FOR THE FACE. The card's derived `samsloop-max-seconds`

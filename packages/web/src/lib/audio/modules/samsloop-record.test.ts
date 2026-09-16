@@ -631,7 +631,7 @@ describe('makeWavBlob — 44-byte header matches the WAV spec', () => {
 describe('encodeRecordingBytes', () => {
   it('mono 8-bit at native rate (no downsample) → 1 byte per sample', () => {
     const l = new Float32Array([0, 0.5, -0.5, 1.0]);
-    const r = new Float32Array(4); // ignored for mono
+    const r = new Float32Array(4);
     const { bytes, rate } = encodeRecordingBytes(l, r, 22050, 22050, 8, 1);
     expect(bytes.byteLength).toBe(4); // mono 8-bit at the same rate
     expect(rate).toBe(22050);
@@ -649,6 +649,32 @@ describe('encodeRecordingBytes', () => {
     expect(view.getInt16(4, true)).toBe(Math.round(0.5 * 32767));   // L
     expect(view.getInt16(6, true)).toBe(Math.round(-0.5 * 32767));  // R
   });
+
+  for (const bits of [8, 16] as const) {
+    for (const dstRate of [48_000, 22_050] as const) {
+      it.each([
+        { name: 'normalled left input retains its level', l: 0.5, r: 0.5, mono: 0.5 },
+        { name: 'right-only input remains audible', l: 0, r: 0.5, mono: 0.25 },
+        { name: 'distinct stereo inputs are averaged', l: -0.5, r: 0.25, mono: -0.125 },
+        { name: 'connected silence remains silent', l: 0, r: 0, mono: 0 },
+      ])(`mono ${bits}-bit at ${dstRate} Hz: $name`, ({ l, r, mono }) => {
+        // These are the tap's actual channel contracts, including L→R
+        // normalling. Counting recorded bytes cannot detect a discarded R.
+        const { bytes, rate } = encodeRecordingBytes(
+          new Float32Array(128).fill(l), new Float32Array(128).fill(r),
+          48_000, dstRate, bits, 1,
+        );
+        const decoded = decodeRecordedPcm({ bytesB64: bytesToBase64(bytes), bits, channels: 1 });
+        expect(rate).toBe(dstRate === 48_000 ? 48_000 : 24_000);
+        expect(decoded).toHaveLength(dstRate === 48_000 ? 128 : 64);
+        const tolerance = 1 / (bits === 16 ? 32767 : 127);
+        // Let the decimator's zero-initialized IIR settle below one PCM step.
+        for (const sample of decoded.subarray(16)) {
+          expect(Math.abs(sample - mono)).toBeLessThanOrEqual(tolerance);
+        }
+      });
+    }
+  }
 
   it('mono 16-bit @ 22050 from 44100 source → halves the length post-downsample', () => {
     const l = new Float32Array(200).fill(0.25);
