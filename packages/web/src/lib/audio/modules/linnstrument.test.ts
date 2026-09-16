@@ -1107,6 +1107,28 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBe(1);
   });
 
+  it('arp ownership never replaces direct finger identity, including after arp-off', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 50));
+    r.handle.setParam('keys_arp_on', 1);
+    r.tick(1000, 1);
+    r.tick(1500, 1.5); // lane 0 now plays finger 2, whose allocator lane is 1
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.9, timbre: 1 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBe(0);
+    r.tick(2000, 2); // finger 1 must retain the squeeze made during finger 2's step
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.9);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(1);
+    r.tick(2500, 2.5); // leave the output owned by finger 2 at handover
+    r.handle.setParam('keys_arp_on', 0);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.3 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.3);
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBe(0);
+    expect(laneValue(r.handle, 'keys_poly', 0, 'gate')).toBe(0);
+    expect(laneValue(r.handle, 'keys_poly', 1, 'gate')).toBe(1);
+  });
+
   it('arp mode: the last lift returns lane 0 press to 0', async () => {
     const r = await rig();
     r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));

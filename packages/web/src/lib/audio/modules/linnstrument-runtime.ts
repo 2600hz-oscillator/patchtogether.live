@@ -589,12 +589,29 @@ export async function createLinnstrumentRuntime(
   }
   function applyVoiceEvent(r: RegionRuntime, ev: MpeEvent, at: number = ctx.currentTime): void {
     const v = ev.voice;
+    // The allocator owns finger identity; lane 0's display belongs to the
+    // arp while it is enabled. Comparing a finger to that output snapshot
+    // rejects valid expression as soon as the arp plays a different voice.
+    // applyTouch has already rejected stale/stolen touch events.
+    if (r.arp.enabled) {
+      if (ev.kind === 'voice_start') {
+        r.arp.touchStart(v.id, v.note, v);
+      } else if (ev.kind === 'voice_expression') {
+        r.arp.touchExpression(v.id, v);
+        if (r.lanes[0]!.owner === v.id) {
+          writeExpr(r, 0, { press: v.pressure, timbre: timbreJack(v.timbre) }, at);
+        }
+      } else {
+        r.arp.touchEnd(v.id);
+      }
+      return;
+    }
     const lane = laneOf(r, v);
     if (ev.kind === 'voice_start') {
       Object.assign(lane, { voice: v.id, note: v.note, velocity: v.velocity, pressure: v.pressure, timbre: v.timbre, bend: v.bend, pitchCv: midiToVOct(v.note + v.bend), owner: null });
       lane.gate = 1;
       // vel LATCHED, press and timbre initialised — all at the gate's `at`.
-      if (!r.arp.enabled) writeLane(r, v.lane, lane.pitchCv, 1, at, jackValues(v));
+      writeLane(r, v.lane, lane.pitchCv, 1, at, jackValues(v));
       r.arp.touchStart(v.id, v.note, { velocity: v.velocity, pressure: v.pressure, timbre: v.timbre, bend: v.bend });
       return;
     }
@@ -605,10 +622,7 @@ export async function createLinnstrumentRuntime(
       lane.bend = v.bend;
       lane.pitchCv = midiToVOct(v.note + v.bend);
       const live = { press: v.pressure, timbre: timbreJack(v.timbre) };
-      if (!r.arp.enabled) writeLane(r, v.lane, lane.pitchCv, null, at, live);
-      // In arp mode lane 0 is the arp's, and it carries the OWNING finger's
-      // live expression (the docs' promise for `keys_arp_on`).
-      else if (r.lanes[0]!.owner === v.id) writeExpr(r, 0, live, at);
+      writeLane(r, v.lane, lane.pitchCv, null, at, live);
       r.arp.touchExpression(v.id, { pressure: v.pressure, timbre: v.timbre, bend: v.bend });
       return;
     }
@@ -620,7 +634,7 @@ export async function createLinnstrumentRuntime(
     lane.owner = null;
     // A lifted finger exerts no pressure; vel and timbre are RETAINED until
     // the lane is reassigned (design.md "define release tails explicitly").
-    if (!r.arp.enabled) writeLane(r, v.lane, null, 0, at, { press: 0 });
+    writeLane(r, v.lane, null, 0, at, { press: 0 });
   }
   function writeLane(r: RegionRuntime, lane: number, pitch: number | null, gate: 0 | 1 | null, at: number, expr?: ExprWrite): void {
     const slot = r.sender.voices[lane];
@@ -665,10 +679,13 @@ export async function createLinnstrumentRuntime(
   }
   function reassertVoices(r: RegionRuntime): void {
     const now = ctx.currentTime;
+    for (const lane of r.lanes) Object.assign(lane, freshLane(lane.lane));
     for (const v of activeVoices(r.mpe)) {
       const lane = laneOf(r, v);
-      lane.gate = 1;
-      writeLane(r, v.lane, midiToVOct(v.note + v.bend), 1, now, jackValues(v));
+      Object.assign(lane, { voice: v.id, note: v.note, gate: 1, velocity: v.velocity,
+        pressure: v.pressure, timbre: v.timbre, bend: v.bend,
+        pitchCv: midiToVOct(v.note + v.bend), owner: null });
+      writeLane(r, v.lane, lane.pitchCv, 1, now, jackValues(v));
     }
   }
 
