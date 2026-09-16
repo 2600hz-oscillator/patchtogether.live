@@ -1129,6 +1129,23 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(laneValue(r.handle, 'keys_poly', 1, 'gate')).toBe(1);
   });
 
+  it('arp owner lift clears pressure while another finger remains held', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 80));
+    r.handle.setParam('keys_arp_on', 1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.8 }));
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.2 }));
+    r.tick(1000, 1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.9 }));
+    expect(r.api.expression('keys')[0]!.pressure).toBeCloseTo(0.9);
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBe(0);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))!.time).toBeGreaterThanOrEqual(1.025);
+    r.tick(1500, 1.5);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.2);
+  });
+
   it('arp mode: the last lift returns lane 0 press to 0', async () => {
     const r = await rig();
     r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
@@ -1139,15 +1156,14 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the step carries the owning finger\'s pressure').toBeCloseTo(0.8);
     const velWrites = sets(exprSource(r.handle, 'keys', 'vel', 0)).length;
     const timbreWrites = sets(exprSource(r.handle, 'keys', 'timbre', 0)).length;
-    // The last finger lifts. The direct path writes NOTHING (the arp owns the
-    // bus), so only the arp can settle the jack — and before this fix it never
-    // did: lane 0's press held the lifted finger's 0.8 forever.
+    // The last finger lifts. Its pressure clears at the scheduled release,
+    // after any step already queued inside the arp lookahead.
     r.sim.emit(touchEnd(r.sim, 1, 'keys'));
-    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the lift itself does not reach the jack in arp mode').toBeCloseTo(0.8);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the owning lift clears pressure').toBe(0);
     r.tick(1200, 1.2);
     const settled = lastSet(exprSource(r.handle, 'keys', 'press', 0));
     expect(settled?.value, 'the pool emptied: press returns to 0').toBe(0);
-    expect(settled?.time, 'at the arp\'s OWN `at`, past every press it queued').toBeCloseTo(1.225, 6);
+    expect(settled?.time, 'past every press already queued').toBeGreaterThanOrEqual(1.025);
     expect(sets(exprSource(r.handle, 'keys', 'vel', 0)).length, 'vel retains, like a release').toBe(velWrites);
     expect(sets(exprSource(r.handle, 'keys', 'timbre', 0)).length, 'timbre retains, like a release').toBe(timbreWrites);
     expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBe(1);

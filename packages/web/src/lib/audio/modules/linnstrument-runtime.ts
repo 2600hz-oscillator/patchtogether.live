@@ -599,10 +599,18 @@ export async function createLinnstrumentRuntime(
       } else if (ev.kind === 'voice_expression') {
         r.arp.touchExpression(v.id, v);
         if (r.lanes[0]!.owner === v.id) {
+          Object.assign(r.lanes[0]!, { pressure: v.pressure, timbre: v.timbre });
           writeExpr(r, 0, { press: v.pressure, timbre: timbreJack(v.timbre) }, at);
         }
       } else {
         r.arp.touchEnd(v.id);
+        if (r.lanes[0]!.owner === v.id) {
+          r.lanes[0]!.pressure = 0;
+          // A lifted owner exerts no pressure even while OTHER fingers keep
+          // the pool alive. Land after any step already in the lookahead.
+          writeExpr(r, 0, { press: 0 }, Math.max(at, ctx.currentTime + r.arp.lookaheadS));
+          r.arpVoiced = false;
+        }
       }
       return;
     }
