@@ -27,6 +27,7 @@
 // LINES pattern differ, no absolute pixel values are pinned).
 
 import { test, expect, type Page } from '@playwright/test';
+import { applyCpuThrottle } from '../_helpers/cpu-throttle';
 import { VIDEO_THUMB_FPS, SHELL_TILE_W } from '../../packages/web/src/lib/ui/workflow/module-shell-model';
 import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import {
@@ -1410,6 +1411,7 @@ test.describe('?shell=1 video CHAIN parity', () => {
 
   test('a video module with a DOM-backed source owns its renderer from the NODE, with no off-screen host anywhere', async ({ page }) => {
     test.setTimeout(SLOW_RENDER ? 90_000 : 30_000);
+    await applyCpuThrottle(page);
     await gotoShell(page);
     await expect(videoOutLane(page)).toBeVisible({ timeout: 15_000 });
 
@@ -1498,8 +1500,14 @@ test.describe('?shell=1 video CHAIN parity', () => {
       ['ras1', 'rasterize'],
       ['cube2', 'cube'],
     ] as const;
+    // One graph transaction, followed by the same per-node assertions. Repeated
+    // injectPatch calls rechecked/booted the engine and crossed the loaded page
+    // four times per row. On main 52107095 every assertion passed, but those
+    // serial round trips spent the 90 s case budget before teardown completed.
+    await injectPatch(page, converted.map(([id, type]) => ({
+      id, type, position: { x: -1600, y: 5100 },
+    })));
     for (const [nodeId, type] of converted) {
-      await injectPatch(page, [{ id: nodeId, type, position: { x: -1600, y: 5100 } }]);
       await expect(
         page.locator(laneTileSelector(nodeId)),
         `${type} mounted no RACKLINE lane tile`,
