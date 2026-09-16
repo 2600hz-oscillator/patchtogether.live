@@ -206,12 +206,6 @@ export interface SamsloopRecordedSample {
    *  recordings persisted before it existed do not carry it — those fall back
    *  to the length-based signature, which is exactly as good as it ever was. */
   recordedAt?: number;
-  /** Set by the DENOISE transform on the record it writes (and carried across
-   *  a later NORMALIZE). A second DENOISE press refuses on it: the core learns
-   *  its noise profile from the sample itself, so pressing it again would
-   *  profile the floored residual and dull the take a second time. Optional
-   *  because every REC take and every pre-feature record lacks it. */
-  denoised?: true;
 }
 
 /**
@@ -884,10 +878,7 @@ export function foldCapturePeaks(
 
 /**
  * The `node.data` keys an UPLOAD owns. The RECORD commit deletes every one of
- * them — and so does the TRANSFORM commit (NORMALIZE / DENOISE in
- * `samsloop-face-actions.ts`), which turns an upload into a `sample` record
- * and re-writes `sampleLength` / `sampleRate` from the encode exactly as REC
- * does — and the upload commit deletes `sample`. That pair of deletes IS the
+ * them, and the upload commit deletes `sample` — that pair of deletes IS the
  * module's one-sample invariant ("a new upload or recording REPLACES the
  * previous one", samsloop.ts header) expressed in the data rather than in
  * prose. It lives here, as one list both writers import, because the failure
@@ -962,92 +953,6 @@ export function buildRecordedSample(
       recordedAt: now,
     },
   };
-}
-
-/**
- * Assemble the persisted record of a TRANSFORMED sample (NORMALIZE / DENOISE)
- * — `buildRecordedSample`'s sibling for the third writer of `node.data.sample`.
- *
- * ⚠ WRITTEN AT THE SOURCE'S BIT DEPTH, MONO, AT THE BUFFER'S OWN RATE. An
- * 8-bit 48 kHz take comes back 8-bit 48 kHz, so a transform can never GROW a
- * record past the caps REC sized it under (the per-take 3 MB budget and the
- * 60 s ceiling are re-checked on the write by `samsloopTransformCapRefusal`,
- * because an UPLOAD was never sized under them). Mono because the playback
- * buffer has always been mono (`decodeRecordedPcm(…, 'mix')`) — the transform
- * operates on what plays, and a stereo take collapses to the mix it was
- * already heard as. `f32` is quantized exactly as REC quantizes
- * (`quantizeF32ToI16` / `quantizeF32ToI8`, symmetric clip at ±1), so a
- * normalized peak of exactly 1.0 lands on +32767 / +127.
- *
- * `denoised` stamps the record so a second DENOISE press refuses; NORMALIZE
- * passes the source's own flag through. Pure — `now` is injectable so a test
- * can pin the signature.
- */
-export function buildTransformedSample(
-  f32: Float32Array,
-  rate: number,
-  bits: SamsloopRecBits,
-  opts: { denoised?: boolean; now?: number } = {},
-): { sample: SamsloopRecordedSample; frames: number } {
-  const q = bits === 16 ? quantizeF32ToI16(f32) : quantizeF32ToI8(f32);
-  const bytes = new Uint8Array(q.buffer, q.byteOffset, q.byteLength);
-  const built = buildRecordedSample(bytes, rate, bits, 1, opts.now ?? Date.now());
-  if (opts.denoised) built.sample.denoised = true;
-  return built;
-}
-
-/** The sentence for a transform whose PCM would not fit the rack's remaining
- *  sample budget — `samsloopRackFullMessage`'s sibling, with the numbers a
- *  player needs: what this write needs and what is left. */
-export function samsloopRackTransformMessage(
-  ledger: SamsloopRackLedger,
-  neededBase64Bytes: number,
-): string {
-  const mb = (b: number) => (b / 1_000_000).toFixed(2);
-  return (
-    `No room to store the transformed sample: it needs ${mb(neededBase64Bytes)} MB ` +
-    `and this rack has ${mb(ledger.freeBytes)} MB of its ${mb(ledger.budgetBytes)} MB ` +
-    `sample budget left (${ledger.nodeCount} samsloop${ledger.nodeCount === 1 ? '' : 's'}). ` +
-    `Export or clear another sample first.`
-  );
-}
-
-/**
- * The three size ceilings a TRANSFORM write must clear, as ONE named refusal
- * or null. REC enforces the per-take byte budget and the 60 s ceiling by
- * sizing its capture buffer at ARM time; an UPLOAD was never sized under
- * either (a 2 MB mp3 decodes to 1.5 M samples = 62.5 s at 24 kHz), so the
- * write that turns it into a `sample` record is where they bind. The rack
- * ledger is re-read FRESH by the caller for the same reason REC re-reads it:
- * a peer's sample can land between render and press.
- *
- * `ledger` must EXCLUDE the node being written (`samsloopRackLedger(nodes,
- * nodeId)`) — its own payload is about to be released.
- */
-export function samsloopTransformCapRefusal(w: {
-  byteLength: number;
-  frames: number;
-  rate: number;
-  base64Length: number;
-  ledger: SamsloopRackLedger;
-}): string | null {
-  if (w.byteLength > SAMSLOOP_RECORD_BUDGET_BYTES) {
-    return (
-      `Transformed sample would be ${(w.byteLength / 1_000_000).toFixed(2)} MB of PCM, over the ` +
-      `${SAMSLOOP_RECORD_BUDGET_BYTES / 1_000_000} MB per-sample cap. Use a shorter sample.`
-    );
-  }
-  const seconds = w.rate > 0 ? w.frames / w.rate : Infinity;
-  if (seconds > SAMSLOOP_RECORD_MAX_SECONDS) {
-    return (
-      `Transformed sample would be ${seconds.toFixed(1)} s, over the ` +
-      `${SAMSLOOP_RECORD_MAX_SECONDS} s cap a stored sample can be. Use a shorter sample.`
-    );
-  }
-  if (w.base64Length > w.ledger.freeBytes) {
-    return samsloopRackTransformMessage(w.ledger, w.base64Length);
-  }
-  return null;
 }
 
 /**
