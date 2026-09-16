@@ -1,6 +1,6 @@
 {
   "_comment": "Per-spec-file cost in SECONDS of test execution (CPU time, summed across a file's tests). Regenerate with `flox activate -- task e2e:timings:accept -- <ci-run-id>` (scripts/e2e-timings-accept.mjs) and REVIEW THE DIFF. Costs only — contention classes are derived at plan time by scripts/e2e-contention-scan.mjs and are deliberately NOT committed here (#1600).",
-  "_source": "blob-report artifacts of ci.yml run 34899578737 (2591 tests, 427 files, 26244 CPU-s) + linnstrument.spec.ts / preflight-linnstrument.spec.ts from the branch pin (ci.yml run 34912091642) — merge of #2396 into #2398",
+  "_source": "blob-report artifacts of ci.yml run 34899578737 (2591 tests, 427 files, 26244 CPU-s) + linnstrument.spec.ts / preflight-linnstrument.spec.ts from the branch pin (ci.yml run 34912091642) — merge of #2396 into #2398; linnstrument-expression.spec.ts from its local run (darwin, 24.5 s, no gating CI on the stacked branch — re-pin from the first ci.yml run after the base merges)",
   "files": {
     "4plexer.spec.ts": 24.5,
     "acidwarp-face-screen.spec.ts": 40.9,
@@ -193,6 +193,7 @@
     "launchpad-scene-repeats.spec.ts": 15.1,
     "layers-survive-card-collapse.spec.ts": 29.7,
     "lfo-face.spec.ts": 29.2,
+    "linnstrument-expression.spec.ts": 24.5,
     "linnstrument.spec.ts": 38.1,
     "live-glyphs.spec.ts": 11.5,
     "livecode.spec.ts": 32,

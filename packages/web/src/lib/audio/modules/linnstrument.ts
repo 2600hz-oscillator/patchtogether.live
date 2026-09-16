@@ -21,14 +21,21 @@
 //                   playable) and a played mark — because User Firmware Mode
 //                   switches the stock lighting off. The device paints from
 //                   THIS node's roots, so lights and notes cannot disagree.
-//   NOT BUILT       D14 expression jacks: `polyCv` is a graph-wide change and
-//                   the per-voice-scalar fallback is equally unruled, so the
-//                   two poly buses carry PITCH + GATE only and per-lane
-//                   velocity / pressure / timbre stay on the card-api.
+//   EXPRESSION      F03 (owner ruling 2026-09-15: "a build"): per-lane
+//                   velocity / pressure / timbre leave the module as ordinary
+//                   `cv` jacks, lane-aligned with each region's bus, for the
+//                   first LINN_EXPRESSION_LANES lanes (derived, 6 today).
+//   NOT BUILT       D14's `polyCv` cable + voice breakout (per-voice MONO
+//                   pitch / gate): a graph-wide type the owner has not ruled
+//                   on. The buses carry PITCH + GATE only; expressive pairing
+//                   is with a synth that has per-voice AUDIO taps.
 //
 // Outputs:
 //   r_x r_y g_x g_y b_x b_y (cv): the three RETAINED joystick pairs, bipolar.
 //   keys_poly, pad_poly (polyPitchGate): one 16-lane note bus per region.
+//   <region>_vel1..N, <region>_press1..N, <region>_timbre1..N (cv): lane
+//     1..N of that region's bus — velocity 0..1 latched, pressure 0..1 (0 on
+//     lift), timbre bipolar (0 = the resting finger). N = LINN_EXPRESSION_LANES.
 // Inputs: none (the device is the input; nothing patches INTO this module).
 //
 // THE RUNTIME IS IN `linnstrument-runtime.ts` and the arp transport in
@@ -46,8 +53,22 @@ import {
   ARP_OCTAVE_RANGE_LABELS,
   ARP_OCTAVE_RANGES,
 } from '$lib/audio/arp-engine';
-import { RECOMMENDED_KEYS_ROOT, RECOMMENDED_PAD_ROOT } from '$lib/midi/linnstrument/profile';
-import { createLinnstrumentRuntime, LINN_ROOT_MAX, LINN_ROOT_MIN, LINN_SCALE_OPTIONS } from './linnstrument-runtime';
+import { LINN_EXPRESSION_LANES, RECOMMENDED_KEYS_ROOT, RECOMMENDED_PAD_ROOT } from '$lib/midi/linnstrument/profile';
+// The shared DSP lib — node-importable IDENTICAL source the worklet bundles
+// (the profile.ts / pentemelodica.ts precedent for reaching packages/dsp by
+// relative path). The docs name a per-voice tap only where one exists.
+import { PENTE_VOICES } from '../../../../../dsp/src/lib/pentemelodica-dsp';
+import type { MusicalRegion } from '$lib/midi/linnstrument/types';
+import {
+  createLinnstrumentRuntime,
+  EXPRESSION_DIMS,
+  expressionPortId,
+  LINN_REGIONS,
+  LINN_ROOT_MAX,
+  LINN_ROOT_MIN,
+  LINN_SCALE_OPTIONS,
+  type ExpressionDim,
+} from './linnstrument-runtime';
 import { ARP_DIRECTIONS } from './linnstrument-arp';
 
 export type {
@@ -61,6 +82,45 @@ const ON_OFF = [
   { value: 0, label: 'OFF' },
   { value: 1, label: 'ON' },
 ] as const;
+
+// ── The expression jacks (F03) — 3 dims × LINN_EXPRESSION_LANES × 2 regions,
+//    generated so the ids, the labels and the docs cannot disagree with the
+//    runtime's `expressionPortId`. ADDITIVE: no existing id moves.
+const REGION_WORD: Record<MusicalRegion, string> = { keys: 'keyboard', pad: 'pad' };
+function expressionOutputs(): AudioModuleDef['outputs'] {
+  return LINN_REGIONS.flatMap((r) =>
+    EXPRESSION_DIMS.flatMap((d) =>
+      Array.from({ length: LINN_EXPRESSION_LANES }, (_, i) => ({ id: expressionPortId(r, d, i), type: 'cv' as const, label: `${r} ${d} ${i + 1}` })),
+    ),
+  );
+}
+/** One sentence template per dimension; the lane, the region and the lane
+ *  cap are filled from the same constants the ids come from. The pairing
+ *  clause is conditional on the lane: PENTEMELODICA taps voice1..PENTE_VOICES
+ *  (5) and no other shipped synth exposes a per-voice audio tap (SIXSTRUM's
+ *  six strings leave through one summed `out`), so a lane past PENTE_VOICES
+ *  has a jack but no per-voice tap to sit beside today. */
+function expressionDoc(r: MusicalRegion, d: ExpressionDim, i: number): string {
+  const n = i + 1;
+  const where = `lane ${n} of the ${REGION_WORD[r]} bus (${r}_poly)`;
+  const beyond = `Fingers that land on lanes beyond ${LINN_EXPRESSION_LANES} still play on the bus and have no jack.`;
+  const pairing =
+    n <= PENTE_VOICES
+      ? `It describes exactly the voice on ${where} — PENTEMELODICA's VOICE ${n} — so patch it beside that voice's own audio tap; a summed poly synth's single CV input would hear this one finger for all of its voices. ${beyond}`
+      : `It describes exactly the voice on ${where}. That lane still plays on the bus, but no shipped synth exposes a per-voice audio tap for it today (PENTEMELODICA taps voice 1..${PENTE_VOICES}; SIXSTRUM's six strings leave through one summed out), so this jack pairs only with a whole-synth CV input, which then hears this one finger for all of its voices. ${beyond}`;
+  if (d === 'vel') {
+    return `The attack velocity of the finger on ${where}, as CV 0..1. It is latched the moment that finger lands and held — it does not follow the finger — until the lane is reassigned to a new finger or PANIC returns it to 0, so a level set from it stays for the whole note. ${pairing}`;
+  }
+  if (d === 'press') {
+    return `The pressure of the finger on ${where}, as CV 0..1, following the finger sample by sample and returning to 0 the moment it lifts (a lifted finger exerts none), and to 0 on PANIC. Into a VCA's CV with the base at 0 it is that one voice's swell: squeeze the finger and only that voice rises. ${pairing}`;
+  }
+  return `The vertical timbre of the finger on ${where}, as BIPOLAR CV: 0 with the finger at the cell's vertical centre (the instrument's CC 74 at 64), −1 at the bottom edge, +1 at the top, following the finger and keeping its last value after the lift (PANIC returns it to 0). Into a bipolar cutoff CV a finger that has not moved changes nothing, so an unpatched jack and a resting finger read alike. ${pairing}`;
+}
+function expressionDocs(): Record<string, string> {
+  return Object.fromEntries(
+    LINN_REGIONS.flatMap((r) => EXPRESSION_DIMS.flatMap((d) => Array.from({ length: LINN_EXPRESSION_LANES }, (_, i) => [expressionPortId(r, d, i), expressionDoc(r, d, i)] as const))),
+  );
+}
 
 /** The two roots share one shape; the defaults are the package's
  *  RECOMMENDATION (`initial_roots`), not a ruling. */
@@ -248,6 +308,8 @@ export const linnstrumentDef: AudioModuleDef = {
     { id: 'b_y', type: 'cv', label: 'b y' },
     { id: 'keys_poly', type: 'polyPitchGate', label: 'keys' },
     { id: 'pad_poly', type: 'polyPitchGate', label: 'pad' },
+    // keys_vel1..N, keys_press1..N, keys_timbre1..N, then the same for pad.
+    ...expressionOutputs(),
   ],
   params: [
     // D08 RECOMMENDATION: R on, G and B off. Three INDEPENDENT bits (D04
@@ -302,7 +364,7 @@ export const linnstrumentDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A LinnStrument 200 played into the rack as three instruments at once. The playing surface is split into a 16 by 8 keyboard on the left, laid out in fourths like the instrument's own default (one semitone per column, five per row, so the same shape is the same chord anywhere), a single column of eight control cells, and an 8 by 8 pad on the right. The keyboard and the pad are each a polyphonic MPE instrument with their own note bus: every finger is its own voice with its own pitch slide, pressure and vertical timbre, and two fingers on the same pitch stay two voices. The pad is also the rack's joystick hand. Three of the control cells are the R, G and B toggles, each an independent switch — any of the eight combinations is legal — and the first finger to land on the pad moves every joystick that is currently selected, as one coherent X/Y pair per sample; lifting the finger leaves each pair exactly where it was, and a joystick that is not selected simply keeps its last pair. That is what the six CV jacks carry: three retained X/Y pairs, bipolar, held between gestures and stored in the patch like a knob, so they survive a reload. The lower five control cells are ARP, HOLD, OCT−, OCT+ and PANIC for the keyboard, and each region has an arpeggiator that walks whatever is held there in time with TIMELORDE. Mental model: a keyboard, a pad, and three joysticks you can pick up and put down with one hand, with the rack hearing all of it at once. The device binds through CONNECT (the one-time Web MIDI grant); which port is bound is a setting of this computer, not of the patch. Nothing that a finger does is streamed into the saved patch: touches, pressures and voices are live engine state, and only the six retained pairs and the switches are stored. The three pads on the dock faceplate are the same three joysticks — drag one to move it, whether or not the hardware is connected — and they go through exactly the same selection logic as the instrument, so the face, the CV and the lights on the device can never disagree. Because User Firmware Mode switches the instrument's own lighting off, the module lights it: on the keyboard and the pad every root is cyan, every other note of the chosen SCALE green, out-of-scale cells dark but still playable, a cell under a finger white, and the control column shows which of R, G and B are on — all painted from this module's own roots, so the lights and the notes cannot disagree. No expression jacks are offered yet: pressure, timbre and velocity per voice are kept aligned to the note bus lanes inside the module and wait on a rack-wide poly-CV cable decision.",
+      "A LinnStrument 200 played into the rack as three instruments at once. The playing surface is split into a 16 by 8 keyboard on the left, laid out in fourths like the instrument's own default (one semitone per column, five per row, so the same shape is the same chord anywhere), a single column of eight control cells, and an 8 by 8 pad on the right. The keyboard and the pad are each a polyphonic MPE instrument with their own note bus: every finger is its own voice with its own pitch slide, pressure and vertical timbre, and two fingers on the same pitch stay two voices. The pad is also the rack's joystick hand. Three of the control cells are the R, G and B toggles, each an independent switch — any of the eight combinations is legal — and the first finger to land on the pad moves every joystick that is currently selected, as one coherent X/Y pair per sample; lifting the finger leaves each pair exactly where it was, and a joystick that is not selected simply keeps its last pair. That is what the six CV jacks carry: three retained X/Y pairs, bipolar, held between gestures and stored in the patch like a knob, so they survive a reload. The lower five control cells are ARP, HOLD, OCT−, OCT+ and PANIC for the keyboard, and each region has an arpeggiator that walks whatever is held there in time with TIMELORDE. Mental model: a keyboard, a pad, and three joysticks you can pick up and put down with one hand, with the rack hearing all of it at once. The device binds through CONNECT (the one-time Web MIDI grant); which port is bound is a setting of this computer, not of the patch. Nothing that a finger does is streamed into the saved patch: touches, pressures and voices are live engine state, and only the six retained pairs and the switches are stored. The three pads on the dock faceplate are the same three joysticks — drag one to move it, whether or not the hardware is connected — and they go through exactly the same selection logic as the instrument, so the face, the CV and the lights on the device can never disagree. Because User Firmware Mode switches the instrument's own lighting off, the module lights it: on the keyboard and the pad every root is cyan, every other note of the chosen SCALE green, out-of-scale cells dark but still playable, a cell under a finger white, and the control column shows which of R, G and B are on — all painted from this module's own roots, so the lights and the notes cannot disagree. Expression leaves the module per voice, as ordinary CV: for the first " + String(LINN_EXPRESSION_LANES) + " lanes of each note bus there is a velocity, a pressure and a timbre jack, numbered like the lanes — KEYS PRESS 3 is the pressure of whichever finger holds keys lane 3, which is the voice PENTEMELODICA plays as VOICE 3 — so a squeeze on one finger swells that finger's own voice and a slide up one cell opens that voice's own filter, provided the jack is patched beside that voice's audio tap (a poly synth with one shared CV input would hear one finger for all its voices). Velocity is latched at the touch, pressure falls to 0 when the finger lifts, timbre is bipolar around the resting finger, and every jack returns to rest on PANIC. Fingers on lanes beyond the jacks still play on the bus. Per-voice mono pitch and gate for a plain mono synth (a poly-CV cable and a voice breakout) is not built.",
     inputs: {},
     outputs: {
       r_x: "The R joystick's retained horizontal position as bipolar CV, −1 at the pad's left edge through 0 at its centre to +1 at the right. It follows the pad finger while R is selected, holds the last value when the finger lifts or R is deselected, and is stored in the patch.",
@@ -315,6 +377,7 @@ export const linnstrumentDef: AudioModuleDef = {
         "The keyboard as a polyphonic pitch and gate bus, up to sixteen voices, one lane per finger for as long as that finger is down. Pitch is the cell's note plus the finger's horizontal slide, so a bend is a real pitch movement on the lane; the gate stays high while the finger holds and drops when it lifts, and a finger that is stolen when a seventeenth arrives hands its lane to the newcomer without ending the newcomer later. When the keyboard arp is on the bus carries the arpeggio instead — one lane, a real gate-low interval between steps, so an envelope re-fires on every note. Patch it into any poly-aware voice (CUBE, DX7) to hear the keyboard.",
       pad_poly:
         "The 8 by 8 pad as its own polyphonic pitch and gate bus, independent of the keyboard: the same finger that steers the selected joysticks also plays a note here, with its own pitch slide, so the pad can be a second instrument, a drum surface, or simply the joystick hand with this jack left unpatched. The pad arp takes the bus over in the same way the keyboard arp takes the keyboard bus.",
+      ...expressionDocs(),
     },
     controls: {
       'linnstrument-connect-{n}':

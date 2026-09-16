@@ -14,9 +14,11 @@
 // names one byte per vector whose corruption MUST fail that vector; the test
 // proves the instrument can see red.
 //
-// Ids V12/V13/V15/V16 carry a `deferred` expectation naming the WP that owns
-// the audible half (arp sequence, gate-low samples, level/timbre at the jack);
-// their state-level half is asserted here so they are never vacuous.
+// Ids V12/V13/V16 carry a `deferred` expectation naming the WP that owns the
+// audible half (arp sequence, gate-low samples, silent gated topology); their
+// state-level half is asserted here so they are never vacuous. V15's audible
+// half (pressure → level at a real jack, cable pulled as the control) is
+// OWNED by e2e/tests/linnstrument-expression.spec.ts and named as `audible`.
 
 import type { LinnProfile, MusicalRegion, RawRejection, SelectorId, XyPair } from './types';
 import type { MpeEndReason, MpeVoice } from '../mpe-state';
@@ -40,7 +42,10 @@ export type VectorExpectation =
   /** Voice events of `event` whose voice deep-matches `voice` (and `reason`). */
   | { kind: 'voice_event'; region?: MusicalRegion; event: 'voice_start' | 'voice_expression' | 'voice_end'; voice?: Partial<MpeVoice>; reason?: MpeEndReason; count?: number }
   /** Owned by a later WP — listed so the id is never mistaken for shipped. */
-  | { kind: 'deferred'; to: 'WP-C' | 'WP-D'; claim: string };
+  | { kind: 'deferred'; to: 'WP-C' | 'WP-D'; claim: string }
+  /** The audible half is SHIPPED and owned by the named e2e spec (a file
+   *  under e2e/tests/); the pure ops assert the state half here. */
+  | { kind: 'audible'; spec: string; claim: string };
 
 export interface AcceptanceVector {
   id: string;
@@ -333,7 +338,7 @@ export const ACCEPTANCE_VECTORS: readonly AcceptanceVector[] = [
     expected: [
       { kind: 'voice', match: { channel: 1, pressure: 100 / 127, held: true } },
       { kind: 'voice_event', event: 'voice_expression', count: 2 },
-      { kind: 'deferred', to: 'WP-D', claim: 'unpatching the pressure path removes level modulation while note audio remains' },
+      { kind: 'audible', spec: 'linnstrument-expression.spec.ts', claim: 'unpatching the pressure path removes level modulation while note audio remains' },
     ],
     negativeControl: { message: 2, byte: 1, value: 64 },
   },

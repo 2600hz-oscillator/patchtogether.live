@@ -14,7 +14,12 @@
 //
 // ⚠ PLAIN `.ts`, no runes (trails-device.ts:20-24).
 
-import type { LinnLightingRoles, LinnProfile, Region, RegionRect, SelectorId } from './types';
+import type { LinnLightingRoles, LinnProfile, MusicalRegion, Region, RegionRect, SelectorId } from './types';
+// The shared DSP libs — node-importable IDENTICAL source the worklets bundle
+// (the pentemelodica.ts precedent for reaching packages/dsp by relative path).
+import { PENTE_VOICES } from '../../../../../dsp/src/lib/pentemelodica-dsp';
+import { POLY_SUM_VOICES } from '../../../../../dsp/src/lib/poly-osc-sum';
+import { SIXSTRUM_STRINGS } from '../../../../../dsp/src/lib/sixstrum-tuning';
 
 /** RECOMMENDATION, not a ruling (`corrected_geometry`, D03). The request said
  *  16×16, which cannot fit an eight-row instrument; the package INFERS
@@ -57,8 +62,31 @@ export const RECOMMENDED_DEFAULT_MASK: Record<SelectorId, boolean> = { r: true, 
  *  on device"). Palette keys: a physical review edits one word per role. */
 export const RECOMMENDED_LIGHTING_ROLES: LinnLightingRoles = { root: 'cyan', inScale: 'green', outScale: 'off', played: 'white' };
 
-/** `polyCv_extension` (D14) is a GRAPH change and has no profile switch — the
- *  runtime keeps per-lane expression internally until the owner rules. */
+/** HOW MANY ALLOCATOR LANES GET EXPRESSION JACKS (F03, owner ruling
+ *  2026-09-15 "a build"): one `vel` / `press` / `timbre` cv jack per lane for
+ *  the first N lanes of each region, N DERIVED from the widest per-voice
+ *  reader the tree ships (PENTEMELODICA 5 voices, POLY-OSC-SUM 5,
+ *  SIXSTRUM 6 strings; poly.ts:22-27 is the census) — never hand-typed. Lanes
+ *  N..15 still play on the bus and simply have no jack. `polyCv_extension`
+ *  (D14: per-voice mono pitch/gate through a new cable type + a breakout) is a
+ *  GRAPH change with no profile switch and stays unbuilt until the owner rules
+ *  on a cable type. */
+export const LINN_EXPRESSION_LANES = Math.max(PENTE_VOICES, POLY_SUM_VOICES, SIXSTRUM_STRINGS);
+
+/** The three per-lane expression dimensions with a jack (F03). `bend` has
+ *  none: it is already IN the bus pitch. Declared HERE (plain data, no engine
+ *  import) so the runtime, the def and the docs manifest's `?raw` parser —
+ *  which cannot run the def's spread — all derive the same ids. */
+export type ExpressionDim = 'vel' | 'press' | 'timbre';
+export const EXPRESSION_DIMS: readonly ExpressionDim[] = ['vel', 'press', 'timbre'];
+/** `keys_press3` = lane index 2 of `keys_poly` — 1-based like `voice1`. */
+export const expressionPortId = (r: MusicalRegion, d: ExpressionDim, lane: number): string => `${r}_${d}${lane + 1}`;
+/** Every expression jack id, in def order: region-major, then dim, then lane. */
+export function expressionPortIds(): { region: MusicalRegion; dim: ExpressionDim; lane: number; id: string }[] {
+  return (['keys', 'pad'] as const).flatMap((region) =>
+    EXPRESSION_DIMS.flatMap((dim) => Array.from({ length: LINN_EXPRESSION_LANES }, (_, lane) => ({ region, dim, lane, id: expressionPortId(region, dim, lane) }))),
+  );
+}
 
 export const DEFAULT_LINN_PROFILE: LinnProfile = {
   columns: 25,
