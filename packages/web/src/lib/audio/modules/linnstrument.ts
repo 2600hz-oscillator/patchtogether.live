@@ -54,6 +54,10 @@ import {
   ARP_OCTAVE_RANGES,
 } from '$lib/audio/arp-engine';
 import { LINN_EXPRESSION_LANES, RECOMMENDED_KEYS_ROOT, RECOMMENDED_PAD_ROOT } from '$lib/midi/linnstrument/profile';
+// The shared DSP lib — node-importable IDENTICAL source the worklet bundles
+// (the profile.ts / pentemelodica.ts precedent for reaching packages/dsp by
+// relative path). The docs name a per-voice tap only where one exists.
+import { PENTE_VOICES } from '../../../../../dsp/src/lib/pentemelodica-dsp';
 import type { MusicalRegion } from '$lib/midi/linnstrument/types';
 import {
   createLinnstrumentRuntime,
@@ -91,11 +95,19 @@ function expressionOutputs(): AudioModuleDef['outputs'] {
   );
 }
 /** One sentence template per dimension; the lane, the region and the lane
- *  cap are filled from the same constants the ids come from. */
+ *  cap are filled from the same constants the ids come from. The pairing
+ *  clause is conditional on the lane: PENTEMELODICA taps voice1..PENTE_VOICES
+ *  (5) and no other shipped synth exposes a per-voice audio tap (SIXSTRUM's
+ *  six strings leave through one summed `out`), so a lane past PENTE_VOICES
+ *  has a jack but no per-voice tap to sit beside today. */
 function expressionDoc(r: MusicalRegion, d: ExpressionDim, i: number): string {
   const n = i + 1;
   const where = `lane ${n} of the ${REGION_WORD[r]} bus (${r}_poly)`;
-  const pairing = `It describes exactly the voice on ${where} — PENTEMELODICA's VOICE ${n} — so patch it beside that voice's own audio tap; a summed poly synth's single CV input would hear this one finger for all of its voices. Fingers that land on lanes beyond ${LINN_EXPRESSION_LANES} still play on the bus and have no jack.`;
+  const beyond = `Fingers that land on lanes beyond ${LINN_EXPRESSION_LANES} still play on the bus and have no jack.`;
+  const pairing =
+    n <= PENTE_VOICES
+      ? `It describes exactly the voice on ${where} — PENTEMELODICA's VOICE ${n} — so patch it beside that voice's own audio tap; a summed poly synth's single CV input would hear this one finger for all of its voices. ${beyond}`
+      : `It describes exactly the voice on ${where}. That lane still plays on the bus, but no shipped synth exposes a per-voice audio tap for it today (PENTEMELODICA taps voice 1..${PENTE_VOICES}; SIXSTRUM's six strings leave through one summed out), so this jack pairs only with a whole-synth CV input, which then hears this one finger for all of its voices. ${beyond}`;
   if (d === 'vel') {
     return `The attack velocity of the finger on ${where}, as CV 0..1. It is latched the moment that finger lands and held — it does not follow the finger — until the lane is reassigned to a new finger or PANIC returns it to 0, so a level set from it stays for the whole note. ${pairing}`;
   }
