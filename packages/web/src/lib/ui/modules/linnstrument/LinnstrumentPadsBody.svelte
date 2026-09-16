@@ -157,7 +157,16 @@
   }
 
   // ── Lamps ──
+  //
+  // LINK has THREE looks, not two (2026-09-15 review caution — "LINK lit but
+  // the instrument unchanged" must not recur): DARK while no port is bound;
+  // AMBER (`warn`) while a port is bound but the instrument has NOT confirmed
+  // User Firmware Mode — requested and pending, reported OFF, or silent over
+  // USB — and the domain ACCENT only once the instrument's own NRPN 245 answer
+  // says ON. The colour is the whole visual; which of the three pending/fault
+  // cases it is stays in `detail`, never a text node.
   let linkLit = $derived(!!snap && snap.session.state !== 'disconnected');
+  let linkTone = $derived<'accent' | 'warn'>(!!snap && snap.session.userMode ? 'accent' : 'warn');
   let linkDetail = $derived.by(() => {
     if (!snap) return 'engine not up yet';
     if (snap.session.state === 'disconnected') return 'no LinnStrument bound — CONNECT grants Web MIDI and binds the port named like a LinnStrument (in the native shell: the one picked on rig setup)';
@@ -169,11 +178,17 @@
     // says what to do on the instrument (linnstrument-device.ts header).
     void $linnstrumentMidiVersion;
     const device = linnstrumentStatus();
+    // Three unconfirmed readings, each true to what the instrument DID:
+    // SILENT — nothing came back over USB; ANSWERED — it spoke, and said OFF
+    // (it left the mode, or refused the entry); PENDING — the request is out
+    // and the reply window is still open.
     const mode = snap.session.userMode
       ? 'user firmware mode confirmed by the instrument'
       : device.kind === 'bound' && device.reply === 'silent'
         ? device.message
-        : 'user firmware mode requested, not yet confirmed by the instrument';
+        : device.kind === 'bound' && device.reply === 'answered'
+          ? 'the instrument answered: user firmware mode is off — press CONNECT to request it again'
+          : 'user firmware mode requested, not yet confirmed by the instrument';
     return `${src}, ${mode}, session ${snap.session.epoch}`;
   });
   function regionDetail(region: 'keys' | 'pad'): string {
@@ -253,7 +268,7 @@
   </div>
 
   <div class="row">
-    <StatusLed caption="LINK" lit={linkLit} tone="accent" detail={linkDetail} testid="linnstrument-face-led-link-{nodeId}" />
+    <StatusLed caption="LINK" lit={linkLit} tone={linkTone} detail={linkDetail} testid="linnstrument-face-led-link-{nodeId}" />
     <StatusLed caption="KEYS" lit={keysLit} tone="accent" detail={regionDetail('keys')} testid="linnstrument-face-led-keys-{nodeId}" />
     <StatusLed caption="PAD" lit={padLit} tone="accent" detail={regionDetail('pad')} testid="linnstrument-face-led-pad-{nodeId}" />
   </div>

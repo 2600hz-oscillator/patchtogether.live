@@ -104,15 +104,23 @@ export interface LinnLightingRoles {
   played: keyof LinnPalette;
 }
 
-/** What the MODULE tells the source to light the keys and the pad with: ITS
- *  roots and ITS scale (the `keys_root` / `pad_root` / `scale` params), so
- *  the lights can never disagree with the notes the runtime derives (WP-C
- *  open item 3c). `scale` undefined = chromatic — only the roots are
- *  landmarks; nothing is out of scale (keyboard-map.ts `noteRole`). */
+/** What the MODULE tells the source to light with: ITS roots and ITS scale
+ *  for the keys and the pad (the `keys_root` / `pad_root` / `scale` params),
+ *  so the lights can never disagree with the notes the runtime derives (WP-C
+ *  open item 3c), and whether ITS lower five control cells are live
+ *  (`extra_controls`, D17) so the control column can never stay lit for a
+ *  cell the module has made inert (2026-09-15 review F08: the runtime's
+ *  profile flipped while the writer kept a profile of its own). `scale`
+ *  undefined = chromatic — only the roots are landmarks; nothing is out of
+ *  scale (keyboard-map.ts `noteRole`). */
 export interface LinnLighting {
   keysRoot: number;
   padRoot: number;
   scale: ScaleName | undefined;
+  /** The lower five control cells (ARP / HOLD / OCT− / OCT+ / PANIC) are
+   *  enabled: lit orange when true, `off` when false — the same switch that
+   *  makes them inert in the reducer. */
+  extraControls: boolean;
 }
 
 export interface LinnProfile {
@@ -172,7 +180,12 @@ export type RawRejection =
   | 'no_contact'
   | 'duplicate_press'
   | 'unmapped_cc'
-  | 'malformed_slide';
+  | 'malformed_slide'
+  /** User-Mode cell vocabulary (a note = a column, a CC = a coordinate) while
+   *  the instrument has NOT confirmed User Firmware Mode — unconfirmed, OFF or
+   *  silent. In any other mode those same bytes are ordinary musical MIDI and
+   *  must not become cell presses. Management traffic (NRPN) still decodes. */
+  | 'mode_unconfirmed';
 
 export type RawEvent =
   | { kind: 'cell_down'; epoch: Epoch; touch: TouchId; col: number; row: number; velocity: number; time: number }
@@ -184,8 +197,12 @@ export type RawEvent =
   | { kind: 'cell_z'; epoch: Epoch; touch: TouchId; col: number; row: number; z: number; time: number }
   /** A completed horizontal transfer: same touch, new column, no new attack. */
   | { kind: 'cell_slide'; epoch: Epoch; touch: TouchId; fromCol: number; toCol: number; row: number; time: number }
-  /** Firmware mode notification (NRPN 245 readback). */
-  | { kind: 'mode'; epoch: Epoch; userMode: boolean; time: number }
+  /** Firmware mode notification (NRPN 245 readback). `changed` says whether
+   *  it REPORTED A TRANSITION (the epoch advanced, every contact ended) or
+   *  merely acknowledged the mode the decoder already knew — the second
+   *  answer of a healthy entry (echo on channel 9, then the 299 read's answer)
+   *  invalidates nothing. */
+  | { kind: 'mode'; epoch: Epoch; userMode: boolean; changed: boolean; time: number }
   | { kind: 'rejected'; epoch: Epoch; reason: RawRejection; bytes: readonly number[]; time: number };
 
 // ── Surface events (APPLICATION coordinates, region-attributed) ───────────

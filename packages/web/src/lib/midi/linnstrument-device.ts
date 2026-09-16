@@ -79,6 +79,10 @@
 //     module returns an authoritative state revision used for LEDs"): a
 //     selector press on the hardware produces a `control_edge` event and
 //     NOTHING on the wire until the runtime acknowledges it via `onSelection`;
+//     whether the lower five are lit at all is the module's `extraControls`
+//     in the SAME `onLighting` publish as the roots — never this layer's own
+//     profile, which is region geometry and a palette, not the module's
+//     switches (2026-09-15 review F08: EXTRAS OFF left the five lit);
 //   · the KEYS and PAD regions from the module's roots + scale (`onLighting`,
 //     the D09 lighting half: root / in-scale / out-of-scale through the tree's
 //     `noteRole`) — User Firmware Mode switches the stock surface lighting off
@@ -632,9 +636,10 @@ export interface PlayedCell {
 }
 
 /** The lighting a source falls back on before any module has published:
- *  the profile's roots, chromatic (only the roots are landmarks). */
+ *  the profile's roots, chromatic (only the roots are landmarks), the lower
+ *  five as the profile has them. */
 export function lightingFromProfile(p: LinnProfile): LinnLighting {
-  return { keysRoot: p.keysRoot, padRoot: p.padRoot, scale: undefined };
+  return { keysRoot: p.keysRoot, padRoot: p.padRoot, scale: undefined, extraControls: p.extraControlsEnabled };
 }
 
 /** The keys / pad cells a live touch is on — the column it is CURRENTLY on
@@ -651,16 +656,18 @@ export function playedCells(state: SurfaceMapState): PlayedCell[] {
 
 /** The control-column frame acknowledged state implies. Selector cells show
  *  their colour when selected and `off` otherwise; the lower five are lit
- *  only while `extraControlsEnabled` (D17 recommendation). Colour ids are
- *  the profile palette — fixed-firmware APPROXIMATIONS (D18). Pure. */
-export function controlColumnFrame(state: SelectionState, p: LinnProfile): LedCell[] {
+ *  only while the MODULE's `lighting.extraControls` is on (D17 recommendation
+ *  — the runtime's `extra_controls` param, published on the same path as
+ *  the roots; F08). Colour ids are the profile palette — fixed-firmware
+ *  APPROXIMATIONS (D18). Pure. */
+export function controlColumnFrame(state: SelectionState, p: LinnProfile, lighting: LinnLighting = lightingFromProfile(p)): LedCell[] {
   const controls = p.regions.controls;
   const wireCol = appColToWireCol(controls.left);
   const colourOf = (name: ControlName): number => {
     if (name === 'r') return state.mask.r ? p.palette.red : p.palette.off;
     if (name === 'g') return state.mask.g ? p.palette.green : p.palette.off;
     if (name === 'b') return state.mask.b ? p.palette.blue : p.palette.off;
-    return p.extraControlsEnabled ? p.palette.orange : p.palette.off;
+    return lighting.extraControls ? p.palette.orange : p.palette.off;
   };
   return (Object.keys(p.controlRows) as ControlName[])
     .map((name) => ({ wireCol, ledRow: appRowToLedRow(controls.bottom + p.controlRows[name]), color: colourOf(name) }))
@@ -709,7 +716,7 @@ export function ledFrame(
   lighting: LinnLighting = lightingFromProfile(p),
   played: readonly PlayedCell[] = [],
 ): LedCell[] {
-  return [...(state ? controlColumnFrame(state, p) : []), ...musicalFrame(p, lighting, played)];
+  return [...(state ? controlColumnFrame(state, p, lighting) : []), ...musicalFrame(p, lighting, played)];
 }
 
 // ── Input ─────────────────────────────────────────────────────────────────
@@ -732,7 +739,9 @@ function onFrame(ev: MidiEventLike): void {
     // The instrument spoke: whichever of the echo and the read answer this is,
     // the reply window is settled. A healthy instrument sends BOTH on a fresh
     // entry (echo on channel 9, then the answer on the read's channel), so
-    // the enables + repaint happen on the TRANSITION only, not on every "on".
+    // the enables + repaint happen on the TRANSITION only, not on every "on"
+    // — and the decoder publishes an unchanged answer as `changed: false`,
+    // which ends no contact, opens no epoch and resets no runtime.
     settleReply('answered');
     const entered = mode.userMode && !userModeEntered;
     userModeEntered = mode.userMode;
@@ -826,15 +835,7 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
   mapState = createSurfaceMapState();
   led.painted.clear();
 
-  // Entry, enables (the firmware resets them on entry, so they follow it),
-  // then the READ — the one message the instrument answers whether or not the
-  // entry changed anything (header: TWO things can bring that message back).
-  sendAll(encodeUserFirmwareMode(true));
-  sendAll(encodeRowAxisEnables(profile));
-  sendAll(encodeUserFirmwareModeRead());
-  userModeEntered = false;
-  if (output) armReplyWindow();
-  else settleReply('pending');
+  requestUserMode();
 
   publishRaw(rc.events, 'connected');
   led.scheduleFlush();
@@ -846,6 +847,28 @@ export function bindLinnstrument(inputId: string, opts: { viaRig?: boolean } = {
   }
   bump();
   return true;
+}
+
+/**
+ * THE MODE REQUEST: entry, enables (the firmware resets them on entry, so they
+ * follow it), then the READ — the one message the instrument answers whether
+ * or not the entry changed anything (header: TWO things can bring that message
+ * back) — and a fresh reply window. The bind sends it once; an EXPLICIT
+ * CONNECT on an ALREADY-BOUND port sends it again while the mode is
+ * unconfirmed, reported OFF or the instrument was silent
+ * (`connectLinnstrument`), which is the recovery every one of those status
+ * lines instructs. The roster refresh (`resolvePorts`)
+ * never does: a rig echo or a hot-plug of an unrelated port must not re-enter
+ * the mode on a healthy instrument.
+ */
+function requestUserMode(): void {
+  if (!bound) return;
+  sendAll(encodeUserFirmwareMode(true));
+  sendAll(encodeRowAxisEnables(profile));
+  sendAll(encodeUserFirmwareModeRead());
+  userModeEntered = false;
+  if (bound.output) armReplyWindow();
+  else settleReply('pending');
 }
 
 /** Tear the binding down. `restore` sends the User Mode exit; false when the
@@ -946,12 +969,26 @@ function adoptAccess(a: LinnAccessLike): void {
  *
  * MUST be called synchronously from a user gesture — an `await` above the
  * request spends the activation and Chromium refuses to prompt. Safe to call
- * again: with access held it just re-resolves. NEVER THROWS. Returns true
- * only when a port is actually bound.
+ * again: with access held it re-resolves the roster, and when an ALREADY-BOUND
+ * instrument has not confirmed User Firmware Mode (unconfirmed, reported OFF,
+ * or silent) it RE-SENDS the mode request with a new reply window and repaints
+ * — the "press CONNECT again" every one of those status lines instructs. A
+ * port that this call's own roster pass was the first to bind has just had
+ * the request sent by the bind, once; a confirmed instrument is left alone.
+ * NEVER THROWS. Returns true only when a port is actually bound.
  */
 export async function connectLinnstrument(request?: LinnRequestFn): Promise<boolean> {
   if (access) {
+    // The binding object is replaced by every bind (`bindLinnstrument`), so
+    // identity across the roster pass is "was bound before this gesture".
+    const before = bound;
     resolvePorts();
+    if (bound && bound === before && !userModeEntered) {
+      requestUserMode();
+      led.painted.clear();
+      led.scheduleFlush();
+      bump();
+    }
     return bound !== null;
   }
   if (connectInFlight) return false;

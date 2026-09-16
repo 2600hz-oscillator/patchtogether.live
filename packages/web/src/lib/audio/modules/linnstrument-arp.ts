@@ -30,13 +30,36 @@
 //   scheduled gate-down and is NOT written as a second edge.
 //
 //   CANCELLATION. `cancel()` silences the sink now, drops the running note and
-//   the step clock, so stop / latch-off / panic / unplug end both the active
-//   note and every future one.
+//   the step clock, so stop / latch-off end both the active note and every
+//   future one — the latched set and the touches SURVIVE, which is what an
+//   arp-off + arp-on round trip wants. `reset()` is the stronger one: it also
+//   forgets every touch and the engine's frozen (latched) set, so PANIC and
+//   an unplug leave NOTHING for the next tick to resurrect (2026-09-15 review
+//   F01: `cancel` alone kept a released, latched pool and the next service
+//   re-anchored the clock and played it again).
 //
 //   TICKING. `service({ nowMs, audioTime, bpm })` is called from the module's
 //   scheduler-clock subscription (~25 ms, tick-granular exactly like the
 //   Launchpad's `serviceArp`) at the TIMELORDE bpm the caller reads; the step
 //   period comes from `arpStepPeriod` so the division table is the engine's.
+//
+//   THE LATE-STEP POLICY. A service call plays AT MOST ONE step, always at
+//   `audioTime + lookahead`. The step grid is KEPT only while the tick's
+//   lateness still leaves a real gate-low interval before the next grid
+//   point — i.e. lateness ≤ step − gate-high − one render quantum, the
+//   ordinary 25 ms tick jitter. Any later — a busy main thread, a
+//   backgrounded tab, a division that just got much shorter, whether one
+//   step is due or several — and the step clock re-anchors to now. The
+//   backlog is never replayed: replaying it at one instant stacks every
+//   attack on the same audio time (a gate written 1, 0, 1 at one timestamp
+//   is not an edge at all — review F07: a 400 ms stall at a 125 ms division
+//   scheduled three steps on one timestamp); replaying it at distinct future
+//   instants plays a burst nobody asked for; and keeping the grid on a tick
+//   late by more than the gate-low slot lands the next attack INSIDE the
+//   note just scheduled — distinct timestamps, but a legato retune with no
+//   edge (the review's follow-up: 100 ms late at 4× gave a −37.5 ms "low"
+//   interval). Skipping nothing and shifting the grid keeps every note of
+//   the pattern and a real gate-low interval between attacks.
 //
 // PURE + engine-free: the sink is an interface, so the adapter is unit-tested
 // with a recording fake and the module wires a real `createPolySender`.
@@ -115,12 +138,14 @@ export interface LinnArp {
   touchStart(touch: ArpTouchId, note: number, expression?: Partial<ArpExpression>): void;
   touchExpression(touch: ArpTouchId, expression: Partial<ArpExpression>): void;
   touchEnd(touch: ArpTouchId): void;
-  /** Drive the transport: schedules every step due by `nowMs`. Returns the
-   *  steps it played, oldest first. */
+  /** Drive the transport: schedules AT MOST ONE step per call (header: THE
+   *  LATE-STEP POLICY). Returns the steps it played. */
   service(input: ArpServiceInput): ArpPlayed[];
-  /** Stop now: silence the sink, drop the running note and the step clock. */
+  /** Stop now: silence the sink, drop the running note and the step clock.
+   *  The touches and a latched set survive (arp off → on resumes them). */
   cancel(audioTime: number): void;
-  /** Forget every touch too (unplug / session end), then cancel. */
+  /** PANIC / unplug / session end: forget every touch AND the engine's
+   *  frozen (latched) set, then cancel — nothing is left for the next tick. */
   reset(audioTime: number): void;
   snapshot(): LinnArpSnapshot;
 }
@@ -143,11 +168,6 @@ const DEFAULT_GATE_RATIO = 0.5;
  *  quantum at 48 kHz, so `gateOffSec` can never collapse the low interval to
  *  zero even at the 8× division of a fast tempo. */
 const MIN_GATE_LOW_S = 128 / 48000;
-/** A stall longer than this (a backgrounded tab) re-anchors the step clock
- *  rather than replaying every missed step at once. */
-const STALL_BEATS = 8;
-/** Steps drained per service call, so a stall can never spin the loop. */
-const MAX_STEPS_PER_SERVICE = 32;
 
 const DEFAULT_EXPRESSION: ArpExpression = { velocity: 0.8, pressure: 0, timbre: 0.5, bend: 0 };
 
@@ -228,29 +248,33 @@ export function createLinnArp(opts: LinnArpOptions = {}): LinnArpWithSink {
       const stepMs = arpStepPeriod(beatMs, state.params.divisionIndex);
       const now = input.nowMs;
       if (nextStepMs === 0) nextStepMs = now;
-      if (now - nextStepMs > beatMs * STALL_BEATS) nextStepMs = now;
-      let guard = 0;
-      while (now >= nextStepMs && guard < MAX_STEPS_PER_SERVICE) {
-        const step = arpAdvance(state);
-        state = step.state;
-        if (step.noteOn !== undefined) {
-          const owner = ownerOf(step.noteOn);
-          const expr = owner ? owner.expression : DEFAULT_EXPRESSION;
-          const at = input.audioTime + lookaheadS;
-          const stepS = stepMs / 1000;
-          // A REAL gate-low interval: high for `gateRatio` of the step, and
-          // never so long that the low part vanishes.
-          const gateOffSec = Math.max(MIN_GATE_LOW_S, Math.min(stepS - MIN_GATE_LOW_S, stepS * gateRatio));
-          const lanes: { pitch: number; gate: 0 | 1 }[] = [];
-          for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) lanes.push({ pitch: 0, gate: 0 });
-          lanes[lane] = { pitch: midiToVOct(step.noteOn + expr.bend), gate: 1 };
-          sink.scheduleStep(at, lanes, gateOffSec);
-          lastOwner = owner ? owner.touch : null;
-          played.push({ at, note: step.noteOn, owner: lastOwner, expression: { ...expr }, gateOffSec });
-        }
-        nextStepMs += stepMs;
-        guard++;
+      if (now < nextStepMs) return played;
+      const stepS = stepMs / 1000;
+      // A REAL gate-low interval: high for `gateRatio` of the step, and
+      // never so long that the low part vanishes.
+      const gateOffSec = Math.max(MIN_GATE_LOW_S, Math.min(stepS - MIN_GATE_LOW_S, stepS * gateRatio));
+      // THE LATE-STEP POLICY (header): the grid is kept only while this tick's
+      // lateness still leaves a real gate-low interval before the NEXT grid
+      // point — the attack scheduled now goes down at `+gateOffSec`, and the
+      // next attack must land at least one render quantum after that. Any
+      // later (which includes every "more than one step due" stall) and the
+      // grid re-anchors to now; the next note plays ONCE either way.
+      const maxLateMs = stepMs - gateOffSec * 1000 - MIN_GATE_LOW_S * 1000;
+      if (now - nextStepMs > maxLateMs) nextStepMs = now;
+      const step = arpAdvance(state);
+      state = step.state;
+      if (step.noteOn !== undefined) {
+        const owner = ownerOf(step.noteOn);
+        const expr = owner ? owner.expression : DEFAULT_EXPRESSION;
+        const at = input.audioTime + lookaheadS;
+        const lanes: { pitch: number; gate: 0 | 1 }[] = [];
+        for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) lanes.push({ pitch: 0, gate: 0 });
+        lanes[lane] = { pitch: midiToVOct(step.noteOn + expr.bend), gate: 1 };
+        sink.scheduleStep(at, lanes, gateOffSec);
+        lastOwner = owner ? owner.touch : null;
+        played.push({ at, note: step.noteOn, owner: lastOwner, expression: { ...expr }, gateOffSec });
       }
+      nextStepMs += stepMs;
       return played;
     },
     cancel(audioTime) {

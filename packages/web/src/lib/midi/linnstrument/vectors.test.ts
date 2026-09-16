@@ -24,7 +24,7 @@ interface Run {
 
 function execute(vector: AcceptanceVector): Run {
   const profile: LinnProfile = { ...DEFAULT_LINN_PROFILE, ...vector.profile };
-  let rawState: RawDecodeState = createRawDecodeState();
+  let rawState: RawDecodeState = createRawDecodeState(1, true); // the instrument has confirmed User Mode
   let mapState: SurfaceMapState = createSurfaceMapState();
   let selection = createSelectionState(profile);
   const mpe = { keys: createMpeState({ lanes: profile.lanesPerRegion }), pad: createMpeState({ lanes: profile.lanesPerRegion }), stock: createMpeState({ lanes: vector.lanes ?? 16 }) };
@@ -68,7 +68,7 @@ function execute(vector: AcceptanceVector): Run {
         selection = reduceAll(createSelectionState(profile), [{ kind: 'hydrate', ...persisted }], profile).state;
         mpe.keys = createMpeState({ lanes: profile.lanesPerRegion });
         mpe.pad = createMpeState({ lanes: profile.lanesPerRegion });
-        rawState = createRawDecodeState(rawState.epoch);
+        rawState = createRawDecodeState(rawState.epoch, true);
         mapState = createSurfaceMapState();
       }
     }
