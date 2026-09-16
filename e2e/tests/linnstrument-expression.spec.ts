@@ -274,12 +274,18 @@ test('@linnstrument per-voice pressure opens ITS voice\'s VCA and timbre opens I
   await sim(page, 'move', KEY_B.col, KEY_B.row, { z: 127 });
   await opens(page, 'scp1', 'keys_press2 into VCA1: B\'s pressure opens it');
   //     TIMBRE: pull keys_timbre1 → cutoff_cv at rest; A's Y at 127 no longer
-  //     lifts the ratio, while the lane reads timbre 1.
+  //     lifts the ratio, while the lane reads timbre 1. Sample twice, assert on
+  //     the second (the settledSilence shape): the audio-graph edge removal
+  //     lags the Y.Doc delete, so the first window after it can still see the
+  //     cutoff open for part of its span — that window is only waited out.
   await deleteEdge(page, 'e-timbre-1');
   await sim(page, 'move', KEY_A.col, KEY_A.row, { y: 127 });
   await expect.poll(async () => (await laneA())?.timbre ?? -1).toBeCloseTo(1, 2);
-  const unpatched = await timbreSpread(page, fA);
-  expect(unpatched.hi, `with the timbre cable pulled, A's timbre at +1 no longer opens the filter (rest hi ${rest.hi.toFixed(3)}, unpatched ${unpatched.lo.toFixed(3)}..${unpatched.hi.toFixed(3)}, patched open ${openRatio.toFixed(3)})`).toBeLessThan(rest.hi * TIMBRE_RISE);
+  await expect
+    .poll(() => timbreRatio(page, fA), { timeout: AUDIBLE_CAP_MS, message: `with the timbre cable pulled, the ratio must settle below the rise threshold within the cap (rest hi ${rest.hi.toFixed(3)})` })
+    .toBeLessThan(rest.hi * TIMBRE_RISE);
+  const unpatched = await timbreRatio(page, fA);
+  expect(unpatched, `with the timbre cable pulled, A's timbre at +1 no longer opens the filter — and STAYS shut over a full window (rest hi ${rest.hi.toFixed(3)}, unpatched ${unpatched.toFixed(3)}, patched open ${openRatio.toFixed(3)})`).toBeLessThan(rest.hi * TIMBRE_RISE);
 
   // (7) PANIC — the same reducer intent the ranked cell dispatches: every
   //     voice off, pressure cleared, both VCAs silent within the cap.
