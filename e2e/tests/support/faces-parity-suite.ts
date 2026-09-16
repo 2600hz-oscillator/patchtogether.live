@@ -1772,7 +1772,20 @@ async function runFaceParityRow(rack: RackSession, type: string, scope: FaceRowS
             + 'the row is running UNQUIESCED and its budget no longer means what it says',
         ).toBe(quiesce.value);
       }
-      await spawnPatch(page, [{ id: 'm', type, position: { x: 460, y: 240 } }]);
+      // REC deliberately refuses an unwired SAMSLOOP. Supply its real input
+      // prerequisite so the ordinary per-cell delivery assertion still tests
+      // a successful press; the dedicated refusal spec covers the negative.
+      await spawnPatch(page, [
+        { id: 'm', type, position: { x: 460, y: 240 } },
+        ...(type === 'samsloop'
+          ? [{ id: 'record-source', type: 'noise', position: { x: 100, y: 240 } }]
+          : []),
+      ], type === 'samsloop' ? [{
+        id: 'record-input',
+        from: { nodeId: 'record-source', portId: 'white' },
+        to: { nodeId: 'm', portId: 'audio_l_in' },
+        sourceType: 'noise', targetType: 'samsloop',
+      }] : []);
 
       const spec = await readSpec(page, type);
       // The imported STRICT_FACES set and the live registry agree this module
