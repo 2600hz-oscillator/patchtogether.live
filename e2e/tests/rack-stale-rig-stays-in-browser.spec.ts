@@ -71,6 +71,13 @@
 // repro — no runner-side knob produces it — so the handler is correct by
 // construction (Playwright's documented overlay mechanism) plus that leg.
 
+// Main CI 35049356846 exposed a third race: the gate handler's outside
+// pointerdown closes an open topbar panel, then a pending close-TOGGLE click
+// resumes and reopens it. Force that suspension at the camera cleanup below.
+// An outside click on the banner is an idempotent close gesture, so cleanup
+// stays closed even if the audio handler already dismissed the panel. The old
+// toggle fails this forced sequence locally; no timeout or assertion is relaxed.
+
 import { test, expect, type Page } from '@playwright/test';
 import { canvasPane, revealInPane } from './_helpers';
 import { installRenderSmokeHooks } from './_render-smoke';
@@ -234,6 +241,19 @@ async function installAudioGateHandler(page: Page, w: Watch): Promise<void> {
       await el.dispose();
     }
   });
+}
+
+/** Closing must not invert state after the gate handler's outside click. */
+async function closeTopbarPanel(
+  page: Page,
+  panelTestId: string,
+  options: { timeout?: number } = {},
+): Promise<void> {
+  // A real locator click keeps gate recovery inside the action's wait, before
+  // the short state assertion. The heading is outside every menu anchor and
+  // has no toggle handler, so both the recovery click and this click close.
+  await page.getByTestId('workflow-topbar').getByRole('heading').click();
+  await expect(page.getByTestId(panelTestId)).toHaveAttribute('data-open', 'false', options);
 }
 
 /**
@@ -402,8 +422,18 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     await expect(host.getByTestId('cameraInput-tile-lamp')).toHaveAttribute('data-lamp', 'streaming', {
       timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
     });
-    await page.getByTestId('workflow-topbar-slot-cameras').click();
-    await expect(page.getByTestId('workflow-cameras-panel')).toHaveAttribute('data-open', 'false');
+    // Reproduce main CI 35049356846: the audio gate can return while a
+    // panel is open. Its recovery click is an outside pointerdown that closes
+    // the panel before the original pending action continues.
+    await page.evaluate(() => {
+      const w = window as unknown as { __engine: () => { getDomain: (d: string) => { ctx: AudioContext } } };
+      return w.__engine().getDomain('audio').ctx.suspend();
+    });
+    await expect.poll(() => page.locator(GATE).count(), {
+      message: 'the audio gate returns while the camera panel is open',
+      timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
+    }).toBe(1);
+    await closeTopbarPanel(page, 'workflow-cameras-panel');
 
     // ── 3b. AUDIO OUT — the master-sink picker, written AND applied ────────
     await page.getByTestId('workflow-topbar-slot-audio-io').click();
@@ -428,7 +458,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
         timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
       })
       .toBe(SINK_B);
-    await page.getByTestId('workflow-topbar-slot-audio-io').click();
+    await closeTopbarPanel(page, 'workflow-io-panel');
 
     // ── 3b'. THE BROWSER STOPS THE CONTEXT (the first CI head, deterministic) ─
     // CI's audio-device error left the context `suspended`; the product's
@@ -478,8 +508,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     await expect(page.getByTestId('workflow-io-panel'), 'and the click behind it landed').toHaveAttribute('data-open', 'true', {
       timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
     });
-    await page.getByTestId('workflow-topbar-slot-audio-io').click();
-    await expect(page.getByTestId('workflow-io-panel')).toHaveAttribute('data-open', 'false', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await closeTopbarPanel(page, 'workflow-io-panel', { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     await mountRack(page);
 
     // ── 3c. ES-9 — the CONNECT cell on the tile, with the bridge REFUSED ───
