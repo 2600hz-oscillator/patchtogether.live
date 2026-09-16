@@ -685,9 +685,9 @@ export function makeWavBlob(
  *
  * `l` and `r` MUST be the same length. `srcRate` is the AudioContext
  * rate the L+R buffers were captured at. `dstRate` / `bits` / `channels`
- * are the user-chosen target settings; when channels === 1, the L
- * channel is mono-mixed (the helper averages L+R if R was distinct,
- * otherwise L is used directly).
+ * are the user-chosen target settings; when channels === 1, average L+R.
+ * The capture tap already normals an unpatched R to L, so a left-only
+ * input keeps its level. A right-only input has silent L and still contributes.
  *
  * Exported so a unit test can pin the end-to-end pipeline at one entry
  * point rather than chaining 4 helpers in the test body.
@@ -702,25 +702,22 @@ export function encodeRecordingBytes(
 ): { bytes: Uint8Array; rate: number } {
   // Resample each channel independently, then quantize, then interleave.
   const lDs = downsample(l, srcRate, dstRate);
-  const rDs = channels === 2 ? downsample(r, srcRate, dstRate) : null;
+  // R contributes to mono too. Skipping it for a mono target silently erased
+  // right-only takes even though the tap had captured their frames correctly.
+  const rDs = r === l ? lDs : downsample(r, srcRate, dstRate);
   const n = lDs.length;
 
   // Build the pre-quantize buffer (mono mix when channels === 1).
   let pre: Float32Array;
   if (channels === 1) {
-    if (rDs) {
-      pre = new Float32Array(n);
-      for (let i = 0; i < n; i++) pre[i] = ((lDs[i] ?? 0) + (rDs[i] ?? 0)) * 0.5;
-    } else {
-      pre = lDs;
-    }
+    pre = new Float32Array(n);
+    for (let i = 0; i < n; i++) pre[i] = ((lDs[i] ?? 0) + (rDs[i] ?? 0)) * 0.5;
   } else {
     // Stereo: interleave L, R, L, R...
-    const rUse = rDs ?? lDs; // mono input + stereo target ⇒ duplicate L
     pre = new Float32Array(n * 2);
     for (let i = 0; i < n; i++) {
       pre[i * 2]     = lDs[i] ?? 0;
-      pre[i * 2 + 1] = rUse[i] ?? 0;
+      pre[i * 2 + 1] = rDs[i] ?? 0;
     }
   }
 
