@@ -186,7 +186,12 @@ export function loadShellExtension(id: string): Promise<ShellExtension | null> {
   let p = CACHE.get(id);
   if (!p) {
     const loader = LOADERS.get(id);
-    p = loader ? loader().then((m) => m.default ?? null) : Promise.resolve(null);
+    p = loader ? loader().then((m) => m.default ?? null).catch((error: unknown) => {
+      // A deployment can retire a chunk held by an open tab. Do not cache a
+      // rejected promise forever: the shell reports the failure and can retry.
+      CACHE.delete(id);
+      throw error;
+    }) : Promise.resolve(null);
     CACHE.set(id, p);
   }
   return p;

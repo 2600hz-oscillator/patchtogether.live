@@ -150,6 +150,18 @@ export function startSamsloopTake(nodeId: string, barWidth?: number): SamsloopTa
     return { ok: false, error: 'Audio engine not ready yet — start audio first.' };
   }
 
+  // The capture worklet receives no frames with neither record input wired.
+  // Read the live graph at the gesture, so patching/unpatching can recover
+  // without remounting the face. Silence on a connected input is a valid take.
+  const hasInput = Object.values(patch.edges).some((edge) =>
+    edge && edge.target.nodeId === nodeId
+    && (edge.target.portId === 'audio_l_in' || edge.target.portId === 'audio_r_in')
+    && !!patch.nodes[edge.source.nodeId],
+  );
+  if (!hasInput) {
+    return { ok: false, error: 'Connect audio to REC L or REC R before recording.' };
+  }
+
   const d = (node?.data ?? {}) as SamsloopData;
   const recRate = (d.recRate ?? SAMSLOOP_REC_DEFAULTS.rate) as SamsloopRecRate;
   const recBits = (d.recBits ?? SAMSLOOP_REC_DEFAULTS.bits) as SamsloopRecBits;

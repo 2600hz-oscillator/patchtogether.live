@@ -292,21 +292,25 @@
   // LAZILY-loaded slot map (glyph today — see WIRED_SHELL_EXTENSION_SLOTS).
   // This is the shell's ONLY route to module-specific components: no module
   // name appears in this file's imports, and module-shell-import-guard keeps
-  // it that way. Until the chunk resolves the slot renders nothing (a
-  // microtask + one chunk fetch on first mount, settled long before any
-  // screenshot or interaction); an undeclared/unknown id stays null and the
-  // generic shell is unchanged.
+  // it that way. While the chunk loads the slot is empty. A failed download
+  // gets a recovery control instead of an unhandled rejection and a blank
+  // panel. An undeclared/unknown id stays null; the lint catches that case.
   let ext = $state<ShellExtension | null>(null);
+  let extFailed = $state(false);
+  let extAttempt = $state(0);
   $effect(() => {
     const extId = (def as FaceplateDefLike | undefined)?.face?.extension;
+    void extAttempt;
+    ext = null;
+    extFailed = false;
     if (!extId) {
-      ext = null;
       return;
     }
     let cancelled = false;
-    void loadShellExtension(extId).then((resolved) => {
-      if (!cancelled) ext = resolved;
-    });
+    void loadShellExtension(extId).then(
+      (resolved) => { if (!cancelled) ext = resolved; },
+      () => { if (!cancelled) extFailed = true; },
+    );
     return () => {
       cancelled = true;
     };
@@ -1537,6 +1541,13 @@
     </div>
   {/snippet}
 
+  {#if extFailed}
+    <div class="extension-error nodrag nopan" role="alert" data-testid="shell-extension-error">
+      <span>Panel could not load. Save your patch, then reload if retry does not help.</span>
+      <Button label="RETRY PANEL" onTrigger={() => { extAttempt += 1; }} />
+    </div>
+  {/if}
+
   {#if dockBands}
     <!-- DOCK FACEPLATE (view='dock-full'): the glyph is the hero band, then
          the dockFacePlan SECTION BANDS — one labeled band per curated page +
@@ -1931,6 +1942,14 @@
 {/snippet}
 
 <style>
+  .extension-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    font-size: 11px;
+  }
   /* INERT family/static cell — a family/static face key with NO registered
      shell-cell spec (shell-cells.ts). It is a LOUD FAILURE MARKER, not a
      render: `data-cell-inert` fails module-face-lint's coverage gate and the

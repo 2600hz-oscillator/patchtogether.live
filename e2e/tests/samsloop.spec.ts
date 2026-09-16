@@ -202,16 +202,19 @@ test.describe('SAMSLOOP module', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
-  test('REC button is present and clicking it does not crash the card', async ({ page }) => {
-    // The audio-input record path is exercised end-to-end in
-    // samsloop-record.spec.ts (where a VCO is patched into audio_l_in).
-    // Here we just assert the cell mounts + clicking it without an attached
-    // audio source arms a recording and a second click stops it, without
-    // throwing. The cell's label is static by design — the card's REC/STOP
-    // text flip died with the card; the NODE-keyed registry's probe
-    // (__samsloopRecording) is the recording-state observable.
+  test('REC button starts and stops a connected audio take without errors', async ({ page }) => {
+    // The unwired refusal is covered by face-samsloop-rec-refusal.spec.ts.
+    // This positive control supplies a real input and proves both REC edges.
     const errors = await setupPage(page);
-    await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
+    await spawnPatch(page, [
+      { id: 'n', type: 'noise', position: { x: 50, y: 200 } },
+      { id: 's', type: 'samsloop', position: { x: 200, y: 200 } },
+    ], [{
+      id: 'record-input',
+      from: { nodeId: 'n', portId: 'white' },
+      to: { nodeId: 's', portId: 'audio_l_in' },
+      sourceType: 'noise', targetType: 'samsloop',
+    }]);
     const pane = await openSamsPane(page);
     const rec = pane.getByTestId('shell-cell-samsloop-rec');
     await expect(rec).toBeVisible();
@@ -225,7 +228,10 @@ test.describe('SAMSLOOP module', () => {
     expect(await recording()).toBe(false);
     await rec.click();
     await expect.poll(recording, { message: 'first press arms the take' }).toBe(true);
-    await page.waitForTimeout(150);
+    await page.waitForFunction(() =>
+      (globalThis as unknown as { __samsloopRecording: (id: string) => { frames: number } })
+        .__samsloopRecording('s').frames > 0,
+    );
     await rec.click();
     await expect.poll(recording, { message: 'second press stops it' }).toBe(false);
     expect(errors, errors.join('; ')).toEqual([]);
