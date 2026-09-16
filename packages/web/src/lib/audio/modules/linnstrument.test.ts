@@ -30,6 +30,7 @@ import {
   type LinnstrumentRuntimeDeps,
 } from './linnstrument-runtime';
 import { LINN_EXPRESSION_LANES } from '$lib/midi/linnstrument/profile';
+import { MPE_TIMBRE_REST } from '$lib/midi/mpe-state';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { __resetLinnstrumentSourceForTest, setLinnstrumentSource } from '$lib/midi/linnstrument/source-registry';
@@ -926,8 +927,8 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(gateAt).toBe(pitchAt);
     expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))).toEqual({ kind: 'set', value: 100 / 127, time: pitchAt });
     expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))).toEqual({ kind: 'set', value: 0, time: pitchAt });
-    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))).toEqual({ kind: 'set', value: timbreJack(0.5), time: pitchAt });
-    expect(timbreJack(0.5)).toBe(0);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))).toEqual({ kind: 'set', value: timbreJack(MPE_TIMBRE_REST), time: pitchAt });
+    expect(timbreJack(MPE_TIMBRE_REST)).toBe(0);
     for (const dim of EXPRESSION_DIMS) {
       expect(before('keys', dim, 1), `keys lane 1 ${dim} saw no write`).toBe(baseline[`keys:${dim}`]);
       expect(before('pad', dim, 0), `the pad bus's jacks saw no write`).toBe(baseline[`pad:${dim}`]);
@@ -938,7 +939,7 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(lastSet(exprSource(r.handle, 'keys', 'vel', 0))?.value, 'lane 0 keeps its own latched velocity').toBeCloseTo(100 / 127);
   });
 
-  it('voice_expression writes press and timbre on THAT lane at its own time; timbre is bipolar on the jack (1 → +1, 0.25 → −0.5) and 0..1 on the card-api; vel is NOT rewritten', async () => {
+  it('voice_expression writes press and timbre on THAT lane at its own time; timbre is bipolar on the jack (1 → +1, 0.25 → −0.51) and 0..1 on the card-api; vel is NOT rewritten', async () => {
     const r = await rig();
     r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0));
     r.sim.emit(touchStart(r.sim, 2, 'keys', 3, 0));
@@ -951,12 +952,42 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'lane 0 is untouched (per voice, not broadcast)').toBe(0);
     expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(0);
     r.sim.emit(touchExpr(r.sim, 2, 'keys', { timbre: 0.25 }));
-    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBeCloseTo(-0.5);
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBeCloseTo(timbreJack(0.25));
     r.sim.emit(touchExpr(r.sim, 2, 'keys', { timbre: 0 }));
     expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBe(-1);
     // The card-api keeps the 0..1 convention (V15's state pin in the e2e).
     expect(r.api.expression('keys')[1]).toMatchObject({ pressure: 0.75, timbre: 0 });
-    expect(r.api.expression('keys')[0]).toMatchObject({ pressure: 0, timbre: 0.5 });
+    expect(r.api.expression('keys')[0]).toMatchObject({ pressure: 0, timbre: MPE_TIMBRE_REST });
+  });
+
+  it('the timbre jack is centred on CC 74\'s REST BYTE: y 64 → EXACTLY 0, y 127 → +1, y 0 → −1', async () => {
+    // The wire normalises the Y byte as `raw.y / 127` (surface-map.ts:199), so
+    // the jack must re-centre on the BYTE 64. `2·t − 1` centred it on the 0..1
+    // midpoint — y 63.5, a byte the instrument cannot send — and left the real
+    // rest byte at +0.0079, while the jack docs promise "an unpatched jack and
+    // a resting finger read alike" (2026-09-15 review).
+    expect(timbreJack(64 / 127)).toBe(0);
+    expect(timbreJack(MPE_TIMBRE_REST)).toBe(0);
+    expect(timbreJack(127 / 127)).toBe(1);
+    expect(timbreJack(0 / 127)).toBe(-1);
+    // The bottom half spans 64 bytes against the top's 63, so ONLY the last
+    // byte clamps — every other byte is a distinct value.
+    expect(timbreJack(1 / 127)).toBe(-1);
+    expect(timbreJack(2 / 127)).toBeGreaterThan(-1);
+    expect(timbreJack(0.5), 'the 0..1 midpoint is NOT the rest byte').toBeCloseTo(-0.0079, 4);
+    expect(timbreJack(Number.NaN)).toBe(0);
+    // …and that exact 0 is what the runtime writes for a finger that has not
+    // moved vertically: at the voice start, and again when byte 64 arrives.
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value, 'the rest before any Y byte').toBe(0);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { timbre: 64 / 127 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value, 'CC 74 at 64').toBe(0);
+    expect(r.api.expression('keys')[0]!.timbre, 'the card-api keeps the raw 0..1 off the wire (V15)').toBeCloseTo(64 / 127, 10);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { timbre: 127 / 127 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { timbre: 0 / 127 }));
+    expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 0))?.value).toBe(-1);
   });
 
   it('V10: a stolen touch\'s stale expression writes NOTHING on the jack', async () => {
@@ -988,7 +1019,7 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(sets(exprSource(r.handle, 'keys', 'vel', 0)).length).toBe(velWrites);
     expect(sets(exprSource(r.handle, 'keys', 'timbre', 0)).length).toBe(timbreWrites);
     expect(exprSource(r.handle, 'keys', 'vel', 0).offset.value).toBeCloseTo(90 / 127);
-    expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBeCloseTo(0.5);
+    expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBeCloseTo(timbreJack(0.75));
     // The lane is reassigned: every dimension is re-initialised before it opens.
     r.sim.emit(touchStart(r.sim, 2, 'keys', 1, 0, 30));
     expect(exprSource(r.handle, 'keys', 'vel', 0).offset.value).toBeCloseTo(30 / 127);
@@ -1074,6 +1105,44 @@ describe('linnstrument runtime — per-lane expression jacks (F03)', () => {
     expect(lastSet(exprSource(r.handle, 'keys', 'vel', 1))).toEqual({ kind: 'set', value: 50 / 127, time: 1.5 });
     expect(lastSet(exprSource(r.handle, 'keys', 'press', 1))?.value).toBeCloseTo(0.1);
     expect(lastSet(exprSource(r.handle, 'keys', 'timbre', 1))?.value).toBe(1);
+  });
+
+  it('arp mode: the last lift returns lane 0 press to 0', async () => {
+    const r = await rig();
+    r.sim.emit(touchStart(r.sim, 1, 'keys', 0, 0, 100));
+    r.ctx.currentTime = 1;
+    r.handle.setParam('keys_arp_on', 1);
+    r.sim.emit(touchExpr(r.sim, 1, 'keys', { pressure: 0.8, timbre: 1 }));
+    r.tick(1000, 1);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the step carries the owning finger\'s pressure').toBeCloseTo(0.8);
+    const velWrites = sets(exprSource(r.handle, 'keys', 'vel', 0)).length;
+    const timbreWrites = sets(exprSource(r.handle, 'keys', 'timbre', 0)).length;
+    // The last finger lifts. The direct path writes NOTHING (the arp owns the
+    // bus), so only the arp can settle the jack — and before this fix it never
+    // did: lane 0's press held the lifted finger's 0.8 forever.
+    r.sim.emit(touchEnd(r.sim, 1, 'keys'));
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'the lift itself does not reach the jack in arp mode').toBeCloseTo(0.8);
+    r.tick(1200, 1.2);
+    const settled = lastSet(exprSource(r.handle, 'keys', 'press', 0));
+    expect(settled?.value, 'the pool emptied: press returns to 0').toBe(0);
+    expect(settled?.time, 'at the arp\'s OWN `at`, past every press it queued').toBeCloseTo(1.225, 6);
+    expect(sets(exprSource(r.handle, 'keys', 'vel', 0)).length, 'vel retains, like a release').toBe(velWrites);
+    expect(sets(exprSource(r.handle, 'keys', 'timbre', 0)).length, 'timbre retains, like a release').toBe(timbreWrites);
+    expect(exprSource(r.handle, 'keys', 'timbre', 0).offset.value).toBe(1);
+    // ONCE, not once a tick.
+    const pressWrites = sets(exprSource(r.handle, 'keys', 'press', 0)).length;
+    r.tick(1400, 1.4);
+    r.tick(1600, 1.6);
+    expect(sets(exprSource(r.handle, 'keys', 'press', 0)).length, 'an idle arp does not re-write the rest').toBe(pressWrites);
+    // A new finger re-arms it: the step carries ITS pressure, and the next
+    // empty pool settles that one too.
+    r.sim.emit(touchStart(r.sim, 2, 'keys', 4, 0, 60));
+    r.sim.emit(touchExpr(r.sim, 2, 'keys', { pressure: 0.4 }));
+    r.tick(1800, 1.8);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value).toBeCloseTo(0.4);
+    r.sim.emit(touchEnd(r.sim, 2, 'keys'));
+    r.tick(2000, 2);
+    expect(lastSet(exprSource(r.handle, 'keys', 'press', 0))?.value, 'and again on the next empty pool').toBe(0);
   });
 
   it('dispose stops and disconnects every expression source', async () => {

@@ -184,6 +184,12 @@ it('R09 real wire bytes: Z, Y and velocity of the finger on lane k land on lane 
   r.sim.send([0xb0, 1 + 64, 127]); // CC (wire col + 64) = Y → timbre 1 → jack +1
   expect(jack('keys_press1').at(2)).toBeCloseTo(100 / 127);
   expect(jack('keys_timbre1').at(2)).toBe(1);
+  // …and CC 74's REST BYTE, off the real wire, is EXACTLY 0 on the jack — the
+  // docs' "an unpatched jack and a resting finger read alike" (2026-09-15
+  // review minor: `2·t − 1` centred on y 63.5 and left byte 64 at +0.0079).
+  r.sim.send([0xb0, 1 + 64, 64]);
+  expect(jack('keys_timbre1').at(2)).toBe(0);
+  r.sim.send([0xb0, 1 + 64, 127]); // back up, for the retention check below
   expect(jack('keys_press2').events.length + jack('keys_timbre2').events.length, 'lane 1\'s jacks saw nothing of lane 0\'s finger').toBe(lane1Writes);
   expect(jack('keys_press2').at(2)).toBe(0);
   expect(jack('keys_timbre2').at(2)).toBe(0);
