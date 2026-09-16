@@ -40,6 +40,7 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { readSample, samsloopIsRecording } from './_samsloop-helpers';
 
 const SL = 'f-sl-refuse';
 
@@ -113,6 +114,61 @@ async function engineIsUp(page: Page): Promise<boolean> {
 
 test.describe('SAMSLOOP faceplate — a refused REC press', () => {
   test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
+
+  test('a missing panel chunk reports recovery and a fresh page restores the saved rack', async ({ page }, testInfo) => {
+    const errors: string[] = [];
+    const blocked = new Set<string>();
+    let blockPanel = true;
+    page.on('pageerror', (error) => errors.push(error.message));
+    // Match the module-owned surface in either dev source or a hashed preview
+    // chunk. Never pin yesterday's hash: changing builds is the failure case.
+    await page.route('**/*', async (route) => {
+      if (route.request().resourceType() !== 'script') return route.continue();
+      const response = await route.fetch();
+      const body = await response.text();
+      if (blockPanel && body.includes('samsloop-output-body')) {
+        blocked.add(route.request().url());
+        return route.fulfill({ status: 404, contentType: 'text/html', body: '<h1>Not found</h1>' });
+      }
+      await route.fulfill({ response });
+    });
+    await gotoShell(page);
+    await spawnWithoutEngine(page, SL);
+    const dock = await openDock(page, SL);
+    const failure = dock.getByTestId('shell-extension-error');
+    await expect(failure).toBeVisible();
+    expect(blocked.size, 'the negative control actually blocked the surface download').toBe(1);
+    await expect(dock.getByTestId('samsloop-output-body')).toHaveCount(0);
+    await expect(failure).toContainText('Save your patch');
+    await failure.getByRole('button', { name: 'RETRY PANEL' }).click();
+    await expect(failure, 'a persistent missing chunk remains actionable').toBeVisible();
+    expect(errors, 'the import rejection must be handled').toEqual([]);
+    await testInfo.attach('panel-download-failure', { body: await dock.screenshot(), contentType: 'image/png' });
+
+    // Follow the recovery's SAVE instruction through the same envelope seam
+    // as File → Save. This isolated fixture does not auto-persist a rack.
+    const envelope = await page.evaluate(() => {
+      const w = globalThis as unknown as { __persistence: { save: () => unknown } };
+      return w.__persistence.save();
+    });
+    expect(envelope).toBeTruthy();
+    blockPanel = false;
+    await page.reload();
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
+    await page.waitForFunction(() => !!(globalThis as unknown as {
+      __persistence?: { load?: unknown };
+    }).__persistence?.load);
+    await page.evaluate((saved) => {
+      const w = globalThis as unknown as { __persistence: { load: (saved: unknown) => unknown } };
+      w.__persistence.load(saved);
+    }, envelope);
+    // Do not respawn: restore the saved rack, not a replacement test node.
+    const recovered = await openDock(page, SL);
+    await expect(recovered.getByTestId('samsloop-output-body')).toBeVisible();
+    await expect(recovered.getByTestId('samsloop-face-canvas')).toBeVisible();
+    await expect(recovered.getByTestId('shell-extension-error')).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
 
   test('paints the module\'s refusal, and the next armed press retires it', async ({ page }) => {
     const errors: string[] = [];
@@ -198,12 +254,44 @@ test.describe('SAMSLOOP faceplate — a refused REC press', () => {
     expect(await engineIsUp(page), 'the engine is up for the second press').toBe(true);
 
     await rec.click();
+    await expect(refusal).toContainText('Connect audio');
+    expect(await samsloopIsRecording(page, SL)).toBe(false);
+    expect(await readSample(page, SL)).toBeNull();
+
+    // Connect a real source without replacing the sampler or remounting its
+    // refusal. The right input alone is valid too; silence is not a refusal.
+    await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['rec-noise'] = {
+          id: 'rec-noise', type: 'noise', domain: 'audio',
+          position: { x: 400, y: 140 }, params: {},
+        };
+        w.__patch.edges['rec-input'] = {
+          id: 'rec-input',
+          source: { nodeId: 'rec-noise', portId: 'white' },
+          target: { nodeId: id, portId: 'audio_r_in' },
+          sourceType: 'audio', targetType: 'audio',
+        };
+      });
+    }, SL);
+    await rec.click();
     await expect(refusal, 'a press that ARMS retires the refusal').toHaveCount(0, {
       timeout: SLOW_BOOT_TEST_TIMEOUT_MS,
     });
 
-    // Leave nothing running for the next test in this worker.
+    await expect.poll(async () => page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __samsloopRecording: (id: string) => { frames: number };
+      };
+      return w.__samsloopRecording(id).frames;
+    }, SL), { message: 'a connected input actually captures frames' }).toBeGreaterThan(0);
+
     await rec.click();
+    expect(await readSample(page, SL)).not.toBeNull();
 
     expect(errors).toEqual([]);
   });

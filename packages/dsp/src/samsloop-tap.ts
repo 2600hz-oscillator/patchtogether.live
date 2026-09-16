@@ -47,8 +47,11 @@ class SamsloopTapProcessor extends AudioWorkletProcessor {
     // Matches the stereovca / cofefve normalling pattern.
     const lRaw = inputs[0]?.[0];
     const rRaw = inputs[1]?.[0];
-    if (!lRaw) return true; // no audio in at all — nothing to record this frame.
-    const rNorm = rRaw ?? lRaw;
+    const frames = lRaw?.length ?? rRaw?.length ?? 0;
+    if (!frames) return true;
+    // A right-only cable is still audio. Preserve its side (silent L); only
+    // the established L→R normal duplicates a single left input.
+    const rNorm = rRaw ?? lRaw!;
 
     // Copy out of the worklet-owned buffers (which get overwritten next
     // block) into transferable ArrayBuffers. The main thread receives the
@@ -56,8 +59,8 @@ class SamsloopTapProcessor extends AudioWorkletProcessor {
     // 128-sample blocks are cheap to clone). One message per block ≈ every
     // 2.7 ms at 48 kHz; the main thread drains them into a Float32Array
     // accumulator and decides when to stop.
-    const lOut = new Float32Array(lRaw.length);
-    lOut.set(lRaw);
+    const lOut = new Float32Array(frames);
+    if (lRaw) lOut.set(lRaw);
     const rOut = new Float32Array(rNorm.length);
     rOut.set(rNorm);
 
