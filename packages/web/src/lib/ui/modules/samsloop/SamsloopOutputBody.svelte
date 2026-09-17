@@ -36,12 +36,7 @@
   import { nodeSamsloop } from '../node-samsloop-registry.svelte';
   import { drawSamsloopWaveform } from '../samsloop-waveform-draw';
   import { samsloopRecRefusal } from './samsloop-rec-refusal.svelte';
-  import { samsloopTransformStatus } from './samsloop-transform-status.svelte';
-  import {
-    resolveSamsloopSource,
-    samsloopDecodeBytesB64,
-    type SamsloopData,
-  } from '$lib/audio/modules/samsloop';
+  import { samsloopDecodeBytesB64, type SamsloopData } from '$lib/audio/modules/samsloop';
   import { decodeRecordedPcm } from '$lib/audio/modules/samsloop-record';
   import { AudioEngine } from '$lib/audio/engine';
 
@@ -62,21 +57,6 @@
   /** The last REC press that REFUSED, or null. Absent at rest and cleared by
    *  the next press that arms, so nothing here is resting text. */
   let recRefusal = $derived(samsloopRecRefusal(nodeId));
-  /** The live sample's signature — the one key a transform status line is
-   *  stamped with, so a line about a sample that has since changed never
-   *  paints. `resolveSamsloopSource` is the ONE signature (the factory poll's
-   *  own), never a third hand-typed copy.
-   *
-   *  ⚠ `$state` WRITTEN FROM THE rAF TICK, NOT `$derived` OFF `data` — the
-   *  proxy-identity lesson above, measured a second time here: as a derived
-   *  off the `data` proxy it computed ONCE at mount and never again, so every
-   *  status line was stamped with a
-   *  signature the gate had never seen and nothing painted. The tick already
-   *  resolves the source for the picture; it publishes the signature too. */
-  let sourceSig = $state('empty');
-  /** The last NORMALIZE / DENOISE press's outcome, or null. Absent at rest,
-   *  sig-gated, so nothing here is resting text either. */
-  let transformStatus = $derived(samsloopTransformStatus(nodeId, sourceSig));
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -103,13 +83,7 @@
   function refreshDisplaySamples(): void {
     const d = data;
     if (!d) return;
-    // ⚠ KEYED ON THE SOURCE SIGNATURE, the same one the factory poll re-pushes
-    // on. The old `fileSize:fileName:sampleLength` key was blind to
-    // `recordedAt`, so a same-length rewrite of a record — a transform, a
-    // re-record — never redrew and the picture disagreed with the sound.
-    const srcSig = resolveSamsloopSource(d)?.signature ?? 'empty';
-    if (srcSig !== sourceSig) sourceSig = srcSig;
-    const sig = `${srcSig}:${d.sampleLength ?? 0}`;
+    const sig = `${d.fileSize ?? 0}:${d.fileName ?? ''}:${d.sampleLength ?? 0}`;
     if (sig === displaySig || sig === decodingSig) return;
 
     // The RECORDED path decodes synchronously off the persisted bytes, through
@@ -217,21 +191,6 @@
   {#if recRefusal}
     <p class="rec-refusal" role="status" data-testid="samsloop-face-rec-error">{recRefusal}</p>
   {/if}
-  <!-- THE TRANSFORM STATUS — what the last NORMALIZE / DENOISE press did, or
-       why it refused, in the REC refusal's own vocabulary (a refusal paints
-       in the same class). Absent at rest and SIG-STAMPED: it paints only
-       while the sample it describes is still the live one, so no VRT dock
-       baseline moves and a stale line never survives a new sample. -->
-  {#if transformStatus}
-    <p
-      class="transform-status"
-      class:rec-refusal={transformStatus.phase === 'refused'}
-      class:busy={transformStatus.phase === 'busy'}
-      role="status"
-      data-testid="samsloop-face-transform-status"
-      data-phase={transformStatus.phase}
-    >{transformStatus.text}</p>
-  {/if}
 </div>
 
 <style>
@@ -257,21 +216,6 @@
     font-family: ui-monospace, monospace;
     color: #ff6b6b;
     text-align: center;
-  }
-  /* The transform line shares the refusal's metrics; a SUCCESS is the muted
-     monospace the shell's own `.cell-cap` status uses, a REFUSAL takes the
-     `.rec-refusal` colour above so the two refusal kinds read as one thing. */
-  .transform-status {
-    margin: 4px 0 0;
-    max-width: 512px;
-    font-size: 0.6rem;
-    line-height: 1.35;
-    font-family: ui-monospace, monospace;
-    color: #9aa3b2;
-    text-align: center;
-  }
-  .transform-status.busy {
-    opacity: 0.7;
   }
   /* ⚠ THE WAVEFORM IS THE WIDTH-EARNER, and it is one the compact-by-default
      ruling names outright ("a live picture"). Time runs along X, and the two

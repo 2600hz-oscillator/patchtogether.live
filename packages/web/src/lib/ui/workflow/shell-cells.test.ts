@@ -349,15 +349,7 @@ describe('shell cells — ACTION cells declare the handler their MODE needs', ()
       // happen, AND would let a probe watching this node be satisfied by a REC
       // press instead. That is the same aliasing `manual-press` was split out to
       // prevent, one seam over.
-      //
-      // ⚠ `sample-normalize` / `sample-denoise` ARE PRESENT, one-shot like
-      // `file-export`: samsloop's two in-place transforms reach no engine and
-      // no file, and are two members rather than one so a probe on one button
-      // cannot be satisfied by the other on the same node.
-      const SEAMS = [
-        'manual-strike', 'manual-gate', 'engine-message', 'file-export',
-        'sample-normalize', 'sample-denoise',
-      ];
+      const SEAMS = ['manual-strike', 'manual-gate', 'engine-message', 'file-export'];
       if (!SEAMS.includes(probe.effect.seam)) {
         problems.push(`${where}: unknown audition seam '${probe.effect.seam}'`);
       } else if (mode === 'gate' && probe.effect.seam !== 'manual-gate') {

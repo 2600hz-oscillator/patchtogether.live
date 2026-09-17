@@ -635,14 +635,7 @@ interface AuditionRecord {
   /** `manual-press` is the MOMENTARY PAD seam — see the `momentary` branch and
    *  audition-ledger.ts for why it is a fourth member, not an alias of
    *  `manual-gate`. An ACTION cell must never declare it (shell-cells.test.ts). */
-  seam:
-    | 'manual-strike'
-    | 'manual-gate'
-    | 'engine-message'
-    | 'manual-press'
-    | 'file-export'
-    | 'sample-normalize'
-    | 'sample-denoise';
+  seam: 'manual-strike' | 'manual-gate' | 'engine-message' | 'manual-press';
   high?: boolean;
   paramId?: string;
   delivered: boolean;

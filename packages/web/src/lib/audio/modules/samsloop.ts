@@ -1246,11 +1246,6 @@ export const samsloopDef: AudioModuleDef = {
     { id: 'samsloop-wav-input',   label: 'Sample loader',      kind: 'other', testidPrefix: 'samsloop-wav-input' },
     { id: 'samsloop-rec',         label: 'Record transport',   kind: 'other', testidPrefix: 'samsloop-rec' },
     { id: 'samsloop-download',    label: 'Sample export',      kind: 'other', testidPrefix: 'samsloop-download' },
-    // The two IN-PLACE TRANSFORMS (owner, 2026-09-11). DENOISE is declared
-    // before NORMALIZE because that is the processing order the sample page
-    // ranks them in — see the page below.
-    { id: 'samsloop-denoise',     label: 'Denoise',            kind: 'other', testidPrefix: 'samsloop-denoise' },
-    { id: 'samsloop-normalize',   label: 'Normalize',          kind: 'other', testidPrefix: 'samsloop-normalize' },
     { id: 'samsloop-chan',        label: 'Record channels',    kind: 'other', testidPrefix: 'samsloop-chan' },
     { id: 'samsloop-bits',        label: 'Record bit depth',   kind: 'other', testidPrefix: 'samsloop-bits' },
     // ⚠ The id and the testidPrefix DIVERGE here on purpose. The card's rate
@@ -1295,11 +1290,6 @@ export const samsloopDef: AudioModuleDef = {
       'rate', 'start', 'end', 'mode', 'samsloop-trigger-{n}', 'poly',
       'samsloop-wav-input-{n}', 'samsloop-rec-{n}', 'samsloop-download-{n}',
       'samsloop-chan-{n}', 'samsloop-bits-{n}', 'samsloop-rate-select-{n}',
-      // ⚠ APPENDED, not inserted: rank decides the lane tiers, and the two
-      // transforms are dock-only by construction (the dock body is the only
-      // surface that paints their outcome line — the REC argument, twice). The
-      // SAMPLE page below is where their ORDER relative to REC lives.
-      'samsloop-denoise-{n}', 'samsloop-normalize-{n}',
     ],
 
     pages: [
@@ -1317,12 +1307,6 @@ export const samsloopDef: AudioModuleDef = {
         controls: [
           'samsloop-wav-input-{n}',
           'samsloop-rec-{n}',
-          // DENOISE then NORMALIZE — the order you would run them: the floor
-          // is profiled on the take as recorded, then the peak is set on the
-          // cleaned take. Between "get one" and "send it out" because both
-          // rewrite what EXPORT then ships.
-          'samsloop-denoise-{n}',
-          'samsloop-normalize-{n}',
           'samsloop-download-{n}',
           'samsloop-chan-{n}',
           'samsloop-bits-{n}',
@@ -1385,11 +1369,7 @@ export const samsloopDef: AudioModuleDef = {
       "samsloop-rec-{n}":
         "Starts and stops recording into the sample buffer, capturing whatever is patched to the record inputs at the current CHAN/BITS/RATE. A take REPLACES the loaded sample. It refuses to arm rather than silently shortening when the rack's sample budget cannot fit a usable take, and it stops itself at the length the current settings buy.",
       "samsloop-download-{n}":
-        "Exports the sample to a file: a recording is written as a WAV at the rate, depth and channel count it was captured with, while an uploaded file comes back as its ORIGINAL bytes — an mp3 stays an mp3, losslessly — UNLESS it has been through DENOISE or NORMALIZE: a transform rewrites the sample in place as PCM at the stored rate, so a transformed upload exports as a mono WAV, not the original file. Export BEFORE transforming if you want the original back. Nothing to export means nothing happens.",
-      "samsloop-denoise-{n}":
-        "Removes steady background noise or tape hiss from the sample, in place. The noise profile is learned from the sample itself (the quietest fifth of its frames, per frequency band), then a spectral gate with a −12 dB floor attenuates each band toward that profile — hiss in the gaps drops by up to 12 dB and the tonal body of the voice or instrument on top is left within a dB. What it cannot do is tell a quiet consonant from the hiss: an s, sh, f or breath that sits within about 10 dB of the noise floor is turned down with it (the familiar lisp of a spectral gate, measured at 1–2 dB on a sibilant 10 dB over the hiss), so if the esses matter, record hotter or denoise a louder take. It REFUSES, with a reason under the waveform, when there is no steady floor to find: a pad, a drone, a clean take, or a phrase whose pauses are less than about a sixth of its length (the floor has to stand alone somewhere) is a level change, not a denoise, and is left untouched. A second press on an already-denoised sample refuses too (it would only dull the take). A DC offset is left in place for NORMALIZE to remove and report. The rewrite is NOT UNDOABLE — like REC, export first is the way back — and it lands as mono PCM at the source's own bit depth and rate (an 8-bit take stays 8-bit; a mp3 upload becomes a WAV on export). Run it BEFORE normalize.",
-      "samsloop-normalize-{n}":
-        "Raises a quiet sample to full scale, in place: the DC offset is removed first (a constant offset eats headroom and is a click at every loop wrap), then the peak is scaled to exactly 0 dBFS — the sampler convention, so a low-volume vocal take fills the range. A single click in a quiet take is the peak and sets the gain; that is what peak-normalize means. It REFUSES, with a reason under the waveform, on a silent sample and on one already at full scale with no offset. The status line reports the gain applied and the offset removed. The rewrite is NOT UNDOABLE — like REC, export first is the way back — and it lands as mono PCM at the source's own bit depth and rate (the CHAN/BITS/RATE switches describe the NEXT recording, not this record; the status line says what was written).",
+        "Exports the sample to a file: a recording is written as a WAV at the rate, depth and channel count it was captured with, while an uploaded file comes back as its ORIGINAL bytes — an mp3 stays an mp3, losslessly. Nothing to export means nothing happens.",
       "samsloop-chan-{n}":
         "How many channels a RECORDING captures. MONO halves the bytes per second and so roughly doubles the take length the budget allows; STEREO records both record inputs. It applies to the next take — the settings are frozen for the duration of one, and changing this mid-take ends it cleanly.",
       "samsloop-bits-{n}":
@@ -1488,19 +1468,9 @@ export const samsloopDef: AudioModuleDef = {
      *  Bails silently on failure: hydrate-time decode errors should NOT
      *  crash audio. The interactive upload path in the card surfaces
      *  errors to the user; this is the headless rehydrate path. */
-    async function decodeBytesAndPush(b64: string, sig: string): Promise<void> {
+    async function decodeBytesAndPush(b64: string): Promise<void> {
       const result = await samsloopDecodeBytesB64(b64, ctx);
       if (!result || !result.ok || !result.samples) return;
-      // ⚠ STILL CURRENT? The file branch claims `lastSignature` BEFORE this
-      // decode resolves, and the record branch never waits on it — so a
-      // record-shaped write landing mid-decode (a REC stop, a NORMALIZE /
-      // DENOISE commit) is pushed by its own poll, and THIS decode would then
-      // post the OLD upload over the newer buffer with nothing to re-push it.
-      // The dock body's `decodingSig` makes the same check for the picture.
-      const nowSig = resolveSamsloopSource(
-        livePatch.nodes[node.id]?.data as SamsloopData | undefined,
-      )?.signature ?? 'empty';
-      if (nowSig !== sig) return;
       const f32 = new Float32Array(result.samples);
       try {
         workletNode.port.postMessage(
@@ -1603,7 +1573,7 @@ export const samsloopDef: AudioModuleDef = {
         if (decodeInFlight) return;
         lastSignature = sig;
         decodeInFlight = true;
-        decodeBytesAndPush(src.b64, sig).finally(() => {
+        decodeBytesAndPush(src.b64).finally(() => {
           decodeInFlight = false;
         });
         return;

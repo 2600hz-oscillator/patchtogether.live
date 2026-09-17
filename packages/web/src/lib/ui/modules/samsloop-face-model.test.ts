@@ -20,10 +20,6 @@ import {
   samsloopRecRefusal,
   setSamsloopRecRefusal,
 } from './samsloop/samsloop-rec-refusal.svelte';
-import {
-  samsloopTransformStatus,
-  setSamsloopTransformStatus,
-} from './samsloop/samsloop-transform-status.svelte';
 
 const HERE = resolve(__dirname);
 const read = (p: string) => readFileSync(p, 'utf8');
@@ -280,110 +276,6 @@ describe('samsloop face — a REFUSED REC press is VISIBLE, not merely ledgered'
       /No room to record|engine not ready/i.test(body),
       'the body must READ the refusal, never re-type one — a second copy is the '
         + 'drift the shared action file exists to prevent',
-    ).toBe(false);
-  });
-});
-
-describe('samsloop face — NORMALIZE and DENOISE are two DOCK cells, in processing order', () => {
-  // ── THE FINDING ───────────────────────────────────────────────────────────
-  //
-  // Owner (2026-09-11): a NORMALIZE button for low-volume vocal samples and a
-  // DENOISE button for background noise / tape hiss. Both are in-place
-  // rewrites of `node.data.sample` whose only outcome surface is the dock
-  // body's status line — so, like REC, they must be unreachable at every lane
-  // tier or a press on a tile would be silent. And their ORDER on the sample
-  // page is DENOISE then NORMALIZE, because that is the order you run them:
-  // profile the floor on the take, then set the peak on the cleaned take.
-
-  const DEF = samsloopDef as unknown as FaceDefLike;
-  const KEYS = ['samsloop-denoise-{n}', 'samsloop-normalize-{n}'] as const;
-
-  it('both keys resolve to ACTION cells with lowercase labels and their OWN audition seams', () => {
-    for (const key of KEYS) {
-      const cell = shellCellFor('samsloop', { key, kind: 'family', familyId: key.replace('-{n}', ''), label: key });
-      expect(cell?.kind, key).toBe('action');
-      if (cell?.kind !== 'action') continue;
-      expect(cell.label).toBe(cell.label.toLowerCase());
-      expect(cell.mode).toBe('trigger');
-      expect(cell.probe.effect.kind).toBe('audition');
-    }
-    const den = shellCellFor('samsloop', { key: KEYS[0], kind: 'family', familyId: 'samsloop-denoise', label: 'x' });
-    const nor = shellCellFor('samsloop', { key: KEYS[1], kind: 'family', familyId: 'samsloop-normalize', label: 'x' });
-    expect(den?.kind === 'action' && den.probe.effect.kind === 'audition' && den.probe.effect.seam).toBe('sample-denoise');
-    expect(nor?.kind === 'action' && nor.probe.effect.kind === 'audition' && nor.probe.effect.seam).toBe('sample-normalize');
-    expect(den?.kind === 'action' && den.label).toBe('denoise');
-    expect(nor?.kind === 'action' && nor.label).toBe('normalize');
-  });
-
-  it('the titles say NOT UNDOABLE / export first — the owner\'s ruling, on the button', () => {
-    for (const key of KEYS) {
-      const cell = shellCellFor('samsloop', { key, kind: 'family', familyId: key.replace('-{n}', ''), label: key });
-      expect(cell?.kind === 'action' ? cell.title : '').toMatch(/not undoable/i);
-      expect(cell?.kind === 'action' ? cell.title : '').toMatch(/export first/i);
-    }
-  });
-
-  it('DOCK-ONLY, like REC — unreachable at mini/compact/full, present on the dock', () => {
-    for (const tier of ['mini', 'compact', 'full'] as const) {
-      const keys = curatedFace(DEF, tier)!.controls.map((c) => c.key);
-      for (const key of KEYS) expect(keys, `${tier}: ${key} leaked onto a lane tier`).not.toContain(key);
-    }
-    const dockKeys = curatedFace(DEF, 'dock')!.controls.map((c) => c.key);
-    for (const key of KEYS) expect(dockKeys).toContain(key);
-  });
-
-  it('DENOISE ranks before NORMALIZE on the SAMPLE page, both between REC and EXPORT', () => {
-    const sample = samsloopDef.face!.pages!.find((p) => p.id === 'sample')!;
-    const c = sample.controls;
-    const i = (k: string) => c.indexOf(k);
-    expect(i('samsloop-denoise-{n}')).toBeGreaterThan(-1);
-    expect(i('samsloop-normalize-{n}')).toBe(i('samsloop-denoise-{n}') + 1);
-    expect(i('samsloop-rec-{n}')).toBeLessThan(i('samsloop-denoise-{n}'));
-    expect(i('samsloop-download-{n}')).toBeGreaterThan(i('samsloop-normalize-{n}'));
-  });
-
-  it('the docs say NOT UNDOABLE and the EXPORT sentence no longer promises an mp3 unconditionally', () => {
-    const docs = samsloopDef.docs!.controls!;
-    expect(docs['samsloop-denoise-{n}']).toMatch(/NOT UNDOABLE/);
-    expect(docs['samsloop-normalize-{n}']).toMatch(/NOT UNDOABLE/);
-    expect(docs['samsloop-normalize-{n}']).toMatch(/0 dBFS/);
-    expect(docs['samsloop-download-{n}']).toMatch(/transformed upload exports as a mono WAV/);
-  });
-});
-
-describe('samsloop face — the TRANSFORM status seam is sig-stamped and the body reads it', () => {
-  const NODE = 'samsloop-transform-status-unit';
-
-  beforeEach(() => {
-    setSamsloopTransformStatus(NODE, null);
-  });
-
-  it('NEGATIVE CONTROL: nothing pressed, nothing painted', () => {
-    expect(samsloopTransformStatus(NODE, 'record:1')).toBeNull();
-  });
-
-  it('a DONE line paints only while its signature is the live one; BUSY paints regardless', () => {
-    setSamsloopTransformStatus(NODE, { phase: 'done', text: 'normalized +12.0 dB', sig: 'record:1' });
-    expect(samsloopTransformStatus(NODE, 'record:1')?.text).toBe('normalized +12.0 dB');
-    expect(samsloopTransformStatus(NODE, 'record:2'), 'a new sample retires it').toBeNull();
-    setSamsloopTransformStatus(NODE, { phase: 'busy', text: 'denoise…', sig: 'record:1' });
-    expect(samsloopTransformStatus(NODE, 'record:9')?.phase).toBe('busy');
-    setSamsloopTransformStatus(NODE, null);
-    expect(samsloopTransformStatus(NODE, 'record:1')).toBeNull();
-  });
-
-  it('the body PAINTS it from the seam and re-types no sentence', () => {
-    const body = read(resolve(HERE, 'samsloop', 'SamsloopOutputBody.svelte'));
-    expect(body).toContain('data-testid="samsloop-face-transform-status"');
-    expect(body).toContain('samsloopTransformStatus');
-    // The signature the body gates on is the ONE resolver's, not a third copy
-    // — and it is PULLED in the tick, never `$derived` off the node proxy (the
-    // identity lesson the body's own header records, paid twice).
-    expect(body).toContain('resolveSamsloopSource(d)?.signature');
-    expect(body).not.toMatch(/\$derived\(resolveSamsloopSource\(data\)/);
-    expect(
-      /Load or record a sample first|no steady noise floor|already denoised/i.test(body),
-      'the body must READ the status, never re-type one',
     ).toBe(false);
   });
 });

@@ -44,30 +44,25 @@
 
 import { getActiveEngine } from '$lib/audio/engine-ref';
 import { AudioEngine } from '$lib/audio/engine';
-import { patch, undoManager } from '$lib/graph/store';
+import { patch } from '$lib/graph/store';
 import { mutateNode } from '$lib/graph/mutate';
 import type { ModuleNode } from '$lib/graph/types';
 import type { SelectorOption } from '$lib/ui/controls';
-import { recordAudition, type AuditionSeam } from './audition-ledger';
+import { recordAudition } from './audition-ledger';
 import { nodeSamsloop, type SamsloopTap } from './node-samsloop-registry.svelte';
 import { setSamsloopRecRefusal } from './samsloop/samsloop-rec-refusal.svelte';
-import { setSamsloopTransformStatus } from './samsloop/samsloop-transform-status.svelte';
 import {
   loadSamsloopWav,
-  resolveSamsloopSource,
-  samsloopDecodeBytesB64,
   SAMSLOOP_WINDOW_RANGE,
   type SamsloopData,
 } from '$lib/audio/modules/samsloop';
 import {
   bytesToBase64,
-  clearSamsloopUploadKeys,
   samsloopAchievedRate,
   samsloopMaxCaptureFrames,
   samsloopMaxSecondsExact,
   samsloopRackFullMessage,
   samsloopRackLedger,
-  samsloopTransformCapRefusal,
   samsloopDownloadFilename,
   makeWavBlob,
   base64ToBytes,
@@ -78,17 +73,6 @@ import {
   type SamsloopRecChannels,
   type SamsloopRecRate,
 } from '$lib/audio/modules/samsloop-record';
-import {
-  nextSamsloopTransformId,
-  runSamsloopTransformAsync,
-  type SamsloopTransformRunner,
-} from '$lib/audio/samsloop-transform/transform-client';
-import type {
-  SamsloopTransformKind,
-  SamsloopTransformRefusal,
-  SamsloopTransformSource,
-  SamsloopTransformStats,
-} from '$lib/audio/samsloop-transform/transform-core';
 
 /** What a transport gesture did, so the CARD can render its error line and the
  *  FACE can record an audition from the same one call. */
@@ -453,275 +437,4 @@ export async function loadSamsloopAudioFile(
     status: `loaded ${samples.length} samples @ ${result.sampleRate} Hz`,
     error: null,
   };
-}
-
-// ── NORMALIZE / DENOISE — the two in-place transforms ───────────────────────
-//
-// OWNER (2026-09-11): "samsloop should have a normalize button intended for
-// low-volume vocal samples which normalizes the buffer … we also want a
-// Denoise button that attempts to remove unwanted background noise or tape
-// hiss." Rulings (2026-09-15): a transform rewrites the sample IN PLACE as
-// PCM at the stored rate (an uploaded mp3 then EXPORTS as a WAV); it is NOT
-// UNDOABLE, like REC — export first is the way back; NORMALIZE targets 0 dBFS
-// after DC removal, and silence / already-full-scale are REFUSALS with a
-// reason; DENOISE on a pad or drone REFUSES ("no steady noise floor found")
-// through the same refusal seam REC uses, leaving the sample untouched.
-//
-// ⚠ THE SHAPE, AND WHY EACH SEAM IS WHERE IT IS.
-//   * The DSP runs in a module WORKER (`$lib/audio/samsloop-transform`): 0.2–
-//     0.4 s of STFT at the sample caps plus a 3 MB quantize + base64 must not
-//     sit on the thread that schedules audio. The record path's bytes are
-//     decoded THERE; an upload is decoded HERE (a worker has no AudioContext)
-//     and its Float32 transferred.
-//   * The write is REC's own shape — `clearSamsloopUploadKeys` then a fresh
-//     `sample` record with `sampleLength` / `sampleRate` — in ONE `mutateNode`
-//     transaction under an UNTRACKED origin (`raw-write-ledger.ts` carries
-//     REC's commit as the precedent for a sample write that is not an undo
-//     entry). `undoManager.stopCapturing()` first, so the next tracked edit
-//     opens a fresh undo step instead of merging across the rewrite.
-//   * The SIGNATURE is re-checked INSIDE the transact against the one read at
-//     press time (H10): a REC take, an upload or a peer's write that lands
-//     while the worker is busy makes the result stale, and a stale result is
-//     discarded with a reason rather than written over the newer sample.
-//   * The window (`params.start/end`) is NOT touched — the frame count is
-//     unchanged and a fraction describes the same slice.
-//   * The three size ceilings are re-checked on the write
-//     (`samsloopTransformCapRefusal`): an upload was never sized under REC's
-//     per-take 3 MB / 60 s caps, and the rack ledger is re-read fresh.
-//   * EVERY EXIT WRITES THE STATUS SEAM (`samsloop-transform-status.svelte.ts`)
-//     and the audition ledger. The seam is sig-stamped: a line about a sample
-//     that has since changed never paints.
-//
-// ⚠ WHY TWO AUDITION SEAMS AND NOT `engine-message` OR `file-export`. A
-// transform reaches no engine and no file; and one shared seam for both
-// buttons would let a probe watching DENOISE be satisfied by a NORMALIZE
-// press on the same node — the aliasing `file-export` was split out to
-// prevent. `delivered: true` with a `false` return on a bare rack is the
-// DOWNLOAD precedent above: the handler ran, resolved a live node, and there
-// was no subject — a successful no-op, not a dead button.
-
-/** Refusal sentences — exported so the tests assert IDENTITY with the seam's
- *  string rather than a copy typed beside it. */
-export const SAMSLOOP_TRANSFORM_NO_SAMPLE = 'Load or record a sample first.';
-export const SAMSLOOP_TRANSFORM_RECORDING = 'Stop recording first.';
-export const SAMSLOOP_TRANSFORM_BUSY = 'A transform is already running on this sample.';
-export const SAMSLOOP_TRANSFORM_ALREADY_DENOISED =
-  'Already denoised — a second pass would only dull the sample. Export first if you want to try again.';
-export const SAMSLOOP_TRANSFORM_SAMPLE_CHANGED =
-  'The sample changed while the transform ran — result discarded. Press again.';
-export const SAMSLOOP_TRANSFORM_DECODE_FAILED = 'Could not decode the sample.';
-export const SAMSLOOP_TRANSFORM_ENGINE_NOT_READY =
-  'Audio engine not ready yet — start audio first.';
-
-/** The reason the dsp core gave, as the sentence the player reads. */
-export function samsloopTransformRefusalText(
-  kind: SamsloopTransformKind,
-  reason: SamsloopTransformRefusal,
-): string {
-  const verb = kind === 'normalize' ? 'normalize' : 'denoise';
-  switch (reason) {
-    case 'silent':
-      return `Nothing to ${verb}: the sample is silent.`;
-    case 'already-full-scale':
-      return 'Already at full scale (0 dBFS peak, no DC offset) — nothing to normalize.';
-    case 'no-steady-noise-floor':
-      return 'No steady noise floor found — this sample has too few gaps where hiss stands alone (a pad, a drone, a clean take, or a phrase whose pauses are under a sixth of it). Sample untouched.';
-    case 'too-short':
-      return 'Too short to denoise — the sample needs about a third of a second of audio.';
-    case 'not-finite':
-      return `Could not ${verb}: the sample contains non-finite values.`;
-    case 'empty':
-      return SAMSLOOP_TRANSFORM_NO_SAMPLE;
-  }
-}
-
-/** The success line under the waveform: what moved, and the bits the record
- *  was WRITTEN at — the REC bits/chan selectors still show the REC setting,
- *  which is not what a transformed record holds, so the line says so. */
-export function samsloopTransformStatusText(
-  stats: SamsloopTransformStats,
-  written: { bits: number; rate: number },
-): string {
-  const fmt = (v: number, d: number) => `${v < 0 ? '−' : v > 0 ? '+' : ''}${Math.abs(v).toFixed(d)}`;
-  const tail = ` · written ${written.bits}-bit mono @ ${(written.rate / 1000).toFixed(1)} kHz`;
-  if (stats.kind === 'normalize') {
-    const dc = Math.abs(stats.dcOffset) < 0.0005 ? 'dc 0' : `dc ${fmt(stats.dcOffset, 3)}`;
-    return `normalized ${fmt(stats.gainDb, 1)} dB, ${dc}${tail}`;
-  }
-  return `denoised −${stats.reductionDb.toFixed(1)} dB in the gaps, floor ${fmt(Math.round(stats.noiseFloorDb), 0)} dBFS${tail}`;
-}
-
-/** The Yjs origin the transform commit is tagged with. NOT `LOCAL_ORIGIN`, so
- *  the UndoManager (trackedOrigins = [LOCAL_ORIGIN]) does not capture it —
- *  the owner's "not undoable, like REC" ruling, expressed as the origin axis
- *  `graph/mutate.ts` documents rather than as a flag. */
-export const SAMSLOOP_TRANSFORM_ORIGIN = Symbol('samsloop-transform');
-
-/** Injectable collaborators, so the unit test drives the real commit against
- *  a real Y.Doc with no Worker and no AudioContext. */
-export interface SamsloopTransformDeps {
-  run?: SamsloopTransformRunner;
-  /** Decode an upload's stored bytes (needs an AudioContext). */
-  decodeFile?: (
-    b64: string,
-    ctx: BaseAudioContext,
-  ) => Promise<{ ok: boolean; samples?: Float32Array; sampleRate?: number } | null>;
-  /** The engine's AudioContext, or undefined when it is down. */
-  audioCtx?: () => BaseAudioContext | undefined;
-  now?: () => number;
-}
-
-const transformsInFlight = new Set<string>();
-
-function defaultAudioCtx(): BaseAudioContext | undefined {
-  const eng = getActiveEngine();
-  try {
-    if (eng?.hasDomain('audio')) return eng.getDomain<AudioEngine>('audio').ctx;
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
-function transformSeam(kind: SamsloopTransformKind): AuditionSeam {
-  return kind === 'normalize' ? 'sample-normalize' : 'sample-denoise';
-}
-
-/**
- * THE ONE TRANSFORM ACTION — both buttons call this. Resolves to `true` when
- * a record was written, `false` on every refusal (each of which has already
- * been painted through the status seam and recorded in the ledger).
- */
-export async function transformSamsloopSample(
-  nodeId: string,
-  kind: SamsloopTransformKind,
-  deps: SamsloopTransformDeps = {},
-): Promise<boolean> {
-  const seam = transformSeam(kind);
-  const node = liveNode(nodeId);
-  if (!node) {
-    // No node: the press reached nothing. The ledger's own definition of false.
-    recordAudition({ nodeId, seam, delivered: false });
-    return false;
-  }
-  const d = (node.data ?? {}) as SamsloopData;
-  const src = resolveSamsloopSource(d);
-  const sigAtPress = src?.signature ?? 'empty';
-
-  const refuse = (text: string): false => {
-    setSamsloopTransformStatus(nodeId, { phase: 'refused', text, sig: sigAtPress });
-    recordAudition({ nodeId, seam, delivered: true });
-    return false;
-  };
-
-  // ⚠ EVERY PRE-DECODE REFUSAL IS SYNCHRONOUS — before the first `await` — so
-  // a bare-rack press (faces-parity's whole world) has its audition recorded
-  // by the time `onFire` returns.
-  if (!src) return refuse(SAMSLOOP_TRANSFORM_NO_SAMPLE);
-  if (samsloopIsRecording(nodeId)) return refuse(SAMSLOOP_TRANSFORM_RECORDING);
-  if (transformsInFlight.has(nodeId)) return refuse(SAMSLOOP_TRANSFORM_BUSY);
-  if (kind === 'denoise' && src.kind === 'record' && src.sample.denoised) {
-    return refuse(SAMSLOOP_TRANSFORM_ALREADY_DENOISED);
-  }
-  const carriedDenoised = src.kind === 'record' && !!src.sample.denoised;
-
-  transformsInFlight.add(nodeId);
-  setSamsloopTransformStatus(nodeId, { phase: 'busy', text: `${kind}…`, sig: sigAtPress });
-  try {
-    let source: SamsloopTransformSource;
-    if (src.kind === 'record') {
-      const s = src.sample;
-      source = { kind: 'pcm', bytesB64: s.bytesB64, bits: s.bits, channels: s.channels, rate: s.rate };
-    } else if (src.kind === 'legacy') {
-      const f32 = Float32Array.from(src.samples);
-      source = { kind: 'f32', samples: f32.buffer, rate: src.sampleRate ?? d.sampleRate ?? 48_000, bits: 16 };
-    } else {
-      // An upload: decode through the AudioContext on THIS thread (a worker
-      // has none), then hand the Float32 over. The stored bytes are the
-      // ORIGINAL file, so this is the same decode the factory's hydrate does.
-      const ctx = (deps.audioCtx ?? defaultAudioCtx)();
-      if (!ctx) return refuse(SAMSLOOP_TRANSFORM_ENGINE_NOT_READY);
-      const r = await (deps.decodeFile ?? samsloopDecodeBytesB64)(src.b64, ctx);
-      if (!r?.ok || !r.samples || !r.sampleRate) return refuse(SAMSLOOP_TRANSFORM_DECODE_FAILED);
-      // A private copy: `r.samples` may alias a buffer the decoder still holds.
-      const f32 = new Float32Array(r.samples);
-      source = { kind: 'f32', samples: f32.buffer, rate: r.sampleRate, bits: 16 };
-    }
-
-    const res = await (deps.run ?? runSamsloopTransformAsync)({
-      id: nextSamsloopTransformId(),
-      kind,
-      source,
-      denoised: carriedDenoised,
-      now: deps.now?.(),
-    });
-    if (!res.ok) return refuse(samsloopTransformRefusalText(kind, res.reason));
-
-    // ⚠ THE CAPS, RE-READ FRESH. The ledger excludes this node — its own
-    // payload is what the write replaces.
-    const cap = samsloopTransformCapRefusal({
-      byteLength: res.sample.byteLength,
-      frames: res.frames,
-      rate: res.sample.rate,
-      base64Length: res.sample.bytesB64.length,
-      ledger: samsloopRackLedger(patch.nodes, nodeId),
-    });
-    if (cap) return refuse(cap);
-
-    // ⚠ ONE TRANSACTION, UNTRACKED ORIGIN, SIGNATURE RE-CHECKED INSIDE IT.
-    let written: string | null = null;
-    let stale = false;
-    let liveSig = sigAtPress;
-    undoManager.stopCapturing();
-    mutateNode(
-      nodeId,
-      (live) => {
-        if (!live.data) live.data = {};
-        const ld = live.data as SamsloopData;
-        const cur = resolveSamsloopSource(ld)?.signature ?? 'empty';
-        if (cur !== sigAtPress) {
-          stale = true;
-          liveSig = cur;
-          return;
-        }
-        clearSamsloopUploadKeys(ld as Record<string, unknown>);
-        ld.sample = res.sample;
-        ld.sampleLength = res.frames;
-        ld.sampleRate = res.sample.rate;
-        written = resolveSamsloopSource(ld)?.signature ?? null;
-      },
-      { origin: SAMSLOOP_TRANSFORM_ORIGIN },
-    );
-    if (stale || written === null) {
-      // ⚠ STAMPED WITH THE LIVE SIGNATURE, NOT THE PRESSED ONE. The body paints
-      // an entry only while its stamp is the live signature, and in this
-      // branch the pressed one is by definition gone — `refuse()` here would
-      // be a refusal nobody can see (the reviewer's finding on this PR). The
-      // sentence is about the sample that is there NOW: press again on it.
-      setSamsloopTransformStatus(nodeId, { phase: 'refused', text: SAMSLOOP_TRANSFORM_SAMPLE_CHANGED, sig: liveSig });
-      recordAudition({ nodeId, seam, delivered: true });
-      return false;
-    }
-
-    setSamsloopTransformStatus(nodeId, {
-      phase: 'done',
-      text: samsloopTransformStatusText(res.stats, { bits: res.sample.bits, rate: res.sample.rate }),
-      sig: written,
-    });
-    recordAudition({ nodeId, seam, delivered: true });
-    return true;
-  } finally {
-    transformsInFlight.delete(nodeId);
-  }
-}
-
-/** The NORMALIZE cell's `onFire`. Fire-and-forget from the shell; the promise
- *  is for callers that want the outcome. */
-export function normalizeSamsloopSample(nodeId: string, deps?: SamsloopTransformDeps): Promise<boolean> {
-  return transformSamsloopSample(nodeId, 'normalize', deps);
-}
-
-/** The DENOISE cell's `onFire`. */
-export function denoiseSamsloopSample(nodeId: string, deps?: SamsloopTransformDeps): Promise<boolean> {
-  return transformSamsloopSample(nodeId, 'denoise', deps);
 }
