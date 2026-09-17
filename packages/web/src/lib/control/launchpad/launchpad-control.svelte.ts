@@ -130,7 +130,7 @@ import { customScaleRowsFor, clampRowOffsetFor } from '$lib/control/clip-surface
 import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import { recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
 import { pushAudition } from '$lib/audio/modules/clip-audition';
-import { captureStep, RECORD_GRID_STEPS_DEFAULT } from '$lib/audio/modules/clip-record-capture';
+import { captureStep, captureGateLength, RECORD_GRID_STEPS_DEFAULT } from '$lib/audio/modules/clip-record-capture';
 import { getLanePhase } from '$lib/audio/modules/clip-lane-phase';
 import { reconcileClipRemoval } from '$lib/audio/modules/clip-reconcile';
 import {
@@ -443,7 +443,7 @@ interface HeldKeyPad {
   midi: number;
 }
 const keysHeld = new Map<number, HeldKeyPad>(); // keysPadId(col,row) → what its press emitted
-const keysOnsets = new Map<number, number>(); // midi → the step its onset recorded on
+const keysOnsets = new Map<number, { step: number; onMs: number; laneDur?: number }>();
 // THE FAILSAFE LEDGER — every audition note-on this binding has emitted and not
 // yet matched with an off, keyed `${lane}:${midi}`. Every audition write goes
 // through auditionOn/auditionOff so it cannot drift; keysReconcileSounding()
@@ -1739,11 +1739,12 @@ function openLengthFromKeys(nodeId: string, data: ClipPlayerData | undefined): v
 function finishHeldOnsets(nodeId: string, data: ClipPlayerData | undefined, lane: number): void {
   if (keysOnsets.size === 0) return;
   const offStep = getLanePlayhead(nodeId, lane);
-  if (offStep < 0) { keysOnsets.clear(); return; }
-  for (const [midi, onStep] of keysOnsets) {
+  const offMs = nowMs();
+  for (const [midi, onset] of keysOnsets) {
     const clip = clipAtIndex(liveData(nodeId), keysClipIndex);
     if (!clip) break;
-    const next = extendRecordedNote(clip, onStep, midi, offStep);
+    const next = extendRecordedNote(clip, onset.step, midi, offStep < 0 ? onset.step : offStep,
+      captureGateLength(onset.onMs, offMs, onset.laneDur));
     if (next !== clip) writeClip(nodeId, next, keysClipIndex);
   }
   keysOnsets.clear();
@@ -1756,8 +1757,8 @@ function finishHeldOnsets(nodeId: string, data: ClipPlayerData | undefined, lane
  *  the capture. Falls back to the audible integer step when no phase is
  *  published (transport stopped / lane silent / test harness without an engine).
  *  Returns -1 when even the fallback is unavailable. */
-function keysCaptureStep(nodeId: string, lane: number): number {
-  const q = captureStep(nowMs(), getLanePhase(nodeId, lane), RECORD_GRID_STEPS_DEFAULT);
+function keysCaptureStep(nodeId: string, lane: number, eventMs = nowMs()): number {
+  const q = captureStep(eventMs, getLanePhase(nodeId, lane), RECORD_GRID_STEPS_DEFAULT);
   if (q !== null && q >= 0) return q;
   return getLanePlayhead(nodeId, lane);
 }
@@ -1817,6 +1818,7 @@ function handleKeysUnit(nodeId: string, unit: LaunchpadUnit, e: LaunchpadKeyEven
  */
 function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velocity: number): void {
   const padId = keysPadId(col, row);
+  const eventMs = nowMs();
 
   // ── RELEASE ── replay exactly what this pad's press emitted.
   if (s !== 1) {
@@ -1841,10 +1843,11 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
     const rec = readNoteRec(data);
     if (rec?.recording && keysOnsets.has(held.midi)) {
       const clip = clipAtIndex(data, keysClipIndex);
-      const onStep = keysOnsets.get(held.midi)!;
-      const offStep = keysCaptureStep(nodeId, held.lane);
+      const onset = keysOnsets.get(held.midi)!;
+      const offStep = keysCaptureStep(nodeId, held.lane, eventMs);
       if (clip && offStep >= 0) {
-        const next = extendRecordedNote(clip, onStep, held.midi, offStep);
+        const next = extendRecordedNote(clip, onset.step, held.midi, offStep,
+          captureGateLength(onset.onMs, eventMs, onset.laneDur));
         if (next !== clip) writeClip(nodeId, next, keysClipIndex);
       }
       keysOnsets.delete(held.midi);
@@ -1888,14 +1891,14 @@ function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velo
   }
   const capturing = readNoteRec(liveData(nodeId))?.recording === true;
   if (capturing) {
-    const step = keysCaptureStep(nodeId, lane);
+    const step = keysCaptureStep(nodeId, lane, eventMs);
     if (step >= 0) {
       const mono = laneMono(data, lane);
       // ADDITIVE (owner-locked): recording only ADDS — no per-step replace.
       const next = recordNoteAt(clip, step, midi, { mono, velocity: vel });
       if (next !== clip) {
         writeClip(nodeId, next, keysClipIndex);
-        keysOnsets.set(midi, step); // track for note-off span capture
+        keysOnsets.set(midi, { step, onMs: eventMs, laneDur: getLanePhase(nodeId, lane)?.laneDur });
       }
     }
   }

@@ -134,12 +134,21 @@ export function extendRecordedNote(
   onStep: number,
   midi: number,
   offStep: number,
+  gateLen?: number,
 ): NoteClipRecord {
   const idx = clip.steps.findIndex((e) => e.step === onStep && e.midi === midi);
   if (idx < 0) return clip;
+  const cur = clip.steps[idx]!;
+  if (gateLen !== undefined && Number.isFinite(gateLen) && gateLen > 0) {
+    const duration = Math.min(gateLen, Math.max(1, clip.lengthSteps - onStep));
+    const lengthSteps = Math.max(1, Math.round(duration));
+    if (cur.gateLen === duration && cur.lengthSteps === lengthSteps) return clip;
+    const steps = clip.steps.slice();
+    steps[idx] = { ...cur, gateLen: duration, lengthSteps };
+    return { ...clip, steps };
+  }
   const raw = offStep < onStep ? clip.lengthSteps - onStep : offStep - onStep + 1;
   const span = Math.max(1, Math.min(raw, clip.lengthSteps - onStep));
-  const cur = clip.steps[idx]!;
   if ((cur.lengthSteps ?? 1) === span) return clip;
   const steps = clip.steps.slice();
   steps[idx] = { ...cur, lengthSteps: span };

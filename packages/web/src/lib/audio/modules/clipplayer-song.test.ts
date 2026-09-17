@@ -458,3 +458,41 @@ describe('clipplayer SONG playback (authoritative)', () => {
     expect(handle.read!('gateValue:0')).toBe(0); // silenced
   });
 });
+
+
+describe('captured durations survive song print and playback', () => {
+  it('prints and replays each chord voice at its own duration', async () => {
+    const clip: NoteClipRecord = { ...noteClip(60), lengthSteps: 16, steps: [
+      { step: 0, midi: 60, lengthSteps: 1, gateLen: 0.2 },
+      { step: 0, midi: 64, lengthSteps: 1, gateLen: 1.4 },
+    ] };
+    seed({ stepDiv: 2, quantize: 0, gateLength: 0.1 }, {
+      clips: { '0': clip }, queued: lane8(0, 0, null), clipMode: 'session',
+      songRec: { armed: true, mode: 'replace' },
+    });
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.5);
+    (livePatch.nodes[NODE_ID]!.data as { songRec?: unknown }).songRec = null;
+    run(ctx, 0.5, 0.6);
+    const song = songOf();
+    const events = song.notes!['0']!.events;
+    expect(events).toHaveLength(2);
+    expect(events[0]!.lengthBeats).toBeCloseTo(0.05);
+    expect(events[1]!.lengthBeats).toBeCloseTo(0.35);
+    handle.dispose();
+    seed({ stepDiv: 2, quantize: 0, gateLength: 0.1 }, { clipMode: 'song', song });
+    seedTimelorde(1);
+    const playCtx = new FakeAudioContext();
+    const playback = await build(playCtx);
+    run(playCtx, 0, 0.3);
+    for (const [voice, expected] of [[0, 0.025], [1, 0.175]]) {
+      const gate = polyGateOf(playback, 0, voice);
+      const on = gate.events.find((e) => e.value === 1)!;
+      const off = gate.events.find((e) => e.value === 0 && e.time > on.time)!;
+      expect(off.time - on.time).toBeCloseTo(expected);
+    }
+    playback.dispose();
+  });
+});

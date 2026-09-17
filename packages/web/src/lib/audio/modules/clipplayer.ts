@@ -56,6 +56,7 @@ import {
   clipLengthSteps,
   notesFiringAt,
   lanesFromFiring,
+  noteGateDurations,
   assignPolyLanes,
   createPolyLaneBook,
   freePolyLanesAt,
@@ -291,7 +292,7 @@ export const clipplayerDef: AudioModuleDef = {
       "clipplayer-pad-{n}":
         "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (with QNT on it quantizes to the longest playing clip's next loop boundary; immediately when nothing's playing yet or via NOW), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. RIGHT-CLICK a pad for the CLIP menu — the SAME menu, with the same rows in the same order, that a note cell opens, only scoped to the whole clip: NOTE PROBABILITY (the clip DEFAULT every note without its own inherits), PITCH PROBABILITY and SKIP EVERY (both applied to EVERY note in the clip), then COPY, PASTE and CLEAR. It opens on EVERY pad, loaded or empty: on an empty slot only PASTE is live, which is how a copied clip is duplicated onto a free pad, exactly as on a Launchpad or Push 2. An empty pad shows differently from a filled or playing one; a clip that CARRIES RECORDED AUTOMATION shows a small teal dot in its corner (the envelope belongs to the clip — copy/paste moves it with the clip).",
       "clipplayer-cell-{n}":
-        "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click a note for its menu. The menu's top level is three SUBMENUS that expand into their option lists — NOTE PROBABILITY (a 0–100% firing chance), PITCH PROBABILITY (an off–100% pitch-instability amount in 40 increments) and SKIP EVERY (a 1–8 count-divider that plays the note only on every Nth loop of the clip) — followed by three actions on the CLIP you are editing: COPY and PASTE, which use the same typed clipboard as the Launchpad and Push 2 (so a clip copied on the faceplate pastes on the hardware and vice versa; a paste replaces the target's notes AND its recorded automation, and a whole-SCENE buffer will not paste onto a single clip), and CLEAR, which DELETES the clip — the same undoable operation as the launch grid's right-click CLEAR, and distinct from the editor's ⌫, which empties the notes but keeps the clip. The first two STACK and decide WHETHER the note fires: it sounds only when it's that loop's turn AND it wins its probability roll. The third decides WHAT PITCH it fires at — off (the default) plays exactly the note you drew, and turning it up lets the note wander to nearby SCALE DEGREES of the clip's key, from occasional ornaments through melodic variation to out-of-key reharmonisation at the top, with octaves favoured over equally-distant dissonances. The cell colour codes the first two — white = always fires, a dimmer purple/orange as probability drops, RED (dimmer the higher N) for a play-every note, and the AVERAGE of the two when a note is both probabilistic and play-every. Pitch probability deliberately does NOT add a third colour to that blend (it would be unreadable at cell size): a note whose pitch can wander gets a DASHED border instead, and its exact amount is in the cell's tooltip and the menu's checkmark. The cells make up the clip you're editing for the selected lane+slot.",
+        "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to add or select a note; click the selected note again to erase it. Shift-click a later cell on the same pitch row to tie the span into one held gate, shown as a solid bar. Alt-click or use VEL to cycle velocity; right-click a note for its menu. The menu's top level is three SUBMENUS that expand into their option lists — NOTE PROBABILITY (a 0–100% firing chance), PITCH PROBABILITY (an off–100% pitch-instability amount in 40 increments) and SKIP EVERY (a 1–8 count-divider that plays the note only on every Nth loop of the clip) — followed by three actions on the CLIP you are editing: COPY and PASTE, which use the same typed clipboard as the Launchpad and Push 2 (so a clip copied on the faceplate pastes on the hardware and vice versa; a paste replaces the target's notes AND its recorded automation, and a whole-SCENE buffer will not paste onto a single clip), and CLEAR, which DELETES the clip — the same undoable operation as the launch grid's right-click CLEAR, and distinct from the editor's ⌫, which empties the notes but keeps the clip. The first two STACK and decide WHETHER the note fires: it sounds only when it's that loop's turn AND it wins its probability roll. The third decides WHAT PITCH it fires at — off (the default) plays exactly the note you drew, and turning it up lets the note wander to nearby SCALE DEGREES of the clip's key, from occasional ornaments through melodic variation to out-of-key reharmonisation at the top, with octaves favoured over equally-distant dissonances. The cell colour codes the first two — white = always fires, a dimmer purple/orange as probability drops, RED (dimmer the higher N) for a play-every note, and the AVERAGE of the two when a note is both probabilistic and play-every. Pitch probability deliberately does NOT add a third colour to that blend (it would be unreadable at cell size): a note whose pitch can wander gets a DASHED border instead, and its exact amount is in the cell's tooltip and the menu's checkmark. The cells make up the clip you're editing for the selected lane+slot.",
       "clipplayer-auto-arm-{n}":
         "Lane {n}'s ◉ automation arm (CLIP RECORD, CONTINUOUS OVERDUB) — the small teal button under channel {n}'s column, next to its RATE control; PER LANE, Deluge-like (this replaced the old single global AUTO button), and distinct from the experimental red ● arranger record. While lane {n} is armed and a note clip plays in it, the recorder punches in cleanly at THAT clip's own next loop start; then just MOVE any control of a MODULE assigned to lane {n} (screen / MIDI / Electra all count — CV never records): it records WHILE you hold it, and every OTHER track keeps playing back so the automation loops audibly/visibly. Recording lands in the clip PLAYING in the lane (each clip carries its own envelopes). Release a control and it reverts to playback next loop. It overdubs EVERY loop until you click the ◉ again — a MANUAL STOP (no auto punch-out); stopping mid-loop keeps the untouched tail. Touching a control on an UNASSIGNED module records nothing — right-click the module\'s card → \"Assign to automation lane\" first. A 🟡🟡🔴🔴 countdown flashes this ◉ (and the recording clip's grid cell + Launchpad pad) on the last four beats before the clip's wrap. Per-lane single-writer: the arming client records this lane (another collaborator can record a DIFFERENT lane at the same time); peers still play back. On a Launchpad, SHIFT + the top-row button of the lane's column toggles the same arm (lane 8 = double-tap SHIFT).",
       "clipplayer-scene-repeat-{n}":
@@ -1659,8 +1660,10 @@ export const clipplayerDef: AudioModuleDef = {
       // the identical overlap shape (a pad printed under a moving line is two
       // chords at different beats), so the positional re-pack would collapse it
       // the same way. See `assignPolyLanes`.
-      for (const wv of assignPolyLanes(ln.playBook, chord, at, gateOff)) {
+      const durations = chord.slice(0, POLY_CHANNEL_PAIRS).map((n) => Math.max(0.001, (n.lengthBeats ?? 0) * secPerBeat));
+      for (const wv of assignPolyLanes(ln.playBook, chord, at, durations)) {
         const v = ln.poly.voices[wv.lane]!;
+        v.gateSrc.offset.cancelScheduledValues(wv.onAt);
         v.pitchSrc.offset.setValueAtTime(wv.pitch + octave, wv.onAt);
         v.gateSrc.offset.setValueAtTime(1, wv.onAt);
         v.gateSrc.offset.setValueAtTime(0, wv.offAt);
@@ -2008,12 +2011,8 @@ export const clipplayerDef: AudioModuleDef = {
       const r = lanesFromFiring(firing);
       const octave = readParam('octave', 0);
       const gateFrac = readParam('gateLength', 0.9);
-      // A held/tied note (lengthSteps > 1) keeps its gate HIGH the whole span
-      // (legato) — the "hold a pad + tap another" gesture. A single-step note
-      // uses the GATE duty cycle so it can be shortened/staccato.
-      const span = r.gateSteps * stepDur;
-      const gateOff =
-        r.gateSteps > 1 ? Math.max(0.001, span - 0.002) : Math.max(0.001, span * gateFrac);
+      const gateDurations = noteGateDurations(firing, stepDur, gateFrac);
+      const gateOff = Math.max(0.001, ...gateDurations);
       const voiced = r.lanes.map((v) => ({ pitch: v.pitch + octave, gate: v.gate }));
       // Gate-sampled Sample & Hold (ONE global toggle for all 8 lanes, default
       // ON). On an EMPTY step (a rest) with S&H ON nothing is written at all, so
@@ -2032,9 +2031,10 @@ export const clipplayerDef: AudioModuleDef = {
       // first pitch. `assignPolyLanes` gives each note a lane of its own for its
       // whole life and returns ONLY the lanes to touch. See its header for the
       // measurement.
-      const writes = assignPolyLanes(ln.playBook, firing, atTime, gateOff);
+      const writes = assignPolyLanes(ln.playBook, firing, atTime, gateDurations);
       for (const wv of writes) {
         const v = ln.poly.voices[wv.lane]!;
+        v.gateSrc.offset.cancelScheduledValues(wv.onAt);
         v.pitchSrc.offset.setValueAtTime(wv.pitch + octave, wv.onAt);
         v.gateSrc.offset.setValueAtTime(1, wv.onAt);
         v.gateSrc.offset.setValueAtTime(0, wv.offAt);
@@ -2757,16 +2757,10 @@ export const clipplayerDef: AudioModuleDef = {
                 const secPerBeatCap = 60 / transportBpm();
                 if (secPerBeatCap > 0) {
                   const beatAtEmit = Math.max(0, songBeat + (emitAt - ctx.currentTime) / secPerBeatCap);
-                  let gateSteps = 1;
-                  for (const ev of starting) gateSteps = Math.max(gateSteps, ev.lengthSteps ?? 1);
-                  const spanS = gateSteps * laneDur;
-                  const gateOffS =
-                    gateSteps > 1
-                      ? Math.max(0.001, spanS - 0.002)
-                      : Math.max(0.001, laneDur * readParam('gateLength', 0.9));
-                  const lengthBeats = gateOffS / secPerBeatCap;
+                  const durations = noteGateDurations(starting, laneDur, readParam('gateLength', 0.9));
                   const buf = songNoteBuf[L]!;
-                  for (const ev of starting) {
+                  for (const [i, ev] of starting.entries()) {
+                    const lengthBeats = durations[i]! / secPerBeatCap;
                     buf.push({
                       beat: beatAtEmit,
                       midi: ev.midi,
