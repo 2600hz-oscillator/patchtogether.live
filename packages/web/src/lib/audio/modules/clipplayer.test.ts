@@ -1194,3 +1194,29 @@ describe('clipplayer: same-session load at a REUSED id (fleet-audit #5)', () => 
     expect(d.clips?.['9'], 'the legacy key is gone').toBeUndefined();
   });
 });
+
+
+describe('clipplayer: precise recorded gates', () => {
+  it('schedules each poly release separately and the mono release at the chord maximum', async () => {
+    const notes: NoteClipRecord = { ...noteClip(60, 16), steps: [
+      { step: 0, midi: 60, lengthSteps: 1, gateLen: 0.2 },
+      { step: 0, midi: 64, lengthSteps: 1, gateLen: 1.4 },
+    ] };
+    seed({ stepDiv: 2, quantize: 0, gateLength: 0.1 },
+      { clips: { '0': notes }, playing: lane8(0, 0, null) });
+    seedTimelorde(1);
+    const ctx = ctx0();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.05);
+    const duration = (gate: FakeParam) => {
+      const on = gate.events.find((e) => e.value === 1)!;
+      expect(on).toBeDefined();
+      const off = gate.events.find((e) => e.value === 0 && e.time > on.time)!;
+      return off.time - on.time;
+    };
+    expect(duration(polyGateOf(handle as never, 0, 0))).toBeCloseTo(0.025);
+    expect(duration(polyGateOf(handle as never, 0, 1))).toBeCloseTo(0.175);
+    expect(duration(gateOf(handle as never, 0))).toBeCloseTo(0.175);
+    handle.dispose();
+  });
+});

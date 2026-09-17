@@ -109,3 +109,11 @@ export function captureStep(
   if (frac === null) return null;
   return quantizeStep(frac, phase!.lengthSteps, gridSteps);
 }
+
+
+/** Duration uses the lane rate at note-on, independent of onset quantization and loop wraps. */
+export function captureGateLength(onMs: number, offMs: number, laneDur: number | undefined): number | undefined {
+  if (!laneDur || !Number.isFinite(laneDur) || laneDur <= 0) return undefined;
+  const steps = (offMs - onMs) / (1000 * laneDur);
+  return Number.isFinite(steps) && steps > 0 ? steps : undefined;
+}

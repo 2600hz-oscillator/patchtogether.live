@@ -35,6 +35,8 @@ import {
   lanePlaying,
   laneQueued,
   slotOf,
+  setNoteSpan,
+  noteCovering,
   toggleCustomScaleNote,
   toggleLaneAutomationArm,
   toggleNoteAt,
@@ -498,7 +500,23 @@ export function toggleClipplayerNote(
   reconcileClipRemoval(nodeId, clip, next, index, clipplayerData(nodeId));
 }
 
-/** Cycle one cell's VELOCITY level (the shift-click gesture). Places a note at
+export function tieClipplayerNote(nodeId: string, index: number, start: number, end: number, midi: number): void {
+  const clip = clipplayerClipAt(nodeId, index);
+  if (!clip || end < start || end >= clip.lengthSteps) return;
+  const anchor = noteCovering(clip, start, midi);
+  if (!anchor) return;
+  const next = setNoteSpan(clip, anchor.step, end, midi, {
+    mono: laneMono(clipplayerData(nodeId), laneOf(index)),
+    velocity: anchor.velocity,
+  });
+  const tied = next.steps.at(-1)!;
+  const { gateLen: _capturedDuration, ...attributes } = anchor;
+  next.steps[next.steps.length - 1] = { ...attributes, ...tied };
+  writeClipplayerClip(nodeId, index, next);
+  reconcileClipRemoval(nodeId, clip, next, index, clipplayerData(nodeId));
+}
+
+/** Cycle one cell's VELOCITY level (Alt-click or VEL mode). Places a note at
  *  the default level on an empty cell, matching the Launchpad's VEL hold. */
 export function cycleClipplayerNoteVelocity(
   nodeId: string,

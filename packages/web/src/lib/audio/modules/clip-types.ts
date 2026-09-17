@@ -220,6 +220,8 @@ export interface NoteEvent {
   midi: number; // MIDI note int (c4 = 60), same convention as note-entry.ts
   velocity?: number; // 0..127 (default DEFAULT_VELOCITY)
   lengthSteps?: number; // gate width in steps (default 1)
+  /** Captured gate duration in fractional steps; absent keeps legacy step/duty timing. */
+  gateLen?: number;
   prob?: number; // 0..1 own firing probability; UNSET ⇒ follow the clip default (else 1)
   playEvery?: number; // 1..8 count-divider; UNSET/1 ⇒ every loop. STACKS with prob:
   // the note fires iff it's this loop's turn AND it wins its probability roll.
@@ -1283,6 +1285,9 @@ export function coerceNoteEvent(raw: unknown): NoteEvent | null {
   if (typeof r.lengthSteps === 'number' && Number.isFinite(r.lengthSteps)) {
     ev.lengthSteps = Math.max(1, Math.round(r.lengthSteps));
   }
+  if (typeof r.gateLen === 'number' && Number.isFinite(r.gateLen) && r.gateLen > 0) {
+    ev.gateLen = Math.min(MAX_CLIP_STEPS, r.gateLen);
+  }
   if (typeof r.prob === 'number' && Number.isFinite(r.prob)) {
     ev.prob = Math.max(0, Math.min(1, r.prob));
   }
@@ -1320,6 +1325,9 @@ export function coerceClipRecord(raw: unknown): ClipRecord | null {
       typeof r.root === 'number' && Number.isFinite(r.root)
         ? Math.round(r.root)
         : C3_MIDI;
+    for (const ev of steps) {
+      if (ev.gateLen !== undefined) ev.gateLen = Math.min(ev.gateLen, Math.max(1, lengthSteps - ev.step));
+    }
     const out: NoteClipRecord = { kind: 'note', steps, lengthSteps, root, loop };
     // Unknown / legacy / absent scale ⇒ undefined (chromatic editor rows).
     const scale = coerceScaleName(r.scale);
@@ -1878,6 +1886,18 @@ export function lanesFromFiring(firing: NoteEvent[]): StepLanes {
 }
 
 
+export function noteGateDurations(firing: readonly NoteEvent[], stepDur: number, gateFraction: number): number[] {
+  const starting = firing.slice(0, POLY_CHANNEL_PAIRS);
+  const legacySteps = Math.max(1, ...starting.map((ev) => ev.lengthSteps ?? 1));
+  const legacyDuration = legacySteps > 1
+    ? Math.max(0.001, legacySteps * stepDur - 0.002)
+    : Math.max(0.001, stepDur * gateFraction);
+  return starting.map((ev) => ev.gateLen === undefined
+    ? legacyDuration
+    : Math.max(0.001, ev.gateLen * stepDur));
+}
+
+
 // ── SCHEDULED POLY VOICE ALLOCATION — a note keeps its lane until IT ends ────
 //
 // ⚠ THE DEFECT THIS REPLACES (owner report, 2026-09-02: "midi out on a poly
@@ -1975,7 +1995,7 @@ export function assignPolyLanes(
   // allocator rather than two that could drift apart.
   firing: readonly { midi: number }[],
   onAt: number,
-  gateOffSec: number,
+  gateOffSec: number | readonly number[],
 ): PolyLaneWrite[] {
   // 1. RETIRE — a lane whose note has already ended is available again.
   for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
@@ -1985,7 +2005,6 @@ export function assignPolyLanes(
     }
   }
 
-  const offAt = onAt + gateOffSec;
   const writes: PolyLaneWrite[] = [];
 
   for (const ev of firing) {
@@ -2011,6 +2030,7 @@ export function assignPolyLanes(
       lane = victim;
     }
 
+    const offAt = onAt + (typeof gateOffSec === 'number' ? gateOffSec : gateOffSec[writes.length]!);
     book.note[lane] = ev.midi;
     book.busyUntil[lane] = offAt;
     writes.push({ lane, pitch: midiToVOct(ev.midi), midi: ev.midi, onAt, offAt });
@@ -2764,6 +2784,7 @@ function clampEventSpan(e: NoteEvent, maxLen: number): NoteEvent {
   const len = e.lengthSteps ?? 1;
   const max = Math.max(1, maxLen - e.step);
   if (len > max) e.lengthSteps = max;
+  if (e.gateLen !== undefined) e.gateLen = Math.min(e.gateLen, max);
   return e;
 }
 
@@ -2779,7 +2800,7 @@ export function reverseClipSteps(clip: NoteClipRecord): NoteClipRecord {
   const len = clip.lengthSteps;
   const steps: NoteEvent[] = [];
   for (const e of clip.steps) {
-    const span = e.lengthSteps ?? 1;
+    const span = e.gateLen === undefined ? (e.lengthSteps ?? 1) : Math.ceil(e.gateLen);
     let mirroredStart = len - (e.step + span);
     let mirroredLen = span;
     if (mirroredStart < 0) {
@@ -2788,7 +2809,12 @@ export function reverseClipSteps(clip: NoteClipRecord): NoteClipRecord {
       mirroredStart = 0;
       if (mirroredLen < 1) continue; // nothing of the note remains inside the clip
     }
-    steps.push({ ...e, step: mirroredStart, lengthSteps: mirroredLen });
+    const reversed = { ...e, step: mirroredStart, lengthSteps: mirroredLen };
+    if (e.gateLen !== undefined) {
+      reversed.gateLen = Math.min(e.gateLen, mirroredLen);
+      reversed.lengthSteps = Math.max(1, Math.round(reversed.gateLen));
+    }
+    steps.push(clampEventSpan(reversed, len));
   }
   return { ...clip, steps };
 }

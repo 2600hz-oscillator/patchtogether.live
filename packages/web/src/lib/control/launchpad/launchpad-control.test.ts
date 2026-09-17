@@ -70,6 +70,7 @@ import {
   KEYS_PH_ROW,
 } from './launchpad-map';
 import { SCENE_CCS, padNote } from './launchpad-sysex';
+import { setLanePhase, clearLanePhases } from '$lib/audio/modules/clip-lane-phase';
 import { setLanePlayhead, clearPlayheads } from '$lib/audio/modules/clip-playhead';
 import { drainAudition, clearAudition } from '$lib/audio/modules/clip-audition';
 import {
@@ -120,6 +121,7 @@ beforeEach(async () => {
   __test_resetLaunchpad();
   clearPatch();
   clearPlayheads(NODE_ID);
+  clearLanePhases(NODE_ID);
   clearAudition(NODE_ID);
   sim = await installSimulatedLaunchpad();
 });
@@ -739,6 +741,28 @@ describe('KEYS mode — live audition + record capture', () => {
     sim.press('L', 3, 2); // col 3 row 1 → midi = 48 + 3 + 5 = 56
     sim.release('L', 3, 2);
     expect(clipAt(0).steps.some((s) => s.step === 5 && s.midi === 56), 'note captured at step 5').toBe(true);
+  });
+
+  it.each(['release', 'stop'] as const)('captures fractional duration on %s through the real key binding', (finish) => {
+    seedClipPlayer({ clips: { '0': noteClip() } });
+    seedTimelorde(0);
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    setLanePlayhead(NODE_ID, 0, 0);
+    hoisted.tick!();
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    try {
+      setLanePhase(NODE_ID, 0, { anchorStep: 2, anchorTime: 1, laneDur: 0.125,
+        lengthSteps: 16, ctxTime: 1, perfNow: 1000 });
+      sim.press('L', 2, 1);
+      now.mockReturnValue(1175);
+      if (finish === 'release') sim.release('L', 2, 1);
+      else sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW);
+      expect(clipAt(0).steps[0]).toMatchObject({ step: 2, midi: 50, lengthSteps: 1, gateLen: 1.4 });
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('ADDITIVE (overdub OFF): the playhead crossing a step does NOT clear its onsets (replace-as-you-play removed)', () => {

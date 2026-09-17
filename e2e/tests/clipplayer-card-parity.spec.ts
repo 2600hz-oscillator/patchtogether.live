@@ -119,7 +119,7 @@ test('parity: dock CONTROL-deck MUTE and the single-pad Launchpad MUTE write the
   await expect.poll(async () => (await nodeData(page, 'cp'))?.muted?.[2] ?? true).toBe(false);
 });
 
-test('VEL mode (deck toggle or held Shift) makes a cell click CYCLE velocity instead of toggling the note', async ({ page, rack }) => {
+test('VEL mode (deck toggle or held Alt) makes a cell click CYCLE velocity instead of toggling the note', async ({ page, rack }) => {
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClip(page, 'cp', 0);
   const pane = await openDockPane(page, 'cp');
@@ -153,17 +153,16 @@ test('VEL mode (deck toggle or held Shift) makes a cell click CYCLE velocity ins
   expect(after.count, 'note kept (velocity mode, not toggled off)').toBe(1);
   expect(after.vel, 'velocity cycled').not.toBe(v0);
 
-  // VEL mode OFF → a held SHIFT still cycles (the modifier gesture, kept from
-  // the card), and a plain click toggles the note away again.
+  // Alt-click cycles velocity with VEL off; Shift is reserved for note ties.
   await vel.click();
   await expect(vel).toHaveAttribute('aria-pressed', 'false');
-  await cell.click({ modifiers: ['Shift'] });
-  const shifted = await page.evaluate(() => {
+  await cell.click({ modifiers: ['Alt'] });
+  const modified = await page.evaluate(() => {
     const s = (globalThis as unknown as W).__patch.nodes['cp'].data?.clips?.['0']?.steps ?? [];
     return { count: s.filter((n) => n.step === 6).length, vel: s.find((n) => n.step === 6)?.velocity ?? null };
   });
-  expect(shifted.count, 'shift-click also cycles, never deletes').toBe(1);
-  expect(shifted.vel, 'shift-click moved the velocity again').not.toBe(after.vel);
+  expect(modified.count, 'Alt-click also cycles, never deletes').toBe(1);
+  expect(modified.vel, 'Alt-click moved the velocity again').not.toBe(after.vel);
 
   await cell.click();
   const gone = await page.evaluate(() => {

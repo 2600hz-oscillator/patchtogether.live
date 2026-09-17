@@ -89,6 +89,7 @@
     queueClipplayerLane,
     setClipplayerCustomScaleOn,
     toggleClipplayerNote,
+    tieClipplayerNote,
     toggleClipplayerScaleRow,
   } from './clipplayer-face-actions';
   import { clipplayerSelectedClip } from './clipplayer-face-selection.svelte';
@@ -170,8 +171,37 @@
    *  authoring lens, like holding shift. The MEMBERSHIP and the APPLIED flag
    *  both live on node.data. */
   let pickingScale = $state(false);
-  /** The card's shift-to-edit-velocity modifier, held on this surface. */
+
   let velMode = $state(false);
+  let selectedNote = $state<{ clip: number; step: number; midi: number } | null>(null);
+  $effect(() => {
+    void selectedClip;
+    selectedNote = null;
+  });
+
+  function clickNote(e: MouseEvent, step: number, midi: number) {
+    ensureThenEdit(() => {
+      if (velMode || e.altKey) {
+        cycleClipplayerNoteVelocity(nodeId, selectedClip, step, midi);
+        return;
+      }
+      const anchor = selectedNote;
+      if (e.shiftKey) {
+        if (anchor?.clip === selectedClip && anchor.midi === midi && step >= anchor.step) {
+          tieClipplayerNote(nodeId, selectedClip, anchor.step, step, midi);
+        }
+        return;
+      }
+      const note = noteCovering(clip, step, midi);
+      if (note && !(anchor?.clip === selectedClip && anchor.step === note.step && anchor.midi === midi)) {
+        selectedNote = { clip: selectedClip, step: note.step, midi };
+        return;
+      }
+      toggleClipplayerNote(nodeId, selectedClip, note?.step ?? step, midi);
+      selectedNote = note ? null : { clip: selectedClip, step, midi };
+    });
+  }
+
 
   let customScaleNotes = $derived((live.v, laneCustomScale(data, editLane)));
   let customScaleOn = $derived((live.v, laneCustomScaleOn(data, editLane)));
@@ -253,7 +283,7 @@
 
   function cellTitle(c: NoteClipRecord, step: number, midi: number): string {
     const base =
-      'Click: note on/off (Shift-click: cycle velocity) · Right-click: note probability (colour = purple ∝ probability, white = 100%), pitch probability, skip every — plus copy / paste / clear for the whole clip';
+      'Click: add/select note; click selected note again: erase · Shift-click: hold through this step on the same row · Alt-click: cycle velocity · Right-click: note probability (colour = purple ∝ probability, white = 100%), pitch probability, skip every — plus copy / paste / clear for the whole clip';
     const pp = noteCellPitchProb(c, step, midi);
     return pp > 0 ? `${base} — PITCH PROBABILITY ${pitchProbLabel(pp)} (dashed border)` : base;
   }
@@ -338,7 +368,7 @@
         class="op"
         class:on={velMode}
         aria-pressed={velMode}
-        title="VELOCITY mode — while on, clicking a cell cycles its velocity instead of toggling the note. Shift-clicking a cell does the same for one click; this LATCHES it, standing in for the card's held-Shift, which a faceplate has no keyboard handler for."
+        title="VELOCITY mode — clicking a cell cycles its velocity. Alt-click does the same for one click."
         data-testid={`clipplayer-velmode-${nodeId}`}
         onclick={() => (velMode = !velMode)}>VEL</button
       >
@@ -401,8 +431,14 @@
             {#each Array(editCols) as _c, step (step)}
               {@const midi = midiForDisplayRow(clip, row)}
               {@const fill = noteCellFill(clip, step, midi)}
+              {@const note = noteCovering(clip, step, midi)}
+              {@const joinsPrevious = note && step > note.step}
+              {@const joinsNext = note && step + 1 < note.step + (note.lengthSteps ?? 1)}
               <button
                 class="cell"
+                class:joined-left={!!joinsPrevious}
+                class:joined-right={!!joinsNext}
+                class:selected={!!note && selectedNote?.clip === selectedClip && selectedNote.step === note.step && selectedNote.midi === midi}
                 class:note={fill !== ''}
                 class:unstable={noteCellPitchUnstable(clip, step, midi)}
                 class:playhead={step === curStep}
@@ -410,17 +446,13 @@
                 class:crow={midi % 12 === 0}
                 class:frow={midi % 12 === 5}
                 style={fill ? `background:${fill}` : undefined}
+                data-note-start={note?.step}
                 data-step={step}
                 data-row={row}
                 aria-label={`step ${step} row ${row}`}
                 title={cellTitle(clip, step, midi)}
                 data-testid={`clipplayer-cell-${row}-${step}`}
-                onclick={(e) =>
-                  ensureThenEdit(() =>
-                    velMode || e.shiftKey
-                      ? cycleClipplayerNoteVelocity(nodeId, selectedClip, step, midi)
-                      : toggleClipplayerNote(nodeId, selectedClip, step, midi),
-                  )}
+                onclick={(e) => clickNote(e, step, midi)}
                 oncontextmenu={(e) => openNoteMenu(e, step, row)}
               ></button>
             {/each}
@@ -586,6 +618,22 @@
      unreadable. The magnitude is in the tooltip and the menu's checkmark. */
   .cell.unstable {
     border-style: dashed;
+  }
+  .cell.joined-left {
+    border-left: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .cell.joined-right {
+    width: 17px;
+    margin-right: -2px;
+    border-right: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .cell.selected {
+    border-top-color: #fff;
+    border-bottom-color: #fff;
   }
   .cell.playhead {
     background: rgba(108, 170, 255, 0.22);
