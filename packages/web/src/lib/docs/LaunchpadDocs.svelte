@@ -1310,6 +1310,7 @@
         one glows bright green. The scale <em>lights</em> the keyboard (root cyan, in-scale green) but does
         <strong>not</strong> snap what you play — the pads stay fully chromatic.</li>
       <li><strong>CLIP RECORD:</strong> QUEUE-REC arms and starts transport if needed. Capture begins on the first played note while transport runs, or the next loop wrap, whichever comes first. Recording <strong>adds notes</strong>; OVERDUB off does not erase untouched steps. Toggle OVERDUB from on to off during capture to finish at the next wrap, or press EXIT to stop immediately and stay in KEYS. QUEUE-REC cannot arm while ARRANGER RECORD or arrangement playback is active.</li>
+      <li><strong>Note duration:</strong> onsets follow the capture grid; releases preserve the time you held each key, including fractions of a step, up to the clip’s end. Captured durations override the global GATE duty. See <a href="/docs/modules/clipplayer#notes">note lengths and screen ties</a>.</li>
       <li><strong>OCT− / OCT+</strong> shift the whole keyboard an octave; <strong>PANIC</strong> kills
         every sounding note; <strong>LEN</strong> opens the length page (EXIT returns straight to
         KEYS).</li>
@@ -1682,6 +1683,7 @@
     <ul class="tight">
       <li><strong>QUEUE-REC</strong> (bottom row, L) arms and starts transport if stopped. Capture punches in on the first played note while running or the next wrap, whichever comes first. Re-tap while armed to cancel; EXIT stops an active recording. Arming is blocked during ARRANGER RECORD or arrangement playback.</li>
       <li><strong>Both recording modes add notes.</strong> OVERDUB off does not clear untouched steps. While recording, turn OVERDUB from on to off to finish at the loop boundary. Otherwise capture continues until stopped.</li>
+      <li><strong>Note duration:</strong> both units capture how long you hold each key independently of onset snapping, including fractions of a step, up to the clip’s end. These captured durations override GATE; use the note editor’s hold-and-tap gesture to replace a duration with a tied span. See <a href="/docs/modules/clipplayer#notes">note lengths</a>.</li>
       <li><strong>LEN</strong> opens the length page on R (EXIT returns straight to KEYS while L keeps the
         live keyboard), so you can resize the loop without leaving — the length-page layout is in the
         <em>Note Editor</em> tab.</li>

@@ -5,7 +5,7 @@
   const lanes = Array.from({ length: CLIP_LANES }, (_, i) => i);
   const titles = {
     session: 'Session: lane controls above the launch grid; selected clip below',
-    notes: 'Note editor: clip tools above the piano roll; audition below',
+    notes: 'Note editor: select a note, Shift-click its endpoint to tie; audition below',
     audio: 'Audio editor: recorded/live source, waveform, launch and record status',
     song: 'Arrangement and printed song are different recordings',
   };
@@ -57,6 +57,8 @@
           <rect x={42 + col * 27} y={101 + row * 24} width="24" height="21" rx="2" fill={on ? '#69c79e' : col === 6 ? '#444c59' : '#29313b'} stroke={col % 4 === 0 ? '#667580' : '#39424c'} />
         {/each}
       {/each}
+      <rect x="42" y="197" width="105" height="21" rx="2" fill="#69c79e" stroke="#effff8" stroke-width="2" />
+      <text x="94" y="211" text-anchor="middle" class="tiny" style="fill:#17382a">selected tie</text>
       <text x="28" y="290" class="muted">← steps →                  pitch increases upward</text>
       <rect x="306" y="306" width="70" height="28" rx="4" fill="#224037" stroke="#6dcea2" />
       <rect x="387" y="306" width="86" height="28" rx="4" fill="#493d26" stroke="#dbb66e" />
@@ -64,9 +66,11 @@
       <text x="509" y="70" class="number">1</text><text x="531" y="70">Clip tools</text>
       <text x="509" y="92" class="muted">Scale, length, division and velocity.</text>
       <text x="509" y="145" class="number">2</text><text x="531" y="145">Draw in the piano roll</text>
-      <text x="509" y="167" class="muted">Click: add / remove.</text>
-      <text x="509" y="189" class="muted">Shift-click or VEL: change velocity.</text>
-      <text x="509" y="211" class="muted">Right-click a note: its note menu.</text>
+      <text x="509" y="167" class="muted">Click: add / select.</text>
+      <text x="509" y="187" class="muted">Click the selected note: erase.</text>
+      <text x="509" y="207" class="muted">Shift-click its endpoint: tie.</text>
+      <text x="509" y="227" class="muted">Alt-click or VEL: change velocity.</text>
+      <text x="509" y="247" class="muted">Right-click a note: its note menu.</text>
       <text x="509" y="294" class="number">3</text><text x="531" y="294">Hear this clip</text>
       <text x="509" y="316" class="muted">NOW is immediate.</text>
       <text x="509" y="338" class="muted">QUEUE follows launch quantization.</text>

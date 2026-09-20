@@ -62,7 +62,8 @@
   <section aria-labelledby="notes">
     <h2 id="notes">Write and shape note clips</h2>
     <ClipplayerGuideDiagram view="notes" />
-    <p>The piano roll shows the selected clip’s editable pitch range and full length, up to {MAX_CLIP_STEPS} steps. Click to add or remove a note. <strong>Shift-click</strong>, or turn on <strong>VEL</strong> and click, to cycle velocity. Right-click an existing note to open its menu.</p>
+    <p>The piano roll shows the selected clip’s editable pitch range and full length, up to {MAX_CLIP_STEPS} steps. Click an empty cell to add and select a note. Click an existing note to select it; click that selected note again to erase it. <strong>Shift-click a later cell on the same pitch row</strong> to hold the selected note through that step. The tied span appears as one solid bar. <strong>Alt-click</strong>, or turn on <strong>VEL</strong> and click, to cycle velocity. Right-click an existing note to open its menu.</p>
+    <p>Ordinary step notes use the global GATE setting; tied notes sustain across their span. Notes recorded from hardware KEYS can carry their own held duration, including a fraction of a step, so changing GATE does not shorten those captured gates. A recorded note ends no later than the clip’s end. Tying it in the editor replaces that captured duration with the span you choose.</p>
     <table>
       <thead><tr><th>Control</th><th>Behavior</th></tr></thead>
       <tbody>
@@ -161,7 +162,7 @@
         <tr><td>STEP</td><td>Global musical step resolution from TIMELORDE: 1/4, 1/8, 1/16 or 1/32.</td></tr>
         <tr><td>Lane RATE / clip DIV</td><td>1/8, 1/4, 1/2, 1, 2× or 4×. A clip DIV overrides its lane’s rate.</td></tr>
         <tr><td>QNT</td><td>Queue a launch to the longest playing clip’s boundary. NOW and Shift-click override it.</td></tr>
-        <tr><td>OCT / GATE</td><td>Global octave transpose and gate duty. Held notes keep their full span.</td></tr>
+        <tr><td>OCT / GATE</td><td>Global octave transpose and ordinary step-note gate duty. Tied spans and explicit recorded-note durations keep their own lengths.</td></tr>
         <tr><td>S&amp;H</td><td>On: pitch holds through rests while gate closes. Off: resting pitch returns to zero.</td></tr>
         <tr><td>reset</td><td>A rising edge re-aligns active clip steps. Queued launches remain queued.</td></tr>
         <tr><td>stop_all</td><td>A rising edge stops all lanes immediately.</td></tr>

@@ -328,18 +328,41 @@ async function countdownLampLit(page: Page): Promise<'1' | '0' | null> {
   }, CP);
 }
 
-/** Poll the REC lamp for `ms`, returning the ORDERED sequence of distinct lit
- *  states observed (e.g. ['0','1','0','1']) — proves the lamp PULSES on the
- *  approach to each wrap rather than sitting stuck in either state. */
-async function collectCountdown(page: Page, ms: number): Promise<Array<'1' | '0'>> {
-  const seq: Array<'1' | '0'> = [];
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    const c = await countdownLampLit(page);
-    if (c !== null && seq[seq.length - 1] !== c) seq.push(c);
-    await page.waitForTimeout(60);
-  }
-  return seq;
+/** Observe the rendered lamp inside the page until it changes twice. The old
+ *  Playwright-side sampler missed transitions under CI load (main run
+ *  35246510753 saw only 01 in 9.5s). A MutationObserver sees every committed
+ *  data-lit change without competing CDP round trips. Time bounds failure;
+ *  the actual transitions define success. A stuck lamp cannot pass. */
+async function collectCountdown(page: Page): Promise<{
+  seq: Array<'1' | '0'>; samples: number; elapsedMs: number;
+}> {
+  return page.evaluate((id) => new Promise<{
+    seq: Array<'1' | '0'>; samples: number; elapsedMs: number;
+  }>((resolve, reject) => {
+    const lamp = document.querySelector(`[data-testid="clipplayer-auto-countdown-${id}"]`);
+    if (!lamp) { reject(new Error('REC countdown lamp is missing; zero samples')); return; }
+    const seq: Array<'1' | '0'> = [];
+    const start = performance.now();
+    let samples = 0;
+    const observer = new MutationObserver(sample);
+    const timeout = setTimeout(() => finish(false), 12_000);
+    function finish(pulsed: boolean): void {
+      observer.disconnect();
+      clearTimeout(timeout);
+      const elapsedMs = Math.round(performance.now() - start);
+      if (pulsed) resolve({ seq, samples, elapsedMs });
+      else reject(new Error(`REC lamp did not pulse: ${seq.join('')}, ${samples} samples in ${elapsedMs}ms`));
+    }
+    function sample(): void {
+      const value = lamp!.getAttribute('data-lit');
+      if (value !== '0' && value !== '1') return;
+      samples++;
+      if (seq[seq.length - 1] !== value) seq.push(value);
+      if (seq.length >= 3) finish(true);
+    }
+    observer.observe(lamp, { attributes: true, attributeFilter: ['data-lit'] });
+    sample();
+  }), CP);
 }
 
 /** Open the clip player's dock pane (idempotent) — the pad grid, arm row and
@@ -1272,14 +1295,14 @@ test('per-clip automation: the REC countdown lamp pulses while a lane records; d
   await armLaneViaCard(page, 0);
   expect(await isLaneArmed(page, 0)).toBe(true);
 
-  // Observe ≥2 loops (~9s over a 4s loop): the deck REC lamp pulses on the
-  // last four beats before each wrap, published from the tick. Requiring BOTH
-  // states plus ≥3 transitions rules out a lamp stuck lit or stuck dark.
+  // Observe two actual transitions: the deck REC lamp pulses on the last four
+  // beats before each wrap, published from the tick. Either 010 or 101 rules
+  // out a lamp stuck lit or stuck dark, without guessing a wall-clock window.
   // (The card's per-◉ 🟡→🔴 colour order died with the card — S2 manifest.)
-  const seq = await collectCountdown(page, 9500);
+  const { seq, samples, elapsedMs } = await collectCountdown(page);
   expect(seq, 'the REC lamp lights on the approach to a wrap').toContain('1');
   expect(seq, 'and goes dark between approaches').toContain('0');
-  expect(seq.length, `the lamp PULSES rather than latching (saw ${seq.join('')})`).toBeGreaterThanOrEqual(3);
+  expect(seq.length, `REC pulses: ${seq.join('')}, ${samples} samples in ${elapsedMs}ms`).toBeGreaterThanOrEqual(3);
 
   // DISARM → the countdown clears (no stuck light).
   await armLaneViaCard(page, 0);
