@@ -79,6 +79,13 @@ export function clipplayerSelectedClip(nodeId: string): number {
   return selection.get(nodeId) ?? 0;
 }
 
+/** Inspect without launching, materialising content, or moving a record target. */
+export function clipplayerInspectClip(nodeId: string, index: number): void {
+  if (!Number.isInteger(index) || index < 0 || index >= CLIP_LANES * SCENE_STRIDE) return;
+  selection.set(nodeId, index);
+  pruneDeletedNodes();
+}
+
 /** Open a clip in the face's editor. Out-of-range indices are IGNORED rather
  *  than clamped: a clamp would silently open a DIFFERENT clip than the one the
  *  caller named, which on a launcher is an edit landing in the wrong lane.
@@ -99,7 +106,7 @@ export function clipplayerSelectClip(nodeId: string, index: number): void {
   // than derived on read, because a derivation could only ever recover the one
   // lane the flat index sits in.
   const lane = laneOf(index);
-  const slots = laneSelection.get(nodeId) ?? new Array<number>(CLIP_LANES).fill(0);
+  const slots = [...(laneSelection.get(nodeId) ?? new Array<number>(CLIP_LANES).fill(0))];
   slots[lane] = slotOf(index);
   laneSelection.set(nodeId, slots);
   pruneDeletedNodes();
@@ -118,7 +125,7 @@ export function clipplayerSelectClip(nodeId: string, index: number): void {
 export function clipplayerSelectLaneSlot(nodeId: string, lane: number, slot: number): void {
   if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) return;
   if (!Number.isInteger(slot) || slot < 0 || slot >= SCENE_STRIDE) return;
-  const slots = laneSelection.get(nodeId) ?? new Array<number>(CLIP_LANES).fill(0);
+  const slots = [...(laneSelection.get(nodeId) ?? new Array<number>(CLIP_LANES).fill(0))];
   slots[lane] = slot;
   laneSelection.set(nodeId, slots);
   pruneDeletedNodes();

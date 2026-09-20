@@ -124,6 +124,28 @@ beforeEach(async () => {
 });
 
 describe('channel select (Push-LOCAL 5a)', () => {
+  it('routes AUDIO through the shared controller and shows its target and state on the display', async () => {
+    seedClipPlayer({ playing: [0] });
+    sim = await installSimulatedPush2AndBind(CP);
+    setLaunchpadView('control');
+    sim.press(4, 6);
+    expect(__test_mode().mode).toBe('audio');
+    sim.press(2, 4); // lane 3, slot 4
+    const d = livePatch.nodes[CP]!.data as Record<string, unknown>;
+    expect(d.queued).toBeUndefined();
+    sim.cc(PUSH_CC_SCENE_BASE + 7, 127); // ARM (top scene button)
+    expect(d.recRequest).toMatchObject({ '2': { slot: 3 } });
+    const labels = () => pushDisplayOps().filter((op) => op.op === 'text').map(op => op.text).join(' ');
+    expect(labels()).toContain('LANE 3  /  SLOT 4');
+    expect(labels()).toContain('ARMED');
+    sim.cc(PUSH_CC_LEGEND, 127);
+    expect(labels()).toContain('ARM / FINISH');
+    expect(labels()).toContain('REPLACE TAKE');
+    sim.cc(PUSH_CC_LEGEND, 0);
+    sim.cc(PUSH_CC_SCENE_BASE, 127); // EXIT (bottom scene button)
+    expect(__test_mode().mode).toBe('session');
+    expect(d.recArm).toMatchObject({ '2': true });
+  });
   it('selectChannel updates the index + persists to localStorage', () => {
     selectChannel(4);
     expect(selectedChannelIndex()).toBe(4);

@@ -117,6 +117,7 @@ import {
   CLIP_LANES,
   DEFAULT_CLIP_STEPS,
   SCENE_STRIDE,
+  clipHasRecordedAutomation,
   clipIndex,
   coerceClipRecord,
   readClip,
@@ -254,6 +255,8 @@ interface LaneRec {
   /** The clipplayer node the take commits to — latched at arm. */
   clipNodeId: string | null;
   slot: number;
+  checkedRequest?: boolean;
+  replaceMediaId?: string;
   lengthSteps: number;
   /** The unit loop in frames — latched at the EDGE (tempo latch, spec edge 3);
    *  only the window's start/stop wait for confirm. */
@@ -525,6 +528,11 @@ export class NodeClipRecorderRegistry {
     for (let lane = 0; lane < CLIP_LANES; lane++) {
       const st = entry.lanes[lane]!;
       const armed = laneRecArm(data, lane);
+      // An arm carries its writer before asynchronous media preparation. A
+      // collaborator must not prepare the same intent using their local target.
+      const request = data?.recRequest?.[String(lane)];
+      if (request && request.recorderId !== ydoc.clientID &&
+          st.machine.phase === 'idle' && !st.preparing && !st.prepared) continue;
 
       // ⚠ THE ARM IS LEVEL-TRIGGERED ON (TOGGLE AND RUNNING), NOT ON A TOGGLE
       // EDGE, and that IS clause 4. "Set the toggle while stopped, record when
@@ -693,22 +701,34 @@ export class NodeClipRecorderRegistry {
     // the slot the player last selected in this lane and nothing else — a
     // record button whose destination you cannot see is a record button that
     // loses takes.
-    const slot = clipplayerSelectedSlotForLane(clipNode.id, lane);
+    const request = data?.recRequest?.[String(lane)];
+    if (request && (request.recorderId !== ydoc.clientID || !Number.isInteger(request.slot) ||
+        request.slot < 0 || request.slot >= SCENE_STRIDE)) return false;
+    const slot = request?.slot ?? clipplayerSelectedSlotForLane(clipNode.id, lane);
+    const target = readClip(data, clipIndex(slot, lane));
+    if (request && target?.kind === 'audio' && target.mediaId !== request.replaceMediaId) {
+      this.#refuse(entry, lane, 'the target audio take changed; confirm Replace take again');
+      return false;
+    }
     // A note clip in the target is a REFUSAL, not a silent relocation: a slot
     // holds exactly one kind, and quietly recording somewhere else would be the
     // same defect the selected-slot rule exists to remove. (The commit re-checks
     // this at the end — a peer can author notes into the slot mid-take.)
-    // ⚠ ONLY AUTHORED NOTES BLOCK A TAKE. Clicking an empty pad to aim the
+    // Authored notes or automation block a take. Clicking an empty pad to aim the
     // record button materialises an EMPTY note clip as a placeholder, so
     // refusing on `kind === 'note'` would refuse the very slot the player just
     // selected. An empty placeholder is recorded over; a clip with notes in it
     // is someone's work and is refused instead of silently replaced.
-    if (noteClipHasContent(readClip(data, clipIndex(slot, lane)))) {
+    if (noteClipHasContent(target)) {
       this.#refuse(
         entry,
         lane,
         `lane ${lane + 1} slot ${slot + 1} holds a note clip with notes in it — clear it or pick another slot`,
       );
+      return false;
+    }
+    if (target?.kind === 'note' && clipHasRecordedAutomation(data, clipIndex(slot, lane))) {
+      this.#refuse(entry, lane, `lane ${lane + 1} slot ${slot + 1} contains recorded automation — pick another slot`);
       return false;
     }
     // ⚠ ARMING NO LONGER STARTS THE TRANSPORT (clause 4). It used to
@@ -756,6 +776,8 @@ export class NodeClipRecorderRegistry {
     st.prepared = false;
     st.clipNodeId = clipNode.id;
     st.slot = slot;
+    st.checkedRequest = !!request;
+    st.replaceMediaId = request?.replaceMediaId;
     st.lengthSteps = lengthSteps;
     st.unitFrames = unitFrames;
     st.tap = entry.wiringTap;
@@ -1052,6 +1074,12 @@ export class NodeClipRecorderRegistry {
         // the arm-time check.)
         throw new Error(`slot ${st.slot + 1} now holds a note clip with notes in it`);
       }
+      if (st.checkedRequest && existing?.kind === 'audio' && existing.mediaId !== st.replaceMediaId) {
+        throw new Error(`slot ${st.slot + 1} now holds a different audio take`);
+      }
+      if (existing?.kind === 'note' && clipHasRecordedAutomation(node.data as ClipPlayerData | undefined, index)) {
+        throw new Error(`slot ${st.slot + 1} now contains recorded automation`);
+      }
       const record: AudioClipRecord = {
         kind: 'audio',
         mediaId,
@@ -1072,6 +1100,7 @@ export class NodeClipRecorderRegistry {
         const d = (node.data ?? (node.data = {})) as ClipPlayerData;
         if (!d.clips) d.clips = {};
         d.clips[String(index)] = record;
+        if (d.auto?.[String(index)] != null) delete d.auto[String(index)];
       });
       // Only NOW is the take done: the clip that names it exists, so the GC's
       // live set covers it and the status flip cannot orphan it.

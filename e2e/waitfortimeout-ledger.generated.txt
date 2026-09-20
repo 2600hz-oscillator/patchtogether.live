@@ -67,7 +67,6 @@ e2e/tests/chromaconsole.spec.ts :: chromaconsole: with NO output selected, a wri
 e2e/tests/clap.spec.ts :: CLAP real chain: SEQUENCER → trigger_in → AUDIOOUT — audible RMS + clap-band-dominant spectrum :: waitForTimeout(60) #1
 e2e/tests/clear.spec.ts :: clear after voice demo removes all nodes + edges :: waitForTimeout(300) #1
 e2e/tests/clip-automation.spec.ts :: CV exclusion: an LFO CV cable driving the assigned module records NOTHING while its lane records; a MIDI twist of the same knob records :: waitForTimeout(3500) #1
-e2e/tests/clip-automation.spec.ts :: collectCountdown :: waitForTimeout(60) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: a MIDI CC on an automated param suspends only that param until the twist idles; CC-idle resumes :: waitForTimeout(220) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: grabbing an on-screen fader suspends only its playback until RELEASE; the other keeps playing :: waitForTimeout(220) #1
 e2e/tests/clip-automation.spec.ts :: per-clip automation: on stop the param HOLDS its last automated value — no snap to default/zero :: waitForTimeout(400) #1

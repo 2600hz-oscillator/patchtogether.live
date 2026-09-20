@@ -12,7 +12,7 @@
   <title>Launchpad control · modules · patchtogether.live</title>
   <meta
     name="description"
-    content="Drive the clip player from one or a pair of Novation Launchpad Mini Mk3 units over Web MIDI. Single-pad mode: a permanent top row with Grid/Clip/Keys/Control views, one-hand shift, per-clip divider, swing, and an arpeggiator. Pair mode: an always-live 8×8 clip matrix plus a command-deck / note-editor. Pairing, pad/CC map, and the full LED colour language."
+    content="Launchpad Mini Mk3 guide: connect one or two devices, learn the pad maps, edit and play notes, record audio, arm automation, control scenes and understand the LEDs. Links to the complete Clip Player workflow."
   />
 </svelte:head>
 

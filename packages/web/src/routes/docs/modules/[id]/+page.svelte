@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import IoDiagram from '$lib/docs/IoDiagram.svelte';
+  import ClipplayerDocs from '$lib/docs/ClipplayerDocs.svelte';
   import DocHoverPane from '$lib/docs/interactive/DocHoverPane.svelte';
   import type VirtualModuleComponent from '$lib/docs/interactive/VirtualModule.svelte';
   import type { DocHoverState } from '$lib/docs/interactive/use-doc-hover.svelte';
@@ -78,6 +79,9 @@
   </div>
 </section>
 
+{#if mod.type === 'clipplayer'}
+  <ClipplayerDocs />
+{:else}
 <p>{mod.description}</p>
 
 {#if mod.docs?.explanation}
@@ -95,13 +99,15 @@
   </a>
 {/if}
 
+{/if}
+
 <!-- THE FACEPLATE — 2-column interactive view (the redesign): LEFT a live,
      hoverable virtual module (the PRIMARY view), RIGHT a pane that explains
      whatever faceplate control / patch port you hover. The static numbered face
      is the no-JS / prerender / not-allowlisted FALLBACK shown on the left until
      the live faceplate mounts (or for modules not on the interactive
      allowlist). -->
-<h2>the faceplate</h2>
+<h2 id="reference">{mod.type === 'clipplayer' ? 'Reference: faceplate, ports and controls' : 'the faceplate'}</h2>
 <div class="card-explore" data-testid="card-explore" class:has-live={showLive}>
   <div class="card-explore-left">
     {#if showLive && VirtualModule}

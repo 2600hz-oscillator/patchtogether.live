@@ -581,6 +581,10 @@ export interface ClipPlayerData {
    *  the moment the transport rolled, and a saved patch must never reload armed.
    *  Absent/empty = nothing armed. */
   recArm?: Record<string, boolean>;
+  /** Transient audio intent: snapshot the destination and writer at ARM, not
+   *  when asynchronous preparation happens. Replacement names the exact take
+   *  the player confirmed, so a collaborator's later take cannot be erased. */
+  recRequest?: Record<string, { slot: number; recorderId: number; replaceMediaId?: string } | null>;
   /** CLAUSE 5 — the per-lane CLIP-vs-ENDLESS switch. Length CLIP_LANES.
    *
    *  ⚠ THE UNION IS THE MACHINE'S, THE LABEL IS THE OWNER'S. `'single'` is what
@@ -916,6 +920,7 @@ const CLIP_PLAYER_TRANSIENT_DATA_FIELD_KINDS = {
   // armed. ⚠ `recMode` is deliberately NOT here — it is a SETTING, and a mode
   // cannot start a recording on its own.
   recArm: 'arm',
+  recRequest: 'arm',
   automation: 'arm', // per-lane automation arm + recorderIds
   autoAssign: 'live', // module→lane claims (globally exclusive — never copied)
   resetNonce: 'live', // reset intent counter
@@ -1515,6 +1520,14 @@ export function readAutoClip(
   return rec && Object.keys(rec.tracks).length > 0 ? rec : null;
 }
 
+/** Recorded automation is authored content even when the note grid is empty. */
+export function clipHasRecordedAutomation(
+  data: { auto?: Record<string, unknown> } | undefined,
+  index: string | number,
+): boolean {
+  return Object.values(readAutoClip(data, index)?.tracks ?? {}).some((track) => track.events.length > 0);
+}
+
 /** Build the RUNTIME track views (parsed target + step-sorted events) from a
  *  coerced AutoClipRecord — the shape the playback/record controller consumes.
  *  PURE; the engine caches the result per clip identity/revision (coerce-ONCE —
@@ -1722,7 +1735,7 @@ export type CopyTargetKind = 'clip' | 'scene';
  *  buffer (or clears it when the source had none — no ghost counts, same
  *  discipline as the automation). */
 export type CopyBuffer =
-  | { kind: 'clip'; clip: NoteClipRecord; auto: AutoClipRecord | null }
+  | { kind: 'clip'; clip: ClipRecord; auto: AutoClipRecord | null }
   | {
       kind: 'scene';
       clips: (ClipRecord | null)[];
@@ -2832,7 +2845,10 @@ export function reverseClipSteps(clip: NoteClipRecord): NoteClipRecord {
  *  copy/paste; the field is per-clip content exactly like `div`/`gain`, so it
  *  travels with the clip (see `noteEffProb` — an unset note INHERITS it, which
  *  is what made the loss audible rather than cosmetic). */
-export function copyClip(clip: NoteClipRecord): NoteClipRecord {
+export function copyClip(clip: NoteClipRecord): NoteClipRecord;
+export function copyClip(clip: ClipRecord): ClipRecord;
+export function copyClip(clip: ClipRecord): ClipRecord {
+  if (clip.kind !== 'note') return plainCloneClip(clip)!;
   const out: NoteClipRecord = {
     kind: 'note',
     steps: clip.steps.map((s) => ({ ...s })),

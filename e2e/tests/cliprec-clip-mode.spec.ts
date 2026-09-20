@@ -180,9 +180,41 @@ async function openLauncher(page: Page): Promise<void> {
   });
 }
 
-test('CLIP mode: armed while stopped, records ONE loop into the SELECTED clip on play, and the take is AUDIBLE, purple-bordered and LIVE-switchable', async ({
+type CaptureSurface = 'screen' | 'push' | 'launchpad' | 'pair';
+async function hardwareAudio(page: Page, surface: Exclude<CaptureSurface, 'screen'>, action: 'select' | 'arm' | 'transport' | 'source') {
+  await page.evaluate(async ({ surface, action, nodeId, slot }) => {
+    type Single = { press(x: number, y: number): void; cc(cc: number, value: number): void };
+    type Pair = { pressL(x: number, y: number): void; pressR(x: number, y: number): void; ccR(cc: number, value: number): void };
+    const w = window as unknown as {
+      __push2TestInstall(id: string): Promise<boolean>; __push2Sim: Single;
+      __launchpadTestInstallSingle(id: string): Promise<boolean>; __launchpadSingleSim: Single;
+      __launchpadTestInstall(id: string): Promise<boolean>; __launchpadSim: Pair;
+    };
+    if (action === 'select') {
+      const installed = surface === 'push' ? await w.__push2TestInstall(nodeId) : surface === 'pair' ? await w.__launchpadTestInstall(nodeId) : await w.__launchpadTestInstallSingle(nodeId);
+      if (!installed) throw new Error(`Could not install simulated ${surface}`);
+    }
+    if (surface === 'pair') {
+      const sim = w.__launchpadSim;
+      if (action === 'select') { sim.pressR(4, 6); sim.pressR(0, 0); sim.pressL(slot, 7); }
+      if (action === 'arm') sim.pressR(0, 6);
+      if (action === 'transport') { sim.ccR(96, 127); sim.ccR(96, 0); }
+      if (action === 'source') sim.pressR(0, 4);
+    } else {
+      const sim = surface === 'push' ? w.__push2Sim : w.__launchpadSingleSim;
+      const cc = (value: number) => { sim.cc(value, 127); sim.cc(value, 0); };
+      if (action === 'select') { cc(surface === 'push' ? 24 : 95); sim.press(4, 6); sim.press(0, 7 - slot); }
+      if (action === 'arm') cc(surface === 'push' ? 43 : 89);
+      if (action === 'transport') cc(surface === 'push' ? 85 : 91);
+      if (action === 'source') cc(surface === 'push' ? 40 : 59);
+    }
+  }, { surface, action, nodeId: CP, slot: TARGET_SLOT });
+}
+
+for (const surface of ['screen', 'push', 'launchpad', 'pair'] as const) {
+test(`${surface} CLIP mode: armed while stopped, records ONE loop into the SELECTED clip on play, and the take is AUDIBLE, purple-bordered and LIVE-switchable`, async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(TEST_BUDGET_MS);
 
   // ⚠ A pageerror guard belongs in every spec of this shape: an uncaught
@@ -246,16 +278,28 @@ test('CLIP mode: armed while stopped, records ONE loop into the SELECTED clip on
   // A plain click selects the lane's record target. Slot 3 is chosen precisely
   // because the retired "first empty slot" behaviour would have picked slot 0.
   const targetPad = page.getByTestId(`clipplayer-pad-${TARGET_INDEX}`);
-  await targetPad.scrollIntoViewIfNeeded({ timeout: UI_MS });
-  await targetPad.click({ timeout: UI_MS });
+  const queueBeforeSelection = (await readData(page, CP)).queued;
+  if (surface === 'screen') {
+    await page.getByRole('combobox', { name: 'Inspect slot' }).selectOption({ label: String(TARGET_SLOT + 1) });
+    await page.getByTestId('clipplayer-set-record-target').click();
+  } else await hardwareAudio(page, surface, 'select');
+  expect((await readData(page, CP)).queued, 'choosing a record destination never launches a clip').toEqual(queueBeforeSelection);
+  await page.getByTestId('clipplayer-session-auto-arm-0').click();
+  await expect(page.getByTestId('clipplayer-session-auto-arm-0')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('clipplayer-session-auto-arm-0').click();
 
   // ── CLAUSES 3 + 4 — toggle record ON while the transport is STOPPED ──────
   const recArm = page.getByTestId('clipplayer-rec-arm-0');
   await expect(recArm, 'the record toggle is on the LAUNCHER view, not behind a tab').toBeVisible({
     timeout: UI_MS,
   });
-  await recArm.click({ timeout: UI_MS });
+  if (surface === 'screen') await recArm.click({ timeout: UI_MS });
+  else await hardwareAudio(page, surface, 'arm');
   await expect(recArm).toHaveAttribute('aria-pressed', 'true', { timeout: STATE_MS });
+  // Inspection after arming must not retarget the pending take.
+  await page.getByRole('combobox', { name: 'Inspect slot' }).selectOption({ label: '6' });
+  await expect(page.getByTestId('clipplayer-set-record-target')).toBeDisabled();
+  await page.getByRole('combobox', { name: 'Inspect slot' }).selectOption({ label: String(TARGET_SLOT + 1) });
 
   // NOTHING RECORDS WHILE STOPPED, and the toggle SURVIVES. The second half is
   // the load-bearing one: the pre-redesign registry tore a pending arm down on
@@ -280,7 +324,8 @@ test('CLIP mode: armed while stopped, records ONE loop into the SELECTED clip on
     .toEqual({ '0': true });
 
   // ── PLAY — this is what starts the recording (clause 4) ─────────────────
-  await setTransport(page, true);
+  if (surface === 'screen') await setTransport(page, true);
+  else await hardwareAudio(page, surface, 'transport');
 
   // The arm reaches the pad: `audioRec` projects lane 0 armed/recording at the
   // SELECTED slot — the projection that drives the pad ladder.
@@ -407,20 +452,9 @@ test('CLIP mode: armed while stopped, records ONE loop into the SELECTED clip on
   // The per-clip replacement for the removed channel-level MON duck: the take
   // is still there, it simply does not play, so the lane's live input is what
   // reaches the channel.
-  await page.evaluate(
-    ([cpId, index]) => {
-      const w = window as unknown as {
-        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      const node = w.__patch.nodes[cpId as string]!;
-      w.__ydoc.transact(() => {
-        const clips = node.data!.clips as Record<string, Record<string, unknown>>;
-        clips[String(index)]!.live = true;
-      });
-    },
-    [CP, TARGET_INDEX] as const,
-  );
+  if (surface === 'screen') await page.locator('[data-testid="clipplayer-source-live"]:visible').click({ timeout: UI_MS });
+  else await hardwareAudio(page, surface, 'source');
+  await expect(page.locator('[data-testid="clipplayer-source-live"]:visible')).toHaveAttribute('aria-pressed', 'true');
   await expectSilence(page, 'a clip set to LIVE must not play its recorded take');
 
   // …and the take was NOT destroyed by the flip — LIVE is a playback choice,
@@ -431,5 +465,18 @@ test('CLIP mode: armed while stopped, records ONE loop into the SELECTED clip on
   expect(after?.mediaId, 'and still names the same media').toBe(rec.mediaId);
   expect(await targetPad.getAttribute('data-audio'), 'and the pad still says so').toBe('1');
 
+  if (surface === 'screen') await page.locator('[data-testid="clipplayer-source-recorded"]:visible').click({ timeout: UI_MS });
+  else await hardwareAudio(page, surface, 'source');
+  await expect.poll(async () => (await readScopePeakOverWindow(page, SC, 800)).rms, { timeout: AUDIBLE_MS }).toBeGreaterThan(0.02);
+  await targetPad.dblclick({ timeout: UI_MS });
+  await expect(page.locator('.waveform[data-media-state="ready"]')).toBeVisible({ timeout: STATE_MS });
+  await expect(page.locator('[data-testid="clipplayer-audio-panel"]:visible')).toHaveAttribute('data-clip-kind', 'audio');
+  await page.locator('[data-testid="clipplayer-replace-take"]:visible').click();
+  expect((await readData(page, CP)).recArm).toEqual({ '0': false });
+  await expect(page.getByTestId('clipplayer-confirm-replace')).toBeVisible();
+  await page.getByRole('button', { name: 'CANCEL', exact: true }).click();
+  await page.locator('[data-testid="clipplayer-audio-panel"]:visible').screenshot({ path: testInfo.outputPath('audio-editor.png') });
+
   expect(pageErrors, 'the page threw during the journey').toEqual([]);
 });
+}

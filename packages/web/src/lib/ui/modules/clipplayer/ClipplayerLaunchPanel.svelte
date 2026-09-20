@@ -50,16 +50,21 @@
     setClipplayerLaneColor,
     toggleClipplayerLaneRecArm,
     toggleClipplayerLaneRecMode,
+    toggleClipplayerLaneArm,
+    setClipplayerAudioTarget,
+    toggleClipplayerLaneMute,
+    stopClipplayerLane,
   } from './clipplayer-face-actions';
   import {
     clipplayerNowSticky,
-    clipplayerSelectClip,
-    clipplayerSelectLaneSlot,
+    clipplayerInspectClip,
+    clipplayerSelectedClip,
     clipplayerSetNowSticky,
   } from './clipplayer-face-selection.svelte';
   import { requestFaceTab } from '$lib/ui/workflow/face-tab-request.svelte';
   import { nodeClipRecorder } from '../node-clip-recorder-registry.svelte';
   import ClipplayerClipMenu from './ClipplayerClipMenu.svelte';
+  import ClipplayerAudioPanel from './ClipplayerAudioPanel.svelte';
 
   interface Props {
     nodeId: string;
@@ -99,6 +104,7 @@
   );
 
   let menu = $state<ClipplayerMenuAt | null>(null);
+  let recordMessage = $state('');
 
   /** STICKY NOW — while on, a plain pad click launches IMMEDIATELY, ignoring
    *  QNT, exactly as a shift-click does.
@@ -126,7 +132,8 @@
     // Immediate (not inside the double-click timer) so the target moves the
     // instant you touch a pad, and separate from the editor selection so it
     // neither creates a clip nor navigates away from the grid.
-    clipplayerSelectLaneSlot(nodeId, laneOf(index), slotOf(index));
+    clipplayerInspectClip(nodeId, index);
+    setClipplayerAudioTarget(nodeId, laneOf(index), slotOf(index));
     if (clickTimer) clearTimeout(clickTimer);
     clickTimer = setTimeout(() => {
       clickTimer = null;
@@ -157,7 +164,7 @@
       clickTimer = null;
     }
     ensureClipplayerClip(nodeId, index);
-    clipplayerSelectClip(nodeId, index);
+    clipplayerInspectClip(nodeId, index);
     requestFaceTab(nodeId, 'editor');
   }
   $effect(() => () => {
@@ -178,8 +185,18 @@
        every channel accent in the rack at its default with no gate able to see
        it. So it is on the hero, not in a body. -->
   <div class="head" role="row">
+    <span class="row-label mute-label">MUTE</span>
+    <span class="row-label stop-label">STOP</span>
+    <span class="row-label audio-label">AUDIO</span>
+    <span class="row-label auto-label">AUTO</span>
     {#each lanes as l (l.lane)}
       <span class="head-cell" style={`--lane-color:${l.color}`}>
+        <span class="lane-number">{l.lane + 1}</span>
+        <button class="lane-action" class:on={l.muted} aria-label={`channel ${l.lane + 1} mute`}
+          aria-pressed={l.muted} title={`Mute channel ${l.lane + 1}; the clip keeps advancing`}
+          data-testid={`clipplayer-mute-${l.lane}`} onclick={() => toggleClipplayerLaneMute(nodeId, l.lane)}>M</button>
+        <button class="lane-action" aria-label={`channel ${l.lane + 1} stop`} title={`Queue stop for channel ${l.lane + 1}`}
+          data-testid={`clipplayer-stop-${l.lane}`} onclick={() => stopClipplayerLane(nodeId, l.lane)}>■</button>
         <input
           class="lane-color"
           type="color"
@@ -222,7 +239,7 @@
               ? `NOT recording — ${l.recRefusal}. Tap to disarm.`
               : `Record into channel ${l.lane + 1}'s SELECTED clip — ${
                   l.recMode === 'endless'
-                    ? 'ENDLESS: keeps recording until you tap this again or the transport stops, always ending at the end of the current loop'
+                    ? 'ENDLESS: tap again to finish at the current loop end; stopping transport keeps only completed whole loops'
                     : 'CLIP: records exactly one loop, then stops'
                 }. Can be armed while stopped — recording starts when the transport plays.`}
             aria-label={`channel ${l.lane + 1} audio record${
@@ -232,7 +249,7 @@
             data-rec-phase={l.recPhase}
             data-rec-refusal={l.recRefusal ?? undefined}
             data-testid={`clipplayer-rec-arm-${l.lane}`}
-            onclick={() => toggleClipplayerLaneRecArm(nodeId, l.lane)}
+            onclick={() => { recordMessage = toggleClipplayerLaneRecArm(nodeId, l.lane) ?? ''; }}
           ></button>
           <button
             class="rec-mode"
@@ -242,10 +259,16 @@
             data-lane={l.lane}
             data-rec-mode={l.recMode}
             data-testid={`clipplayer-rec-mode-${l.lane}`}
+            disabled={l.recArmed || l.recPhase !== 'idle'}
             onclick={() => toggleClipplayerLaneRecMode(nodeId, l.lane)}
             >{l.recMode === 'endless' ? '\u221e' : '1'}</button
           >
         </span>
+        <button class="auto-arm" class:on={l.armed} aria-pressed={l.armed}
+          aria-label={`channel ${l.lane + 1} automation record arm`}
+          title={`AUTO — record assigned control movements into lane ${l.lane + 1}'s playing note clip`}
+          data-testid={`clipplayer-session-auto-arm-${l.lane}`}
+          onclick={() => toggleClipplayerLaneArm(nodeId, l.lane)}>◉</button>
       </span>
     {/each}
   </div>
@@ -268,6 +291,7 @@
           <button
             class="pad {pad.state}"
             class:has-audio={pad.hasAudio}
+            class:selected={clipplayerSelectedClip(nodeId) === pad.index}
             role="gridcell"
             style={`--lane-color:${lanes[pad.lane]!.color}`}
             aria-label={`lane ${pad.lane + 1} slot ${pad.slot + 1} ${pad.state}${
@@ -286,7 +310,7 @@
             onclick={(e) => onPadClick(pad.index, e)}
             ondblclick={() => onPadDblClick(pad.index)}
             oncontextmenu={(e) => openPadMenu(e, pad.index)}
-            >{#if pad.hasAuto}<span class="auto-dot" aria-hidden="true"></span>{/if}</button
+            >{#if pad.hasClip}<span class="clip-kind" aria-hidden="true">{pad.hasAudio ? 'A' : 'N'}</span>{/if}{#if pad.hasAuto}<span class="auto-dot" aria-hidden="true"></span>{/if}</button
           >
         {/each}
       </div>
@@ -305,6 +329,8 @@
       onclick={() => clipplayerSetNowSticky(nodeId, !nowSticky)}>NOW</button
     >
   </div>
+  {#if recordMessage}<div class="record-message" role="status">{recordMessage}</div>{/if}
+  <ClipplayerAudioPanel {nodeId} />
 </div>
 
 <ClipplayerClipMenu {nodeId} at={menu} onclose={() => (menu = null)} />
@@ -318,15 +344,31 @@
   /* The header aligns to the pad columns below: same 28 px track, same 3 px gap,
      and the same 14 px left inset the scene column occupies. */
   .head {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(8, 28px);
     gap: 3px;
-    margin-left: 14px;
+    margin-left: 38px;
   }
+  .row-label { position:absolute; left:-38px; width:35px; font:8px monospace; color:#bbc5d1; }
+  .mute-label { top:16px; }
+  .stop-label { top:36px; }
+  .audio-label { top:70px; }
+  .auto-label { top:88px; color:#72d7ce; }
   .head-cell {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     width: 28px;
   }
+  .lane-number { height:10px; font:8px monospace; text-align:center; color:#bac1cb; }
+  .lane-action { width:28px; height:18px; padding:0; font-size:9px; color:#bbc2cd; border:1px solid rgb(255 255 255 / .16); border-radius:2px; background:rgb(255 255 255 / .04); cursor:pointer; }
+  .lane-action.on { background:#976825; color:#fff; }
+  .auto-arm { width:28px; height:18px; padding:0; border:1px solid rgb(255 255 255 / .16); border-radius:2px; background:rgb(255 255 255 / .04); color:#72d7ce; cursor:pointer; }
+  .auto-arm.on { background:#286c67; border-color:#72d7ce; color:#fff; }
+  .clip-kind { position:absolute; top:2px; left:3px; color:#eee; font:8px monospace; }
+  .pad.selected { box-shadow:inset 0 0 0 1px #eee; }
+  .record-message { max-width:400px; color:#ffb6c8; font-size:11px; }
   .lane-color {
     display: block;
     width: 28px;
@@ -348,17 +390,17 @@
     display: flex;
     gap: 1px;
     width: 28px;
-    margin-top: 2px;
+    margin-top: 0;
   }
   .rec-arm,
   .rec-mode {
     padding: 0;
-    height: 10px;
+    height: 16px;
     border: 1px solid rgb(255 255 255 / 0.16);
     border-radius: 2px;
     background: rgb(255 255 255 / 0.04);
     color: rgb(255 255 255 / 0.55);
-    font-size: 7px;
+    font-size: 9px;
     line-height: 1;
     cursor: pointer;
   }
@@ -432,7 +474,7 @@
     display: grid;
     grid-template-columns: repeat(8, 28px);
     gap: 3px;
-    margin-left: 14px;
+    margin-left: 38px;
   }
   .scene-launch {
     position: absolute;
@@ -532,7 +574,7 @@
   }
   .foot {
     display: flex;
-    margin-left: 14px;
+    margin-left: 38px;
   }
   .now {
     height: 16px;

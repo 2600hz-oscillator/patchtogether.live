@@ -1,30 +1,12 @@
 <script lang="ts">
-  // LAUNCHPAD MK3 — shared, colour-coded in-app guide with faithful pad-grid
-  // diagrams. Rendered by /docs/modules/launchpadControlLeft, the consolidated
-  // launchpad-control module's docs route (right-click the card → "View docs").
-  //
-  // STRUCTURE (owner directive): TAB navigation. Two top-level tabs —
-  // "1 Launchpad" and "2 Launchpads". "1 Launchpad" has subtabs for its real
-  // views (Grid Mode · Clip Mode · Arranger Mode (TBD) · Control Mode, plus the
-  // beginner Walkthrough — a deliberate 5th subtab beyond the owner's four, the
-  // home of the pre-existing beginner guide; flag it during preview); the
-  // shared single-mode foundation (Setup · permanent top row · SHIFT ·
-  // palettes) lives in collapsed <details> directly under the subtab strip so
-  // the mode tabs are the first thing a reader sees. "2 Launchpads" has subtabs
-  // derived from the real pair-mode structure (Unit L matrix · Unit R deck ·
-  // note editor · KEYS). Tab state is local component state (no router
-  // changes); tabs use role=tablist/tab/tabpanel with arrow-key navigation.
-  //
-  // VOCABULARY (owner directive): two kinds of recording, named consistently —
-  //   CLIP RECORD     = recording INTO a clip (KEYS note-record; automation
-  //                     record via the per-lane arm — SHIFT+top-row on the
-  //                     Launchpad, the per-lane ◉ on the card).
-  //   ARRANGER RECORD = the red ● that records clip LAUNCHES into the song
-  //                     arrangement.
-  //
-  // Every diagram + swatch imports the LIVE launchpad-map constants, so the doc
-  // never drifts from what the firmware is actually sent.
+  import { onMount } from 'svelte';
+  let ready = $state(false);
+  onMount(() => { ready = true; });
+  // Device-specific controls for the shipped Launchpad Mini Mk3 adapter.
+  // Clip Player owns musical behavior, routing, media and recovery guidance.
+  // Diagrams import the live map; source-checked gesture details live here.
   import LaunchpadDiagram from './LaunchpadDiagram.svelte';
+  import { AUDIO_ENTRY, AUDIO_COLOR, AUDIO_RIGHT_BINDINGS, pairAudioPad, paintAudioCapture } from '$lib/control/launchpad/launchpad-audio-map';
   import {
     RGB_LOADED,
     RGB_PLAYING,
@@ -109,12 +91,16 @@
     // frame painter (computeSingleGridFrame + repeatPadOrdinal), so the picture
     // IS the firmware paint for that state (drift-guarded in the unit test).
     computeSingleGridFrame,
+    computeSingleClipFrame,
+    RGB_PLAY_EVERY_RED,
+    playEveryRgb,
     repeatPadOrdinal,
     type Rgb,
   } from '$lib/control/launchpad/launchpad-map';
+  import { emptyFrame } from '$lib/control/launchpad/launchpad-device.svelte';
   import { padNote, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
   import { keyboardCellToMidi, noteRole } from '$lib/audio/modules/keyboard-map';
-  import { defaultLaneColorHex } from '$lib/audio/modules/clip-types';
+  import { defaultLaneColorHex, defaultNoteClip } from '$lib/audio/modules/clip-types';
 
   // ── TAB STATE (local; no router involvement). ──
   const TOP_TABS = [
@@ -125,8 +111,9 @@
   const SINGLE_TABS = [
     { id: 'grid', label: 'Grid Mode' },
     { id: 'clip', label: 'Clip Mode' },
-    { id: 'arranger', label: 'Arranger Mode (TBD)' },
+    { id: 'arranger', label: 'Arranger (reserved)' },
     { id: 'control', label: 'Control Mode' },
+    { id: 'audio', label: 'Audio' },
     { id: 'walkthrough', label: 'Walkthrough' },
   ] as const;
   type SingleTab = (typeof SINGLE_TABS)[number]['id'];
@@ -138,6 +125,7 @@
     { id: 'deck', label: 'Deck (Unit R)' },
     { id: 'editor', label: 'Note Editor (Unit R)' },
     { id: 'keys', label: 'Keys (both units)' },
+    { id: 'audio', label: 'Audio (Unit R)' },
   ] as const;
   type PairTab = (typeof PAIR_TABS)[number]['id'];
 
@@ -184,7 +172,7 @@
 
   // ── The clip MATRIX (an illustrative live state) — pair Unit L. ──
   // y is the launchpad's BOTTOM-origin row; the matrix maps lane 1 → the TOP
-  // row (y=7) so it matches the on-screen card. yL() converts a card-lane
+  // row (y=7). yL() converts a card-lane
   // (0 = top) to its physical row.
   const yL = (lane: number) => 7 - lane;
   const matrixPads = [
@@ -200,7 +188,7 @@
   const matrixScene = Array.from({ length: 8 }, (_, r) => ({
     row: r,
     fill: hex(RGB_SCENE),
-    label: r === 7 ? 'SCENE' : undefined,
+    label: `SCENE ${r + 1}`,
   }));
   // PAIR Unit-L top row (CC 91..98) — the 8 per-lane MUTE pads (col = lane).
   // Shown: lane 3 muted (orange), the rest live (dim).
@@ -471,6 +459,7 @@
   // controls. (The old single AUTO pad at (2,6) is RETIRED — per-lane
   // automation arm is the permanent top row's SHIFT+column gesture.) ──
   const controlPads = [
+    { ...AUDIO_ENTRY, fill: hex(AUDIO_COLOR), label: 'AUDIO' },
     // re-homed onto dark grid pads (the permanent CC row owns the real top row):
     { x: 0, y: 7, fill: hex(RGB_TEMPO_NUDGE), label: 'T−' },
     { x: 1, y: 7, fill: hex(RGB_TEMPO_NUDGE), label: 'T+' },
@@ -486,7 +475,7 @@
   const controlScene = Array.from({ length: 8 }, (_, r) => ({
     row: r,
     fill: hex(r === 7 ? RGB_STOP_ACTIVE : RGB_STOP_IDLE),
-    label: r === 7 ? 'STOP' : undefined,
+    label: `STOP ${r + 1}`,
   }));
   const controlCallouts = [
     { label: 'T−', fromCol: 0, tier: 0 },
@@ -505,6 +494,7 @@
   //   row 4 = per-lane RATE (a cool→warm ramp; the shown state is all-default '1')
   const rateDefault = hex(RGB_RATE_BY_INDEX[3]); // index 3 = '1' (the default)
   const deckPads = [
+    { ...AUDIO_ENTRY, fill: hex(AUDIO_COLOR), label: 'AUDIO' },
     { x: 0, y: 0, fill: hex(RGB_DECK_EDIT) }, // EDIT — orange
     { x: 1, y: 0, fill: hex(RGB_DECK_COPY) }, // COPY — green
     { x: 2, y: 0, fill: hex(RGB_DECK_COPY) }, // PASTE — green
@@ -525,7 +515,7 @@
   const deckScene = Array.from({ length: 8 }, (_, r) => ({
     row: r,
     fill: hex(r === 0 ? RGB_STOP_ACTIVE : RGB_STOP_IDLE),
-    label: r === 7 ? 'STOP' : undefined,
+    label: `STOP ${r + 1}`,
   }));
   const deckCallouts = [
     { label: 'EDIT', fromCol: 0, tier: 0 },
@@ -648,7 +638,8 @@
   // on the pair Matrix tab only — the SINGLE grid uses channel colours (below).
   const SESSION_COLORS: { state: string; rgb: Rgb; anim: string; note: string }[] = [
     { state: 'empty slot', rgb: [0, 0, 0], anim: 'off', note: 'no clip here' },
-    { state: 'loaded clip', rgb: RGB_LOADED, anim: 'static dim', note: 'has notes, stopped' },
+    { state: 'loaded note clip', rgb: RGB_LOADED, anim: 'static dim', note: 'note clip, stopped' },
+    { state: 'loaded audio clip', rgb: AUDIO_COLOR, anim: 'static purple', note: 'saved take, stopped; playing and queued use the ordinary matrix states' },
     { state: 'playing', rgb: RGB_PLAYING, anim: 'SOLID green', note: 'running now (steady — a blinking pad means queued, not playing)' },
     { state: 'queued-launch', rgb: RGB_QUEUED, anim: 'flash green', note: 'waiting for the loop boundary' },
     { state: 'queued-stop', rgb: RGB_QUEUED_STOP, anim: 'flash red', note: 'will stop on the boundary' },
@@ -665,7 +656,8 @@
   // channel 3's default colour as the example.
   const SINGLE_GRID_COLORS: { state: string; rgb: Rgb; anim: string; note: string }[] = [
     { state: 'empty slot', rgb: [0, 0, 0], anim: 'off', note: 'no clip here (glows dim red while ARRANGER RECORD is armed)' },
-    { state: 'loaded clip', rgb: dimRgb(laneRgb(2)), anim: 'static dim', note: 'has notes, stopped — DIM in the channel’s own colour' },
+    { state: 'loaded audio clip', rgb: AUDIO_COLOR, anim: 'static purple', note: 'saved take; playing / queued states keep the lane colour' },
+    { state: 'loaded note clip', rgb: dimRgb(laneRgb(2)), anim: 'static dim', note: 'has notes, stopped — DIM in the channel’s own colour' },
     { state: 'playing', rgb: laneRgb(2), anim: 'SOLID', note: 'running now — full-brightness channel colour (steady; a blinking pad means queued, not playing)' },
     { state: 'queued-launch', rgb: laneRgb(2), anim: 'flash', note: 'flashes in the channel’s colour until the loop boundary' },
     { state: 'queued-stop', rgb: RGB_QUEUED_STOP, anim: 'flash RED', note: 'will stop on the boundary — always red, whatever the channel colour' },
@@ -687,7 +679,7 @@
     { state: 'EDIT', rgb: RGB_DECK_EDIT, note: 'orange — opens a clip’s note editor (brightens while held/armed)' },
     { state: 'COPY / PASTE / P-REV', rgb: RGB_DECK_COPY, note: 'green — clipboard actions (brighten while held/armed)' },
     { state: 'DOUBLE', rgb: RGB_DECK_DBL, note: 'purple — duplicate the pattern + double the clip length (cap 128)' },
-    { state: 'LENGTH', rgb: RGB_DECK_LEN, note: 'yellow — open the 2-row length page' },
+    { state: 'LENGTH', rgb: RGB_DECK_LEN, note: 'yellow — open the three-row length page' },
     { state: 'NOW', rgb: RGB_DECK_NOW, note: 'purple — launches ignore quantize (hold on the PAIR deck; the single-mode Grid-shift column no longer carries NOW — its bottom two buttons are the amber scene-scroll)' },
     { state: 'RESET (RST)', rgb: RGB_RESET, note: 'steel blue — snap every active lane back to step 1 (deck row 1 col 2; pair: also the R deck)' },
     { state: 'MONO on / off', rgb: RGB_MONO_ON, note: 'teal — per-lane MONO (one note per column) engaged; dim teal = poly (deck row 2)' },
@@ -704,6 +696,7 @@
   // replaced velocity-blue). White = effective 100% (always fires); a note using
   // its OWN probability ramps PURPLE; a note following the clip default ramps ORANGE.
   const EDITOR_COLORS: { state: string; rgb: Rgb; note: string }[] = [
+    { state: 'play every N loops', rgb: playEveryRgb(4), note: 'red, dimmer for larger N; combined probability and play-every average their tints' },
     { state: 'note · 100% (always fires)', rgb: RGB_WHITE, note: 'white — fires every pass. Effective 100% is always white, whatever the source (a note set to 100% pins white above a lower clip default)' },
     { state: 'note · own chance', rgb: probNoteRgb(0.6), note: 'purple ∝ probability — a note using its own probability (SHIFT + tap a note to set it); dimmer = a lower dice-roll chance' },
     { state: 'note · clip-default chance', rgb: probNoteRgbOrange(0.6), note: 'orange ∝ probability — a note with NO probability of its own, following the clip’s default (set on Grid: SHIFT + a clip pad)' },
@@ -751,21 +744,44 @@
     { state: 'swing — lowering', rgb: RGB_SWING_DOWN, note: 'blue ramp — Swing− nudged down' },
   ];
 
+  const audioRowLabels = { select: 'LANE', arm: 'ARM', length: '1/∞', source: 'R/L', auto: 'AUTO', pick: 'PICK', play: 'PLAY', replace: 'REPL', exit: 'EXIT' };
+  const audioExample = (pair: boolean) => paintAudioCapture(emptyFrame(), undefined, {
+    pair, index: 1, offset: 0, targets: Array(8).fill(0), blink: true, pick: false, replacing: false,
+  });
+  const singleAudioFrame = audioExample(false);
+  const pairAudioFrame = audioExample(true);
+  const audioPads = (pair: boolean) => Array.from({ length: 64 }, (_, i) => {
+    const x = i % 8, y = Math.floor(i / 8), action = pair ? pairAudioPad(x, y) : null;
+    return { x, y, fill: hex((pair ? pairAudioFrame : singleAudioFrame).leds.get(padNote(x, y))!),
+      label: action ? action.action === 'select' && 'lane' in action ? String(action.lane + 1) : audioRowLabels[action.action] : undefined };
+  });
+  const audioScene = AUDIO_RIGHT_BINDINGS.map((binding, i) => ({
+    row: 7 - i, fill: hex(singleAudioFrame.leds.get(SCENE_CCS[i])!), label: binding.legend,
+  }));
+  // The live painter owns the play-every diagram's current/dim red states.
+  const playEveryFrame = computeSingleClipFrame(defaultNoteClip(), { top: {
+    view: 'clip', keysActive: false, transportRunning: true, shift: { held: false }, canUndo: false, canRedo: false,
+  }, playheadStep: -1, rowOffset: 0, colOffset: 0, followOn: true, velEditing: false, playEveryView: { playEvery: 4 } });
+  const playEveryPads = Array.from({ length: 8 }, (_, x) => ({
+    x, y: 7, fill: hex(playEveryFrame.leds.get(padNote(x, 7))!), label: String(x + 1),
+  }));
+
   // ── Pad + CC reference tables, split per tab (the raw protocol is shared). ──
   type MapRow = { what: string; addr: string };
   const SINGLE_MAP_GLOBAL: MapRow[] = [
-    { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held). This row NEVER changes meaning per view' },
-    { what: 'SHIFT (CC 98)', addr: 'MOMENTARY HOLD — effective only while physically held down (bright yellow); a short tap does nothing (there is no latch). HOLD shift + tap a right-column / top-row function to use its shift meaning. Grid compound functions arm on the held tap and stay sticky for their target, so nothing needs a permanent second hand' },
+    { what: 'permanent top row (every view)', addr: 'CC 91 = transport (red stopped / green playing) · 92 = GRID · 93 = CLIP · 94 = ARRANGER · 95 = CONTROL (purple; bright = active) · 96 = UNDO · 97 = REDO (orange) · 98 = SHIFT (yellow: dim off / bright held). Without SHIFT these meanings are stable; SHIFT exposes the automation-arm map' },
+    { what: 'SHIFT (CC 98)', addr: 'MOMENTARY HOLD — effective only while physically held down (bright yellow); a short tap does nothing (there is no latch). HOLD shift + tap a right-column / top-row function to use its shift meaning. Only COPY and PASTE survive releasing SHIFT; keep SHIFT held for CLIP-DIV and LENGTH targets' },
     { what: 'AUTOMATION ARM (HOLD SHIFT + top row)', addr: 'while SHIFT is HELD, the top row becomes the PER-LANE ARM MAP: press column 1–7 to toggle that lane’s automation record (red pulse = armed · dim red = available); lane 8 = the pad DIRECTLY BELOW SHFT (topmost 8×8 row, rightmost column), lit in the arm map. Works from EVERY view; the press is consumed (no transport/view/undo/launch side-effect). An armed lane’s button red-flashes over its normal colour all the time' },
     { what: 'UNDO / REDO (CC 96 / 97)', addr: 'launchpad-scoped: undoes only THIS launchpad’s persistent clip edits (div / swing / length / paste / content / scale) — never a collaborator’s edit, never a transient launch. Lit orange when the stack has something; dim otherwise. Under SHIFT these presses are the lane 6/7 arm toggles instead' },
   ];
   const SINGLE_MAP_GRID: MapRow[] = [
-    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
-    { what: 'CLIP-DEFAULT PROBABILITY — SHIFT + a clip pad', addr: 'SHIFT + press a clip PAD (with NO armed function) → the 8×8 becomes a 40-level ORANGE bar (top 5 rows; each pad = 2.5%) for that clip’s DEFAULT firing probability. Tap pad k = k×2.5%, pad 40 = 100% (clears the clip default); the page auto-returns on the tap, a bottom-3-row tap cancels. The default is used by EVERY note with no probability of its own (a note’s own prob is used as-is, incl 100% which pins above the default). Opens only on a pad holding a clip; single-unit only. An armed copy/paste/div/len still consumes the tap; a no-shift tap still launches. Also on the card: right-click a clip pad → “note probability”' },
-    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
+    { what: 'GRID — the clip matrix', addr: 'column = channel / lane (1–8 left→right), row = clip slot (top row = slot 1). Single-tap = launch / stop (queued to the boundary). HOLD GRID + a clip = inspect without launching. DOUBLE-TAP a clip = select it + open CLIP on it (empty pad = create a clip). No-shift right column = ROW / scene launch — a SCROLLING window of position-relative buttons over up to 64 scenes (slid by Grid+shift SCR▲/SCR▼)' },
+    { what: 'CLIP-DEFAULT PROBABILITY — SHIFT + a clip pad', addr: 'SHIFT + press a clip PAD (with NO armed function) → the 8×8 becomes a 40-level ORANGE bar (top 5 rows; each pad = 2.5%) for that clip’s DEFAULT firing probability. Tap pad k = k×2.5%, pad 40 = 100% (clears the clip default); the page auto-returns on the tap, a bottom-3-row tap cancels. The default is used by EVERY note with no probability of its own (a note’s own prob is used as-is, incl 100% which pins above the default). Opens only on a pad holding a clip; single-unit only. An armed copy/paste/div/len still consumes the tap; a no-shift tap still launches. Also in Clip Player: right-click a clip pad → “note probability”' },
+    { what: 'GRID + shift right column', addr: 'top→bottom: COPY · PASTE · CLIP-DIV · SWING+ · SWING− · LENGTH · SCROLL▲ · SCROLL▼ (amber). Copy / Paste / Clip-Div / Length are TAP-TO-ARM (tap → arm → tap a target). COPY/PASTE survive SHIFT release; CLIP-DIV/LENGTH require SHIFT held. Copy + a ROW/scene press grabs the WHOLE SCENE (all 8 lanes) — release SHIFT first so the column shows the ROW ▶ buttons (clip-pad targets work under either shift state); Paste is type-gated (clip→clip + scene→scene apply, the cross-type pastes are no-ops). Swing ± are direct ±2 % nudges on the SELECTED channel. SCROLL ▲▼ slide the scene window (up to 64 scenes; each dims at its limit)' },
     { what: 'SCENE REPEATS — HOLD GRID + HOLD a scene button', addr: 'the 8×8 becomes the orange REPEAT-COUNT view for that scene (no shift — SHIFT+top-row stays the arm map). Tap pad k (row-major from the upper-left) = k repeats (1–63) · pad 64 = INFINITE (default). Pads 1..N stay lit for count N; all 64 lit = infinite. The held button is POSITION-RELATIVE through the scene scroll (button i edits scene offset+i); the press never launches. Release either button = back to the grid. After N passes of the scene’s longest clip (frozen at launch) the next content scene down auto-launches via the normal quantized path' },
   ];
   const SINGLE_MAP_CLIP: MapRow[] = [
+    { what: 'PLAY EVERY — SHIFT + double-tap a note', addr: 'Keep SHIFT held and tap the same note twice quickly. The top grid row selects play-every 1–8 loops (red; current value bright). Tap another row to cancel. Once the page is open all eight values remain reachable, even with SHIFT held' },
     { what: 'CLIP — note-editor right column', addr: 'top→bottom: DOUBLE · LENGTH · FOLLOW · KEYS · ROW+ · ROW− · STEP◀ · STEP▶. Shift: ROW± = a full page jump (±8 rows), STEP± = block jump. The FOLLOW row is double-duty: HOLD it (no shift) = the momentary VEL modifier (tap notes → cycle velocity); SHIFT + tap it = the FOLLOW toggle' },
     { what: 'CLIP — note colour = firing probability', addr: 'notes glow by their EFFECTIVE firing probability, not velocity: WHITE = effective 100% (always fires) · PURPLE ramp = a note using its own probability · ORANGE ramp = a note following the clip default (dimmer = less likely). Playback rolls a per-trigger dice-roll; a chord partially fires' },
     { what: 'CLIP + shift — per-note PROB page', addr: 'SHIFT + tap a note → the 8×8 becomes a 40-level PURPLE bar (top 5 rows; each pad = 2.5%), opening at the note’s current probability (its own, else the clip default). Tap pad k = k×2.5%, pad 40 = 100%; the page auto-returns on the tap, a bottom-3-row tap cancels. Sets the note’s OWN probability, used as-is (incl 100% = white, always fires, pinning above a lower clip default). Opens only on a cell holding a note; single-unit only' },
@@ -775,7 +791,7 @@
     { what: 'LENGTH-EDIT page', addr: 'opened from GRID+shift LENGTH or CLIP LENGTH. Bottom row = end BLOCK (1–8 ×16), next two rows = end STEP (1–8, 9–16). Length = (endBlock−1)×16 + endStep, up to 128. EXIT = top scene button' },
   ];
   const SINGLE_MAP_CONTROL: MapRow[] = [
-    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row); REC (arranger record) · SONG one row below. Automation arm is NOT here — it is SHIFT + the lane’s top-row button (every view)' },
+    { what: 'CONTROL — the performance deck', addr: 'RESET (row 1, col 2, steel blue) · MONO row (teal) · MUTE row (orange) · RATE row (rate ramp) — one pad per channel. Right column = per-lane STOP. Re-homed on dark pads: TEMPO− / TEMPO+ / STOP-ALL (top grid row); REC (arranger record) · SONG one row below. AUDIO = column 5, second row from top. Automation arm = SHIFT + the lane’s top-row button (every view)' },
   ];
   const SINGLE_MAP_ARRANGER: MapRow[] = [
     { what: 'ARRANGER', addr: 'inert placeholder (faint grid, dark right column). The arrangement engine exists but has no launchpad UI yet; ARRANGER RECORD (REC) + SONG live in CONTROL for now' },
@@ -786,7 +802,7 @@
   const PAIR_MAP_DECK: MapRow[] = [
     { what: 'deck hold-modifiers (R, row 0)', addr: 'EDIT · COPY · PASTE · P-REV · NOW — hold on R + tap a clip on L. BUF (col 4) = tap to clear the clipboard' },
     { what: 'deck globals (R top row)', addr: 'CC 91 = REC (ARRANGER RECORD arm) · 92 = SONG (SES⇄ARR) · 93 = TEMPO− · 94 = TEMPO+ · 96 = PLAY (transport) · 97 = ALL (stop-all) · 95 = SHIFT (editor ×8)' },
-    { what: 'automation arm (pair mode)', addr: 'not on the pair hardware yet — the L top row is the per-lane MUTE strip and the R top row is the deck globals, so per-lane automation arm stays on the CARD (the per-lane ◉ next to each RATE control) for the two-unit rig; a pair surface is a follow-up' },
+    { what: 'automation arm (pair mode)', addr: 'R deck → AUDIO (column 5, second row from top) → AUTO row (fifth row from top), one pad per lane. This is the same automation arm as Clip Player Session / Channels; independent of audio arm' },
     { what: 'RESET / MONO / MUTE / RATE (R deck)', addr: 'row 1 col 2 = RESET · row 2 = MONO · row 3 = MUTE · row 4 = RATE (per lane) — identical to the single deck (single IS the R brain)' },
   ];
   const PAIR_MAP_EDITOR: MapRow[] = [
@@ -794,7 +810,7 @@
     { what: 'editor scene column (top→bottom)', addr: 'EXIT (row 7) · DBL (row 6) · LEN (row 5) · rows 4–2 dark (copy/paste is Grid-only) · OCT+ (row 1) · OCT− (row 0)' },
   ];
   const PAIR_MAP_KEYS: MapRow[] = [
-    { what: 'KEYS entry', addr: 'hold note-REC (R deck row 1 col 0) or note-OVERDUB (col 1) + DOUBLE-TAP a clip on L (REC = overdub off · OVERDUB = overdub on)' },
+    { what: 'KEYS entry', addr: 'hold note-REC (R deck row 1 col 0) or note-OVERDUB (col 1) + DOUBLE-TAP a clip on L (REC = overdub off · OVERDUB = overdub on; both capture additively)' },
     { what: 'KEYS layout', addr: 'top rows = 16-cell playhead (L 1–8, R 9–16) · 6 keyboard rows continuous across the L|R seam · bottom row (L) = EXIT · QUEUE-REC · OVERDUB · OCT− · OCT+ · PANIC · LEN' },
   ];
   const HW_MAP: MapRow[] = [
@@ -857,97 +873,28 @@
   </p>
 {/snippet}
 
-{#snippet signalFlow()}
-  <h3 id="single-signal-flow">Signal flow — how one pad drives sound</h3>
-  <p class="muted">
-    The Launchpad never makes sound itself. It drives the <strong>clip player</strong>, whose eight
-    per-channel outputs carry <strong>gate</strong> (triggers) and <strong>poly pitch</strong> to your
-    voice modules. KEYS + the arp reach the same per-channel output, so the notes you play / record land on
-    the same cables the clips fire.
-  </p>
-  <figure class="sigflow">
-    <svg viewBox="0 0 732 216" width="732" height="216" role="img" aria-label="Signal flow: Launchpad → clip player → voice modules → output">
-      <defs>
-        <marker id="sfhead" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 z" class="sf-head" />
-        </marker>
-      </defs>
-      <!-- Launchpad -->
-      <rect class="sf-box" x="8" y="96" width="132" height="54" rx="8" />
-      <text class="sf-txt" x="74" y="120" text-anchor="middle">Launchpad</text>
-      <text class="sf-sub" x="74" y="135" text-anchor="middle">Mini Mk3</text>
-      <path class="sf-arrow" d="M140 123 H176" />
-      <text class="sf-cable" x="158" y="116" text-anchor="middle">Web MIDI</text>
-      <!-- clip player -->
-      <rect class="sf-box hl" x="176" y="40" width="150" height="172" rx="8" />
-      <text class="sf-txt" x="251" y="60" text-anchor="middle">clip player</text>
-      <text class="sf-sub" x="251" y="75" text-anchor="middle">8 channels</text>
-      <rect class="sf-chan" x="184" y="90" width="134" height="20" rx="4" />
-      <text class="sf-sub" x="192" y="104">ch 1  → kick</text>
-      <rect class="sf-chan" x="184" y="118" width="134" height="20" rx="4" />
-      <text class="sf-sub" x="192" y="132">ch 2  → snare</text>
-      <rect class="sf-chan" x="184" y="146" width="134" height="20" rx="4" />
-      <text class="sf-sub" x="192" y="160">ch 3  → TIDY VCO</text>
-      <text class="sf-sub" x="192" y="186">…ch 4–8</text>
-      <!-- voice modules -->
-      <rect class="sf-box" x="392" y="34" width="120" height="40" rx="8" />
-      <text class="sf-txt" x="452" y="58" text-anchor="middle">kickdrum</text>
-      <rect class="sf-box" x="392" y="100" width="120" height="40" rx="8" />
-      <text class="sf-txt" x="452" y="124" text-anchor="middle">snaredrum</text>
-      <rect class="sf-box" x="392" y="156" width="140" height="44" rx="8" />
-      <text class="sf-txt" x="462" y="176" text-anchor="middle">TIDY VCO</text>
-      <text class="sf-sub" x="462" y="190" text-anchor="middle">(poly)</text>
-      <!-- clip → voices -->
-      <path class="sf-arrow" d="M326 100 C356 100 362 54 392 54" />
-      <text class="sf-cable" x="356" y="50" text-anchor="middle">gate1</text>
-      <path class="sf-arrow" d="M326 128 C356 128 362 120 392 120" />
-      <text class="sf-cable" x="356" y="112" text-anchor="middle">gate2</text>
-      <path class="sf-arrow" d="M326 156 C356 156 362 178 392 178" />
-      <text class="sf-cable" x="352" y="205" text-anchor="middle">pitch3 (poly) + gate3</text>
-      <!-- output -->
-      <rect class="sf-box" x="596" y="100" width="120" height="44" rx="8" />
-      <text class="sf-txt" x="656" y="126" text-anchor="middle">mixer / out</text>
-      <path class="sf-arrow" d="M512 54 C556 54 560 116 596 116" />
-      <path class="sf-arrow" d="M512 120 C556 120 560 122 596 122" />
-      <path class="sf-arrow" d="M532 178 C566 178 566 130 596 130" />
-    </svg>
-    <figcaption>
-      One Launchpad → the clip player's channels → gate + poly-pitch cables → your voice modules → your
-      mix. KEYS and the arpeggiator push notes onto the same per-channel output the clips fire.
-    </figcaption>
-  </figure>
+{#snippet audioWorkflow()}
+  <ol class="steps">
+    <li><strong>Select an empty target</strong> without launching it. Pick <strong>1 / ENDLESS</strong>, then press <strong>ARM</strong>. The recorder fixes the lane and slot at arming; later inspection cannot redirect it.</li>
+    <li>Press transport Play if stopped. <strong>1</strong> ends after one loop; <strong>ENDLESS</strong> finishes on a loop boundary after another ARM / FINISH press. During a one-loop take that press cancels the unfinished take. Use the on-screen status for readiness or refusal details.</li>
+    <li>The saved take launches in its lane. <strong>PLAY TAKE</strong> queues the selected take; <strong>REC / LIVE</strong> toggles recorded audio versus bypass. To hear the note pattern again, launch its original note slot from the matrix.</li>
+    <li><strong>REPLACE TAKE twice</strong> confirms replacement of the selected audio take. Any other press cancels that confirmation. The old take remains until successful save; choose another empty target to keep both.</li>
+  </ol>
+  <p><strong>LEDs:</strong> amber flashes while armed; red means recording; alternating red/amber means finishing; purple marks a saved, stopped audio take. Notes and recorded automation are protected from audio overwrite. Leaving AUDIO or unplugging the controller does not cancel capture. Finish from the Clip Player screen if needed.</p>
+  <p>For source selection, monitoring, recovery and saved media, read <a href="/docs/modules/clipplayer#audio">Clip Player audio</a> and <a href="/docs/modules/clipplayer#routing">routing</a>. The hardware issues the same actions as the screen.</p>
 {/snippet}
 
-<section class="hero">
-  <h1>Launchpad Mini Mk3 — clip launcher</h1>
-  <p class="lede">
-    <strong>Novation Launchpad Mini Mk3</strong> drives the <strong>clip player</strong> over
-    browser-native <strong>Web MIDI</strong> (no helper app). It works with <strong>one unit</strong> or
-    <strong>two</strong> — pick a tab; each is a complete, self-contained guide for that mode.
-  </p>
+<section class="hero" id="overview">
+  <h1>Launchpad Mini Mk3</h1>
+  <p class="lede">Connect one device for a switchable performance surface, or two for a live matrix beside a command deck. This guide covers the physical controls, gestures and LEDs of the <strong>launchpad control</strong> module.</p>
+  <p>Start with the <a href="/docs/modules/clipplayer#quick-start">Clip Player quick start</a> for sound wiring and clip playback. See that guide for <a href="/docs/modules/clipplayer#notes">note editing</a>, <a href="/docs/modules/clipplayer#audio">audio capture</a>, <a href="/docs/modules/clipplayer#automation">automation</a>, <a href="/docs/modules/clipplayer#scenes">scenes</a> and <a href="/docs/modules/clipplayer#song">arrangement and Song</a>. For Ableton hardware, use the separate <a href="/docs/modules/push2Control">Push 2 guide</a>.</p>
   <div class="rec-vocab">
-    <h2>Two kinds of recording</h2>
+    <h2>Choose the recording control for the job</h2>
     <dl>
-      <dt>CLIP RECORD</dt>
-      <dd>
-        Recording <strong>into a clip</strong>. Notes: KEYS → <strong>QUEUE-REC</strong>. Knob / control
-        moves: <strong>per-clip automation</strong>, Deluge-style — right-click a <strong>module's
-        card</strong> → <em>Assign to automation lane</em> (1–8; the whole module joins the lane and its
-        card gets a border in the lane's colour), launch a clip in that lane, then <strong>arm the
-        lane</strong> (the card's per-lane <strong>◉</strong> next to its RATE control, or on a
-        <strong>single-unit</strong> Launchpad <strong>HOLD SHIFT + that lane's top-row button</strong>; lane 8 =
-        HOLD SHIFT + the pad directly below SHFT — the two-unit rig has no hardware arm yet, arm from the card) and just
-        move the module's controls: every touch — screen, MIDI, Electra — records into <em>that clip's
-        own</em> automation, punching in at the clip's next loop start, then overdubbing every loop. <strong>CV is never recorded</strong>:
-        automation records your hands, a CV cable stays live modulation.
-      </dd>
-      <dt>ARRANGER RECORD</dt>
-      <dd>
-        The red <strong>●</strong> that records your <strong>clip launches</strong> onto the song timeline
-        (experimental). Arm it from the card's <strong>●</strong>, the single-mode Control-Mode
-        <strong>REC</strong> pad, or the pair deck's top-left <strong>REC</strong> button (CC 91). It never
-        records notes or knob moves.
-      </dd>
+      <dt>CLIP RECORD — notes</dt><dd>KEYS → <strong>QUEUE-REC</strong> captures played notes into the selected note clip.</dd>
+      <dt>AUTO — control movement</dt><dd>One device: <strong>HOLD SHIFT</strong> + lane 1–7’s top button; lane 8 uses the pad directly below SHIFT. Two devices: R → AUDIO → AUTO row. AUTO is independent of audio recording. Assignment and playback are explained in <a href="/docs/modules/clipplayer#automation">Clip Player automation</a>.</dd>
+      <dt>AUDIO RECORD — sound</dt><dd>CONTROL → <strong>AUDIO</strong> selects a destination and arms mixer-channel capture. Use the Audio tab below for the device layout.</dd>
+      <dt>ARRANGER RECORD — launches</dt><dd>Single CONTROL → <strong>REC</strong>, or paired R’s top-left <strong>REC</strong>, captures clip launches for arrangement playback.</dd>
     </dl>
   </div>
 </section>
@@ -957,6 +904,7 @@
     <button
       type="button"
       role="tab"
+      disabled={!ready}
       id={`lp-tab-${t.id}`}
       aria-selected={topTab === t.id}
       aria-controls={topTab === t.id ? `lp-panel-${t.id}` : undefined}
@@ -972,10 +920,10 @@
 <div class="mode-section" id="lp-panel-single" role="tabpanel" tabindex="0" aria-labelledby="lp-tab-single">
   <h2 class="mode-title">1 Launchpad — one device, four views</h2>
   <p>
-    One Launchpad does everything. The lone device is a <strong>four-view surface</strong> —
+    One Launchpad switches between the views below. The lone device is a <strong>four-view surface</strong> —
     <strong>GRID</strong> (launch clips), <strong>CLIP</strong> (edit notes; its KEYS sub-view plays,
-    clip-records + arpeggiates), <strong>ARRANGER</strong> (TBD) and <strong>CONTROL</strong> (the
-    performance deck) — laid over a <strong>permanent top-row nav bar</strong> that never changes meaning,
+    clip-records + arpeggiates), <strong>ARRANGER</strong> (reserved) and <strong>CONTROL</strong> (the
+    performance deck) — laid over a <strong>permanent top-row nav bar</strong> with a shared SHIFT arm layer,
     with a one-hand <strong>SHIFT</strong> layer. New to the device? Start with the
     <strong>Walkthrough</strong> tab. Setup + the shared top-row / SHIFT foundation sit in the two
     collapsible panels just below the tabs.
@@ -986,6 +934,7 @@
       <button
         type="button"
         role="tab"
+      disabled={!ready}
         id={`lp1-tab-${t.id}`}
         aria-selected={singleTab === t.id}
         aria-controls={singleTab === t.id ? `lp1-panel-${t.id}` : undefined}
@@ -999,16 +948,15 @@
 
   <!-- Shared foundation — collapsed so the mode tabs stay the first thing you
        see; everything inside applies to EVERY view. -->
-  <details class="shared">
-    <summary>Setup — connect the device</summary>
+  <details class="shared" id="setup">
+    <summary>Setup, binding and reconnection</summary>
     <ol class="steps">
-      <li>Add a <strong>launchpad control</strong> and a <strong>clip player</strong> to the canvas.</li>
-      <li>Click <strong>Connect single Launchpad</strong> on the card (grants Web-MIDI/sysex on the first
-        click). The one device binds — no press-a-pad handshake — and auto-binds the first clip player.</li>
-      <li>The device starts in <strong>GRID view</strong>. A reload restores your view; hit
-        <strong>Connect single Launchpad</strong> once to re-attach the hardware (browser permission needs a
-        click).</li>
+      <li>Add <strong>launchpad control</strong> and <strong>clip player</strong>. This controller module has no audio ports; wire sound through Clip Player and your instruments.</li>
+      <li>Plug in a <strong>Launchpad Mini Mk3</strong> and press <strong>Connect single</strong> on the Launchpad module face. Grant the browser’s Web MIDI and SysEx request. The first matching MIDI port binds; there is no press-a-pad handshake.</li>
+      <li>The first Clip Player in the patch is bound automatically. Open the Launchpad module to check <strong>LINK</strong> (hardware connected) and <strong>CLIP</strong> (Clip Player bound). <strong>Bind to clip-player</strong> / <strong>Unbind clip-player</strong> changes that binding; there is no picker for arbitrary players.</li>
+      <li>A fresh Connect single gesture starts in <strong>GRID</strong>. Device IDs, deployment and view are saved on this computer; reconnect after reload. The on-screen <strong>GRID / CLIP / ARR / CTRL</strong> segment also changes the hardware view.</li>
     </ol>
+    <p>The implemented protocol targets Mini Mk3. Launchpad X and Pro Mk3 have different device IDs; their presence in source constants is not support for those models. A shared controller engine serves one active Push/Launchpad surface at a time; adding another module does not create an independent controller session.</p>
   </details>
 
   <details class="shared">
@@ -1060,17 +1008,13 @@
       caption="Shift released — the compass comes back, but ARMED lane 3's button keeps RED-FLASHING, alternating with its base colour (shown on the red phase), in every view, until the lane is disarmed. A RED-FAMILY base (the stopped transport button) alternates with a DIM red instead, so the blink stays legible."
     />
 
-    <h3 id="single-shift">The shift layer + tap-to-arm — one-handed by design</h3>
-    <p>
-      Every right-column button has a plain meaning and a <strong>shift</strong> meaning. SHIFT (CC 98) is a
-      <strong>momentary hold</strong>: the alt layer is active <em>only while you physically hold SHIFT</em>
-      (bright yellow) — a short tap does nothing, there is no latch. And because you can't hold a function
-      button <em>and</em> tap a clip at once, the Grid's compound functions (Copy · Paste · Clip-Div ·
-      Length) are <strong>tap-to-ARM</strong>: hold SHIFT and tap the function → it arms (brightens; only one
-      at a time) → release SHIFT and tap a target → it applies and auto-disarms. Copy and Paste stay
-      <strong>sticky</strong> across the release so the no-shift matrix hosts their target; tap the armed
-      button again to cancel; a stale arm auto-clears after ~4 s.
-    </p>
+    <h3 id="single-shift">SHIFT and armed actions</h3>
+    <p>SHIFT (CC 98) is a <strong>momentary hold</strong>. In Grid, hold it and tap COPY, PASTE, CLIP-DIV or LENGTH to arm that action. Only one action can be armed at a time.</p>
+    <ul class="tight">
+      <li><strong>COPY / PASTE:</strong> release SHIFT, then tap a clip or scene target. The arm remains active until used, cancelled, timed out (about four seconds), or you leave Grid.</li>
+      <li><strong>CLIP-DIV / LENGTH:</strong> keep SHIFT held for the target tap. Releasing SHIFT commits the divider preview or cancels an unused length arm.</li>
+      <li>Tap the armed function again to disarm. These temporary edit arms are separate from the lane’s audio and automation recording arms.</li>
+    </ul>
     <h4>Navigation palette (permanent top row)</h4>
     {@render swatches3(NAV_COLORS)}
     <h4>Right-column function taxonomy</h4>
@@ -1090,15 +1034,15 @@
     />
     <ul class="tight">
       <li><strong>Every channel's clip states glow in that channel's own colour</strong> (the colour you
-        picked on the card, else its default hue) — <strong>dim</strong> = loaded, <strong>solid full
+        picked in Clip Player, else its default hue) — <strong>dim</strong> = loaded, <strong>solid full
         brightness</strong> = playing, <strong>flashing</strong> = queued-launch. Only
         <strong>queued-stop flashes RED</strong> on every channel, so a pending stop always reads. The pad
-        matches the card's swatch for the same channel.</li>
+        matches Clip Player’s swatch for the same channel.</li>
       <li><strong>Tap a loaded clip</strong> (dim) to <strong>launch</strong> it — it flashes (queued) until
         the next quantize boundary, then turns solid (playing). Tap the playing clip to
         queue a <strong>stop</strong> (flashes red until the boundary).</li>
       <li><strong>Columns are channels, rows are slots</strong> — the same orientation as the
-        ClipplayerCard, so the pad you see lit is the clip you see on screen.</li>
+        Clip Player Session grid, so the pad you see lit is the clip you see on screen.</li>
       <li><strong>Row / scene launch (right column):</strong> a grid <strong>row</strong> is one clip per
         channel — an Ableton-style scene / song section. Scene button <em>N</em> fires <strong>that row's
         slot across every channel that has a clip</strong> and <strong>stops</strong> the channels that
@@ -1108,15 +1052,9 @@
       <li>Empty pads glow dim red while <strong>ARRANGER RECORD</strong> is armed.</li>
     </ul>
 
-    <h4 id="single-select">Single-tap launches · double-tap edits</h4>
-    <p>
-      A <strong>single tap launches</strong> immediately (never delayed). A <strong>double-tap</strong> of
-      the same pad (~¼ s) instead <strong>selects that clip and opens it in CLIP mode</strong> — and it
-      reverts the channel to whatever play/queue state it was in before the first tap, so
-      <strong>editing never changes whether a clip plays</strong>. Double-tap an <em>empty</em> pad to
-      create a fresh clip and edit it. The selected clip is what the <strong>CLIP</strong> and
-      <strong>KEYS</strong> buttons act on, and its channel is the one <strong>Swing ±</strong> nudges.
-    </p>
+    <h4 id="single-select">Launch versus inspect</h4>
+    <p><strong>Tap</strong> a clip to launch or stop it. <strong>HOLD GRID + tap a clip</strong> selects and opens it without changing playback: note clips open CLIP; audio takes open AUDIO. Empty pads create a note clip. A <strong>double-tap</strong> also opens the clip; it restores the lane’s pre-tap play/queue intent after the first launch tap. Use HOLD GRID when you want inspection with no first launch.</p>
+    <p>The selected note clip is the target for CLIP, KEYS and Swing ±. <a href="/docs/modules/clipplayer#session">Clip Player Session</a> explains lane, clip and queue behavior. Audio takes use the same launch/stop gestures and have a purple loaded-state LED.</p>
 
     <h4>GRID + shift — the function palette (home of copy/paste)</h4>
     <LaunchpadDiagram
@@ -1191,19 +1129,7 @@
       <li><strong>Scroll-aware:</strong> the held scene button is <strong>position-relative</strong>
         through the scene window — with the column scrolled (SCR▲/▼), button <em>i</em> edits scene
         <em>offset + i</em>, the same scene it would launch.</li>
-      <li>After N passes of the scene's <strong>longest clip</strong> (its length × rate/div,
-        <strong>frozen at launch</strong> — mid-count edits never move the scheduled boundaries), the
-        next content scene down launches through the <strong>normal quantized launch path</strong> —
-        arranger-record captures it, LEDs update, peers stay in sync.</li>
-      <li><strong>Manual always wins:</strong> launching any scene mid-count re-anchors the count fresh
-        (re-launching the SAME scene resets it to zero); launching an individual clip outside the scene
-        cancels the countdown until the next scene launch. <strong>Muting</strong> lanes never voids or
-        alters the count; stopping <em>every</em> scene lane cancels it.</li>
-      <li>The count is saved with the patch and shows on the card as a small <strong>×N</strong> flair
-        beside the scene's row (live <strong>p/N</strong> while counting; infinite shows nothing).</li>
-      <li><strong>Counts travel with the scene:</strong> a whole-scene <strong>COPY/PASTE</strong>
-        carries the repeat count along with the clips and their automation — a full-replace paste sets
-        the target scene's count from the copied one (and clears it when the copied scene had none).</li>
+      <li>Counts are saved with the scene and travel with whole-scene copy/paste. See <a href="/docs/modules/clipplayer#scenes">scene timing, auto-advance and manual overrides</a> for how repeats behave.</li>
       <li>No collision with the automation arm: that gesture is <strong>SHIFT</strong> + a top-row
         button — this one is a GRID hold <strong>without</strong> shift.</li>
     </ul>
@@ -1237,11 +1163,11 @@
         has its own lower value; old clips stay byte-identical).</li>
       <li>Under shift an <strong>armed</strong> copy / paste / clip-div / length still consumes the clip-pad
         tap (unchanged); a <strong>no-shift</strong> tap still launches. Empty pads don't open the page
-        (there's no clip to carry a default). <em>Single-unit only</em> — on the card, right-click a clip
+        (there's no clip to carry a default). <em>Single-unit only</em> — in Clip Player, right-click a clip
         pad → <strong>note probability</strong>.</li>
-      <li><strong>The bottom-right clip pad (7,7) is claimed by the lane-8 arm</strong> from every view, so a
+      <li><strong>The top-right clip pad (physical x=7, y=7) is claimed by the lane-8 arm</strong> from every view, so a
         SHIFT-tap there arms lane 8 rather than opening that clip's default-probability page. Set that clip's
-        default from the card instead: <strong>right-click the clip pad → note probability</strong>.</li>
+        default in Clip Player instead: <strong>right-click the clip pad → note probability</strong>.</li>
     </ul>
 
     {@render lengthEditSection()}
@@ -1277,7 +1203,7 @@
         (<strong>SHIFT + a clip pad</strong>). Velocity is still editable — it just no longer colours the
         pad.</li>
       <li><strong>DOUBLE</strong> (green) duplicates the pattern into the back half and doubles the length
-        (cap 128). <strong>LENGTH</strong> (green) opens the length page.</li>
+        (cap 128). <strong>LENGTH</strong> (green in this view) opens the length page.</li>
       <li><strong>FOLLOW</strong> (green → bright green while following) auto-scrolls the window with the
         playhead; a manual step scroll freezes it. <em>Its scene-row is a DOUBLE-DUTY button now:</em>
         <strong>HOLD it (no shift) = the momentary VEL modifier</strong> (below), and <strong>SHIFT + tap it
@@ -1316,13 +1242,18 @@
         draw beats its effective probability (a chord partially fires). A note's own probability is used as-is
         — it is independent of the clip default. The arranger PRINT bakes the realized hits — the printed take
         equals what actually sounded.</li>
-      <li>You can also set it from the card: <strong>right-click a note cell → Probability</strong> (100%
+      <li>You can also set it in Clip Player: <strong>right-click a note cell → Probability</strong> (100%
         default … 2.5%). <em>The PROB page is single-unit only</em> — in two-Launchpad mode set per-note
-        probability from the card (the pair note editor has no PROB page).</li>
-      <li><strong>The bottom-right cell (7,7) is claimed by the lane-8 arm</strong> from every view, so a
+        probability in Clip Player (the pair note editor has no PROB page).</li>
+      <li><strong>The top-right cell (physical x=7, y=7) is claimed by the lane-8 arm</strong> from every view, so a
         SHIFT-tap there arms lane 8 rather than opening that note's PROB page. Open <em>that</em> note's
-        probability from the card instead: <strong>right-click the note cell → Probability</strong>.</li>
+        probability in Clip Player instead: <strong>right-click the note cell → Probability</strong>.</li>
     </ul>
+
+    <h4 id="single-play-every">Play every N loops — SHIFT + double-tap a note</h4>
+    <p>Keep SHIFT held and tap the same note twice quickly. The first tap opens probability; the second opens <strong>PLAY EVERY</strong>. The top grid row becomes eight red choices. Pick <strong>1–8</strong> from left to right; 1 means every loop. A tap in another row cancels. Once this selector is open, every value is available even while SHIFT stays held.</p>
+    <LaunchpadDiagram top={permTop('clip', { running: true })} pads={playEveryPads} scene={clipRightScene} accent={hex(RGB_PLAY_EVERY_RED)} caption="PLAY EVERY: the top grid row chooses loops 1–8, shown with 4 selected. Only the current value is bright. All other grid rows cancel without editing." />
+    <p>The note editor adds a red tint for play-every values above 1; higher values are dimmer. Probability and play-every tints blend when both apply. The pair editor displays the same state but has no probability or play-every selector. For the playback rules and other note properties, see <a href="/docs/modules/clipplayer#notes">Clip Player notes</a>.</p>
 
     <h4>CLIP + shift — big jumps (and the PROB page)</h4>
     <LaunchpadDiagram
@@ -1356,8 +1287,7 @@
         no shift) and tap a note to <strong>cycle its velocity</strong>. The faint purple wash marks the
         mode. Releasing the row ends it — and, being momentary, it never toggles FOLLOW (that is
         <strong>SHIFT + the same row</strong>).</li>
-      <li>Velocity is stored but no longer sets the pad colour (that is probability now); a hard hit in KEYS
-        still captures the played velocity.</li>
+      <li>The Mini Mk3 uses a fixed note-entry velocity. Hold VEL to cycle velocity after entry; pad colour represents probability and play-every, not velocity.</li>
     </ul>
 
     <h3 id="single-keys">KEYS — play, CLIP-RECORD notes + arpeggiate</h3>
@@ -1365,8 +1295,7 @@
       <strong>KEYS</strong> turns the device into a playable <strong>isomorphic keyboard</strong>
       (LinnStrument-style, chromatic fourths) routed live to the selected clip's channel, <em>and</em> the
       <strong>CLIP RECORD</strong> surface for notes, <em>and</em> an <strong>arpeggiator</strong>. Enter
-      it from <strong>CLIP → KEYS</strong> (bright orange, right column). The clip plays under you while
-      the keyboard is live; recording is idle until you tap QUEUE-REC.
+      it from <strong>CLIP → KEYS</strong> (bright orange, right column). Entering KEYS launches the selected note clip immediately; the keyboard is live, and recording is idle until you tap QUEUE-REC.
     </p>
     <LaunchpadDiagram
       top={permTop('clip', { running: true, keys: true })}
@@ -1380,12 +1309,8 @@
       <li><strong>Scale select (right column):</strong> tap a scale to set the clip's scale — the selected
         one glows bright green. The scale <em>lights</em> the keyboard (root cyan, in-scale green) but does
         <strong>not</strong> snap what you play — the pads stay fully chromatic.</li>
-      <li><strong>CLIP RECORD a loop:</strong> tap <strong>QUEUE-REC</strong> to arm (flashes yellow);
-        recording begins when the playhead wraps to step 1 (the transport auto-starts) and the cell turns
-        red. <strong>OVERDUB off</strong> = true-replace (each step is cleared as the playhead crosses it);
-        <strong>OVERDUB on</strong> = additive layering until you toggle it off. Entering from CLIP → KEYS
-        always starts overdub OFF. <em>QUEUE-REC won't arm while ARRANGER RECORD is armed or during
-        ARRANGEMENT playback — disarm ● / return to SESSION first.</em></li>
+      <li><strong>CLIP RECORD:</strong> QUEUE-REC arms and starts transport if needed. Capture begins on the first played note while transport runs, or the next loop wrap, whichever comes first. Recording <strong>adds notes</strong>; OVERDUB off does not erase untouched steps. Toggle OVERDUB from on to off during capture to finish at the next wrap, or press EXIT to stop immediately and stay in KEYS. QUEUE-REC cannot arm while ARRANGER RECORD or arrangement playback is active.</li>
+      <li><strong>Note duration:</strong> onsets follow the capture grid; releases preserve the time you held each key, including fractions of a step, up to the clip’s end. Captured durations override the global GATE duty. See <a href="/docs/modules/clipplayer#notes">note lengths and screen ties</a>.</li>
       <li><strong>OCT− / OCT+</strong> shift the whole keyboard an octave; <strong>PANIC</strong> kills
         every sounding note; <strong>LEN</strong> opens the length page (EXIT returns straight to
         KEYS).</li>
@@ -1417,7 +1342,8 @@
       <li><strong>RANGE+ / RANGE−</strong> widen the octave span: <strong>1 oct</strong> (default)
         <strong>· +1..−1 · +2..−2</strong> (symmetric around the held notes).</li>
       <li><strong>LATCH</strong> (orange): hold the note set after you release the keys. A fresh press
-        after a full release replaces the set; pressing while a key is still down adds to it.</li>
+        after a full release replaces the set; pressing while a key is still down adds to it. Switching views keeps a latched arp running; explicit KEYS EXIT or PANIC stops it.</li>
+      <li>ARP is a single-device live performance function. Its generated notes are not written by QUEUE-REC; record its sound with AUDIO if you need a take.</li>
     </ul>
 
     {@render lengthEditSection()}
@@ -1430,9 +1356,9 @@
   </div>
   {:else if singleTab === 'arranger'}
   <div id="lp1-panel-arranger" role="tabpanel" tabindex="0" aria-labelledby="lp1-tab-arranger">
-    <h3>ARRANGER Mode — experimental / TBD</h3>
+    <h3>ARRANGER Mode — reserved</h3>
     <p class="tbd-banner">
-      <strong>TBD.</strong> The arrangement <em>engine</em> (ARRANGER RECORD — record + replay your live
+      <strong>Reserved.</strong> The arrangement <em>engine</em> (ARRANGER RECORD — record + replay your live
       clip launches as a song) already exists, but this view has no launchpad UI yet: it's a lit-but-inert
       placeholder. Everything below works <em>today</em> from Control Mode and the card.
     </p>
@@ -1457,7 +1383,7 @@
     <p class="muted">
       Remember the split: ARRANGER RECORD captures <strong>launches</strong> (which clips fire, when).
       Recording <strong>into</strong> a clip — notes or knob moves — is <strong>CLIP RECORD</strong>
-      (KEYS QUEUE-REC · the per-lane automation arm — SHIFT+top-row / the card's per-lane ◉).
+      (KEYS QUEUE-REC · the per-lane automation arm — SHIFT+top-row / Clip Player’s per-lane ◉).
     </p>
     <h4>Reference</h4>
     {@render mapTable([...SINGLE_MAP_GLOBAL, ...SINGLE_MAP_ARRANGER])}
@@ -1471,11 +1397,11 @@
       scene={controlScene}
       callouts={controlCallouts}
       accent={hex(RGB_RESET)}
-      caption="CONTROL view. RESET (row 1 col 2, steel blue) · MONO row (teal) · MUTE row (orange when muted) · RATE row (a cool→warm ramp; shown all-default '1') — one pad per channel. Right column = per-lane STOP (bright red = that channel is audible). Re-homed onto the dark top grid rows: TEMPO− · TEMPO+ · STOP-ALL, and REC · SONG one row below. (Automation arm is SHIFT + a lane's top-row button — every view.)"
+      caption="CONTROL view. RESET (row 1 col 2, steel blue) · MONO row (teal) · MUTE row (orange when muted) · RATE row (a cool→warm ramp; shown all-default '1') — one pad per channel. Right column = per-lane STOP (bright red = that channel is audible). Re-homed onto the dark top grid rows: TEMPO− · TEMPO+ · STOP-ALL, and REC · SONG one row below. (Automation arm is SHIFT + a lane's top-row button — every view.) AUDIO is column 5, second row from the top."
     />
     <ul class="tight">
       <li><strong>RESET (RST, steel blue):</strong> snap every playing channel back to step 1 at one shared
-        instant. Same field as the card's RST button and the reset gate. Reset ≠ stop: clips keep playing,
+        instant. Same field as Clip Player’s RST button and the reset gate. Reset ≠ stop: clips keep playing,
         just re-aligned.</li>
       <li><strong>MONO row (teal):</strong> toggle a channel between MONO (one note per column) and POLY.
         <strong>MUTE row (orange):</strong> mute a channel <em>in place</em> — it keeps advancing its
@@ -1490,187 +1416,38 @@
       <li><strong>REC + SONG = ARRANGER RECORD:</strong> <strong>REC</strong> arms ARRANGER RECORD (it
         records your live clip <em>launches</em> — not notes, not knobs; the pad pulses red while
         recording), and <strong>SONG</strong> flips SESSION ⇄ ARRANGEMENT to replay the recorded song.
-        Same synced state as the card's <strong>●</strong> and SES/ARR buttons.</li>
-      <li><strong>Automation CLIP RECORD = HOLD SHIFT + the lane's top-row button</strong> (not a grid pad —
-        it works from every view, including this one; lane 8 = HOLD SHIFT + the pad below SHFT). Assign modules first
-        (right-click a <em>module's card</em> → <em>Assign to automation lane</em> 1–8 — the whole
-        module joins the lane, its card gets a border in the lane's colour); while a lane is
-        <strong>armed</strong> (its top-row button red-flashes; same toggle as the card's per-lane
-        <strong>◉</strong>) and its clip <em>plays</em>, every control you TOUCH on an assigned module —
-        screen, MIDI, Electra; <strong>never CV</strong> — records by continuous overdub, punching in at
-        <em>that clip's</em> next loop start, into that clip's OWN automation (each clip in a lane
-        carries its own envelopes; copy/paste and scene-duplicate carry them with the clip). The
-        recording clip's grid cell shows the 🟡🟡🔴🔴 pre-roll countdown before its wrap. Touching an
-        unassigned module's control records nothing. SHIFT+the button again stops that lane; other
-        armed lanes keep recording — and different collaborators can record different lanes at once.
-        Deleting is card-side and explicit: right-click a control → <em>Clear recorded automation</em>,
-        or the editor's CLR AUTO (per clip) — the module menu's <em>Remove automation assignment</em>
-        only stops future recording. Longer-form automation across a song is the (future) arranger
-        mode's job.</li>
+        Same synced state as Clip Player’s <strong>●</strong> and SES/ARR buttons.</li>
+      <li><strong>AUDIO:</strong> column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. Opens target selection and audio capture; see the Audio tab.</li>
+      <li><strong>AUTO:</strong> hold SHIFT + lane 1–7’s top button; lane 8 uses the pad directly below SHIFT. This toggles the same lane arm as Clip Player’s Session AUTO row and Channels controls. See <a href="/docs/modules/clipplayer#automation">assignment, capture timing and clearing automation</a>.</li>
     </ul>
     <h4>Control-mode colours</h4>
     {@render swatches3(SINGLE_CONTROL_COLORS)}
     <h4>Reference</h4>
     {@render mapTable([...SINGLE_MAP_GLOBAL, ...SINGLE_MAP_CONTROL])}
   </div>
+  {:else if singleTab === 'audio'}
+  <div id="lp1-panel-audio" role="tabpanel" tabindex="0" aria-labelledby="lp1-tab-audio">
+    <h3>Single-device AUDIO — select, record, replay</h3>
+    <p>Press CONTROL, then <strong>AUDIO</strong> at column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. Inspecting an existing audio clip also opens this page.</p>
+    <LaunchpadDiagram top={permTop('control')} pads={audioPads(false)} scene={audioScene} accent={hex(AUDIO_COLOR)} caption="AUDIO target grid. Columns = lanes 1–8; rows = an eight-slot bank, top to bottom. White flashes on the inspected target (lane 1, slot 2 here). These grid taps select without launching. Right-column labels come directly from the implemented audio map." />
+    <p><strong>BANK UP / DOWN</strong> moves eight slots at a time through all 64 destinations. <strong>EXIT AUDIO</strong> returns to Grid; a view button can also leave. The permanent top buttons and SHIFT automation-arm map retain their functions. Release SHIFT before selecting the top-right target, because SHIFT + that pad arms lane 8.</p>
+    {@render audioWorkflow()}
+    {@render mapTable(AUDIO_RIGHT_BINDINGS.map((b, i) => ({ what: b.legend, addr: `Right column, ${i + 1} from top · CC ${SCENE_CCS[i]}` })))}
+  </div>
   {:else if singleTab === 'walkthrough'}
   <div id="lp1-panel-walkthrough" role="tabpanel" tabindex="0" aria-labelledby="lp1-tab-walkthrough">
-    <h3>Make a patch in 1-pad mode</h3>
-    <p>
-      Never touched the device? This is the whole journey on <strong>one Launchpad</strong> — plug in, wire
-      three voices, clip-record a bassline in KEYS, lay clips in GRID, build scenes, perform, and record
-      knob automation into a clip. By the end
-      you'll have a live three-voice patch: <strong>kick</strong>, <strong>snare</strong> and a poly
-      <strong>TIDY VCO</strong> bassline.
-    </p>
-
-    <h4>1 · Plug in + connect</h4>
+    <h3>A short single-device session</h3>
+    <p>Build the sound path using the <a href="/docs/modules/clipplayer#quick-start">Clip Player quick start</a>, then connect the Launchpad as described above.</p>
     <ol class="steps">
-      <li>Plug the <strong>Launchpad Mini Mk3</strong> into a USB port.</li>
-      <li>On the canvas, drop a <strong>launchpad control</strong> and a <strong>clip player</strong> (in
-        workflow mode, add them from the module drawer — the clip player is the brain the pad drives).</li>
-      <li>Click <strong>Connect single Launchpad</strong> on the launchpad card and accept the browser's
-        Web-MIDI prompt (first click only). The pad lights up in <strong>GRID view</strong> and auto-binds
-        the clip player.</li>
+      <li><strong>Make notes:</strong> HOLD GRID + an empty pad. Tap the note grid to add or remove notes; hold one and tap another in the same row for a longer note. Press transport Play.</li>
+      <li><strong>Play the keyboard:</strong> CLIP → KEYS. This launches the selected clip. Play the middle six rows; tap QUEUE-REC to capture additively. EXIT stops capture first, then exits when idle.</li>
+      <li><strong>Make a variation:</strong> return to Grid. HOLD SHIFT + COPY, release SHIFT, tap the source. HOLD SHIFT + PASTE, release SHIFT, tap a destination. HOLD GRID + that destination to edit while the previous clip keeps playing.</li>
+      <li><strong>Perform scenes:</strong> press the Grid right column. Set scene repeats by <strong>HOLD GRID + HOLD the scene button</strong>, then tap a count. Use SHIFT + SCR▲ / SCR▼ to move the scene window.</li>
+      <li><strong>Capture sound:</strong> CONTROL → AUDIO; select another empty slot, choose 1 / ENDLESS and ARM. Replay the saved take or return to Grid and launch the original note clip.</li>
+      <li><strong>Capture controls:</strong> follow <a href="/docs/modules/clipplayer#automation">Assign to automation lane</a>, play its note clip, then HOLD SHIFT + the lane’s top button to arm AUTO. Disarm the same way.</li>
+      <li><strong>Capture the performance:</strong> use CONTROL → REC, perform launches in Grid, then CONTROL → REC to finish. SONG switches arrangement playback. Read <a href="/docs/modules/clipplayer#song">arrangement versus printed Song</a> before replacing or printing a take.</li>
     </ol>
-
-    <h4>2 · Wire three voices</h4>
-    <p>
-      Add a <strong>kickdrum</strong>, a <strong>snaredrum</strong>, a <strong>TIDY VCO</strong>, and a
-      <strong>TIMELORDE</strong> (the rack transport). Wire one clip-player channel per voice — the channels
-      are the pad's columns:
-    </p>
-    <ul class="tight">
-      <li><strong>Channel 1 → kick:</strong> <code>gate1</code> → the kickdrum's trigger (drums fire on the
-        gate; pitch optional).</li>
-      <li><strong>Channel 2 → snare:</strong> <code>gate2</code> → the snaredrum's trigger.</li>
-      <li><strong>Channel 3 → TIDY VCO (poly):</strong> <code>pitch3</code> (the poly pitch cable) → TIDY
-        VCO's pitch, and <code>gate3</code> → its gate. Make channel 3 polyphonic so it plays chords: in
-        <strong>CONTROL mode</strong> its <strong>MONO</strong> pad (row 2, third column) should be
-        <em>dim</em> — dim = poly, teal = mono.</li>
-      <li>Run each voice to your output. See the signal-flow picture at the bottom of this tab.</li>
-    </ul>
-
-    <h4>3 · Clip-record a bassline into channel 3 (KEYS)</h4>
-    <LaunchpadDiagram
-      top={permTop('clip', { running: true, keys: true })}
-      pads={keysSinglePads}
-      scene={keysScaleScene}
-      callouts={keysSingleCallouts}
-      accent={hex(RGB_PATTERN_ARMED)}
-      caption="STEP 3 — KEYS on channel 3. Right column = scale select (MAJOR selected). Play the keyboard rows; QUEUE-REC clip-records a loop; ARP (bottom orange) + SHIFT open the arp column if you want it."
-    />
-    <ol class="steps">
-      <li>In <strong>GRID</strong>, <strong>double-tap</strong> the <strong>channel-3, slot-1 pad</strong>
-        (third column, top row) → the clip opens in <strong>CLIP mode</strong> (an empty pad makes a fresh
-        clip).</li>
-      <li>Press <strong>KEYS</strong> (right column, 4th from the top, bright orange) → the device becomes
-        the keyboard for that clip; the transport starts and the clip plays.</li>
-      <li><strong>Pick a scale:</strong> tap a scale in the right column — e.g. <strong>MINOR</strong>. The
-        selected scale glows bright green and lights the in-key rows.</li>
-      <li><strong>(Optional) arpeggiate:</strong> tap <strong>ARP</strong> (bottom of the right column),
-        then <strong>hold SHIFT</strong> and set <strong>direction</strong>, <strong>DIV</strong> and
-        <strong>RANGE</strong>. Hold a chord and it sequences itself; tap <strong>LATCH</strong> to keep it
-        running hands-free.</li>
-      <li><strong>CLIP RECORD:</strong> tap <strong>QUEUE-REC</strong> (bottom row, 2nd pad) — it flashes
-        yellow, then turns red at the loop top. Play your bassline (use <strong>OCT−</strong> for a deeper
-        register). Leave <strong>OVERDUB</strong> off for a clean replace, or toggle it on to layer.</li>
-      <li><strong>Stop:</strong> tap <strong>EXIT</strong> (bottom-left) to end the take (you stay in
-        KEYS), then a <strong>view button</strong> (GRID) to leave KEYS.</li>
-    </ol>
-
-    <h4>4 · Lay clips on channels 1 + 2 (GRID)</h4>
-    <LaunchpadDiagram
-      top={permTop('grid', { running: true })}
-      pads={gridPads}
-      scene={gridRowScene}
-      callouts={gridCallouts}
-      accent={hex(RGB_SCENE)}
-      caption="STEP 4 — GRID with clips laid in. Columns = channels, rows = slots; each channel's clips glow in its own colour (dim = loaded, solid = playing, flashing = queued). Right column = ROW / scene launch."
-    />
-    <ol class="steps">
-      <li><strong>Kick clip:</strong> in GRID, double-tap <strong>channel-1, slot-1</strong> (top-left pad)
-        → CLIP → <strong>KEYS</strong> → QUEUE-REC → tap out a four-on-the-floor on the low rows → EXIT →
-        GRID.</li>
-      <li><strong>Snare clip:</strong> double-tap <strong>channel-2, slot-1</strong> → CLIP → KEYS →
-        QUEUE-REC → play the backbeat → EXIT → GRID.</li>
-      <li><strong>Variations (slots 2–3):</strong> for a fast copy, HOLD <strong>SHIFT</strong>, tap
-        <strong>COPY</strong> (right column, top), tap a source clip, tap <strong>PASTE</strong>, then
-        release SHIFT and tap the empty slot below it — now tweak. Repeat so each channel has 2–3 slots.</li>
-      <li>Tapping any loaded pad <strong>launches just that clip</strong>; you'll launch whole rows
-        next.</li>
-    </ol>
-
-    <h4>5 · Build scenes with the row-launch column</h4>
-    <p>
-      A grid <strong>row</strong> is a <strong>scene</strong> — one clip per channel firing together. Slot 1
-      (top row) is your main groove; slot 2 a breakdown; slot 3 a fill.
-    </p>
-    <ol class="steps">
-      <li>Press the <strong>top scene button</strong> (right column, top) → the slot-1 clip in every channel
-        launches together (kick + snare + bass) on the next boundary.</li>
-      <li>Press the <strong>second scene button</strong> → every channel switches to its slot-2 clip at once
-        — a one-press section change. Channels with no clip in that slot stop.</li>
-      <li>That's your arrangement: each row is a section, and one button moves the whole band between
-        them.</li>
-      <li><strong>Let it run itself — scene repeats:</strong> <strong>HOLD GRID + HOLD a scene
-        button</strong> → the 8×8 becomes an orange count bar; <strong>tap pad 4</strong> to make that
-        scene play <strong>4 times</strong> then auto-launch the next scene down (pad 64 = back to
-        infinite; release either button to return). Set counts on your sections and the song walks
-        itself down the rows — any manual launch takes over instantly.</li>
-    </ol>
-
-    <h4>6 · Perform</h4>
-    <LaunchpadDiagram
-      top={permTop('control', { running: true })}
-      pads={controlPads}
-      scene={controlScene}
-      callouts={controlCallouts}
-      accent={hex(RGB_RESET)}
-      caption="STEP 6 — CONTROL mode. RESET · MONO row · MUTE row · RATE row (one pad per channel), per-lane STOP on the right, TEMPO± / STOP-ALL / REC · SONG re-homed on the top grid rows. The full tour is in the Control Mode tab."
-    />
-    <ol class="steps">
-      <li><strong>Mute the kick for a breakdown:</strong> press <strong>CONTROL</strong> (top row), tap
-        <strong>channel 1's MUTE pad</strong> (row 3, first column) — the kick goes silent in place (its
-        playhead keeps running, so it snaps back on beat). Tap again to bring it back.</li>
-      <li><strong>Half-time the bass:</strong> on the <strong>RATE row</strong> (row 4), tap <strong>channel
-        3's pad</strong> until it reads <strong>1/2</strong>.</li>
-      <li><strong>Add a shuffle:</strong> back in GRID, HOLD <strong>SHIFT</strong> and tap
-        <strong>SWING+</strong> a few times (it ramps purple); the button flashes green when you return to
-        straight.</li>
-      <li><strong>Reshape a clip's feel:</strong> in GRID + shift, arm <strong>CLIP-DIV</strong> and tap a
-        clip to cycle its own division — the pad pulses at the new rate; disarm to commit.</li>
-      <li><strong>Undo a mistake:</strong> tap <strong>UNDO</strong> (top row) to revert your last
-        persistent edit; <strong>REDO</strong> to reapply.</li>
-      <li><strong>Ride the tempo / drop everything:</strong> in CONTROL, nudge <strong>TEMPO+ / −</strong>,
-        or hit <strong>STOP-ALL</strong>; the <strong>transport</strong> button (top row, CC 91) starts /
-        stops the clock.</li>
-    </ol>
-
-    <h4>7 · Record knob automation (CLIP RECORD)</h4>
-    <ol class="steps">
-      <li><strong>Assign the module:</strong> right-click the <strong>TIDY VCO's card</strong> →
-        <em>Assign to automation lane</em> → <strong>lane 3</strong> (the bass channel). The whole module
-        joins the lane and its card gets a thin border in lane 3's colour.</li>
-      <li><strong>Arm lane 3:</strong> hold <strong>SHIFT</strong> and press the <strong>3rd top-row
-        button</strong> — from any view (lane 8 is <em>HOLD SHIFT + the pad directly below SHFT</em>). The
-        button red-flashes: same arm as the card's per-lane <strong>◉</strong>.</li>
-      <li><strong>Play + twist:</strong> with the bass clip playing, move any TIDY VCO control — every
-        touch (screen drag, MIDI CC, Electra; <strong>never CV</strong>) records into <em>that playing
-        clip's own</em> automation, punching in at the clip's <strong>next loop start</strong> (a
-        🟡🟡🔴🔴 countdown flashes the clip's pad before each wrap), then overdubbing every loop.
-        Release the control and it replays your move every loop.</li>
-      <li><strong>Disarm:</strong> SHIFT + the same button. Made a mess? Right-click the control →
-        <em>Clear recorded automation</em>, or <strong>CLR AUTO</strong> in the clip editor — both
-        undoable. Copy/paste — single clips or whole scenes — carries each clip's automation with it
-        (and launching a clip always plays its own envelopes); long-form, song-length automation is
-        the (future) ARRANGER mode's job.</li>
-    </ol>
-    <p class="muted">
-      Every control you touched — the four views, the shift layer, KEYS + arp, MUTE / RATE / RESET / SWING /
-      CLIP-DIV, and launchpad-scoped undo — lives on <strong>one</strong> device, one hand at a time.
-    </p>
-    {@render signalFlow()}
+    <p>UNDO / REDO on the permanent row covers this single-device session’s persistent edits. Live launches are not undo entries. The pair has no equivalent dedicated undo buttons.</p>
   </div>
   {/if}
 </div>
@@ -1701,6 +1478,7 @@
       <button
         type="button"
         role="tab"
+      disabled={!ready}
         id={`lp2-tab-${t.id}`}
         aria-selected={pairTab === t.id}
         aria-controls={pairTab === t.id ? `lp2-panel-${t.id}` : undefined}
@@ -1721,7 +1499,7 @@
       scene={matrixScene}
       callouts={matrixMuteCallouts}
       accent={hex(RGB_MUTE_ON)}
-      caption="PAIR · UNIT L. Rows = the 8 instrument lanes (top→bottom, matching the on-screen card — lane 1 is the top row), columns = the 8 clip slots. Tap a clip to launch it / stop its lane (next quantize boundary; hold NOW on R — a Deck hold, see the Deck tab — to fire instantly). Right column = scene launch (amber). TOP ROW = the 8 per-lane MUTE pads (numbered 1–8; orange = muted, dim = live)."
+      caption="PAIR · UNIT L. Rows = the 8 instrument lanes (top→bottom, lane 1 is the top row; this is rotated relative to the on-screen Session grid), columns = the 8 clip slots. Tap a clip to launch it / stop its lane (next quantize boundary; hold NOW on R — a Deck hold, see the Deck tab — to fire instantly). Right column = scene launch (amber). TOP ROW = the 8 per-lane MUTE pads (numbered 1–8; orange = muted, dim = live)."
     />
     <ul class="tight">
       <li><strong>Tap a loaded clip</strong> (dim blue) to <strong>launch</strong> — flashing green =
@@ -1764,7 +1542,7 @@
         turquoise while the clipboard holds a clip — <strong>tap BUF to clear it</strong>. These act on the
         <em>matrix</em> (the grid) — the note editor has no copy/paste of its own.</li>
       <li><strong>DOUBLE</strong> duplicates the pattern + doubles the length (cap 128).
-        <strong>LENGTH</strong> opens the 2-row length page on R. <strong>NOW (hold)</strong> makes
+        <strong>LENGTH</strong> opens the three-row length page on R. <strong>NOW (hold)</strong> makes
         launches ignore quantize.</li>
       <li><strong>Per-lane STOP (right column):</strong> row <em>N</em> stops lane <em>N</em> (bright red =
         audible now). <strong>PLAY (CC 96)</strong> toggles the transport; <strong>ALL (CC 97)</strong>
@@ -1787,7 +1565,7 @@
     <p class="muted">
       ARRANGER RECORD captures your <strong>live clip-launch performance</strong> — which clips you fire,
       in which lanes, exactly when — and plays it back as a song. It records <em>launches</em>, not notes
-      or knob moves (that's CLIP RECORD), so the clips stay fully editable. Identical to the card's red
+      or knob moves (that's CLIP RECORD), so the clips stay fully editable. Identical to Clip Player’s red
       <strong>●</strong> + <strong>SES/ARR</strong> buttons (both write the same synced state).
     </p>
     <ol class="steps">
@@ -1795,7 +1573,7 @@
         running</strong> (PLAY / CC 96) so song-time advances.</li>
       <li>Press <strong>REC</strong> (CC 91, top-left of the R deck) — it pulses red. In the default
         <strong>REPLACE</strong> mode arming clears the previous take and restarts at bar 1; switch the
-        RPL/OVR pill on the card for overdub-merge.</li>
+        RPL/OVR pill in Clip Player for overdub-merge.</li>
       <li><strong>Perform on L</strong> — every launch/stop/scene is captured exactly when it applies
         (quantized launches on the boundary; NOW launches instantly).</li>
       <li>Press <strong>REC</strong> again to disarm. Press <strong>SONG</strong> (CC 92) to switch to
@@ -1836,7 +1614,7 @@
         <strong>SCALE</strong> (CC 97) cycles the clip scale.</li>
       <li><strong>Note colour = firing probability</strong> (white 100% · purple per-note · orange clip
         default), the same as single mode. The pair note editor has <strong>no PROB page</strong> — set a
-        per-note or clip-default probability from the <strong>card</strong> (right-click a note cell →
+        per-note or clip-default probability from <strong>Clip Player</strong> (right-click a note cell →
         note probability, or a clip pad → note probability) or on a single-unit Launchpad.</li>
       <li><strong>FOLLOW (CC 98):</strong> green = the window auto-scrolls with the playhead; violet =
         frozen on the page you chose. A manual ◀/▶ scroll freezes; <strong>tap FOL to resume
@@ -1854,6 +1632,19 @@
     {@render swatches3(EDITOR_COLORS)}
     <h4>Reference</h4>
     {@render mapTable(PAIR_MAP_EDITOR)}
+  </div>
+  {:else if pairTab === 'audio'}
+  <div id="lp2-panel-audio" role="tabpanel" tabindex="0" aria-labelledby="lp2-tab-audio">
+    <h3>Paired AUDIO — record from R while L stays live</h3>
+    <p>On R’s normal deck, press AUDIO at column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. R changes to the layout below; L keeps its clip matrix.</p>
+    <LaunchpadDiagram top={pairDeckTop} pads={audioPads(true)} scene={deckScene} accent={hex(AUDIO_COLOR)} caption="Unit R AUDIO. Top five grid rows: select lane; audio ARM / FINISH; 1 / ENDLESS; RECORDED / LIVE; AUTO arm. Each column controls the numbered lane. Two rows are reserved. Bottom row: PICK, PLAY, REPLACE, then EXIT at the right. The normal top-row globals and right-column lane stops remain available." />
+    <ol class="steps">
+      <li>Press <strong>PICK</strong> (bottom-left on R), then one pad on L. That next pad selects a target without launching; later L taps launch normally. Press PICK again to cancel before choosing.</li>
+      <li>Use the desired lane’s <strong>ARM</strong>, <strong>1/∞</strong> and <strong>R/L</strong> pads on R. Lanes run left to right on R, even though they run top to bottom on L.</li>
+      <li><strong>PLAY / REPLACE</strong> act on the selected lane’s inspected target. L shows slots 1–8; choose slots beyond that bank in Clip Player on screen, then use that lane on R.</li>
+      <li><strong>AUTO</strong> (fifth grid row from top) toggles per-lane automation arm. Red = armed. It is separate from the AUDIO arm row. <strong>EXIT</strong> restores the ordinary R deck without stopping capture. R’s right-column stops keep their original order: lane 1 at the bottom through lane 8 at the top.</li>
+    </ol>
+    {@render audioWorkflow()}
   </div>
   {:else if pairTab === 'keys'}
   <div id="lp2-panel-keys" role="tabpanel" tabindex="0" aria-labelledby="lp2-tab-keys">
@@ -1880,31 +1671,25 @@
     </div>
     <h4>Getting in — a two-step safety gesture</h4>
     <ol class="steps">
-      <li><strong>Hold K●</strong> (note-REC — enter with overdub OFF / true-replace) or <strong>KO</strong>
-        (note-OVERDUB — enter with overdub ON / additive) on the RIGHT deck (the row just above
+      <li><strong>Hold K●</strong> (note-REC — enter with overdub OFF) or <strong>KO</strong>
+        (note-OVERDUB — enter with overdub ON) on the RIGHT deck (the row just above
         EDIT/COPY). While held, taps on the LEFT matrix <strong>don't launch</strong>.</li>
       <li><strong>Double-tap a clip on the LEFT</strong> (two quick taps of the same pad) → both units flip
         to <strong>KEYS</strong> for that clip (an empty pad makes a fresh clip). The clip starts
         <strong>playing</strong>, the keyboard is <strong>live</strong>, and CLIP RECORD is
-        <strong>armed-but-idle</strong> until you press QUEUE-REC.</li>
+        <strong>idle</strong> until you press QUEUE-REC.</li>
     </ol>
     <h4>CLIP RECORD — record a loop of notes</h4>
     <ul class="tight">
-      <li><strong>QUEUE-REC</strong> (bottom row, unit L): tap to <strong>arm</strong> — flashes yellow.
-        Recording begins when the playhead <strong>wraps to step 1</strong> (the transport auto-starts if
-        stopped); the pad turns red. Re-tap while armed to cancel. <em>QUEUE-REC won't arm while ARRANGER
-        RECORD is armed or during ARRANGEMENT playback — disarm REC / return to SESSION first.</em></li>
-      <li><strong>Overdub OFF = TRUE REPLACE:</strong> each step is cleared as the playhead crosses it,
-        then refilled by what you play that pass — an un-played region wipes.</li>
-      <li><strong>OVERDUB ON = additive:</strong> each pass layers onto the last, looping endlessly; toggle
-        <strong>OVR</strong> off to finish (it stops at the end of the current loop).</li>
+      <li><strong>QUEUE-REC</strong> (bottom row, L) arms and starts transport if stopped. Capture punches in on the first played note while running or the next wrap, whichever comes first. Re-tap while armed to cancel; EXIT stops an active recording. Arming is blocked during ARRANGER RECORD or arrangement playback.</li>
+      <li><strong>Both recording modes add notes.</strong> OVERDUB off does not clear untouched steps. While recording, turn OVERDUB from on to off to finish at the loop boundary. Otherwise capture continues until stopped.</li>
+      <li><strong>Note duration:</strong> both units capture how long you hold each key independently of onset snapping, including fractions of a step, up to the clip’s end. These captured durations override GATE; use the note editor’s hold-and-tap gesture to replace a duration with a tied span. See <a href="/docs/modules/clipplayer#notes">note lengths</a>.</li>
       <li><strong>LEN</strong> opens the length page on R (EXIT returns straight to KEYS while L keeps the
         live keyboard), so you can resize the loop without leaving — the length-page layout is in the
         <em>Note Editor</em> tab.</li>
       <li><strong>O− / O+ (octave, unit L bottom row):</strong> shift the whole keyboard down / up an
         octave. <strong>PNC (panic):</strong> kill every sounding note instantly (stays in KEYS).</li>
-      <li>Velocity is captured from how hard you hit (a Launchpad X is expressive automatically; a
-        velocity-flat Mini records a default level).</li>
+      <li>Mini Mk3 entry uses a fixed velocity; edit it with the note editor’s VEL hold. Pair KEYS has no scale-select or arpeggiator column. Set the scale in the pair note editor before entering KEYS.</li>
     </ul>
     <h4>Getting out</h4>
     <ul class="tight">
@@ -1921,7 +1706,7 @@
 </div>
 {/if}
 
-<h2>Hardware protocol (confirmed against the device)</h2>
+<h2>Hardware protocol — implemented Mini Mk3 adapter</h2>
 {@render mapTable(HW_MAP)}
 
 <style>
@@ -2045,24 +1830,4 @@
   table.map td { padding: 5px 10px; border-bottom: 1px solid #2a2d36; vertical-align: top; }
   .m-what { font-weight: 600; white-space: nowrap; }
   .m-addr code { font-size: 0.8rem; color: var(--muted, #cfd3df); }
-  /* Signal-flow block diagram (Launchpad → clip player → voices → out). Follows
-     the LaunchpadDiagram look: boxes stroked in the muted hue, cyan-accented clip
-     player, cable labels in the muted hue. */
-  .sigflow { margin: 1rem 0 1.4rem; }
-  .sigflow svg { max-width: 100%; height: auto; }
-  .sf-box { fill: none; stroke: var(--muted, #9aa0b2); stroke-width: 1.4; }
-  .sf-box.hl { stroke: #16d6d6; }
-  .sf-chan { fill: none; stroke: var(--muted, #9aa0b2); stroke-opacity: 0.45; }
-  .sf-txt { fill: #cdd2de; font: 600 12px/1 ui-monospace, 'SF Mono', Menlo, monospace; }
-  .sf-sub { fill: var(--muted, #9aa0b2); font: 500 10px/1 ui-monospace, 'SF Mono', Menlo, monospace; }
-  .sf-cable { fill: var(--muted, #9aa0b2); font: 600 9px/1 ui-monospace, 'SF Mono', Menlo, monospace; }
-  .sf-arrow { fill: none; stroke: var(--muted, #9aa0b2); stroke-width: 1.4; marker-end: url(#sfhead); }
-  .sf-head { fill: var(--muted, #9aa0b2); }
-  .sigflow figcaption {
-    margin-top: 0.4rem;
-    font-size: 0.82rem;
-    color: var(--muted, #98a);
-    font-style: italic;
-    max-width: 70ch;
-  }
 </style>

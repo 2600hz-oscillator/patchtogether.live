@@ -69,6 +69,7 @@ import {
   type SingleView,
 } from '$lib/control/launchpad/launchpad-map';
 import { LP_HEIGHT } from '$lib/control/launchpad/launchpad-sysex';
+import { AUDIO_RIGHT_BINDINGS, audioRight } from '$lib/control/launchpad/launchpad-audio-map';
 import type { LaunchpadLegendContext } from '$lib/control/launchpad/launchpad-control.svelte';
 
 /** Cells per legend row — the 8 scene buttons / the 8 function buttons. */
@@ -208,6 +209,7 @@ function lengthEditSceneCell(index: number): PushLegendCell {
 
 /** Caption for the scene row, naming the view/mode it documents. */
 function sceneCaption(ctx: LaunchpadLegendContext): string {
+  if (ctx.mode === 'audio') return 'SCENE COLUMN · AUDIO';
   if (ctx.mode === 'lengthEdit') return 'SCENE COLUMN · LENGTH PAGE';
   if (ctx.mode === 'keys') return 'SCENE COLUMN · KEYS';
   return `SCENE COLUMN · ${ctx.view.toUpperCase()}`;
@@ -222,6 +224,7 @@ function sceneCaption(ctx: LaunchpadLegendContext): string {
 export function sceneLegendRow(ctx: LaunchpadLegendContext): PushLegendRow {
   const idx = Array.from({ length: LEGEND_CELLS }, (_, i) => i);
   const cells = idx.map((i): PushLegendCell => {
+    if (ctx.mode === 'audio') return fromBinding(i, audioRight(i) ? AUDIO_RIGHT_BINDINGS[i] : undefined, false);
     if (ctx.mode === 'lengthEdit') return lengthEditSceneCell(i);
     if (ctx.mode === 'keys') {
       return ctx.shift
@@ -297,7 +300,7 @@ export function functionLegendRow(ctx: LaunchpadLegendContext): PushLegendRow {
  */
 export function pushLegendView(ctx: LaunchpadLegendContext): PushLegendView {
   const contextName =
-    ctx.mode === 'lengthEdit' ? 'LENGTH' : ctx.mode === 'keys' ? 'KEYS' : ctx.view.toUpperCase();
+    ctx.mode === 'audio' ? 'AUDIO' : ctx.mode === 'lengthEdit' ? 'LENGTH' : ctx.mode === 'keys' ? 'KEYS' : ctx.view.toUpperCase();
   return {
     context: contextName,
     shift: ctx.shift,

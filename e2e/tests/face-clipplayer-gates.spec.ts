@@ -170,23 +170,33 @@ test('KEYS records exact holds and stabs, replaying their lengths through mono a
     await waitUntil(() => sim.state().mode === 'keys');
     sim.press(2, 0); sim.release(2, 0); // Overdub keeps the recording open.
     sim.press(1, 0); sim.release(1, 0); // Queue record starts transport.
-    const elapsed: number[] = [];
+    const elapsed: { min: number; max: number }[] = [];
     for (const [step, hold] of [[2, 0.35], [6, 0.075]]) {
       await waitUntil(() => engine.read(w.__patch.nodes.cp, 'currentStep:0') === step);
       const start = ctx.currentTime;
-      const onMs = performance.now();
+      // Capture timestamps are sampled inside the synchronous MIDI handlers.
+      // Bracket each dispatch: measuring only before it wrongly counts setup
+      // work as held time, which varies under CI load.
+      const onBefore = performance.now();
       sim.press(0, 1);
+      const onAfter = performance.now();
       await waitUntil(() => ctx.currentTime - start >= hold);
-      const offMs = performance.now();
+      const offBefore = performance.now();
       sim.release(0, 1);
-      elapsed.push((offMs - onMs) / 1000);
+      const offAfter = performance.now();
+      elapsed.push({ min: (offBefore - onAfter) / 1000, max: (offAfter - onBefore) / 1000 });
     }
     sim.press(0, 0); sim.release(0, 0); // Finish the take.
     w.__ydoc.transact(() => { w.__patch.nodes.tl.params.running = 0; });
     return { elapsed, steps: JSON.parse(JSON.stringify(w.__patch.nodes.cp.data.clips['0'].steps)) as RecordedNote[] };
   });
   expect(captured.steps).toHaveLength(2);
-  captured.steps.forEach((note, i) => expect(note.gateLen! * 0.25).toBeCloseTo(captured.elapsed[i], 2));
+  captured.steps.forEach((note, i) => {
+    const seconds = note.gateLen! * 0.25;
+    const bounds = captured.elapsed[i];
+    expect(seconds, JSON.stringify({ note, bounds })).toBeGreaterThanOrEqual(bounds.min - 1e-9);
+    expect(seconds, JSON.stringify({ note, bounds })).toBeLessThanOrEqual(bounds.max + 1e-9);
+  });
   const actual = await playbackDurations(page, 2);
   expect(actual.samples).toBeGreaterThan(0);
   expect(actual.silencePeak, JSON.stringify(actual)).toBeLessThan(0.00001);

@@ -32,6 +32,7 @@ import {
   laneRecArm,
   clipIndex,
   clipPadState,
+  defaultNoteClip,
   readClip,
   type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
@@ -222,7 +223,7 @@ async function settle(times = 6) {
  *  change what commits, only what is reported. `gapFrames` models a render-
  *  clock GAP the worklet padded with silence: same rule, same length, only
  *  the report changes. */
-async function recordOneTake(h: Harness, slipFrames = 0, gapFrames = 0) {
+async function recordOneTake(h: Harness, slipFrames = 0, gapFrames = 0, beforeDone?: () => void) {
   h.reg.sync(liveNodes());
   h.reg.pump(); // builds wiring; adopts the (all-zero) arm state
   await settle();
@@ -245,6 +246,7 @@ async function recordOneTake(h: Harness, slipFrames = 0, gapFrames = 0) {
   const data = new Float32Array(frames * 2);
   data.fill(0.25);
   h.port.onmessage?.({ data: { type: 'chunk', lane: 0, firstFrame: 0, frames, data } } as MessageEvent);
+  beforeDone?.();
   h.port.onmessage?.({
     data: { type: 'done', lane: 0, frames, startFrame: startFrame + slipFrames, gapFrames },
   } as MessageEvent);
@@ -261,6 +263,54 @@ beforeEach(() => {
 });
 
 describe('node-clip-recorder-registry — arm-single end to end', () => {
+  it('honours the request destination and never prepares a foreign writer request', async () => {
+    const h = makeHarness(); h.reg.sync(liveNodes()); h.reg.pump(); await settle();
+    clipData().recRequest = { '0': { slot: 3, recorderId: ydoc.clientID + 1 } };
+    h.setRecArm(0, true); h.reg.pump(); await settle();
+    expect(h.manifests).toHaveLength(0);
+    expect(h.posted.filter(m => m.type === 'arm')).toHaveLength(0);
+    clipData().recRequest!['0'] = { slot: 3, recorderId: ydoc.clientID };
+    h.reg.pump(); await settle(); h.reg.pump(); await settle();
+    expect(audioRecState(clipData(), 0)?.slot).toBe(3);
+    expect(h.posted.some(m => m.type === 'arm')).toBe(true);
+  });
+
+  it('keeps a peer replacement and scratch when the destination changes during capture', async () => {
+    const h = makeHarness();
+    clipData().recRequest = { '0': { slot: 3, recorderId: ydoc.clientID } };
+    await recordOneTake(h, 0, 0, () => {
+      clipData().clips = { '3': { kind: 'audio', mediaId: 'peer-take', lengthSteps: 16, frames: UNIT_FRAMES, sampleRate: SR, channels: 2, format: 'pcm-f32', takeAt: 42, loop: true } };
+    });
+    expect(readClip(clipData(), 3)).toMatchObject({ kind: 'audio', mediaId: 'peer-take' });
+    expect(h.finished).toHaveLength(0);
+    expect(h.removed).toHaveLength(0);
+  });
+
+  it('preserves automation authored into an empty note clip during capture', async () => {
+    const h = makeHarness();
+    clipData().recRequest = { '0': { slot: 3, recorderId: ydoc.clientID } };
+    await recordOneTake(h, 0, 0, () => {
+      clipData().clips = { '3': defaultNoteClip() };
+      clipData().auto = { '3': { tracks: { 'synth::gain': { events: [{ step: 0, value: 0.8 }] } } } };
+    });
+    expect(readClip(clipData(), 3)?.kind).toBe('note');
+    expect(clipData().auto?.['3']?.tracks['synth::gain']?.events).toEqual([{ step: 0, value: 0.8 }]);
+    expect(h.finished).toHaveLength(0);
+    expect(h.removed).toHaveLength(0);
+  });
+
+  it('removes orphan automation on audio commit and restores it with the same undo', async () => {
+    const h = makeHarness();
+    clipData().recRequest = { '0': { slot: 3, recorderId: ydoc.clientID } };
+    clipData().auto = { '3': { tracks: { 'synth::gain': { events: [{ step: 0, value: 0.8 }] } } } };
+    await recordOneTake(h);
+    expect(readClip(clipData(), 3)?.kind).toBe('audio');
+    expect(clipData().auto?.['3']).toBeUndefined();
+    expect(h.finished).toHaveLength(1);
+    clipUndo(CLIP);
+    expect(readClip(clipData(), 3)).toBeNull();
+    expect(clipData().auto?.['3']?.tracks['synth::gain']?.events).toEqual([{ step: 0, value: 0.8 }]);
+  });
   it('arms as an OBSERVABLE SEQUENCE: edge → armed(startFrame null) → confirmed window → rec-active', async () => {
     const h = makeHarness();
     h.reg.sync(liveNodes());

@@ -28,6 +28,8 @@
   import {
     PLAY_EVERY_MAX,
     copyClip,
+    readClip,
+    defaultNoteClip,
     noteCovering,
     pasteApplies,
     plainCloneAutoClip,
@@ -112,7 +114,8 @@
     return at ? clipplayerClipAt(nodeId, at.idx) : null;
   }
   function menuHasClip(): boolean {
-    return menuClip() !== null;
+    void version;
+    return !!at && readClip(clipplayerData(nodeId), at.idx) !== null;
   }
 
   function closeMenu() {
@@ -161,7 +164,7 @@
     // ⚠ A DISABLED row must not open its flyout on HOVER either. `disabled`
     // suppresses `click` but NOT `pointerenter`, so without this an empty pad's
     // greyed-out row still cascaded a live option list that wrote nothing.
-    if (!menuHasClip()) return;
+    if (!menuClip()) return;
     const row = e.currentTarget as HTMLElement | null;
     if (!row) return;
     const r = row.getBoundingClientRect();
@@ -224,10 +227,10 @@
    *  clipboard — the same buffer the Launchpad and Push 2 use. */
   function copyEditClip() {
     if (!at) return;
-    const clip = clipplayerClipAt(nodeId, at.idx);
+    const clip = readClip(clipplayerData(nodeId), at.idx);
     if (!clip) return;
     setClipboardBuffer(
-      { kind: 'clip', clip: copyClip(clip), auto: readAutoClip(clipplayerData(nodeId), at.idx) },
+      { kind: 'clip', clip: copyClip(clip), auto: clip.kind === 'note' ? readAutoClip(clipplayerData(nodeId), at.idx) : null },
       at.idx,
     );
     closeMenu();
@@ -250,7 +253,7 @@
     pasteClipplayerClip(nodeId, idx, next, plainCloneAutoClip(clipboardClipAuto()));
     // A paste REPLACES every note, so it is a note REMOVAL for anything the old
     // clip left sounding — cut those voices NOW rather than next loop.
-    if (before) reconcileClipRemoval(nodeId, before, next, idx, clipplayerData(nodeId));
+    if (before) reconcileClipRemoval(nodeId, before, next.kind === 'note' ? next : defaultNoteClip(), idx, clipplayerData(nodeId));
     closeMenu();
   }
   /** CLEAR — the owner's word: it DELETES the clip, not the note and not merely
@@ -271,6 +274,7 @@
      viewport-clamped so the whole menu stays in view at the window's edges. -->
 {#if at}
   {@const hasClip = menuHasClip()}
+  {@const hasNotes = menuClip() !== null}
   {@const current = probMenuCurrentLevel()}
   {@const curEvery = playEveryMenuCurrent()}
   {@const curPitch = pitchProbMenuCurrent()}
@@ -303,7 +307,7 @@
           role="menuitem"
           aria-haspopup="menu"
           aria-expanded={probSub?.which === 'note'}
-          disabled={!hasClip}
+          disabled={!hasNotes}
           title={isClip
             ? "This clip's DEFAULT firing chance — used by every note that has no probability of its own"
             : 'How likely this note is to FIRE at all'}
@@ -317,7 +321,7 @@
           role="menuitem"
           aria-haspopup="menu"
           aria-expanded={probSub?.which === 'pitch'}
-          disabled={!hasClip}
+          disabled={!hasNotes}
           title={isClip
             ? 'How far EVERY note in this clip may wander in pitch when it fires'
             : "How far this note's PITCH may wander when it fires"}
@@ -331,7 +335,7 @@
           role="menuitem"
           aria-haspopup="menu"
           aria-expanded={probSub?.which === 'skip'}
-          disabled={!hasClip}
+          disabled={!hasNotes}
           title={isClip
             ? 'Play EVERY note in this clip only on every Nth loop'
             : 'Play this note only on every Nth loop of the clip'}

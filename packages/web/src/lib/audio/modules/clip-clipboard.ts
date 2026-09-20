@@ -49,7 +49,7 @@ import type {
   AutoClipRecord,
   CopyBuffer,
   CopyBufferKind,
-  NoteClipRecord,
+  ClipRecord,
 } from './clip-types';
 
 /** The typed buffer: one clip, or a whole scene. `null` = empty clipboard. */
@@ -89,7 +89,7 @@ export function clipboardSourceIndex(): number | null {
  *  paste path reads through this, so a SCENE buffer can NEVER paste onto a
  *  single clip — scene→clip and clip→scene are no-ops by the type gate
  *  (`pasteApplies`), not by each caller remembering to check. */
-export function clipboardClip(): NoteClipRecord | null {
+export function clipboardClip(): ClipRecord | null {
   return buffer?.kind === 'clip' ? buffer.clip : null;
 }
 

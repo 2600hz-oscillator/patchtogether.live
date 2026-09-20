@@ -1,9 +1,8 @@
-// Build-time data for the clip-player + monome-grid docs page. Operator-style
-// guide (not an auto-generated port table), so no module-manifest dependency —
-// but we keep a server load so the route prerenders like its siblings.
-
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = () => {
-  return {};
-};
+// Keep this an HTTP redirect. Prerendering produces an HTML refresh which
+// drops the incoming fragment in production preview; browsers preserve it on
+// the 308 response. The canonical guide retains the audition/song-mode IDs.
+export const prerender = false;
+export const load: PageServerLoad = () => redirect(308, '/docs/modules/clipplayer');

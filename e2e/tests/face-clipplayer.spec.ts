@@ -1143,12 +1143,30 @@ test.describe('CLIP PLAYER faceplate', () => {
     expect(glyph.radius, 'a dot').toBe('50%');
     expect(parseFloat(glyph.width), 'visible, not a 0 px box').toBeGreaterThan(0);
 
-    // ── THE OWNER'S SEQUENCE: arm while stopped, then play ────────────────
+    // Known note content is refused immediately, before changing arm state.
+    await arm0.click();
+    await expect(arm0).toHaveAttribute('aria-pressed', 'false');
+    await expect(grid.locator('.record-message')).toContainText('contains notes');
+    // A peer can still fill an empty destination AFTER we arm. That race
+    // must reach the registry refusal path and show the reason on the button.
+    await page.evaluate((cp) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data: { clips: Record<string, unknown> } }> } };
+      delete w.__patch.nodes[cp]!.data.clips['0'];
+    }, CP);
+    // ── ARM WHILE STOPPED, then a peer authors notes before PLAY ─────────
     await arm0.click();
     await expect(arm0).toHaveAttribute('aria-pressed', 'true');
     // Armed while STOPPED nothing is asked of the recorder (the arm is
     // level-triggered on toggle AND running), so nothing can be refused yet.
     await expect(arm0).not.toHaveAttribute('data-rec-refusal');
+
+    await page.evaluate((cp) => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { data: { clips: Record<string, unknown> } }> } };
+      w.__patch.nodes[cp]!.data.clips['0'] = {
+        kind: 'note', lengthSteps: 4, root: 48, loop: true,
+        steps: [{ step: 0, midi: 72, velocity: 127, lengthSteps: 1 }],
+      };
+    }, CP);
 
     await setTransport(page, 1);
 

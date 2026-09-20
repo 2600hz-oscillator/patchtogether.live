@@ -21,8 +21,8 @@ const html = (props: Record<string, string> = {}) =>
   render(LaunchpadDocs as never, { props } as never).body;
 
 // Every tab combination (mirrors SINGLE_TABS / PAIR_TABS in the component).
-const SINGLE_TAB_IDS = ['grid', 'clip', 'arranger', 'control', 'walkthrough'] as const;
-const PAIR_TAB_IDS = ['matrix', 'deck', 'editor', 'keys'] as const;
+const SINGLE_TAB_IDS = ['grid', 'clip', 'arranger', 'control', 'audio', 'walkthrough'] as const;
+const PAIR_TAB_IDS = ['matrix', 'deck', 'editor', 'keys', 'audio'] as const;
 const everyPanel = (): { name: string; out: string }[] => [
   ...SINGLE_TAB_IDS.map((id) => ({
     name: `single/${id}`,
@@ -41,7 +41,7 @@ describe('LaunchpadDocs — tabbed structure', () => {
     expect(out).toContain('2 Launchpads');
     expect(out).toContain('Grid Mode');
     expect(out).toContain('Clip Mode');
-    expect(out).toContain('Arranger Mode (TBD)');
+    expect(out).toContain('Arranger (reserved)');
     expect(out).toContain('Control Mode');
   });
 
@@ -67,14 +67,14 @@ describe('LaunchpadDocs — tabbed structure', () => {
     expect(out).toContain('ARRANGER RECORD');
     // Discoverability: the arming surfaces are named in the vocabulary box —
     // per-lane arm (the owner-locked model): HOLD SHIFT + top-row on the
-    // hardware, the per-lane ◉ on the card; module-level assignment; CV never
-    // recorded. SHIFT is momentary hold-only (no latch, no double-tap).
-    expect(out).toContain('arm the');
+    // hardware. The canonical Clip Player guide owns automation behavior;
+    // this hardware page owns the physical arm gesture.
     expect(out).toContain('HOLD SHIFT');
     expect(out).not.toContain('double-tap SHIFT'); // the retired latch-era gesture
     expect(out).toContain('QUEUE-REC');
-    expect(out).toContain('Assign to automation lane');
-    expect(out).toContain('CV is never recorded');
+    expect(out).toContain('/docs/modules/clipplayer#automation');
+    expect(out).toContain('AUDIO RECORD');
+    expect(out).toContain('lp1-tab-audio');
   });
 
   it('shows the automation ARM layer in the top-row diagram data, not prose alone', () => {
@@ -195,7 +195,9 @@ describe('LaunchpadDocs — tabbed structure', () => {
     for (const { name, out } of everyPanel()) {
       // The retired Control-view AUTO pad must not resurface as a pad label or
       // a documented pad — the arm lives on the permanent top row under SHIFT.
-      expect(out, name).not.toContain('>AUTO<');
+      // The pair's explicit AUDIO page now has an AUTO row. The retired
+      // single CONTROL-view AUTO pad remains absent.
+      expect(out, name).toContain('AUTO is independent of audio recording.');
       expect(out, name).not.toContain('AUTO pad');
     }
   });

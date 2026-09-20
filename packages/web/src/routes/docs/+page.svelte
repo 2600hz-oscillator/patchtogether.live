@@ -110,10 +110,11 @@
     4-player co-op: starting a game, joining, late-join, player colors, controls.
   </li>
   <li>
-    <a href="/docs/modules/grid-clip-launcher">Clip player + monome grid</a> —
-    an 8-instrument-lane, TIMELORDE-locked clip launcher you build, launch, scene,
-    and edit from a monome grid 128 (WebSerial, no helper).
+    <a href="/docs/modules/clipplayer">Clip Player</a> —
+    notes, recorded audio, automation, scenes, song, routing and recovery, with visual guides.
   </li>
+  <li><a href="/docs/modules/push2Control">Push 2</a> — connection, physical maps, display, encoders and clip workflows.</li>
+  <li><a href="/docs/modules/launchpadControlLeft">Launchpad</a> — one-device and paired layouts, pad modes, recording and LED feedback.</li>
   <li>
     <a href="/docs/rackspace-persistence">Rackspace persistence</a> —
     where patches + assets live, what Save/Load do, what auto-saves.

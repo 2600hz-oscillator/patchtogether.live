@@ -130,8 +130,6 @@
   import {
     resetClipplayerLanes,
     stopAllClipplayerLanes,
-    stopClipplayerLane,
-    toggleClipplayerLaneMute,
     toggleClipplayerSongRec,
     toggleClipplayerSongRecMode,
     writeClipplayerData,
@@ -473,35 +471,6 @@
     >
   </div>
 
-  <!-- PER-LANE PERFORMANCE DECK — mute and stop, the card's CONTROL view. -->
-  <div class="deck-lanes" role="group" aria-label="per-lane mute and stop">
-    {#each lanes as l (l.lane)}
-      <div class="deck-lane" style={`--lane-color:${l.color}`}>
-        <span class="deck-lane-lbl" aria-hidden="true">{l.lane + 1}</span>
-        <button
-          class="deck-mute"
-          class:on={l.muted}
-          title={l.muted
-            ? `Ch ${l.lane + 1} MUTED — click to unmute`
-            : `Ch ${l.lane + 1} MUTE — the lane keeps advancing but emits no audio`}
-          aria-label={`channel ${l.lane + 1} mute`}
-          aria-pressed={l.muted}
-          data-lane={l.lane}
-          data-testid={`clipplayer-mute-${l.lane}`}
-          onclick={() => toggleClipplayerLaneMute(nodeId, l.lane)}>M</button
-        >
-        <button
-          class="deck-stop"
-          title={`Stop Ch ${l.lane + 1} (queue stop)`}
-          aria-label={`channel ${l.lane + 1} stop`}
-          data-lane={l.lane}
-          data-testid={`clipplayer-stop-${l.lane}`}
-          onclick={() => stopClipplayerLane(nodeId, l.lane)}>■</button
-        >
-      </div>
-    {/each}
-  </div>
-
   <!-- THE TWO RECORDERS, kept visibly apart exactly as the card keeps them: the
        ARRANGER record captures clip LAUNCHES onto a timeline; SONG-REC prints a
        concrete performance. Neither is the per-lane automation arm, which
@@ -690,46 +659,6 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-  }
-
-  .deck-lanes {
-    display: grid;
-    grid-template-columns: repeat(8, auto);
-    gap: 3px;
-    justify-content: start;
-  }
-  .deck-lane {
-    display: grid;
-    grid-template-rows: auto auto auto;
-    gap: 2px;
-    justify-items: center;
-  }
-  .deck-lane-lbl {
-    font-size: 8px;
-    color: rgb(255 255 255 / 0.3);
-    font-variant-numeric: tabular-nums;
-  }
-  .deck-mute,
-  .deck-stop {
-    width: 28px;
-    height: 14px;
-    padding: 0;
-    font-size: 9px;
-    line-height: 1;
-    color: rgb(255 255 255 / 0.42);
-    background: rgb(255 255 255 / 0.05);
-    border: 1px solid rgb(255 255 255 / 0.1);
-    border-radius: 2px;
-    cursor: pointer;
-  }
-  .deck-mute.on {
-    color: #fff;
-    background: hsl(38 70% 40%);
-    border-color: hsl(38 80% 58%);
-  }
-  .deck-mute:hover,
-  .deck-stop:hover {
-    color: #fff;
   }
 
   /* THE RECOVERY PROMPT. Ordinary flow content, not an overlay: the card had to
