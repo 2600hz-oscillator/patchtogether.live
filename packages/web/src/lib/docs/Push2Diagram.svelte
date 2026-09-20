@@ -124,7 +124,7 @@
     <!-- 960×160 display -->
     <rect x={nx(dispX0)} y={ny(dispY0)} width={nx(dispX1) - nx(dispX0)} height={ny(dispY1) - ny(dispY0)}
           rx="4" fill="#0d1016" stroke={STROKE} stroke-width="1" />
-    <text x={(nx(dispX0) + nx(dispX1)) / 2} y={(ny(dispY0) + ny(dispY1)) / 2 + 3} text-anchor="middle" class="disp">960 × 160 display · Phase 2</text>
+    <text x={(nx(dispX0) + nx(dispX1)) / 2} y={(ny(dispY0) + ny(dispY1)) / 2 + 3} text-anchor="middle" class="disp">MODULE CARD · AUDIO · ELECTRA · LEGEND</text>
 
     <!-- below-display buttons = permanent controls (CC 20–27) -->
     {#each Array(8) as _, i (i)}
@@ -138,8 +138,8 @@
     <rect x={stripX} y={stripY} width={stripW} height={stripH} rx="3" fill={OFF} stroke={STROKE} stroke-width="0.75" />
 
     <!-- left transport column: Record + Play at the bottom-left -->
-    <circle cx={leftCx} cy={recCy} r={11} fill="#7a2222" stroke={STROKE} stroke-width="1" />
-    <text x={leftCx} y={recCy + 3} text-anchor="middle" class="mini">REC</text>
+    <circle cx={leftCx} cy={recCy} r={11} fill={OFF} stroke={STROKE} stroke-width="1" />
+    <text x={leftCx} y={recCy + 3} text-anchor="middle" class="mini">—</text>
     <circle cx={leftCx} cy={playCy} r={12} fill="#1f7a34" stroke={STROKE} stroke-width="1" />
     <text x={leftCx} y={playCy + 3} text-anchor="middle" class="mini">▶</text>
 
@@ -156,7 +156,7 @@
       <rect x={nx(sceneCx) - padSize / 2} y={sceneY(i) - btnH / 2} width={padSize} height={btnH} rx="4"
             fill={DIM} stroke={STROKE} stroke-width="0.75" />
       {#if sceneLabels[i]}
-        <text x={nx(sceneCx) + padSize / 2 + 4} y={sceneY(i) + 3} text-anchor="start" class="mini">{sceneLabels[i]}</text>
+        <text x={nx(sceneCx)} y={sceneY(i) + 21} text-anchor="middle" class="mini">{sceneLabels[i]}</text>
       {/if}
     {/each}
 
@@ -175,10 +175,15 @@
 <style>
   .p2-diagram {
     margin: 1rem 0 1.4rem;
+    max-width:760px;
   }
   .p2-diagram svg {
-    max-width: 100%;
+    width:100%;
     height: auto;
+    display:block;
+    background:#151c26;
+    border:1px solid #3a4455;
+    border-radius:8px;
   }
   .lbl {
     font: 600 8px/1 ui-monospace, 'SF Mono', Menlo, monospace;
@@ -191,7 +196,7 @@
   }
   .disp {
     font: 600 9px/1 ui-monospace, 'SF Mono', Menlo, monospace;
-    fill: #5a6478;
+    fill: #a7b7ce;
   }
   figcaption {
     margin-top: 0.4rem;

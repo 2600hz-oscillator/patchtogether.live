@@ -2491,7 +2491,7 @@ describe('the ARM subset is DERIVED from the transient list, not restated beside
     }
   });
 
-  it('names EXACTLY the six record-arm latches — nothing else may ride along', () => {
+  it('names only record-arm latches and pending recording requests', () => {
     // ⚠ EXACT, not `toContain`. A save/load scrub is a DELETE: a `live` field
     // that drifted into this set would start being erased from every saved
     // patch, which is the same class of silent damage in the other direction.
@@ -2506,7 +2506,7 @@ describe('the ARM subset is DERIVED from the transient list, not restated beside
     // (CLIP vs ENDLESS), it survives save and duplicate on purpose, and a mode
     // cannot start a recording on its own.
     expect([...CLIP_PLAYER_ARM_DATA_FIELDS].sort()).toEqual(
-      ['audioRec', 'automation', 'noteRec', 'recArm', 'recording', 'songRec'].sort(),
+      ['audioRec', 'automation', 'noteRec', 'recArm', 'recRequest', 'recording', 'songRec'].sort(),
     );
   });
 

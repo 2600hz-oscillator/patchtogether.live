@@ -1,9 +1,19 @@
 # ADR-013: Keep clip-owned state per clip, and media out of the Y.Doc
 
-- Status: Accepted (arranger song-mode phases 2–6 unbuilt — see Consequences)
+- Status: Accepted (see dated implementation status below)
 - Date: 2026-09-08 (records owner decisions of 2026-06-15 through 2026-09-04)
 - Deciders: project owner; this ADR documents the decisions
 - Tags: clips, persistence, multiplayer, audio, automation
+
+## Implementation status — 2026-09-20
+
+The decisions below retain their original attribution. Current source now
+captures and plays printed **note** performances through `● SONG` / SONG.
+Song automation capture/playback and a dedicated printed-song editor remain
+unbuilt. Experimental ARR still records and edits the separate clip-launch log;
+it is not the printed song. The original Consequences section describes the
+status at this ADR's acceptance. For current operation, see the
+[Clip Player guide](/docs/modules/clipplayer#song).
 
 ## Context
 

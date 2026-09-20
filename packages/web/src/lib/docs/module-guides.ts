@@ -19,12 +19,6 @@ export interface ModuleGuide {
 }
 
 export const MODULE_GUIDES: Record<string, ModuleGuide> = {
-  clipplayer: {
-    href: '/docs/modules/grid-clip-launcher',
-    title: 'Clip launcher, monome grid & song mode',
-    blurb:
-      'The full illustrated guide — launching clips, scenes & quantize, editing notes on the pads, driving it from a monome grid 128, and recording a session into a song-mode arrangement.',
-  },
   doom: {
     href: '/docs/modules/doom-multiplayer',
     title: 'DOOM multiplayer',
@@ -34,13 +28,13 @@ export const MODULE_GUIDES: Record<string, ModuleGuide> = {
     href: '/docs/modules/launchpadControlLeft',
     title: 'Launchpad control (clip launcher)',
     blurb:
-      'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — the always-live 8×8 matrix on the left, the command deck + note editor on the right. Pairing, pad/CC map, SHIFT windowing, and the full RGB colour language.',
+      'One or two Launchpad Mini Mk3 units: setup, pad maps, note tools, keys, audio recording, automation arms and LED feedback.',
   },
   push2Control: {
     href: '/docs/modules/push2Control',
     title: 'Push 2 control (clip launcher)',
     blurb:
-      'Drive the clip player from an Ableton Push 2 — full Launchpad parity on the 8×8 pads, START/STOP on Play, D-Pad clip nav, the 8 above-display buttons select channel 1-8, and the 11 encoders drive the MixMasters volume + sends.',
+      'Push 2 setup and physical controls: pads, note tools, keys, audio recording, display, LEGEND and parameter encoders.',
   },
   vfpgaRunner: {
     href: '/docs/modules/vfpga-runner',
@@ -54,19 +48,10 @@ export function guideFor(type: string): ModuleGuide | null {
   return MODULE_GUIDES[type] ?? null;
 }
 
-// GUIDE_PAGES — the hand-written walkthrough pages that live at custom routes
-// under /docs/modules/<slug>/ (NOT auto-generated from a module def). The
-// catalog (/docs/modules) is built from `buildModuleManifest()`, which globs
-// ONLY `audio/modules/*.ts`, so these pages are otherwise UNREACHABLE from the
-// catalog or nav:
-//   - grid-clip-launcher / launchpadControlLeft / doom-multiplayer / vfpga-runner
-//     have no module def at all (no `[id]` page);
-//   - mappy / onetonine are VIDEO modules — absent from the audio-only catalog;
-//   - livecode is an audio module already in the catalog, listed here too so the
-//     guides section is a complete index of the illustrated walkthroughs.
-// An explicit small list (intentionally NOT auto-derived from the audio manifest)
-// keeps each guide one click away. `slug` is the route segment under
-// /docs/modules/.
+// GUIDE_PAGES indexes illustrated walkthroughs, including dedicated routes
+// and the authored Clip Player guide embedded above its generated reference.
+// This is editorial navigation, not a second module registry. Existing links
+// to grid-clip-launcher redirect to clipplayer. `slug` is a route segment.
 export interface GuidePage {
   /** Route segment under /docs/modules/ (the custom static route). */
   slug: string;
@@ -78,22 +63,22 @@ export interface GuidePage {
 
 export const GUIDE_PAGES: GuidePage[] = [
   {
-    slug: 'grid-clip-launcher',
-    title: 'Clip player + monome grid',
+    slug: 'clipplayer',
+    title: 'Clip Player',
     blurb:
-      'Launch clips, scenes & quantize, edit notes on the pads, drive it from a monome grid 128, and record a session into a song-mode arrangement.',
+      'The complete illustrated workflow: notes, recorded audio, automation, scenes, song and arrangement, routing, recovery and monome maps.',
   },
   {
     slug: 'launchpadControlLeft',
     title: 'Launchpad control (clip launcher)',
     blurb:
-      'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — pairing, the pad/CC map, SHIFT windowing, and the full RGB colour language.',
+      'One or two Launchpad Mini Mk3 units: connection, mode maps, note and audio recording, automation, modifiers and LEDs.',
   },
   {
     slug: 'push2Control',
     title: 'Push 2 control (clip launcher)',
     blurb:
-      'Drive the clip player from an Ableton Push 2 — Launchpad parity on the pads, Play transport, D-Pad nav, channel-select buttons, and the encoder→MixMasters map.',
+      'Push 2 connection, physical maps, pad modes, audio recording, display, LEGEND and parameter encoders.',
   },
   {
     slug: 'mappy',

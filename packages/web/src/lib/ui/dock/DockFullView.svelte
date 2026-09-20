@@ -217,6 +217,55 @@
   let annotationsOn = $derived(isAnnotating(node.id));
 </script>
 
+{#snippet tabRail()}
+          <div class="tabrail" role="tablist" data-testid="faceplate-tabrail">
+            {#if tabs}
+              {#each tabs as t (t.id)}
+                <!-- `id` + `aria-controls` are the half of the tabs pattern
+                     that was missing: without them a screen reader announces
+                     eight tabs that control NOTHING, because the band
+                     (`role="tabpanel"` on ModuleShell's `.dock-page`) has no
+                     way to point back. The band's `aria-labelledby` names this
+                     button, so the pairing is stated in both directions. -->
+                <button
+                  type="button"
+                  class="tab"
+                  class:on={t.id === activeTab}
+                  role="tab"
+                  id={`faceplate-tab-${t.id}`}
+                  aria-selected={t.id === activeTab}
+                  aria-controls={`face-page-${t.id}`}
+                  tabindex={t.id === activeTab ? 0 : -1}
+                  data-testid={`faceplate-tab-${t.id}`}
+                  data-face-tab={t.id}
+                  onkeydown={(e) => {
+                    // ROVING FOCUS. Arrow keys move between tabs (the pattern's
+                    // required interaction); Home/End jump to the ends. Without
+                    // this the rail is reachable but not navigable as a tablist.
+                    const i = tabs!.findIndex((x) => x.id === activeTab);
+                    const n = tabs!.length;
+                    let j = -1;
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
+                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + n) % n;
+                    else if (e.key === 'Home') j = 0;
+                    else if (e.key === 'End') j = n - 1;
+                    if (j < 0) return;
+                    e.preventDefault();
+                    const next = tabs![j]!.id;
+                    requestFaceTab(node.id, next);
+                    (e.currentTarget as HTMLElement)
+                      .parentElement?.querySelector<HTMLElement>(`[data-face-tab="${next}"]`)
+                      ?.focus();
+                  }}
+                  onclick={() => requestFaceTab(node.id, t.id)}
+                ><span class="t1">{t.label}</span></button>
+              {/each}
+            {:else}
+              <div class="tab on" data-testid="faceplate-tab"><span class="t1">MODULE</span></div>
+            {/if}
+          </div>
+{/snippet}
+
 <div
   class="dock-faceplate"
   data-testid="dock-full-view"
@@ -273,7 +322,7 @@
             aria-pressed={annotationsOn}
             title="Annotations — show this faceplate's authored notes"
             onclick={() => toggleAnnotate(node.id)}
-          >NOTES</button>
+          >{node.type === 'clipplayer' ? 'HELP' : 'NOTES'}</button>
         {/if}
         {#if flipped && def}
           <!-- REAR state chip — the title bar's only swap on the flip side
@@ -294,6 +343,10 @@
           </button>
         </div>
       </div>
+
+      {#if node.type === 'clipplayer'}
+        <div class="fixed-tabs" class:fp-front-hidden={flipped && def}>{@render tabRail()}</div>
+      {/if}
 
       <!-- CONTENT SCROLL REGION: everything BELOW the chrome — the rear patch
            field or the front tab-rail + control page — scrolls here, both
@@ -317,52 +370,7 @@
                (dockTabPlan) gets REAL per-section tabs; everything else keeps
                the single MODULE chip and scrolls, which is the better trade
                below the threshold. -->
-          <div class="tabrail" role="tablist" data-testid="faceplate-tabrail">
-            {#if tabs}
-              {#each tabs as t (t.id)}
-                <!-- `id` + `aria-controls` are the half of the tabs pattern
-                     that was missing: without them a screen reader announces
-                     eight tabs that control NOTHING, because the band
-                     (`role="tabpanel"` on ModuleShell's `.dock-page`) has no
-                     way to point back. The band's `aria-labelledby` names this
-                     button, so the pairing is stated in both directions. -->
-                <button
-                  type="button"
-                  class="tab"
-                  class:on={t.id === activeTab}
-                  role="tab"
-                  id={`faceplate-tab-${t.id}`}
-                  aria-selected={t.id === activeTab}
-                  aria-controls={`face-page-${t.id}`}
-                  tabindex={t.id === activeTab ? 0 : -1}
-                  data-testid={`faceplate-tab-${t.id}`}
-                  data-face-tab={t.id}
-                  onkeydown={(e) => {
-                    // ROVING FOCUS. Arrow keys move between tabs (the pattern's
-                    // required interaction); Home/End jump to the ends. Without
-                    // this the rail is reachable but not navigable as a tablist.
-                    const i = tabs!.findIndex((x) => x.id === activeTab);
-                    const n = tabs!.length;
-                    let j = -1;
-                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
-                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + n) % n;
-                    else if (e.key === 'Home') j = 0;
-                    else if (e.key === 'End') j = n - 1;
-                    if (j < 0) return;
-                    e.preventDefault();
-                    const next = tabs![j]!.id;
-                    requestFaceTab(node.id, next);
-                    (e.currentTarget as HTMLElement)
-                      .parentElement?.querySelector<HTMLElement>(`[data-face-tab="${next}"]`)
-                      ?.focus();
-                  }}
-                  onclick={() => requestFaceTab(node.id, t.id)}
-                ><span class="t1">{t.label}</span></button>
-              {/each}
-            {:else}
-              <div class="tab on" data-testid="faceplate-tab"><span class="t1">MODULE</span></div>
-            {/if}
-          </div>
+          {#if node.type !== 'clipplayer'}{@render tabRail()}{/if}
 
           <div class="page">
             <div class="editor" data-testid="faceplate-editor">
@@ -377,6 +385,7 @@
 </div>
 
 <style>
+  .fixed-tabs { flex: 0 0 auto; min-width: 0; }
   /* The full-view faceplate fills ONE pane of Canvas's .dock-fullview-drawer
      (the bottom overlay + 50/50 split container live THERE — dock
      unification: Canvas mounts EITHER that drawer OR the bottom DockRail

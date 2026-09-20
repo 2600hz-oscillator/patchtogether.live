@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Push2PadGuide from './Push2PadGuide.svelte';
   // PUSH 2 CONTROL — module docs. Authored reference for the Phase-1 Push 2
   // integration, with a DATA-DRIVEN diagram fed from the REAL push2-map CC
   // constants so the picture + the control→action table can never drift from the
@@ -44,9 +45,9 @@
 
   // The control→action reference (each row's CC comes from the real map).
   const parityRows = [
-    { control: '8×8 pads', cc: '36–99', action: 'Clip launch / note editor / arm / KEYS — FULL Launchpad parity. Velocity-SENSITIVE: your hit velocity is recorded (note entry) + played (KEYS)' },
+    { control: '8×8 pads', cc: '36–99', action: 'Clip launch, note editor, KEYS and AUDIO. Hit velocity is recorded for note entry and used for live KEYS playback' },
     { control: 'Play', cc: `CC ${PUSH_CC_PLAY}`, action: 'START / STOP the transport (moved here from the grid)' },
-    { control: 'Permanent-controls row ×8', cc: `CC ${PUSH_CC_PERMANENT_BASE}–${PUSH_CC_PERMANENT_BASE + 7}`, action: 'The 8 buttons BELOW the display → the Launchpad view/function top row (91–98): session / clip-note / scene / arm / KEYS' },
+    { control: 'Permanent-controls row ×8', cc: `CC ${PUSH_CC_PERMANENT_BASE}–${PUSH_CC_PERMANENT_BASE + 7}`, action: 'The 8 buttons BELOW the display: transport, GRID, CLIP, ARRANGER, CONTROL, UNDO, REDO, SHIFT. These remain available while the grid changes modes' },
     { control: 'Scene launch ×8', cc: `CC ${PUSH_CC_SCENE_BASE}–${PUSH_CC_SCENE_BASE + 7}`, action: 'The 8 buttons RIGHT of the grid → the scene column (launch / editor functions / KEYS scale). TOP button = 43 … BOTTOM = 36' },
     { control: 'Undo', cc: `CC ${PUSH_CC_UNDO}`, action: 'Undo' },
     { control: 'SHIFT (permanent row, above channel 8)', cc: `CC ${PUSH_CC_SHIFT}`, action: 'SHIFT modifier — editor ×8 window, encoder fine-nudge, arm gestures, the LEGEND shift layer. NOT the button labelled “Shift”: that one is CC ' + PUSH_CC_ELECTRA_MODE },
@@ -54,7 +55,7 @@
   const additiveRows = [
     { control: 'Above-display ×8', cc: `CC ${PUSH_CC_ABOVE_DISPLAY_BASE}–${PUSH_CC_ABOVE_DISPLAY_BASE + 7}`, action: 'Select LANE 1–8 — the screen shows that lane\u2019s PUSH CARD (Push-local, never synced)' },
     { control: 'Display encoders 1–8', cc: `CC ${PUSH_CC_ENCODER_BASE}–${PUSH_CC_ENCODER_BASE + 7}`, action: 'Turn the 8 controls of the current push card (SHIFT = fine)' },
-    { control: 'Tempo encoder', cc: `CC ${PUSH_CC_ENCODER_TEMPO}`, action: 'Unbound in v1' },
+    { control: 'Tempo encoder', cc: `CC ${PUSH_CC_ENCODER_TEMPO}`, action: 'Unbound; use CONTROL tempo pads or TIMELORDE' },
     { control: 'Swing encoder', cc: `CC ${PUSH_CC_ENCODER_SWING}`, action: 'Flip through the push cards of the modules in the selected lane' },
     { control: 'Master encoder', cc: `CC ${PUSH_CC_ENCODER_MASTER}`, action: 'MixMasters master volume' },
     { control: 'D-Pad ↑ / ↓', cc: `CC ${PUSH_CC_DPAD_UP} / ${PUSH_CC_DPAD_DOWN}`, action: 'CLIP-view pitch window ±1 (SHIFT = ×8)' },
@@ -76,15 +77,26 @@
   <h1>Push 2 control</h1>
   <p class="lede">
     Drive the clip player from an Ableton Push 2. The 8×8 pads give you the
-    <strong>full Launchpad control surface</strong> — clip launch, the note editor,
-    the arm row, scenes, and the KEYS keyboard — through the same shipped brain,
+    <strong>clip performance surface</strong> — clip launch, the note editor,
+    audio recording, scenes, automation arms and the KEYS keyboard —
     and because the Push pads are <strong>velocity-sensitive</strong>, how hard you
     hit a pad is recorded into the clip and played through the keyboard. On top of
     that, every module has a <strong>push card</strong>: the 8 buttons above the
-    display pick a lane, the 960×160 screen shows one module\u2019s card at a time,
+    display pick a lane, the 960×160 screen shows one module’s card at a time,
     and the 8 display encoders turn its controls.
     START/STOP lives on the dedicated <strong>Play</strong> button.
   </p>
+
+  <p>This guide covers the Push’s physical implementation. Read <a href="/docs/modules/clipplayer">Clip Player</a> for the full note, audio, automation and song workflows. <a href="/docs/modules/launchpadControlLeft">Launchpad</a> has its own single-device and paired guide.</p>
+  <nav class="guide-nav" aria-label="Push 2 guide contents"><a href="#setup">Connect</a><a href="#pad-modes">Pad modes</a><a href="#encoders">Encoders</a><a href="#electra">Electra mode</a><a href="#legend">LEGEND</a><a href="#hardware">Compatibility</a></nav>
+  <h2 id="setup">Connect the module and display</h2>
+  <ol>
+    <li>Add <strong>Push 2 control</strong> and <strong>Clip Player</strong>. The control module has no sound ports; follow <a href="/docs/modules/clipplayer#quick-start">Clip Player’s wiring guide</a>.</li>
+    <li>Connect Push 2 by USB, press <strong>Connect Push 2</strong> on the module, and allow Web MIDI. The adapter uses its <strong>LIVE port</strong> in Live mode.</li>
+    <li>Check the bound Clip Player on the module. Binding uses the first available player; <strong>Bind to clip-player</strong> / <strong>Unbind clip-player</strong> controls that connection.</li>
+    <li>Press <strong>Connect display</strong> and allow WebUSB for the physical screen. This is a separate permission. The browser module preview shows the same display content when USB display access is unavailable.</li>
+  </ol>
+  <p>The shared Push/Launchpad engine has one active control surface at a time. A Launchpad pair counts as one surface; adding more control modules does not create independent sessions.</p>
 
   <Push2Diagram
     {pads}
@@ -95,11 +107,11 @@
     caption="Push 2 — encoders on top (Tempo unbound · Swing flips cards · the 8 push-card strips · Master); lane-select above the display; the permanent-controls row below it; the 8×8 grid with the scene column + NAV arrows on its right; Play is bottom-left."
   />
 
-  <h2>Parity — the clip surface</h2>
+  <h2>Physical controls</h2>
   <p>
-    Everything the Launchpad does on its 8×8 works here identically. START/STOP
-    moves to the Play button; view switching lives on the permanent-controls row
-    below the display; scene launch is the column to the right of the grid.
+    Use physical Play for START/STOP, the permanent-controls row below the display
+    to change views, and the right column for the current page’s actions. The
+    physical Record button is unbound; audio recording is on CONTROL → AUDIO.
   </p>
   <table class="p2-table" data-testid="push2-parity-table">
     <thead><tr><th>Control</th><th>MIDI</th><th>Action</th></tr></thead>
@@ -110,23 +122,22 @@
     </tbody>
   </table>
 
-  <h2>Additive — the push card + navigation</h2>
+  <Push2PadGuide />
+  <h2 id="encoders">Parameter cards and encoders</h2>
   <p>
     Every module has a <strong>push card</strong>: up to eight controls, each drawn
     as a name, a bar graph and a readout, one per display encoder. Pick a lane with
     a button above the screen and you get the card for the module you last looked
     at in that lane, or — if you have never opened it — the module most recently
-    added to it. The <strong>second encoder from the left</strong> flips through the
-    other modules in that lane, one card at a time.
+    added to it. The <strong>card-scroll encoder (CC {PUSH_CC_ENCODER_SWING})</strong> flips through the
+    other modules in that lane, one card at a time. Its physical position remains unconfirmed on hardware.
   </p>
   <p>
     Which eight controls a module shows is a text file you can edit:
     <code>packages/web/src/lib/control/push2/push-card-config.ts</code>. Modules
     with no entry fall back to their curated faceplate ranking, and un-faced
-    modules to the order they declare their params in. The encoders write through
-    the same streaming-CC pump the Electra One uses, so a fast twist never storms
-    the shared document. The selected lane and the per-lane card you left off on
-    are Push-local (per machine, per rack) and are never synced.
+    modules to the order they declare their params in. The selected lane and the module card you left open are remembered locally
+    for this rack; they do not change another collaborator’s selection.
   </p>
   <table class="p2-table" data-testid="push2-additive-table">
     <thead><tr><th>Control</th><th>MIDI</th><th>Action</th></tr></thead>
@@ -137,7 +148,7 @@
     </tbody>
   </table>
 
-  <h2>ElectraControl mode</h2>
+  <h2 id="electra">ElectraControl mode</h2>
   <p>
     Press the button labelled <strong>Shift</strong> in the lower right
     (<code>CC {PUSH_CC_ELECTRA_MODE}</code>) and the Push becomes an
@@ -167,6 +178,10 @@
     </tbody>
   </table>
 
+  <h2 id="legend">Hold LEGEND for the current button map</h2>
+  <p>Hold LEGEND (<code>CC {PUSH_CC_LEGEND}</code>) to replace the display with the current view’s button labels. The bottom display row follows the eight function buttons left to right; the top display row describes the scene column from top to bottom. Hold the permanent-row SHIFT as well to see its alternate layer. Release LEGEND to return; it never changes what a button does.</p>
+  <p>Display priority is LEGEND, then ElectraControl, then AUDIO status, then the selected module’s parameter card. AUDIO leaves parameter encoders working normally. A display page is not a second set of clip playback states.</p>
+
   <p class="note" data-testid="push2-shift-note">
     <strong>Two different buttons are both called “shift”.</strong> The
     <strong>SHIFT modifier</strong> — the editor's ×8 window, the encoder
@@ -174,12 +189,12 @@
     permanent-row button <em>above channel 8</em> (<code>CC {PUSH_CC_SHIFT}</code>),
     which is the one that maps to the Launchpad's own shift. The button physically
     <em>labelled</em> “Shift” in the lower right (<code>CC {PUSH_CC_ELECTRA_MODE}</code>)
-    is the ElectraControl mode toggle. Until 2026-08-03 it was a duplicate second
-    route to the same modifier; reassigning it took nothing away.
+    is the ElectraControl mode toggle.
   </p>
 
+  <h2 id="hardware">Compatibility and troubleshooting</h2>
   <p class="note" data-testid="push2-hardware-note">
-    <strong>Phase 1 note:</strong> the Push binds its <strong>LIVE port</strong> and
+    The Push binds its <strong>LIVE port</strong> and
     stays in the device's default <strong>Live mode</strong> — both the pad presses
     and the pad-LED Note-Ons flow there with no per-frame SysEx (the reliable
     standalone-browser path; the User port only carries pads/LEDs once switched to
@@ -196,6 +211,7 @@
     instruments of a lane, and now through ElectraControl rows — not by a position
     anyone has verified by turning it.
   </p>
+  <p>If pads do nothing, check MIDI connection and the bound Clip Player. If the screen is blank but pads work, check the separate display connection. If a recorded take is silent, check <a href="/docs/modules/clipplayer#routing">routing</a> and <a href="/docs/modules/clipplayer#recovery">media availability</a>. MIDI simulation validates the mappings; it does not establish every physical-device position or color.</p>
 </div>
 
 <style>
@@ -209,6 +225,8 @@
   .p2docs h1 { font-size: 1.6rem; margin: 0 0 0.6rem; }
   .p2docs h2 { font-size: 1.15rem; margin: 1.8rem 0 0.5rem; }
   .lede { color: #aeb4c4; }
+  .guide-nav { display:flex; flex-wrap:wrap; gap:1rem; padding:1rem 0; }
+  h2 { scroll-margin-top:85px; }
   .p2-table {
     width: 100%;
     border-collapse: collapse;

@@ -23,6 +23,10 @@ import { patch, ydoc } from '$lib/graph/store';
 import { clipUndoTransact } from '$lib/control/clip-undo';
 import {
   CLIP_LANES,
+  SCENE_STRIDE,
+  audioRecState,
+  clipHasRecordedAutomation,
+  clipIndex,
   clampSwing,
   coerceClipRecord,
   coerceCustomScale,
@@ -34,6 +38,10 @@ import {
   laneOf,
   lanePlaying,
   laneQueued,
+  laneRecArm,
+  noteClipHasContent,
+  readClip,
+  plainCloneClip,
   slotOf,
   setNoteSpan,
   noteCovering,
@@ -41,6 +49,7 @@ import {
   toggleLaneAutomationArm,
   toggleNoteAt,
   type ClipPlayerData,
+  type ClipRecord,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
 import { reconcileClipRemoval } from '$lib/audio/modules/clip-reconcile';
@@ -58,6 +67,7 @@ import {
   setSceneRepeat,
 } from '$lib/audio/modules/clip-scene-repeats';
 import { nextSceneRepeat } from './clipplayer-face-model';
+import { clipplayerSelectedSlotForLane, clipplayerSelectLaneSlot } from './clipplayer-face-selection.svelte';
 
 /** The live `ClipPlayerData` of a clip-player node, or undefined. READ-ONLY —
  *  callers project it through `clipplayer-face-model`; mutation goes through
@@ -159,7 +169,32 @@ export function toggleClipplayerLaneArm(nodeId: string, lane: number): void {
  *  while paused or stopped and the recorder punches in when it plays. Toggling
  *  OFF while an ENDLESS take is running is the owner's "tap it again" — the
  *  take stops at the end of the CURRENT loop, keeping every whole loop. */
-export function toggleClipplayerLaneRecArm(nodeId: string, lane: number): void {
+export function toggleClipplayerLaneRecArm(
+  nodeId: string,
+  lane: number,
+  replaceMediaId?: string,
+): string | null {
+  if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) return 'Invalid recording lane';
+  const data = clipplayerData(nodeId);
+  const active = audioRecState(data, lane);
+  const request = data?.recRequest?.[String(lane)];
+  if ((active && active.recorderId !== ydoc.clientID) ||
+      (laneRecArm(data, lane) && request && request.recorderId !== ydoc.clientID)) {
+    return `Lane ${lane + 1} is armed by another collaborator`;
+  }
+  if (active?.phase === 'stopping') return 'The take is finishing at the loop boundary';
+  const turningOn = !laneRecArm(data, lane);
+  const slot = clipplayerSelectedSlotForLane(nodeId, lane);
+  const clip = readClip(data, clipIndex(slot, lane));
+  if (turningOn) {
+    if (active) return 'Wait for the current take to finish';
+    if (noteClipHasContent(clip)) return `Lane ${lane + 1}, slot ${slot + 1} contains notes. Choose an empty slot`;
+    if (clip?.kind === 'note' && clipHasRecordedAutomation(data, clipIndex(slot, lane))) {
+      return `Lane ${lane + 1}, slot ${slot + 1} contains recorded automation. Choose an empty slot`;
+    }
+    if (clip && clip.kind !== 'note' && clip.kind !== 'audio') return 'This clip cannot be replaced with audio';
+    if (clip?.kind === 'audio' && clip.mediaId !== replaceMediaId) return 'Use Replace take to confirm recording over this audio clip';
+  }
   writeClipplayerData(nodeId, (d) => {
     // ⚠ MUTATE IN PLACE. `d` is a Y.Doc proxy; rebuilding the map and
     // reassigning re-inserts values already in the tree, which Yjs rejects.
@@ -169,8 +204,24 @@ export function toggleClipplayerLaneRecArm(nodeId: string, lane: number): void {
     // ⚠ WRITE `false`, NEVER `delete` — the Y.Doc proxy's deleteProperty trap
     // refuses a nested key and throws. `laneRecArm` tests `=== true`, so a
     // stored `false` is exactly as disarmed as an absent key.
-    d.recArm[String(lane)] = d.recArm[String(lane)] !== true;
+    if (!d.recRequest) d.recRequest = {};
+    if (turningOn) d.recRequest[String(lane)] = {
+      slot, recorderId: ydoc.clientID,
+      ...(clip?.kind === 'audio' ? { replaceMediaId: clip.mediaId } : {}),
+    };
+    d.recArm[String(lane)] = turningOn;
   });
+  return null;
+}
+
+/** Explicit record-target selection. Playback and editor selection are untouched. */
+export function setClipplayerAudioTarget(nodeId: string, lane: number, slot: number): string | null {
+  if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES ||
+      !Number.isInteger(slot) || slot < 0 || slot >= SCENE_STRIDE) return 'Invalid recording target';
+  const data = clipplayerData(nodeId);
+  if (laneRecArm(data, lane) || audioRecState(data, lane)) return 'Disarm or finish this lane before changing its recording target';
+  clipplayerSelectLaneSlot(nodeId, lane, slot);
+  return null;
 }
 
 /** CLAUSE 5 — flip a lane between CLIP (one loop) and ENDLESS.
@@ -178,6 +229,7 @@ export function toggleClipplayerLaneRecArm(nodeId: string, lane: number): void {
  *  UNDOABLE: unlike the arm, this is a SETTING that survives the session and
  *  travels with a duplicated player, so it belongs on the content stack. */
 export function toggleClipplayerLaneRecMode(nodeId: string, lane: number): void {
+  if (laneRecArm(clipplayerData(nodeId), lane) || audioRecState(clipplayerData(nodeId), lane)) return;
   writeClipplayerDataUndoable(nodeId, (d) => {
     // A fresh array of PRIMITIVES is safe to assign (nothing in it is already
     // in the tree), and a whole-array write is right here: unlike the arm, the
@@ -200,6 +252,11 @@ export function toggleClipplayerLaneRecMode(nodeId: string, lane: number): void 
  *  no take to choose against, and silently stamping the flag on one would make
  *  a field that reads as meaningful and is not. */
 export function toggleClipplayerClipLive(nodeId: string, index: number): void {
+  const cur = readClip(clipplayerData(nodeId), index);
+  if (cur?.kind === 'audio') setClipplayerClipLive(nodeId, index, !cur.live);
+}
+
+export function setClipplayerClipLive(nodeId: string, index: number, live: boolean): void {
   writeClipplayerDataUndoable(nodeId, (d) => {
     // ⚠ WRITE THE ONE CLIP, NEVER THE WHOLE `clips` MAP. Spreading `d.clips`
     // and reassigning it hands Yjs back every OTHER clip record — objects
@@ -209,7 +266,7 @@ export function toggleClipplayerClipLive(nodeId: string, index: number): void {
     const cur = coerceClipRecord(d.clips?.[String(index)]);
     if (!cur || cur.kind !== 'audio') return;
     if (!d.clips) d.clips = {};
-    d.clips[String(index)] = { ...cur, live: !cur.live };
+    d.clips[String(index)] = { ...cur, live };
   });
 }
 
@@ -565,15 +622,15 @@ export function setClipplayerCustomScaleOn(nodeId: string, lane: number, on: boo
 export function pasteClipplayerClip(
   nodeId: string,
   index: number,
-  next: NoteClipRecord,
+  next: ClipRecord,
   auto: unknown,
 ): void {
   const key = String(index);
   writeClipplayerDataUndoable(nodeId, (d) => {
     if (!d.clips) d.clips = {};
-    d.clips[key] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    d.clips[key] = plainCloneClip(next)!;
     if (!d.auto) d.auto = {};
-    if (auto) d.auto[key] = auto as never;
+    if (auto && next.kind === 'note') d.auto[key] = auto as never;
     else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
   });
 }

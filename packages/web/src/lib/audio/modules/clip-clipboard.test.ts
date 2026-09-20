@@ -47,7 +47,8 @@ describe('clip clipboard — the shared typed buffer', () => {
     setClipboardBuffer({ kind: 'clip', clip: clipWith(64), auto }, 7);
     expect(clipboardKind()).toBe('clip');
     expect(clipboardLoaded()).toBe(true);
-    expect(clipboardClip()?.steps[0].midi).toBe(64);
+    const clip = clipboardClip();
+    expect(clip?.kind === 'note' ? clip.steps[0].midi : null).toBe(64);
     expect(clipboardClipAuto()).toBe(auto);
     expect(clipboardSourceIndex()).toBe(7);
   });
@@ -78,7 +79,7 @@ describe('clip clipboard — the shared typed buffer', () => {
       const seen = __test_copyBuffer();
       expect(seen, 'the launchpad reads the buffer the card wrote').not.toBeNull();
       expect(seen?.kind).toBe('clip');
-      expect(seen?.kind === 'clip' ? seen.clip.steps[0].midi : null).toBe(72);
+      expect(seen?.kind === 'clip' && seen.clip.kind === 'note' ? seen.clip.steps[0].midi : null).toBe(72);
       // Identity, not just equality — a copy would mean two buffers kept in sync
       // by luck, which is exactly the state this test exists to forbid.
       expect(seen).toBe(clipboardBuffer());

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ClipplayerAudioPanel from './ClipplayerAudioPanel.svelte';
+  import { readClip } from '$lib/audio/modules/clip-types';
   // ClipplayerNotePanel — the `clipplayer-cell` family's cell: the PIANO-ROLL
   // note editor for the clip the launch grid has open, plus the clip-scoped
   // gestures that operate on it.
@@ -289,6 +291,9 @@
   }
 </script>
 
+{#if (live.v, readClip(data, selectedClip))?.kind === 'audio'}
+  <ClipplayerAudioPanel {nodeId} waveform />
+{:else}
 <div class="editor" class:pending data-testid="clipplayer-face-editor" data-pending={pending ? '1' : '0'}>
     <!-- THE CLIP HEAD. Every button below shows its OWN current value as its
          caption; the clip's identity (channel, slot, root, painted range) is on
@@ -483,6 +488,7 @@
 </div>
 
 <ClipplayerClipMenu {nodeId} at={menu} onclose={() => (menu = null)} />
+{/if}
 
 <style>
   .editor {

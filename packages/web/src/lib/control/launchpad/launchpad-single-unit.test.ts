@@ -1656,9 +1656,17 @@ describe('restoreLaunchpadDeployment — REFUSES to run over a live binding', ()
     __test_resetLaunchpad();
     expect(isSingleBound(), 'the precondition of this leg: nothing is bound').toBe(false);
 
-    restoreLaunchpadDeployment();
-
-    expect(launchpadDeployment()).toBe('pair');
-    expect(launchpadActiveView()).toBe('grid');
+    // Other suites install a storage stub in this shared worker. Make the
+    // no-storage precondition explicit rather than depending on file order.
+    const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true });
+    try {
+      restoreLaunchpadDeployment();
+      expect(launchpadDeployment()).toBe('pair');
+      expect(launchpadActiveView()).toBe('grid');
+    } finally {
+      if (storage) Object.defineProperty(globalThis, 'localStorage', storage);
+      else Reflect.deleteProperty(globalThis, 'localStorage');
+    }
   });
 });

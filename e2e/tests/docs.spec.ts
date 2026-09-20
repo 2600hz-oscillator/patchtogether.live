@@ -27,7 +27,7 @@ test('docs modules gallery loads with diagrams', async ({ page }) => {
   await expect.poll(async () => diagrams.count()).toBeGreaterThanOrEqual(19);
 });
 
-test('docs catalog surfaces the custom guide pages (grid-clip-launcher is reachable)', async ({
+test('docs catalog opens the canonical illustrated Clip Player guide', async ({
   page,
 }) => {
   // The catalog is built from the AUDIO-only manifest, so the hand-written
@@ -37,24 +37,20 @@ test('docs catalog surfaces the custom guide pages (grid-clip-launcher is reacha
   const guides = page.locator('[data-testid="guides"]');
   await expect(guides).toBeVisible();
   // The monome grid clip-launcher guide is linked here and navigates.
-  const gridLink = guides.getByRole('link', { name: /clip player \+ monome grid/i });
+  const gridLink = guides.getByRole('link', { name: /clip player/i });
   await expect(gridLink).toBeVisible();
   await gridLink.click();
-  await expect(page).toHaveURL(/\/docs\/modules\/grid-clip-launcher\/?$/);
-  await expect(
-    page.getByRole('heading', { name: 'Clip player + monome grid', level: 1 }),
-  ).toBeVisible();
-  // …and the guide links back to the clip player module reference page.
-  await expect(page.getByRole('link', { name: /clip player module page/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/docs\/modules\/clipplayer\/?$/);
+  await expect(page.getByTestId('clipplayer-guide')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Record audio, then choose what you hear' })).toBeVisible();
+  await expect(page.locator('[data-testid="io-outputs"]')).toContainText('audio1L');
 });
 
-test('clip player module page surfaces the grid-clip-launcher guide callout', async ({ page }) => {
-  // The auto `[id]` page for `clipplayer` must point at its illustrated guide via
-  // the MODULE_GUIDES callout (the forward cross-link the owner asked for).
-  await page.goto('/docs/modules/clipplayer');
-  const guideLink = page.locator('[data-testid="module-guide-link"]');
-  await expect(guideLink).toBeVisible();
-  await expect(guideLink).toHaveAttribute('href', '/docs/modules/grid-clip-launcher');
+test('old Clip Player guide bookmarks reach the canonical guide and retained anchor', async ({ page }) => {
+  await page.goto('/docs/modules/grid-clip-launcher#song-mode');
+  await expect(page).toHaveURL(/\/docs\/modules\/clipplayer\/?#song-mode$/);
+  await expect(page.locator('#song-mode')).toBeAttached();
+  await expect(page.getByTestId('clip-guide-song')).toBeVisible();
 });
 
 test('docs per-module page renders its I/O (kria)', async ({ page }) => {

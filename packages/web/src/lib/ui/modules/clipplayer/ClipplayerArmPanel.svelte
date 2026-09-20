@@ -4,7 +4,7 @@
   //
   // CLIP RECORD, CONTINUOUS OVERDUB, Deluge-like and PER LANE. Arm a lane while
   // a note clip plays in it, then move any control of a MODULE assigned to that
-  // lane (screen / MIDI / Electra — CV never records): the recorder punches in
+  // lane (screen / MIDI / Electra and supported active CV bridges): the recorder punches in
   // at THAT clip's own next loop start and overdubs every loop until the arm is
   // clicked again. There is no auto punch-out; stopping mid-loop keeps the
   // untouched tail.
@@ -54,8 +54,8 @@
       aria-pressed={l.armed}
       aria-label={`lane ${l.lane + 1} automation arm`}
       title={l.armed
-        ? `Lane ${l.lane + 1} automation RECORDING (continuous overdub) — move any control of a module assigned to this lane (screen / MIDI / Electra; CV never records) and it records into the clip playing here. Click to STOP.`
-        : `Arm lane ${l.lane + 1} automation (CLIP RECORD) — punches in at its playing clip's next loop start; assign modules via right-click on a module card → Assign to automation lane.`}
+        ? `Lane ${l.lane + 1} automation ARMED (continuous overdub) — records assigned controls from screen / MIDI / Electra and supported active CV bridges into the playing note clip; human touch takes precedence. Click to STOP.`
+        : `Arm lane ${l.lane + 1} automation (CLIP RECORD) — punches in at its playing clip's next loop start; assign modules via the module menu → Assign to automation lane.`}
       data-lane={l.lane}
       data-armed={l.armed ? '1' : '0'}
       data-testid={`clipplayer-auto-arm-${l.lane}`}

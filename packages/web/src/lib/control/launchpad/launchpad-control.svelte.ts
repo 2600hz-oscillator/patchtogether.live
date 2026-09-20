@@ -28,6 +28,10 @@
 // (localStorage). LED frames are local render state, never synced.
 
 import { patch as livePatch, ydoc } from '$lib/graph/store';
+import { AUDIO_ENTRY, AUDIO_COLOR, isAudioEntry, audioRight, pairAudioPad, paintAudioCapture, paintAudioMatrix, type AudioAction } from './launchpad-audio-map';
+import { clipplayerInspectClip, clipplayerSelectedSlotForLane } from '$lib/ui/modules/clipplayer/clipplayer-face-selection.svelte';
+import { setClipplayerAudioTarget, toggleClipplayerLaneRecArm, toggleClipplayerLaneRecMode, toggleClipplayerClipLive } from '$lib/ui/modules/clipplayer/clipplayer-face-actions';
+import { setClipplayerAudioFeedback } from '$lib/ui/modules/clipplayer/clipplayer-audio-feedback.svelte';
 import * as Y from 'yjs';
 import { getYjsValue } from '@syncedstore/core';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
@@ -142,6 +146,10 @@ import {
 import {
   CLIP_LANES,
   CLIP_SLOTS,
+  SCENE_STRIDE,
+  readClip,
+  audioRecState,
+  laneRecArm,
   clipIndex,
   laneOf,
   slotOf,
@@ -165,6 +173,7 @@ import {
   doubleNoteClip,
   reverseClipSteps,
   copyClip,
+  plainCloneClip,
   lengthFromBlockTap,
   lengthFromStepTap,
   readNoteRec,
@@ -267,6 +276,21 @@ function onKey(cb: (e: LaunchpadKeyEvent) => void): () => void {
   return surface.onKey(cb);
 }
 function setFrame(unit: LaunchpadUnit, frame: LaunchpadFrame): void {
+  const data = boundNodeId ? liveData(boundNodeId) : undefined;
+  const blink = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
+  if (boundNodeId && mode === 'audio' && (deployment === 'single' || unit === 'R')) {
+    paintAudioCapture(frame, data, {
+      pair: deployment === 'pair', index: selectedClipIndex, offset: audioOffset,
+      targets: Array.from({ length: CLIP_LANES }, (_, l) => clipplayerSelectedSlotForLane(boundNodeId!, l)),
+      blink, pick: audioPickTarget, replacing: audioReplace !== null, shift: shiftHeldSingle,
+    });
+  } else if (mode === 'session' && ((deployment === 'single' && singleView === 'control') || (deployment === 'pair' && unit === 'R'))) {
+    frame.leds.set(padNote(AUDIO_ENTRY.x, AUDIO_ENTRY.y), AUDIO_COLOR);
+  }
+  if ((deployment === 'pair' && unit === 'L' && mode !== 'keys' && !(mode === 'lengthEdit' && lengthReturnMode === 'keys')) ||
+      (deployment === 'single' && mode === 'session' && singleView === 'grid' && !singleShiftEff() && !repeatViewHeld && !clipProbEditHeld && !armedRightAction)) {
+    paintAudioMatrix(frame, data, deployment === 'pair', sceneScrollOffset, blink);
+  }
   surface.setFrame(unit, frame);
 }
 function clearUnit(unit: LaunchpadUnit): void {
@@ -369,7 +393,10 @@ let selectedClipIndex = 0;
 
 // Mode state (R unit's view; L is always the matrix — EXCEPT 'keys', which takes
 // BOTH units for the note/keyboard + clip-record view, owner-locked Q4).
-export type LaunchpadMode = 'session' | 'edit' | 'lengthEdit' | 'keys';
+export type LaunchpadMode = 'session' | 'edit' | 'lengthEdit' | 'keys' | 'audio';
+let audioOffset = 0;
+let audioPickTarget = false;
+let audioReplace: { index: number; mediaId: string } | null = null;
 let mode: LaunchpadMode = 'session';
 let editClipIndex = 0;
 // Held modifiers on R's deck.
@@ -578,7 +605,7 @@ function clearBuffer(): void {
  *  paths (pair deck, clip-view, editor, grid clip-pad target) read through this,
  *  so a SCENE buffer NEVER pastes onto a single clip (clip→scene / scene→clip are
  *  no-ops — the type gate). */
-function bufferClip(): NoteClipRecord | null {
+function bufferClip(): ClipRecord | null {
   return clipboardClip();
 }
 /** The buffered clip's SIBLING AUTOMATION (or null when the source carried
@@ -755,6 +782,9 @@ function stopLoops(): void {
 }
 /** Reset the single-mode transient state (shift/arm/div-preview/swing/arp). */
 function resetSingleState(): void {
+  audioPickTarget = false;
+  audioReplace = null;
+  audioOffset = 0;
   shiftHeldSingle = false;
   armedRightAction = null;
   armTick = 0;
@@ -1273,16 +1303,17 @@ function writeClip(
  *  keep using `writeClip` — they must never touch the sibling automation. */
 function writeClipWithAuto(
   nodeId: string,
-  next: NoteClipRecord,
+  next: ClipRecord,
   auto: AutoClipRecord | null,
   index: number,
 ): void {
-  const plainAuto = plainCloneAutoClip(auto);
+  const plainAuto = next.kind === 'note' ? plainCloneAutoClip(auto) : null;
+  const before = clipAtIndex(liveData(nodeId), index);
   editData(
     nodeId,
     (d) => {
       if (!d.clips) d.clips = {};
-      d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+      d.clips[String(index)] = plainCloneClip(next)!;
       if (!d.auto) d.auto = {};
       const key = String(index);
       if (plainAuto) d.auto[key] = plainAuto;
@@ -1290,6 +1321,7 @@ function writeClipWithAuto(
     },
     { undoable: true },
   );
+  if (before) reconcileClipRemoval(nodeId, before, next.kind === 'note' ? next : defaultNoteClip(), index, liveData(nodeId));
 }
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
   for (const [id, n] of Object.entries(livePatch.nodes)) {
@@ -1938,6 +1970,12 @@ function serviceKeysRecord(nodeId: string, data: ClipPlayerData | undefined): vo
 function handleKey(e: LaunchpadKeyEvent): void {
   const nodeId = boundNodeId;
   if (!nodeId || !livePatch.nodes[nodeId]) return;
+  if (mode === 'audio' && audioReplace && e.ev.s === 1) {
+    const replacing = deployment === 'single'
+      ? e.ev.type === 'scene' && audioRight(sceneIndexForCc(e.ev.cc) ?? -1) === 'replace'
+      : e.unit === 'R' && e.ev.type === 'pad' && pairAudioPad(e.ev.x, e.ev.y)?.action === 'replace';
+    if (!replacing) audioReplace = null;
+  }
   if (deployment === 'single') {
     handleSingleKey(nodeId, e);
     return;
@@ -2009,6 +2047,7 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
     return;
   }
   // 2) length-edit takeover (scene EXIT returns to the opener's view).
+  if (mode === 'audio') { handleAudioKey(nodeId, e); return; }
   if (mode === 'lengthEdit') {
     handleRLength(nodeId, e);
     return;
@@ -2106,9 +2145,14 @@ function handleTopRow(
  *  length-edit cleanly, then swaps the view. Selecting Clip targets the current
  *  selectedClipIndex (editClipIndex stays synced for the window helpers). */
 function selectView(nodeId: string, view: SingleView): void {
+  if (mode === 'audio') { mode = 'session'; audioPickTarget = false; audioReplace = null; }
   if (mode === 'keys') forceExitKeys(nodeId);
   if (mode === 'lengthEdit') mode = 'session';
   if (view === 'clip') editClipIndex = selectedClipIndex;
+  if (view === 'clip' && readClip(liveData(nodeId), selectedClipIndex)?.kind === 'audio') {
+    enterAudioMode(nodeId, selectedClipIndex);
+    return;
+  }
   // Clear the note-editor hold modifiers on any view switch so a PROB page /
   // VEL-hold never "sticks" across views (mirrors the repeat-view GRID-release
   // clear). Both are momentary single-Clip-view gestures. The GRID-view clip-
@@ -2293,6 +2337,7 @@ function handleSingleGrid(nodeId: string, e: LaunchpadKeyEvent): void {
  *  press a clip pad"). Clears any pending launch double-tap so the open never
  *  pairs with a prior tap. */
 function openClipProbPage(nodeId: string, clipIdx: number): void {
+  if (refuseAudioNoteAction(nodeId, clipIdx, 'Note probability')) return;
   if (!clipAtIndex(liveData(nodeId), clipIdx)) return; // no clip here → nothing to default
   clipProbEditHeld = { clipIdx };
   lastTapClipIndex = -1; // a prob-page open is never a launch double-tap half
@@ -2310,6 +2355,7 @@ function openClipProbPage(nodeId: string, clipIdx: number): void {
 function enterClipEditor(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
   lastTapClipIndex = -1; // an ENTER is never half of a launch double-tap
   setSelectedClip(clipIdx);
+  if (readClip(data, clipIdx)?.kind === 'audio') { enterAudioMode(nodeId, clipIdx); return; }
   // Materialize a default clip if the pad was empty so Clip view can edit it.
   if (!data?.clips?.[String(clipIdx)]) {
     editData(
@@ -2472,14 +2518,16 @@ function commitDivPreview(nodeId: string): void {
  *  Empty/illegal targets are no-ops that simply disarm. */
 function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
   lastTapClipIndex = -1; // an armed tap isn't a launch
+  if ((armedRightAction === 'len' || armedRightAction === 'clipDiv') &&
+      refuseAudioNoteAction(nodeId, clipIdx, 'Note length / division')) return;
   switch (armedRightAction) {
     case 'copy': {
       // Copy a SINGLE clip onto the typed buffer (kind: 'clip') — the clip's
       // sibling automation rides along (the envelope belongs to the clip).
-      const c = clipAtIndex(data, clipIdx);
+      const c = readClip(data, clipIdx);
       if (c) {
         setClipboardBuffer(
-          { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) },
+          { kind: 'clip', clip: copyClip(c), auto: c.kind === 'note' ? readAutoClip(data, clipIdx) : null },
           clipIdx,
         );
       }
@@ -3011,11 +3059,125 @@ function applyArpStep(nodeId: string, lane: number, step: ReturnType<typeof arpA
 
 // ── CONTROL view (performance deck: RESET/MONO/MUTE/RATE + per-lane STOP; the
 // re-homed transport nudges / STOP-ALL / arranger REC / SONG on dark grid pads). ──
+function audioFeedback(nodeId: string, message: string): void {
+  setClipplayerAudioFeedback(nodeId, message);
+  bumpView();
+}
+
+function refuseAudioNoteAction(nodeId: string, index: number, action: string): boolean {
+  if (readClip(liveData(nodeId), index)?.kind !== 'audio') return false;
+  disarmGridArm(nodeId);
+  enterAudioMode(nodeId, index);
+  audioFeedback(nodeId, `${action} applies to note clips. This slot contains an audio take.`);
+  return true;
+}
+
+function enterAudioMode(nodeId: string, index = selectedClipIndex): void {
+  if (mode === 'keys') forceExitKeys(nodeId);
+  editArmed = copyHeld = pasteHeld = pasteRevHeld = nowHeld = false;
+  keysRecHeld = keysOverdubHeld = false;
+  probEditHeld = clipProbEditHeld = playEveryViewHeld = null;
+  repeatViewHeld = null;
+  audioPickTarget = false;
+  audioReplace = null;
+  setSelectedClip(index);
+  clipplayerInspectClip(nodeId, index);
+  audioOffset = Math.floor(slotOf(index) / LP_HEIGHT) * LP_HEIGHT;
+  mode = 'audio';
+  if (deployment === 'single') setSingleViewInternal('control');
+  audioFeedback(nodeId, 'AUDIO: choose an empty target, then arm. Notes keep playing until the take launches.');
+  renderLeds();
+}
+
+function selectAudioTarget(nodeId: string, index: number): void {
+  setSelectedClip(index);
+  clipplayerInspectClip(nodeId, index);
+  audioReplace = null;
+  const error = setClipplayerAudioTarget(nodeId, laneOf(index), slotOf(index));
+  audioFeedback(nodeId, error ?? `AUDIO target: lane ${laneOf(index) + 1}, slot ${slotOf(index) + 1}. Playback unchanged.`);
+}
+
+function performAudioAction(nodeId: string, action: AudioAction): void {
+  const index = selectedClipIndex, lane = laneOf(index), slot = slotOf(index);
+  const data = liveData(nodeId), clip = readClip(data, index);
+  if (action !== 'replace') audioReplace = null;
+  switch (action) {
+    case 'arm': {
+      let error: string | null = null;
+      if (!laneRecArm(data, lane) && !audioRecState(data, lane)) error = setClipplayerAudioTarget(nodeId, lane, slot);
+      if (!error) error = toggleClipplayerLaneRecArm(nodeId, lane);
+      audioFeedback(nodeId, error ?? `Lane ${lane + 1}: audio record state updated.`);
+      break;
+    }
+    case 'length':
+      editData(nodeId, () => toggleClipplayerLaneRecMode(nodeId, lane), { undoable: true });
+      audioFeedback(nodeId, laneRecArm(data, lane) || audioRecState(data, lane) ? 'Finish or disarm before changing record length.' : `Lane ${lane + 1}: record length changed.`);
+      break;
+    case 'play':
+      if (clip?.kind === 'audio') { queueLane(nodeId, lane, slot, false); audioFeedback(nodeId, `Audio take queued: lane ${lane + 1}, slot ${slot + 1}.`); }
+      else audioFeedback(nodeId, 'Select an audio take to play.');
+      break;
+    case 'source':
+      if (clip?.kind === 'audio') {
+        editData(nodeId, () => toggleClipplayerClipLive(nodeId, index), { undoable: true });
+        audioFeedback(nodeId, clip.live ? 'RECORDED take enabled.' : 'LIVE input: take bypassed. Launch the original note slot to resume notes.');
+      } else audioFeedback(nodeId, 'RECORDED / LIVE applies to audio clips only.');
+      break;
+    case 'replace':
+      if (clip?.kind !== 'audio') { audioReplace = null; audioFeedback(nodeId, 'Select an existing audio take to replace.'); break; }
+      if (audioReplace?.index === index && audioReplace.mediaId === clip.mediaId) {
+        const error = setClipplayerAudioTarget(nodeId, lane, slot) ?? toggleClipplayerLaneRecArm(nodeId, lane, clip.mediaId);
+        audioReplace = null;
+        audioFeedback(nodeId, error ?? `Replacing lane ${lane + 1}, slot ${slot + 1}: audio armed. The old take stays until commit.`);
+      } else {
+        audioReplace = { index, mediaId: clip.mediaId };
+        audioFeedback(nodeId, `Replace lane ${lane + 1}, slot ${slot + 1}? Press REPLACE again to confirm; another action cancels.`);
+      }
+      break;
+    case 'up': audioOffset = Math.max(0, audioOffset - LP_HEIGHT); break;
+    case 'down': audioOffset = Math.min(SCENE_STRIDE - LP_HEIGHT, audioOffset + LP_HEIGHT); break;
+    case 'exit':
+      mode = 'session'; audioPickTarget = false;
+      if (deployment === 'single') setSingleViewInternal('grid');
+      audioFeedback(nodeId, 'Audio page closed. Recording and clip playback are unchanged.');
+      break;
+  }
+  renderLeds();
+}
+
+function handleAudioKey(nodeId: string, e: LaunchpadKeyEvent): void {
+  const ev = e.ev;
+  if (ev.s !== 1) return;
+  if (deployment === 'single') {
+    if (ev.type === 'pad') selectAudioTarget(nodeId, clipIndex(audioOffset + LP_HEIGHT - 1 - ev.y, ev.x));
+    else if (ev.type === 'scene') {
+      const i = sceneIndexForCc(ev.cc);
+      const action = i === null ? null : audioRight(i);
+      if (action) performAudioAction(nodeId, action);
+    }
+  } else if (ev.type === 'pad') {
+    const action = pairAudioPad(ev.x, ev.y);
+    if (!action) return;
+    if ('lane' in action) {
+      setSelectedClip(clipIndex(clipplayerSelectedSlotForLane(nodeId, action.lane), action.lane));
+      clipplayerInspectClip(nodeId, selectedClipIndex);
+      if (action.action === 'select') { audioReplace = null; audioFeedback(nodeId, `Audio lane ${action.lane + 1} selected.`); }
+      else if (action.action === 'auto') { audioReplace = null; toggleLaneAutoArm(nodeId, action.lane); }
+      else performAudioAction(nodeId, action.action);
+    } else if (action.action === 'pick') {
+      audioReplace = null; audioPickTarget = !audioPickTarget;
+      audioFeedback(nodeId, audioPickTarget ? 'PICK TARGET: next left pad selects without launching; press PICK again to cancel.' : 'Target selection cancelled.');
+    } else performAudioAction(nodeId, action.action);
+  }
+  renderLeds();
+}
+
 function handleSingleControl(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
   const data = liveData(nodeId);
   if (ev.type === 'pad') {
     if (ev.s !== 1) return; // control taps act on press
+    if (isAudioEntry(ev.x, ev.y)) { enterAudioMode(nodeId); return; }
     // Performance rows (RESET · per-lane MONO / MUTE / RATE).
     if (rDeckReset(ev.x, ev.y)) { doReset(nodeId); return; }
     const monoLane = rDeckMonoLane(ev.x, ev.y);
@@ -3055,6 +3217,7 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     const clipIdx = lPadToClipIndex(ev.x, ev.y);
     if (clipIdx === null) return;
     if (ev.s !== 1) return; // clip launch acts on press
+    if (mode === 'audio' && audioPickTarget) { selectAudioTarget(nodeId, clipIdx); audioPickTarget = false; renderLeds(); return; }
     // KEYS ENTRY (pair): holding note-REC or note-OVERDUB on the R deck
     // SUPPRESSES the launch on L taps (mirror editArmed) and a DOUBLE-TAP of a
     // clip opens the KEYS view for it — hold-REC = overdub OFF, hold-OVERDUB =
@@ -3074,6 +3237,7 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     }
     // Held-modifier branches FIRST (the modifiers live on R, read here).
     if (editArmed) {
+      if (readClip(data, clipIdx)?.kind === 'audio') { editArmed = false; enterAudioMode(nodeId, clipIdx); return; }
       // hold-EDIT (on R) + tap a clip (on L) → enter the editor on R. Not a
       // launch → clear the double-tap tracker so it can't mis-pair later.
       lastTapClipIndex = -1;
@@ -3095,10 +3259,10 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       return;
     }
     if (copyHeld) {
-      const c = clipAtIndex(data, clipIdx);
+      const c = readClip(data, clipIdx);
       if (c) {
         setClipboardBuffer(
-          { kind: 'clip', clip: copyClip(c), auto: readAutoClip(data, clipIdx) },
+          { kind: 'clip', clip: copyClip(c), auto: c.kind === 'note' ? readAutoClip(data, clipIdx) : null },
           clipIdx,
         );
       }
@@ -3115,6 +3279,10 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     }
     if (pasteRevHeld && bufferClip()) {
       const src = bufferClip()!;
+      if (src.kind !== 'note') {
+        audioFeedback(nodeId, 'Reverse paste supports note clips only. Use PASTE to copy this audio take.');
+        return;
+      }
       const auto = bufferClipAuto();
       writeClipWithAuto(
         nodeId,
@@ -3168,6 +3336,7 @@ function handleR(nodeId: string, e: LaunchpadKeyEvent): void {
   }
 
   if (mode === 'lengthEdit') return handleRLength(nodeId, e);
+  if (mode === 'audio' && ev.type === 'pad') return handleAudioKey(nodeId, e);
   if (mode === 'edit') return handleREdit(nodeId, e);
   return handleRDeck(nodeId, e);
 }
@@ -3177,6 +3346,7 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
   const data = liveData(nodeId);
 
   if (ev.type === 'pad') {
+    if (isAudioEntry(ev.x, ev.y)) { if (ev.s === 1) enterAudioMode(nodeId); return; }
     // Tap the COPY-INDICATOR pad to EMPTY the buffer (turns off the turquoise
     // source glow on L). It's render-only otherwise, so handle it before the
     // rDeckPad classifier (which returns null for it).
@@ -3217,6 +3387,7 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
     if (action === 'now') { nowHeld = ev.s === 1; return; }
     if (ev.s !== 1) return; // the remaining are tap actions
     if (action === 'double') {
+      if (refuseAudioNoteAction(nodeId, editClipIndex, 'Double')) return;
       const clip = clipAtIndex(data, editClipIndex);
       if (clip) {
         const next = doubleNoteClip(clip);
@@ -3225,6 +3396,7 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
       return;
     }
     if (action === 'lengthEdit') {
+      if (refuseAudioNoteAction(nodeId, editClipIndex, 'Note length')) return;
       // Open the length page for the most-recently-edited clip (or clip 0).
       if (clipAtIndex(data, editClipIndex)) mode = 'lengthEdit';
       return;

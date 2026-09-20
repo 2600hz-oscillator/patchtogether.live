@@ -1,7 +1,13 @@
 # CLIP PLAYER — a Deluge-flavored, Ableton-Session clip launcher
 
-Status: **in build** (`feat/clipplayer-8lane-instruments`). This is the source of
-truth for the module's behaviour and its two UIs (the card + the monome grid).
+Status: **Historical design record — June 2026.** Preserved for provenance;
+the owner decisions below retain their original wording. Implementation paths,
+controls and shipping status describe that period and include superseded details.
+Current source governs behavior. For current operation, use the illustrated
+[Clip Player](/docs/modules/clipplayer), [Push 2](/docs/modules/push2Control) and
+[Launchpad](/docs/modules/launchpadControlLeft) guides.
+
+Original implementation references (historical):
 Code: `packages/web/src/lib/audio/modules/clipplayer.ts` (def + factory),
 `packages/web/src/lib/audio/modules/clip-types.ts` (data model + pure helpers),
 `packages/web/src/lib/ui/modules/ClipplayerCard.svelte` (card),

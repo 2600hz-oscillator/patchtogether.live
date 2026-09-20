@@ -9,7 +9,7 @@
   <title>Push 2 control · modules · patchtogether.live</title>
   <meta
     name="description"
-    content="Drive the clip player from an Ableton Push 2 over Web MIDI — full Launchpad clip-launch / note-editor / scene / KEYS parity on the 8×8 pads, START/STOP on the Play button, D-Pad clip navigation, channel-select on the 8 above-display buttons, and the 11 encoders driving the MixMasters volume + sends."
+    content="Push 2 setup and visual control reference: clips, scenes, note editing, KEYS and arpeggiator, audio recording, automation, song controls, module-card encoders, ElectraControl mode, and the WebUSB display."
   />
 </svelte:head>
 

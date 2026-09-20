@@ -115,6 +115,18 @@ export interface PushTextOp {
 
 export type PushDrawOp = PushRectOp | PushTextOp;
 
+/** Contextual audio status. Encoders retain their existing parameter routing. */
+export function renderPushAudio(title: string, state: string, message: string): PushDrawOp[] {
+  return [
+    rect(0, 0, PUSH_SCREEN_W, PUSH_SCREEN_H, COL_BG),
+    text(12, 18, title, '#C4A0FF', 17, 'left', 936, 'bold'),
+    rect(0, 35, PUSH_SCREEN_W, 1, COL_RULE),
+    text(12, 56, state, COL_VALUE, 16, 'left', 936, 'bold'),
+    ...wrapToWidth(message, 14, 936, 2).map((line, i) => text(12, 83 + i * 20, line, COL_LABEL, 14, 'left', 936)),
+    text(12, 143, 'Pads: select target   •   Hold LEGEND for audio actions   •   Encoders: module parameters', COL_MUTED, 12, 'left', 936),
+  ];
+}
+
 
 /** Left edge of strip `i` (0-based). */
 export function stripX(i: number): number {

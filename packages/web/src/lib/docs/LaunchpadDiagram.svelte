@@ -14,7 +14,7 @@
   interface Pad {
     x: number; // 0..7 (col / slot / step)
     y: number; // 0..7 PHYSICAL row from the BOTTOM (the L matrix flips lane→row
-               // so lane 1 lands on the TOP row to match the on-screen card)
+               // so lane 1 lands on the TOP row of the paired matrix)
     fill: string; // any CSS colour
     label?: string; // tiny in-pad glyph (e.g. a number)
   }
@@ -65,6 +65,13 @@
   const TIER_H = 28;
 
   const OFF = '#181a20'; // an unlit pad (visible outline, clearly dark)
+  function padTextColor(fill: string): string {
+    const rgb = fill.startsWith('#') && fill.length === 7
+      ? [1,3,5].map(i => Number.parseInt(fill.slice(i,i + 2),16))
+      : (fill.match(/[\d.]+/g) ?? []).slice(0,3).map(Number);
+    if (rgb.length !== 3) return '#e7edf7';
+    return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722 > 125 ? '#0c0e12' : '#e7edf7';
+  }
 
   // Only reserve the top-button band when the diagram HAS top buttons — a
   // topless diagram (matrix / KEYS / length) otherwise carries ~60px of dead
@@ -105,7 +112,7 @@
         {@const p = pads.find((q) => q.x === xx && q.y === yy)}
         <rect x={colX(xx)} y={gridTop + svgRow(yy) * PITCH} width={CELL} height={CELL} rx="6" fill={p?.fill || OFF} />
         {#if p?.label}
-          <text x={colCx(xx)} y={gridTop + svgRow(yy) * PITCH + CELL / 2 + 4} text-anchor="middle" class="pad-lbl">{p.label}</text>
+          <text x={colCx(xx)} y={gridTop + svgRow(yy) * PITCH + CELL / 2 + 4} text-anchor="middle" class="pad-lbl" style:fill={padTextColor(p.fill)}>{p.label}</text>
         {/if}
       {/each}
     {/each}
@@ -140,19 +147,21 @@
 <style>
   .lp-diagram {
     margin: 1rem 0 1.4rem;
+    max-width:660px;
   }
   .lp-diagram svg {
-    max-width: 100%;
+    width:100%;
     height: auto;
+    display:block;
+    background:#151c26;
+    border:1px solid #3a4455;
+    border-radius:8px;
   }
   .top-lbl,
   .pad-lbl {
     font: 600 9px/1 ui-monospace, 'SF Mono', Menlo, monospace;
     fill: #cdd2de;
     letter-spacing: 0.02em;
-  }
-  .pad-lbl {
-    fill: #0c0e12;
   }
   .scene-lbl,
   .call-lbl {
