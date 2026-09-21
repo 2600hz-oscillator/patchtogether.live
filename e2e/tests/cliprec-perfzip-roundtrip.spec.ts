@@ -91,7 +91,7 @@ async function readData(page: Page, nodeId: string): Promise<Record<string, unkn
 
 async function readClipAt(page: Page, index: number): Promise<Record<string, unknown> | null> {
   const d = await readData(page, CP);
-  const clips = (d.clips ?? {}) as Record<string, unknown>;
+  const clips = (d.audio ?? {}) as Record<string, unknown>;
   return (clips[String(index)] ?? null) as Record<string, unknown> | null;
 }
 
@@ -247,6 +247,10 @@ test('a recorded clip survives export → fresh context + wiped OPFS → load, A
     })
     .toBeGreaterThan(0.02);
 
+  await page.evaluate(({ id, index }) => {
+    const w = window as unknown as { __patch: { nodes: Record<string, { data: unknown }> }; __ydoc: { transact(fn: () => void): void } };
+    w.__ydoc.transact(() => { w.__patch.nodes[id]!.data = { sv: 2, clips: { [String(index)]: { kind: 'note', lengthSteps: 16, root: 60, loop: true, steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 2 }] } } }; });
+  }, { id: CP, index: TARGET_INDEX });
   await openLauncher(page);
   const targetPad = page.getByTestId(`clipplayer-pad-${TARGET_INDEX}`);
   await targetPad.scrollIntoViewIfNeeded({ timeout: UI_MS });

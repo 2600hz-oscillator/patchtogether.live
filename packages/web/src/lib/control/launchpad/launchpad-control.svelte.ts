@@ -148,6 +148,8 @@ import {
   CLIP_SLOTS,
   SCENE_STRIDE,
   readClip,
+  readClipAudio,
+  readSceneAudios,
   audioRecState,
   laneRecArm,
   clipIndex,
@@ -194,6 +196,7 @@ import {
   toggleLaneAutomationArm,
   armedAutomationLanes,
   type AutoClipRecord,
+  type AudioClipRecord,
   type ClipPlayerData,
   type ClipRecord,
   type NoteClipRecord,
@@ -211,6 +214,7 @@ import {
   clipboardSourceIndex,
   clipboardClip,
   clipboardClipAuto,
+  clipboardClipAudio,
   clipboardLoaded,
   clipboardKind,
 } from '$lib/audio/modules/clip-clipboard';
@@ -1306,6 +1310,7 @@ function writeClipWithAuto(
   next: ClipRecord,
   auto: AutoClipRecord | null,
   index: number,
+  audio: AudioClipRecord | null = null,
 ): void {
   const plainAuto = next.kind === 'note' ? plainCloneAutoClip(auto) : null;
   const before = clipAtIndex(liveData(nodeId), index);
@@ -1316,6 +1321,10 @@ function writeClipWithAuto(
       d.clips[String(index)] = plainCloneClip(next)!;
       if (!d.auto) d.auto = {};
       const key = String(index);
+      if (next.kind === 'note' && audio) {
+        if (!d.audio) d.audio = {};
+        d.audio[key] = plainCloneClip(audio) as AudioClipRecord;
+      } else if (d.audio?.[key] != null) delete d.audio[key];
       if (plainAuto) d.auto[key] = plainAuto;
       else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
     },
@@ -2527,7 +2536,7 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
       const c = readClip(data, clipIdx);
       if (c) {
         setClipboardBuffer(
-          { kind: 'clip', clip: copyClip(c), auto: c.kind === 'note' ? readAutoClip(data, clipIdx) : null },
+          { kind: 'clip', clip: copyClip(c), auto: c.kind === 'note' ? readAutoClip(data, clipIdx) : null, audio: readClipAudio(data, clipIdx) },
           clipIdx,
         );
       }
@@ -2542,7 +2551,7 @@ function consumeGridArm(nodeId: string, clipIdx: number, data: ClipPlayerData | 
       const bc = bufferClip();
       const kind = clipboardKind();
       if (bc && kind && pasteApplies(kind, 'clip')) {
-        writeClipWithAuto(nodeId, copyClip(bc), bufferClipAuto(), clipIdx);
+        writeClipWithAuto(nodeId, copyClip(bc), bufferClipAuto(), clipIdx, clipboardClipAudio());
       }
       disarmGridArm(nodeId);
       break;
@@ -2607,6 +2616,7 @@ function consumeSceneArm(
         kind: 'scene',
         clips: readScene(data, slot),
         autos: readSceneAutos(data, slot),
+        audios: readSceneAudios(data, slot),
         repeats: sceneRepeatCount(data, slot),
       },
       null, // a scene has no single source pad
@@ -2616,7 +2626,7 @@ function consumeSceneArm(
     // pasteApplies(kind, 'scene') is true ONLY for a scene buffer — the `.kind`
     // check narrows the union for TS; a clip buffer here is the clip→scene NO-OP.
     if (buf && pasteApplies(buf.kind, 'scene') && buf.kind === 'scene') {
-      pasteSceneInto(nodeId, slot, buf.clips, buf.autos, buf.repeats ?? 0);
+      pasteSceneInto(nodeId, slot, buf.clips, buf.autos, buf.repeats ?? 0, buf.audios);
     }
   }
   disarmGridArm(nodeId);
@@ -2636,15 +2646,20 @@ function pasteSceneInto(
   sceneClips: (ClipRecord | null)[],
   sceneAutos?: (AutoClipRecord | null)[],
   sceneRepeats = 0,
+  sceneAudios?: (AudioClipRecord | null)[],
 ): void {
-  const plan = sceneWritePlan(targetSlot, sceneClips, sceneAutos);
+  const plan = sceneWritePlan(targetSlot, sceneClips, sceneAutos, sceneAudios);
   editData(
     nodeId,
     (d) => {
       if (!d.clips) d.clips = {};
       if (!d.auto) d.auto = {};
-      for (const { index, value, auto } of plan) {
+      for (const { index, value, auto, audio } of plan) {
         const key = String(index);
+        if (audio) {
+          if (!d.audio) d.audio = {};
+          d.audio[key] = audio;
+        } else if (d.audio?.[key] != null) delete d.audio[key];
         if (value === null) {
           // Only delete a key that EXISTS — the syncedStore proxy's deleteProperty
           // trap throws on a missing key. An already-empty target lane is a no-op.
@@ -3085,7 +3100,7 @@ function enterAudioMode(nodeId: string, index = selectedClipIndex): void {
   audioOffset = Math.floor(slotOf(index) / LP_HEIGHT) * LP_HEIGHT;
   mode = 'audio';
   if (deployment === 'single') setSingleViewInternal('control');
-  audioFeedback(nodeId, 'AUDIO: choose an empty target, then arm. Notes keep playing until the take launches.');
+  audioFeedback(nodeId, 'AUDIO: select the clip to render. Recording adds its audio layer and keeps notes and automation.');
   renderLeds();
 }
 
@@ -3099,7 +3114,7 @@ function selectAudioTarget(nodeId: string, index: number): void {
 
 function performAudioAction(nodeId: string, action: AudioAction): void {
   const index = selectedClipIndex, lane = laneOf(index), slot = slotOf(index);
-  const data = liveData(nodeId), clip = readClip(data, index);
+  const data = liveData(nodeId), clip = readClip(data, index), take = readClipAudio(data, index);
   if (action !== 'replace') audioReplace = null;
   switch (action) {
     case 'arm': {
@@ -3114,23 +3129,23 @@ function performAudioAction(nodeId: string, action: AudioAction): void {
       audioFeedback(nodeId, laneRecArm(data, lane) || audioRecState(data, lane) ? 'Finish or disarm before changing record length.' : `Lane ${lane + 1}: record length changed.`);
       break;
     case 'play':
-      if (clip?.kind === 'audio') { queueLane(nodeId, lane, slot, false); audioFeedback(nodeId, `Audio take queued: lane ${lane + 1}, slot ${slot + 1}.`); }
-      else audioFeedback(nodeId, 'Select an audio take to play.');
+      if (clip) { queueLane(nodeId, lane, slot, false); audioFeedback(nodeId, `Audio take queued: lane ${lane + 1}, slot ${slot + 1}.`); }
+      else audioFeedback(nodeId, 'Select a clip to play.');
       break;
     case 'source':
-      if (clip?.kind === 'audio') {
+      if (take) {
         editData(nodeId, () => toggleClipplayerClipLive(nodeId, index), { undoable: true });
-        audioFeedback(nodeId, clip.live ? 'RECORDED take enabled.' : 'LIVE input: take bypassed. Launch the original note slot to resume notes.');
-      } else audioFeedback(nodeId, 'RECORDED / LIVE applies to audio clips only.');
+        audioFeedback(nodeId, take.live ? 'RECORDED: playing this clip’s audio layer.' : 'NOTES: playing this clip through its instrument.');
+      } else audioFeedback(nodeId, 'Record this clip’s audio layer before choosing RECORDED.');
       break;
     case 'replace':
-      if (clip?.kind !== 'audio') { audioReplace = null; audioFeedback(nodeId, 'Select an existing audio take to replace.'); break; }
-      if (audioReplace?.index === index && audioReplace.mediaId === clip.mediaId) {
-        const error = setClipplayerAudioTarget(nodeId, lane, slot) ?? toggleClipplayerLaneRecArm(nodeId, lane, clip.mediaId);
+      if (!take) { audioReplace = null; audioFeedback(nodeId, 'Select an existing audio take to replace.'); break; }
+      if (audioReplace?.index === index && audioReplace.mediaId === take.mediaId) {
+        const error = setClipplayerAudioTarget(nodeId, lane, slot) ?? toggleClipplayerLaneRecArm(nodeId, lane, take.mediaId);
         audioReplace = null;
         audioFeedback(nodeId, error ?? `Replacing lane ${lane + 1}, slot ${slot + 1}: audio armed. The old take stays until commit.`);
       } else {
-        audioReplace = { index, mediaId: clip.mediaId };
+        audioReplace = { index, mediaId: take.mediaId };
         audioFeedback(nodeId, `Replace lane ${lane + 1}, slot ${slot + 1}? Press REPLACE again to confirm; another action cancels.`);
       }
       break;
@@ -3262,7 +3277,7 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       const c = readClip(data, clipIdx);
       if (c) {
         setClipboardBuffer(
-          { kind: 'clip', clip: copyClip(c), auto: c.kind === 'note' ? readAutoClip(data, clipIdx) : null },
+          { kind: 'clip', clip: copyClip(c), auto: c.kind === 'note' ? readAutoClip(data, clipIdx) : null, audio: readClipAudio(data, clipIdx) },
           clipIdx,
         );
       }
@@ -3274,7 +3289,7 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     // the envelope in time to match the reversed notes) and clear the
     // destination's stale record — the envelope belongs to the clip.
     if (pasteHeld && bufferClip()) {
-      writeClipWithAuto(nodeId, copyClip(bufferClip()!), bufferClipAuto(), clipIdx);
+      writeClipWithAuto(nodeId, copyClip(bufferClip()!), bufferClipAuto(), clipIdx, clipboardClipAudio());
       return;
     }
     if (pasteRevHeld && bufferClip()) {
@@ -3289,6 +3304,7 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
         reverseClipSteps(copyClip(src)),
         auto ? reverseAutoClipRecord(auto, src.lengthSteps) : null,
         clipIdx,
+        clipboardClipAudio(),
       );
       return;
     }

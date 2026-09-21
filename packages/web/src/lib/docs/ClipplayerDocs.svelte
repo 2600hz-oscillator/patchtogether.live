@@ -18,11 +18,11 @@
 
   <section aria-labelledby="overview">
     <h2 id="overview">How the pieces fit</h2>
-    <p>A <strong>lane</strong> is one instrument or audio channel. Clip Player has {CLIP_LANES} lanes, with {SCENE_STRIDE} stored slots per lane. Only one clip plays in a lane at a time. A slot holds notes or recorded audio; recording audio into another slot keeps your original notes available.</p>
+    <p>A <strong>lane</strong> is one instrument or audio channel. Clip Player has {CLIP_LANES} lanes, with {SCENE_STRIDE} stored slots per lane. Only one clip plays in a lane at a time. Each clip keeps its <strong>notes, automation and optional recorded-audio layer together in the same slot</strong>.</p>
     <div class="concepts">
-      <div><strong>Note clip · N</strong><span>Notes become pitch, gate and velocity. Patch these to a voice to hear them.</span></div>
-      <div><strong>Audio clip · A</strong><span>A saved stereo take loops through that lane’s audio L/R outputs.</span></div>
-      <div><strong>Automation · teal dot</strong><span>Control movements belong to a note clip and loop with it.</span></div>
+      <div><strong>NOTES source</strong><span>The clip’s notes become pitch, gate and velocity. Patch these to a voice to hear them.</span></div>
+      <div><strong>RECORDED source</strong><span>The same clip plays its saved stereo take instead of generating notes. Its notes remain editable.</span></div>
+      <div><strong>Automation · teal dot</strong><span>Control movements belong to the clip and continue with either playback source.</span></div>
     </div>
     <p><strong>Inspecting, launching and choosing a record target are separate actions.</strong> The editor can show a stopped clip while a different slot plays. Once audio is armed, its destination stays fixed even if you inspect something else.</p>
     <p>TIMELORDE supplies the shared clock. With QNT on, queued launches wait for the next boundary of the <strong>longest currently playing clip</strong>. NOW bypasses that wait. If nothing is playing yet, the first launch starts immediately.</p>
@@ -37,7 +37,7 @@
       <li>Patch <code>pitch1</code> to a voice’s pitch input, <code>gate1</code> to its envelope or gate input, and the voice’s audio to your mixer/output. Add <code>vel1</code> where your voice accepts velocity.</li>
       <li>Start transport and press <strong>NOW</strong> in the editor. Return to SESSION to launch other clips.</li>
     </ol>
-    <p class="callout">No controller is required. A note clip is a sequencer, so drawing notes alone does not make sound: it needs a connected voice. An audio clip already contains sound.</p>
+    <p class="callout">No controller is required. Drawing notes alone does not make sound: the NOTES source needs a connected voice. Record that voice to attach its sound to the same clip, then choose RECORDED to play the saved take.</p>
   </section>
 
   <section aria-labelledby="session">
@@ -48,15 +48,15 @@
       <tbody>
         <tr><td><strong>SESSION</strong></td><td>Launch grid, per-lane MUTE / STOP / AUDIO / AUTO, scene launch and repeat controls, selected-clip inspector.</td></tr>
         <tr><td><strong>CHANNELS</strong></td><td>Set each lane to mono or poly, choose its RATE, and toggle the same AUTO arm found in Session.</td></tr>
-        <tr><td><strong>EDITOR</strong></td><td>Edit the selected note clip or inspect a recorded waveform. NOW / QUEUE launch that selected clip.</td></tr>
+        <tr><td><strong>EDITOR</strong></td><td>Edit the selected clip’s notes, inspect its recorded waveform and choose NOTES / RECORDED. NOW / QUEUE launch that selected clip.</td></tr>
         <tr><td><strong>PLAYBACK</strong></td><td>Global STEP, QNT, S&amp;H, OCT and GATE settings. These are shared across lanes.</td></tr>
         <tr><td><strong>Above the tabs’ content</strong></td><td>Transport and tempo nudges, stop-all/reset, undo/redo, hardware binding, arrangement/song controls and automation status remain available across views.</td></tr>
       </tbody>
     </table>
-    <p>On screen, <strong>columns are lanes and rows are slots</strong>. Click a loaded pad to launch or queue it; click the currently playing pad to stop its lane. Double-click opens the appropriate editor. Shift-click launches immediately. An empty pad can become a note placeholder, but opening an empty editor alone writes no notes.</p>
+    <p>On screen, <strong>columns are lanes and rows are slots</strong>. Click a loaded pad to launch or queue it; click the currently playing pad to stop its lane. Double-click opens its note editor, with audio controls alongside when it has a take. Shift-click launches immediately. An empty pad can become a note placeholder, but opening an empty editor alone writes no notes.</p>
     <p><strong>MUTE</strong> silences a lane while retaining its running clip. <strong>STOP</strong> stops that lane. Stop-all is the immediate panic action. <strong>RST</strong> re-aligns active clips to their first step; it does not rewind the arrangement or launch stopped lanes.</p>
     <p>The screen grid shows the first eight slots. The selected-clip LANE / SLOT selectors reach all {SCENE_STRIDE} slots without launching. Hardware banking reaches the extended slot range. Scene repeats for the first eight scenes sit beside the screen grid.</p>
-    <p>Right-click a pad for COPY, PASTE and CLEAR, plus note-specific probability controls. The screen, Push and Launchpad share a local clipboard. Note copies include their recorded automation; audio copies retain the take’s media reference. A scene buffer pastes into a scene, and a clip buffer into a clip. A paste replaces the destination’s contents as one undoable edit.</p>
+    <p>Right-click a pad for COPY, PASTE and CLEAR, plus note-specific probability controls. The screen, Push and Launchpad share a local clipboard. A whole-clip copy carries its notes, automation and attached audio; the audio keeps its media reference. A scene buffer pastes into a scene, and a clip buffer into a clip. A paste replaces the destination’s contents as one undoable edit. Menu CLEAR deletes all of that clip’s layers.</p>
   </section>
 
   <section aria-labelledby="notes">
@@ -74,7 +74,7 @@
         <tr><td>Mono / poly in CHANNELS</td><td>Mono replaces an existing pitch when you add another at that step. Poly keeps the chord; use a poly-capable voice to hear every pitch.</td></tr>
         <tr><td>SCALE… / APPLY SCALE</td><td>Check pitch rows to define this lane’s custom note set, then apply it. REMOVE SCALE reveals the other rows again. Hidden notes remain stored and keep playing.</td></tr>
         <tr><td>RESTRICT RANGE / FLOOR</td><td>Show a compact three-octave window instead of the full pitch range. These are view controls; they do not transpose or filter playback.</td></tr>
-        <tr><td>⌫ / CLEAR / CLR AUTO</td><td>⌫ empties notes and automation while keeping the clip. Menu CLEAR deletes the clip. CLR AUTO removes only that clip’s recorded control movements.</td></tr>
+        <tr><td>⌫ / CLEAR / CLR AUTO</td><td>⌫ empties notes and automation while keeping the clip and its audio. Menu CLEAR deletes the whole clip, including attached audio. CLR AUTO removes only that clip’s recorded control movements.</td></tr>
       </tbody>
     </table>
     <h3>Probability, pitch variation and loop skips</h3>
@@ -83,26 +83,29 @@
     <p>Probability dims the note toward purple/orange; loop skips tint it red; combined settings blend those colors. Pitch variation adds a dashed border. The tooltip and menu show exact values. On a pad’s clip menu, probability becomes the clip default while skip and pitch variation apply to its notes. On a note cell, the change affects that note.</p>
     <p>Loop skips and pitch variation follow shared deterministic timing. Firing-probability rolls are currently local to each peer, so collaborators can hear different dropouts.</p>
     <h3 id="audition">Hear the clip you are editing</h3>
-    <p><strong>NOW</strong> switches its lane to this clip immediately. <strong>QUEUE</strong> follows QNT and the shared reference boundary. Neither requires leaving the editor. Live hardware KEYS and arpeggiator entry are described in the controller guides; recording those notes is additive and separate from audio capture.</p>
+    <p><strong>NOW</strong> switches its lane to this clip immediately. <strong>QUEUE</strong> follows QNT and the shared reference boundary. Neither requires leaving the editor. If the clip has a take, choose <strong>NOTES</strong> to hear your note edits; editing notes does not rewrite saved audio. Live hardware KEYS and arpeggiator entry are described in the controller guides; recording those notes is additive and separate from audio capture.</p>
   </section>
 
   <section aria-labelledby="audio">
     <h2 id="audio">Record audio, then choose what you hear</h2>
     <ClipplayerGuideDiagram view="audio" />
     <div class="flow" aria-label="Audio recording workflow">
-      <div><b>1 · Select</b><span>Empty lane + slot<br/>SET REC TARGET</span></div><div><b>2 · Arm</b><span>Choose 1 or ∞<br/>ARM AUDIO</span></div><div><b>3 · Capture</b><span>Play / next boundary<br/>MIXMSTRS input</span></div><div><b>4 · Listen</b><span>Saved A clip launches<br/>RECORDED / LIVE INPUT</span></div>
+      <div><b>1 · Select</b><span>Your existing clip<br/>LANE / SLOT</span></div><div><b>2 · Arm</b><span>Choose 1 or ∞<br/>RECORD AUDIO</span></div><div><b>3 · Capture</b><span>Play that clip<br/>Its own loop boundary</span></div><div><b>4 · Listen</b><span>Take attached here<br/>NOTES / RECORDED</span></div>
     </div>
     <ol>
       <li>Route the sound to the matching <strong>MIXMSTRS channel input</strong>. Lane 1 captures channel 1, and so on. Add MIXMSTRS if the rack does not have it.</li>
-      <li>Inspect an empty destination using the LANE / SLOT selectors below the Session grid, then press <strong>SET REC TARGET</strong>. This does not launch it. Choose another slot if the original note clip should keep running during capture.</li>
-      <li>Choose <strong>1</strong> for one loop or <strong>∞</strong> for endless whole-loop recording using that lane’s AUDIO row. Press the red AUDIO arm or <strong>ARM AUDIO</strong>.</li>
-      <li>Arming does not start transport. Press Play when stopped; when transport already runs, capture starts at its scheduled boundary. The visible status identifies the armed lane, destination and phase.</li>
-      <li>A one-loop take finishes automatically. For endless recording, press the arm again to finish at the end of the current loop. During a one-loop take, pressing it again cancels the unfinished take. While stopping, wait for the take to finish saving.</li>
+      <li>Select the existing clip whose sound you want to record using the <strong>LANE / SLOT</strong> selectors below the Session grid. This does not launch it. Recording temporarily uses <strong>NOTES</strong> so the clip drives its patched voice, even when replacing an existing take.</li>
+      <li>Choose <strong>1 · ONE LOOP</strong> or <strong>∞ · UNTIL FINISH</strong> using that lane’s AUDIO row. Press the red AUDIO arm or <strong>RECORD AUDIO</strong>. If the clip already has a take, use <strong>REPLACE TAKE… → REPLACE AND ARM</strong>. The take stays attached to this same lane and slot.</li>
+      <li>Launch that clip and start transport when ready. Arming alone does neither: it can wait while transport is stopped or a different clip is playing. Capture starts on the target clip’s loop boundary and measures that clip’s own loop, even when another lane has a longer clip. The visible status identifies the target and phase.</li>
+      <li>A one-loop take finishes automatically. For endless recording, press the arm again to finish at the end of the current loop. During a one-loop take, pressing it again cancels the unfinished take. The clip keeps rendering its notes through the stopping phase; wait for the take to finish saving.</li>
     </ol>
-    <p>The take is a stereo audio clip and launches after saving. Double-click its <strong>A</strong> pad to see the waveform. <strong>RECORDED</strong> enables that take; <strong>LIVE INPUT</strong> bypasses it. LIVE INPUT does <em>not</em> turn audio into notes or relaunch the original pattern. To return to note playback, launch the original <strong>N</strong> slot in that lane.</p>
+    <p>Saving attaches the stereo take to the same clip and selects <strong>RECORDED</strong>. It keeps that clip’s lane and slot, preserves notes and automation, and does not queue an extra launch. <strong>NOTES</strong> plays its note sequence through the voice; <strong>RECORDED</strong> plays its saved audio instead of generating those notes. Switch between them on this clip. Automation continues in either source.</p>
+    <p>Double-click the clip to keep editing its notes, with waveform and source controls alongside. A purple audio indicator means the clip has a saved take. Note edits do not alter that take; choose NOTES to hear them and record again when you want an updated audio layer.</p>
     <p>Stopping transport during an endless take keeps completed whole loops; an incomplete single-loop take is discarded. Audio plays at its recorded duration: it is not time-stretched when you change tempo, STEP or RATE. Keep the capture tempo when you need the take to stay aligned with note loops.</p>
-    <p><strong>REPLACE TAKE…</strong> asks for confirmation before arming over existing audio. The original stays until the new take commits. To retain both, record into another empty slot. Clips with notes or recorded automation are protected from audio overwrite. An armed target cannot move; cancel the arm before choosing a different destination.</p>
+    <p><strong>A long take does not lengthen the note clip.</strong> Record four passes of a 16-step clip and its notes and automation still loop every 16 steps; launches and stops still use that original clip length. The attached audio repeats its full four-pass captured duration.</p>
+    <p><strong>REPLACE TAKE…</strong> asks for confirmation before replacing the clip’s audio layer. The original take stays until the new take commits; its notes and automation are preserved. Copy the whole clip to another slot first if you want to keep a version with the old take. An armed target cannot move; cancel the arm before choosing a different clip.</p>
     <p>Leaving the editor, closing the full view or disconnecting a controller does not end a take. Recording belongs to the module. A collaborator’s armed lane cannot be taken over from your controls. Interrupted or refused takes report a reason rather than silently recording somewhere else.</p>
+    <p>Older racks can contain standalone audio clips. These remain readable and playable; their editor shows the saved waveform. New recording adds an audio layer to your existing clip.</p>
   </section>
 
   <section aria-labelledby="automation">
@@ -117,9 +120,9 @@
       <li>Move the assigned module’s controls. Screen, MIDI and Electra gestures record. Supported CV bridge targets can also record effective values; a human touch takes precedence. Unassigned modules do not record into that lane.</li>
       <li>Continue across loops to overdub. Only controls you are moving are rewritten; the other recorded tracks keep playing. Disarm AUTO to finish. Stopping mid-loop preserves the untouched tail.</li>
     </ol>
-    <p>A teal dot marks clips with automation. Copying a note clip carries its automation; reverse paste reverses both. Each clip holds up to {MAX_AUTOMATION_TRACKS} recorded controls. The MAX indicator reports the limit; ASSIGNED and REC report assignment and recording state, with details in their tooltips.</p>
+    <p>A teal dot marks clips with automation. Copying the clip carries its automation; reverse paste reverses its notes and envelopes. Each clip holds up to {MAX_AUTOMATION_TRACKS} recorded controls. The MAX indicator reports the limit; ASSIGNED and REC report assignment and recording state, with details in their tooltips. Automation continues when the clip switches between NOTES and RECORDED, including mixer control movements.</p>
     <p>Live control gestures temporarily override playback. Release the control to return to automation; the override indicator can re-enable all controls. At a lane stop or switch, controls hold their last automated value instead of resetting. Multiple lanes can record at once, with one recording client per lane.</p>
-    <p><strong>CLR AUTO</strong> in the editor clears that clip’s envelopes while keeping its notes. A control’s menu can clear its recorded automation. <strong>Remove automation assignment</strong> only stops future recording for that module; existing envelopes still play. These are deliberately different operations.</p>
+    <p><strong>CLR AUTO</strong> in the editor clears that clip’s envelopes while keeping its notes and audio. A control’s menu can clear its recorded automation. <strong>Remove automation assignment</strong> only stops future recording for that module; existing envelopes still play. These are deliberately different operations.</p>
   </section>
 
   <section aria-labelledby="scenes">
@@ -137,25 +140,27 @@
     <table>
       <thead><tr><th>Recording</th><th>What is saved</th><th>How to use it</th></tr></thead>
       <tbody>
-        <tr><td><strong>AUDIO</strong></td><td>A stereo waveform in one clip slot.</td><td>Lane AUDIO arm; described above.</td></tr>
+        <tr><td><strong>AUDIO</strong></td><td>A stereo take attached to the existing clip, alongside its notes and automation.</td><td>Lane AUDIO arm; described above.</td></tr>
         <tr><td><strong>AUTO</strong></td><td>Control movements attached to a playing note clip.</td><td>Lane AUTO arm; described above.</td></tr>
         <tr><td><strong>ARR</strong> · experimental</td><td>The applied clip-launch and stop events, with their performance timing.</td><td>Use the SES / ARR row and its record toggle. RPL starts fresh; OVR layers launches onto the existing arrangement. ARR ⤢ opens the launch-log editor.</td></tr>
         <tr><td><strong>SONG</strong></td><td>The notes actually emitted while you perform, including their timing, duration and velocity.</td><td>Use ● SONG while performing in Session. RPL starts a fresh print; OVR adds to it. Switch SES to SONG to hear the printed performance.</td></tr>
       </tbody>
     </table>
-    <p>Printed SONG captures the notes that survived probability and loop skips, with pitch variation, rate, division and swing already applied. It plays those events directly instead of re-running the original clip decisions. OCT remains a live output transpose. SONG is a note performance, <strong>not an audio mixdown</strong>, and currently does not print automation or audio clips.</p>
+    <p>Printed SONG captures the notes that survived probability and loop skips, with pitch variation, rate, division and swing already applied. It plays those events directly instead of re-running the original clip decisions. OCT remains a live output transpose. SONG is a note performance, <strong>not an audio mixdown</strong>, and currently does not print automation or recorded audio. A clip using RECORDED does not generate notes to print.</p>
     <p>ARR follows the clip-launch log, so its clips still supply their contents. Its editor lets you select a block, drag it horizontally with BAR / BEAT snapping, cycle its slot, delete it, or adjust the arrangement loop length by bars. The expanded ARR editor is the same launch-log view. There is no printed-song piano-roll editor.</p>
     <p>Use Session for hands-on launches. Song playback takes over the lanes; changing the playback mode is separate from arming a recorder. Neither SONG nor ARR replaces the lane’s AUDIO or AUTO workflow.</p>
   </section>
 
   <section aria-labelledby="routing">
     <h2 id="routing">Routing and timing reference</h2>
-    <div class="routing-map" role="img" aria-label="Notes go to a voice and mixer. Audio capture uses the mixer input. Recorded playback uses audio L/R, automatically returned only when the mixer input has no explicit cable.">
-      <div><b>N · note slot</b><span>pitchN / gateN / velN → voice → MIXMSTRS channel N</span></div>
-      <div><b>AUDIO capture</b><span>MIXMSTRS channel N input → saved A clip</span></div>
-      <div><b>A · audio slot</b><span>audioN L/R → your patch; automatic MIXMSTRS return when its input is unpatched</span></div>
+    <div class="routing-map" role="img" aria-label="One clip has notes and recorded audio. Notes drive a voice patched into MIXMSTRS. Capture attaches that input's audio to the same clip. Recorded playback replaces live monitoring in the same mixer channel without moving cables. Automation continues in either source.">
+      <div><b>NOTES</b><span>This clip’s pitchN / gateN / velN → voice → MIXMSTRS channel N</span></div>
+      <div><b>AUDIO capture</b><span>MIXMSTRS channel N input → audio layer of this same clip</span></div>
+      <div><b>RECORDED</b><span>This clip’s saved take → same mixer channel; replaces live monitoring</span></div>
+      <div><b>AUTO</b><span>This clip’s control movements → assigned modules, with either source</span></div>
     </div>
-    <p>Capture uses the corresponding pre-fader input of the first available MIXMSTRS. An explicit cable into a MIXMSTRS input overrides the automatic recorded-take return. The Clip Player audio L/R outputs continue working, so route them explicitly if that channel is already patched. LIVE INPUT bypasses the take; the live input still needs an actual signal.</p>
+    <p>Capture uses the corresponding pre-fader input of the first available MIXMSTRS. <strong>Leave the instrument cables connected.</strong> With RECORDED selected, the attached take replaces the channel’s live input monitoring; with NOTES selected, the note sequence drives the voice again. No cable moves are needed. The lane’s <code>audioN L/R</code> outputs also expose recorded playback for custom routing. Mixer automation still applies because the take is captured before those mixer controls.</p>
+    <p>If you explicitly patch this Clip Player’s <code>audioN L/R</code> into its matching MIXMSTRS channel, that cable route replaces the internal stereo return so the take is not doubled. Connecting either leg disables that internal pair; connect both legs for stereo. Ordinary instrument-input cables do not disable the return.</p>
     <table>
       <thead><tr><th>Control / input</th><th>Effect</th></tr></thead>
       <tbody>
@@ -178,7 +183,7 @@
       <a href="/docs/modules/launchpadControlLeft"><strong>Launchpad →</strong><span>One-device views, paired matrix/deck, modifiers, keys, recording and LED meanings.</span></a>
       <a href="#monome"><strong>monome grid 128 ↓</strong><span>Serial setup, monochrome Session map, note editor and length pages.</span></a>
     </div>
-    <p>Push 2 and Launchpad expose audio recording at <strong>CONTROL → AUDIO</strong>. The hardware guides explain how to pick a target, arm, finish, switch REC / LIVE, and confirm replacement without disturbing their permanent controls. The shared Push/Launchpad layer has one active controller surface at a time; a Launchpad pair is one surface.</p>
+    <p>Push 2 and Launchpad expose audio recording at <strong>CONTROL → AUDIO</strong>. The hardware guides explain how to pick a clip, arm, finish, switch NOTES / RECORDED, and confirm replacement without disturbing their permanent controls. They use the same clip layers and routing as the screen. The shared Push/Launchpad layer has one active controller surface at a time; a Launchpad pair is one surface.</p>
     <ClipplayerMonomeDocs />
   </section>
 
@@ -187,13 +192,13 @@
     <table>
       <thead><tr><th>What you see</th><th>What to check</th></tr></thead>
       <tbody>
-        <tr><td>Notes are visible but silent</td><td>Enable audio, run TIMELORDE, launch the clip, unmute the lane, and connect pitch/gate to a sounding voice.</td></tr>
-        <tr><td>A saved take is silent</td><td>Choose RECORDED, launch the A slot, check mute and media availability, then check explicit mixer-input cables and audioN L/R routing.</td></tr>
-        <tr><td>AUDIO is armed but waiting</td><td>Start transport or wait for its scheduled boundary. Read the selected-clip status for the frozen target and any refusal.</td></tr>
-        <tr><td>A target refuses recording</td><td>Use an empty slot, confirm replacement of an audio take, wait for a finishing take, or let the collaborator who armed it finish. Notes and recorded automation are protected.</td></tr>
+        <tr><td>Notes are visible but silent</td><td>Choose NOTES, enable audio, run TIMELORDE, launch the clip, unmute the lane, and connect pitch/gate to a sounding voice.</td></tr>
+        <tr><td>A saved take is silent</td><td>Choose RECORDED on that same clip, launch it, and check mute, media availability and the mixer’s output path. Keep its instrument-input cables connected. For custom routing, check audioN L/R.</td></tr>
+        <tr><td>AUDIO is armed but waiting</td><td>Start transport and launch the target clip. Capture waits for that clip’s own loop boundary. Read the selected-clip status for the frozen target and any refusal.</td></tr>
+        <tr><td>A target refuses recording</td><td>Select an existing clip, confirm replacement if it already has audio, wait for a finishing take, or let the collaborator who armed it finish. Existing notes and automation remain intact.</td></tr>
         <tr><td>AUTO records nothing</td><td>Assign the module, launch a note clip in that lane, arm AUTO and wait for its loop start. Check MAX if the clip already has {MAX_AUTOMATION_TRACKS} tracks.</td></tr>
         <tr><td>Audio unavailable on this device</td><td>The clip exists but its media could not load locally. Check the device/browser that recorded or imported the take; the waveform panel reports availability explicitly.</td></tr>
-        <tr><td>An interrupted take is offered</td><td>Opening the full view scans recoverable local takes with at least one complete loop. RECOVER requires the original destination slot to be empty; DISCARD removes that unfinished take. Read the destination and take details before choosing.</td></tr>
+        <tr><td>An interrupted take is offered</td><td>Opening the full view scans recoverable local takes with at least one complete loop. RECOVER can attach audio to the original note clip while preserving its notes and automation. Its audio layer must be vacant; recovery refuses to overwrite an existing take without explicit replacement. DISCARD removes the unfinished take. Read the destination and take details before choosing.</td></tr>
       </tbody>
     </table>
     <p>Clip metadata and playback state are shared, but recorded audio bytes live in the browser’s local media storage; they are not streamed automatically to collaborators. A <strong>performance ZIP (.ptperf.zip)</strong> includes available referenced takes and restores them into the receiving browser. A plain <strong>.imp.json</strong> does not carry audio. Export reports missing media; keep the recording browser’s data until you have a complete media-bearing backup.</p>

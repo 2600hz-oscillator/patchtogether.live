@@ -5,7 +5,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { AudioEngine } from '$lib/audio/engine';
   import { getClipAudioBuffer } from '$lib/audio/clip-audio-cache';
-  import { CLIP_LANES, SCENE_STRIDE, audioRecState, clipIndex, laneOf, slotOf, laneRecArm, laneRecMode, readClip, type ClipPlayerData } from '$lib/audio/modules/clip-types';
+  import { CLIP_LANES, SCENE_STRIDE, audioRecState, clipIndex, laneOf, slotOf, laneRecArm, laneRecMode, readClip, readClipAudio, clipPlaybackIsRecorded, type ClipPlayerData } from '$lib/audio/modules/clip-types';
   import { requestFaceTab } from '$lib/ui/workflow/face-tab-request.svelte';
   import { nodeClipRecorder } from '../node-clip-recorder-registry.svelte';
   import { clipplayerAudioFeedback, setClipplayerAudioFeedback } from './clipplayer-audio-feedback.svelte';
@@ -19,6 +19,8 @@
   let lane = $derived(laneOf(index));
   let slot = $derived(slotOf(index));
   let clip = $derived((live.v, readClip(live.data, index)));
+  let take = $derived((live.v, readClipAudio(live.data, index)));
+  let recorded = $derived((live.v, clipPlaybackIsRecorded(live.data, index)));
   let rec = $derived((live.v, audioRecState(live.data, lane)));
   let armed = $derived((live.v, laneRecArm(live.data, lane)));
   let target = $derived(rec?.slot ?? (armed ? live.data?.recRequest?.[String(lane)]?.slot : undefined) ?? clipplayerSelectedSlotForLane(nodeId, lane));
@@ -27,7 +29,7 @@
   let replacement = $state<{ index: number; mediaId: string } | null>(null);
   let peaks = $state<number[]>([]);
   let mediaState = $state<'loading' | 'ready' | 'unavailable' | 'stopped'>('stopped');
-  let mediaKey = $derived(clip?.kind === 'audio' ? `${clip.mediaId}:${clip.takeAt}` : '');
+  let mediaKey = $derived(take ? `${take.mediaId}:${take.takeAt}` : '');
   let mixer = $derived.by(() => {
     void nodesStructuralVersion();
     return Object.values(patch.nodes).find(n => n?.type === 'mixmstrs');
@@ -37,15 +39,13 @@
     replacement = null;
     setClipplayerAudioFeedback(nodeId, '');
   }
-  function setTarget() {
-    setClipplayerAudioFeedback(nodeId, setClipplayerAudioTarget(nodeId, lane, slot) ?? `Record target: lane ${lane + 1}, slot ${slot + 1}. Playback unchanged.`);
-  }
   function arm(replaceMediaId?: string) {
-    setClipplayerAudioFeedback(nodeId, toggleClipplayerLaneRecArm(nodeId, lane, replaceMediaId) ?? '');
+    const error = !armed && !rec ? setClipplayerAudioTarget(nodeId, lane, slot) : null;
+    setClipplayerAudioFeedback(nodeId, error ?? toggleClipplayerLaneRecArm(nodeId, lane, replaceMediaId) ?? '');
     replacement = null;
   }
   function confirmReplace() {
-    if (!replacement || replacement.index !== index || clip?.kind !== 'audio' || replacement.mediaId !== clip.mediaId) {
+    if (!replacement || replacement.index !== index || !take || replacement.mediaId !== take.mediaId) {
       replacement = null;
       setClipplayerAudioFeedback(nodeId, 'The selected take changed. Choose Replace take again.');
       return;
@@ -56,17 +56,17 @@
   }
   $effect(() => {
     void mediaKey;
-    const selected = untrack(() => clip);
+    const selected = untrack(() => take);
     const e = engine.get();
     peaks = [];
-    if (!waveform || selected?.kind !== 'audio') return;
+    if (!waveform || !selected) return;
     if (!e?.hasDomain('audio')) { mediaState = 'stopped'; return; }
     mediaState = 'loading';
     let cancelled = false;
     void getClipAudioBuffer(e.getDomain<AudioEngine>('audio').ctx, selected).then(buffer => {
       if (cancelled) return;
       if (!buffer) { mediaState = 'unavailable'; return; }
-      const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+      const left = buffer.getChannelData(0), right = buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1));
       const bins = 96;
       peaks = Array.from({ length: bins }, (_, i) => {
         let peak = 0;
@@ -88,48 +88,42 @@
     <label>SLOT <select aria-label="Inspect slot" value={slot} onchange={e => inspect(clipIndex(Number(e.currentTarget.value), lane))}>
       {#each Array(SCENE_STRIDE) as _, i}<option value={i}>{i + 1}</option>{/each}
     </select></label>
-    <span class:audio={clip?.kind === 'audio'}>{clip?.kind === 'audio' ? 'AUDIO CLIP' : clip?.kind === 'note' ? 'NOTE CLIP' : 'EMPTY'}</span>
+    <span class:audio={!!take}>{clip?.kind === 'note' ? take ? 'NOTES + AUDIO' : 'NOTES' : clip?.kind === 'audio' ? 'AUDIO TAKE' : 'EMPTY'}</span>
     <button onclick={() => requestFaceTab(nodeId, waveform ? 'session' : 'editor')}>{waveform ? 'SESSION' : 'EDIT'}</button>
   </div>
-  {#if clip?.kind === 'audio'}
-    <div class="strip-row" role="group" aria-label="Audio clip playback">
-      <span>PLAYBACK</span>
-      <button class="source" aria-pressed={!clip.live} data-testid="clipplayer-source-recorded" onclick={() => setClipplayerClipLive(nodeId, index, false)}>RECORDED</button>
-      <button class="source" aria-pressed={!!clip.live} data-testid="clipplayer-source-live" onclick={() => setClipplayerClipLive(nodeId, index, true)}>LIVE INPUT</button>
-      <button data-testid="clipplayer-replace-take" disabled={armed || !!rec} onclick={() => { if (clip?.kind === 'audio') replacement = { index, mediaId: clip.mediaId }; }}>REPLACE TAKE…</button>
-    </div>
-    {#if waveform}
-      <div class="waveform" role="img" aria-label={mediaState === 'ready' ? 'Recorded stereo waveform' : `Audio preview ${mediaState}`} data-media-state={mediaState}>
-        {#if mediaState === 'ready'}
-          {#each peaks as peak}<span style:height={`${Math.max(1, peak * 100)}%`}></span>{/each}
-        {:else}<span class="media-message">{mediaState === 'loading' ? 'Loading take…' : mediaState === 'unavailable' ? 'Audio unavailable on this device' : 'Enable audio to preview this take'}</span>{/if}
-      </div>
+  <div class="strip-row" role="group" aria-label="Clip playback source">
+    <span>PLAYBACK</span>
+    <button class="source" aria-pressed={!recorded} disabled={clip?.kind !== 'note' || armed || !!rec} data-testid="clipplayer-source-notes" onclick={() => setClipplayerClipLive(nodeId, index, true)}>NOTES</button>
+    <button class="source" aria-pressed={recorded} disabled={!take || armed || !!rec} data-testid="clipplayer-source-recorded" onclick={() => setClipplayerClipLive(nodeId, index, false)}>RECORDED</button>
+    {#if take && !armed && !rec}
+      <button data-testid="clipplayer-replace-take" onclick={() => { if (take) replacement = { index, mediaId: take.mediaId }; }}>REPLACE TAKE…</button>
+    {:else}
+      <button data-testid="clipplayer-selected-record" disabled={!clip || rec?.phase === 'stopping'} onclick={() => arm()}>{rec?.phase === 'recording' ? laneRecMode(live.data, lane) === 'endless' ? 'FINISH TAKE' : 'CANCEL TAKE' : armed ? 'CANCEL ARM' : 'RECORD AUDIO'}</button>
     {/if}
-    <div class="strip-row">
-      <button data-testid="clipplayer-audio-now" onclick={() => queueClipplayerLane(nodeId, lane, slot, true)}>NOW</button>
-      <button data-testid="clipplayer-audio-queue" onclick={() => queueClipplayerLane(nodeId, lane, slot)}>QUEUE</button>
-      <span>{clip.live ? 'Take bypassed; launch the original note slot to return to notes.' : `Recorded take → audio${lane + 1} L/R`}</span>
-    </div>
-  {:else}
-    <div class="strip-row">
-      <button data-testid="clipplayer-set-record-target" disabled={armed || !!rec} onclick={setTarget}>SET REC TARGET</button>
-      <button data-testid="clipplayer-selected-record" onclick={() => arm()}>{rec?.phase === 'recording' ? laneRecMode(live.data, lane) === 'endless' ? 'FINISH TAKE' : 'CANCEL TAKE' : armed ? 'CANCEL ARM' : 'ARM AUDIO'}</button>
+  </div>
+  {#if take && waveform}
+    <div class="waveform" role="img" aria-label={mediaState === 'ready' ? 'Recorded stereo waveform' : `Audio preview ${mediaState}`} data-media-state={mediaState}>
+      {#if mediaState === 'ready'}
+        {#each peaks as peak}<span style:height={`${Math.max(1, peak * 100)}%`}></span>{/each}
+      {:else}<span class="media-message">{mediaState === 'loading' ? 'Loading take…' : mediaState === 'unavailable' ? 'Audio unavailable on this device' : 'Enable audio to preview this take'}</span>{/if}
     </div>
   {/if}
-  {#if clip?.kind === 'audio' && (armed || rec)}
-    <button data-testid="clipplayer-selected-record" disabled={rec?.phase === 'stopping'} onclick={() => arm()}>{rec?.phase === 'recording' ? laneRecMode(live.data, lane) === 'endless' ? 'FINISH TAKE' : 'CANCEL TAKE' : 'CANCEL ARM'}</button>
-  {/if}
+  <div class="strip-row">
+    <button data-testid="clipplayer-audio-now" disabled={!clip} onclick={() => queueClipplayerLane(nodeId, lane, slot, true)}>NOW</button>
+    <button data-testid="clipplayer-audio-queue" disabled={!clip} onclick={() => queueClipplayerLane(nodeId, lane, slot)}>QUEUE</button>
+    <span>{recorded ? `This clip’s audio → MIXMSTRS channel ${lane + 1}` : take ? 'This clip’s notes → instrument; audio layer kept.' : 'Record this clip’s sound as its audio layer.'}</span>
+  </div>
   {#if replacement}
     <div class="replace" role="group" aria-label="Confirm audio replacement">
-      <span>Replace lane {lane + 1}, slot {slot + 1}? The current take stays until a new take is saved.</span>
+      <span>Replace this clip’s audio layer? Notes and automation stay. The current take stays until the new take is saved.</span>
       <button data-testid="clipplayer-confirm-replace" onclick={confirmReplace}>REPLACE AND ARM</button>
       <button onclick={() => replacement = null}>CANCEL</button>
     </div>
   {/if}
   <div class="status" role="status" aria-live="polite" data-testid="clipplayer-record-status">
-    {refusals[lane] || (rec ? `AUDIO ${rec.phase.toUpperCase()} · lane ${lane + 1}, slot ${rec.slot + 1}` : armed ? `AUDIO ARMED · lane ${lane + 1}, slot ${target + 1} · waiting for transport / boundary` : message || `REC target: lane ${lane + 1}, slot ${target + 1}`)}
+    {refusals[lane] || (rec ? `AUDIO ${rec.phase.toUpperCase()} · lane ${lane + 1}, slot ${rec.slot + 1}` : armed ? `AUDIO ARMED · lane ${lane + 1}, slot ${target + 1} · launch this clip to record its next loop` : message || `Audio belongs to this clip: lane ${lane + 1}, slot ${slot + 1}`)}
   </div>
-  <div class="routing">{mixer ? `Capture: MIXMSTRS input ${lane + 1}. Patched mixer inputs override the automatic take return; use audio${lane + 1} L/R when patched.` : 'Add MIXMSTRS to record audio. Recorded clips remain available at their audio L/R outputs.'}</div>
+  <div class="routing">{mixer ? `Capture and playback: MIXMSTRS channel ${lane + 1}. Keep the instrument patched; NOTES / RECORDED switches this clip’s source.` : 'Add MIXMSTRS to record audio. Recorded clips remain available at their audio L/R outputs.'}</div>
 </div>
 
 <style>

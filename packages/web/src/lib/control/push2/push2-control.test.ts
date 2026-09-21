@@ -125,7 +125,7 @@ beforeEach(async () => {
 
 describe('channel select (Push-LOCAL 5a)', () => {
   it('routes AUDIO through the shared controller and shows its target and state on the display', async () => {
-    seedClipPlayer({ playing: [0] });
+    seedClipPlayer({ playing: [0], clips: { '131': { kind: 'note', lengthSteps: 16, root: 60, loop: true, steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 2 }] } } });
     sim = await installSimulatedPush2AndBind(CP);
     setLaunchpadView('control');
     sim.press(4, 6);

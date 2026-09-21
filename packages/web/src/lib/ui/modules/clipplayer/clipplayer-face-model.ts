@@ -30,7 +30,7 @@ import {
   autoAssignCounts,
   autoClipHasTracks,
   audioRecState,
-  clipHasAudio,
+  readClipAudio,
   clipIndex,
   clipPadState,
   coerceClipRecord,
@@ -214,7 +214,7 @@ export function clipplayerPadViews(data: ClipPlayerData | undefined): Clipplayer
         state: clipplayerPadState(data, index),
         hasAuto: autoClipHasTracks(auto[String(index)]),
         hasClip: clipRecordAt(data, index) !== null,
-        hasAudio: clipHasAudio(clipRecordAt(data, index) as ClipRecord | null),
+        hasAudio: readClipAudio(data, index) !== null,
       });
     }
   }

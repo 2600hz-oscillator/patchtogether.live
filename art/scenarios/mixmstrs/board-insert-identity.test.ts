@@ -344,31 +344,47 @@ describe('ART mixmstrs / pre-board insert identity', () => {
     }
   }, 300_000);
 
-  it('the return gate is PINNED OPEN — no mode, and nothing attenuates', async () => {
-    // ⚠ THE DUCK IS STILL BUILT AND IS NOW PERMANENTLY INERT. `ch{N}_mon` was
-    // removed with the record band on 2026-09-04; `duckGain` stays in the graph
-    // at unity so the two-series-unity-gain shape this file measures is
-    // unchanged, and clause 6's per-clip LIVE/RECORDED toggle is what will
-    // eventually move it.
-    //
-    // This asserts the gate never attenuates even when a lane IS playing —
-    // which the old MON test could not check, because nothing published a lane
-    // edge back then. A non-zero delta here means something started ducking.
-    const ctx = new OfflineAudioContext({ numberOfChannels: OUTS.length, length: N, sampleRate: SR });
-    const node = { id: 'gate', type: 'mixmstrs', position: { x: 0, y: 0 }, params: {} } as never;
-    const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
-    // Tell the mixer every lane is playing. Under the OLD clip-auto default
-    // this muted the live branch on all eight channels.
-    for (let lane = 0; lane < MIXMSTRS_CHANNELS.length; lane++) {
-      handle.write?.('clipLaneEdge', { lane, playing: true, atTime: 0 });
+  it('recorded playback replaces only live monitoring, preserves capture, and restores Notes monitoring', async () => {
+    async function capture(live: boolean, returned: boolean, recorded: boolean, restore = false) {
+      const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: N, sampleRate: SR });
+      const node = { id: 'source-switch', type: 'mixmstrs', position: { x: 0, y: 0 }, params: {} } as never;
+      const handle = await mixmstrsDef.factory(ctx as unknown as AudioContext, node);
+      const returns = handle.read?.('laneReturns') as { node: AudioNode; input: number }[];
+      const taps = handle.read?.('recTaps') as { board: { node: AudioNode; output: number }[] };
+      for (const [enabled, frequency, ref] of [
+        [live, 440, handle.inputs.get('ch1L')!], [returned, 880, returns[0]!],
+      ] as const) {
+        if (!enabled) continue;
+        const osc = ctx.createOscillator(); osc.frequency.value = frequency;
+        const gain = ctx.createGain(); gain.gain.value = 0.25;
+        osc.connect(gain); gain.connect(ref.node, 0, ref.input); osc.start(0);
+      }
+      if (recorded) handle.write?.('clipLaneEdge', { lane: 0, playing: true, atTime: 0 });
+      if (restore) handle.write?.('clipLaneEdge', { lane: 0, playing: false, atTime: 0.05 });
+      const merger = ctx.createChannelMerger(2);
+      const master = handle.outputs.get('masterL')!;
+      master.node.connect(merger, master.output, 0);
+      taps.board[0]!.node.connect(merger, taps.board[0]!.output, 1);
+      merger.connect(ctx.destination);
+      const result = await ctx.startRendering();
+      const chans = [result.getChannelData(0).slice(), result.getChannelData(1).slice()];
+      handle.dispose?.();
+      return { chans };
     }
-    const duck = handle.read?.('recDuck') as { lanePlaying: boolean[]; applied: number[] };
-    expect(duck.lanePlaying.every((p) => p === true), 'the lane flags DID move').toBe(true);
-    expect(
-      duck.applied,
-      'the live-branch gain moved off unity — something is ducking again, and clause 6 has not shipped',
-    ).toEqual(duck.applied.map(() => 1));
-    handle.dispose?.();
+    const live = await capture(true, false, false);
+    const take = await capture(false, true, false);
+    const both = await capture(true, true, false);
+    const recorded = await capture(true, true, true);
+    const restored = await capture(true, true, true, true);
+    expect(peakLevel(live), 'the live instrument is audible').toBeGreaterThan(0.01);
+    expect(peakLevel(take), 'the return is audible').toBeGreaterThan(0.01);
+    expect(peakDelta({ chans: [recorded.chans[0]!] }, { chans: [take.chans[0]!] }),
+      'Recorded master contains only the return').toBeLessThan(1e-5);
+    expect(peakDelta({ chans: [recorded.chans[1]!] }, { chans: [live.chans[1]!] }),
+      'the raw recording tap is unaffected by monitoring').toBe(0);
+    expect(peakDelta({ chans: [both.chans[0]!] }, { chans: [take.chans[0]!] }),
+      'negative control: summing live audio is detectable').toBeGreaterThan(0.01);
+    expect(peakDelta(restored, both), 'switching back restores the live branch').toBeLessThan(1e-5);
   }, 120_000);
 
   it('read("recState") is GONE — the mixer no longer publishes an arm', async () => {

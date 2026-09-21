@@ -79,11 +79,10 @@ export function clipplayerSelectedClip(nodeId: string): number {
   return selection.get(nodeId) ?? 0;
 }
 
-/** Inspect without launching, materialising content, or moving a record target. */
+/** Inspect without launching or creating content. This is also the lane's
+ * next recording selection; an already-armed take keeps its frozen request. */
 export function clipplayerInspectClip(nodeId: string, index: number): void {
-  if (!Number.isInteger(index) || index < 0 || index >= CLIP_LANES * SCENE_STRIDE) return;
-  selection.set(nodeId, index);
-  pruneDeletedNodes();
+  clipplayerSelectClip(nodeId, index);
 }
 
 /** Open a clip in the face's editor. Out-of-range indices are IGNORED rather
@@ -112,16 +111,9 @@ export function clipplayerSelectClip(nodeId: string, index: number): void {
   pruneDeletedNodes();
 }
 
-/** Mark `slot` as `lane`'s record target WITHOUT moving the editor.
- *
- * ⚠ A SEPARATE GESTURE FROM `clipplayerSelectClip`, on purpose. Double-click is
- * "open this clip in the editor", and it CREATES a clip in an empty slot and
- * navigates away from the grid — none of which a player wants merely to say
- * "record into that one". Worse, the clip it creates is a NOTE clip, which the
- * recorder then refuses, so double-click could never be the record-target
- * gesture. A plain pad CLICK calls this instead: it moves nothing the player
- * can see except which pad the lane's record button is aimed at.
- */
+/** Remember the lane's next recording selection without moving the editor.
+ * A pad click uses this; inspecting or editing uses clipplayerSelectClip.
+ * Either can select an existing note clip for its attached audio layer. */
 export function clipplayerSelectLaneSlot(nodeId: string, lane: number, slot: number): void {
   if (!Number.isInteger(lane) || lane < 0 || lane >= CLIP_LANES) return;
   if (!Number.isInteger(slot) || slot < 0 || slot >= SCENE_STRIDE) return;

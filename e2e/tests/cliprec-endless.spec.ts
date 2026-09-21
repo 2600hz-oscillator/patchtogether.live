@@ -74,7 +74,7 @@ async function readData(page: Page, nodeId: string): Promise<Record<string, unkn
 
 async function readClipAt(page: Page, index: number): Promise<Record<string, unknown> | null> {
   const d = await readData(page, CP);
-  const clips = (d.clips ?? {}) as Record<string, unknown>;
+  const clips = (d.audio ?? {}) as Record<string, unknown>;
   return (clips[String(index)] ?? null) as Record<string, unknown> | null;
 }
 
@@ -172,6 +172,10 @@ test('ENDLESS mode: tapping record again ends the take at the END of the current
     })
     .toBeGreaterThan(0.02);
 
+  await page.evaluate(({ id, index }) => {
+    const w = window as unknown as { __patch: { nodes: Record<string, { data: unknown }> }; __ydoc: { transact(fn: () => void): void } };
+    w.__ydoc.transact(() => { w.__patch.nodes[id]!.data = { sv: 2, clips: { [String(index)]: { kind: 'note', lengthSteps: 16, root: 60, loop: true, steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 2 }] } } }; });
+  }, { id: CP, index: TARGET_INDEX });
   await openLauncher(page);
 
   // Aim lane 1 at the target slot, then switch the lane to ENDLESS.
@@ -275,6 +279,7 @@ test('ENDLESS mode: tapping record again ends the take at the END of the current
   const rec = (await readClipAt(page, TARGET_INDEX))!;
   const frames = rec.frames as number;
   expect(rec.kind).toBe('audio');
+  expect(((await readData(page, CP)).clips as Record<string, {kind: string}>)[String(TARGET_INDEX)]?.kind).toBe('note');
   expect(typeof frames, 'the take reports a frame count').toBe('number');
 
   const loops = frames / unitFrames;

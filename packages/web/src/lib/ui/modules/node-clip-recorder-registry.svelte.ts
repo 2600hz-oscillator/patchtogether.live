@@ -1,72 +1,13 @@
-// THE CLIP-RECORD REGISTRY — the third node-keyed registry, written after
-// reading node-samsloop-registry.svelte.ts:62-91 (which explains field by
-// field why the first two were not merged). This one differs from BOTH, and
-// the spec's §4.6 table is restated here because it is the reason a third
-// registry exists at all:
+// Node-owned recording: one take per Clip Player lane, independent of mounted UI.
+// The frozen arm request names an existing source clip. Preparation opens media;
+// confirmation waits for that exact clip and resolves its own next loop boundary.
+// Notes generate the capture while armed/recording/finishing. A successful commit
+// writes only data.audio[clipIndex], preserving notes and automation. Legacy
+// standalone takes remain replaceable. Committing never launches a different slot.
 //
-//   | | node-recorder (video) | node-samsloop (audio) | node-clip-recorder |
-//   |---|---|---|---|
-//   | pump        | rAF PULL          | port PUSH        | port PUSH          |
-//   | render lease| yes               | no               | no                 |
-//   | concurrency | one take per node | one take per node| UP TO 8 PER NODE   |
-//   | on stop     | on-disk artifact  | node.data.sample | OPFS → clips[k] on |
-//   |             |                   |                  | a DIFFERENT node   |
-//   | boundary    | wall clock        | byte cap         | AUDIO FRAMES       |
-//   | sweep leaves| recover candidate | nothing          | recover candidate  |
-//
-// The last two rows are the reason it can be neither of the others: the
-// recorder lives on MIXMSTRS (keyed here by that node's id) and the commit
-// lands on CLIPPLAYER, and every boundary is a frame count compared against
-// the worklet's own currentFrame — never a wall-clock elapsed.
-//
-// ⚠ THE #1574 GUARD, ADOPTED VERBATIM: no `dispose()`, no `release()`, no
-// `detach()`. Its ABSENCE is the guard — a card cannot tear a take down in an
-// onDestroy because there is no method to call and tsc refuses the attempt
-// before any test runs. The only ways a take ends are its frame boundary,
-// CANCEL (the arm param dropping to off), the transport stopping, and the
-// graph-lifetime `sync()` sweeping a deleted node — which ABANDONS the take
-// and leaves its scratch as a recover candidate, never deletes it.
-//
-// ⚠ THERE IS CURRENTLY NO ARM SURFACE AT ALL, AND THAT IS DELIBERATE. The arm
-// used to be a mixmstrs param (`ch{N}_rec`, slice 3's record band): this
-// registry polled the mixer's effective (knob + CV) values through
-// `read('recState')` and drove the pure machine from edges on them. The owner
-// ruled that surface off the mixer on 2026-09-04 — recording is a CLIPPLAYER
-// feature, per clip — and the replacement per-lane toggle has not landed yet.
-//
-// So `read('recState')` returns `undefined` on every mixmstrs node today, the
-// guard at the top of `#pumpEntry` returns, and this registry IDLES: entries are
-// still created per live mixmstrs node, no wiring is built, no take can start,
-// and `clipPadState` is untouched. `cliprec-registry-idles.spec.ts` pins that,
-// because an absent seam that throws and an absent seam that idles look
-// identical from the outside until someone boots a rack.
-//
-// The edge contract below is UNCHANGED and is what the clipplayer toggle will
-// drive; only the SOURCE of the arm value moves. Level semantics:
-//   - 0 → 1 edge while idle  = ARM SINGLE (this slice; 2/endless is slice 6,
-//     and reads as "not 1" here — arming stays un-actioned until it lands).
-//     The edge PREPARES (refusals, tempo latch, manifest, writer worker —
-//     the I/O a cold host controls) and the machine arms only at CONFIRM,
-//     with the window resolved from the clock AFTER the open — see LaneRec;
-//   - → 0 while armed/recording = CANCEL (the escape — nothing committed);
-//   - after a COMMIT the registry snaps the KNOB back to 0 itself, so the
-//     control reads disarmed and a held CV gate must dip before it re-arms
-//     (edge-triggered arm; a held high never machine-guns takes).
-//   A saved rack that loads with the param already at 1 is ADOPTED without
-//   arming (the resetNonce rule: a loaded patch never replays a gesture).
-//
-// ⚠ THE COMMIT IS THE TRANSACTIONAL PAIRING the spec defines. Order:
-//   1. the take's bytes are durable (drain flushed, writer closed);
-//   2. the AudioClipRecord lands in clips[k] inside ONE `clipUndoTransact`
-//      — the whole take is one undo unit on the launcher's own stack;
-//   3. only then `finishClipMediaTake` flips the manifest to 'done' — the
-//      clip that names the media exists first, so the GC's live set covers
-//      it and the status flip can no longer orphan it (the
-//      clip-media-recovery ordering rule).
-//   A FAILED finalize writes NO clip record and KEEPS the scratch + manifest
-//   ('recording') as a recover candidate — never a half-committed clip.
-//   Undoing the commit removes the record, which orphans the media for the
-//   graph-pass GC (`sweepClipMedia`) — deleting a take IS the undo's job.
+// Bytes are drained and closed before the undoable audio-layer write; the manifest
+// becomes done only after a clip references it. Failure keeps scratch for recovery.
+// Graph deletion abandons a take; mounting or unmounting a face cannot end one.
 
 import type { ModuleNode } from '$lib/graph/types';
 import type { AudioEngine } from '$lib/audio/engine';
@@ -117,19 +58,19 @@ import {
   CLIP_LANES,
   DEFAULT_CLIP_STEPS,
   SCENE_STRIDE,
-  clipHasRecordedAutomation,
+  readClipAudio,
+  clipLengthSteps,
   clipIndex,
   coerceClipRecord,
   readClip,
   audioRecState,
   laneRecArm,
   laneRecMode,
-  noteClipHasContent,
   type AudioClipRecord,
   type ClipPlayerData,
   type ClipRecordTap,
 } from '$lib/audio/modules/clip-types';
-import { laneRateIndex, laneStepDur } from '$lib/audio/modules/clip-clock';
+import { clipDivIndex } from '$lib/audio/modules/clip-clock';
 
 /** How far ahead of "now" a take punches in when NOTHING is playing (no
  *  reference bar to wait for). By the time this is applied the media is
@@ -175,6 +116,8 @@ interface RecClock {
   baseStepDur: number;
   boundary: number | null;
   refSeconds: number | null;
+  sources: { slot: number | null; at: number }[];
+  lanes: ({ slot: number; lengthSteps: number; stepSeconds: number; boundary: number | null; loopSeconds: number } | null)[];
 }
 
 /** The engine surface this registry needs — structural, so a unit test fakes
@@ -546,7 +489,6 @@ export class NodeClipRecorderRegistry {
       // That is also the owner's CLIP semantics — one loop, then stop.
       if (
         armed &&
-        running &&
         st.machine.phase === 'idle' &&
         !st.preparing &&
         !st.prepared
@@ -588,6 +530,17 @@ export class NodeClipRecorderRegistry {
         ) {
           this.#dispatch(entry, lane, { type: 'cancel' });
         }
+      }
+
+      // A completed one-loop window wins over a stop observed on the same
+      // pump. If the source switched earlier, never include the next clip.
+      const source = clock?.sources?.[lane];
+      const sourceChanged = source && source.slot !== st.slot;
+      const endFrame = sourceChanged ? Math.min(frame, Math.round(source.at * ctx.sampleRate)) : frame;
+      this.#dispatch(entry, lane, { type: 'frame', frame: endFrame });
+      if (sourceChanged && st.machine.phase !== 'idle' && st.machine.phase !== 'committing') {
+        this.#dispatch(entry, lane, { type: 'transportStop', frame: endFrame });
+        this.#snapArmOff(entry, lane);
       }
 
       // THE TRANSPORT STOPPING ends a live take: an endless one truncates to
@@ -706,29 +659,13 @@ export class NodeClipRecorderRegistry {
         request.slot < 0 || request.slot >= SCENE_STRIDE)) return false;
     const slot = request?.slot ?? clipplayerSelectedSlotForLane(clipNode.id, lane);
     const target = readClip(data, clipIndex(slot, lane));
-    if (request && target?.kind === 'audio' && target.mediaId !== request.replaceMediaId) {
-      this.#refuse(entry, lane, 'the target audio take changed; confirm Replace take again');
+    if (!target || (target.kind !== 'note' && target.kind !== 'audio')) {
+      this.#refuse(entry, lane, `lane ${lane + 1} slot ${slot + 1} has no clip to record`);
       return false;
     }
-    // A note clip in the target is a REFUSAL, not a silent relocation: a slot
-    // holds exactly one kind, and quietly recording somewhere else would be the
-    // same defect the selected-slot rule exists to remove. (The commit re-checks
-    // this at the end — a peer can author notes into the slot mid-take.)
-    // Authored notes or automation block a take. Clicking an empty pad to aim the
-    // record button materialises an EMPTY note clip as a placeholder, so
-    // refusing on `kind === 'note'` would refuse the very slot the player just
-    // selected. An empty placeholder is recorded over; a clip with notes in it
-    // is someone's work and is refused instead of silently replaced.
-    if (noteClipHasContent(target)) {
-      this.#refuse(
-        entry,
-        lane,
-        `lane ${lane + 1} slot ${slot + 1} holds a note clip with notes in it — clear it or pick another slot`,
-      );
-      return false;
-    }
-    if (target?.kind === 'note' && clipHasRecordedAutomation(data, clipIndex(slot, lane))) {
-      this.#refuse(entry, lane, `lane ${lane + 1} slot ${slot + 1} contains recorded automation — pick another slot`);
+    const priorTake = readClipAudio(data, clipIndex(slot, lane));
+    if (request && priorTake?.mediaId !== request.replaceMediaId) {
+      this.#refuse(entry, lane, 'the clip’s audio layer changed; confirm Replace take again');
       return false;
     }
     // ⚠ ARMING NO LONGER STARTS THE TRANSPORT (clause 4). It used to
@@ -738,15 +675,8 @@ export class NodeClipRecorderRegistry {
     // transport here would make that impossible to express — every arm would
     // also be a play.
 
-    const rateIdx = laneRateIndex(data, lane);
-    const laneDur = laneStepDur(clock.baseStepDur, rateIdx);
-    // "One loop": the reference bar re-expressed in THIS lane's steps when
-    // something is playing; one default bar (16 steps at the lane's own rate)
-    // on an empty groove. Latched at the EDGE — the tempo latch (edge 3).
-    let lengthSteps = DEFAULT_CLIP_STEPS;
-    if (clock.refSeconds !== null && clock.refSeconds > 0 && laneDur > 0) {
-      lengthSteps = Math.max(1, Math.round(clock.refSeconds / laneDur));
-    }
+    const rateIdx = clipDivIndex(target.kind === 'note' ? target : null, data, lane);
+    const lengthSteps = clipLengthSteps(target);
     const unitFrames = clipRecUnitFrames(lengthSteps, clock.baseStepDur, rateIdx, ctx.sampleRate);
 
     // ⚠ CLAUSE 8 — THE TAP IS FIXED AT BOARD IN, AND THE POSTMIX SEAM IS NAMED
@@ -777,7 +707,7 @@ export class NodeClipRecorderRegistry {
     st.clipNodeId = clipNode.id;
     st.slot = slot;
     st.checkedRequest = !!request;
-    st.replaceMediaId = request?.replaceMediaId;
+    st.replaceMediaId = priorTake?.mediaId;
     st.lengthSteps = lengthSteps;
     st.unitFrames = unitFrames;
     st.tap = entry.wiringTap;
@@ -868,20 +798,21 @@ export class NodeClipRecorderRegistry {
     mode: ClipRecMode,
   ): void {
     const st = entry.lanes[lane]!;
-    st.prepared = false;
+    // A selected clip must actually be playing before its audio can be
+    // associated with this take. Another clip in the lane never satisfies it.
+    const source = clock?.lanes?.[lane];
+    if (!clock?.running || !source || source.slot !== st.slot || source.boundary === null ||
+        !Number.isFinite(source.boundary) || !Number.isFinite(source.loopSeconds) || source.loopSeconds <= 0) return;
     const now = ctx.currentTime;
-    let boundaryTime: number;
-    if (clock && clock.running && clock.boundary !== null && clock.boundary > now) {
-      boundaryTime = clock.boundary;
-      if (
-        boundaryTime - now < CLIP_REC_MIN_BOUNDARY_LEAD_S &&
-        clock.refSeconds !== null &&
-        clock.refSeconds > 0
-      ) {
-        boundaryTime += clock.refSeconds; // slip to the NEXT wrap
-      }
-    } else {
-      boundaryTime = now + CLIP_REC_ARM_LEAD_S;
+    let boundaryTime = source.boundary;
+    while (boundaryTime - now < CLIP_REC_MIN_BOUNDARY_LEAD_S) boundaryTime += source.loopSeconds;
+    st.prepared = false;
+    if (st.lengthSteps !== source.lengthSteps ||
+        st.unitFrames !== Math.max(1, Math.round(source.loopSeconds * ctx.sampleRate))) {
+      this.#cancelPrep(entry, lane);
+      this.#refuse(entry, lane, 'clip length or tempo changed while preparing; arm again');
+      this.#snapArmOff(entry, lane);
+      return;
     }
     const startFrame = clipRecStartFrame(boundaryTime, ctx.sampleRate);
     const window: RecordingWindow = { startFrame, stopFrame: null, unitFrames: st.unitFrames };
@@ -1066,24 +997,17 @@ export class NodeClipRecorderRegistry {
       const existing = coerceClipRecord(
         ((node.data as ClipPlayerData | undefined)?.clips ?? {})[String(index)],
       );
-      if (noteClipHasContent(existing)) {
-        // The slot held nothing authored at arm; a peer wrote notes into it
-        // since. A slot holds one kind, and silently destroying authored notes
-        // is the worst outcome available — keep the take as a recover candidate.
-        // (An EMPTY note placeholder is not content and is replaced, matching
-        // the arm-time check.)
-        throw new Error(`slot ${st.slot + 1} now holds a note clip with notes in it`);
+      if (!existing || (existing.kind !== 'note' && existing.kind !== 'audio')) {
+        throw new Error(`source clip at slot ${st.slot + 1} was removed during recording`);
       }
-      if (st.checkedRequest && existing?.kind === 'audio' && existing.mediaId !== st.replaceMediaId) {
-        throw new Error(`slot ${st.slot + 1} now holds a different audio take`);
-      }
-      if (existing?.kind === 'note' && clipHasRecordedAutomation(node.data as ClipPlayerData | undefined, index)) {
-        throw new Error(`slot ${st.slot + 1} now contains recorded automation`);
+      const existingTake = readClipAudio(node.data as ClipPlayerData | undefined, index);
+      if (existingTake?.mediaId !== st.replaceMediaId) {
+        throw new Error(`slot ${st.slot + 1} now holds a different audio layer`);
       }
       const record: AudioClipRecord = {
         kind: 'audio',
         mediaId,
-        lengthSteps: st.lengthSteps,
+        lengthSteps: st.lengthSteps * Math.max(1, Math.round(frames / st.unitFrames)),
         frames,
         sampleRate: st.sampleRate,
         channels: 2,
@@ -1098,27 +1022,20 @@ export class NodeClipRecorderRegistry {
       };
       clipUndoTransact(clipNodeId, () => {
         const d = (node.data ?? (node.data = {})) as ClipPlayerData;
-        if (!d.clips) d.clips = {};
-        d.clips[String(index)] = record;
-        if (d.auto?.[String(index)] != null) delete d.auto[String(index)];
+        if (existing.kind === 'audio') {
+          d.clips![String(index)] = record; // legacy standalone take replacement
+        } else {
+          if (!d.audio) d.audio = {};
+          d.audio[String(index)] = record;
+        }
       });
       // Only NOW is the take done: the clip that names it exists, so the GC's
       // live set covers it and the status flip cannot orphan it.
       await this.#deps.finishTake(mediaId, frames);
 
-      // "Record a loop and hear it take over" — the second gesture the MON
-      // design exists to remove. Transient launch (never undoable), immediate
-      // (the take ended ON the boundary; NOW is that boundary plus the commit
-      // latency, and waiting a whole reference bar would be worse).
-      ydoc.transact(() => {
-        const d = (node.data ?? (node.data = {})) as ClipPlayerData;
-        const queued = laneArray<number | 'stop' | null>(d.queued, null);
-        queued[lane] = st.slot;
-        d.queued = queued;
-        const qi = laneArray<boolean>(d.queuedImmediate, false);
-        qi[lane] = true;
-        d.queuedImmediate = qi;
-      });
+      // The source clip already owns the playing slot. Committing only adds
+      // its audio layer; it must never relaunch a clip the player stopped or
+      // switched away from while the bytes were finishing.
 
       clearTake(st);
       this.#snapArmOff(entry, lane);

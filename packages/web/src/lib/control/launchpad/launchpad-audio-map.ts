@@ -1,4 +1,4 @@
-import { CLIP_LANES, SCENE_STRIDE, audioRecState, armedAutomationLanes, clipIndex, laneOf, laneRecArm, laneRecMode, readClip, clipPadState, type ClipPlayerData } from '$lib/audio/modules/clip-types';
+import { CLIP_LANES, SCENE_STRIDE, audioRecState, armedAutomationLanes, clipIndex, laneOf, laneRecArm, laneRecMode, readClip, readClipAudio, clipPlaybackIsRecorded, clipPadState, type ClipPlayerData } from '$lib/audio/modules/clip-types';
 import { padNote, SCENE_CCS } from './launchpad-sysex';
 import type { LaunchpadFrame } from './launchpad-device.svelte';
 
@@ -10,8 +10,8 @@ export function isAudioEntry(x: number, y: number): boolean { return x === AUDIO
 export const AUDIO_RIGHT_BINDINGS = [
   { action: 'arm', legend: 'ARM / FINISH', shiftLegend: null },
   { action: 'length', legend: '1 / ENDLESS', shiftLegend: null },
-  { action: 'play', legend: 'PLAY TAKE', shiftLegend: null },
-  { action: 'source', legend: 'REC / LIVE', shiftLegend: null },
+  { action: 'play', legend: 'PLAY CLIP', shiftLegend: null },
+  { action: 'source', legend: 'NOTES / REC', shiftLegend: null },
   { action: 'replace', legend: 'REPLACE TAKE', shiftLegend: null },
   { action: 'up', legend: 'BANK UP', shiftLegend: null },
   { action: 'down', legend: 'BANK DOWN', shiftLegend: null },
@@ -53,7 +53,7 @@ export function paintAudioCapture(frame: LaunchpadFrame, data: ClipPlayerData | 
   pair: boolean; index: number; offset: number; targets: number[]; blink: boolean;
   pick: boolean; replacing: boolean; shift?: boolean;
 }): LaunchpadFrame {
-  const lane = laneOf(opts.index), clip = readClip(data, opts.index);
+  const lane = laneOf(opts.index), clip = readClip(data, opts.index), take = readClipAudio(data, opts.index);
   const lane8 = frame.leds.get(padNote(7, 7));
   for (let x = 0; x < CLIP_LANES; x++) for (let y = 0; y < 8; y++) frame.leds.set(padNote(x, y), OFF);
   if (opts.pair) {
@@ -62,18 +62,18 @@ export function paintAudioCapture(frame: LaunchpadFrame, data: ClipPlayerData | 
       frame.leds.set(padNote(l, 7), l === lane ? WHITE : DIM);
       frame.leds.set(padNote(l, 6), recColor(data, l, opts.blink));
       frame.leds.set(padNote(l, 5), laneRecMode(data, l) === 'endless' ? AMBER : GREEN);
-      const c = readClip(data, clipIndex(opts.targets[l] ?? 0, l));
-      frame.leds.set(padNote(l, 4), c?.kind === 'audio' ? c.live ? GREEN : AUDIO_COLOR : DIM);
+      const index = clipIndex(opts.targets[l] ?? 0, l);
+      frame.leds.set(padNote(l, 4), readClip(data, index) ? clipPlaybackIsRecorded(data, index) ? AUDIO_COLOR : GREEN : DIM);
       frame.leds.set(padNote(l, 3), arms[l] ? RED : [10, 35, 30]);
     }
     frame.leds.set(padNote(0, 0), opts.pick ? AMBER : GREEN);
-    frame.leds.set(padNote(1, 0), clip?.kind === 'audio' ? GREEN : DIM);
-    frame.leds.set(padNote(2, 0), opts.replacing ? RED : clip?.kind === 'audio' ? AUDIO_COLOR : DIM);
+    frame.leds.set(padNote(1, 0), clip ? GREEN : DIM);
+    frame.leds.set(padNote(2, 0), opts.replacing ? RED : take ? AUDIO_COLOR : DIM);
     frame.leds.set(padNote(7, 0), WHITE);
   } else {
     for (let l = 0; l < CLIP_LANES; l++) for (let r = 0; r < 8; r++) {
       const s = opts.offset + r, idx = clipIndex(s, l), c = readClip(data, idx);
-      let color = c?.kind === 'audio' ? AUDIO_COLOR : c ? GREEN : DIM;
+      let color = readClipAudio(data, idx) ? AUDIO_COLOR : c ? GREEN : DIM;
       const rec = audioRecState(data, l);
       const target = rec?.slot ?? data?.recRequest?.[String(l)]?.slot;
       if (target === s && (rec || laneRecArm(data, l))) color = recColor(data, l, opts.blink);
@@ -81,8 +81,8 @@ export function paintAudioCapture(frame: LaunchpadFrame, data: ClipPlayerData | 
       frame.leds.set(padNote(l, 7 - r), color);
     }
     const colors = [recColor(data, lane, opts.blink), laneRecMode(data, lane) === 'endless' ? AMBER : GREEN,
-      clip?.kind === 'audio' ? GREEN : DIM, clip?.kind === 'audio' ? clip.live ? GREEN : AUDIO_COLOR : DIM,
-      opts.replacing ? RED : clip?.kind === 'audio' ? AUDIO_COLOR : DIM, opts.offset > 0 ? AMBER : DIM,
+      clip ? GREEN : DIM, clip ? clipPlaybackIsRecorded(data, opts.index) ? AUDIO_COLOR : GREEN : DIM,
+      opts.replacing ? RED : take ? AUDIO_COLOR : DIM, opts.offset > 0 ? AMBER : DIM,
       opts.offset < SCENE_STRIDE - 8 ? AMBER : DIM, WHITE];
     SCENE_CCS.forEach((cc, i) => frame.leds.set(cc, colors[i]!));
     // The global lane-8 SHIFT arm has precedence over target selection.
@@ -98,7 +98,7 @@ export function paintAudioMatrix(frame: LaunchpadFrame, data: ClipPlayerData | u
     const rec = audioRecState(data, lane), request = data?.recRequest?.[String(lane)];
     const pad = pair ? padNote(row, CLIP_LANES - 1 - lane) : padNote(lane, 7 - row);
     if ((rec?.slot ?? request?.slot) === slot && (rec || laneRecArm(data, lane))) frame.leds.set(pad, recColor(data, lane, blink));
-    else if (readClip(data, idx)?.kind === 'audio' && clipPadState(data, idx) === 'loaded') frame.leds.set(pad, AUDIO_COLOR);
+    else if (readClipAudio(data, idx) && clipPadState(data, idx) === 'loaded') frame.leds.set(pad, AUDIO_COLOR);
   }
   return frame;
 }

@@ -82,20 +82,20 @@ const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
 //
 // ⚠ THE TAP-UPSTREAM-OF-THE-DUCK RULE APPLIES TO `BOARD IN` ONLY, and stating
 // that plainly is the whole reason this block exists. `BOARD IN` is deliberately
-// lifted from ahead of MON's attenuator so a take can capture the live input
-// WHILE a previous take plays and ducks it. The other two taps sit downstream of
+// lifted from ahead of the recorded-playback duck so capture sees the instrument
+// independently of monitoring. The other two taps sit downstream of
 // the merger, i.e. downstream of the duck, and there is no version of them that
 // does not:
 //
 //   BOARD IN    the raw patched input, before the duck, before EQ/comp/fader.
-//               Records what you played. Unaffected by MON, by the fader, and
+//               Records what you played. Unaffected by the duck, the fader, and
 //               by the launcher return.
 //
 //   POST FADER  the channel after EQ → comp → fader. BY DEFINITION IT RECORDS
-//               THE DUCKED SIGNAL, and it also records the normalled launcher
+//               THE DUCKED SIGNAL, and it also records the internal launcher
 //               return, because both join the channel upstream of the strip.
-//               So under `MON: clip-auto`, POST FADER on a lane whose clip is
-//               playing records THE CLIP, not the live input — which is the
+//               During internal RECORDED playback, POST FADER on that lane
+//               records the take while the live input is ducked — which is the
 //               correct meaning of "print the channel as the mix hears it", and
 //               is a re-sample rather than a capture. A muted channel records
 //               silence here; that is the point of the tap.
@@ -147,7 +147,7 @@ export interface MixmstrsTapLeg {
  *  It reads this object and picks with `mixmstrsRecTapPair`. */
 export interface MixmstrsRecTaps {
   /** `recTap: 0` (BOARD IN) — the 16 channel-leg unity inserts, port order
-   *  (ch1L, ch1R, … ch8R). Upstream of the MON duck BY CONSTRUCTION — see the
+   *  (ch1L, ch1R, … ch8R). Upstream of the live-monitor duck — see the
    *  semantics block above. The return ports' inserts are NOT here: a record
    *  lane is a channel, and the returns have no lane. */
   board: readonly MixmstrsTapLeg[];
@@ -764,7 +764,7 @@ export const mixmstrsDef: AudioModuleDef = {
     const controls: Record<string, string> = {};
     for (const ch of MIXMSTRS_CHANNELS) {
       // Stereo audio inputs.
-      inputs[`ch${ch}L`] = `Channel ${ch} left audio input. Pairs with ${`ch${ch}R`} as the stereo source for mixer channel ${ch}.`;
+      inputs[`ch${ch}L`] = `Channel ${ch} left audio input. Pairs with ${`ch${ch}R`} as the stereo source for mixer channel ${ch}. On the first available MIXMSTRS, Clip Player lane ${ch} captures this channel before EQ, compression and fader. Keep instrument cables connected: that clip's RECORDED source returns internally to this channel and replaces live input monitoring.`;
       inputs[`ch${ch}R`] = `Channel ${ch} right audio input, partnering ch${ch}L.`;
       // Per-channel param controls.
       controls[`ch${ch}_volume`] = `Channel ${ch} VOLUME fader (0..1) — the channel's level into the master bus + aux sends. CV via the ch${ch}_volume input.`;
@@ -815,7 +815,7 @@ export const mixmstrsDef: AudioModuleDef = {
     }
     return {
       explanation:
-        "An 8-channel stereo mixer with a channel strip on every input — the master bus of a patch. Each of the eight channels takes a stereo pair, runs it through a 3-band EQ (low/mid/high, ±12 dB), an optional compressor, and a volume fader, then sums into the stereo MASTER output. Two stereo AUX SENDS tap each channel (per-channel SEND 1 / SEND 2 amounts) out to send1L/R and send2L/R — patch an external reverb/delay off a send and bring its wet signal back into the matching stereo RETURN, which sums into the master. The compressor is exposed two ways: manual THRESH / RATIO / ENABLE per channel, OR a single COMP macro knob that collapses all three into one 'amount' (0 = bypass, up to a moderate −20 dB / 4:1 at full). EVERY parameter also has a CV input (so an LFO can ride a fader, EQ band, or send), and the faceplate shows a post-fader VU meter per channel. Multiple MIXMSTRS instances are allowed for submixes / parallel buses — each sums additively into its destination.",
+        "An 8-channel stereo mixer with a channel strip on every input — the master bus of a patch. Each of the eight channels takes a stereo pair, runs it through a 3-band EQ (low/mid/high, ±12 dB), an optional compressor, and a volume fader, then sums into the stereo MASTER output. Two stereo AUX SENDS tap each channel (per-channel SEND 1 / SEND 2 amounts) out to send1L/R and send2L/R — patch an external reverb/delay off a send and bring its wet signal back into the matching stereo RETURN, which sums into the master. The compressor is exposed two ways: manual THRESH / RATIO / ENABLE per channel, OR a single COMP macro knob that collapses all three into one 'amount' (0 = bypass, up to a moderate −20 dB / 4:1 at full). EVERY parameter also has a CV input (so an LFO can ride a fader, EQ band, or send), and the faceplate shows a post-fader VU meter per channel. Multiple MIXMSTRS instances are allowed for submixes / parallel buses — each sums additively into its destination. Clip Player captures the first available MIXMSTRS channel inputs before EQ, compression and faders, attaching audio to the same clips that supplied the notes. Keep instrument cables connected: NOTES plays their voices, while RECORDED returns the saved take to the matching channel and replaces live input monitoring. Clip automation continues in either source. An explicit Clip Player audio cable to that same channel replaces the internal stereo return to avoid doubling. Recording and source controls are in Clip Player; see /docs/modules/clipplayer#routing.",
       inputs,
       outputs: {
         masterL: 'MASTER bus left output — all eight channels (post EQ/comp/fader) plus the two aux returns, summed. The main stereo mix out.',
@@ -861,7 +861,7 @@ export const mixmstrsDef: AudioModuleDef = {
     // ⚠ TWO NODES, NOT ONE, AND THE ORDER IS THE FEATURE. `boardIn` is the TAP
     // POINT — the raw patched channel input, before EQ, before the compressor,
     // before the fader, which is the only place on this module where the audio
-    // is what the player patched in. `duck` is MON's attenuator and sits
+    // is what the player patched in. `duck` attenuates live monitoring and sits
     // DOWNSTREAM of it. Folding the two into one node would duck the tap, and a
     // take recorded WHILE a previous take plays and ducks that same input would
     // capture the silence the first take caused — a failure that produces a
@@ -886,7 +886,7 @@ export const mixmstrsDef: AudioModuleDef = {
       const bi = ctx.createGain();
       bi.gain.value = 1;
       const dk = ctx.createGain();
-      dk.gain.value = 1; // MON has no effect until a lane actually plays
+      dk.gain.value = 1; // Duck only while an internal recorded return plays.
       bi.connect(dk);
       dk.connect(merger, 0, i);
       // Silence keeps the chain active with nothing patched in — fed at the
@@ -896,7 +896,7 @@ export const mixmstrsDef: AudioModuleDef = {
       duckGain.push(dk);
     }
 
-    // ── THE NORMALLED LAUNCHER RETURN — read('laneReturns') ────────────────
+    // ── THE INTERNAL LAUNCHER RETURN — read('laneReturns') ─────────────────
     //
     // One unity GainNode per CHANNEL leg (16 — the aux returns have no lane),
     // summing into the SAME merger input as that leg's duck chain. The order is
@@ -904,15 +904,14 @@ export const mixmstrsDef: AudioModuleDef = {
     //
     //     jack → boardIn[i] (TAP) → duck[i] ─┐
     //                                        ├─► merger input i → Faust
-    //     laneReturnIn[i] (the normal) ──────┘
+    //     laneReturnIn[i] (internal return) ─┘
     //
-    // ⚠ THE RETURN JOINS AFTER THE DUCK, AND THAT IS THE FEATURE. `clip-auto`
-    // means "the clip replaces the live input", so MON's attenuator touches the
-    // LIVE branch only — a returning clip is never ducked, and BOARD IN (the
-    // insert head, upstream of both) never records it. clipplayer connects its
-    // lane output legs into these gains when the normal is CONNECTED and
-    // disconnects them when a cable is patched into the channel's input jack
-    // (`clipLaneNormalConnected` — a graph fact, never an audio probe).
+    // The internal recorded return joins after the duck, so it replaces live
+    // monitoring without attenuating its own signal. BOARD IN remains upstream
+    // and captures the instrument. Ordinary instrument cables leave this route
+    // connected. Only an explicit cable from this player's matching audio
+    // output to this channel replaces the internal stereo return, preventing
+    // doubling (`clipLaneNormalConnected` is a graph fact, not an audio probe).
     const laneReturnIn: GainNode[] = [];
     for (let i = 0; i < NUM_CHANNELS * 2; i++) {
       const g = ctx.createGain();
@@ -1129,52 +1128,33 @@ export const mixmstrsDef: AudioModuleDef = {
     // recorder registry to take arm edges from. The owner ruled the surface off
     // this module: the arm now belongs to the clipplayer, per clip.
     //
-    // ⚠ `read('recState')` NO LONGER EXISTS. Its only consumer was
-    // `node-clip-recorder-registry`, which now finds no arm source on a mixmstrs
-    // node and idles — see `cliprec-registry-idles.spec.ts`, which exists
-    // because an absent seam that throws and an absent seam that idles look
-    // identical until someone boots a rack.
+    // `read('recState')` no longer exists. The recorder registry reads arms
+    // from Clip Player and consumes only the mixer tap roster here.
 
-    // ── THE RETURN GATE — PINNED OPEN, AND DELIBERATELY STILL HERE ──────────
-    //
-    // ⚠ THIS USED TO BE THE MON DUCK, and the owner removed the CONTROL, not
-    // the path. `ch{N}_mon` (live / both / clip-auto) drove `duckGain` so a
-    // playing lane muted the channel's live input; clause 6 of the 2026-09-04
-    // ruling replaces that with a PER-CLIP LIVE/RECORDED toggle, which gates at
-    // the clip-playback / return side instead of ducking a mixer channel.
-    //
-    // Until that toggle exists, the gate is PINNED OPEN: `duckGain` stays in
-    // the graph at unity and nothing ever moves it, so the live input is never
-    // attenuated. Two reasons it stays rather than collapsing into the merger:
-    //
-    //  1. `boardIn -> duckGain -> merger` is the exact two-series-unity-gain
-    //     shape `art/scenarios/mixmstrs/board-insert-identity` measures. Taking
-    //     a node out of the chain changes the arithmetic that test pins, and
-    //     "x * 1.0 is identity" is a claim this module has ALREADY been bitten
-    //     by (`mixmstrs.dsp:205-216`: an algebraically identical crossfade moved
-    //     the send baselines by 1-2 ULP on ~35 % of samples).
-    //  2. It is the named seam clause 6 re-points. Leaving it costs two unity
-    //     multiplies per channel and saves rebuilding the insert.
-    //
-    // `lanePlaying` is still tracked because `read('recDuck')` reports it and
-    // the clipplayer still publishes lane edges — the FLAG is live, the RAMP is
-    // not. When clause 6 lands, this is where its gain lands.
+    // Recorded playback replaces live monitoring, while the BOARD IN capture
+    // tap remains upstream and always sees the instrument. The per-clip source
+    // choice schedules this edge; there is no separate mixer mode control.
     const lanePlaying: boolean[] = new Array(NUM_CHANNELS).fill(false);
     const duckApplied: number[] = new Array(NUM_CHANNELS).fill(1);
 
-    /** Record one lane-playing edge. The flag moves; the gain does NOT — there
-     *  is no monitor mode to apply until clause 6's per-clip LIVE/RECORDED
-     *  toggle ships. */
     function applyClipLaneEdge(raw: unknown): void {
       const edge = coerceClipLanePlayingEdge(raw);
       if (!edge || edge.lane >= NUM_CHANNELS) return;
       lanePlaying[edge.lane] = edge.playing;
+      const gain = edge.playing ? 0 : 1;
+      const at = Math.max(ctx.currentTime, edge.atTime);
+      duckApplied[edge.lane] = gain;
+      for (const leg of [edge.lane * 2, edge.lane * 2 + 1]) {
+        const param = duckGain[leg]!.gain;
+        param.cancelScheduledValues(at);
+        param.setTargetAtTime(gain, at, 0.002);
+      }
     }
 
     const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
     AUDIO_IN_PORTS.forEach((id, i) => {
       // The cable lands on the INSERT HEAD, not on the merger — so the tap sees
-      // the patched signal before MON's duck can touch it.
+      // the patched signal before the live-monitor duck can touch it.
       inputsMap.set(id, { node: boardIn[i]!, input: 0 });
     });
     for (const p of PARAMS) {
@@ -1262,17 +1242,15 @@ export const mixmstrsDef: AudioModuleDef = {
         // THE TAP ROSTERS the clip recorder wires from — every `recTap` value
         // deliverable, addressed in one place. See MixmstrsRecTaps above.
         if (key === 'recTaps') return recTaps;
-        // THE NORMALLED-RETURN ENTRY POINTS — one gain per channel
+        // THE INTERNAL-RETURN ENTRY POINTS — one gain per channel
         // leg, port order (ch1L … ch8R). clipplayer connects its lane output
-        // legs INTO these when the normal is connected. See the wiring comment
+        // legs INTO these when the internal return is connected. See the wiring comment
         // at the construction site.
         if (key === 'laneReturns') {
           return laneReturnIn.map((g) => ({ node: g as AudioNode, input: 0 }));
         }
-        // Lane-playing observability. `applied` is the live-branch gain, which
-        // is PINNED AT 1 until clause 6's per-clip LIVE/RECORDED toggle ships —
-        // a reading of anything else here means something started ducking
-        // again. Never audio data.
+        // Lane-playing observability. `applied` is the live-branch target gain:
+        // 0 during internal recorded playback, 1 otherwise. Never audio data.
         if (key === 'recDuck') {
           return { lanePlaying: lanePlaying.slice(), applied: duckApplied.slice() };
         }
@@ -1281,8 +1259,8 @@ export const mixmstrsDef: AudioModuleDef = {
       write(key, value) {
         // The lane-playing boundary, as clip-lane-return.ts specifies it,
         // published by clipplayer the instant it schedules the clip's own
-        // source node. Validated here (the consumer's boundary). It now only
-        // moves a FLAG — see the pinned-open return gate above.
+        // source node. Validated here before scheduling the live-monitor duck
+        // at the same audio-context time.
         if (key === 'clipLaneEdge') applyClipLaneEdge(value);
       },
       dispose() {
