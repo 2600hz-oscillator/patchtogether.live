@@ -55,7 +55,7 @@
     </table>
     <p>On screen, <strong>columns are lanes and rows are slots</strong>. Click a loaded pad to launch or queue it; click the currently playing pad to stop its lane. Double-click opens the appropriate editor. Shift-click launches immediately. An empty pad can become a note placeholder, but opening an empty editor alone writes no notes.</p>
     <p><strong>MUTE</strong> silences a lane while retaining its running clip. <strong>STOP</strong> stops that lane. Stop-all is the immediate panic action. <strong>RST</strong> re-aligns active clips to their first step; it does not rewind the arrangement or launch stopped lanes.</p>
-    <p>The screen grid shows the first eight slots. The selected-clip LANE / SLOT selectors reach all {SCENE_STRIDE} slots without launching. Hardware banking reaches the extended slot range. Scene repeats for the first eight scenes sit beside the screen grid.</p>
+    <p>The screen grid shows the first eight slots. The selected-clip LANE / SLOT selectors reach all {SCENE_STRIDE} slots without launching. Hardware banking reaches the extended slot range. Scene repeats for the first eight scenes sit above the lane MUTE / STOP rows. The selected-clip controls and recording status sit below the grid and wrap within its width.</p>
     <p>Right-click a pad for COPY, PASTE and CLEAR, plus note-specific probability controls. The screen, Push and Launchpad share a local clipboard. Note copies include their recorded automation; audio copies retain the take’s media reference. A scene buffer pastes into a scene, and a clip buffer into a clip. A paste replaces the destination’s contents as one undoable edit.</p>
   </section>
 
