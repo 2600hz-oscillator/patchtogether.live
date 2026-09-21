@@ -478,7 +478,10 @@ export const clipplayerDef: AudioModuleDef = {
           'the lane, double-click to open it in the EDITOR page (which replaces this one, the way ' +
           'the card always did); give a scene a finite repeat count and it hands over to the next ' +
           'scene with content after that many passes of its longest clip.',
-        controls: ['clipplayer-pad-{n}', 'clipplayer-scene-repeat-{n}'],
+        // Keep scene repeats above the lane controls, so the session earns only
+        // the grid's width instead of adding a mostly empty second column.
+        controls: ['clipplayer-scene-repeat-{n}', 'clipplayer-pad-{n}'],
+        clusters: [{ label: 'lanes', controls: ['clipplayer-pad-{n}'] }],
       },
       {
         id: 'channels',

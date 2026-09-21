@@ -434,6 +434,34 @@ test.describe('CLIP PLAYER faceplate', () => {
       ).toHaveCount(8);
     }
 
+    // The session must shrink to the grid, with the repeat section ABOVE the
+    // lane controls. Counting controls alone cannot see an empty second column
+    // or footer prose that widens the whole faceplate.
+    const layout = await dock.evaluate((el) => {
+      const rect = (selector: string) => {
+        const node = selector ? el.querySelector<HTMLElement>(selector)! : el;
+        const r = node.getBoundingClientRect();
+        return { x: r.x, right: r.right, y: r.y, bottom: r.bottom, width: r.width };
+      };
+      const footer = el.querySelector<HTMLElement>('[data-testid="clipplayer-audio-panel"]')!;
+      return {
+        scenes: rect('[data-testid="clipplayer-face-scene-row"]'),
+        mute: rect('[data-testid="clipplayer-mute-0"]'),
+        first: rect('[data-testid="clipplayer-pad-0"]'),
+        last: rect('[data-testid="clipplayer-pad-448"]'),
+        shell: rect(''),
+        footer: rect('[data-testid="clipplayer-audio-panel"]'),
+        footerClient: footer.clientWidth,
+        footerScroll: footer.scrollWidth,
+      };
+    });
+    await test.info().attach('session-layout', { body: JSON.stringify(layout), contentType: 'application/json' });
+    expect(layout.scenes.bottom, 'scene repeats sit above MUTE').toBeLessThan(layout.mute.y);
+    const gridWidth = layout.last.right - layout.first.x;
+    expect(layout.shell.width, 'the shell is sized to the grid and its controls').toBeLessThan(gridWidth * 1.6);
+    expect(layout.footer.right, 'the inspector fits inside the shell').toBeLessThanOrEqual(layout.shell.right);
+    expect(layout.footerScroll, 'footer text wraps without horizontal clipping').toBeLessThanOrEqual(layout.footerClient + 1);
+
     // …but DRIVING one needs its page open: three of the four rows are on the
     // `channels` band, which the rail hides while the launcher is showing.
     await showPage(page, CP, 'channels');
@@ -466,7 +494,7 @@ test.describe('CLIP PLAYER faceplate', () => {
       .toContain('6');
 
     // SCENE REPEAT on scene 2 — ∞ → 2, the first step of the card's own cycle.
-    // Back on `session`, where the scenes live beside the grid rows they are.
+    // Back on `session`, where the scenes sit above the lane controls.
     await showPage(page, CP, 'session');
     await dock.getByTestId('clipplayer-scene-repeat-2').click();
     await expect
