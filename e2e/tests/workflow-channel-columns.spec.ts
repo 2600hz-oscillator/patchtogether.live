@@ -274,9 +274,10 @@ async function stepsAdvanced(
 async function pollAudio(
   page: Page,
   durationMs: number,
+  audible?: { channels: number[]; channelFloor: number; outFloor: number },
 ): Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }> {
   return await page.evaluate(
-    ({ durationMs }) =>
+    ({ durationMs, audible }) =>
       new Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }>(
         (resolve) => {
           const w = globalThis as unknown as {
@@ -307,14 +308,19 @@ async function pollAudio(
             }
             samples++;
             const elapsedMs = performance.now() - startedAt;
-            if (elapsedMs >= durationMs) {
+            // Presence checks can finish as soon as every required signal is
+            // observed. Ratio and sustained-window callers omit `audible` and
+            // retain their full observation window.
+            const heard = audible && samples > 0 && outMax > audible.outFloor &&
+              audible.channels.every(ch => channelMax[ch]! > audible.channelFloor);
+            if (heard || elapsedMs >= durationMs) {
               clearInterval(timer);
               resolve({ channelMax, outMax, samples, elapsedMs });
             }
           }, 25);
         },
       ),
-    { durationMs },
+    { durationMs, audible },
   );
 }
 
@@ -376,13 +382,20 @@ test.describe('workflow channel columns', () => {
     // clip-control edges → each instrument → its mixer channel → master → out.
     await seedAndRun(page, [0, 1, 2]);
 
-    const { channelMax, outMax } = await pollAudio(page, 12_000);
+    // CI trace 35547662760 reached the RMS window after 13 s, then spent
+    // another 21 s completing its fixed 12 s timer on the busy page, although
+    // all four audio assertions passed. Stop when the existing floors are
+    // met; the 12 s cap now bounds failure rather than defining readiness.
+    const reading = await pollAudio(page, 12_000, { channels: [0, 1, 2], channelFloor: 0.002, outFloor: 0.005 });
+    const { channelMax, outMax, samples, elapsedMs } = reading;
+    const observed = `${samples} samples over ${elapsedMs.toFixed(0)} ms`;
+    expect(samples, observed).toBeGreaterThan(0);
     // Each of the three channels registers energy at its mixer meter…
-    expect(channelMax[0], 'ch1 (tidyvco) audible at the mixer').toBeGreaterThan(0.002);
-    expect(channelMax[1], 'ch2 (kickdrum) audible at the mixer').toBeGreaterThan(0.002);
-    expect(channelMax[2], 'ch3 (wavesculpt) audible at the mixer').toBeGreaterThan(0.002);
+    expect(channelMax[0], `ch1 (tidyvco) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
+    expect(channelMax[1], `ch2 (kickdrum) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
+    expect(channelMax[2], `ch3 (wavesculpt) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
     // …and the whole chain reaches the terminal audio out.
-    expect(outMax, 'audible at the pinned AUDIO OUT').toBeGreaterThan(0.005);
+    expect(outMax, `audible at the pinned AUDIO OUT; ${observed}`).toBeGreaterThan(0.005);
   });
 
   test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven, but ONLY the head sends (2nd is automation-only)', async ({ page }) => {
