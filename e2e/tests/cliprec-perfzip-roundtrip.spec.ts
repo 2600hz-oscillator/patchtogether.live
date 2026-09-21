@@ -309,11 +309,27 @@ test('a recorded clip survives export → fresh context + wiped OPFS → load, A
     })
     .toBe(takeBytes);
   const restored = await readClipAt(page, TARGET_INDEX);
-  expect(restored?.kind, 'the clip record rode the envelope').toBe('audio');
+  expect(restored?.kind, 'the audio layer rode the envelope').toBe('audio');
   expect(restored?.mediaId, 'and still names the same media').toBe(mediaId);
+  expect((await readData(page, CP)).clips, 'the original note clip remains its host').toMatchObject({
+    [String(TARGET_INDEX)]: { kind: 'note' },
+  });
 
   await setTransport(page, true);
   await openLauncher(page);
+  // Import preserves the selected playing slot. CI trace 35549166585 showed
+  // this pad already playing before its click, so the launch/stop toggle
+  // correctly queued a STOP. Establish a stopped lane and consumed queue first;
+  // an immediate "playing" poll could otherwise pass before that stop landed.
+  await page.getByTestId('clipplayer-stop-0').click({ timeout: UI_MS });
+  await expect.poll(async () => {
+    const d = await readData(page, CP);
+    return {
+      playing: (d.playing as (number | null)[] | undefined)?.[0] ?? null,
+      queued: (d.queued as (number | string | null)[] | undefined)?.[0] ?? null,
+    };
+  }, { message: 'stop the restored lane before testing a fresh pad launch', timeout: STATE_MS })
+    .toEqual({ playing: null, queued: null });
   const padAfter = page.getByTestId(`clipplayer-pad-${TARGET_INDEX}`);
   await padAfter.scrollIntoViewIfNeeded({ timeout: UI_MS });
   await padAfter.click({ timeout: UI_MS });
