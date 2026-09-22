@@ -39,8 +39,8 @@ const TEST_BUDGET_MS =
   PROJECT_MS +
   COMMIT_MS +
   4 * STATE_MS +
-  2 * AUDIBLE_MS +
-  2 * SILENCE_MS +
+  4 * AUDIBLE_MS +
+  3 * SILENCE_MS +
   10 * UI_MS;
 
 const TL = 'tl1';
@@ -48,6 +48,8 @@ const OSC = 'osc1';
 const MIX = 'mx1';
 const CP = 'cp1';
 const SC = 'sc1';
+/** A scope on the lane's own audio1L jack — the SAFER-BREAK leg's subject. */
+const JACK = 'jack-scope';
 
 /** The slot this journey records into. Deliberately NOT 0: slot 0 is both the
  *  default selection and what "first empty slot" would have picked, so a take
@@ -176,6 +178,22 @@ async function hardwareAudio(page: Page, surface: Exclude<CaptureSurface, 'scree
   }, { surface, action, nodeId: CP, slot: TARGET_SLOT });
 }
 
+/** Add (or, with null endpoints, remove) one audio cable in the live graph. */
+async function setEdge(
+  page: Page,
+  id: string,
+  from: { nodeId: string; portId: string } | null,
+  to: { nodeId: string; portId: string } | null,
+): Promise<void> {
+  await page.evaluate(({ id, from, to }) => {
+    const w = window as unknown as { __patch: { edges: Record<string, unknown> }; __ydoc: { transact(fn: () => void): void } };
+    w.__ydoc.transact(() => {
+      if (from && to) w.__patch.edges[id] = { id, source: from, target: to, sourceType: 'audio', targetType: 'audio' };
+      else if (w.__patch.edges[id] !== undefined) delete w.__patch.edges[id];
+    });
+  }, { id, from, to });
+}
+
 for (const surface of ['screen', 'push', 'launchpad', 'pair'] as const) {
   test(`${surface}: a note clip records its own audio layer and plays through the still-patched mixer`, async ({ page }, testInfo) => {
     test.setTimeout(TEST_BUDGET_MS);
@@ -194,6 +212,7 @@ for (const surface of ['screen', 'push', 'launchpad', 'pair'] as const) {
       { id: CP, type: 'clipplayer', position: { x: 400, y: 600 } },
       { id: SC, type: 'scope', position: { x: 900, y: 0 } },
       { id: 'live-scope', type: 'scope', position: { x: 900, y: 350 } },
+      { id: JACK, type: 'scope', position: { x: 900, y: 700 } },
     ], [
       { id: 'poly', from: { nodeId: CP, portId: 'pitch1' }, to: { nodeId: OSC, portId: 'poly' }, sourceType: 'polyPitchGate', targetType: 'polyPitchGate' },
       { id: 'left', from: { nodeId: OSC, portId: 'L' }, to: { nodeId: MIX, portId: 'ch1L' } },
@@ -243,6 +262,21 @@ for (const surface of ['screen', 'push', 'launchpad', 'pair'] as const) {
     }, { id: OSC, level });
     await voiceLevel(0);
     await expect.poll(async () => (await readScopePeakOverWindow(page, SC, 800)).rms, { timeout: AUDIBLE_MS }).toBeGreaterThan(0.02);
+    if (surface === 'screen') {
+      // THE SAFER BREAK (owner, 2026-09-21): a cable leaving the lane's OWN
+      // audio jack, to ANY destination, replaces the internal return so a
+      // hand-routed take is never doubled. The voice is at 0 and RECORDED is
+      // selected, so the master hears ONLY the internal return right now —
+      // the jack must keep sounding while the master goes quiet, and
+      // unpatching must bring the return back.
+      await setEdge(page, 'jack', { nodeId: CP, portId: 'audio1L' }, { nodeId: JACK, portId: 'ch1' });
+      await expect.poll(async () => (await readScopePeakOverWindow(page, JACK, 800)).rms, { timeout: AUDIBLE_MS,
+        message: 'the take still plays out of the lane jack once it is patched' }).toBeGreaterThan(0.02);
+      await expectSilence(page, 'a cable on the lane jack breaks the internal return, so the master goes quiet');
+      await setEdge(page, 'jack', null, null);
+      await expect.poll(async () => (await readScopePeakOverWindow(page, SC, 800)).rms, { timeout: AUDIBLE_MS,
+        message: 'unpatching the jack restores the internal return' }).toBeGreaterThan(0.02);
+    }
     if (surface === 'screen') await page.locator('[data-testid="clipplayer-source-notes"]:visible').click();
     else await hardwareAudio(page, surface, 'source');
     await expect(page.locator('[data-testid="clipplayer-source-notes"]:visible')).toHaveAttribute('aria-pressed', 'true');

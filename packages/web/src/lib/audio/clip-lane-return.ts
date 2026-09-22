@@ -1,8 +1,10 @@
 // Clip Player lane N returns to MIXMSTRS channel N after the live-input gain.
 // Instrument cables stay connected: board-in capture taps are before that
-// gain, and recorded playback mutes only the live branch. An explicit cable
-// carrying this same return to its matching channel replaces the internal
-// stereo connection and disables that channel's automatic live-input duck.
+// gain, and recorded playback mutes only the live branch. A cable on EITHER of
+// the lane's own audio{N}L/R output jacks, to any destination, replaces the
+// internal return and disables that channel's automatic live-input duck
+// (owner ruling, 2026-09-21: a player who routes a take by hand owns its
+// routing, so the automatic return must never double it).
 // Playback transitions are scheduled in AudioContext time, matching source
 // starts/stops instead of deriving audio boundaries from timer ticks.
 
@@ -74,8 +76,9 @@ export function clipLaneLiveGain(mon: ClipLaneMonMode, lanePlaying: boolean): nu
 }
 
 /** Keep the internal return while an instrument is patched for recording.
- * An explicit cable carrying this same Clip Player return into this channel
- * replaces the internal connection so the recording is never doubled. */
-export function clipLaneNormalConnected(hasExplicitClipReturn: boolean): boolean {
-  return !hasExplicitClipReturn;
+ * A cable leaving either of the lane's own audio{N}L/R output jacks, to ANY
+ * destination, replaces the internal connection so the take is never doubled.
+ * A GRAPH fact (does a cable leave the jack), never an audio probe. */
+export function clipLaneNormalConnected(laneOutputPatched: boolean): boolean {
+  return !laneOutputPatched;
 }

@@ -159,8 +159,8 @@
       <div><b>RECORDED</b><span>This clip’s saved take → same mixer channel; replaces live monitoring</span></div>
       <div><b>AUTO</b><span>This clip’s control movements → assigned modules, with either source</span></div>
     </div>
-    <p>Capture uses the corresponding pre-fader input of the first available MIXMSTRS. <strong>Leave the instrument cables connected.</strong> With RECORDED selected, the attached take replaces the channel’s live input monitoring; with NOTES selected, the note sequence drives the voice again. No cable moves are needed. The lane’s <code>audioN L/R</code> outputs also expose recorded playback for custom routing. Mixer automation still applies because the take is captured before those mixer controls.</p>
-    <p>If you explicitly patch this Clip Player’s <code>audioN L/R</code> into its matching MIXMSTRS channel, that cable route replaces the internal stereo return so the take is not doubled. Connecting either leg disables that internal pair; connect both legs for stereo. Ordinary instrument-input cables do not disable the return.</p>
+    <p>Capture uses the corresponding pre-fader input of the first available MIXMSTRS. <strong>Leave the instrument cables connected.</strong> With RECORDED selected, the attached take replaces the channel’s live input monitoring; with NOTES selected, the note sequence drives the voice again. No cable moves are needed. The lane’s <code>audioN L/R</code> outputs also expose recorded playback for custom routing; patching them replaces the automatic return. Mixer automation still applies because the take is captured before those mixer controls.</p>
+    <p>If you patch this Clip Player’s <code>audioN L/R</code> outputs anywhere, that cable route replaces the internal stereo return (and its live-input replacement) so the take is not doubled. Connecting either leg disables that internal pair; connect both legs for stereo. Ordinary instrument-input cables into MIXMSTRS never disable the return.</p>
     <table>
       <thead><tr><th>Control / input</th><th>Effect</th></tr></thead>
       <tbody>

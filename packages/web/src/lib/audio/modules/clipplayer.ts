@@ -187,9 +187,9 @@ export const clipplayerDef: AudioModuleDef = {
     // Recorded-layer playback, one stereo pair PER LANE (owner Q8: per-lane, not a
     // sum — the lane↔channel identity is the product concept, and a take must
     // be able to return to its own mixmstrs channel). These same legs feed the
-    // internal return into mixmstrs channel N (clip-lane-return.ts). Only an
-    // explicit matching recorded-output cable replaces that return; ordinary
-    // instrument cables stay connected. These jacks work with either route.
+    // internal return into mixmstrs channel N (clip-lane-return.ts). A cable
+    // leaving either jack, to any destination, replaces that return; ordinary
+    // instrument cables into the mixer never break it.
     ...Array.from({ length: CLIP_LANES }, (_, i) => [
       { id: `audio${i + 1}L`, type: 'audio' as const },
       { id: `audio${i + 1}R`, type: 'audio' as const },
@@ -261,7 +261,7 @@ export const clipplayerDef: AudioModuleDef = {
       vel6: "Lane 6's velocity CV.",
       vel7: "Lane 7's velocity CV.",
       vel8: "Lane 8's velocity CV.",
-      audio1L: "Lane 1's recorded-audio output, LEFT leg. With RECORDED selected, the active clip's attached take loops through this stereo pair for its captured duration; the clip's original note loop still governs launches and automation. The pair also returns internally to channel 1 of the first available MIXMSTRS, replacing live input monitoring while ordinary instrument cables remain connected. Explicitly patching this lane's audio output into its matching mixer channel replaces the internal stereo return to avoid doubling; patch both legs for stereo. These outputs also support custom routing elsewhere. Silent while stopped, muted, using NOTES, or temporarily rendering notes for audio capture. Older standalone audio clips remain playable.",
+      audio1L: "Lane 1's recorded-audio output, LEFT leg. With RECORDED selected, the active clip's attached take loops through this stereo pair for its captured duration; the clip's original note loop still governs launches and automation. The pair also returns internally to channel 1 of the first available MIXMSTRS, replacing live input monitoring while ordinary instrument cables remain connected. Patching either of this lane's audio outputs anywhere replaces the internal stereo return (and the live-input replacement) so the take is never doubled; patch both legs for stereo. Leave both jacks unpatched to keep the automatic return. Silent while stopped, muted, using NOTES, or temporarily rendering notes for audio capture. Older standalone audio clips remain playable.",
       audio1R: "Lane 1's recorded-audio output, RIGHT leg (see audio1L).",
       audio2L: "Lane 2's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 2 (see audio1L).",
       audio2R: "Lane 2's recorded-audio output, RIGHT leg (see audio1L).",
@@ -922,10 +922,10 @@ export const clipplayerDef: AudioModuleDef = {
     // ── THE INTERNAL RETURN — lane N into mixmstrs channel N ───────────────
     //
     // Ordinary instrument cables remain the capture source and do not break
-    // this connection. Only an explicit cable from this player's audio{N}L/R
-    // to its matching MIXMSTRS channel replaces the internal stereo return,
-    // preventing duplicate routing. Either leg replaces the pair. The output
-    // jacks remain available for custom routing. Re-checked every tick against
+    // this connection. A cable leaving either of this player's audio{N}L/R
+    // jacks, to ANY destination, replaces the internal stereo return: a player
+    // who routes a take by hand owns its routing, and the automatic return
+    // must never double it. Either leg replaces the pair. Re-checked every tick against
     // the live edge set and mixer entry points; a rebuilt mixer factory hands
     // back a new roster identity, which forgets dead nodes.
     let laneReturnsRef: unknown = null;
@@ -965,14 +965,12 @@ export const clipplayerDef: AudioModuleDef = {
       const edges = Object.values(livePatch.edges);
       for (let L = 0; L < LANES; L++) {
         // Instrument cables are the capture source, not a reason to remove
-        // playback. Only an explicit cable carrying THIS return to THIS
-        // channel replaces the internal connection, avoiding double routing.
-        const explicitReturn = edges.some((edge) =>
+        // playback. A cable leaving THIS lane's own audio jacks, wherever it
+        // lands, replaces the internal connection so the take is never doubled.
+        const outputPatched = edges.some((edge) =>
           edge?.source.nodeId === nodeId &&
-          (edge.source.portId === `audio${L + 1}L` || edge.source.portId === `audio${L + 1}R`) &&
-          edge.target.nodeId === mix.id &&
-          (edge.target.portId === `ch${L + 1}L` || edge.target.portId === `ch${L + 1}R`));
-        const want = clipLaneNormalConnected(explicitReturn);
+          (edge.source.portId === `audio${L + 1}L` || edge.source.portId === `audio${L + 1}R`));
+        const want = clipLaneNormalConnected(outputPatched);
         if (want === normalOn[L]) continue;
         const rl = laneReturns[2 * L]!;
         const rr = laneReturns[2 * L + 1]!;
@@ -2396,8 +2394,8 @@ export const clipplayerDef: AudioModuleDef = {
           prevMuted[L] = m;
         }
 
-        // Re-derive the lane→mixer return from the live edge set. Only an
-        // explicit matching recorded-output cable replaces the internal route.
+        // Re-derive the lane→mixer return from the live edge set. Any cable
+        // leaving a lane's audio jacks replaces its internal route.
         syncLaneReturns();
 
         // ── SCENE REPEATS: tracker maintenance (runs BEFORE any launch applies
