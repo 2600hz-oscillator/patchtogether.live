@@ -303,6 +303,7 @@ export function createShellGlyphTap(
 
   let disposed = false;
   let analyser: AnalyserNode | null = null;
+  let ctxRef: BaseAudioContext | null = null;
   let src: { node: AudioNode; output: number } | null = null;
   let buf: Float32Array<ArrayBuffer> | null = null;
   let lastReadAt = 0;
@@ -317,6 +318,7 @@ export function createShellGlyphTap(
       }
     }
     analyser = null;
+    ctxRef = null;
     src = null;
     if (idleTimer !== null) {
       clearInterval(idleTimer);
@@ -366,6 +368,7 @@ export function createShellGlyphTap(
         return false;
       }
       analyser = a;
+      ctxRef = audio.ctx ?? null;
       src = out;
       if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize);
       startIdleTimer();
@@ -377,6 +380,11 @@ export function createShellGlyphTap(
     getSamples() {
       lastReadAt = Date.now();
       if (!ensureAttached() || !analyser || !buf) return undefined;
+      // A suspended graph has no live signal: hand back the idle trace instead
+      // of the analyser's last window, whose phase is whatever instant the
+      // suspend landed on (a random-phase polyline is what made
+      // face-foxy-compact nondeterministic under the VRT freeze).
+      if (ctxRef?.state === 'suspended') return undefined;
       analyser.getFloatTimeDomainData(buf);
       return buf;
     },
