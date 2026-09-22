@@ -393,7 +393,19 @@ test.describe('workflow channel columns', () => {
     expect(edges.some((e) => e.startsWith(`${wav}.`) && e.includes(`->${PINNED_MIXER}.ch3`))).toBe(true);
   });
 
-  test('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', async ({ page }) => {
+  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
+  // NONDETERMINISM: main run 35689458096 (b55a70e57, shard 7) recovered on retry with
+  // "ch1 (tidyvco) audible at the mixer; 3 samples over 13216 ms — received 0.0011"; the same
+  // shape hit PR #2414 on runs 35682838684 / 35684290047 (a bare timeout, then ch3 = 0 over
+  // 4–6 samples). The in-page 25 ms sampler turns 3–6 times in 12 s on a starved shard, and
+  // the max of that few 43 ms analyser windows over a note-every-0.5 s pattern is a lottery.
+  // LOST WHILE PARKED: the audible proof that the channel-column RECONCILER's own wcol edges
+  // carry clip notes through each instrument to the mixer and out (the structural edge test
+  // above and cliprec-clip-mode's hand-patched chain remain).
+  // ROOT-CAUSE DIRECTION: read energy from a test-side AnalyserNode (fftSize 32768 ≈ 0.68 s
+  // at 48 k) on the mixer's post-fader `recTaps`, so every sparse sample spans a whole note
+  // period; never a longer wall-clock window. Re-enable only on that (#1847).
+  test.fixme('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: recovered-on-retry on main run 35689458096 and twice on #2414 (3–6 meter samples in 12 s on a starved shard); parked until the meter read is starvation-independent' } }, async ({ page }) => {
     // Bound, not a budget raise: the shared SLOW_BOOT_TEST_TIMEOUT_MS. The step
     // caps below (2×BOOT_MS + a 10 s edge poll + the 12 s window) already sum
     // past the bare 30 s default; run 35682838684 died on that default with the
