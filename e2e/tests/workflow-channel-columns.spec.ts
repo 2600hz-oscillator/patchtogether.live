@@ -51,9 +51,9 @@ const PINNED_MIXER = 'pinned-mixmstrs';
  *  windows (pollAudio). Unchanged from the 43 ms-snapshot era, re-justified
  *  against the long window — MEASURED locally, steady state over a 4 s
  *  window at defaults: ch1 (tidyvco) 0.088, ch2 (kickdrum) 0.281,
- *  ch3 (wavesculpt) 0.050, audio-out input 0.168 → 44× / 140× / 25× / 34×
- *  above the floors. First-crossing samples (the early exit) read as low as
- *  ch3 0.003 because the window has only just caught the note's onset. */
+ *  ch3 (cube) 0.300, audio-out input 0.241 → 44× / 140× / 150× / 48×
+ *  above the floors. First-crossing samples (the early exit) read lower
+ *  because the window has only just caught a note's onset. */
 const CH_FLOOR = 0.002;
 const OUT_FLOOR = 0.005;
 const PINNED_CLIP = 'pinned-clipplayer';
@@ -315,10 +315,10 @@ async function pollAudio(
     channels: number[]; channelFloor: number; outFloor: number;
     quiet?: { channel: number; afterCtxTime: number };
   },
-): Promise<{ channelMax: number[]; outMax: number; quietMax: number | null; quietSamples: number; samples: number; elapsedMs: number; windowS: number }> {
+): Promise<{ channelMax: number[]; outMax: number; quietMax: number | null; quietSamples: number; samples: number; elapsedMs: number; windowS: number; ctxState: string; ctxAdvancedS: number; playing: string }> {
   return await page.evaluate(
     ({ durationMs, audible }) =>
-      new Promise<{ channelMax: number[]; outMax: number; quietMax: number | null; quietSamples: number; samples: number; elapsedMs: number; windowS: number }>(
+      new Promise<{ channelMax: number[]; outMax: number; quietMax: number | null; quietSamples: number; samples: number; elapsedMs: number; windowS: number; ctxState: string; ctxAdvancedS: number; playing: string }>(
         (resolve) => {
           type Leg = { node: AudioNode; output: number };
           const w = globalThis as unknown as {
@@ -329,7 +329,7 @@ async function pollAudio(
                 nodes: Map<string, { inputs: Map<string, { node: AudioNode; input: number }> }>;
               };
             } | null;
-            __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string; data?: { playing?: unknown } } | undefined> };
           };
           const eng = w.__engine?.();
           const mixer = w.__patch.nodes['pinned-mixmstrs'];
@@ -350,6 +350,10 @@ async function pollAudio(
           const chanTaps: Record<number, [number, number]> = {};
           let outTaps: [number, number] | null = null;
           let ctx: AudioContext | null = null;
+          // Diagnostics for a silent window: the audio clock's state and how far
+          // it advanced (a suspended context, a starved renderer and a silent
+          // graph all read 0 on the taps and are told apart only here).
+          const ctxAt0 = eng ? eng.getDomain('audio').ctx.currentTime : 0;
           if (audible && eng && mixer && out) {
             const audio = eng.getDomain('audio');
             ctx = audio.ctx;
@@ -388,7 +392,12 @@ async function pollAudio(
             for (const t of taps) {
               try { t.src.node.disconnect(t.a, t.src.output); } catch { /* already gone */ }
             }
-            resolve({ channelMax, outMax, quietMax, quietSamples, samples, elapsedMs: performance.now() - startedAt, windowS });
+            const c = eng ? eng.getDomain('audio').ctx : null;
+            resolve({
+              channelMax, outMax, quietMax, quietSamples, samples, elapsedMs: performance.now() - startedAt, windowS,
+              ctxState: c ? c.state : 'no-engine', ctxAdvancedS: c ? c.currentTime - ctxAt0 : 0,
+              playing: JSON.stringify(w.__patch.nodes['pinned-clipplayer']?.data?.playing ?? null),
+            });
           };
           const timer = setInterval(() => {
             if (audible && ctx) {
@@ -485,7 +494,12 @@ test.describe('workflow channel columns', () => {
 
     await dropInBand(page, 'tidyVco', colPos(1));
     await dropInBand(page, 'kickdrum', colPos(2));
-    await dropInBand(page, 'wavesculpt', colPos(3));
+    // ⚠ NOT wavesculpt: its per-osc ADSR is a JS-side envelope on a
+    // setInterval (wavesculpt.ts:1720 tick(), :1907-1909), so on a starved
+    // main thread the notes arrive and the worklet stays silent (#2419 run
+    // 35765718367: ch3 exactly 0 for 14.6 s while ch1/ch2 had signal). CUBE's
+    // voice AND envelope live in its worklet (packages/dsp/src/cube.ts:202).
+    await dropInBand(page, 'cube', colPos(3));
     await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
 
     // Three clip-control edges + at least one send per instrument, LIVE in the
@@ -501,33 +515,34 @@ test.describe('workflow channel columns', () => {
     const reading = await pollAudio(page, 12_000, { channels: [0, 1, 2], channelFloor: CH_FLOOR, outFloor: OUT_FLOOR });
     const { channelMax, outMax, samples, elapsedMs, windowS } = reading;
     const observed = `${samples} samples over ${elapsedMs.toFixed(0)} ms, ${windowS.toFixed(2)} s windows; ` +
-      `ch=[${channelMax.slice(0, 3).map(v => v.toFixed(4)).join(', ')}] out=${outMax.toFixed(4)}`;
+      `ch=[${channelMax.slice(0, 3).map(v => v.toFixed(4)).join(', ')}] out=${outMax.toFixed(4)}; ` +
+      `ctx ${reading.ctxState}, advanced ${reading.ctxAdvancedS.toFixed(2)} s; playing=${reading.playing}`;
     console.log(`[source-chain] ${observed}`);
     expect(samples, observed).toBeGreaterThan(0);
     expect(windowS, 'the long-window taps were built (recTaps + audio-out inputs resolved)').toBeGreaterThan(0.5);
     // Each of the three channels registers energy at its mixer channel…
     expect(channelMax[0], `ch1 (tidyvco) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
     expect(channelMax[1], `ch2 (kickdrum) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
-    expect(channelMax[2], `ch3 (wavesculpt) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
+    expect(channelMax[2], `ch3 (cube) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
     // …and the whole chain reaches the terminal audio out.
     expect(outMax, `audible at the pinned AUDIO OUT; ${observed}`).toBeGreaterThan(OUT_FLOOR);
 
     // NEGATIVE CONTROL — the instrument reads the channel it claims to. Mute
-    // wavesculpt at its own output (master_gain 0 is a true mute; tidyvco and
-    // kickdrum bottom out at −24 dB) and ch3 must fall below the floor while
+    // cube at its own output (LEVEL 0 is a true mute; tidyvco and kickdrum
+    // bottom out at −24 dB) and ch3 must fall below the floor while
     // ch1/ch2 stay above it. The quiet read starts only once the audio clock
     // has passed the mute instant plus the analyser window and a release —
     // audio time, not a wall-clock sleep.
-    const wav = (await orderOf(page, 'columns', 3))[0]!;
+    const cube = (await orderOf(page, 'columns', 3))[0]!;
     const mutedAt = await page.evaluate((id) => {
       const w = globalThis as unknown as {
         __engine: () => { getDomain: (d: string) => { ctx: AudioContext } };
         __patch: { nodes: Record<string, { params: Record<string, number> }> };
         __ydoc: { transact: (fn: () => void) => void };
       };
-      w.__ydoc.transact(() => { w.__patch.nodes[id]!.params.master_gain = 0; });
+      w.__ydoc.transact(() => { w.__patch.nodes[id]!.params.level = 0; });
       return w.__engine().getDomain('audio').ctx.currentTime;
-    }, wav);
+    }, cube);
     const control = await pollAudio(page, 12_000, {
       channels: [0, 1], channelFloor: CH_FLOOR, outFloor: OUT_FLOOR,
       quiet: { channel: 2, afterCtxTime: mutedAt + windowS + 0.5 },
@@ -536,9 +551,9 @@ test.describe('workflow channel columns', () => {
       `ch=[${control.channelMax.slice(0, 3).map(v => v.toFixed(4)).join(', ')}]`;
     console.log(`[source-chain control] ${ctl}`);
     expect(control.quietSamples, `a post-settle sample exists; ${ctl}`).toBeGreaterThan(0);
-    expect(control.channelMax[0], `ch1 still audible with wavesculpt muted; ${ctl}`).toBeGreaterThan(CH_FLOOR);
-    expect(control.channelMax[1], `ch2 still audible with wavesculpt muted; ${ctl}`).toBeGreaterThan(CH_FLOOR);
-    expect(control.quietMax, `ch3 silent once wavesculpt is muted — the tap reads ITS channel; ${ctl}`).toBeLessThan(CH_FLOOR);
+    expect(control.channelMax[0], `ch1 still audible with cube muted; ${ctl}`).toBeGreaterThan(CH_FLOOR);
+    expect(control.channelMax[1], `ch2 still audible with cube muted; ${ctl}`).toBeGreaterThan(CH_FLOOR);
+    expect(control.quietMax, `ch3 silent once cube is muted — the tap reads ITS channel; ${ctl}`).toBeLessThan(CH_FLOOR);
   });
 
   test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven, but ONLY the head sends (2nd is automation-only)', async ({ page }) => {
