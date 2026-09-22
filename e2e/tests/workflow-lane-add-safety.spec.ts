@@ -29,6 +29,7 @@
 import { SHELL_COLUMN_W } from '../../packages/web/src/lib/graph/channel-columns';
 import { test, expect, type Page } from '@playwright/test';
 import { waitFrames } from '../_helpers/frames';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 /** Frames the column-reconcile janitor gets to run before a NEGATIVE edge
  *  assertion. FRAMES, not ms: the janitor is a Svelte `$effect` on the graph
@@ -172,6 +173,19 @@ async function expectDocQuiescent(page: Page): Promise<void> {
   });
   expect(updates, 'no janitor write-loop after the add settles').toBeLessThan(10);
 }
+
+// Idle the video engine's frame loop before boot (pause rAF + pin its clock).
+// The subject here is the reconciler, the janitor and the reactive tree, never
+// the picture: nothing below reads a pixel. With the loop live, CI's SwiftShader
+// raster starves the main thread the probes drive — main run 35773543664
+// (8d07ac3d8, shard 4) blew the 25 s two-engine probe on a File click that was
+// "visible, enabled and stable", then passed on retry; the same class as
+// backdraft-preview-toggle (#2345) and layers-survive-card-collapse (#2348).
+// A genuine reconcile freeze still fails every probe: the hooks remove raster
+// load, not the reactive tree.
+test.beforeEach(async ({ page }) => {
+  await installRenderSmokeHooks(page);
+});
 
 test.describe('BUG A — video modules added to an audio lane: unwired-but-functional, never a freeze', () => {
   test('cellshade / backdraft / synesthesia via palette-drop AND assign-to-channel stay sane', async ({ page }) => {
