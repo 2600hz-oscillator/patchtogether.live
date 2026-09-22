@@ -638,9 +638,9 @@ export function referencedClipMediaIds(
   const out = new Set<string>();
   for (const n of nodes) {
     if (n?.type !== 'clipplayer') continue;
-    const clips = (n.data as { clips?: Record<string, unknown> } | undefined)?.clips;
-    if (!clips || typeof clips !== 'object') continue;
-    for (const raw of Object.values(clips)) {
+    const data = n.data as { clips?: Record<string, unknown>; audio?: Record<string, unknown> } | undefined;
+    const records = [data?.clips, data?.audio].flatMap((map) => map && typeof map === 'object' ? Object.values(map) : []);
+    for (const raw of records) {
       const rec = raw as { mediaId?: unknown; videoMediaId?: unknown } | null | undefined;
       if (!rec || typeof rec !== 'object') continue;
       if (typeof rec.mediaId === 'string' && rec.mediaId) out.add(rec.mediaId);

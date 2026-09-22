@@ -74,6 +74,9 @@ import {
   reverseClipSteps,
   copyClip,
   readAutoClip,
+  readClipAudio,
+  plainCloneClip,
+  type AudioClipRecord,
   plainCloneAutoClip,
   reverseAutoClipRecord,
   lengthFromBlockTap,
@@ -128,7 +131,7 @@ let pasteHeld = false;
 let pasteRevHeld = false;
 // The buffer also carries the source clip's sibling AUTOMATION (the envelope
 // belongs to the clip — a paste moves it with the notes; null = none).
-let clipBuffer: { clip: NoteClipRecord; auto: AutoClipRecord | null } | null = null;
+let clipBuffer: { clip: NoteClipRecord; auto: AutoClipRecord | null; audio: AudioClipRecord | null } | null = null;
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -266,6 +269,7 @@ function writeClipWithAuto(
   next: NoteClipRecord,
   auto: AutoClipRecord | null,
   index: number,
+  audio: AudioClipRecord | null = null,
 ): void {
   const plainAuto = plainCloneAutoClip(auto);
   editData(nodeId, (d) => {
@@ -273,6 +277,10 @@ function writeClipWithAuto(
     d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
     if (!d.auto) d.auto = {};
     const key = String(index);
+    if (audio) {
+      if (!d.audio) d.audio = {};
+      d.audio[key] = plainCloneClip(audio) as AudioClipRecord;
+    } else if (d.audio?.[key] != null) delete d.audio[key];
     if (plainAuto) d.auto[key] = plainAuto;
     else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
   });
@@ -476,14 +484,14 @@ function handleKey(e: GridKeyEvent): void {
       const c = clipAtIndex(data, clipIdx);
       // → per-machine buffer (not the Y.Doc); the clip's sibling automation
       // rides along (envelope-belongs-to-the-clip).
-      if (c) clipBuffer = { clip: copyClip(c), auto: readAutoClip(data, clipIdx) };
+      if (c) clipBuffer = { clip: copyClip(c), auto: readAutoClip(data, clipIdx), audio: readClipAudio(data, clipIdx) };
       return;
     }
     if (pasteHeld && clipBuffer) {
       // PASTE = overwrite OR create (plain assignment handles both). ONE undoable
       // transaction with CLONED events (writeClip's discipline) — clip + its
       // automation together; the destination's stale record is cleared.
-      writeClipWithAuto(nodeId, copyClip(clipBuffer.clip), clipBuffer.auto, clipIdx);
+      writeClipWithAuto(nodeId, copyClip(clipBuffer.clip), clipBuffer.auto, clipIdx, clipBuffer.audio);
       return;
     }
     if (pasteRevHeld && clipBuffer) {
@@ -494,6 +502,7 @@ function handleKey(e: GridKeyEvent): void {
           ? reverseAutoClipRecord(clipBuffer.auto, clipBuffer.clip.lengthSteps)
           : null,
         clipIdx,
+        clipBuffer.audio,
       );
       return;
     }

@@ -23,7 +23,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { installMidiOutCapture } from '../_helpers/midi';
-import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { AUDIO_READY_MS, BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { applyCpuThrottle } from '../_helpers/cpu-throttle';
 import {
   SHELL_COLUMN_W,
@@ -129,6 +129,30 @@ async function wcolEdges(page: Page): Promise<string[]> {
       .filter(([id, e]) => e && id.startsWith('wcol-e-'))
       .map(([, e]) => `${e!.source.nodeId}.${e!.source.portId}->${e!.target.nodeId}.${e!.target.portId}`);
   });
+}
+
+/** The wcol edges that carry the source chain (clip → instrument, instrument →
+ *  mixer) are LIVE in the audio engine — both endpoints built and connected —
+ *  not merely present in the patch. Observable state, never a delay: wavesculpt
+ *  awaits a worklet module load, which a starved shard defers past a whole
+ *  12 s window (run 35684290047: ch3 read 0 over 4 samples). */
+async function waitForLiveChain(page: Page, minEdges: number): Promise<void> {
+  await page.waitForFunction(
+    ({ min, clip, mixer }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { hasDomain(d: string): boolean; getDomain(d: string): { edges: Map<string, unknown> } } | null;
+        __patch: { edges: Record<string, { source: { nodeId: string }; target: { nodeId: string } } | undefined> };
+      };
+      const e = w.__engine?.();
+      if (!e?.hasDomain('audio')) return false;
+      const live = e.getDomain('audio').edges;
+      const chain = Object.entries(w.__patch.edges).filter(([id, edge]) =>
+        id.startsWith('wcol-e-') && !!edge && (edge.source.nodeId === clip || edge.target.nodeId === mixer));
+      return chain.length >= min && chain.every(([id]) => live.has(id));
+    },
+    { min: minEdges, clip: PINNED_CLIP, mixer: PINNED_MIXER },
+    { timeout: AUDIO_READY_MS },
+  );
 }
 
 /** A member node's two channel scalars: the COLUMN membership truth
@@ -274,9 +298,10 @@ async function stepsAdvanced(
 async function pollAudio(
   page: Page,
   durationMs: number,
+  audible?: { channels: number[]; channelFloor: number; outFloor: number },
 ): Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }> {
   return await page.evaluate(
-    ({ durationMs }) =>
+    ({ durationMs, audible }) =>
       new Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }>(
         (resolve) => {
           const w = globalThis as unknown as {
@@ -307,14 +332,19 @@ async function pollAudio(
             }
             samples++;
             const elapsedMs = performance.now() - startedAt;
-            if (elapsedMs >= durationMs) {
+            // Presence checks can finish as soon as every required signal is
+            // observed. Ratio and sustained-window callers omit `audible` and
+            // retain their full observation window.
+            const heard = audible && samples > 0 && outMax > audible.outFloor &&
+              audible.channels.every(ch => channelMax[ch]! > audible.channelFloor);
+            if (heard || elapsedMs >= durationMs) {
               clearInterval(timer);
               resolve({ channelMax, outMax, samples, elapsedMs });
             }
           }, 25);
         },
       ),
-    { durationMs },
+    { durationMs, audible },
   );
 }
 
@@ -364,6 +394,11 @@ test.describe('workflow channel columns', () => {
   });
 
   test('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', async ({ page }) => {
+    // Bound, not a budget raise: the shared SLOW_BOOT_TEST_TIMEOUT_MS. The step
+    // caps below (2×BOOT_MS + a 10 s edge poll + the 12 s window) already sum
+    // past the bare 30 s default; run 35682838684 died on that default with the
+    // window still open and no assertion failed (seed transact alone took 5 s).
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await page.goto('/rack');
     await waitForPinnedTrio(page);
 
@@ -372,17 +407,27 @@ test.describe('workflow channel columns', () => {
     await dropInBand(page, 'wavesculpt', colPos(3));
     await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
 
+    // Three clip-control edges + at least one send per instrument, LIVE in the
+    // engine before a note is launched into them.
+    await waitForLiveChain(page, 6);
     // Drive the REAL chain: pinned clip player notes on lanes 0/1/2 → the wcol
     // clip-control edges → each instrument → its mixer channel → master → out.
     await seedAndRun(page, [0, 1, 2]);
 
-    const { channelMax, outMax } = await pollAudio(page, 12_000);
+    // CI trace 35547662760 reached the RMS window after 13 s, then spent
+    // another 21 s completing its fixed 12 s timer on the busy page, although
+    // all four audio assertions passed. Stop when the existing floors are
+    // met; the 12 s cap now bounds failure rather than defining readiness.
+    const reading = await pollAudio(page, 12_000, { channels: [0, 1, 2], channelFloor: 0.002, outFloor: 0.005 });
+    const { channelMax, outMax, samples, elapsedMs } = reading;
+    const observed = `${samples} samples over ${elapsedMs.toFixed(0)} ms`;
+    expect(samples, observed).toBeGreaterThan(0);
     // Each of the three channels registers energy at its mixer meter…
-    expect(channelMax[0], 'ch1 (tidyvco) audible at the mixer').toBeGreaterThan(0.002);
-    expect(channelMax[1], 'ch2 (kickdrum) audible at the mixer').toBeGreaterThan(0.002);
-    expect(channelMax[2], 'ch3 (wavesculpt) audible at the mixer').toBeGreaterThan(0.002);
+    expect(channelMax[0], `ch1 (tidyvco) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
+    expect(channelMax[1], `ch2 (kickdrum) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
+    expect(channelMax[2], `ch3 (wavesculpt) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
     // …and the whole chain reaches the terminal audio out.
-    expect(outMax, 'audible at the pinned AUDIO OUT').toBeGreaterThan(0.005);
+    expect(outMax, `audible at the pinned AUDIO OUT; ${observed}`).toBeGreaterThan(0.005);
   });
 
   test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven, but ONLY the head sends (2nd is automation-only)', async ({ page }) => {

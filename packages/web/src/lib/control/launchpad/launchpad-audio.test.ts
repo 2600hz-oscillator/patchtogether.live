@@ -4,8 +4,8 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
   getSchedulerClock: () => ({ subscribe: () => () => {}, usingWorker: false, dispose: () => {} }),
 }));
 import { patch, ydoc } from '$lib/graph/store';
-import { defaultNoteClip, laneAutomationArmed, readClip, type ClipPlayerData, type AudioClipRecord } from '$lib/audio/modules/clip-types';
-import { clipboardClip, clearClipboard } from '$lib/audio/modules/clip-clipboard';
+import { defaultNoteClip, laneAutomationArmed, readClip, readClipAudio, type ClipPlayerData, type AudioClipRecord } from '$lib/audio/modules/clip-types';
+import { clipboardClip, clipboardClipAudio, clipboardClipAuto, clearClipboard } from '$lib/audio/modules/clip-clipboard';
 import { clipplayerInspectClip } from '$lib/ui/modules/clipplayer/clipplayer-face-selection.svelte';
 import { setClipplayerAudioTarget, toggleClipplayerLaneRecArm, pasteClipplayerClip } from '$lib/ui/modules/clipplayer/clipplayer-face-actions';
 import { clipplayerAudioFeedback } from '$lib/ui/modules/clipplayer/clipplayer-audio-feedback.svelte';
@@ -21,7 +21,7 @@ beforeEach(() => {
   __test_resetBinding(); __test_resetLaunchpad(); clearClipboard();
   __test_setDeployment('single', 'grid');
   for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
-  patch.nodes[CP] = { id: CP, type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: { clips: { '0': { ...defaultNoteClip(), steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }] }, '2': take() }, playing: [0] } } as never;
+  patch.nodes[CP] = { id: CP, type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: { clips: { '0': { ...defaultNoteClip(), steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }] }, '2': defaultNoteClip(), '3': defaultNoteClip() }, audio: { '2': take() }, playing: [0] } } as never;
 });
 
 describe('AUDIO shared recording actions and hardware routing', () => {
@@ -35,13 +35,17 @@ describe('AUDIO shared recording actions and hardware routing', () => {
     expect(data().queued).toBeUndefined();
   });
 
-  it('refuses notes, recorded automation, unconfirmed takes and foreign arms', () => {
+  it('records authored notes and automation, but requires confirmed replacement and a local writer', () => {
     setClipplayerAudioTarget(CP, 0, 0);
-    expect(toggleClipplayerLaneRecArm(CP, 0)).toMatch(/contains notes/);
+    expect(toggleClipplayerLaneRecArm(CP, 0)).toBeNull();
+    expect(readClip(data(), 0)?.kind).toBe('note');
+    toggleClipplayerLaneRecArm(CP, 0);
     data().clips!['1'] = defaultNoteClip();
     data().auto = { '1': { tracks: { 'synth::gain': { events: [{ step: 0, value: 0.8 }] } } } };
     setClipplayerAudioTarget(CP, 0, 1);
-    expect(toggleClipplayerLaneRecArm(CP, 0)).toMatch(/contains recorded automation/);
+    expect(toggleClipplayerLaneRecArm(CP, 0)).toBeNull();
+    expect(data().auto?.['1']).toBeDefined();
+    toggleClipplayerLaneRecArm(CP, 0);
     expect(data().recArm?.['0']).not.toBe(true);
     setClipplayerAudioTarget(CP, 0, 2);
     expect(toggleClipplayerLaneRecArm(CP, 0)).toMatch(/Replace take/);
@@ -71,9 +75,9 @@ describe('AUDIO shared recording actions and hardware routing', () => {
     bindLaunchpadToClip(CP); setLaunchpadView('control'); sim.press('L', 4, 6);
     sim.press('L', 0, 5); // audio slot 3
     sim.cc('L', SCENE_CCS[3]!, 127);
-    expect(readClip(data(), 2)).toMatchObject({ kind: 'audio', live: true });
+    expect(readClipAudio(data(), 2)).toMatchObject({ kind: 'audio', live: true });
     sim.cc('L', 96, 127); // permanent undo
-    expect((readClip(data(), 2) as AudioClipRecord).live).not.toBe(true);
+    expect((readClipAudio(data(), 2) as AudioClipRecord).live).not.toBe(true);
     sim.cc('L', SCENE_CCS[4]!, 127);
     expect(data().recArm?.['0']).not.toBe(true);
     sim.press('L', 0, 5); // another action cancels
@@ -82,7 +86,7 @@ describe('AUDIO shared recording actions and hardware routing', () => {
     sim.cc('L', SCENE_CCS[4]!, 127);
     expect(data().recArm?.['0']).toBe(true);
     expect(data().recRequest?.['0']?.replaceMediaId).toBe('take-original');
-    expect(readClip(data(), 2)?.kind).toBe('audio');
+    expect(readClip(data(), 2)?.kind).toBe('note');
   });
 
   it('pair R consumes one L target tap; subsequent L launches and R auto-arm remain independent', async () => {
@@ -105,10 +109,11 @@ describe('AUDIO shared recording actions and hardware routing', () => {
     const sim = await installSimulatedLaunchpadSingle(); bindLaunchpadToClip(CP);
     sim.cc('L', 98, 127); sim.cc('L', SCENE_CCS[0]!, 127); // SHIFT COPY
     sim.press('L', 0, 5);
-    expect(clipboardClip()).toMatchObject({ kind: 'audio', mediaId: 'take-original' });
+    expect(clipboardClip()).toMatchObject({ kind: 'note' });
+    expect(clipboardClipAudio()).toMatchObject({ mediaId: 'take-original' });
     data().auto = { '4': { tracks: [] } } as never;
-    pasteClipplayerClip(CP, 4, clipboardClip()!, { tracks: [] });
-    expect(readClip(data(), 4)).toEqual(take()); expect(data().auto?.['4']).toBeUndefined();
+    pasteClipplayerClip(CP, 4, clipboardClip()!, clipboardClipAuto(), clipboardClipAudio());
+    expect(readClip(data(), 4)?.kind).toBe('note'); expect(readClipAudio(data(), 4)).toEqual(take()); expect(data().auto?.['4']).toBeUndefined();
   });
 
   it('pair audio LED overlay uses the live matrix orientation', () => {
@@ -120,9 +125,9 @@ describe('AUDIO shared recording actions and hardware routing', () => {
 
   it('refusal feedback is visible to the screen instead of silently doing nothing', async () => {
     const sim = await installSimulatedLaunchpadSingle(); bindLaunchpadToClip(CP);
-    setLaunchpadView('control'); sim.press('L', 4, 6); sim.press('L', 0, 7);
+    setLaunchpadView('control'); sim.press('L', 4, 6); sim.press('L', 0, 0);
     sim.cc('L', SCENE_CCS[0]!, 127);
-    expect(clipplayerAudioFeedback(CP)).toMatch(/contains notes/);
+    expect(clipplayerAudioFeedback(CP)).toMatch(/existing clip/);
     expect(data().recArm?.['0']).not.toBe(true);
   });
 });

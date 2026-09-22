@@ -172,6 +172,7 @@ export function clipPlayerDataNeedsLoadSeam(data: unknown): boolean {
   const d = data as {
     sv?: unknown;
     auto?: unknown;
+    audio?: unknown;
     autoAssign?: unknown;
     automation?: unknown;
     sceneRepeats?: unknown;
@@ -179,6 +180,8 @@ export function clipPlayerDataNeedsLoadSeam(data: unknown): boolean {
   };
   if (d.sv !== CLIP_SCHEMA_VERSION) return true;
   return (
+    !d.audio ||
+    typeof d.audio !== 'object' ||
     !d.auto ||
     typeof d.auto !== 'object' ||
     !d.autoAssign ||
@@ -311,15 +314,10 @@ export interface AudioClipRecord extends ClipBase {
    *  second `mediaId` into the same store, so the clip's audio and video takes
    *  share one lifecycle and one GC. */
   videoMediaId?: string;
-  /** CLAUSE 6 — play LIVE or the RECORDED audio. `true` = this clip is a
-   *  PASS-THROUGH: launching it does not start the recorded source, so the
-   *  lane's live input is what you hear. Absent/false = play the take.
-   *
-   *  ⚠ PER CLIP, NOT PER LANE, and that is the owner's word. It replaces the
-   *  mixmstrs channel-level MON duck (`live`/`both`/`clip-auto`), which gated a
-   *  whole channel; this gates one clip at the playback side, so two clips in
-   *  the same lane can differ. CONTENT — it is a property of the take and is
-   *  copied with it. */
+  /** Persisted source choice: true selects the owning clip's Notes; absent or
+   * false selects its Recorded layer. Kept as `live` for saved-take compatibility.
+   * Legacy standalone audio clips have no notes, so true only bypasses the take.
+   * Source choice is copied with the audio layer and is undoable content. */
   live?: boolean;
 }
 
@@ -427,6 +425,11 @@ export interface ClipPlayerData {
    *  stamps CLIP_SCHEMA_VERSION here. Present = already stride-64. */
   sv?: number;
   clips?: Record<string, ClipRecord | null>; // sparse; null/absent = empty
+  /** Optional audio layer at the SAME clip index. Separate CRDT ownership from
+   * notes and automation: committing a take must never replace either one.
+   * `live: true` selects the clip's notes; absent/false selects its recording.
+   * Standalone kind:'audio' clips remain readable for saved-rack compatibility. */
+  audio?: Record<string, AudioClipRecord | null>;
   /** Per-lane active clip SLOT (0..CLIP_SLOTS-1) or null = stopped. Length
    *  CLIP_LANES. SYNCED — the playing-set all peers + grids see (§5.2). Up to
    *  8 clips (one per instrument lane) play simultaneously. */
@@ -1076,18 +1079,33 @@ export function laneRecMode(
 export function clipPlaysLive(clip: ClipRecord | null | undefined): boolean {
   return clip?.kind === 'audio' && clip.live === true;
 }
-/** Whether a note clip holds AUTHORED CONTENT — at least one note.
- *
- *  ⚠ THE DISTINCTION EXISTS BECAUSE CLICKING AN EMPTY PAD CREATES A CLIP.
- *  Selecting a slot on the launcher materialises an empty `note` record as a
- *  placeholder, so "is there a note clip here" cannot be the test for "would
- *  recording destroy someone's work" — it would refuse to record into every
- *  slot the player had merely touched, which is exactly the slot they just
- *  aimed the record button at.
- *
- *  An EMPTY note clip is a placeholder and may be recorded over. One with notes
- *  in it is authored content, and silently replacing that is the worst outcome
- *  available — the recorder refuses instead. */
+/** The recording attached to one clip, or a legacy standalone audio take.
+ * Always returns a plain validated value, safe for caches and copy/paste. */
+export function readClipAudio(
+  data: { clips?: Record<string, unknown>; audio?: Record<string, unknown> } | undefined,
+  index: number,
+): AudioClipRecord | null {
+  const clip = readClip(data, index);
+  if (!clip) return null;
+  if (clip.kind === 'audio') return clip;
+  if (clip.kind !== 'note') return null;
+  const take = coerceClipRecord(data?.audio?.[String(index)]);
+  return take?.kind === 'audio' ? take : null;
+}
+
+/** One source choice for all surfaces and the engine. An armed clip regenerates
+ * its notes for capture; another armed clip in the lane does not affect it. */
+export function clipPlaybackIsRecorded(data: ClipPlayerData | undefined, index: number): boolean {
+  const take = readClipAudio(data, index);
+  if (!take || take.live) return false;
+  const lane = laneOf(index);
+  const request = data?.recRequest?.[String(lane)];
+  const recording = audioRecState(data, lane);
+  return !((laneRecArm(data, lane) && request?.slot === slotOf(index)) ||
+    (recording && recording.slot === slotOf(index)));
+}
+
+/** Whether the note layer has any authored events. */
 export function noteClipHasContent(clip: ClipRecord | null | undefined): boolean {
   return clip?.kind === 'note' && Array.isArray(clip.steps) && clip.steps.length > 0;
 }
@@ -1735,11 +1753,12 @@ export type CopyTargetKind = 'clip' | 'scene';
  *  buffer (or clears it when the source had none — no ghost counts, same
  *  discipline as the automation). */
 export type CopyBuffer =
-  | { kind: 'clip'; clip: ClipRecord; auto: AutoClipRecord | null }
+  | { kind: 'clip'; clip: ClipRecord; auto: AutoClipRecord | null; audio?: AudioClipRecord | null }
   | {
       kind: 'scene';
       clips: (ClipRecord | null)[];
       autos: (AutoClipRecord | null)[];
+      audios?: (AudioClipRecord | null)[];
       repeats?: number;
     };
 
@@ -1780,6 +1799,11 @@ export function readSceneAutos(
   return out;
 }
 
+/** Audio layers travel with their source clips when copying a scene. */
+export function readSceneAudios(data: ClipPlayerData | undefined, slot: number): (AudioClipRecord | null)[] {
+  return Array.from({ length: CLIP_LANES }, (_, lane) => readClipAudio(data, clipIndex(slot, lane)));
+}
+
 /** Plan a SCENE paste (FULL REPLACE) into `targetSlot`: for EACH lane 0..7, the
  *  flat clip index + the PLAIN-cloned clip to write — `null` MEANS delete that
  *  lane's key so a lane the source scene left empty EMPTIES the target lane —
@@ -1793,8 +1817,9 @@ export function sceneWritePlan(
   targetSlot: number,
   sceneClips: (ClipRecord | null)[],
   sceneAutos?: (AutoClipRecord | null)[],
-): { index: number; value: ClipRecord | null; auto: AutoClipRecord | null }[] {
-  const plan: { index: number; value: ClipRecord | null; auto: AutoClipRecord | null }[] = [];
+  sceneAudios?: (AudioClipRecord | null)[],
+): { index: number; value: ClipRecord | null; auto: AutoClipRecord | null; audio: AudioClipRecord | null }[] {
+  const plan: { index: number; value: ClipRecord | null; auto: AutoClipRecord | null; audio: AudioClipRecord | null }[] = [];
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const value = plainCloneClip(sceneClips[lane] ?? null);
     plan.push({
@@ -1802,6 +1827,7 @@ export function sceneWritePlan(
       value,
       // No clip ⇒ no automation either (delete both target keys).
       auto: value === null ? null : plainCloneAutoClip(sceneAutos?.[lane] ?? null),
+      audio: value?.kind === 'note' ? plainCloneClip(sceneAudios?.[lane] ?? null) as AudioClipRecord | null : null,
     });
   }
   return plan;

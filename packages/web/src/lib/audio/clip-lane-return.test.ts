@@ -84,17 +84,13 @@ describe('clipLaneLiveGain — what MON actually does to the LIVE branch', () =>
   });
 });
 
-describe('clipLaneNormalConnected — a hardware normal, broken by a jack', () => {
-  it('is connected only while NOTHING is patched into the channel input', () => {
+describe('clipLaneNormalConnected — broken by a cable on the lane’s OWN output jack', () => {
+  it('is connected only while NOTHING leaves the lane’s audio{N}L/R jacks', () => {
     expect(clipLaneNormalConnected(false)).toBe(true);
     expect(clipLaneNormalConnected(true)).toBe(false);
   });
 
-  it('is a GRAPH fact — a patched-but-silent source still breaks the normal', () => {
-    // Stated as a test because the tempting bug is to ask "is that cable
-    // actually carrying anything", which is the runtime "is it really X?"
-    // heuristic the stereo policy bans by name. On hardware, inserting a jack
-    // into a silent module still breaks the normal; so does it here.
+  it('is a GRAPH fact — a cable to a silent destination still breaks the return', () => {
     expect(clipLaneNormalConnected(true)).toBe(false);
   });
 });
