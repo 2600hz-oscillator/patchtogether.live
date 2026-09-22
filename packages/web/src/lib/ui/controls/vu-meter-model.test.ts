@@ -8,6 +8,8 @@ import {
   VU_COLOR_AMBER,
   VU_COLOR_YELLOW,
   VU_COLOR_TEAL,
+  linearToDbfs,
+  linearToUnit,
 } from './vu-meter-model';
 
 describe('dbfsToUnit', () => {
@@ -26,6 +28,36 @@ describe('dbfsToUnit', () => {
     expect(dbfsToUnit(-Infinity)).toBe(0);
     expect(dbfsToUnit(Infinity)).toBe(1);
     expect(dbfsToUnit(NaN)).toBe(0);
+  });
+});
+
+describe('linearToDbfs / linearToUnit — the meter display law', () => {
+  it('converts amplitude to dBFS', () => {
+    expect(linearToDbfs(1)).toBe(0);
+    expect(linearToDbfs(0.5)).toBeCloseTo(-6.02, 2);
+    expect(linearToDbfs(Math.SQRT1_2)).toBeCloseTo(-3.01, 2);
+    expect(linearToDbfs(0)).toBe(-Infinity);
+    expect(linearToDbfs(-0.2)).toBe(-Infinity);
+    expect(linearToDbfs(NaN)).toBe(-Infinity);
+  });
+  it('paints a full-scale sine near the top and silence at the floor', () => {
+    expect(linearToUnit(1)).toBe(1);
+    expect(linearToUnit(Math.SQRT1_2)).toBeCloseTo(0.95, 2);
+    // −15 dBFS (a typical house voice level) lands in the yellow zone, not the middle third.
+    expect(linearToUnit(Math.pow(10, -15 / 20))).toBeCloseTo(0.75, 2);
+    // The old linear bar read a full-scale sine after 0.8×0.8 faders at 0.45.
+    expect(linearToUnit(0.4525)).toBeGreaterThan(0.85);
+    expect(linearToUnit(Math.pow(10, VU_DB_FLOOR / 20))).toBe(0);
+    expect(linearToUnit(0)).toBe(0);
+    expect(linearToUnit(2)).toBe(1);
+  });
+  it('is monotone over the audible range', () => {
+    let prev = -1;
+    for (let u = 0; u <= 1.0001; u += 0.01) {
+      const v = linearToUnit(u);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
   });
 });
 

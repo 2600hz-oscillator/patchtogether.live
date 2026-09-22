@@ -10,8 +10,11 @@
       coalesced rAF the scope / playhead meters use). The card wires it to
       `engine.read(node, 'level')` (an AnalyserNode-derived RMS on the module's
       output tap). This is the live path.
-    • `level` — a plain reactive 0..1 (or dBFS with `db`) prop, for callers that
-      already have the value (or for the showcase/tests).
+    • `level` — a plain reactive 0..1 linear amplitude (or dBFS with `db`) prop,
+      for callers that already have the value (or for the showcase/tests).
+  DISPLAY LAW: a linear level is painted on the dBFS scale (vu-meter-model
+  `linearToUnit`, −60 dB floor), the same floor the audio-out meter uses; the
+  bar height is never the raw amplitude.
   Peak-hold + attack/release smoothing run on that same shared frame. Cleans up
   its subscription on unmount and respects prefers-reduced-motion (no smoothing
   animation / no CSS transitions when reduced).
@@ -21,6 +24,7 @@
   import { onMeterFrame } from '$lib/ui/meter-frame';
   import {
     dbfsToUnit,
+    linearToUnit,
     isSegmentLit,
     litCount,
     segmentColor,
@@ -32,7 +36,8 @@
     getLevel?: () => number;
     /** Static/reactive level, used when `getLevel` is absent. */
     level?: number;
-    /** Interpret the level (from either source) as dBFS instead of 0..1. */
+    /** The level (from either source) is already dBFS; otherwise it is a linear
+     *  0..1 amplitude painted through the dB law. */
     db?: boolean;
     /** Number of segments. Default 12 (the moog914 band count). */
     segments?: number;
@@ -62,9 +67,10 @@
     ariaLabel = 'level meter',
   }: Props = $props();
 
-  // Normalize whatever units the caller uses to a 0..1 display fraction.
+  // Normalize whatever units the caller uses to a 0..1 display fraction, on
+  // the dB scale either way.
   function toUnit(v: number): number {
-    return db ? dbfsToUnit(v) : v < 0 ? 0 : v > 1 ? 1 : v;
+    return db ? dbfsToUnit(v) : linearToUnit(v);
   }
 
   let rootEl: HTMLDivElement | null = $state(null);

@@ -161,16 +161,18 @@ test.describe('noise face — three derived readouts from one knob', () => {
       Number(await meter.getAttribute('aria-valuenow'));
 
     // IT LIGHTS, AND IT LIGHTS TO WHITE'S LEVEL — which is the half of the
-    // title a bare "> 0" would not earn. `getLevel` is a LINEAR RMS unit and
-    // the bar is 12 segments, so the three taps are three DIFFERENT counts at
-    // the def default LEVEL 0.5:
+    // title a bare "> 0" would not earn. `getLevel` is a LINEAR RMS unit that
+    // VuMeter paints on the −60 dBFS scale (vu-meter-model `linearToUnit`,
+    // owner 2026-09-22) over 12 segments, so the three taps are three
+    // DIFFERENT counts at the def default LEVEL 0.5:
     //
-    //   white  0.5 × 0.5774 = 0.289 → ceil(3.46) = 4 segments
-    //   brown  0.5 × 0.2558 = 0.128 → 2
-    //   pink   0.5 × 0.1362 = 0.068 → 1
+    //   white  0.5 × 0.5774 = 0.289 → −10.8 dB → 0.82 → ceil(9.84) = 10 segments
+    //   brown  0.5 × 0.2558 = 0.128 → −17.9 dB → 0.70 → 9
+    //   pink   0.5 × 0.1362 = 0.068 → −23.3 dB → 0.61 → 8
     //
-    // So a count in 3..5 says the tap resolved `primaryAudioOutPortId` to the
-    // FIRST declared audio output and not to one of its siblings. `data-lit` is
+    // So a count of 10..11 (noise wobble can add one) says the tap resolved
+    // `primaryAudioOutPortId` to the FIRST declared audio output and not to a
+    // sibling; 12 would mean it is metering something hotter. `data-lit` is
     // the model's own segment count, so this is renderer-independent and prints
     // how far it got when it fails.
     await expect
@@ -178,9 +180,9 @@ test.describe('noise face — three derived readouts from one knob', () => {
         message: "the meter lights to WHITE's level on a free-running source",
         timeout: SLOW_RENDER ? 20_000 : 8_000,
       })
-      .toBeGreaterThanOrEqual(3);
-    expect(await lit(), 'and not past white — 5 would mean it is metering something hotter')
-      .toBeLessThanOrEqual(5);
+      .toBeGreaterThanOrEqual(10);
+    expect(await lit(), 'and not past white — 12 would mean it is metering something hotter')
+      .toBeLessThanOrEqual(11);
 
     // …AND IT FALLS. The negative control, and the half that makes the first
     // half mean something: a meter stuck lit (a static `level` prop, a tap that
