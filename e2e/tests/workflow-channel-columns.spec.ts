@@ -370,6 +370,11 @@ test.describe('workflow channel columns', () => {
   });
 
   test('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', async ({ page }) => {
+    // Bound, not a budget raise: the shared SLOW_BOOT_TEST_TIMEOUT_MS. The step
+    // caps below (2×BOOT_MS + a 10 s edge poll + the 12 s window) already sum
+    // past the bare 30 s default; run 35682838684 died on that default with the
+    // window still open and no assertion failed (seed transact alone took 5 s).
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS);
     await page.goto('/rack');
     await waitForPinnedTrio(page);
 
