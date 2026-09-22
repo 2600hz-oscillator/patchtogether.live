@@ -7,7 +7,10 @@ import {
   VU_DB_FLOOR,
   VU_COLOR_AMBER,
   VU_COLOR_YELLOW,
-  VU_COLOR_TEAL, linearToDbfs, linearToUnit, VU_DB_FLOOR } from './vu-meter-model';
+  VU_COLOR_TEAL,
+  linearToDbfs,
+  linearToUnit,
+} from './vu-meter-model';
 
 describe('dbfsToUnit', () => {
   it('pins the endpoints', () => {
