@@ -23,7 +23,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installRenderSmokeHooks } from './_render-smoke';
 import { installMidiOutCapture } from '../_helpers/midi';
-import { BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
+import { AUDIO_READY_MS, BOOT_MS, SLOW_BOOT_TEST_TIMEOUT_MS } from '../_helpers/boot-budget';
 import { applyCpuThrottle } from '../_helpers/cpu-throttle';
 import {
   SHELL_COLUMN_W,
@@ -129,6 +129,30 @@ async function wcolEdges(page: Page): Promise<string[]> {
       .filter(([id, e]) => e && id.startsWith('wcol-e-'))
       .map(([, e]) => `${e!.source.nodeId}.${e!.source.portId}->${e!.target.nodeId}.${e!.target.portId}`);
   });
+}
+
+/** The wcol edges that carry the source chain (clip → instrument, instrument →
+ *  mixer) are LIVE in the audio engine — both endpoints built and connected —
+ *  not merely present in the patch. Observable state, never a delay: wavesculpt
+ *  awaits a worklet module load, which a starved shard defers past a whole
+ *  12 s window (run 35684290047: ch3 read 0 over 4 samples). */
+async function waitForLiveChain(page: Page, minEdges: number): Promise<void> {
+  await page.waitForFunction(
+    ({ min, clip, mixer }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => { hasDomain(d: string): boolean; getDomain(d: string): { edges: Map<string, unknown> } } | null;
+        __patch: { edges: Record<string, { source: { nodeId: string }; target: { nodeId: string } } | undefined> };
+      };
+      const e = w.__engine?.();
+      if (!e?.hasDomain('audio')) return false;
+      const live = e.getDomain('audio').edges;
+      const chain = Object.entries(w.__patch.edges).filter(([id, edge]) =>
+        id.startsWith('wcol-e-') && !!edge && (edge.source.nodeId === clip || edge.target.nodeId === mixer));
+      return chain.length >= min && chain.every(([id]) => live.has(id));
+    },
+    { min: minEdges, clip: PINNED_CLIP, mixer: PINNED_MIXER },
+    { timeout: AUDIO_READY_MS },
+  );
 }
 
 /** A member node's two channel scalars: the COLUMN membership truth
@@ -383,6 +407,9 @@ test.describe('workflow channel columns', () => {
     await dropInBand(page, 'wavesculpt', colPos(3));
     await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
 
+    // Three clip-control edges + at least one send per instrument, LIVE in the
+    // engine before a note is launched into them.
+    await waitForLiveChain(page, 6);
     // Drive the REAL chain: pinned clip player notes on lanes 0/1/2 → the wcol
     // clip-control edges → each instrument → its mixer channel → master → out.
     await seedAndRun(page, [0, 1, 2]);
