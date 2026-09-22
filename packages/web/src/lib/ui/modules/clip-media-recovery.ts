@@ -15,6 +15,8 @@
 import {
   clipIndex,
   coerceClipRecord,
+  readClipAudio,
+  defaultNoteClip,
   type AudioClipRecord,
   type ClipPlayerData,
 } from '$lib/audio/modules/clip-types';
@@ -61,7 +63,7 @@ export async function scanClipRecoveries(nodeId: string): Promise<ClipRecoveryCa
   return out;
 }
 
-/** Commit a recovered take into its slot as a real audio clip.
+/** Attach a recovered take to its source clip as an audio layer.
  *
  *  ONE `clipUndoTransact`, so the whole recovery is one undo unit — the same
  *  atomic-pass rule the note recorder commits under. */
@@ -75,20 +77,18 @@ export async function recoverClipTake(
   if (!node) return false;
   const index = clipIndex(manifest.slot, manifest.lane);
 
-  // ⚠ NEVER OVERWRITE A CLIP THE USER ALREADY HAS. The crash left this slot
-  // empty, but a peer (or the user, before the recovery was offered) may have
-  // put something there since. A slot holds exactly one clip, and silently
-  // replacing an authored one to restore a take nobody asked for is the worst
-  // outcome available.
+  // Preserve the source notes and automation. An occupied audio layer needs
+  // explicit replacement, so recovery never overwrites one. Old orphan takes
+  // may recreate an empty note host in their original slot.
   const existing = coerceClipRecord(
     ((node.data as ClipPlayerData | undefined)?.clips ?? {})[String(index)],
   );
-  if (existing) return false;
+  if ((existing && existing.kind !== 'note') || readClipAudio(node.data as ClipPlayerData | undefined, index)) return false;
 
   const record: AudioClipRecord = {
     kind: 'audio',
     mediaId: manifest.mediaId,
-    lengthSteps: Math.max(1, Math.round(manifest.lengthSteps)),
+    lengthSteps: Math.max(1, Math.round(manifest.lengthSteps * candidate.loops)),
     frames,
     sampleRate: manifest.sampleRate,
     channels: manifest.channels,
@@ -100,7 +100,9 @@ export async function recoverClipTake(
   clipUndoTransact(nodeId, () => {
     const d = (node.data ?? (node.data = {})) as ClipPlayerData;
     if (!d.clips) d.clips = {};
-    d.clips[String(index)] = record;
+    if (!existing) d.clips[String(index)] = defaultNoteClip();
+    if (!d.audio) d.audio = {};
+    d.audio[String(index)] = record;
   });
 
   // Only NOW is the take done: the clip that names it exists, so the GC's live

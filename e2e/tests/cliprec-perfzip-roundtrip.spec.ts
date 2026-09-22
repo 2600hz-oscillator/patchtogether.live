@@ -91,7 +91,7 @@ async function readData(page: Page, nodeId: string): Promise<Record<string, unkn
 
 async function readClipAt(page: Page, index: number): Promise<Record<string, unknown> | null> {
   const d = await readData(page, CP);
-  const clips = (d.clips ?? {}) as Record<string, unknown>;
+  const clips = (d.audio ?? {}) as Record<string, unknown>;
   return (clips[String(index)] ?? null) as Record<string, unknown> | null;
 }
 
@@ -247,6 +247,10 @@ test('a recorded clip survives export → fresh context + wiped OPFS → load, A
     })
     .toBeGreaterThan(0.02);
 
+  await page.evaluate(({ id, index }) => {
+    const w = window as unknown as { __patch: { nodes: Record<string, { data: unknown }> }; __ydoc: { transact(fn: () => void): void } };
+    w.__ydoc.transact(() => { w.__patch.nodes[id]!.data = { sv: 2, clips: { [String(index)]: { kind: 'note', lengthSteps: 16, root: 60, loop: true, steps: [{ step: 0, midi: 60, velocity: 100, lengthSteps: 2 }] } } }; });
+  }, { id: CP, index: TARGET_INDEX });
   await openLauncher(page);
   const targetPad = page.getByTestId(`clipplayer-pad-${TARGET_INDEX}`);
   await targetPad.scrollIntoViewIfNeeded({ timeout: UI_MS });
@@ -305,11 +309,27 @@ test('a recorded clip survives export → fresh context + wiped OPFS → load, A
     })
     .toBe(takeBytes);
   const restored = await readClipAt(page, TARGET_INDEX);
-  expect(restored?.kind, 'the clip record rode the envelope').toBe('audio');
+  expect(restored?.kind, 'the audio layer rode the envelope').toBe('audio');
   expect(restored?.mediaId, 'and still names the same media').toBe(mediaId);
+  expect((await readData(page, CP)).clips, 'the original note clip remains its host').toMatchObject({
+    [String(TARGET_INDEX)]: { kind: 'note' },
+  });
 
   await setTransport(page, true);
   await openLauncher(page);
+  // Import preserves the selected playing slot. CI trace 35549166585 showed
+  // this pad already playing before its click, so the launch/stop toggle
+  // correctly queued a STOP. Establish a stopped lane and consumed queue first;
+  // an immediate "playing" poll could otherwise pass before that stop landed.
+  await page.getByTestId('clipplayer-stop-0').click({ timeout: UI_MS });
+  await expect.poll(async () => {
+    const d = await readData(page, CP);
+    return {
+      playing: (d.playing as (number | null)[] | undefined)?.[0] ?? null,
+      queued: (d.queued as (number | string | null)[] | undefined)?.[0] ?? null,
+    };
+  }, { message: 'stop the restored lane before testing a fresh pad launch', timeout: STATE_MS })
+    .toEqual({ playing: null, queued: null });
   const padAfter = page.getByTestId(`clipplayer-pad-${TARGET_INDEX}`);
   await padAfter.scrollIntoViewIfNeeded({ timeout: UI_MS });
   await padAfter.click({ timeout: UI_MS });

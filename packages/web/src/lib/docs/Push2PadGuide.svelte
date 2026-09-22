@@ -25,7 +25,7 @@
   let pads = $derived(Array.from({ length:64 }, (_, i) => {
     const x = i % 8, y = Math.floor(i / 8);
     const fill = mode === 'grid' ? (y === 7 ? colors[x]! : '#243044')
-      : mode === 'audio' ? (x === 0 && y === 6 ? '#b695dc' : '#343042')
+      : mode === 'audio' ? (x === 0 && y === 7 ? '#b695dc' : '#343042')
       : mode === 'clip' ? ((x + y * 2) % 7 === 0 ? '#e4e6eb' : '#273342')
       : mode === 'keys' ? (y === 0 || y === 7 ? '#595143' : (x + y * 3) % 12 === 0 ? '#ce9b48' : '#375444')
       : mode === 'lengthEdit' ? (y === 7 && x < 4 || y === 6 ? '#95a864' : '#202630')
@@ -51,14 +51,14 @@
   </div>
   {#if mode === 'grid'}
     <h3>Launch, inspect, copy and repeat</h3>
-    <p>Columns are lanes; rows are slots. Tap to launch or stop the playing clip. <strong>Hold GRID + tap</strong> to inspect without changing playback: notes open CLIP, audio opens AUDIO. Double-tap also opens the clip, but the first tap is a launch gesture before its prior intent is restored.</p>
-    <p>Hold SHIFT for the right-column tools shown above. COPY and PASTE stay armed when SHIFT is released; select their clip target afterward. For scene copy/paste, release SHIFT and use a scene button. Clipboard types must match. CLIP-DIV and LENGTH require SHIFT to remain held while targeting a clip. SCROLL UP/DOWN reaches later scene slots; swing buttons adjust the selected lane.</p>
+    <p>Columns are lanes; rows are slots. Tap to launch or stop the playing clip. <strong>Hold GRID + tap</strong> to inspect without changing playback. A note clip still opens CLIP when it has an attached audio take; use CONTROL → AUDIO for its recording and source controls. Legacy standalone audio clips open AUDIO. Double-tap also opens the clip, but the first tap is a launch gesture before its prior intent is restored.</p>
+    <p>Hold SHIFT for the right-column tools shown above. COPY and PASTE stay armed when SHIFT is released; select their clip target afterward. Whole-clip copies carry notes, automation and attached audio together. For scene copy/paste, release SHIFT and use a scene button. Clipboard types must match. CLIP-DIV and LENGTH require SHIFT to remain held while targeting a clip. SCROLL UP/DOWN reaches later scene slots; swing buttons adjust the selected lane.</p>
     <p><strong>Scene repeats:</strong> hold GRID and the desired scene button together, then choose a pad in the orange count grid. Pads count 1–63 from the upper-left across rows; pad 64 means infinity. Release either held button to exit. See <a href="/docs/modules/clipplayer#scenes">scene behavior</a>.</p>
   {:else if mode === 'clip'}
     <h3>Write notes, with hit velocity</h3>
     <p>The pads show an eight-step, eight-pitch window. Tap a cell to add/remove a note; Push records your hit velocity when entering a note. Hold a note and tap farther along its row to tie the span into one sustained gate. This hardware gesture differs from the screen editor’s select-then-Shift-click gesture. Hold SHIFT and tap a note to open probability; a second quick tap opens PLAY EVERY. Its top row selects loops 1–8; 1 plays every loop.</p>
     <p>The right column contains DOUBLE, LENGTH, VEL HOLD, KEYS, pitch-window and step-window controls. Hold VEL HOLD while tapping notes to change velocity; SHIFT + that button toggles FOLLOW. D-Pad moves the pitch/step window; SHIFT uses eight-step/eight-row jumps. FOLLOW advances the step window with playback. Length, custom scales and pitch probability are explained in <a href="/docs/modules/clipplayer#notes">the note guide</a>; pitch probability and custom-scale editing stay on screen.</p>
-    <p>For probability, choose its level from the grid. Clip and note settings have distinct colors. In the probability page, SHIFT + the top-right pad resets note-level overrides when editing a clip default. COPY and PASTE live in GRID, not the note editor.</p>
+    <p>For probability, choose its level from the grid. Clip and note settings have distinct colors. In the probability page, SHIFT + the top-right pad resets note-level overrides when editing a clip default. COPY and PASTE live in GRID, not the note editor. Choose NOTES in AUDIO to hear note edits when the clip has a saved take; edits do not change that recording.</p>
   {:else if mode === 'keys'}
     <h3>Play notes and record them</h3>
     <p>Enter KEYS from the CLIP right column. The middle six rows form a fourths keyboard; your strike velocity controls note velocity. The top row selects octave. The bottom row provides QUEUE-REC, OVERDUB, EXIT and arp controls. The right column chooses scale, with its bottom button toggling ARP. Hold SHIFT to see the arp settings in the map.</p>
@@ -71,15 +71,15 @@
     <p><strong>AUTO arm:</strong> hold the permanent-row SHIFT and press the lane 1–7 function button. Lane 8 uses the pad directly below SHIFT. That arm belongs to <a href="/docs/modules/clipplayer#automation">the playing note clip’s automation</a>; it is not AUDIO or arranger REC.</p>
   {:else if mode === 'audio'}
     <h3 id="audio">Record and replay audio</h3>
-    <p>Enter <strong>CONTROL → AUDIO</strong>: column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. Tap the target slot without launching it. BANK UP/DOWN moves through eight-slot banks, reaching all 64 slots. The display reports the inspected lane/slot and frozen record target.</p>
+    <p>Enter <strong>CONTROL → AUDIO</strong>: column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. Tap your existing clip to select it without launching. BANK UP/DOWN moves through eight-slot banks, reaching all 64 slots. The display reports the inspected lane/slot and frozen record target. Recording adds an audio layer to that same clip; its notes and automation stay with it.</p>
     <ol>
-      <li>Choose an empty target. Press <strong>{AUDIO_RIGHT_BINDINGS[1].legend}</strong> to select one loop or endless recording.</li>
-      <li>Press the top-right <strong>{AUDIO_RIGHT_BINDINGS[0].legend}</strong>, then physical Play if transport is stopped. Arming alone does not start it.</li>
-      <li>One loop finishes automatically. For endless recording, press ARM / FINISH again; saving waits for the current loop end. During a single-loop take, the same press cancels.</li>
-      <li>The take launches after saving. PLAY TAKE queues it again; REC / LIVE bypasses or enables it. Return to GRID and launch the original note slot to hear notes again.</li>
+      <li>Select the clip whose sound you want to capture. Press <strong>{AUDIO_RIGHT_BINDINGS[1].legend}</strong> to select one loop or recording until you finish.</li>
+      <li>Press the top-right <strong>{AUDIO_RIGHT_BINDINGS[0].legend}</strong>. Launch that clip from GRID and press physical Play if needed. Arming alone starts neither the clip nor transport; it waits until that clip is playing.</li>
+      <li>Capture renders its notes and follows that clip’s own loop, even when another lane is longer. One loop finishes automatically. For endless recording, press ARM / FINISH again; saving waits for its loop end. During a single-loop take, the same press cancels.</li>
+      <li>Saving attaches the take and selects RECORDED on the same clip. PLAY TAKE queues that clip with its take. The source button switches <strong>NOTES / RECORDED</strong>: notes drive the voice, or the saved take plays instead. Automation continues in either source.</li>
     </ol>
-    <p><strong>REPLACE TAKE</strong> requires two consecutive presses; another action cancels confirmation. The old take remains until the new take saves. EXIT AUDIO does not cancel recording. Notes and recorded automation are protected.</p>
-    <p>Amber pulses while armed, red means recording, alternating red/amber means finishing, and purple marks stopped audio. While Electra mode is on it retains display priority; LEGEND overrides both. Encoders keep their normal parameter assignments. The physical Record button is unbound; it does not arm audio.</p>
+    <p><strong>REPLACE TAKE</strong> requires two consecutive presses; another action cancels confirmation. It replaces only the attached audio, retaining the old take until the new one saves and preserving notes and automation. Copy the whole clip first to keep another version. EXIT AUDIO does not cancel recording. Leave the voice patched into MIXMSTRS: recorded playback replaces live monitoring through that same channel.</p>
+    <p>Amber pulses while armed, red means recording, alternating red/amber means finishing, and purple marks a stopped clip with saved audio. While Electra mode is on it retains display priority; LEGEND overrides both. Encoders keep their normal parameter assignments. The physical Record button is unbound; it does not arm audio.</p>
     <p>See <a href="/docs/modules/clipplayer#audio">audio behavior</a>, <a href="/docs/modules/clipplayer#routing">mixer routing</a> and <a href="/docs/modules/clipplayer#recovery">media and recovery</a>.</p>
   {:else if mode === 'lengthEdit'}
     <h3>Exact note-clip length</h3>

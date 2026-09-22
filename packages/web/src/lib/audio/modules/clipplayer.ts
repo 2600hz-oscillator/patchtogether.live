@@ -52,7 +52,8 @@ import { drainAudition, clearAudition } from './clip-audition';
 import { applyPitchProbability } from '$lib/audio/pitch-probability';
 import {
   readClip,
-  clipPlaysLive,
+  readClipAudio,
+  clipPlaybackIsRecorded,
   clipLengthSteps,
   notesFiringAt,
   lanesFromFiring,
@@ -183,12 +184,12 @@ export const clipplayerDef: AudioModuleDef = {
       { id: `gate${i + 1}`, type: 'gate' as const, edge: 'gate' as const },
       { id: `vel${i + 1}`, type: 'cv' as const },
     ]).flat(),
-    // AUDIO CLIP playback, one stereo pair PER LANE (owner Q8: per-lane, not a
+    // Recorded-layer playback, one stereo pair PER LANE (owner Q8: per-lane, not a
     // sum — the lane↔channel identity is the product concept, and a take must
     // be able to return to its own mixmstrs channel). These same legs feed the
-    // internal NORMAL into mixmstrs channel N (clip-lane-return.ts), which a
-    // cable into that channel's input jack breaks — the jacks here keep
-    // working either way, so tape-return patches are untouched.
+    // internal return into mixmstrs channel N (clip-lane-return.ts). A cable
+    // leaving either jack, to any destination, replaces that return; ordinary
+    // instrument cables into the mixer never break it.
     ...Array.from({ length: CLIP_LANES }, (_, i) => [
       { id: `audio${i + 1}L`, type: 'audio' as const },
       { id: `audio${i + 1}R`, type: 'audio' as const },
@@ -199,7 +200,7 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'stepDiv', label: 'Step', defaultValue: 2, min: 0, max: 3, curve: 'discrete' },
     { id: 'octave', label: 'Oct', defaultValue: 0, min: -2, max: 2, curve: 'discrete' },
     { id: 'gateLength', label: 'Gate', defaultValue: 0.9, min: 0.1, max: 1, curve: 'linear' },
-    // 0 = launch immediately, 1 = quantize to the lane's clip-loop boundary.
+    // 0 = launch immediately, 1 = quantize to the longest playing clip's boundary.
     { id: 'quantize', label: 'Qnt', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
     // Gate-sampled Sample & Hold on every lane's pitch CV (ONE global toggle
     // for all 8 lanes — this replaces the 8 external S&H modules). ON
@@ -230,13 +231,13 @@ export const clipplayerDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "Clip Player has eight lanes with separate note and recorded-audio slots. One clip plays per lane. SESSION holds the launch grid and lane MUTE, STOP, AUDIO and AUTO controls; CHANNELS holds mono/poly, lane rate and the same automation arms; EDITOR shows the selected note roll or audio waveform; PLAYBACK holds shared timing and pitch settings. TIMELORDE supplies the clock. QNT queues launches to the longest playing clip boundary; NOW is immediate. Click a scene repeat count to cycle ∞ → 2 → 3 → 4 → 8 → ∞ and advance to the next content scene after that many passes. AUDIO records the matching pre-MIXMSTRS input into a fixed selected slot. RECORDED plays that take; LIVE INPUT bypasses it, and launching the original note slot returns to notes. AUTO records assigned control movements into the playing note clip. Experimental ARR captures clip launches; SONG prints the notes actually played. The illustrated guide at /docs/modules/clipplayer covers all workflows, controller links, local audio storage, recovery and current limits. The tables below describe the module ports and controls.",
+      "Clip Player has eight lanes. One clip plays per lane, keeping its notes, automation and optional recorded audio together in the same slot. SESSION holds the launch grid and lane MUTE, STOP, AUDIO and AUTO controls; CHANNELS holds mono/poly, lane rate and the same automation arms; EDITOR keeps the note roll alongside the clip's waveform and NOTES / RECORDED choice; PLAYBACK holds shared timing and pitch settings. TIMELORDE supplies the clock. QNT queues launches to the longest playing clip boundary; NOW is immediate. Click a scene repeat count to cycle ∞ → 2 → 3 → 4 → 8 → ∞ and advance to the next content scene after that many passes. AUDIO waits for the selected existing clip to play, then captures the matching pre-MIXMSTRS input using that clip's own loop. Recording temporarily uses NOTES; saving attaches the take and selects RECORDED on the same clip without an extra launch. NOTES generates the clip's notes; RECORDED plays its attached take instead. Automation continues in either source. Keep the instrument cables connected: the recorded return replaces live monitoring in the same mixer channel. AUTO records assigned control movements into the playing clip. Experimental ARR captures clip launches; SONG prints the notes actually played. The illustrated guide at /docs/modules/clipplayer covers these workflows, controller links, local audio storage, recovery and current limits. The tables below describe the module ports and controls.",
     inputs: {
       stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
       reset: "Reset trigger: a rising edge snaps every ACTIVE lane back to step 1 and re-anchors all lanes to a shared phase origin (divided/multiplied lanes restart their counting together). Queued-but-not-started launches are untouched — they still drop in at the next loop boundary of the longest playing clip. Stopped lanes stay stopped; the arrangement's song position is not rewound (this is a clip-step reset, not a transport rewind).",
     },
     outputs: {
-      pitch1: "Lane 1's pitch output — the launched clip's notes as a poly chord cable (a mono pitch input receives just the root; a poly voice plays the whole chord), shifted by the OCT control.",
+      pitch1: "Lane 1's pitch output — with NOTES selected, the launched clip's notes become a poly chord cable (a mono pitch input receives just the root; a poly voice plays the whole chord), shifted by OCT. RECORDED suppresses clip-note generation while its attached audio plays; audio recording temporarily uses NOTES.",
       pitch2: "Lane 2's pitch output (poly chord cable), from lane 2's launched clip.",
       pitch3: "Lane 3's pitch output (poly chord cable), from lane 3's launched clip.",
       pitch4: "Lane 4's pitch output (poly chord cable), from lane 4's launched clip.",
@@ -244,7 +245,7 @@ export const clipplayerDef: AudioModuleDef = {
       pitch6: "Lane 6's pitch output (poly chord cable), from lane 6's launched clip.",
       pitch7: "Lane 7's pitch output (poly chord cable), from lane 7's launched clip.",
       pitch8: "Lane 8's pitch output (poly chord cable), from lane 8's launched clip.",
-      gate1: "Lane 1's gate — goes high while a note in lane 1's clip plays (its width set by GATE; tied/held notes stay high across their span); low on rests. Patch into an envelope/VCA.",
+      gate1: "Lane 1's gate — goes high while a note in lane 1's clip plays (ordinary notes use GATE; tied spans and explicit recorded-note durations retain their own lengths); low on rests. Patch into an envelope/VCA.",
       gate2: "Lane 2's gate — high while lane 2's notes play, low on rests.",
       gate3: "Lane 3's gate — high while lane 3's notes play, low on rests.",
       gate4: "Lane 4's gate — high while lane 4's notes play, low on rests.",
@@ -260,27 +261,27 @@ export const clipplayerDef: AudioModuleDef = {
       vel6: "Lane 6's velocity CV.",
       vel7: "Lane 7's velocity CV.",
       vel8: "Lane 8's velocity CV.",
-      audio1L: "Lane 1's recorded-audio-clip output, LEFT leg. When lane 1 plays an AUDIO clip (a take recorded from MIXMSTRS channel 1 — the channel number and the lane number are the same number everywhere in this product), the take loops out this stereo pair, launched and stopped on the same quantized boundaries a note clip uses. This SAME signal is internally NORMALLED into MIXMSTRS channel 1's input — an internal connection that breaks the moment a cable is patched into that channel's input jack — and this jack keeps working either way, so you can also patch the loop anywhere else. Silent while the lane is stopped, muted, or playing a note clip.",
-      audio1R: "Lane 1's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio2L: "Lane 2's recorded-audio-clip output, LEFT leg — lane 2's launched audio take, looped; normalled into MIXMSTRS channel 2 (see audio1L).",
-      audio2R: "Lane 2's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio3L: "Lane 3's recorded-audio-clip output, LEFT leg — lane 3's launched audio take, looped; normalled into MIXMSTRS channel 3 (see audio1L).",
-      audio3R: "Lane 3's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio4L: "Lane 4's recorded-audio-clip output, LEFT leg — lane 4's launched audio take, looped; normalled into MIXMSTRS channel 4 (see audio1L).",
-      audio4R: "Lane 4's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio5L: "Lane 5's recorded-audio-clip output, LEFT leg — lane 5's launched audio take, looped; normalled into MIXMSTRS channel 5 (see audio1L).",
-      audio5R: "Lane 5's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio6L: "Lane 6's recorded-audio-clip output, LEFT leg — lane 6's launched audio take, looped; normalled into MIXMSTRS channel 6 (see audio1L).",
-      audio6R: "Lane 6's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio7L: "Lane 7's recorded-audio-clip output, LEFT leg — lane 7's launched audio take, looped; normalled into MIXMSTRS channel 7 (see audio1L).",
-      audio7R: "Lane 7's recorded-audio-clip output, RIGHT leg (see audio1L).",
-      audio8L: "Lane 8's recorded-audio-clip output, LEFT leg — lane 8's launched audio take, looped; normalled into MIXMSTRS channel 8 (see audio1L).",
-      audio8R: "Lane 8's recorded-audio-clip output, RIGHT leg (see audio1L).",
+      audio1L: "Lane 1's recorded-audio output, LEFT leg. With RECORDED selected, the active clip's attached take loops through this stereo pair for its captured duration; the clip's original note loop still governs launches and automation. The pair also returns internally to channel 1 of the first available MIXMSTRS, replacing live input monitoring while ordinary instrument cables remain connected. Patching either of this lane's audio outputs anywhere replaces the internal stereo return (and the live-input replacement) so the take is never doubled; patch both legs for stereo. Leave both jacks unpatched to keep the automatic return. Silent while stopped, muted, using NOTES, or temporarily rendering notes for audio capture. Older standalone audio clips remain playable.",
+      audio1R: "Lane 1's recorded-audio output, RIGHT leg (see audio1L).",
+      audio2L: "Lane 2's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 2 (see audio1L).",
+      audio2R: "Lane 2's recorded-audio output, RIGHT leg (see audio1L).",
+      audio3L: "Lane 3's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 3 (see audio1L).",
+      audio3R: "Lane 3's recorded-audio output, RIGHT leg (see audio1L).",
+      audio4L: "Lane 4's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 4 (see audio1L).",
+      audio4R: "Lane 4's recorded-audio output, RIGHT leg (see audio1L).",
+      audio5L: "Lane 5's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 5 (see audio1L).",
+      audio5R: "Lane 5's recorded-audio output, RIGHT leg (see audio1L).",
+      audio6L: "Lane 6's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 6 (see audio1L).",
+      audio6R: "Lane 6's recorded-audio output, RIGHT leg (see audio1L).",
+      audio7L: "Lane 7's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 7 (see audio1L).",
+      audio7R: "Lane 7's recorded-audio output, RIGHT leg (see audio1L).",
+      audio8L: "Lane 8's recorded-audio output, LEFT leg — the active clip's attached take, with an automatic return to MIXMSTRS channel 8 (see audio1L).",
+      audio8R: "Lane 8's recorded-audio output, RIGHT leg (see audio1L).",
     },
     controls: {
       stepDiv: "STEP — how many steps fall per TIMELORDE beat (1/4, 1/8, 1/16, 1/32), i.e. the playback resolution of the clips.",
       octave: "OCT — transposes every lane's pitch output up or down by whole octaves (-2..+2).",
-      gateLength: "GATE — how much of each step the per-note gate stays high, from short staccato stabs to near-legato (held/tied notes ignore this and stay high across their full span).",
+      gateLength: "GATE — how much of each step the per-note gate stays high, from short staccato stabs to near-legato (held/tied notes and explicit durations from hardware note recording keep their own lengths).",
       quantize: "QNT — launch quantization: on, a clip you launch waits and drops in cleanly at the next loop boundary of the LONGEST currently-playing clip (the shared reference bar — the Deluge model), so mixed-length clips stay phase-locked; off, it launches immediately. A launch fires immediately only when NOTHING is playing yet (there is no reference loop to line up to) or with a per-lane NOW override — a launch into an idle lane is otherwise queued to that reference boundary, not fired at once.",
       snh: "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
       restrictRange: "RESTRICT RANGE (clip-view display only) — off (default) the piano-roll note editor shows the WHOLE editable pitch range at once; on, it shows a compact 3-octave window (its lowest octave set by the FLOOR control) so a tall grid stays scannable. Affects the editor view ONLY — never the played notes, pitch CV, or anything a clip emits.",
@@ -290,11 +291,11 @@ export const clipplayerDef: AudioModuleDef = {
       "clipplayer-rate-{n}":
         "Lane {n}'s clock-rate control (the per-lane dropdown under each channel column) — divides or multiplies the lane's step rate off the global STEP grid: 1/8, 1/4 and 1/2 advance the lane every 8th/4th/2nd base step; 2x and 4x advance it 2×/4× per base step (exact, since the tempo comes from TIMELORDE); 1 (the default) runs on the STEP grid. All lanes count from a shared phase origin (transport start or RST), so divided lanes stay locked to the others. Exposed on the faceplate AND the Launchpad deck's per-lane RATE row (tap to cycle up); the monome grid has no rate surface.",
       "clipplayer-pad-{n}":
-        "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (with QNT on it quantizes to the longest playing clip's next loop boundary; immediately when nothing's playing yet or via NOW), click the playing pad to stop the lane, and double-click to open its note editor or audio waveform. N marks notes; A and a purple border mark recorded audio. Audio clips offer COPY, PASTE and CLEAR while note-only menu commands are disabled. RIGHT-CLICK a pad for the CLIP menu — the SAME menu, with the same rows in the same order, that a note cell opens, only scoped to the whole clip: NOTE PROBABILITY (the clip DEFAULT every note without its own inherits), PITCH PROBABILITY and SKIP EVERY (both applied to EVERY note in the clip), then COPY, PASTE and CLEAR. It opens on EVERY pad, loaded or empty: on an empty slot only PASTE is live, which is how a copied clip is duplicated onto a free pad, exactly as on a Launchpad or Push 2. An empty pad shows differently from a filled or playing one; a clip that CARRIES RECORDED AUTOMATION shows a small teal dot in its corner (the envelope belongs to the clip — copy/paste moves it with the clip).",
+        "A clip slot in the launch grid (one cell of the visible 8 lanes × 8 slots). Click to launch that lane's clip (with QNT on it quantizes to the longest playing clip's next loop boundary; immediately when nothing's playing yet or via NOW), click the playing pad to stop the lane, and double-click to edit it. Recording attaches audio to the same slot: A and a purple border indicate a saved take, while its note editor remains available alongside the waveform and NOTES / RECORDED controls. N marks a clip without attached audio; a teal dot marks recorded automation. RIGHT-CLICK a pad for the CLIP menu: NOTE PROBABILITY sets the clip default inherited by notes without their own; PITCH PROBABILITY and SKIP EVERY apply to every note; COPY, PASTE and CLEAR act on the whole clip, including notes, automation and attached audio. The screen, Push and Launchpad share this clipboard. On an empty pad only PASTE is available. Legacy standalone audio clips open their waveform and support COPY, PASTE and CLEAR; note-only commands do not apply to those legacy clips.",
       "clipplayer-cell-{n}":
-        "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to add or select a note; click the selected note again to erase it. Shift-click a later cell on the same pitch row to tie the span into one held gate, shown as a solid bar. Alt-click or use VEL to cycle velocity; right-click a note for its menu. The menu's top level is three SUBMENUS that expand into their option lists — NOTE PROBABILITY (a 0–100% firing chance), PITCH PROBABILITY (an off–100% pitch-instability amount in 40 increments) and SKIP EVERY (a 1–8 count-divider that plays the note only on every Nth loop of the clip) — followed by three actions on the CLIP you are editing: COPY and PASTE, which use the same typed clipboard as the Launchpad and Push 2 (so a clip copied on the faceplate pastes on the hardware and vice versa; a paste replaces the target's notes AND its recorded automation, and a whole-SCENE buffer will not paste onto a single clip), and CLEAR, which DELETES the clip — the same undoable operation as the launch grid's right-click CLEAR, and distinct from the editor's ⌫, which empties the notes but keeps the clip. NOTE PROBABILITY and SKIP EVERY stack and decide WHETHER the note fires: it sounds only when it's that loop's turn AND it wins its probability roll. PITCH PROBABILITY decides WHAT PITCH it fires at — off (the default) plays exactly the note you drew, and turning it up lets the note wander to nearby SCALE DEGREES of the clip's key, from occasional ornaments through melodic variation to out-of-key reharmonisation at the top, with octaves favoured over equally-distant dissonances. The cell colour codes firing probability and loop skips — white = always fires, a dimmer purple/orange as probability drops, RED (dimmer the higher N) for a play-every note, and the AVERAGE of the two when a note is both probabilistic and play-every. Pitch probability deliberately does NOT add a third colour to that blend (it would be unreadable at cell size): a note whose pitch can wander gets a DASHED border instead, and its exact amount is in the cell's tooltip and the menu's checkmark. The cells make up the clip you're editing for the selected lane+slot.",
+        "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to add or select a note; click the selected note again to erase it. Shift-click a later cell on the same pitch row to tie the span into one held gate, shown as a solid bar. Alt-click or use VEL to cycle velocity; right-click a note for its menu. The menu's top level is three SUBMENUS that expand into their option lists — NOTE PROBABILITY (a 0–100% firing chance), PITCH PROBABILITY (an off–100% pitch-instability amount in 40 increments) and SKIP EVERY (a 1–8 count-divider that plays the note only on every Nth loop of the clip) — followed by three actions on the CLIP you are editing: COPY and PASTE, which use the same typed clipboard as the Launchpad and Push 2 (so a clip copied on the faceplate pastes on the hardware and vice versa; a paste replaces the target's notes, recorded automation AND attached audio, and a whole-SCENE buffer will not paste onto a single clip), and CLEAR, which DELETES the whole clip and its layers — the same undoable operation as the launch grid's right-click CLEAR, and distinct from the editor's ⌫, which empties notes and automation but keeps the clip and its audio. NOTE PROBABILITY and SKIP EVERY stack and decide WHETHER the note fires: it sounds only when it's that loop's turn AND it wins its probability roll. PITCH PROBABILITY decides WHAT PITCH it fires at — off (the default) plays exactly the note you drew, and turning it up lets the note wander to nearby SCALE DEGREES of the clip's key, from occasional ornaments through melodic variation to out-of-key reharmonisation at the top, with octaves favoured over equally-distant dissonances. The cell colour codes firing probability and loop skips — white = always fires, a dimmer purple/orange as probability drops, RED (dimmer the higher N) for a play-every note, and the AVERAGE of the two when a note is both probabilistic and play-every. Pitch probability deliberately does NOT add a third colour to that blend (it would be unreadable at cell size): a note whose pitch can wander gets a DASHED border instead, and its exact amount is in the cell's tooltip and the menu's checkmark. The cells make up the clip you're editing for the selected lane+slot.",
       "clipplayer-auto-arm-{n}":
-        "Lane {n}'s ◉ automation arm (CLIP RECORD, CONTINUOUS OVERDUB) — the teal AUTO button above the Session lane, also available next to RATE in Channels, and distinct from the experimental red ● arranger record. While lane {n} is armed and a note clip plays in it, the recorder punches in cleanly at THAT clip's own next loop start; then just MOVE any control of a MODULE assigned to lane {n} (screen / MIDI / Electra gestures and supported active CV-bridge movements count; human touches take precedence): it records WHILE you hold it, and every OTHER track keeps playing back so the automation loops audibly/visibly. Recording lands in the clip PLAYING in the lane (each clip carries its own envelopes). Release a control and it reverts to playback next loop. It overdubs EVERY loop until you click the ◉ again — a MANUAL STOP (no auto punch-out); stopping mid-loop keeps the untouched tail. Touching a control on an UNASSIGNED module records nothing — right-click the module → \"Assign to automation lane\" first. A 🟡🟡🔴🔴 countdown flashes this ◉ (and the recording clip's grid cell + Launchpad pad) on the last four beats before the clip's wrap. Per-lane single-writer: the arming client records this lane (another collaborator can record a DIFFERENT lane at the same time); peers still play back. On a Launchpad, SHIFT + the top-row button of the lane's column toggles the same arm (lane 8 = HOLD SHIFT + the pad directly below SHIFT).",
+        "Lane {n}'s ◉ automation arm (CLIP RECORD, CONTINUOUS OVERDUB) — the teal AUTO button above the Session lane, also available next to RATE in Channels, and distinct from the experimental red ● arranger record. While lane {n} is armed and a note clip plays in it, the recorder punches in cleanly at THAT clip's own next loop start; then just MOVE any control of a MODULE assigned to lane {n} (screen / MIDI / Electra gestures and supported active CV-bridge movements count; human touches take precedence): it records WHILE you hold it, and every OTHER track keeps playing back so the automation loops audibly/visibly. Recording lands in the clip PLAYING in the lane (each clip carries its own envelopes). Automation playback and recording continue with either NOTES or RECORDED selected; the original note loop sets their timing. Release a control and it reverts to playback next loop. It overdubs EVERY loop until you click the ◉ again — a MANUAL STOP (no auto punch-out); stopping mid-loop keeps the untouched tail. Touching a control on an UNASSIGNED module records nothing — right-click the module → \"Assign to automation lane\" first. A 🟡🟡🔴🔴 countdown flashes this ◉ (and the recording clip's grid cell + Launchpad pad) on the last four beats before the clip's wrap. Per-lane single-writer: the arming client records this lane (another collaborator can record a DIFFERENT lane at the same time); peers still play back. On a Launchpad, SHIFT + the top-row button of the lane's column toggles the same arm (lane 8 = HOLD SHIFT + the pad directly below SHIFT).",
       "clipplayer-scene-repeat-{n}":
         "Scene {n}'s repeat count — the \"×N\" beside that scene's row. By default a launched scene loops forever (∞); CLICK to cycle the count ∞ → 2 → 3 → 4 → 8 → ∞, and after N passes of the scene's LONGEST clip the player auto-launches the next content scene down, skipping empty rows, through the normal quantized launch path. While the scene is actively counting the faceplate shows live progress \"p/N\" (pass p of N). The count is also settable on a Launchpad — HOLD GRID + HOLD the scene's launch button, then tap pad k in the orange repeat-count view (pad 64 = back to infinite) — and it is CONTENT: a whole-scene COPY/PASTE carries it with the scene. Manual always wins: launching another scene resets the count fresh, launching an individual clip outside the scene cancels the countdown, and stopping every scene lane cancels it too, while MUTING lanes never alters it.",
     },
@@ -370,7 +371,7 @@ export const clipplayerDef: AudioModuleDef = {
   // ⚠ `glyph: 'none'` IS A DECISION NOW, NOT THE ONLY LITERAL THAT COMPILES.
   // Since slice 5 the def DOES declare audio outputs (`audio{N}L/R`, the
   // per-lane clip returns), so a live meter glyph would resolve — onto LANE
-  // 1's clip output, which is silent whenever lane 1 holds no audio clip and
+  // 1's recorded output, which is silent whenever lane 1 is not playing a take and
   // says nothing about the other seven. The only useful glance here ("is
   // anything playing HERE") is per-lane, and the `tileBody` strip is that
   // glance; a lane-1 meter would be a confident picture of the wrong thing.
@@ -498,8 +499,8 @@ export const clipplayerDef: AudioModuleDef = {
         id: 'editor',
         label: 'editor',
         hint:
-          'the selected clip: a note piano roll or recorded-audio waveform. Audio clips expose ' +
-          'RECORDED / LIVE INPUT and confirmed replacement. Range controls change only the ' +
+          'the selected clip: its note piano roll alongside any recorded waveform. NOTES / ' +
+          'RECORDED selects its playback source; confirmed replacement changes only the audio layer. Range controls change only the ' +
           'note editor display; they never change playback. Return with the SESSION tab.',
         controls: ['clipplayer-cell-{n}', 'restrictRange', 'rangeFloor'],
         clusters: [{ label: 'pitch window', controls: ['restrictRange', 'rangeFloor'] }],
@@ -610,6 +611,15 @@ export const clipplayerDef: AudioModuleDef = {
       };
     });
 
+    // Capture follows audible clip switches, not the scheduler's lookahead.
+    const captureSources: { slot: number | null; at: number }[][] =
+      Array.from({ length: LANES }, () => [{ slot: null, at: ctx.currentTime }]);
+    function captureSource(L: number): { slot: number | null; at: number } {
+      const changes = captureSources[L]!;
+      while (changes.length > 1 && changes[1]!.at <= ctx.currentTime) changes.shift();
+      return changes[0]!;
+    }
+
     /** The step lane L is currently SOUNDING (the latest scheduled step whose
      *  time has passed), or -1 when the lane is stopped. Audio-accurate (not the
      *  lookahead position) so the card + grid playhead tracks what you hear. */
@@ -691,15 +701,14 @@ export const clipplayerDef: AudioModuleDef = {
     // value without firing, so loading a saved patch never replays a reset.
     let lastResetNonce: number | null = null;
 
-    // ── AUDIO CLIP PLAYBACK (slice 5) — per-lane stereo outs + the normal ───
+    // ── RECORDED-LAYER PLAYBACK — per-lane stereo outs + mixer return ──────
     //
-    // An audio clip is NOT a step sequence: it is ONE AudioBufferSourceNode,
-    // scheduled ONCE at its launch boundary with loop=true, so its timing is
-    // the context clock's and cannot drift against the grid that launched it
-    // (a per-step emit would be a second, drifting opinion about when it
-    // sounds — emitLaneStep's own comment). The lane machinery still advances
-    // over `clipLengthSteps`, which is what makes queued stops land on the
-    // SAME wrap a note clip would use.
+    // A recorded layer uses one AudioBufferSourceNode, scheduled once at its
+    // source/launch boundary with loop=true. It repeats its captured duration
+    // on the audio-context clock; tempo changes do not time-stretch it. The
+    // lane machinery still advances over the original clipLengthSteps for
+    // launches, stops and automation. A multi-loop take therefore spans
+    // several note loops without changing the note clip's length.
     //
     // Capability-gated: unit tests drive this factory against a fake context
     // with no splitter/buffer-source/destination; there the ports still exist
@@ -748,6 +757,7 @@ export const clipplayerDef: AudioModuleDef = {
       audible: boolean; // the duck edge published as playing
     }
     const laneAudio: (LaneAudioPlay | null)[] = new Array(LANES).fill(null);
+    const recordedSource: boolean[] = new Array(LANES).fill(false);
 
     function firstMixmstrs(): ModuleNode | undefined {
       for (const n of Object.values(livePatch.nodes)) {
@@ -756,7 +766,7 @@ export const clipplayerDef: AudioModuleDef = {
       return undefined;
     }
 
-    /** Publish a lane-playing edge to the mixer's MON duck — a value scheduled
+    /** Publish a lane-playing edge to the mixer's live-monitor duck — scheduled
      *  AT A CONTEXT TIME, the same instant the clip's own source starts or
      *  stops, per the clip-lane-return contract. Never polled. */
     function publishLaneEdge(L: number, playing: boolean, atTime: number): void {
@@ -764,7 +774,7 @@ export const clipplayerDef: AudioModuleDef = {
       const mix = firstMixmstrs();
       if (!engine || !mix) return;
       try {
-        engine.write(mix, 'clipLaneEdge', { lane: L, playing, atTime });
+        engine.write(mix, 'clipLaneEdge', { lane: L, playing: playing && normalOn[L], atTime });
       } catch {
         /* the mixer is not materialized yet — nothing to duck */
       }
@@ -786,6 +796,7 @@ export const clipplayerDef: AudioModuleDef = {
       if (st.originAt >= now) src.start(st.originAt);
       else src.start(now, (now - st.originAt) % buf.duration);
       st.source = src;
+      publishLaneEdge(L, true, Math.max(st.originAt, now));
     }
 
     /** Stop lane L's audio at `at`. `forget` drops the take (launch/stop/
@@ -809,10 +820,6 @@ export const clipplayerDef: AudioModuleDef = {
       if (forget) laneAudio[L] = null;
     }
 
-    /** Begin lane L's playback of an audio `clip`, loop frame 0 at `at`.
-     *  Decode is lazy (byte-capped cache); the duck edge is published at the
-     *  SCHEDULED time immediately, not when the decode resolves — the boundary
-     *  is the boundary whether or not the bytes are warm. */
     /** Cache keys already reported as media-absent, so a re-launch of the same
      *  missing take warns once instead of once per loop/launch. */
     const reportedAbsentTakes = new Set<string>();
@@ -831,6 +838,8 @@ export const clipplayerDef: AudioModuleDef = {
           `its media, or loaded on another machine?)`,
       );
     }
+    /** Begin playback with loop frame 0 anchored at `at`. Lazy decoding keeps
+     * phase on a late start; duck live monitoring only once the buffer starts. */
     function startLaneAudio(L: number, clip: AudioClipRecord, at: number): void {
       haltLaneAudio(L, at, true);
       const st: LaneAudioPlay = {
@@ -841,7 +850,6 @@ export const clipplayerDef: AudioModuleDef = {
         audible: true,
       };
       laneAudio[L] = st;
-      publishLaneEdge(L, true, at);
       if (!canPlayAudioClips) return;
       void getClipAudioBuffer(ctx, clip)
         .then((buf) => {
@@ -866,7 +874,6 @@ export const clipplayerDef: AudioModuleDef = {
       const st = laneAudio[L];
       if (!st || st.audible) return;
       st.audible = true;
-      publishLaneEdge(L, true, ctx.currentTime);
       if (!canPlayAudioClips) return;
       void getClipAudioBuffer(ctx, st.clip)
         .then((buf) => {
@@ -879,22 +886,10 @@ export const clipplayerDef: AudioModuleDef = {
         });
     }
 
-    /** ⚠ THE ONE PLACE THAT DECIDES WHETHER A CLIP'S RECORDED AUDIO SOUNDS.
-     *  Three call sites start lane audio (launch/switch, transport re-anchor,
-     *  and the cache-key sweep) and all three ask here, because a rule spelled
-     *  out three times is a rule two of them will eventually disagree with.
-     *
-     *  CLAUSE 6 is the new clause in it: a clip set to LIVE is a PASS-THROUGH.
-     *  Launching it deliberately starts NO source, so the lane's live input —
-     *  which reaches the mixer channel through the normalled return either way
-     *  — is what you hear. That is what replaced the mixmstrs channel-level MON
-     *  duck: the old control muted a whole channel from the mixer, this one is
-     *  a property of a single clip and is decided at the playback side. */
-    function clipShouldSound(d: ClipPlayerData | undefined, L: number, clip: ClipRecord | null): boolean {
-      if (clip?.kind !== 'audio') return false;
-      if (laneMuted(d, L)) return false;
-      if (clipPlaysLive(clip)) return false; // clause 6 — pass the live input instead
-      return true;
+    /** A source choice belongs to the clip. Recording temporarily renders its
+     * notes, while mute and transport still control the whole lane. */
+    function clipShouldSound(d: ClipPlayerData | undefined, L: number, slot: number | null): boolean {
+      return slot !== null && !laneMuted(d, L) && clipPlaybackIsRecorded(d, clipIndex(slot, L));
     }
 
     /** The launch/stop/switch hook: lane L's active slot became `slot`,
@@ -902,9 +897,10 @@ export const clipplayerDef: AudioModuleDef = {
      *  Called from every path that moves `ln.active`. */
     function updateLaneAudio(L: number, slot: number | null, at: number): void {
       const d = liveData();
-      const clip = slot !== null ? readClip(d, clipIndex(slot, L)) : null;
-      if (clipShouldSound(d, L, clip) && transportRunning()) {
-        startLaneAudio(L, clip as AudioClipRecord, at);
+      const clip = slot !== null ? readClipAudio(d, clipIndex(slot, L)) : null;
+      if (clip && clipShouldSound(d, L, slot) && transportRunning()) {
+        silenceLane(L, at);
+        startLaneAudio(L, clip, at);
       } else {
         haltLaneAudio(L, at, true);
       }
@@ -917,23 +913,21 @@ export const clipplayerDef: AudioModuleDef = {
       for (let L = 0; L < LANES; L++) {
         const slot = lanes[L].active;
         if (slot === null) continue;
-        const clip = readClip(d, clipIndex(slot, L));
-        if (clipShouldSound(d, L, clip)) startLaneAudio(L, clip as AudioClipRecord, at);
+        const clip = readClipAudio(d, clipIndex(slot, L));
+        if (clip && clipShouldSound(d, L, slot)) startLaneAudio(L, clip, at);
         else haltLaneAudio(L, at, true);
       }
     }
 
-    // ── THE NORMALLED RETURN — lane N into mixmstrs channel N ──────────────
+    // ── THE INTERNAL RETURN — lane N into mixmstrs channel N ───────────────
     //
-    // A hardware normal and nothing more (clip-lane-return.ts): the internal
-    // connection BREAKS the moment a cable is patched into that channel's
-    // input jack — a GRAPH fact, never an audio probe — and the lane's own
-    // audio{N}L/R jacks keep working either way. A cable into EITHER leg of
-    // the channel breaks the whole channel's normal: the MON duck is
-    // per-channel, and a half-normalled channel (live L, clip R) is not a
-    // state a player can reason about. Re-checked every tick against the live
-    // edge set and the mixer's published entry points; a rebuilt mixer
-    // factory hands back a NEW roster identity, which forgets dead nodes.
+    // Ordinary instrument cables remain the capture source and do not break
+    // this connection. A cable leaving either of this player's audio{N}L/R
+    // jacks, to ANY destination, replaces the internal stereo return: a player
+    // who routes a take by hand owns its routing, and the automatic return
+    // must never double it. Either leg replaces the pair. Re-checked every tick against
+    // the live edge set and mixer entry points; a rebuilt mixer factory hands
+    // back a new roster identity, which forgets dead nodes.
     let laneReturnsRef: unknown = null;
     let laneReturns: { node: AudioNode; input: number }[] | null = null;
     const normalOn: boolean[] = new Array(LANES).fill(false);
@@ -970,10 +964,13 @@ export const clipplayerDef: AudioModuleDef = {
       if (!laneReturns || !mix) return;
       const edges = Object.values(livePatch.edges);
       for (let L = 0; L < LANES; L++) {
-        const patched =
-          isInputPortConnected(edges, mix.id, `ch${L + 1}L`) ||
-          isInputPortConnected(edges, mix.id, `ch${L + 1}R`);
-        const want = clipLaneNormalConnected(patched);
+        // Instrument cables are the capture source, not a reason to remove
+        // playback. A cable leaving THIS lane's own audio jacks, wherever it
+        // lands, replaces the internal connection so the take is never doubled.
+        const outputPatched = edges.some((edge) =>
+          edge?.source.nodeId === nodeId &&
+          (edge.source.portId === `audio${L + 1}L` || edge.source.portId === `audio${L + 1}R`));
+        const want = clipLaneNormalConnected(outputPatched);
         if (want === normalOn[L]) continue;
         const rl = laneReturns[2 * L]!;
         const rr = laneReturns[2 * L + 1]!;
@@ -998,6 +995,7 @@ export const clipplayerDef: AudioModuleDef = {
           }
         }
         normalOn[L] = want;
+        publishLaneEdge(L, !!laneAudio[L]?.source && !!laneAudio[L]?.audible, ctx.currentTime);
       }
     }
 
@@ -1198,6 +1196,7 @@ export const clipplayerDef: AudioModuleDef = {
       // way); once present, no writer ever replaces the container. (The
       // commit-side shell creation remains as a fallback for clips created
       // mid-arm.)
+      if (!d.audio || typeof d.audio !== 'object') d.audio = {};
       if (!d.auto || typeof d.auto !== 'object') d.auto = {};
       if (!d.autoAssign || typeof d.autoAssign !== 'object') d.autoAssign = {};
       if (!d.automation || typeof d.automation !== 'object') d.automation = {};
@@ -1528,6 +1527,7 @@ export const clipplayerDef: AudioModuleDef = {
         // `active` flips, matching the transport-stop / dispose guards.
         holdLaneAutomation(L, lanes[L].active, null, null);
         lanes[L].active = null; // song time drives the printed channels, not clips
+        captureSources[L]!.push({ slot: null, at: ctx.currentTime });
         // An AUDIO-clip lane entering SONG mode stops its source like every
         // other path that drops `active` (leaving is the peer-adopt path,
         // which restarts through updateLaneAudio).
@@ -1755,6 +1755,7 @@ export const clipplayerDef: AudioModuleDef = {
       // arbitrary now+0.01). A past/absent switchAt keeps the immediate start.
       ln.nextStepTime =
         switchAt !== null && switchAt > ctx.currentTime ? switchAt : ctx.currentTime + 0.01;
+      captureSources[L]!.push({ slot, at: slot === null ? ctx.currentTime : ln.nextStepTime });
       // SCENE REPEATS: pin the tracked scene's start to the ACTUAL audible
       // switch boundary of its (frozen) anchor lane — `switchAt` names the
       // quantized boundary (possibly in the lookahead future), so the beat
@@ -1776,7 +1777,7 @@ export const clipplayerDef: AudioModuleDef = {
         playing[L] = slot;
         d.playing = playing;
       });
-      // AUDIO CLIP hook — the launch/stop/switch lands at the SAME instant the
+      // Recorded-layer hook — the launch/stop/switch lands at the SAME instant the
       // grid re-anchors on (`ln.nextStepTime` above), so the buffer source and
       // the step machinery agree about where loop frame 0 is.
       updateLaneAudio(L, slot, ln.nextStepTime);
@@ -1812,7 +1813,7 @@ export const clipplayerDef: AudioModuleDef = {
         // Drop the now-cancelled future entries so the playhead can't show them.
         ln.sched = ln.sched.filter((e) => e.t <= at);
       }
-      // AUDIO CLIPS re-anchor with everything else: restart from loop frame 0
+      // Recorded takes re-anchor with everything else: restart from loop frame 0
       // on the same shared origin instant.
       restartActiveLaneAudio(at + 0.01);
     }
@@ -1955,7 +1956,7 @@ export const clipplayerDef: AudioModuleDef = {
       // launchpad record-capture still track it, staying locked to the transport)
       // but emits NO audio. The falling edge was already scheduled when mute
       // engaged (the tick-loop edge-scan), so nothing needs to sound here.
-      if (laneMuted(liveData(), L)) {
+      if (laneMuted(liveData(), L) || clipPlaybackIsRecorded(liveData(), clipIndex(ln.active, L))) {
         ln.sched.push({ t: atTime, idx });
         if (ln.sched.length > 32) ln.sched.shift();
         return [];
@@ -2282,7 +2283,7 @@ export const clipplayerDef: AudioModuleDef = {
           // counts in data.sceneRepeats are untouched). started=false re-pins
           // startBeat at the restart boundary via the tracker maintenance below.
           if (repTrack) repTrack.started = false;
-          // AUDIO CLIPS restart from loop frame 0 on the shared origin.
+          // Recorded takes restart from loop frame 0 on the shared origin.
           restartActiveLaneAudio(ctx.currentTime + 0.01);
         } else if (!running && prevRunning) {
           // SONG-REC: a transport stop punches out the in-flight print. DROP the
@@ -2295,7 +2296,7 @@ export const clipplayerDef: AudioModuleDef = {
           advanceFloorUntil = null;
           for (let L = 0; L < LANES; L++) {
             silenceLane(L, ctx.currentTime);
-            // AUDIO CLIPS stop with the transport. Forgotten (not suspended):
+            // Recorded takes stop with transport. Forgotten (not suspended):
             // the transport-start edge above re-launches active audio lanes
             // from loop frame 0 on the shared origin, like every other lane.
             haltLaneAudio(L, ctx.currentTime, true);
@@ -2363,6 +2364,12 @@ export const clipplayerDef: AudioModuleDef = {
         // phase-locked, mirroring how a muted note lane's playhead keeps
         // advancing.
         for (let L = 0; L < LANES; L++) {
+          const slot = lanes[L].active;
+          const usesRecording = slot !== null && clipPlaybackIsRecorded(d0, clipIndex(slot, L));
+          if (usesRecording !== recordedSource[L]) {
+            reconcileLane(L); // cancel queued gates and preserve the clip's phase
+            recordedSource[L] = usesRecording;
+          }
           const m = laneMuted(d0, L);
           if (m && !prevMuted[L] && lanes[L].active !== null) {
             silenceLane(L, ctx.currentTime);
@@ -2373,8 +2380,8 @@ export const clipplayerDef: AudioModuleDef = {
             } else {
               // Launched while muted — nothing was suspended. Start now,
               // phase-locked to the lane's own grid position.
-              const clip = readClip(d0, clipIndex(lanes[L].active!, L));
-              if (clip?.kind === 'audio') {
+              const clip = readClipAudio(d0, clipIndex(lanes[L].active!, L));
+              if (clip && clipShouldSound(d0, L, lanes[L].active)) {
                 const base = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
                 const laneDur = laneStepDur(base, lanes[L].divIndex);
                 const frac = laneFracStep(L, laneDur);
@@ -2387,8 +2394,8 @@ export const clipplayerDef: AudioModuleDef = {
           prevMuted[L] = m;
         }
 
-        // AUDIO CLIP normal upkeep — the lane→mixer return, re-derived from the
-        // live edge set (a patched cable breaks it; unpatching restores it).
+        // Re-derive the lane→mixer return from the live edge set. Any cable
+        // leaving a lane's audio jacks replaces its internal route.
         syncLaneReturns();
 
         // ── SCENE REPEATS: tracker maintenance (runs BEFORE any launch applies
@@ -2481,7 +2488,8 @@ export const clipplayerDef: AudioModuleDef = {
               lanes[L].loopCount = 0; // peer-adopted switch → play-every counts from 0 (peers converge)
               lanes[L].autoStarted = false; // re-entry → next step-0 glides
               lanes[L].nextStepTime = ctx.currentTime + 0.01;
-              // AUDIO CLIP hook — peer-driven switches take the same path a
+              captureSources[L]!.push({ slot: sv, at: sv === null ? ctx.currentTime : lanes[L].nextStepTime });
+              // Recorded-layer hook — peer-driven switches take the same path a
               // local immediate switch does.
               updateLaneAudio(L, sv, lanes[L].nextStepTime);
               if (sv === null) silenceLane(L, ctx.currentTime);
@@ -2720,10 +2728,10 @@ export const clipplayerDef: AudioModuleDef = {
               ln.divIndex = clipDivIndex(activeClip?.kind === 'note' ? activeClip : null, d0, L);
             }
             const laneDur = laneStepDur(stepDur, ln.divIndex);
-            // Loop length from the CACHED clip, KIND-AGNOSTICALLY (a note clip
-            // loops over its own lengthSteps — its sibling automation is LINKED
-            // to the same length; an audio clip loops over the length its take
-            // was recorded to; a kind with no length reads 1).
+            // The original note clip owns lane/automation loop length even
+            // when data.audio[index] has a longer take. Recorded playback loops
+            // independently over its captured frames. Legacy standalone audio
+            // clips use their saved lengthSteps; a kind with no length reads 1.
             const len = clipLengthSteps(activeClip);
             // SWING: even steps sit on the un-swung grid, odd steps push late by
             // swing*laneDur. Swing 0 ⇒ offset 0 ⇒ the emitted times are the base
@@ -2859,57 +2867,24 @@ export const clipplayerDef: AudioModuleDef = {
           laneClips[L] = ln.active !== null ? activeClip : null;
         }
 
-        // AUDIO CLIP stale-take reconcile: the take a lane is sounding must be
-        // the take its slot still HOLDS. An undo, a CLEAR, or a re-record
-        // replaces/removes the record (keyed by mediaId+takeAt), and a source
-        // still looping the old bytes would be audio without a clip — cut it.
-        // A REPLACED take (same slot, new key) restarts from its own top.
-        // ⚠ IT ALSO STARTS A LANE THAT HAS NO SOURCE YET, and that half was
-        // missing. The loop used to open with `if (!st) continue`, so it could
-        // only ever CUT or REPLACE an already-sounding take — a lane whose slot
-        // BECAME an audio clip while the lane had no audio state was skipped on
-        // every tick and stayed silent forever.
-        //
-        // That is exactly what a freshly recorded take does. The commit writes
-        // `clips[k]` and queues its own take-over launch in ONE transaction, and
-        // the launch can be applied on a pass where the slot still reads as the
-        // empty note placeholder the player clicked to aim the record button —
-        // `updateLaneAudio` then correctly declines to sound a note clip, and
-        // nothing ever revisited the decision. The result was a clip that
-        // reported `playing`, painted `playing`, held 96000 frames of non-silent
-        // audio in OPFS, and emitted nothing.
-        //
-        // Starting here is idempotent: once the source exists its cache key
-        // matches and the next tick takes the `continue` above.
+        // Reconcile source edits, replacement, undo, and newly attached takes.
+        // Audio and notes remain separate content at the same clip index.
         for (let L = 0; L < LANES; L++) {
           const st = laneAudio[L];
-          const clip = laneClips[L];
-          // ⚠ CLAUSE 6, AND IT MUST COME BEFORE THE CACHE-KEY TEST. Flipping a
-          // clip to LIVE changes neither its `mediaId` nor its `takeAt`, so its
-          // cache key is IDENTICAL and the `continue` below would skip a lane
-          // that is still sounding a take the player just asked to stop hearing.
-          //
-          // Deliberately narrow: it tests `clipPlaysLive` alone rather than the
-          // whole `clipShouldSound`, because a MUTED lane must keep its
-          // suspend/resume path (`st.audible`) and halting it here would lose
-          // the phase that path exists to preserve.
-          // ⚠ RE-READ THE RECORD, do not trust `laneClips[L]`. That cache is
-          // refreshed only when a LAUNCH swaps `ln.active`, so it still holds
-          // the record as it was at launch — and flipping LIVE is an EDIT, not
-          // a launch. Reading the live slot is what makes the toggle take
-          // effect on a clip that is already sounding, which is the only moment
-          // the control is interesting.
-          const activeSlot = lanes[L]?.active ?? null;
-          const liveRecord =
-            activeSlot !== null ? readClip(d0, clipIndex(activeSlot, L)) : null;
-          if (st && clipPlaysLive(liveRecord)) {
-            haltLaneAudio(L, ctx.currentTime, true);
+          const slot = lanes[L].active;
+          const take = slot !== null ? readClipAudio(d0, clipIndex(slot, L)) : null;
+          const recorded = slot !== null && clipPlaybackIsRecorded(d0, clipIndex(slot, L));
+          if (!recorded || !take) {
+            if (st) haltLaneAudio(L, ctx.currentTime, true);
             continue;
           }
-          if (st && clip?.kind === 'audio' && clipAudioCacheKey(clip) === st.key) continue;
+          if (st && clipAudioCacheKey(take) === st.key) continue;
           if (st) haltLaneAudio(L, ctx.currentTime, true);
-          if (clipShouldSound(d0, L, clip) && running) {
-            startLaneAudio(L, clip as AudioClipRecord, ctx.currentTime + 0.01);
+          if (clipShouldSound(d0, L, slot) && running) {
+            const laneDur = laneStepDur(stepDur, lanes[L].divIndex);
+            const frac = laneFracStep(L, laneDur);
+            const origin = frac >= 0 ? ctx.currentTime - frac * laneDur : ctx.currentTime + 0.01;
+            startLaneAudio(L, take, origin);
           }
         }
 
@@ -2927,7 +2902,7 @@ export const clipplayerDef: AudioModuleDef = {
             const ln = lanes[L];
             const clip = laneClips[L];
             // KIND-AGNOSTIC. Publish the phase for ANY playing clip that has a
-            // length, not just a note one: the audio clip recorder needs this
+            // length, not just a note one: the audio recorder needs this
             // lane's live phase to resolve a punch-in against the same wrap the
             // grid is showing, and re-deriving it there would be a second
             // opinion about where the playhead is. A STOPPED lane still
@@ -3070,15 +3045,18 @@ export const clipplayerDef: AudioModuleDef = {
       read(key) {
         if (key === 'totalLoops') return totalLoops;
         if (key === 'transportRunning') return transportRunning() ? 1 : 0;
-        // THE RECORDER'S CLOCK — everything the clip-record registry needs to
-        // resolve a take window, computed by the SAME code a launch uses so
-        // the recorder and the launcher cannot disagree about the shared bar:
-        //   running     — the transport gate (arm auto-starts it when false);
+        // THE RECORDER'S CLOCK — per-lane windows follow the selected clip's
+        // own loop. The shared boundary fields remain available for launch
+        // timing; audio capture uses lanes[L] after its target is audible:
+        //   running     — transport state; arming does not start it;
         //   baseStepDur — the global STEP grid in seconds (bpm + stepDiv);
         //   boundary    — `nextLaunchBoundary` over the live playing clocks
         //                 (ctx seconds), null when nothing plays / stopped;
         //   refSeconds  — the reference bar's loop length in seconds (the
-        //                 longest playing clip), null when nothing plays.
+        //                 longest playing clip), null when nothing plays;
+        //   sources     — each lane's audible slot and switch time;
+        //   lanes       — that source's length, next boundary and loop seconds,
+        //                 null while the audible and scheduled slots disagree.
         if (key === 'recClock') {
           const d = liveData();
           const running = transportRunning();
@@ -3094,6 +3072,18 @@ export const clipplayerDef: AudioModuleDef = {
             baseStepDur,
             boundary: running ? nextLaunchBoundary(clocks, ctx.currentTime) : null,
             refSeconds,
+            sources: lanes.map((_, L) => captureSource(L)),
+            lanes: lanes.map((ln, L) => {
+              if (ln.active === null || captureSource(L).slot !== ln.active) return null;
+              const clip = readClip(d, clipIndex(ln.active, L));
+              if (!clip) return null;
+              const lenSteps = clipLengthSteps(clip);
+              const stepSeconds = laneStepDur(baseStepDur, ln.divIndex);
+              const clock = { lenSteps, laneStepDur: stepSeconds, nextStepTime: ln.nextStepTime, stepIndex: ln.stepIndex };
+              return { slot: ln.active, lengthSteps: lenSteps, stepSeconds,
+                boundary: running ? nextLaunchBoundary([clock], ctx.currentTime) : null,
+                loopSeconds: lenSteps * stepSeconds };
+            }),
           };
         }
         if (key === 'externallyClocked') return transportExternallyClocked() ? 1 : 0;
@@ -3190,9 +3180,9 @@ export const clipplayerDef: AudioModuleDef = {
           unsubscribeTick();
           unsubscribeTick = null;
         }
-        // AUDIO CLIPS: stop every source + release the duck (the mixer must
+        // Recorded layers: stop every source + release the duck (the mixer must
         // not stay ducked for a launcher that no longer exists), then tear
-        // down the per-lane output plumbing and any live normals.
+        // down the per-lane output plumbing and internal mixer returns.
         for (let L = 0; L < LANES; L++) haltLaneAudio(L, ctx.currentTime, true);
         for (const o of audioOut) {
           try { o.split?.disconnect(); } catch { /* */ }

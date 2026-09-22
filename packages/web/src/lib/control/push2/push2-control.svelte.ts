@@ -49,7 +49,7 @@ import { getVideoModuleDef } from '$lib/video/module-registry';
 import { getMetaModuleDef } from '$lib/meta/module-registry';
 import { resolveDisplayName } from '$lib/multiplayer/module-naming';
 import type { ModuleNode, ParamDef } from '$lib/graph/types';
-import { laneAssignedModules, laneColorEff, laneOf, slotOf, readClip, audioRecState, laneRecArm, laneRecMode, type ClipPlayerData } from '$lib/audio/modules/clip-types';
+import { laneAssignedModules, laneColorEff, laneOf, slotOf, readClip, readClipAudio, clipPlaybackIsRecorded, audioRecState, laneRecArm, laneRecMode, type ClipPlayerData } from '$lib/audio/modules/clip-types';
 import { clipplayerSelectedClip } from '$lib/ui/modules/clipplayer/clipplayer-face-selection.svelte';
 import { clipplayerAudioFeedback } from '$lib/ui/modules/clipplayer/clipplayer-audio-feedback.svelte';
 import { nodeClipRecorder } from '$lib/ui/modules/node-clip-recorder-registry.svelte';
@@ -913,14 +913,14 @@ export function pushDisplayOps(): PushDrawOp[] {
   if (nodeId && launchpadLegendContext().mode === 'audio') {
     const index = clipplayerSelectedClip(nodeId), lane = laneOf(index);
     const data = patch.nodes[nodeId]?.data as ClipPlayerData | undefined;
-    const clip = readClip(data, index), rec = audioRecState(data, lane);
+    const clip = readClip(data, index), take = readClipAudio(data, index), rec = audioRecState(data, lane);
     const phase = rec?.phase ?? (laneRecArm(data, lane) ? 'armed' : 'idle');
     const target = rec?.slot ?? data?.recRequest?.[String(lane)]?.slot ?? slotOf(index);
     const refusal = nodeClipRecorder.laneRefusals(nodeId)[lane];
     return renderPushAudio(
       `AUDIO  /  LANE ${lane + 1}  /  SLOT ${slotOf(index) + 1}`,
-      `${refusal ? 'NOT RECORDING' : phase.toUpperCase()}${phase !== 'idle' ? ` → SLOT ${target + 1}` : ''}  •  ${laneRecMode(data, lane) === 'endless' ? 'ENDLESS' : '1 LOOP'}  •  ${clip?.kind === 'audio' ? clip.live ? 'LIVE INPUT' : 'RECORDED TAKE' : clip?.kind === 'note' ? 'NOTES' : 'EMPTY SLOT'}`,
-      refusal || clipplayerAudioFeedback(nodeId) || 'Select an empty slot, then ARM. Notes and audio occupy separate slots.',
+      `${refusal ? 'NOT RECORDING' : phase.toUpperCase()}${phase !== 'idle' ? ` → SLOT ${target + 1}` : ''}  •  ${laneRecMode(data, lane) === 'endless' ? 'ENDLESS' : '1 LOOP'}  •  ${take && !take.live ? 'RECORDED' : clip ? 'NOTES' : 'EMPTY SLOT'}`,
+      refusal || clipplayerAudioFeedback(nodeId) || 'Record this clip’s audio layer. NOTES / RECORDED keeps the same clip.',
     );
   }
   return renderPushCard(currentPushCardView());

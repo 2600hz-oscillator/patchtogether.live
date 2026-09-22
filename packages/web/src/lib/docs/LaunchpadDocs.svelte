@@ -100,7 +100,7 @@
   import { emptyFrame } from '$lib/control/launchpad/launchpad-device.svelte';
   import { padNote, SCENE_CCS } from '$lib/control/launchpad/launchpad-sysex';
   import { keyboardCellToMidi, noteRole } from '$lib/audio/modules/keyboard-map';
-  import { defaultLaneColorHex, defaultNoteClip } from '$lib/audio/modules/clip-types';
+  import { defaultLaneColorHex, defaultNoteClip, type ClipPlayerData } from '$lib/audio/modules/clip-types';
 
   // ── TAB STATE (local; no router involvement). ──
   const TOP_TABS = [
@@ -744,9 +744,15 @@
     { state: 'swing — lowering', rgb: RGB_SWING_DOWN, note: 'blue ramp — Swing− nudged down' },
   ];
 
-  const audioRowLabels = { select: 'LANE', arm: 'ARM', length: '1/∞', source: 'R/L', auto: 'AUTO', pick: 'PICK', play: 'PLAY', replace: 'REPL', exit: 'EXIT' };
-  const audioExample = (pair: boolean) => paintAudioCapture(emptyFrame(), undefined, {
-    pair, index: 1, offset: 0, targets: Array(8).fill(0), blink: true, pick: false, replacing: false,
+  const audioRowLabels = { select: 'LANE', arm: 'ARM', length: '1/∞', source: 'N/R', auto: 'AUTO', pick: 'PICK', play: 'PLAY', replace: 'REPL', exit: 'EXIT' };
+  // One clip index owns both layers. This metadata only feeds the LED diagram.
+  const audioExampleData: ClipPlayerData = {
+    clips: { '0': { ...defaultNoteClip(), steps: [{ step: 0, midi: 60, velocity: 0.8, lengthSteps: 1 }] } },
+    audio: { '0': { kind: 'audio', loop: true, mediaId: 'guide-example', lengthSteps: 16,
+      frames: 96000, sampleRate: 48000, channels: 2, format: 'pcm-f32', takeAt: 1 } },
+  };
+  const audioExample = (pair: boolean) => paintAudioCapture(emptyFrame(), audioExampleData, {
+    pair, index: 0, offset: 0, targets: Array(8).fill(0), blink: true, pick: false, replacing: false,
   });
   const singleAudioFrame = audioExample(false);
   const pairAudioFrame = audioExample(true);
@@ -875,12 +881,12 @@
 
 {#snippet audioWorkflow()}
   <ol class="steps">
-    <li><strong>Select an empty target</strong> without launching it. Pick <strong>1 / ENDLESS</strong>, then press <strong>ARM</strong>. The recorder fixes the lane and slot at arming; later inspection cannot redirect it.</li>
-    <li>Press transport Play if stopped. <strong>1</strong> ends after one loop; <strong>ENDLESS</strong> finishes on a loop boundary after another ARM / FINISH press. During a one-loop take that press cancels the unfinished take. Use the on-screen status for readiness or refusal details.</li>
-    <li>The saved take launches in its lane. <strong>PLAY TAKE</strong> queues the selected take; <strong>REC / LIVE</strong> toggles recorded audio versus bypass. To hear the note pattern again, launch its original note slot from the matrix.</li>
-    <li><strong>REPLACE TAKE twice</strong> confirms replacement of the selected audio take. Any other press cancels that confirmation. The old take remains until successful save; choose another empty target to keep both.</li>
+    <li><strong>Select the existing clip whose sound you want to capture</strong> without launching it. Pick <strong>1 / ENDLESS</strong>, then press <strong>ARM</strong>. The recorder fixes that same lane and slot at arming; later inspection cannot redirect it.</li>
+    <li>Launch that clip and press transport Play if stopped. Arming alone starts neither; it can wait while another clip plays. Capture renders the target’s notes and measures its own loop. <strong>1</strong> ends after one loop; <strong>ENDLESS</strong> finishes on that clip’s loop boundary after another ARM / FINISH press. During a one-loop take that press cancels the unfinished take. Use the on-screen status for readiness or refusal details.</li>
+    <li>Saving attaches the take and selects <strong>RECORDED on the same clip</strong>. <strong>PLAY TAKE</strong> queues that clip with its take; the source button switches <strong>NOTES / RECORDED</strong>. NOTES drives the voice; RECORDED plays the attached audio instead of generating notes. Automation continues in either source.</li>
+    <li><strong>REPLACE TAKE twice</strong> confirms replacement of only that clip’s audio layer. Any other press cancels that confirmation. The old take remains until successful save; notes and automation stay intact. Copy the whole clip first to keep a version with the old take.</li>
   </ol>
-  <p><strong>LEDs:</strong> amber flashes while armed; red means recording; alternating red/amber means finishing; purple marks a saved, stopped audio take. Notes and recorded automation are protected from audio overwrite. Leaving AUDIO or unplugging the controller does not cancel capture. Finish from the Clip Player screen if needed.</p>
+  <p><strong>LEDs:</strong> amber flashes while armed; red means recording; alternating red/amber means finishing; purple marks a stopped clip with saved audio. Leaving AUDIO or unplugging the controller does not cancel capture. Finish from the Clip Player screen if needed. Leave the voice’s mixer input cables connected: recorded playback replaces live monitoring through the same MIXMSTRS channel.</p>
   <p>For source selection, monitoring, recovery and saved media, read <a href="/docs/modules/clipplayer#audio">Clip Player audio</a> and <a href="/docs/modules/clipplayer#routing">routing</a>. The hardware issues the same actions as the screen.</p>
 {/snippet}
 
@@ -1053,8 +1059,8 @@
     </ul>
 
     <h4 id="single-select">Launch versus inspect</h4>
-    <p><strong>Tap</strong> a clip to launch or stop it. <strong>HOLD GRID + tap a clip</strong> selects and opens it without changing playback: note clips open CLIP; audio takes open AUDIO. Empty pads create a note clip. A <strong>double-tap</strong> also opens the clip; it restores the lane’s pre-tap play/queue intent after the first launch tap. Use HOLD GRID when you want inspection with no first launch.</p>
-    <p>The selected note clip is the target for CLIP, KEYS and Swing ±. <a href="/docs/modules/clipplayer#session">Clip Player Session</a> explains lane, clip and queue behavior. Audio takes use the same launch/stop gestures and have a purple loaded-state LED.</p>
+    <p><strong>Tap</strong> a clip to launch or stop it. <strong>HOLD GRID + tap a clip</strong> selects and opens it without changing playback. Note clips open CLIP, including those with attached audio; their recording and source controls stay in CONTROL → AUDIO. Legacy standalone audio clips open AUDIO. Empty pads create a note clip. A <strong>double-tap</strong> also opens the clip; it restores the lane’s pre-tap play/queue intent after the first launch tap. Use HOLD GRID when you want inspection with no first launch.</p>
+    <p>The selected note clip is the target for CLIP, KEYS and Swing ±. <a href="/docs/modules/clipplayer#session">Clip Player Session</a> explains lane, clip and queue behavior. A clip with saved audio keeps the same launch/stop gestures and has a purple loaded-state LED. Choose NOTES in AUDIO to hear note edits; they do not change the saved take. Whole-clip copy/paste carries notes, automation and attached audio together.</p>
 
     <h4>GRID + shift — the function palette (home of copy/paste)</h4>
     <LaunchpadDiagram
@@ -1428,8 +1434,8 @@
   {:else if singleTab === 'audio'}
   <div id="lp1-panel-audio" role="tabpanel" tabindex="0" aria-labelledby="lp1-tab-audio">
     <h3>Single-device AUDIO — select, record, replay</h3>
-    <p>Press CONTROL, then <strong>AUDIO</strong> at column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. Inspecting an existing audio clip also opens this page.</p>
-    <LaunchpadDiagram top={permTop('control')} pads={audioPads(false)} scene={audioScene} accent={hex(AUDIO_COLOR)} caption="AUDIO target grid. Columns = lanes 1–8; rows = an eight-slot bank, top to bottom. White flashes on the inspected target (lane 1, slot 2 here). These grid taps select without launching. Right-column labels come directly from the implemented audio map." />
+    <p>Press CONTROL, then <strong>AUDIO</strong> at column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. Select the same clip you use in Grid or Clip; recording adds a take alongside its notes and automation. Inspecting a legacy standalone audio clip also opens this page.</p>
+    <LaunchpadDiagram top={permTop('control')} pads={audioPads(false)} scene={audioScene} accent={hex(AUDIO_COLOR)} caption="AUDIO target grid. Columns = lanes 1–8; rows = an eight-slot bank, top to bottom. White flashes on the inspected clip (lane 1, slot 1 here). These grid taps select without launching; its take stays in this same slot. Right-column labels come directly from the implemented audio map." />
     <p><strong>BANK UP / DOWN</strong> moves eight slots at a time through all 64 destinations. <strong>EXIT AUDIO</strong> returns to Grid; a view button can also leave. The permanent top buttons and SHIFT automation-arm map retain their functions. Release SHIFT before selecting the top-right target, because SHIFT + that pad arms lane 8.</p>
     {@render audioWorkflow()}
     {@render mapTable(AUDIO_RIGHT_BINDINGS.map((b, i) => ({ what: b.legend, addr: `Right column, ${i + 1} from top · CC ${SCENE_CCS[i]}` })))}
@@ -1443,7 +1449,7 @@
       <li><strong>Play the keyboard:</strong> CLIP → KEYS. This launches the selected clip. Play the middle six rows; tap QUEUE-REC to capture additively. EXIT stops capture first, then exits when idle.</li>
       <li><strong>Make a variation:</strong> return to Grid. HOLD SHIFT + COPY, release SHIFT, tap the source. HOLD SHIFT + PASTE, release SHIFT, tap a destination. HOLD GRID + that destination to edit while the previous clip keeps playing.</li>
       <li><strong>Perform scenes:</strong> press the Grid right column. Set scene repeats by <strong>HOLD GRID + HOLD the scene button</strong>, then tap a count. Use SHIFT + SCR▲ / SCR▼ to move the scene window.</li>
-      <li><strong>Capture sound:</strong> CONTROL → AUDIO; select another empty slot, choose 1 / ENDLESS and ARM. Replay the saved take or return to Grid and launch the original note clip.</li>
+      <li><strong>Capture sound:</strong> CONTROL → AUDIO; select your playing clip, choose 1 / ENDLESS and ARM. Saving attaches the take to that clip and selects RECORDED. Use NOTES / RECORDED to switch what the same clip plays.</li>
       <li><strong>Capture controls:</strong> follow <a href="/docs/modules/clipplayer#automation">Assign to automation lane</a>, play its note clip, then HOLD SHIFT + the lane’s top button to arm AUTO. Disarm the same way.</li>
       <li><strong>Capture the performance:</strong> use CONTROL → REC, perform launches in Grid, then CONTROL → REC to finish. SONG switches arrangement playback. Read <a href="/docs/modules/clipplayer#song">arrangement versus printed Song</a> before replacing or printing a take.</li>
     </ol>
@@ -1637,11 +1643,11 @@
   <div id="lp2-panel-audio" role="tabpanel" tabindex="0" aria-labelledby="lp2-tab-audio">
     <h3>Paired AUDIO — record from R while L stays live</h3>
     <p>On R’s normal deck, press AUDIO at column {AUDIO_ENTRY.x + 1}, row {8 - AUDIO_ENTRY.y} from the top. R changes to the layout below; L keeps its clip matrix.</p>
-    <LaunchpadDiagram top={pairDeckTop} pads={audioPads(true)} scene={deckScene} accent={hex(AUDIO_COLOR)} caption="Unit R AUDIO. Top five grid rows: select lane; audio ARM / FINISH; 1 / ENDLESS; RECORDED / LIVE; AUTO arm. Each column controls the numbered lane. Two rows are reserved. Bottom row: PICK, PLAY, REPLACE, then EXIT at the right. The normal top-row globals and right-column lane stops remain available." />
+    <LaunchpadDiagram top={pairDeckTop} pads={audioPads(true)} scene={deckScene} accent={hex(AUDIO_COLOR)} caption="Unit R AUDIO. Top five grid rows: select lane; audio ARM / FINISH; 1 / ENDLESS; NOTES / RECORDED (N/R); AUTO arm. Each column controls the numbered lane. Two rows are reserved. Bottom row: PICK, PLAY, REPLACE, then EXIT at the right. The normal top-row globals and right-column lane stops remain available." />
     <ol class="steps">
-      <li>Press <strong>PICK</strong> (bottom-left on R), then one pad on L. That next pad selects a target without launching; later L taps launch normally. Press PICK again to cancel before choosing.</li>
-      <li>Use the desired lane’s <strong>ARM</strong>, <strong>1/∞</strong> and <strong>R/L</strong> pads on R. Lanes run left to right on R, even though they run top to bottom on L.</li>
-      <li><strong>PLAY / REPLACE</strong> act on the selected lane’s inspected target. L shows slots 1–8; choose slots beyond that bank in Clip Player on screen, then use that lane on R.</li>
+      <li>Press <strong>PICK</strong> (bottom-left on R), then your existing clip’s pad on L. That next pad selects it without launching; later L taps launch normally. Recording attaches audio to this same clip. Press PICK again to cancel before choosing.</li>
+      <li>Use the desired lane’s <strong>ARM</strong>, <strong>1/∞</strong> and <strong>N/R</strong> pads on R. N/R switches NOTES / RECORDED for that lane’s selected clip. Lanes run left to right on R, even though they run top to bottom on L.</li>
+      <li><strong>PLAY / REPLACE</strong> act on the selected clip’s attached take. L shows slots 1–8; choose slots beyond that bank in Clip Player on screen, then use that lane on R.</li>
       <li><strong>AUTO</strong> (fifth grid row from top) toggles per-lane automation arm. Red = armed. It is separate from the AUDIO arm row. <strong>EXIT</strong> restores the ordinary R deck without stopping capture. R’s right-column stops keep their original order: lane 1 at the bottom through lane 8 at the top.</li>
     </ol>
     {@render audioWorkflow()}

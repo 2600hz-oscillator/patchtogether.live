@@ -6,7 +6,7 @@
   const titles = {
     session: 'Session: lane controls above the launch grid; selected clip below',
     notes: 'Note editor: select a note, Shift-click its endpoint to tie; audition below',
-    audio: 'Audio editor: recorded/live source, waveform, launch and record status',
+    audio: 'One clip: editable notes, attached waveform and NOTES / RECORDED playback',
     song: 'Arrangement and printed song are different recordings',
   };
 </script>
@@ -26,8 +26,8 @@
           <text x={92 + lane * 42} y={92 + row * 23} text-anchor="middle">{label}</text>
         {/each}
         {#each Array(4) as _, slot}
-          <rect x={74 + lane * 42} y={181 + slot * 28} width="36" height="24" rx="3" fill={slot === 0 ? colors[lane] : '#242b34'} fill-opacity={slot === 0 ? '.38' : '1'} stroke={lane === 0 && slot === 1 ? '#bf93ef' : '#454c56'} stroke-width={lane === 0 && slot === 1 ? 2 : 1} />
-          {#if slot === 0 || lane === 0 && slot === 1}<text x={92 + lane * 42} y={197 + slot * 28} text-anchor="middle">{slot === 0 ? 'N' : 'A'}</text>{/if}
+          <rect x={74 + lane * 42} y={181 + slot * 28} width="36" height="24" rx="3" fill={slot === 0 ? colors[lane] : '#242b34'} fill-opacity={slot === 0 ? '.38' : '1'} stroke={lane === 0 && slot === 0 ? '#bf93ef' : '#454c56'} stroke-width={lane === 0 && slot === 0 ? 2 : 1} />
+          {#if slot === 0}<text x={92 + lane * 42} y={197 + slot * 28} text-anchor="middle">{lane === 0 ? 'A' : 'N'}</text>{/if}
         {/each}
       {/each}
       {#each Array(4) as _, slot}
@@ -41,12 +41,12 @@
       <text x="480" y="138" class="number">2</text><text x="501" y="138">Two independent arms</text>
       <text x="480" y="159" class="muted">AUDIO captures sound. AUTO captures moves.</text>
       <text x="480" y="213" class="number">3</text><text x="501" y="213">Each row is a scene</text>
-      <text x="480" y="234" class="muted">N = notes · A / purple border = audio.</text>
+      <text x="480" y="234" class="muted">A = audio attached; notes stay in this clip.</text>
       <text x="480" y="255" class="muted">Eight slots are visible; four shown here.</text>
       <rect x="28" y="305" width="392" height="31" rx="4" fill="#272f3a" stroke="#697586" />
-      <text x="41" y="325">LANE 1 ▾   SLOT 2 ▾   AUDIO CLIP   EDIT</text>
+      <text x="41" y="325">LANE 1 ▾   SLOT 1 ▾   NOTES + AUDIO   EDIT</text>
       <text x="480" y="309" class="number">4</text><text x="501" y="309">Inspect before recording</text>
-      <text x="480" y="330" class="muted">Selectors do not launch or move an armed target.</text>
+      <text x="480" y="330" class="muted">Recording keeps this clip’s lane and slot.</text>
     {:else if view === 'notes'}
       <text x="28" y="29" class="heading">EDITOR · NOTES</text>
       <rect x="28" y="48" width="449" height="29" rx="4" fill="#29313b" />
@@ -75,29 +75,35 @@
       <text x="509" y="316" class="muted">NOW is immediate.</text>
       <text x="509" y="338" class="muted">QUEUE follows launch quantization.</text>
     {:else if view === 'audio'}
-      <text x="28" y="29" class="heading">EDITOR · AUDIO</text>
-      <text x="28" y="63">LANE 1 ▾   SLOT 2 ▾   AUDIO CLIP</text>
-      <rect x="28" y="81" width="121" height="29" rx="4" fill="#594073" stroke="#bf93ef" />
-      <rect x="158" y="81" width="117" height="29" rx="4" fill="#29313b" stroke="#667580" />
+      <text x="28" y="29" class="heading">EDITOR · SAME CLIP, TWO SOURCES</text>
+      <text x="28" y="63">LANE 1 ▾   SLOT 1 ▾   NOTES + AUDIO</text>
+      <rect x="28" y="81" width="121" height="29" rx="4" fill="#29313b" stroke="#667580" />
+      <rect x="158" y="81" width="117" height="29" rx="4" fill="#594073" stroke="#bf93ef" />
       <rect x="286" y="81" width="143" height="29" rx="4" fill="#29313b" stroke="#667580" />
-      <text x="88" y="101" text-anchor="middle">RECORDED</text><text x="216" y="101" text-anchor="middle">LIVE INPUT</text><text x="357" y="101" text-anchor="middle">REPLACE TAKE…</text>
-      <rect x="28" y="128" width="429" height="104" rx="4" fill="#222831" />
-      {#each Array(68) as _, i}
-        {@const height = 9 + Math.abs(Math.sin(i * 1.82) * Math.cos(i * .17)) * 76}
-        <rect x={39 + i * 6} y={180 - height / 2} width="3" height={height} rx="1" fill="#b98ee8" />
+      <text x="88" y="101" text-anchor="middle">NOTES</text><text x="216" y="101" text-anchor="middle">RECORDED</text><text x="357" y="101" text-anchor="middle">REPLACE TAKE…</text>
+      <text x="28" y="130" class="tiny">NOTES REMAIN EDITABLE</text>
+      <rect x="28" y="138" width="429" height="37" rx="4" fill="#222831" />
+      {#each Array(8) as _, i}
+        <rect x={39 + i * 51} y={144 + i % 3 * 8} width={i === 0 ? 43 : 23} height="6" rx="2" fill="#69c79e" />
       {/each}
-      <rect x="28" y="251" width="72" height="29" rx="4" fill="#29313b" stroke="#67c297" /><text x="64" y="271" text-anchor="middle">NOW</text>
-      <rect x="110" y="251" width="84" height="29" rx="4" fill="#29313b" stroke="#d2ad68" /><text x="152" y="271" text-anchor="middle">QUEUE</text>
-      <text x="28" y="309" class="muted">REC target: lane 1, slot 2</text>
-      <text x="28" y="333" class="muted">Capture: MIXMSTRS input 1 · playback: audio1 L/R</text>
-      <text x="489" y="72" class="number">1</text><text x="511" y="72">Choose the source explicitly</text>
-      <text x="489" y="94" class="muted">LIVE bypasses the recorded take.</text>
-      <text x="489" y="116" class="muted">Launch an N slot to return to notes.</text>
-      <text x="489" y="170" class="number">2</text><text x="511" y="170">See the saved take</text>
-      <text x="489" y="192" class="muted">Waveform or media-availability status.</text>
+      <rect x="28" y="188" width="429" height="69" rx="4" fill="#222831" />
+      {#each Array(68) as _, i}
+        {@const height = 7 + Math.abs(Math.sin(i * 1.82) * Math.cos(i * .17)) * 49}
+        <rect x={39 + i * 6} y={223 - height / 2} width="3" height={height} rx="1" fill="#b98ee8" />
+      {/each}
+      <rect x="28" y="273" width="72" height="29" rx="4" fill="#29313b" stroke="#67c297" /><text x="64" y="293" text-anchor="middle">NOW</text>
+      <rect x="110" y="273" width="84" height="29" rx="4" fill="#29313b" stroke="#d2ad68" /><text x="152" y="293" text-anchor="middle">QUEUE</text>
+      <text x="28" y="331" class="muted">Same clip → same mixer channel · cables stay connected</text>
+      <text x="489" y="72" class="number">1</text><text x="511" y="72">Choose what this clip plays</text>
+      <text x="489" y="94" class="muted">NOTES drives the voice.</text>
+      <text x="489" y="116" class="muted">RECORDED plays its attached take.</text>
+      <text x="489" y="170" class="number">2</text><text x="511" y="170">Keep every layer together</text>
+      <text x="489" y="192" class="muted">Notes stay editable. Audio stays attached.</text>
+      <text x="489" y="214" class="muted">Automation plays with either source.</text>
       <text x="489" y="252" class="number">3</text><text x="511" y="252">Replace deliberately</text>
       <text x="489" y="274" class="muted">Confirmation comes before arming.</text>
       <text x="489" y="296" class="muted">The old take stays until the new one saves.</text>
+      <text x="489" y="318" class="muted">Recording leaves notes and automation intact.</text>
     {:else}
       <text x="28" y="30" class="heading">TWO WAYS TO CAPTURE A PERFORMANCE</text>
       <text x="28" y="64" fill="#dbb66e">ARR · launch events</text>

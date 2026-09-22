@@ -100,6 +100,9 @@ import {
   CLIP_PLAYER_TRANSIENT_DATA_FIELDS,
   CLIP_PLAYER_ARM_DATA_FIELDS,
   type AudioClipRecord,
+  readClipAudio,
+  clipPlaybackIsRecorded,
+  readSceneAudios,
   type ClipRecord,
   coerceAutomationEvent,
   coerceAutoTrack,
@@ -259,6 +262,7 @@ describe('clipPlayerDataNeedsLoadSeam (fleet-audit #5 — the tick re-arm)', () 
   const seamed = () => ({
     sv: CLIP_SCHEMA_VERSION,
     auto: {},
+    audio: {},
     autoAssign: {},
     automation: { lanes: {} },
     sceneRepeats: {},
@@ -270,7 +274,7 @@ describe('clipPlayerDataNeedsLoadSeam (fleet-audit #5 — the tick re-arm)', () 
   });
 
   it('fires when an LWW-hardening container is missing on stamped v2 data', () => {
-    for (const missing of ['auto', 'autoAssign', 'automation', 'sceneRepeats', 'song'] as const) {
+    for (const missing of ['auto', 'audio', 'autoAssign', 'automation', 'sceneRepeats', 'song'] as const) {
       const d = seamed() as Record<string, unknown>;
       delete d[missing];
       expect(clipPlayerDataNeedsLoadSeam(d), `missing ${missing}`).toBe(true);
@@ -283,7 +287,7 @@ describe('clipPlayerDataNeedsLoadSeam (fleet-audit #5 — the tick re-arm)', () 
     // seam: migrate + create the containers, then assert quiet.
     const d = { clips: { '9': defaultNoteClip() } } as Record<string, unknown>;
     migrateClipPlayerData(d as never);
-    Object.assign(d, { auto: {}, autoAssign: {}, automation: {}, sceneRepeats: {}, song: {} });
+    Object.assign(d, { audio: {}, auto: {}, autoAssign: {}, automation: {}, sceneRepeats: {}, song: {} });
     expect(clipPlayerDataNeedsLoadSeam(d)).toBe(false);
   });
 
@@ -2531,5 +2535,42 @@ describe('the ARM subset is DERIVED from the transient list, not restated beside
     for (const f of ['playing', 'queued', 'queuedImmediate', 'autoAssign', 'resetNonce', 'sceneLaunch']) {
       expect(CLIP_PLAYER_ARM_DATA_FIELDS as readonly string[], f).not.toContain(f);
     }
+  });
+});
+
+describe('audio layers owned by note clips', () => {
+  const take = () => coerceClipRecord(audioClipFixture()) as AudioClipRecord;
+  it('reads an attached layer without changing the source notes, and retains legacy takes', () => {
+    const notes = defaultNoteClip();
+    const d: ClipPlayerData = { clips: { '0': notes, '1': take() }, audio: { '0': take() } };
+    expect(readClip(d, 0)).toEqual(notes);
+    expect(readClipAudio(d, 0)).toEqual(take());
+    expect(readClipAudio(d, 1)).toEqual(take());
+    expect(readClipAudio({ audio: d.audio }, 0)).toBeNull();
+    expect(readClipAudio({ clips: d.clips, audio: { '0': { kind: 'audio' } } }, 0)).toBeNull();
+  });
+  it('uses Notes while capturing and finishing, but leaves other clips’ source choices alone', () => {
+    const d: ClipPlayerData = { clips: { '0': defaultNoteClip(), '1': defaultNoteClip() }, audio: { '0': take(), '1': take() } };
+    expect(clipPlaybackIsRecorded(d, 0)).toBe(true);
+    d.recArm = { '0': true }; d.recRequest = { '0': { slot: 0, recorderId: 1 } };
+    expect(clipPlaybackIsRecorded(d, 0)).toBe(false);
+    expect(clipPlaybackIsRecorded(d, 1)).toBe(true);
+    d.recArm['0'] = false;
+    d.audioRec = { '0': { lane: 0, slot: 0, mode: 'endless', phase: 'stopping', startFrame: 0, stopFrame: 96000, unitFrames: 96000, recorderId: 1 } };
+    expect(clipPlaybackIsRecorded(d, 0)).toBe(false);
+    d.audioRec['0'] = null;
+    expect(clipPlaybackIsRecorded(d, 0)).toBe(true);
+    d.audio!['0']!.live = true;
+    expect(clipPlaybackIsRecorded(d, 0)).toBe(false);
+  });
+  it('scene copy carries independent plain audio layers and clears absent destination layers', () => {
+    const d: ClipPlayerData = { clips: { '0': defaultNoteClip() }, audio: { '0': take() } };
+    const audios = readSceneAudios(d, 0);
+    const plan = sceneWritePlan(3, readScene(d, 0), undefined, audios);
+    expect(plan[0]!.audio).toEqual(take());
+    expect(plan[1]!.audio).toBeNull();
+    audios[0]!.live = true;
+    expect(plan[0]!.audio?.live).not.toBe(true);
+    expect(d.audio!['0']!.live).not.toBe(true);
   });
 });

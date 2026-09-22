@@ -47,6 +47,7 @@
 
 import type {
   AutoClipRecord,
+  AudioClipRecord,
   CopyBuffer,
   CopyBufferKind,
   ClipRecord,
@@ -99,6 +100,11 @@ export function clipboardClip(): ClipRecord | null {
  *  stale record rather than leaving a ghost envelope under foreign notes. */
 export function clipboardClipAuto(): AutoClipRecord | null {
   return buffer?.kind === 'clip' ? buffer.auto : null;
+}
+
+/** The audio layer belongs to the copied clip, independently of its notes. */
+export function clipboardClipAudio(): AudioClipRecord | null {
+  return buffer?.kind === 'clip' ? buffer.audio ?? null : null;
 }
 
 /** True when ANY buffer (clip OR scene) is loaded. */

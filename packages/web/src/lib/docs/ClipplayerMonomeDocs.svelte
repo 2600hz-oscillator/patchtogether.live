@@ -15,7 +15,7 @@
   <h3>Session map</h3>
   <GridDiagram cols={session.cols} rows={session.rows} cells={session.cells} callouts={session.callouts} sideLabels={session.sideLabels} caption={session.caption} />
   <p>On this 16×8 grid, <strong>lanes run down the rows</strong> and the first eight slots run across the left half. A clip pad launches its slot or stops it when already playing. The stop column is column {CTRL_STOP_COL + 1}; the scene column is column {CTRL_SCENE_COL + 1}. A scene button launches its slot across all lanes. Coordinates in the diagram use the mapping’s zero-based notation.</p>
-  <p><strong>EDIT + clip</strong> opens a note editor. <strong>COPY + note clip</strong> fills the monome’s private note clipboard; <strong>PASTE + target</strong> writes it into that slot. <strong>PASTE↺</strong> reverses the notes and their automation. These modifiers are held, not latched. The clipboard survives reconnecting the grid and is separate from the screen/Push/Launchpad clipboard.</p>
+  <p><strong>EDIT + clip</strong> opens its note editor, including when the clip has attached audio. <strong>COPY + note clip</strong> fills the monome’s private clipboard with the clip’s notes, automation and attached audio; <strong>PASTE + target</strong> writes them into that slot. <strong>PASTE↺</strong> reverses the notes and their automation; it does not reverse the recorded waveform. These modifiers are held, not latched. The clipboard survives reconnecting the grid and is separate from the screen/Push/Launchpad clipboard.</p>
   <div class="led-key" aria-label="Monome clip LED legend">
     {#each [{ name:'Empty', level:0 }, { name:'Loaded', level:LED_LOADED }, { name:'Queued · blinking', level:LED_QUEUED_HI }, { name:'Playing', level:LED_PLAYING }] as item}
       <span><i style:background={brightness(item.level)}></i>{item.name}</span>
@@ -36,7 +36,7 @@
   <p>LEN opens the length page. Select the ending 16-step block on the top row, then its exact last step on the second row. For example, 113 steps is block 8, step 1. Shortening hides later notes from playback without deleting them. EXIT returns to the note editor.</p>
 
   <h3>What stays on screen</h3>
-  <p>The monome can launch and stop existing audio clips in its first eight slots, but their LEDs use the ordinary clip states. Audio recording, waveform/source selection, confirmed replacement, AUTO arm, mono/poly, lane rate and extended scene banking are not mapped here. Use Clip Player’s screen for those actions. Monome EDIT and copy/paste are note-only workflows. Push 2 and Launchpad provide the newer AUDIO page.</p>
+  <p>The monome launches and stops clips in its first eight slots using each clip’s selected NOTES or RECORDED source; LEDs use the ordinary clip states. Audio recording, waveform/source selection, confirmed replacement, AUTO arm, mono/poly, lane rate and extended scene banking are not mapped here. Use Clip Player’s screen for those actions. EDIT and copy/paste work with note clips, including attached audio, but do not edit legacy standalone audio clips. Push 2 and Launchpad provide the AUDIO page.</p>
 </details>
 
 <style>

@@ -25,7 +25,7 @@ import {
   CLIP_LANES,
   SCENE_STRIDE,
   audioRecState,
-  clipHasRecordedAutomation,
+  readClipAudio,
   clipIndex,
   clampSwing,
   coerceClipRecord,
@@ -39,7 +39,6 @@ import {
   lanePlaying,
   laneQueued,
   laneRecArm,
-  noteClipHasContent,
   readClip,
   plainCloneClip,
   slotOf,
@@ -163,7 +162,7 @@ export function toggleClipplayerLaneArm(nodeId: string, lane: number): void {
  *  ⚠ NOT UNDOABLE, and deliberately so. An arm is a PERFORMANCE gesture, not
  *  content: the same rule the automation arm above follows. Undo on this
  *  launcher belongs to the take itself — the commit lands as one undo unit, and
- *  undoing it removes the recorded clip.
+ *  undoing it restores the previous audio layer without removing the notes.
  *
  *  Toggling ON does NOT start the transport (clause 4): the button can be set
  *  while paused or stopped and the recorder punches in when it plays. Toggling
@@ -188,12 +187,9 @@ export function toggleClipplayerLaneRecArm(
   const clip = readClip(data, clipIndex(slot, lane));
   if (turningOn) {
     if (active) return 'Wait for the current take to finish';
-    if (noteClipHasContent(clip)) return `Lane ${lane + 1}, slot ${slot + 1} contains notes. Choose an empty slot`;
-    if (clip?.kind === 'note' && clipHasRecordedAutomation(data, clipIndex(slot, lane))) {
-      return `Lane ${lane + 1}, slot ${slot + 1} contains recorded automation. Choose an empty slot`;
-    }
-    if (clip && clip.kind !== 'note' && clip.kind !== 'audio') return 'This clip cannot be replaced with audio';
-    if (clip?.kind === 'audio' && clip.mediaId !== replaceMediaId) return 'Use Replace take to confirm recording over this audio clip';
+    if (!clip || (clip.kind !== 'note' && clip.kind !== 'audio')) return 'Choose an existing clip to record its audio layer';
+    const take = readClipAudio(data, clipIndex(slot, lane));
+    if (take && take.mediaId !== replaceMediaId) return 'Use Replace take to replace this clip’s audio layer';
   }
   writeClipplayerData(nodeId, (d) => {
     // ⚠ MUTATE IN PLACE. `d` is a Y.Doc proxy; rebuilding the map and
@@ -207,7 +203,7 @@ export function toggleClipplayerLaneRecArm(
     if (!d.recRequest) d.recRequest = {};
     if (turningOn) d.recRequest[String(lane)] = {
       slot, recorderId: ydoc.clientID,
-      ...(clip?.kind === 'audio' ? { replaceMediaId: clip.mediaId } : {}),
+      ...(readClipAudio(data, clipIndex(slot, lane)) ? { replaceMediaId: readClipAudio(data, clipIndex(slot, lane))!.mediaId } : {}),
     };
     d.recArm[String(lane)] = turningOn;
   });
@@ -244,29 +240,24 @@ export function toggleClipplayerLaneRecMode(nodeId: string, lane: number): void 
   });
 }
 
-/** CLAUSE 6 — flip ONE CLIP between playing its RECORDED take and passing the
- *  LIVE input through.
- *
- *  UNDOABLE: it is a property of the clip, so it is content and a duplicate
- *  carries it. A no-op on anything that is not an audio clip — a note clip has
- *  no take to choose against, and silently stamping the flag on one would make
- *  a field that reads as meaningful and is not. */
+/** Choose one clip's source while leaving all of its content intact. */
 export function toggleClipplayerClipLive(nodeId: string, index: number): void {
-  const cur = readClip(clipplayerData(nodeId), index);
-  if (cur?.kind === 'audio') setClipplayerClipLive(nodeId, index, !cur.live);
+  const take = readClipAudio(clipplayerData(nodeId), index);
+  if (take) setClipplayerClipLive(nodeId, index, !take.live);
 }
 
 export function setClipplayerClipLive(nodeId: string, index: number, live: boolean): void {
   writeClipplayerDataUndoable(nodeId, (d) => {
-    // ⚠ WRITE THE ONE CLIP, NEVER THE WHOLE `clips` MAP. Spreading `d.clips`
-    // and reassigning it hands Yjs back every OTHER clip record — objects
-    // already in the tree — and the write is rejected outright. The replacement
-    // record below is a fresh plain object, which is exactly what may be
-    // assigned.
-    const cur = coerceClipRecord(d.clips?.[String(index)]);
-    if (!cur || cur.kind !== 'audio') return;
-    if (!d.clips) d.clips = {};
-    d.clips[String(index)] = { ...cur, live };
+    const take = readClipAudio(d, index);
+    if (!take) return;
+    const lane = laneOf(index);
+    if (laneRecArm(d, lane) && d.recRequest?.[String(lane)]?.slot === slotOf(index)) return;
+    if (readClip(d, index)?.kind === 'audio') {
+      d.clips![String(index)] = { ...take, live }; // saved standalone take
+    } else {
+      if (!d.audio) d.audio = {};
+      d.audio[String(index)] = { ...take, live };
+    }
   });
 }
 
@@ -320,6 +311,7 @@ export function ensureClipplayerClip(nodeId: string, index: number): void {
     if (!d.clips) d.clips = {};
     d.clips[String(index)] = defaultNoteClip();
     const key = String(index);
+    if (d.audio?.[key] != null) delete d.audio[key];
     if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
   });
 }
@@ -439,6 +431,7 @@ export function deleteClipplayerClip(nodeId: string, index: number): void {
   writeClipplayerDataUndoable(nodeId, (d) => {
     const key = String(index);
     if (d.clips) delete d.clips[key];
+    if (d.audio?.[key] != null) delete d.audio[key];
     if (d.auto && d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
   });
 }
@@ -624,6 +617,7 @@ export function pasteClipplayerClip(
   index: number,
   next: ClipRecord,
   auto: unknown,
+  audio?: unknown,
 ): void {
   const key = String(index);
   writeClipplayerDataUndoable(nodeId, (d) => {
@@ -632,5 +626,10 @@ export function pasteClipplayerClip(
     if (!d.auto) d.auto = {};
     if (auto && next.kind === 'note') d.auto[key] = auto as never;
     else if (d.auto[key] !== undefined && d.auto[key] !== null) delete d.auto[key];
+    const take = coerceClipRecord(audio);
+    if (next.kind === 'note' && take?.kind === 'audio') {
+      if (!d.audio) d.audio = {};
+      d.audio[key] = take;
+    } else if (d.audio?.[key] != null) delete d.audio[key];
   });
 }

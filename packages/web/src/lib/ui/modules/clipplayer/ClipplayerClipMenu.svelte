@@ -36,12 +36,14 @@
     playEveryEff,
     probLevelToValue,
     readAutoClip,
+    readClipAudio,
     setNotePlayEvery,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
   import {
     clipboardClip,
     clipboardClipAuto,
+    clipboardClipAudio,
     clipboardKind,
     setClipboardBuffer,
   } from '$lib/audio/modules/clip-clipboard';
@@ -230,7 +232,7 @@
     const clip = readClip(clipplayerData(nodeId), at.idx);
     if (!clip) return;
     setClipboardBuffer(
-      { kind: 'clip', clip: copyClip(clip), auto: clip.kind === 'note' ? readAutoClip(clipplayerData(nodeId), at.idx) : null },
+      { kind: 'clip', clip: copyClip(clip), auto: clip.kind === 'note' ? readAutoClip(clipplayerData(nodeId), at.idx) : null, audio: readClipAudio(clipplayerData(nodeId), at.idx) },
       at.idx,
     );
     closeMenu();
@@ -250,7 +252,7 @@
     const idx = at.idx;
     const before = clipplayerClipAt(nodeId, idx);
     const next = copyClip(bc);
-    pasteClipplayerClip(nodeId, idx, next, plainCloneAutoClip(clipboardClipAuto()));
+    pasteClipplayerClip(nodeId, idx, next, plainCloneAutoClip(clipboardClipAuto()), clipboardClipAudio());
     // A paste REPLACES every note, so it is a note REMOVAL for anything the old
     // clip left sounding — cut those voices NOW rather than next loop.
     if (before) reconcileClipRemoval(nodeId, before, next.kind === 'note' ? next : defaultNoteClip(), idx, clipplayerData(nodeId));

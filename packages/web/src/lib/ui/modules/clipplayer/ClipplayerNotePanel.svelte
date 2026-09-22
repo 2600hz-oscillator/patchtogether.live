@@ -1,6 +1,6 @@
 <script lang="ts">
   import ClipplayerAudioPanel from './ClipplayerAudioPanel.svelte';
-  import { readClip } from '$lib/audio/modules/clip-types';
+  import { readClip, readClipAudio } from '$lib/audio/modules/clip-types';
   // ClipplayerNotePanel — the `clipplayer-cell` family's cell: the PIANO-ROLL
   // note editor for the clip the launch grid has open, plus the clip-scoped
   // gestures that operate on it.
@@ -487,6 +487,9 @@
     </div>
 </div>
 
+{#if (live.v, readClipAudio(data, selectedClip))}
+  <ClipplayerAudioPanel {nodeId} waveform />
+{/if}
 <ClipplayerClipMenu {nodeId} at={menu} onclose={() => (menu = null)} />
 {/if}
 
