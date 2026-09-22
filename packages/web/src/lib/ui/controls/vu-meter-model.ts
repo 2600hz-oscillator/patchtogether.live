@@ -28,6 +28,24 @@ export function dbfsToUnit(db: number, floor: number = VU_DB_FLOOR): number {
   return 1 - db / floor;
 }
 
+/** A linear amplitude fraction (RMS or peak, 0..1) as dBFS: 1 → 0 dB, 0.5 →
+ *  −6.02 dB, 0 → −Infinity. Pure. */
+export function linearToDbfs(u: number): number {
+  if (!Number.isFinite(u) || u <= 0) return u > 0 ? Infinity : -Infinity;
+  return 20 * Math.log10(u);
+}
+
+/**
+ * The meter's display law for a LINEAR level: paint it on the dBFS scale
+ * (owner, 2026-09-22: the linear bar put a full-scale sine after the default
+ * 0.8×0.8 faders at 45 %, six of twelve segments, and the warm zones could
+ * never light). A full-scale sine (RMS 0.707) → 0.95, −15 dBFS → 0.75,
+ * VU_DB_FLOOR (0.001) and below → 0.
+ */
+export function linearToUnit(u: number, floor: number = VU_DB_FLOOR): number {
+  return dbfsToUnit(linearToDbfs(u), floor);
+}
+
 /**
  * Is segment `index` (0 = bottom) lit at display level `level` (0..1) over a
  * bar of `segments` segments? A segment lights as soon as the level reaches the
