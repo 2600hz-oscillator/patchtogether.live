@@ -476,6 +476,23 @@ describe('createShellGlyphTap — visible→mounted, hidden→released', () => {
     tap.dispose();
   });
 
+  it('hands back the IDLE trace while the graph is suspended, and the live window once it runs again', () => {
+    // The VRT freeze suspends the AudioContext; the analyser then holds
+    // whatever 2048-sample window the suspend landed on, and for a source
+    // that is not silent at rest (foxy: ~0.076 peak) that window's PHASE is
+    // the freeze instant — a random-phase polyline, which is exactly how
+    // face-foxy-compact differed by 159 px on run 35686057717.
+    const { engine, audio } = makeFakeEngine(0.5);
+    const ctx = audio.ctx as unknown as { state: string };
+    ctx.state = 'suspended';
+    const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
+    expect(tap.getSamples(), 'suspended → idle trace, not the stale window').toBeUndefined();
+    expect(tap.attached(), 'the tap stays attached — this is display, not release').toBe(true);
+    ctx.state = 'running';
+    expect(tap.getSamples()).toBeInstanceOf(Float32Array);
+    tap.dispose();
+  });
+
   it('getLevel reads the RMS of the analyser window', () => {
     const { engine } = makeFakeEngine(0.5);
     const tap = createShellGlyphTap(() => engine, 'n1', 'out_l');
