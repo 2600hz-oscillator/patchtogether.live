@@ -434,29 +434,42 @@ test.describe('CLIP PLAYER faceplate', () => {
       ).toHaveCount(8);
     }
 
-    // The session must shrink to the grid, with the repeat section ABOVE the
-    // lane controls. Counting controls alone cannot see an empty second column
-    // or footer prose that widens the whole faceplate.
+    // The session must shrink to the grid AND keep the grid at the top of the
+    // page: the docked full view at the default 1280×720 viewport has to show
+    // the first pad row without scrolling. clipplayer-grid-stability clicks pad
+    // 0 from its measured box, and a layout that pushes that row below the
+    // pane's visible edge clicks the status bar instead (the #2415 red run).
+    // Scene repeats sit BELOW the grid cell. Counting controls alone cannot see
+    // an empty second column, a grid scrolled out of view, or footer prose that
+    // widens the whole faceplate.
     const layout = await dock.evaluate((el) => {
-      const rect = (selector: string) => {
-        const node = selector ? el.querySelector<HTMLElement>(selector)! : el;
+      const rect = (node: Element) => {
         const r = node.getBoundingClientRect();
         return { x: r.x, right: r.right, y: r.y, bottom: r.bottom, width: r.width };
       };
+      const q = (selector: string) => rect(el.querySelector<HTMLElement>(selector)!);
       const footer = el.querySelector<HTMLElement>('[data-testid="clipplayer-audio-panel"]')!;
+      const pane = el.closest<HTMLElement>('[data-testid="dock-fullview-pane"]')!;
       return {
-        scenes: rect('[data-testid="clipplayer-face-scene-row"]'),
-        mute: rect('[data-testid="clipplayer-mute-0"]'),
-        first: rect('[data-testid="clipplayer-pad-0"]'),
-        last: rect('[data-testid="clipplayer-pad-448"]'),
-        shell: rect(''),
-        footer: rect('[data-testid="clipplayer-audio-panel"]'),
+        scenes: q('[data-testid="clipplayer-face-scene-row"]'),
+        mute: q('[data-testid="clipplayer-mute-0"]'),
+        first: q('[data-testid="clipplayer-pad-0"]'),
+        last: q('[data-testid="clipplayer-pad-448"]'),
+        shell: rect(el),
+        footer: q('[data-testid="clipplayer-audio-panel"]'),
         footerClient: footer.clientWidth,
         footerScroll: footer.scrollWidth,
+        pane: rect(pane),
+        paneScrollTop: pane.scrollTop,
+        viewportH: window.innerHeight,
       };
     });
     await test.info().attach('session-layout', { body: JSON.stringify(layout), contentType: 'application/json' });
-    expect(layout.scenes.bottom, 'scene repeats sit above MUTE').toBeLessThan(layout.mute.y);
+    expect(layout.paneScrollTop, 'measured before anything scrolled the pane').toBe(0);
+    expect(layout.first.y, 'the first pad row starts inside the dock pane without scrolling').toBeGreaterThanOrEqual(layout.pane.y);
+    expect(layout.first.bottom, 'the first pad row is fully visible in the pane, in the viewport').toBeLessThanOrEqual(Math.min(layout.pane.bottom, layout.viewportH));
+    expect(layout.mute.y, 'the lane strip sits above the grid, where it always has').toBeLessThan(layout.first.y);
+    expect(layout.scenes.y, 'scene repeats sit BELOW the grid cell').toBeGreaterThanOrEqual(layout.last.bottom);
     const gridWidth = layout.last.right - layout.first.x;
     expect(layout.shell.width, 'the shell is sized to the grid and its controls').toBeLessThan(gridWidth * 1.6);
     expect(layout.footer.right, 'the inspector fits inside the shell').toBeLessThanOrEqual(layout.shell.right);

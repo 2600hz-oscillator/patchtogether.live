@@ -478,10 +478,16 @@ export const clipplayerDef: AudioModuleDef = {
           'the lane, double-click to open it in the EDITOR page (which replaces this one, the way ' +
           'the card always did); give a scene a finite repeat count and it hands over to the next ' +
           'scene with content after that many passes of its longest clip.',
-        // Keep scene repeats above the lane controls, so the session earns only
-        // the grid's width instead of adding a mostly empty second column.
-        controls: ['clipplayer-scene-repeat-{n}', 'clipplayer-pad-{n}'],
-        clusters: [{ label: 'lanes', controls: ['clipplayer-pad-{n}'] }],
+        // The launch grid comes FIRST and un-clustered, so its lane strip and
+        // first pad row sit exactly where they always have (the docked full view
+        // at 1280×720 shows them without scrolling — clipplayer-grid-stability
+        // clicks pad 0 from its measured box). Scene repeats are pulled aside
+        // into a cluster BELOW it: a cluster is its own block, so the session
+        // earns only the grid's width instead of a mostly empty second column.
+        // The inspector strip renders inside the grid cell, so the scene block
+        // lands beneath that strip — the shell cannot interleave a cell there.
+        controls: ['clipplayer-pad-{n}', 'clipplayer-scene-repeat-{n}'],
+        clusters: [{ label: 'scenes', controls: ['clipplayer-scene-repeat-{n}'] }],
       },
       {
         id: 'channels',
