@@ -434,6 +434,42 @@ test.describe('CLIP PLAYER faceplate', () => {
       ).toHaveCount(8);
     }
 
+    // Grid in view without scrolling (CI run 35551681650: a row pushed below
+    // the pane clicked the status bar), scenes below it, shell no wider than
+    // the grid, footer wraps.
+    const layout = await dock.evaluate((el) => {
+      const rect = (node: Element) => {
+        const r = node.getBoundingClientRect();
+        return { x: r.x, right: r.right, y: r.y, bottom: r.bottom, width: r.width };
+      };
+      const q = (selector: string) => rect(el.querySelector<HTMLElement>(selector)!);
+      const footer = el.querySelector<HTMLElement>('[data-testid="clipplayer-audio-panel"]')!;
+      const pane = el.closest<HTMLElement>('[data-testid="dock-fullview-pane"]')!;
+      return {
+        scenes: q('[data-testid="clipplayer-face-scene-row"]'),
+        mute: q('[data-testid="clipplayer-mute-0"]'),
+        first: q('[data-testid="clipplayer-pad-0"]'),
+        last: q('[data-testid="clipplayer-pad-448"]'),
+        shell: rect(el),
+        footer: q('[data-testid="clipplayer-audio-panel"]'),
+        footerClient: footer.clientWidth,
+        footerScroll: footer.scrollWidth,
+        pane: rect(pane),
+        paneScrollTop: pane.scrollTop,
+        viewportH: window.innerHeight,
+      };
+    });
+    await test.info().attach('session-layout', { body: JSON.stringify(layout), contentType: 'application/json' });
+    expect(layout.paneScrollTop, 'measured before anything scrolled the pane').toBe(0);
+    expect(layout.first.y, 'the first pad row starts inside the dock pane without scrolling').toBeGreaterThanOrEqual(layout.pane.y);
+    expect(layout.first.bottom, 'the first pad row is fully visible in the pane, in the viewport').toBeLessThanOrEqual(Math.min(layout.pane.bottom, layout.viewportH));
+    expect(layout.mute.y, 'the lane strip sits above the grid, where it always has').toBeLessThan(layout.first.y);
+    expect(layout.scenes.y, 'scene repeats sit BELOW the grid cell').toBeGreaterThanOrEqual(layout.last.bottom);
+    const gridWidth = layout.last.right - layout.first.x;
+    expect(layout.shell.width, 'the shell is sized to the grid and its controls').toBeLessThan(gridWidth * 1.6);
+    expect(layout.footer.right, 'the inspector fits inside the shell').toBeLessThanOrEqual(layout.shell.right);
+    expect(layout.footerScroll, 'footer text wraps without horizontal clipping').toBeLessThanOrEqual(layout.footerClient + 1);
+
     // …but DRIVING one needs its page open: three of the four rows are on the
     // `channels` band, which the rail hides while the launcher is showing.
     await showPage(page, CP, 'channels');
@@ -466,7 +502,7 @@ test.describe('CLIP PLAYER faceplate', () => {
       .toContain('6');
 
     // SCENE REPEAT on scene 2 — ∞ → 2, the first step of the card's own cycle.
-    // Back on `session`, where the scenes live beside the grid rows they are.
+    // Back on `session`, where the scenes sit above the lane controls.
     await showPage(page, CP, 'session');
     await dock.getByTestId('clipplayer-scene-repeat-2').click();
     await expect

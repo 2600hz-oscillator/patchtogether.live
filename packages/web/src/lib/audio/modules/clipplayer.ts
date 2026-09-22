@@ -479,7 +479,10 @@ export const clipplayerDef: AudioModuleDef = {
           'the lane, double-click to open it in the EDITOR page (which replaces this one, the way ' +
           'the card always did); give a scene a finite repeat count and it hands over to the next ' +
           'scene with content after that many passes of its longest clip.',
+        // Grid first (its first pad row must stay inside the 1280×720 dock pane —
+        // clipplayer-grid-stability.spec.ts), scene repeats clustered BELOW it.
         controls: ['clipplayer-pad-{n}', 'clipplayer-scene-repeat-{n}'],
+        clusters: [{ label: 'scenes', controls: ['clipplayer-scene-repeat-{n}'] }],
       },
       {
         id: 'channels',

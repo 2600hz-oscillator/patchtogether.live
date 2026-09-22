@@ -127,7 +127,9 @@
 </div>
 
 <style>
-  .clip-strip { display:grid; gap:7px; border-top:1px solid var(--line,#41474d); padding-top:9px; width:100%; max-width:540px; color:var(--text,#e7edf4); font-size:11px; }
+  /* The grid/editor earns the panel width. Inspector prose and wrapped
+     controls fill that width without contributing an unwrapped intrinsic size. */
+  .clip-strip { display:grid; gap:7px; border-top:1px solid var(--line,#41474d); padding-top:9px; width:100%; max-width:540px; min-width:0; contain:inline-size; white-space:normal; overflow-wrap:anywhere; color:var(--text,#e7edf4); font-size:11px; }
   .strip-row,.replace { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
   label { display:flex; align-items:center; gap:4px; }
   button,select { font:inherit; color:inherit; background:rgb(255 255 255 / .05); border:1px solid var(--line,#41474d); border-radius:3px; padding:4px 6px; min-height:24px; cursor:pointer; }
