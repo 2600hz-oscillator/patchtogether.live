@@ -124,7 +124,10 @@ test.describe('SAMSLOOP faceplate — a refused REC press', () => {
     // chunk. Never pin yesterday's hash: changing builds is the failure case.
     await page.route('**/*', async (route) => {
       if (route.request().resourceType() !== 'script') return route.continue();
-      const response = await route.fetch();
+      // A static chunk GET is idempotent: retry once when the preview server
+      // closes an idle keep-alive socket under us ("socket hang up", both
+      // attempts of run 35683315966 shard 6, at the reload after ~5 s idle).
+      const response = await route.fetch().catch(() => route.fetch());
       const body = await response.text();
       if (blockPanel && body.includes('samsloop-output-body')) {
         blocked.add(route.request().url());
@@ -153,6 +156,10 @@ test.describe('SAMSLOOP faceplate — a refused REC press', () => {
     });
     expect(envelope).toBeTruthy();
     blockPanel = false;
+    // Nothing is blocked any more: stop proxying every script of the reload
+    // through a Node round-trip (the preview server's idle keep-alive socket
+    // race on CI; a boot slower than BOOT_MS on the dev server).
+    await page.unroute('**/*');
     await page.reload();
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
     await page.waitForFunction(() => !!(globalThis as unknown as {
