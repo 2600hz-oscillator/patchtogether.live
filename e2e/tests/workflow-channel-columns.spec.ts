@@ -47,6 +47,15 @@ const SEND_RAIL_X0 = 8 * COLUMN_W;
  *  lane height. */
 
 const PINNED_MIXER = 'pinned-mixmstrs';
+/** Presence floors for the REAL source-chain test, read over 0.68 s analyser
+ *  windows (pollAudio). Unchanged from the 43 ms-snapshot era, re-justified
+ *  against the long window — MEASURED locally, steady state over a 4 s
+ *  window at defaults: ch1 (tidyvco) 0.088, ch2 (kickdrum) 0.281,
+ *  ch3 (cube) 0.300, audio-out input 0.241 → 44× / 140× / 150× / 48×
+ *  above the floors. First-crossing samples (the early exit) read lower
+ *  because the window has only just caught a note's onset. */
+const CH_FLOOR = 0.002;
+const OUT_FLOOR = 0.005;
 const PINNED_CLIP = 'pinned-clipplayer';
 
 /** A flow-space spawn anchor inside channel column `ch`'s painted band (X
@@ -282,65 +291,146 @@ async function stepsAdvanced(
   );
 }
 
-/** Accumulate, IN THE PAGE, the per-channel MAX mixmstrs meter RMS
- *  (read('levels') → number[8]) and the MAX pinned AUDIO OUT RMS over
+/** Accumulate, IN THE PAGE, per-channel and terminal-out MAX RMS over
  *  `durationMs`, sampling on a 25 ms in-page timer.
  *
- *  ⚠ This was a Playwright-side poll loop (one cross-process round trip per
- *  sample on the same main thread as the subject, 40 ms nominal). On a loaded
- *  runner that samples SPARSELY, and the max of a decaying note-pattern meter
- *  under sparse sampling is a lottery on which slices of the envelope the
- *  samples land — #1569 caught the ADDITIVE test's after/base ratio at both
- *  1.87× and 0.45× for IDENTICAL seeded content. In-page accumulation makes
- *  sampling density independent of runner load; `samples`/`elapsedMs` are
- *  returned so an assertion can show how well the window was actually
- *  observed. */
+ *  Ratio / sustained-window callers (no `audible`) read the product's own
+ *  meters (`read('levels')`, a 43 ms analyser snapshot) and the audio-out
+ *  `outputSnapshot`, exactly as before.
+ *
+ *  PRESENCE callers pass `audible` and read TEST-SIDE analysers instead: one
+ *  pair per channel on the mixer's post-fader taps and one pair on the
+ *  audio-out input stage, fftSize 32768 (≈0.68 s at 48 kHz). A starved shard
+ *  turns this timer 3–6 times in 12 s (main run 35689458096: 3 samples in
+ *  13.2 s), and the max of that few 43 ms snapshots over a note-every-0.5 s
+ *  pattern was a lottery. A 0.68 s window spans a whole note period, so every
+ *  sparse sample is an observation. Optional `quiet` reads one channel only
+ *  from samples taken after `afterCtxTime` on the AUDIO clock (never a
+ *  wall-clock sleep), so a freshly silenced source is judged once its release
+ *  and the analyser window have flushed. */
 async function pollAudio(
   page: Page,
   durationMs: number,
-  audible?: { channels: number[]; channelFloor: number; outFloor: number },
-): Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }> {
+  audible?: {
+    channels: number[]; channelFloor: number; outFloor: number;
+    quiet?: { channel: number; afterCtxTime: number };
+  },
+): Promise<{ channelMax: number[]; outMax: number; quietMax: number | null; quietSamples: number; samples: number; elapsedMs: number; windowS: number; ctxState: string; ctxAdvancedS: number; playing: string }> {
   return await page.evaluate(
     ({ durationMs, audible }) =>
-      new Promise<{ channelMax: number[]; outMax: number; samples: number; elapsedMs: number }>(
+      new Promise<{ channelMax: number[]; outMax: number; quietMax: number | null; quietSamples: number; samples: number; elapsedMs: number; windowS: number; ctxState: string; ctxAdvancedS: number; playing: string }>(
         (resolve) => {
+          type Leg = { node: AudioNode; output: number };
           const w = globalThis as unknown as {
-            __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-            __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
+            __engine?: () => {
+              read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+              getDomain: (d: string) => {
+                ctx: AudioContext;
+                nodes: Map<string, { inputs: Map<string, { node: AudioNode; input: number }> }>;
+              };
+            } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string; data?: { playing?: unknown } } | undefined> };
           };
+          const eng = w.__engine?.();
+          const mixer = w.__patch.nodes['pinned-mixmstrs'];
+          const out = w.__patch.nodes['pinned-audioOut'];
           const channelMax = new Array(8).fill(0);
           let outMax = 0;
+          let quietMax: number | null = null;
+          let quietSamples = 0;
           let samples = 0;
-          const startedAt = performance.now();
-          const timer = setInterval(() => {
-            const eng = w.__engine?.();
-            const mixer = w.__patch.nodes['pinned-mixmstrs'];
-            const out = w.__patch.nodes['pinned-audioOut'];
-            const levels = eng && mixer ? (eng.read(mixer, 'levels') as number[] | undefined) : undefined;
-            if (levels) {
-              for (let i = 0; i < levels.length && i < 8; i++) {
-                channelMax[i] = Math.max(channelMax[i], levels[i] ?? 0);
+          let windowS = 0;
+          const rms = (buf: Float32Array): number => {
+            let acc = 0;
+            for (let i = 0; i < buf.length; i++) acc += buf[i]! * buf[i]!;
+            return Math.sqrt(acc / buf.length);
+          };
+          // Test-side long-window taps (presence callers only).
+          const taps: { a: AnalyserNode; src: Leg; buf: Float32Array<ArrayBuffer> }[] = [];
+          const chanTaps: Record<number, [number, number]> = {};
+          let outTaps: [number, number] | null = null;
+          let ctx: AudioContext | null = null;
+          // Diagnostics for a silent window: the audio clock's state and how far
+          // it advanced (a suspended context, a starved renderer and a silent
+          // graph all read 0 on the taps and are told apart only here).
+          const ctxAt0 = eng ? eng.getDomain('audio').ctx.currentTime : 0;
+          if (audible && eng && mixer && out) {
+            const audio = eng.getDomain('audio');
+            ctx = audio.ctx;
+            const rec = eng.read(mixer, 'recTaps') as { postFader: Leg[] } | undefined;
+            const outHandle = audio.nodes.get(out.id);
+            const tap = (src: Leg): number => {
+              const a = ctx!.createAnalyser();
+              a.fftSize = 32768;
+              a.smoothingTimeConstant = 0;
+              src.node.connect(a, src.output);
+              taps.push({ a, src, buf: new Float32Array(a.fftSize) });
+              return taps.length - 1;
+            };
+            windowS = 32768 / ctx.sampleRate;
+            if (rec?.postFader) {
+              const tapped = new Set([...audible.channels, ...(audible.quiet ? [audible.quiet.channel] : [])]);
+              for (const ch of tapped) {
+                chanTaps[ch] = [tap(rec.postFader[2 * ch]!), tap(rec.postFader[2 * ch + 1]!)];
               }
             }
-            if (eng && out) {
-              const snap = eng.read(out, 'outputSnapshot') as { samples: Float32Array } | undefined;
-              if (snap?.samples?.length) {
-                let s = 0;
-                for (let i = 0; i < snap.samples.length; i++) s += snap.samples[i]! * snap.samples[i]!;
-                outMax = Math.max(outMax, Math.sqrt(s / snap.samples.length));
+            const inL = outHandle?.inputs.get('L');
+            const inR = outHandle?.inputs.get('R');
+            if (inL && inR) outTaps = [tap({ node: inL.node, output: 0 }), tap({ node: inR.node, output: 0 })];
+          }
+          const pair = (idx: [number, number]): number => {
+            const [l, r] = idx;
+            taps[l]!.a.getFloatTimeDomainData(taps[l]!.buf);
+            taps[r]!.a.getFloatTimeDomainData(taps[r]!.buf);
+            const a = rms(taps[l]!.buf);
+            const b = rms(taps[r]!.buf);
+            return Math.sqrt((a * a + b * b) / 2); // the same L/R combination readChannelLevels uses
+          };
+          const startedAt = performance.now();
+          const finish = (): void => {
+            clearInterval(timer);
+            for (const t of taps) {
+              try { t.src.node.disconnect(t.a, t.src.output); } catch { /* already gone */ }
+            }
+            const c = eng ? eng.getDomain('audio').ctx : null;
+            resolve({
+              channelMax, outMax, quietMax, quietSamples, samples, elapsedMs: performance.now() - startedAt, windowS,
+              ctxState: c ? c.state : 'no-engine', ctxAdvancedS: c ? c.currentTime - ctxAt0 : 0,
+              playing: JSON.stringify(w.__patch.nodes['pinned-clipplayer']?.data?.playing ?? null),
+            });
+          };
+          const timer = setInterval(() => {
+            if (audible && ctx) {
+              for (const ch of audible.channels) {
+                const idx = chanTaps[ch];
+                if (idx) channelMax[ch] = Math.max(channelMax[ch], pair(idx));
+              }
+              if (outTaps) outMax = Math.max(outMax, pair(outTaps));
+              const q = audible.quiet;
+              if (q && chanTaps[q.channel] && ctx.currentTime >= q.afterCtxTime) {
+                quietMax = Math.max(quietMax ?? 0, pair(chanTaps[q.channel]!));
+                quietSamples++;
+              }
+            } else {
+              const levels = eng && mixer ? (eng.read(mixer, 'levels') as number[] | undefined) : undefined;
+              if (levels) {
+                for (let i = 0; i < levels.length && i < 8; i++) {
+                  channelMax[i] = Math.max(channelMax[i], levels[i] ?? 0);
+                }
+              }
+              if (eng && out) {
+                const snap = eng.read(out, 'outputSnapshot') as { samples: Float32Array } | undefined;
+                if (snap?.samples?.length) outMax = Math.max(outMax, rms(snap.samples));
               }
             }
             samples++;
             const elapsedMs = performance.now() - startedAt;
-            // Presence checks can finish as soon as every required signal is
-            // observed. Ratio and sustained-window callers omit `audible` and
-            // retain their full observation window.
+            // Presence checks finish as soon as every required signal is observed
+            // (and, with `quiet`, once at least one post-settle sample exists).
             const heard = audible && samples > 0 && outMax > audible.outFloor &&
-              audible.channels.every(ch => channelMax[ch]! > audible.channelFloor);
-            if (heard || elapsedMs >= durationMs) {
-              clearInterval(timer);
-              resolve({ channelMax, outMax, samples, elapsedMs });
-            }
+              audible.channels.every(ch => channelMax[ch]! > audible.channelFloor) &&
+              (!audible.quiet || quietSamples > 0);
+            if (heard || elapsedMs >= durationMs) finish();
           }, 25);
         },
       ),
@@ -393,19 +483,7 @@ test.describe('workflow channel columns', () => {
     expect(edges.some((e) => e.startsWith(`${wav}.`) && e.includes(`->${PINNED_MIXER}.ch3`))).toBe(true);
   });
 
-  // ⏸ FLAKE-PARK #1847 — parked with `test.fixme`; the body and its assertions are UNCHANGED.
-  // NONDETERMINISM: main run 35689458096 (b55a70e57, shard 7) recovered on retry with
-  // "ch1 (tidyvco) audible at the mixer; 3 samples over 13216 ms — received 0.0011"; the same
-  // shape hit PR #2414 on runs 35682838684 / 35684290047 (a bare timeout, then ch3 = 0 over
-  // 4–6 samples). The in-page 25 ms sampler turns 3–6 times in 12 s on a starved shard, and
-  // the max of that few 43 ms analyser windows over a note-every-0.5 s pattern is a lottery.
-  // LOST WHILE PARKED: the audible proof that the channel-column RECONCILER's own wcol edges
-  // carry clip notes through each instrument to the mixer and out (the structural edge test
-  // above and cliprec-clip-mode's hand-patched chain remain).
-  // ROOT-CAUSE DIRECTION: read energy from a test-side AnalyserNode (fftSize 32768 ≈ 0.68 s
-  // at 48 k) on the mixer's post-fader `recTaps`, so every sparse sample spans a whole note
-  // period; never a longer wall-clock window. Re-enable only on that (#1847).
-  test.fixme('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', { annotation: { type: 'fixme', description: 'FLAKE-PARK #1847 — nondeterministic on CI: recovered-on-retry on main run 35689458096 and twice on #2414 (3–6 meter samples in 12 s on a starved shard); parked until the meter read is starvation-independent' } }, async ({ page }) => {
+  test('REAL source chain: the clip player drives each channel to audible RMS at the mixer + audio out', async ({ page }) => {
     // Bound, not a budget raise: the shared SLOW_BOOT_TEST_TIMEOUT_MS. The step
     // caps below (2×BOOT_MS + a 10 s edge poll + the 12 s window) already sum
     // past the bare 30 s default; run 35682838684 died on that default with the
@@ -416,7 +494,12 @@ test.describe('workflow channel columns', () => {
 
     await dropInBand(page, 'tidyVco', colPos(1));
     await dropInBand(page, 'kickdrum', colPos(2));
-    await dropInBand(page, 'wavesculpt', colPos(3));
+    // ⚠ NOT wavesculpt: its per-osc ADSR is a JS-side envelope on a
+    // setInterval (wavesculpt.ts:1720 tick(), :1907-1909), so on a starved
+    // main thread the notes arrive and the worklet stays silent (#2419 run
+    // 35765718367: ch3 exactly 0 for 14.6 s while ch1/ch2 had signal). CUBE's
+    // voice AND envelope live in its worklet (packages/dsp/src/cube.ts:202).
+    await dropInBand(page, 'cube', colPos(3));
     await expect.poll(async () => (await wcolEdges(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
 
     // Three clip-control edges + at least one send per instrument, LIVE in the
@@ -426,20 +509,51 @@ test.describe('workflow channel columns', () => {
     // clip-control edges → each instrument → its mixer channel → master → out.
     await seedAndRun(page, [0, 1, 2]);
 
-    // CI trace 35547662760 reached the RMS window after 13 s, then spent
-    // another 21 s completing its fixed 12 s timer on the busy page, although
-    // all four audio assertions passed. Stop when the existing floors are
-    // met; the 12 s cap now bounds failure rather than defining readiness.
-    const reading = await pollAudio(page, 12_000, { channels: [0, 1, 2], channelFloor: 0.002, outFloor: 0.005 });
-    const { channelMax, outMax, samples, elapsedMs } = reading;
-    const observed = `${samples} samples over ${elapsedMs.toFixed(0)} ms`;
+    // Presence over 0.68 s analyser windows on the post-fader taps and the
+    // audio-out input stage (see pollAudio); the early exit keeps a green run
+    // short and the 12 s cap bounds failure.
+    const reading = await pollAudio(page, 12_000, { channels: [0, 1, 2], channelFloor: CH_FLOOR, outFloor: OUT_FLOOR });
+    const { channelMax, outMax, samples, elapsedMs, windowS } = reading;
+    const observed = `${samples} samples over ${elapsedMs.toFixed(0)} ms, ${windowS.toFixed(2)} s windows; ` +
+      `ch=[${channelMax.slice(0, 3).map(v => v.toFixed(4)).join(', ')}] out=${outMax.toFixed(4)}; ` +
+      `ctx ${reading.ctxState}, advanced ${reading.ctxAdvancedS.toFixed(2)} s; playing=${reading.playing}`;
+    console.log(`[source-chain] ${observed}`);
     expect(samples, observed).toBeGreaterThan(0);
-    // Each of the three channels registers energy at its mixer meter…
-    expect(channelMax[0], `ch1 (tidyvco) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
-    expect(channelMax[1], `ch2 (kickdrum) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
-    expect(channelMax[2], `ch3 (wavesculpt) audible at the mixer; ${observed}`).toBeGreaterThan(0.002);
+    expect(windowS, 'the long-window taps were built (recTaps + audio-out inputs resolved)').toBeGreaterThan(0.5);
+    // Each of the three channels registers energy at its mixer channel…
+    expect(channelMax[0], `ch1 (tidyvco) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
+    expect(channelMax[1], `ch2 (kickdrum) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
+    expect(channelMax[2], `ch3 (cube) audible at the mixer; ${observed}`).toBeGreaterThan(CH_FLOOR);
     // …and the whole chain reaches the terminal audio out.
-    expect(outMax, `audible at the pinned AUDIO OUT; ${observed}`).toBeGreaterThan(0.005);
+    expect(outMax, `audible at the pinned AUDIO OUT; ${observed}`).toBeGreaterThan(OUT_FLOOR);
+
+    // NEGATIVE CONTROL — the instrument reads the channel it claims to. Mute
+    // cube at its own output (LEVEL 0 is a true mute; tidyvco and kickdrum
+    // bottom out at −24 dB) and ch3 must fall below the floor while
+    // ch1/ch2 stay above it. The quiet read starts only once the audio clock
+    // has passed the mute instant plus the analyser window and a release —
+    // audio time, not a wall-clock sleep.
+    const cube = (await orderOf(page, 'columns', 3))[0]!;
+    const mutedAt = await page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __engine: () => { getDomain: (d: string) => { ctx: AudioContext } };
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => { w.__patch.nodes[id]!.params.level = 0; });
+      return w.__engine().getDomain('audio').ctx.currentTime;
+    }, cube);
+    const control = await pollAudio(page, 12_000, {
+      channels: [0, 1], channelFloor: CH_FLOOR, outFloor: OUT_FLOOR,
+      quiet: { channel: 2, afterCtxTime: mutedAt + windowS + 0.5 },
+    });
+    const ctl = `${control.quietSamples} post-settle samples; ch3=${control.quietMax?.toFixed(4) ?? 'none'} ` +
+      `ch=[${control.channelMax.slice(0, 3).map(v => v.toFixed(4)).join(', ')}]`;
+    console.log(`[source-chain control] ${ctl}`);
+    expect(control.quietSamples, `a post-settle sample exists; ${ctl}`).toBeGreaterThan(0);
+    expect(control.channelMax[0], `ch1 still audible with cube muted; ${ctl}`).toBeGreaterThan(CH_FLOOR);
+    expect(control.channelMax[1], `ch2 still audible with cube muted; ${ctl}`).toBeGreaterThan(CH_FLOOR);
+    expect(control.quietMax, `ch3 silent once cube is muted — the tap reads ITS channel; ${ctl}`).toBeLessThan(CH_FLOOR);
   });
 
   test('MULTI-SOURCE: two instruments in ONE column → BOTH clip-driven, but ONLY the head sends (2nd is automation-only)', async ({ page }) => {
