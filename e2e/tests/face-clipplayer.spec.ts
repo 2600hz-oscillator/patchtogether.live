@@ -434,14 +434,9 @@ test.describe('CLIP PLAYER faceplate', () => {
       ).toHaveCount(8);
     }
 
-    // The session must shrink to the grid AND keep the grid at the top of the
-    // page: the docked full view at the default 1280×720 viewport has to show
-    // the first pad row without scrolling. clipplayer-grid-stability clicks pad
-    // 0 from its measured box, and a layout that pushes that row below the
-    // pane's visible edge clicks the status bar instead (the #2415 red run).
-    // Scene repeats sit BELOW the grid cell. Counting controls alone cannot see
-    // an empty second column, a grid scrolled out of view, or footer prose that
-    // widens the whole faceplate.
+    // Grid in view without scrolling (CI run 35551681650: a row pushed below
+    // the pane clicked the status bar), scenes below it, shell no wider than
+    // the grid, footer wraps.
     const layout = await dock.evaluate((el) => {
       const rect = (node: Element) => {
         const r = node.getBoundingClientRect();
