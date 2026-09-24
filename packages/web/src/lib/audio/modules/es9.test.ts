@@ -2,7 +2,13 @@
 // transport halves have their own suites (dsp: es9-bridge-core.test.ts;
 // web: $lib/audio/es9/es9-transport.test.ts).
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('$lib/audio/es9/bridge-owner', async (orig) => ({
+  ...(await orig<typeof import('$lib/audio/es9/bridge-owner')>()),
+  updateEs9Config: vi.fn(),
+}));
+import { updateEs9Config } from '$lib/audio/es9/bridge-owner';
+import { patch } from '$lib/graph/store';
 import {
   ES9_CLASS_AUDIO,
   ES9_CLASS_CV,
@@ -16,6 +22,9 @@ import {
   es9Def,
   es9OutputModes,
   es9RefsFromParams,
+  es9BridgeConfig,
+  es9LiveBridgeConfig,
+  syncEs9UnderrunPolicy,
 } from './es9';
 
 describe('es9 def shape', () => {
@@ -165,5 +174,40 @@ describe('class mapping helpers', () => {
     expect(modes['10'], 'gate jacks fail low, never hold').toBe('audio');
     expect(modes['11']).toBe('audio');
     expect(modes['0']).toBe('audio');   // USB bus feeds are always audio
+  });
+
+  it("HOLDS the one gate that is a LEVEL — CV Buddy's RUN jack — while CLOCK still fails low", () => {
+    const params = { out7_class: ES9_CLASS_GATE, out8_class: ES9_CLASS_GATE };
+    // Without a held-jack roster both transport jacks fade (the 2026-08-07 rule).
+    expect(es9OutputModes(params)['14']).toBe('audio');
+    expect(es9OutputModes(params)['15']).toBe('audio');
+    // Jack 7 named as a held level (channel index 8 + 6 = 14) → HOLD; jack 8
+    // (the clock pulses) keeps failing low. Every hiccup used to fail RUN low
+    // and Pam's reset on the recovery edge (owner video, 2026-09-23).
+    const modes = es9OutputModes(params, [7]);
+    expect(modes['14'], 'RUN holds').toBe('cv');
+    expect(modes['15'], 'CLOCK still fails low').toBe('audio');
+    // The override is gate-only: an audio-class jack in the roster still fades,
+    // and the roster never touches the USB bus feeds.
+    expect(es9OutputModes({ out7_class: ES9_CLASS_AUDIO }, [7])['14']).toBe('audio');
+    expect(es9OutputModes(params, [7])['6']).toBe('audio');
+    expect(es9BridgeConfig(params, [7]).outputModes).toEqual(modes);
+  });
+
+  it('the LIVE builder reads the held jack from the CV Buddy allocation in the store, and the janitor sync pushes it', () => {
+    for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
+    const es9Params = { out7_class: ES9_CLASS_GATE, out8_class: ES9_CLASS_GATE };
+    patch.nodes['es9-a'] = { id: 'es9-a', type: 'es9', domain: 'audio', position: { x: 0, y: 0 }, params: es9Params } as never;
+    // No CV Buddy → nothing is a held level.
+    expect(es9LiveBridgeConfig(es9Params).outputModes['14']).toBe('audio');
+    patch.nodes['cb-1'] = { id: 'cb-1', type: 'cvBuddy', domain: 'audio', position: { x: 0, y: 0 }, params: {} } as never;
+    expect(es9LiveBridgeConfig(es9Params).outputModes['14'], 'RUN on jack 7 holds').toBe('cv');
+    expect(es9LiveBridgeConfig(es9Params).outputModes['15'], 'CLOCK on jack 8 fades').toBe('audio');
+    vi.mocked(updateEs9Config).mockClear();
+    syncEs9UnderrunPolicy(patch.nodes);
+    expect(vi.mocked(updateEs9Config)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateEs9Config).mock.calls[0]![0]).toBe('es9-a');
+    expect(vi.mocked(updateEs9Config).mock.calls[0]![1].outputModes['14']).toBe('cv');
+    for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
   });
 });

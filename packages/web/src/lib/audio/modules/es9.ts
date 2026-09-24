@@ -69,6 +69,8 @@ import {
   type Es9BridgeConfigLike,
 } from '$lib/audio/es9/bridge-owner';
 import workletUrl from '@patchtogether.live/dsp/dist/es9-bridge.js?url';
+import { cvBuddyHeldGateJacks } from '$lib/audio/cv-buddy/slot-alloc';
+import { patch as livePatch } from '$lib/graph/store';
 
 import { createWorkletNode } from '$lib/audio/worklet-guard';
 const PROCESSOR_NAME = 'es9-bridge';
@@ -235,14 +237,28 @@ export function es9RefsFromParams(params: Record<string, number> | undefined): {
  *
  * Failing low loses at most the pulses inside the hiccup, which is the
  * graceful failure, so gate takes the fade policy. Pitch and CV still hold.
+ *
+ * ⚠ EXCEPT A GATE THAT IS A LEVEL. CV Buddy's RUN jack is a gate class held
+ * high for the whole performance; failing it low turns every hiccup into a
+ * stop-and-restart, and Pam's RESETS on that rising edge (owner video,
+ * 2026-09-23: every divider re-fired together while the 16th clock stayed
+ * dead regular). `heldGateJacks` (1..8) names those jacks — derived from the
+ * CV Buddy allocation, never typed — and they take the HOLD policy while
+ * keeping the gate class's 0/+5 V comparator.
  */
-export function es9OutputModes(params: Record<string, number> | undefined): Record<string, 'audio' | 'cv'> {
+export function es9OutputModes(
+  params: Record<string, number> | undefined,
+  heldGateJacks: readonly number[] = [],
+): Record<string, 'audio' | 'cv'> {
   const { outClasses } = es9ClassesFromParams(params);
   const modes: Record<string, 'audio' | 'cv'> = {};
   for (let c = 0; c < HW_CHANNELS; c++) {
     const cls = outClasses[c];
-    // HOLD only for the level-carrying classes; gate and audio both fail low.
-    modes[String(c)] = cls === ES9_CLASS_CV || cls === ES9_CLASS_PITCH ? 'cv' : 'audio';
+    const heldLevel =
+      cls === ES9_CLASS_GATE && c >= JACK_CHANNEL_BASE && heldGateJacks.includes(c - JACK_CHANNEL_BASE + 1);
+    // HOLD for the level-carrying classes and for a gate jack that carries a
+    // level; pulse gates and audio fail low.
+    modes[String(c)] = cls === ES9_CLASS_CV || cls === ES9_CLASS_PITCH || heldLevel ? 'cv' : 'audio';
   }
   return modes;
 }
@@ -268,12 +284,36 @@ export function es9OutputModes(params: Record<string, number> | undefined): Reco
  * v1 subscribes/drives all channels — loopback bandwidth is trivial and it
  * keeps the masks decoupled from patch-edge churn.
  */
-export function es9BridgeConfig(params: Record<string, number> | undefined): Es9BridgeConfigLike {
+export function es9BridgeConfig(
+  params: Record<string, number> | undefined,
+  heldGateJacks: readonly number[] = [],
+): Es9BridgeConfigLike {
   return {
     inputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
     outputChannels: Array.from({ length: HW_CHANNELS }, (_, c) => c),
-    outputModes: es9OutputModes(params),
+    outputModes: es9OutputModes(params, heldGateJacks),
   };
+}
+
+/** The config for a LIVE node: the params plus the held-level jacks read from
+ *  the live graph (the CV Buddy allocation). Every runtime push goes through
+ *  here — factory acquire, class edits, the Connect action and the janitor. */
+export function es9LiveBridgeConfig(params: Record<string, number> | undefined): Es9BridgeConfigLike {
+  return es9BridgeConfig(params, cvBuddyHeldGateJacks(livePatch.nodes));
+}
+
+/** Re-derive every ES-9 node's underrun policy from `nodes` and push it to its
+ *  live connection. Called by the CV Buddy janitor on each graph change, since
+ *  a re-allocation can move RUN without touching a param. `updateEs9Config`
+ *  dedupes, so a converged graph sends nothing. */
+export function syncEs9UnderrunPolicy(
+  nodes: Record<string, { id?: string; type?: string; params?: Record<string, number> } | null | undefined>,
+): void {
+  const held = cvBuddyHeldGateJacks(nodes);
+  for (const [id, n] of Object.entries(nodes)) {
+    if (!n || n.type !== 'es9') continue;
+    updateEs9Config(n.id ?? id, es9BridgeConfig(n.params, held));
+  }
 }
 
 // ---- docs (STRICT_DOCS: every port + control documented) ----------------
@@ -282,7 +322,7 @@ function inputDocs(): Record<string, string> {
   const docs: Record<string, string> = {};
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}`] =
-      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = ±1 → ±5 V, or ±1 → ±1.736 V with Out ${n} ref set to line for a line-level input; cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock).`;
+      `To ES-9 physical output jack ${n} (DC-coupled, ±10 V; USB channel ${8 + n} under the ES-9's default routing). Takes audio or any CV-family signal; the Out ${n} class selector sets the voltage scaling (audio = ±1 → ±5 V, or ±1 → ±1.736 V with Out ${n} ref set to line for a line-level input; cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V) and how the jack fails if the browser stream hiccups (cv and pitch HOLD their last voltage, since a collapsed pitch is a wrong note; gate and audio fall to zero, since a frozen gate is a stuck note or a stopped clock; the one gate that HOLDS is CV Buddy's RUN jack, a level, because a dropout must not read downstream as a transport restart).`;
   }
   const usbDefault: Record<number, string> = {
     1: 'the main outputs (via internal mix 1) and phones',
@@ -328,7 +368,7 @@ function controlDocs(): Record<string, string> {
   }
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}_class`] =
-      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = ±1 → ±5 V, the same scaling as cv, or ±1 → ±1.736 V with Out ${n} ref set to line) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
+      `Signal class for hardware output jack ${n} (audio/cv/pitch/gate; default audio). Sets the inverse voltage mapping for signals patched into out${n} (cv = ±1 → ±5 V, pitch = 1.0/oct → 1 V/oct, gate = 0|1 → 0/+5 V, audio = ±1 → ±5 V, the same scaling as cv, or ±1 → ±1.736 V with Out ${n} ref set to line) AND the bridge's failure policy for the jack on a stream hiccup: cv and pitch HOLD their last voltage (a pitch collapsing to 0 V would be a wrong note), while gate and audio FALL TO ZERO — except CV Buddy's RUN jack, a held level, which HOLDS so a dropout never reads as a transport restart — (a frozen gate is a stuck note or a stalled clock, which is worse than a dropped pulse).`;
   }
   for (let n = 1; n <= DC_OUTPUT_JACKS; n++) {
     docs[`out${n}_ref`] =
@@ -664,7 +704,7 @@ export const es9Def: AudioModuleDef = {
     // renders a module. Collapsing the dock pane, switching to ?shell=1, or
     // never opening the card at all can no longer stop the hardware stream.
     // No-ops without Worker/SAB (node, vitest, the ART harness).
-    const rings = acquireEs9Bridge(node.id, ctx.sampleRate, es9BridgeConfig(node.params));
+    const rings = acquireEs9Bridge(node.id, ctx.sampleRate, es9LiveBridgeConfig(node.params));
     if (rings) {
       worklet.port.postMessage({ type: 'rings', in: rings.inRing, out: rings.outRing });
     }
@@ -692,7 +732,7 @@ export const es9Def: AudioModuleDef = {
           // than a dropped pulse. This is the one place that knows a class
           // changed with no view involved, which is what makes it the right
           // place: a store write from the CV-Buddy janitor arrives here too.
-          updateEs9Config(node.id, es9BridgeConfig(liveParams));
+          updateEs9Config(node.id, es9LiveBridgeConfig(liveParams));
         }
       },
       readParam(paramId) {

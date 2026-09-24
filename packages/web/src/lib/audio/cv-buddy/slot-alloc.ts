@@ -155,6 +155,36 @@ export function allocateCvBuddySlots(
 
 /** The ES-9 target port + signal class for a given slot. `class` is the
  *  out{N}_class value the reconciler writes onto the es9 node's params. */
+/** Every CV Buddy in a node map (BOTH kinds, one list — the allocator draws
+ *  them from a single jack pool), keyed the way the reconciler keys them. */
+export function cvBuddyInstancesFromNodes(
+  nodes: Record<string, { id?: string; type?: string } | null | undefined>,
+): CvBuddyInstance[] {
+  const out: CvBuddyInstance[] = [];
+  for (const [id, n] of Object.entries(nodes)) {
+    if (!n || !n.type) continue;
+    const nid = n.id ?? id;
+    if (n.type === 'cvBuddy') out.push({ id: nid, kind: 'full' });
+    else if (n.type === 'cvBuddyMini') out.push({ id: nid, kind: 'mini' });
+  }
+  return out;
+}
+
+/** ES-9 jacks (1..8) whose GATE class carries a held LEVEL rather than pulses:
+ *  the owner CV Buddy's RUN jack, or none. The bridge's underrun policy HOLDS
+ *  these (es9OutputModes) — a dropout that fails RUN low reads downstream as a
+ *  stop-and-restart, and Pam's resets on that edge (owner video, 2026-09-23).
+ *  A graph fact from the same allocation the reconciler wires by. */
+export function cvBuddyHeldGateJacks(
+  nodes: Record<string, { id?: string; type?: string } | null | undefined>,
+): number[] {
+  const out: number[] = [];
+  for (const a of allocateCvBuddySlots(cvBuddyInstancesFromNodes(nodes)).values()) {
+    if (a.runSlot !== null) out.push(a.runSlot);
+  }
+  return out.sort((x, y) => x - y);
+}
+
 export type CvBuddySlotRole = 'pitch' | 'gate' | 'vel' | 'run' | 'clock';
 
 /** The ES-9 port name for a jack. Role-INDEPENDENT — a jack is `out{N}`

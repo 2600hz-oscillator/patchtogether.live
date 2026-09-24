@@ -12,6 +12,8 @@ import {
   ES9_GATE,
   CV_BUDDY_MANAGED_SLOTS,
   type CvBuddyAlloc,
+  cvBuddyInstancesFromNodes,
+  cvBuddyHeldGateJacks,
 } from './slot-alloc';
 
 describe('allocateCvBuddySlots', () => {
@@ -246,5 +248,21 @@ describe('CV Buddy MINI — the owner\'s two rack configurations', () => {
     expect(slotToEs9(3, 'pitch'), 'same jack, different role, different class')
       .toEqual({ port: 'out3', class: ES9_PITCH });
     expect(slotToEs9(4, 'gate')).toEqual({ port: 'out4', class: ES9_GATE });
+  });
+});
+
+describe('cvBuddyInstancesFromNodes / cvBuddyHeldGateJacks — the RUN jack as a graph fact', () => {
+  const node = (id: string, type: string) => ({ id, type });
+  it('collects both kinds, keyed by node id, and ignores everything else', () => {
+    expect(cvBuddyInstancesFromNodes({ b: node('b', 'cvBuddyMini'), a: node('a', 'cvBuddy'), m: node('m', 'mixmstrs'), x: undefined }))
+      .toEqual([{ id: 'b', kind: 'mini' }, { id: 'a', kind: 'full' }]);
+    expect(cvBuddyInstancesFromNodes({ k: { type: 'cvBuddy' } }), 'falls back to the map key').toEqual([{ id: 'k', kind: 'full' }]);
+  });
+  it('names the owner\'s RUN jack only — one held level, never the clock, never a second instance', () => {
+    expect(cvBuddyHeldGateJacks({})).toEqual([]);
+    expect(cvBuddyHeldGateJacks({ a: node('a', 'cvBuddy') })).toEqual([7]);
+    expect(cvBuddyHeldGateJacks({ a: node('a', 'cvBuddyMini') })).toEqual([7]);
+    expect(cvBuddyHeldGateJacks({ b: node('b', 'cvBuddy'), a: node('a', 'cvBuddy'), c: node('c', 'cvBuddy') })).toEqual([7]);
+    expect(cvBuddyHeldGateJacks({ m: node('m', 'mixmstrs') })).toEqual([]);
   });
 });

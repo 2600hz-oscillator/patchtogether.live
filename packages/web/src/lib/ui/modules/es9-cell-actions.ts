@@ -30,7 +30,7 @@ import { getActiveEngine } from '$lib/audio/engine-ref';
 import { patch } from '$lib/graph/store';
 import { recordAudition } from '$lib/ui/modules/audition-ledger';
 import type { ModuleNode } from '$lib/graph/types';
-import { es9BridgeConfig } from '$lib/audio/modules/es9';
+import { es9LiveBridgeConfig } from '$lib/audio/modules/es9';
 import { restartEs9Bridge, stopEs9Bridge } from '$lib/audio/es9/bridge-owner';
 
 /**
@@ -65,7 +65,7 @@ export function es9Connect(nodeId: string): boolean {
     return false;
   }
   recordAudition({ nodeId, seam: 'engine-message', delivered: true });
-  restartEs9Bridge(nodeId, engineSampleRate(), es9BridgeConfig(node.params));
+  restartEs9Bridge(nodeId, engineSampleRate(), es9LiveBridgeConfig(node.params));
   return true;
 }
 

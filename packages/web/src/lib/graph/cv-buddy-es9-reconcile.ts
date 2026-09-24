@@ -37,11 +37,12 @@
 
 import { patch, ydoc } from '$lib/graph/store';
 import type { Edge, ModuleNode } from '$lib/graph/types';
+import { syncEs9UnderrunPolicy } from '$lib/audio/modules/es9';
 import {
   allocateCvBuddySlots,
   slotToEs9,
   es9PortForSlot,
-  type CvBuddyInstance,
+  cvBuddyInstancesFromNodes,
   type CvBuddySlotRole,
   slotsToReset,
   CV_BUDDY_MANAGED_SLOTS,
@@ -144,17 +145,11 @@ export function planCvBuddyEs9(
   // which is what makes a full and a mini on the same rack impossible to
   // collide. Collecting them separately and allocating twice would give each
   // its own jack 1.
-  const cvBuddyInstances: CvBuddyInstance[] = [];
+  const cvBuddyInstances = cvBuddyInstancesFromNodes(nodes);
   for (const [id, n] of Object.entries(nodes)) {
-    if (!n || !n.type) continue;
+    if (!n || n.type !== 'es9') continue;
     const nid = n.id ?? id;
-    if (n.type === 'es9') {
-      if (es9Id === null || nid < es9Id) es9Id = nid;
-    } else if (n.type === 'cvBuddy') {
-      cvBuddyInstances.push({ id: nid, kind: 'full' });
-    } else if (n.type === 'cvBuddyMini') {
-      cvBuddyInstances.push({ id: nid, kind: 'mini' });
-    }
+    if (es9Id === null || nid < es9Id) es9Id = nid;
   }
 
   // Existing janitor-owned edges (id prefix), regardless of whether they still
@@ -273,21 +268,26 @@ function planIsEmpty(p: CvBuddyEs9Plan): boolean {
  */
 export function reconcileCvBuddyEs9(): void {
   const plan = planCvBuddyEs9(patch.nodes, patch.edges);
-  if (planIsEmpty(plan)) return;
-  ydoc.transact(() => {
-    for (const id of plan.edgeIdsToRemove) {
-      if (patch.edges[id]) delete patch.edges[id];
-    }
-    for (const e of plan.edgesToAdd) {
-      patch.edges[e.id] = e;
-    }
-    for (const { es9Id, paramId, value } of plan.classSets) {
-      const live = patch.nodes[es9Id] as ModuleNode | undefined;
-      if (!live) continue;
-      if (!live.params) live.params = {};
-      // Programmatic JANITOR write (CVBUDDY_JANITOR_ORIGIN, non-undo-tracked) —
-      // deliberately out of the undo stack, like the automation-assign janitor.
-      live.params[paramId] = value; // guard:allow-raw-write
-    }
-  }, CVBUDDY_JANITOR_ORIGIN);
+  if (!planIsEmpty(plan)) {
+    ydoc.transact(() => {
+      for (const id of plan.edgeIdsToRemove) {
+        if (patch.edges[id]) delete patch.edges[id];
+      }
+      for (const e of plan.edgesToAdd) {
+        patch.edges[e.id] = e;
+      }
+      for (const { es9Id, paramId, value } of plan.classSets) {
+        const live = patch.nodes[es9Id] as ModuleNode | undefined;
+        if (!live) continue;
+        if (!live.params) live.params = {};
+        // Programmatic JANITOR write (CVBUDDY_JANITOR_ORIGIN, non-undo-tracked) —
+        // deliberately out of the undo stack, like the automation-assign janitor.
+        live.params[paramId] = value; // guard:allow-raw-write
+      }
+    }, CVBUDDY_JANITOR_ORIGIN);
+  }
+  // The RUN jack's underrun policy is a GRAPH fact (which instance owns it),
+  // not a param: a re-allocation that leaves out7_class unchanged writes no
+  // param, so the bridge would never hear about it. Deduped in bridge-owner.
+  syncEs9UnderrunPolicy(patch.nodes);
 }

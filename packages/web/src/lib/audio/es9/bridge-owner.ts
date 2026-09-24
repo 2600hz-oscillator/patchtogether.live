@@ -65,6 +65,9 @@ type Listener = (s: Es9OwnerSnapshot) => void;
 interface Entry {
   client: Es9BridgeClient;
   snap: Es9OwnerSnapshot;
+  /** The last config pushed through `updateEs9Config`, so the janitor's
+   *  per-graph-change sync sends nothing to a converged connection. */
+  configKey?: string;
 }
 
 const IDLE: Es9OwnerSnapshot = {
@@ -168,7 +171,12 @@ export function acquireEs9Bridge(
 /** Push a new channel/mode config to a LIVE connection (the card's class
  *  selectors). No-op when the node has no connection. */
 export function updateEs9Config(nodeId: string, config: Es9BridgeConfigLike): void {
-  entries.get(nodeId)?.client.updateConfig(config);
+  const entry = entries.get(nodeId);
+  if (!entry) return;
+  const key = JSON.stringify(config);
+  if (entry.configKey === key) return;
+  entry.configKey = key;
+  entry.client.updateConfig(config);
 }
 
 /**
