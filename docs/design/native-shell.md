@@ -139,8 +139,17 @@ rack". This is also what keeps the guard off the hundreds of ordinary `/rack`
 specs: an unbound rig gathers no evidence and can never prompt.
 
 `/preflight` is an ordinary web route, not a shell-native panel, and it reuses the
-app's own enumeration (screen identity, the camera pattern, the push2 / launchpad /
-PTZ rosters) rather than reinventing it — so the same screen drives the browser.
+app's own enumeration (screen identity, the camera pattern, and controller MIDI
+rosters). The route is desktop-only; browsers connect devices from the rack.
+
+TRAILS has a saved input selection in the per-machine rig record. Desktop setup
+and the module runtime restore it after the store hydrates, without another
+Connect gesture. The runtime owns MIDI even when its face is collapsed. Exact
+input identity wins; a changed id can fall back to the saved name only when one
+live input matches. Missing or ambiguous inputs stay selected but unbound, and
+hot-plug re-resolves the pick. Clearing it detaches the input. A disappearing or
+replaced input releases gates and poly notes; axis CV retains its last position.
+Browser TRAILS retains its gesture-triggered, name-matched connection behavior.
 
 ## Not built
 

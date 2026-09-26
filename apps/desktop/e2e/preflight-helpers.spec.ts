@@ -23,6 +23,7 @@ import { test, expect, _electron, type ElectronApplication } from '@playwright/t
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { midiDeviceMockScript } from '../../../e2e/_helpers/midi';
 
 const APP_DIR = path.resolve(__dirname, '..');
 const WEB_ROOT = process.env.PT_DESKTOP_WEB_ROOT
@@ -65,6 +66,41 @@ test.beforeAll(() => {
       `No desktop web bundle at ${WEB_ROOT} — run \`task desktop:build:web\` first (or set PT_DESKTOP_WEB_ROOT).`,
     );
   }
+});
+
+test('TRAILS selection survives a real process relaunch and connects without another gesture', async () => {
+  test.setTimeout(BOOT_MS * 3);
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-trails-'));
+  const input = { id: 'native-trails', name: 'Bela Trails' };
+  const script = midiDeviceMockScript([], [input], 'instant');
+  try {
+    const first = await launch(profile);
+    try {
+      const page = await first.firstWindow();
+      await page.addInitScript({ content: script });
+      await page.reload();
+      await expect(page.getByTestId('preflight-panel')).toBeVisible({ timeout: BOOT_MS });
+      await page.getByTestId('preflight-trails-connect').click();
+      await page.getByTestId('preflight-trails-select').selectOption(input.id);
+      await expect.poll(() => JSON.parse(fs.readFileSync(path.join(profile, 'rig-bindings.json'), 'utf8')).trails)
+        .toEqual({ deviceId: input.id, deviceName: input.name });
+    } finally { await first.close(); }
+    const second = await launch(profile);
+    try {
+      const page = await second.firstWindow();
+      await page.addInitScript({ content: script });
+      await page.reload();
+      await expect(page.getByTestId('preflight-trails-select')).toHaveValue(input.id, { timeout: BOOT_MS });
+      await expect(page.getByTestId('preflight-trails-presence')).toHaveAttribute('data-state', 'ok');
+      const screenshot = test.info().outputPath('restored-trails-setup.png');
+      await page.getByTestId('preflight-section-trails').screenshot({ path: screenshot });
+      await test.info().attach('restored-trails-setup', { path: screenshot, contentType: 'image/png' });
+      expect(await page.evaluate((id) => {
+        const w = window as unknown as { __midiDeviceMock: { inject(id: string, bytes: number[]): boolean } };
+        return w.__midiDeviceMock.inject(id, [0xf8]);
+      }, input.id)).toBe(true);
+    } finally { await second.close(); }
+  } finally { fs.rmSync(profile, { recursive: true, force: true }); }
 });
 
 test('pre-flight renders es9/ptz helper presence, and an ES-9 bind survives a relaunch (electron-store round-trip)', async () => {

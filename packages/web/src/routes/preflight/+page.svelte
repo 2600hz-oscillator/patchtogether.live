@@ -38,6 +38,10 @@
     linnstrumentMidiVersion,
     listLinnstrumentPorts,
   } from '$lib/midi/linnstrument-device';
+  import {
+    connectTrails, restoreNativeTrails, trailsHasAccess, trailsMidiVersion,
+    listTrailsPorts, selectedTrailsPortId,
+  } from '$lib/midi/trails-device';
 
   interface PtNativeLike {
     command?: (
@@ -261,6 +265,33 @@
     return !!b && linnPorts.some((p) => p.inputId === b.deviceId);
   }
 
+  // ── TRAILS ────────────────────────────────────────────────────────────────
+  let trailsPorts = $derived.by(() => {
+    $trailsMidiVersion;
+    return listTrailsPorts();
+  });
+  let trailsScanned = $state(false);
+  let trailsAccess = $derived.by(() => {
+    $trailsMidiVersion;
+    return trailsHasAccess();
+  });
+  let trailsSelectedId = $derived.by(() => {
+    $trailsMidiVersion;
+    rig.trails;
+    return selectedTrailsPortId();
+  });
+  async function scanTrails(): Promise<void> {
+    await connectTrails();
+    trailsScanned = true;
+  }
+  function pickTrails(inputId: string): void {
+    const port = trailsPorts.find((p) => p.inputId === inputId);
+    store.setTrails(port ? { deviceId: inputId, deviceName: port.name } : null);
+  }
+  function trailsPresent(): boolean {
+    return !!rig.trails && trailsSelectedId !== null;
+  }
+
   // ── GAMEPAD ───────────────────────────────────────────────────────────────
   let gamepads = $state<{ id: string; index: number }[]>([]);
   function pollGamepads(): void {
@@ -299,6 +330,7 @@
     });
     void store.whenReady().then(() => {
       rig = store.snapshot();
+      if (shell && rig.trails) void restoreNativeTrails().then(() => { trailsScanned = true; });
     });
     void refreshCameras();
     navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
@@ -665,6 +697,32 @@
           <option value={rig.linnstrument.deviceId} disabled>bound (not connected)</option>
         {/if}
         {#each linnPorts as p (p.inputId)}<option value={p.inputId}>{p.name}</option>{/each}
+      </select>
+    </div>
+  </section>
+
+  <!-- TRAILS -->
+  <section class="group" data-testid="preflight-section-trails">
+    <div class="group-head">
+      <h2>trails</h2>
+      <button class="ghost" data-testid="preflight-trails-connect" onclick={scanTrails}>
+        {trailsAccess ? 'rescan' : 'enable midi'}
+      </button>
+    </div>
+    <div class="row">
+      <span class="label">trails input</span>
+      <span class="lamp" data-testid="preflight-trails-presence"
+        data-state={rig.trails && !trailsPresent() ? 'down' : trailsPorts.length > 0 ? 'ok' : 'idle'}>
+        {rig.trails && !trailsPresent() ? 'not connected' : trailsPorts.length > 0 ? 'connected' : trailsScanned ? 'not found' : 'not scanned'}
+      </span>
+      <select class="control" data-testid="preflight-trails-select"
+        value={rig.trails ? trailsSelectedId ?? rig.trails.deviceId : ''}
+        onchange={(e) => pickTrails(e.currentTarget.value)}>
+        <option value="">— none —</option>
+        {#if rig.trails && !trailsPresent()}
+          <option value={rig.trails.deviceId} disabled>{rig.trails.deviceName || 'bound'} (not connected)</option>
+        {/if}
+        {#each trailsPorts as p (p.inputId)}<option value={p.inputId}>{p.name}</option>{/each}
       </select>
     </div>
   </section>

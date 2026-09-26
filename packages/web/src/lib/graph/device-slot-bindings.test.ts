@@ -69,6 +69,15 @@ describe('normalizeRigBindings', () => {
     expect(out.es9?.pushPolicy).toBe('always');
   });
 
+  it('trails: round-trips the selected input and optional name; drops malformed fields', () => {
+    const saved = { deviceId: 'trails-in', deviceName: 'Bela Trails' };
+    expect(normalizeRigBindings(JSON.parse(JSON.stringify({ trails: saved }))).trails).toEqual(saved);
+    expect(normalizeRigBindings({ trails: { deviceId: 't', deviceName: 42 } }).trails).toEqual({ deviceId: 't' });
+    for (const trails of [null, 't', { deviceId: 42 }, {}]) {
+      expect(normalizeRigBindings({ trails }).trails).toBeUndefined();
+    }
+  });
+
   it('linnstrument: round-trips a well-formed record and DROPS a malformed one', () => {
     // The ptz discipline (device-slot-bindings.ts): a string deviceId is the
     // whole contract; anything else is unbound, never a crash or a stale id.
@@ -148,6 +157,15 @@ describe('RigBindingStore', () => {
     store.setLinnstrument(null);
     expect(store.getLinnstrument()).toBeNull();
     expect(backend.saved.at(-1)?.linnstrument).toBeUndefined();
+    store.setTrails({ deviceId: 'trails-in', deviceName: 'Bela Trails' });
+    expect(store.getTrails()).toEqual({ deviceId: 'trails-in', deviceName: 'Bela Trails' });
+    const trailsBefore = store.snapshot();
+    store.setTrails({ deviceId: 'trails-next' });
+    expect(trailsBefore.trails?.deviceId).toBe('trails-in');
+    expect(backend.saved.at(-1)?.trails?.deviceId).toBe('trails-next');
+    store.setTrails(null);
+    expect(store.getTrails()).toBeNull();
+    expect(backend.saved.at(-1)?.trails).toBeUndefined();
     store.dispose();
   });
 
