@@ -6,7 +6,7 @@
 // that element with `gl.texImage2D(target, 0, RGBA, RGBA, UNSIGNED_BYTE,
 // videoEl)` (first call) → `texSubImage2D` (subsequent calls; cheaper, no
 // re-allocation). The output is a fullscreen-quad pass-through with a
-// gain multiplier and an optional horizontal flip ("mirror"), rendered
+// gain multiplier and independent horizontal/vertical flips, rendered
 // into the module's FBO so downstream modules see standard `video`
 // frames.
 //
@@ -26,6 +26,7 @@
 //   gain (linear 0..2): RGB gain multiplier.
 //   enabled (discrete 0..1): on/off toggle (off = silent black).
 //   mirror (discrete 0..1): horizontal flip ("mirror selfie").
+//   flipY (discrete 0..1): vertical flip, off by default.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -42,6 +43,7 @@ uniform sampler2D uTex;
 uniform float uHasInput;     // 0 = idle pattern, 1 = sample texture
 uniform float uGain;         // post-multiplier on RGB
 uniform float uMirror;       // 0 = passthrough, 1 = horizontal flip
+uniform float uFlipY;        // 0 = passthrough, 1 = vertical flip
 // (sx, sy) — UV scale that ZOOM-FITS (cover) the camera's native aspect
 // into the engine's 4:3 FBO without stretching. Computed adaptively per
 // ctx.res so a 16:9 webcam gets sx>1 (zoom in + crop the sides) and FILLS
@@ -62,12 +64,13 @@ void main() {
   // zooms IN + crops the off-axis (no bars — the default); LETTERBOX/contain
   // (sx,sy <= 1) shrinks so the whole frame fits with black bars.
   vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
-  // Sample with optional horizontal mirror. The webcam frame comes in
+  // Sample with independent horizontal and vertical flips. The webcam frame comes in
   // upside-down relative to GL clip space, but we use UNPACK_FLIP_Y_WEBGL
   // at upload time to fix that — so vUv here is already top-left-origin
   // for the camera frame.
   vec2 uv = centered;
   if (uMirror > 0.5) uv.x = 1.0 - uv.x;
+  if (uFlipY > 0.5) uv.y = 1.0 - uv.y;
   // In LETTERBOX mode the centered UV can fall outside [0,1] — render those
   // bar pixels black (CLAMP_TO_EDGE would smear the edge). In FILL mode the UV
   // is always in range by construction so this is a no-op.
@@ -161,6 +164,7 @@ interface CameraParams {
   gain: number;
   enabled: number;   // 0 | 1
   mirror: number;    // 0 | 1
+  flipY: number;     // 0 | 1
   fillMode: number;  // 0 = letterbox, 1 = fill (cover-crop) — DEFAULT
 }
 
@@ -168,6 +172,7 @@ const DEFAULTS: CameraParams = {
   gain: 1.0,
   enabled: 1,
   mirror: 1,
+  flipY: 0,
   // Cover-crop by default (the existing camera behaviour — never letterbox the
   // live feed). Per-source toggle to letterbox via the Fit/Fill control.
   fillMode: 1,
@@ -192,6 +197,7 @@ export const cameraInputDef: VideoModuleDef = {
     // (uMirror > 0.5) — so patch an LFO / clock / gate here to flip the mirror in
     // time with the music. With nothing patched, the Mirror button still owns it.
     { id: 'mirror', type: 'gate', paramTarget: 'mirror', edge: 'gate' },
+    { id: 'flipY', type: 'gate', paramTarget: 'flipY', edge: 'gate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -200,6 +206,7 @@ export const cameraInputDef: VideoModuleDef = {
     { id: 'gain',     label: 'Gain',   defaultValue: DEFAULTS.gain,     min: 0, max: 2, curve: 'linear' },
     { id: 'enabled',  label: 'On',     defaultValue: DEFAULTS.enabled,  min: 0, max: 1, curve: 'discrete' },
     { id: 'mirror',   label: 'Mirror', defaultValue: DEFAULTS.mirror,   min: 0, max: 1, curve: 'discrete' },
+    { id: 'flipY',    label: 'Flip Y', defaultValue: DEFAULTS.flipY,    min: 0, max: 1, curve: 'discrete' },
     { id: 'fillMode', label: 'Fill',   defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
   ],
 
@@ -251,34 +258,10 @@ export const cameraInputDef: VideoModuleDef = {
   // a permission grant is a property of ONE person's browser, and syncing it
   // would assert something false about everyone else's machine.
   //
-  // THE TIER LADDER, read back as a sentence: ON first, because it is the only
-  // control that decides whether there is a PICTURE AT ALL — everything else
-  // shapes a signal it has to already be passing. MIRROR second: it is the
-  // control a player reaches for on a camera before any other, and the only one
-  // on this def with a CV port declared `edge: 'gate'`, so it is also the only
-  // one something else can drive. GAIN third — the sole continuous control, and
-  // the only one that can be wrong by degree rather than by state. FILL last:
-  // framing is a set-once decision, and it is the one control whose effect a
-  // player will not notice until the source aspect differs from the output's.
+  // Capture first, then the independent X/Y orientation toggles, brightness,
+  // and framing. Flip Y defaults off to preserve existing saved-rack output.
   face: {
-    order: ['enabled', 'mirror', 'gain', 'fillMode'],
-
-    // ⚠ NO `pages`. Four controls over one capture are a single honest band.
-
-    // ⚠ ONE DECLARATION, AND ONLY ONE. The faceplate draws `gain`
-    // with `NeonFader`, so it is declared — nothing in a ParamDef separates "a
-    // level" from any other continuous scalar, and an undeclared face resolves
-    // it to a KNOB. The other three are `0..1 discrete`, so `looksLikeToggle`
-    // resolves them to Toggles on their own and the face agrees (two buttons and
-    // `NativeFillToggle`). Declaring them would be redundant; declaring `fader`
-    // for them would be REFUSED, correctly, since a throw over a two-state param
-    // has no "anywhere on this scale".
-    //
-    // ⚠ AND NONE OF THE THREE NEEDS A MOMENTARY/LATCHING CLASSIFICATION, which
-    // is worth stating because every other two-state param this fleet has faced
-    // did. `looksLikeSwitch` is `looksLikeToggle(p) && p.defaultValue === 0`,
-    // and all three of these default to **1** — a camera arrives ON, mirrored
-    // and filling. So they never reach the gate that demands the classification.
+    order: ['enabled', 'mirror', 'flipY', 'gain', 'fillMode'],
     paramCells: { gain: 'fader' },
 
     // ⚠ MANDATORY FOR A VIDEO DEF — no `type: 'audio'` output, so
@@ -300,15 +283,17 @@ export const cameraInputDef: VideoModuleDef = {
   maxInstances: 4,
 
   docs: {
-    explanation: "CAMERA is a webcam-as-source video module. It requests getUserMedia, runs a live <video> element, and hands it to the engine, which samples each decoded frame into a GPU texture and renders a fullscreen pass-through: the shader aspect-fits the camera frame into the engine's canvas (cover-cropping the off-axis by default so a 16:9 webcam fills the frame with no black bars), optionally flips it horizontally for a selfie mirror, and multiplies the RGB by a gain before sending it downstream. When no frame is available, or while disabled/paused, it shows a dark navy idle pattern (a faint vertical gradient, brighter toward the top) rather than black, so an unconfigured CAMERA reads as alive. Usage: drop CAMERA in, pick a device and grant access, then patch OUT into any video module (mixer, effect, OUTPUT screen). Use it as the live face/scene layer of a video patch.",
+    explanation: "CAMERA is a webcam-as-source video module. It requests getUserMedia, runs a live <video> element, and hands it to the engine, which samples each decoded frame into a GPU texture and renders a fullscreen pass-through: the shader aspect-fits the camera frame into the engine's canvas (cover-cropping the off-axis by default so a 16:9 webcam fills the frame with no black bars), optionally flips it horizontally for a selfie mirror or vertically for an inverted camera, and multiplies the RGB by a gain before sending it downstream. When no frame is available, or while disabled/paused, it shows a dark navy idle pattern (a faint vertical gradient, brighter toward the top) rather than black, so an unconfigured CAMERA reads as alive. Usage: drop CAMERA in, pick a device and grant access, then patch OUT into any video module (mixer, effect, OUTPUT screen). Use it as the live face/scene layer of a video patch.",
     inputs: {
+      flipY: "Gate input that drives Flip Y. The frame is vertically flipped while the level is held high (above 0.5) and upright while low. With nothing patched, the Flip Y control owns the state, independently of Mirror.",
       gain: "CV input that modulates the Gain control (linear scale, paramTarget=gain). Patch an LFO or envelope here to pulse the camera's RGB brightness; combines with the Gain control.",
       mirror: "Gate input that drives the Mirror toggle. It is level-sensitive (edge: gate): the image is horizontally flipped while the level is held high (above 0.5) and un-flipped while low, so an LFO/clock/gate flips the mirror in time. With nothing patched, the Mirror control owns the state.",
     },
     outputs: {
-      out: "Video output carrying the live camera frame: aspect-fitted, optionally mirrored, gain-multiplied RGB. Patch into any downstream video module.",
+      out: "Video output carrying the live camera frame: aspect-fitted, optionally flipped on either axis, gain-multiplied RGB. Patch into any downstream video module.",
     },
     controls: {
+      flipY: "Flip Y (discrete 0/1, default 0 = off). Vertically flips the camera frame without changing its horizontal orientation. Use it for an upside-down camera, or combine it with Mirror to flip both axes. The setting is saved with the patch and shared across collaborators; the flipY gate input can drive it while held high.",
       gain: "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the camera frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled (bright/clipped) RGB. CV-modulatable via the gain input.",
       enabled: "On (discrete 0/1, default 1 = on). Off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream. The PARAM owns that, not any one button — the faceplate\'s ON cell, the topbar camera manager and a collaborator's toggle all reach the hardware identically, because the capture acts on the value rather than on the click.",
       mirror: "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the Mirror control or held high by the mirror gate input. The param is shared across collaborators.",
@@ -323,6 +308,7 @@ export const cameraInputDef: VideoModuleDef = {
     const uHasInput  = gl.getUniformLocation(program, 'uHasInput');
     const uGain      = gl.getUniformLocation(program, 'uGain');
     const uMirror    = gl.getUniformLocation(program, 'uMirror');
+    const uFlipY     = gl.getUniformLocation(program, 'uFlipY');
     const uLetterbox = gl.getUniformLocation(program, 'uLetterbox');
 
     const { fbo, texture: outTexture } = ctx.createFbo();
@@ -505,6 +491,7 @@ export const cameraInputDef: VideoModuleDef = {
         g.uniform1f(uHasInput, hasInput ? 1.0 : 0.0);
         g.uniform1f(uGain,     params.gain);
         g.uniform1f(uMirror,   params.mirror);
+        g.uniform1f(uFlipY,    params.flipY);
 
         // Aspect-preserving fit into the live engine FBO (4:3 or 16:9). Per the
         // fillMode param: FILL/cover (default) crops the off-axis so a non-
