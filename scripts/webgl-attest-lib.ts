@@ -216,7 +216,8 @@ export function resolveHeavyWebglSpecs(): string[] {
  *  as a spec file. Such a spec is matched by the heavy glob but is NOT attestable
  *  (it belongs to the @collab lane), so it must be subtracted from Pass A's
  *  expected spec-file count or the count-gate sees a false shortfall (48/49).
- *  Sound for this repo's structure (tags live on the outermost describe). */
+ *  Also recognizes files containing only tagged top-level tests, without a
+ *  describe wrapper. */
 export function isFullyCollabCapacityGated(absPath: string): boolean {
   const src = stripComments(readFileSync(absPath, 'utf8'));
   // No tag anywhere → definitely attestable.
@@ -228,8 +229,10 @@ export function isFullyCollabCapacityGated(absPath: string): boolean {
   // Every top-level `test.describe(` must carry a tag for the file to be fully
   // gated. If any top-level describe lacks the tag, surviving tests remain.
   const topDescribes = [...src.matchAll(/^test\.describe(\.\w+)?\(\s*(['"`])(.*?)\2/gm)];
-  if (topDescribes.length === 0) return false; // tag present but not structuring describes → be safe, count it
-  return topDescribes.every((m) => /@collab|@capacity/.test(m[3] ?? ''));
+  const topTests = [...src.matchAll(/^test(\.(?:only|skip|fixme))?\(\s*(['"`])(.*?)\2/gm)];
+  const declarations = [...topDescribes, ...topTests];
+  if (declarations.length === 0) return false; // unknown structure → be safe, count it
+  return declarations.every((m) => /@collab|@capacity/.test(m[3] ?? ''));
 }
 
 /** The heavy specs that Pass A ACTUALLY runs: the glob set minus any spec that
