@@ -4,14 +4,15 @@ import { clearRigStoreOnce, installFakeShell, readRig, FAKE_SHELL_STORE_KEY } fr
 import { installMidiDeviceMock, injectMidiDeviceIn, unplugMidiPort, plugMidiPort } from '../_helpers/midi';
 import { readScopePeakOverWindow } from './_module-coverage-helpers';
 import { sampleScopeRms } from '../_helpers/scope-poll';
+import { BOOT_MS } from '../_helpers/boot-budget';
 
 const INPUT = { id: 'saved-trails', name: 'Bela Trails' };
 const OTHER = { id: 'other-trails', name: 'Trails Two' };
 const FLOOR = 0.03;
 
 async function ready(page: Page): Promise<void> {
-  await expect(page.getByTestId('preflight-panel')).toBeVisible();
-  await page.waitForFunction(() => (globalThis as unknown as { __preflightReady?: boolean }).__preflightReady);
+  await expect(page.getByTestId('preflight-panel')).toBeVisible({ timeout: BOOT_MS });
+  await page.waitForFunction(() => (globalThis as unknown as { __preflightReady?: boolean }).__preflightReady, undefined, { timeout: BOOT_MS });
   await page.waitForLoadState('networkidle');
 }
 
@@ -40,7 +41,7 @@ test('saved TRAILS restores after document reload and rack entry, produces audio
 
   await page.getByTestId('preflight-enter').click();
   await page.waitForURL(/\/rack(\?|$)/);
-  await expect(page.getByTestId('workflow-topbar')).toBeVisible();
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: BOOT_MS });
   await spawnPatch(page, [
     { id: 'tr', type: 'trails', domain: 'audio', position: { x: 40, y: 40 } },
     { id: 'osc', type: 'analogVco', domain: 'audio', position: { x: 320, y: 40 } },
