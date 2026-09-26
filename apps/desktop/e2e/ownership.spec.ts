@@ -24,6 +24,7 @@ import { test, expect, _electron, type ElectronApplication } from '@playwright/t
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { enterRack } from './enter-rack';
 import * as http from 'node:http';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -53,10 +54,7 @@ function requireBundle(): void {
 
 function freshUserDataDir(tag: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `pt-shell-${tag}-`));
-  // Two-stage launch (native-shell pre-flight): a fresh machine opens /preflight
-  // for first-run setup. These specs assert on the RACK (ownership / lock), so
-  // seed a present-but-empty rig record → isFirstRun() is false → boot /rack.
-  // The first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  // Retain a saved rig; every launch still starts at the hardware splash.
   fs.writeFileSync(path.join(dir, 'rig-bindings.json'), '{}');
   return dir;
 }
@@ -127,6 +125,7 @@ test('a second launch on the same fixed port does not open a second shell', asyn
   const first = await launch();
   try {
     const page = await first.firstWindow();
+    await enterRack(page);
     await page.waitForURL(new RegExp(`^http://127\\.0\\.0\\.1:${port}/rack`), { timeout: BOOT_MS });
     // POSITIVE control: the first instance really did get the port and a window.
     expect(first.windows().length).toBe(1);
@@ -185,12 +184,12 @@ test('the lock is per-instance, not a blanket refusal to start twice', async () 
   });
   let b: ElectronApplication | null = null;
   try {
-    await (await a.firstWindow()).waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
+    await enterRack(await a.firstWindow());
     b = await _electron.launch({
       args: [`--user-data-dir=${freshUserDataDir('twinB')}`, APP_DIR],
       env: { ...process.env, PT_DESKTOP_WEB_ROOT: WEB_ROOT, PT_DESKTOP_PORT: '0', PT_DESKTOP_WINDOWED: '1', PT_HELPERS: 'off' },
     });
-    await (await b.firstWindow()).waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
+    await enterRack(await b.firstWindow());
     expect(a.windows().length).toBe(1);
     expect(b.windows().length).toBe(1);
   } finally {
@@ -242,6 +241,7 @@ test('a foreign listener on a helper port is reported, never adopted and never k
   app.process().stderr?.on('data', (d: Buffer) => console.error(`[main] ${String(d).trimEnd()}`));
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
 
     // NEGATIVE control: the row settles on the terminal foreign state, and it
@@ -308,6 +308,7 @@ test('our own helper on the same port reaches running with ownership proven', as
   });
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
     await expect.poll(async () => (await status(app, 'es9'))?.state, { timeout: 40_000 }).toBe('running');
     const row = await status(app, 'es9');

@@ -10,7 +10,7 @@
 //   2. THE ELECTRON-STORE ROUND-TRIP. Binding the ES-9 output-push policy on
 //      /preflight round-trips through `bindings.set` into the on-disk rig record
 //      (rig-store.ts). A RELAUNCH against the SAME userData dir then (a) boots
-//      straight to /rack — the store is no longer first-run — and (b) reads the
+//      to /preflight with the saved selection — and (b) reads the
 //      policy back through `bindings.get`. That is "bindings applied at boot;
 //      relaunch restores everything," proven end to end.
 //
@@ -113,15 +113,14 @@ test('pre-flight renders es9/ptz helper presence, and an ES-9 bind survives a re
     await app1.close();
   }
 
-  // ── RELAUNCH — same userData → configured rig → boots straight to /rack ────
+  // RELAUNCH: review hardware again, with the saved selection restored.
   const app2 = await launch(userDataDir);
+  const app2Process = app2.process();
   try {
     const page = await app2.firstWindow();
-    // The store is no longer first-run, so the shell opens /rack directly (and
-    // the relaunch guard does NOT bounce: the es9 helper is starting/running,
-    // never a positively-down state).
-    await page.waitForURL(/\/rack(\?|$)/, { timeout: BOOT_MS });
-    await expect(page.locator('.svelte-flow').first()).toBeVisible({ timeout: BOOT_MS });
+    await page.waitForURL(/\/preflight(\?|$)/, { timeout: BOOT_MS });
+    await expect(page.getByTestId('preflight-panel')).toBeVisible({ timeout: BOOT_MS });
+    await expect(page.getByTestId('preflight-es9-config')).toHaveValue('always');
 
     // The ES-9 policy came back from disk through bindings.get.
     const policy = await page.evaluate(async () => {
@@ -132,8 +131,34 @@ test('pre-flight renders es9/ptz helper presence, and an ES-9 bind survives a re
       return r.result?.es9?.pushPolicy ?? null;
     });
     expect(policy, 'the ES-9 policy survived the relaunch in the electron-store').toBe('always');
+    await page.getByTestId('preflight-enter').click();
+    await page.waitForURL(/\/rack(\?|$)/, { timeout: BOOT_MS });
+    await expect(page.locator('.svelte-flow').first()).toBeVisible({ timeout: BOOT_MS });
+
+    // Both File menus expose Exit. The renderer action must close the shell
+    // through normal app.quit(), including its owned helper and output windows.
+    expect(await app2.evaluate(({ Menu }) => {
+      const file = Menu.getApplicationMenu()?.items.find((item) => item.label === 'File');
+      return file?.submenu?.items.some((item) => item.label === 'Exit' && item.role === 'quit');
+    })).toBe(true);
+    const helperPid = await page.evaluate(async () => {
+      const w = window as unknown as { ptNative: { command: (op: string) => Promise<{ result: { current: { id: string; pid: number | null; state: string }[] } }> } };
+      const reply = await w.ptNative.command('helpers.status');
+      const es9 = reply.result.current.find((row) => row.id === 'es9');
+      if (es9?.state !== 'running' || !es9.pid) throw new Error('ES-9 stub must be running before Exit');
+      return es9.pid;
+    });
+    await app2.evaluate(({ BrowserWindow }) => { new BrowserWindow({ show: false }); });
+    await page.getByTestId('workflow-file-trigger').click();
+    await expect(page.getByTestId('workflow-file-exit')).toBeVisible();
+    const closed = app2.waitForEvent('close');
+    await page.getByTestId('workflow-file-exit').click();
+    await closed;
+    await expect.poll(() => {
+      try { process.kill(helperPid, 0); return true; } catch { return false; }
+    }, { message: 'Exit stops the owned ES-9 helper' }).toBe(false);
   } finally {
-    await app2.close();
+    if (app2Process.exitCode === null) await app2.close();
     fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 });

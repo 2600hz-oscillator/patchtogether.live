@@ -48,16 +48,15 @@ function isPlainObject(v: unknown): v is RigBindings {
  */
 export class RigStore {
   private cache: RigBindings = {};
-  /** True when the file was absent, empty, or unparseable at load — i.e. there
-   *  is no usable configured rig, so the shell opens /preflight. */
+  /** True when the file was absent, empty, or unparseable at load. */
   private firstRun = true;
 
   constructor(private readonly filePath: string) {
     this.load();
   }
 
-  /** No usable rig on disk at boot (absent / empty / corrupt). Drives the
-   *  first-run → /preflight vs configured → /rack decision in main.ts. */
+  /** No usable rig on disk at boot (absent / empty / corrupt). This describes
+   *  persistence only; every fresh launch opens /preflight. */
   isFirstRun(): boolean {
     return this.firstRun;
   }

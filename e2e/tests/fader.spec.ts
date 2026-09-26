@@ -1,9 +1,10 @@
 // FADER — the face ↔ engine param-wiring chain. The per-module-per-port sweep
-// proves the 3 inputs (A/B/RETURN) accept video + the 2 outputs (OUT/SEND)
+// proves the 3 video inputs (A/B/RETURN) accept video + the 2 outputs (OUT/SEND)
 // exist + emit (FADER is in EXEMPT_OUTPUT_EMIT_MODULES — black until an input is
 // driven). The transition blend math is unit-tested in fader-transitions.test.ts.
 // This proves the UNIQUE bit: the two faders + two transition dropdowns drive the
-// engine params (node.params), the same path a CV cable would, with no GL errors.
+// engine params (node.params). fader-cv.spec.ts separately proves CV changes
+// the rendered picture without overwriting those saved manual positions.
 //
 // ── ⚠ WHY THIS FILE CARRIES A PER-TEST BOUND (2026-09-05) ──────────────────
 //

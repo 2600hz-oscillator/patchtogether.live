@@ -21,6 +21,7 @@ import { test, expect, _electron, type ElectronApplication } from '@playwright/t
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { enterRack } from './enter-rack';
 import * as http from 'node:http';
 
 const APP_DIR = path.resolve(__dirname, '..');
@@ -34,10 +35,7 @@ const BOOT_MS = 60_000;
  *  deliberately shares one — that is the collision under test. */
 function freshUserDataDir(tag: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `pt-shell-${tag}-`));
-  // Two-stage launch (native-shell pre-flight): a fresh machine opens /preflight
-  // for first-run setup. These specs assert on the RACK (security policy), so
-  // seed a present-but-empty rig record → isFirstRun() is false → boot /rack.
-  // The first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  // Retain a saved rig; every launch still starts at the hardware splash.
   fs.writeFileSync(path.join(dir, 'rig-bindings.json'), '{}');
   return dir;
 }
@@ -63,9 +61,41 @@ async function launch(opts: { userDataDir: string; port?: string }): Promise<Ele
 /** The shell's own origin, read back off the loaded page. */
 async function shellOrigin(app: ElectronApplication): Promise<string> {
   const page = await app.firstWindow();
+  await enterRack(page);
   await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
   return new URL(page.url()).origin;
 }
+
+test('a same-origin auxiliary window cannot quit the desktop process', async () => {
+  const app = await launch({ userDataDir: freshUserDataDir('quit-denied') });
+  try {
+    const origin = await shellOrigin(app);
+    const popupReady = app.waitForEvent('window');
+    await app.evaluate(({ BrowserWindow }, { url, preload }) => {
+      const popup = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          preload,
+          contextIsolation: true, sandbox: true, nodeIntegration: false,
+        },
+      });
+      void popup.loadURL(`${url}/preflight`);
+    }, { url: origin, preload: path.join(APP_DIR, 'dist', 'preload.js') });
+    const popup = await popupReady;
+    await popup.waitForURL(/\/preflight(\?|$)/, { timeout: BOOT_MS });
+    const reply = await popup.evaluate(async () => {
+      const w = window as unknown as { ptNative: { command: (op: string) => Promise<{ ok: boolean; error?: { code: string } }> } };
+      // Positive control: this window really has a working, same-origin bridge.
+      const status = await w.ptNative.command('helpers.status');
+      return { status, quit: await w.ptNative.command('app.quit') };
+    });
+    expect(reply.status.ok).toBe(true);
+    expect(reply.quit).toMatchObject({ ok: false, error: { code: 'denied' } });
+    expect(app.process().exitCode).toBeNull();
+  } finally {
+    await app.close();
+  }
+});
 
 // 1. The pure policy, driven directly in the MAIN process.
 //
@@ -156,6 +186,7 @@ test('permission checks: granted for the shell, denied for a non-shell origin se
   const app = await launch({ userDataDir: freshUserDataDir('perm') });
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
     const port = new URL(page.url()).port;
 
@@ -237,6 +268,7 @@ test('getUserMedia succeeds for the shell and is refused for a non-shell origin'
   });
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
     const port = new URL(page.url()).port;
 
@@ -278,6 +310,7 @@ test('window.open and navigation stay on the shell origin', async () => {
   const app = await launch({ userDataDir: freshUserDataDir('nav') });
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
     const before = page.url();
 
@@ -329,6 +362,7 @@ test('loopback server rejects a rebound Host header but serves the loopback ones
   const app = await launch({ userDataDir: freshUserDataDir('host') });
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
     const port = Number(new URL(page.url()).port);
 
@@ -365,6 +399,7 @@ test('bridge envelope: versioned, correlated, structured errors, cancellable', a
   const app = await launch({ userDataDir: freshUserDataDir('bridge') });
   try {
     const page = await app.firstWindow();
+    await enterRack(page);
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
 
     const out = await page.evaluate(async () => {

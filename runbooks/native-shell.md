@@ -21,6 +21,15 @@ flox activate -- task desktop:build:web   # the web bundle the shell serves
 flox activate -- task desktop:dev         # boot the shell against that bundle
 ```
 
+Every fresh launch opens the hardware splash, including when a rig was saved.
+Review the restored selections and choose **Enter rack**. If the app is already
+running, another launch focuses that instance instead of interrupting it.
+
+Choose **File → Exit** in the desktop toolbar or native File menu to close the
+app, its output windows, and its supervised helpers. macOS **Quit** / **⌘Q**
+also works. Helpers started separately remain under their original owner's
+control. Browser sessions do not show Exit.
+
 `desktop:build:web` sets `PT_DESKTOP_BUILD=1`, which switches
 `packages/web/svelte.config.js` to **adapter-static** (Cloudflare stays the default
 for real deploys), and bakes `VITE_E2E_HOOKS=1`. That makes it the **Tier-A test

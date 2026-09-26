@@ -8,14 +8,36 @@
 // mid-injection, or a getter that throws must all read `false` and leave the
 // browser behaviour exactly as it was.
 
-import { describe, it, expect, afterEach } from 'vitest';
-import { nativeAvailable, nativeShellVersion, setNativeAvailableForTests } from './native';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { nativeAvailable, nativeShellVersion, setNativeAvailableForTests, exitNative } from './native';
 
 const host = globalThis as unknown as { ptNative?: unknown };
 
 afterEach(() => {
   delete host.ptNative;
   setNativeAvailableForTests(null);
+});
+
+describe('desktop Exit', () => {
+  it('uses the existing command bridge', async () => {
+    const command = vi.fn().mockResolvedValue({ ok: true, result: {} });
+    host.ptNative = { nativeAvailable: () => true, command };
+    await exitNative();
+    expect(command).toHaveBeenCalledExactlyOnceWith('app.quit');
+  });
+
+  it('never issues a quit command in a browser', async () => {
+    const command = vi.fn();
+    host.ptNative = { nativeAvailable: () => false, command };
+    await expect(exitNative()).rejects.toThrow('unavailable');
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused command', async () => {
+    host.ptNative = { nativeAvailable: () => true,
+      command: async () => ({ ok: false, error: { message: 'only the main window may exit the app' } }) };
+    await expect(exitNative()).rejects.toThrow('only the main window');
+  });
 });
 
 describe('nativeAvailable', () => {
