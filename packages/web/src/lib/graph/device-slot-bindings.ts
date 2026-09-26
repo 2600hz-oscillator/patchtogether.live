@@ -91,6 +91,12 @@ export interface LinnstrumentBinding {
   deviceId: string;
 }
 
+/** Desktop TRAILS input; the name is a fallback only when it is unambiguous. */
+export interface TrailsBinding {
+  deviceId: string;
+  deviceName?: string;
+}
+
 /** A gamepad pick. Keyed on the browser `Gamepad.id` string (the only stable
  *  handle the Gamepad API exposes — its numeric `index` is a per-connection slot
  *  that rotates as pads are plugged/unplugged, so it is a HINT, not identity).
@@ -115,6 +121,7 @@ export interface RigBindings {
   ptz?: PtzBinding;
   gamepad?: GamepadBinding;
   linnstrument?: LinnstrumentBinding;
+  trails?: TrailsBinding;
 }
 
 /** Engine liveness follows local hardware bindings, never stale node.data. */
@@ -173,6 +180,11 @@ export function normalizeRigBindings(raw: unknown): RigBindings {
   // mode of a bad binding is "device unbound", never a crash or a stale id.
   if (r.linnstrument && typeof (r.linnstrument as LinnstrumentBinding).deviceId === 'string') {
     out.linnstrument = { deviceId: (r.linnstrument as LinnstrumentBinding).deviceId };
+  }
+  if (r.trails && typeof (r.trails as TrailsBinding).deviceId === 'string') {
+    const b = r.trails as TrailsBinding;
+    out.trails = { deviceId: b.deviceId };
+    if (typeof b.deviceName === 'string') out.trails.deviceName = b.deviceName;
   }
   if (r.gamepad && typeof (r.gamepad as GamepadBinding).id === 'string') {
     const gp = r.gamepad as GamepadBinding;
@@ -358,6 +370,9 @@ export class RigBindingStore {
   getLinnstrument(): LinnstrumentBinding | null {
     return this.cache.linnstrument ?? null;
   }
+  getTrails(): TrailsBinding | null {
+    return this.cache.trails ?? null;
+  }
 
   setCamera(slot: CameraSlotName, binding: CameraBinding | null): void {
     this.mutate((c) => {
@@ -414,6 +429,13 @@ export class RigBindingStore {
     });
   }
 
+  setTrails(binding: TrailsBinding | null): void {
+    this.mutate((c) => {
+      if (binding) c.trails = binding;
+      else delete c.trails;
+    });
+  }
+
   /** Fire `cb` on any change — local mutation or external. Returns unsubscribe.
    *  Not called for the initial state; call a getter first if you need it. */
   subscribe(cb: () => void): () => void {
@@ -451,6 +473,7 @@ function cloneRig(b: RigBindings): RigBindings {
     ptz: b.ptz ? { ...b.ptz } : undefined,
     gamepad: b.gamepad ? { ...b.gamepad } : undefined,
     linnstrument: b.linnstrument ? { ...b.linnstrument } : undefined,
+    trails: b.trails ? { ...b.trails } : undefined,
   };
 }
 

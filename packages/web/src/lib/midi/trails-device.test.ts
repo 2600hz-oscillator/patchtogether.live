@@ -17,13 +17,86 @@ import {
   trailsAvailable,
   trailsStatus,
   TRAILS_PORT_PATTERN,
+  restoreNativeTrails,
+  selectedTrailsPortId,
+  listTrailsPorts,
 } from './trails-device';
+import { RigBindingStore, emptyRigBindings, setRigBindingsForTests } from '$lib/graph/device-slot-bindings';
+import { setNativeAvailableForTests } from '$lib/platform/native';
+import type { MidiInputLike } from '$lib/audio/modules/midi-cv-buddy';
 import { createTrailsDecoder, type TrailsEvent } from './trails-decode';
 import type { MidiEventLike } from '$lib/audio/modules/midi-cv-buddy';
 
 afterEach(() => {
   __resetTrailsForTest();
+  setRigBindingsForTests(null);
+  setNativeAvailableForTests(null);
   vi.unstubAllGlobals();
+});
+
+describe('desktop TRAILS binding', () => {
+  async function setup() {
+    const store = new RigBindingStore({ load: emptyRigBindings, save: () => {}, subscribe: () => () => {} });
+    setRigBindingsForTests(store);
+    setNativeAvailableForTests(true);
+    await store.whenReady();
+    const port = (id: string, name = 'Bela Trails'): MidiInputLike => ({ id, name, state: 'connected', onmidimessage: null });
+    const first = port('first');
+    const second = port('second', 'Trails Two');
+    const decoy = port('decoy', 'Other MIDI');
+    const access = { inputs: new Map([first, second, decoy].map((p) => [p.id, p])), onstatechange: null as (() => void) | null };
+    const request = vi.fn(async () => access);
+    vi.stubGlobal('navigator', { requestMIDIAccess: request });
+    return { store, first, second, decoy, access, request, port };
+  }
+
+  it('restores only a saved native input, reacts to selection changes, and clears its claim', async () => {
+    const { store, first, second, decoy, request } = await setup();
+    expect(await restoreNativeTrails()).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+    store.setTrails({ deviceId: first.id, deviceName: first.name! });
+    expect(await restoreNativeTrails()).toBe(true);
+    expect(first.onmidimessage).toBeTypeOf('function');
+    expect(second.onmidimessage).toBeNull();
+    expect(decoy.onmidimessage).toBeNull();
+    expect(listTrailsPorts().map((p) => p.inputId)).toEqual(['first', 'second']);
+    store.setTrails({ deviceId: second.id, deviceName: second.name! });
+    expect(first.onmidimessage).toBeNull();
+    expect(second.onmidimessage).toBeTypeOf('function');
+    store.setTrails(null);
+    expect(second.onmidimessage).toBeNull();
+    expect(trailsStatus().message).toContain('hardware setup');
+  });
+
+  it('keeps a missing binding and reconnects on hot-plug, with a unique-name fallback after id rotation', async () => {
+    const { store, first, second, access, port } = await setup();
+    store.setTrails({ deviceId: first.id, deviceName: first.name! });
+    await restoreNativeTrails();
+    first.state = 'disconnected';
+    access.onstatechange?.();
+    expect(first.onmidimessage).toBeNull();
+    expect(second.onmidimessage).toBeNull();
+    expect(store.getTrails()?.deviceId).toBe('first');
+    const replacement = port('rotated');
+    access.inputs.set(replacement.id, replacement);
+    access.onstatechange?.();
+    expect(replacement.onmidimessage).toBeTypeOf('function');
+    expect(selectedTrailsPortId()).toBe('rotated');
+    const ambiguous = port('ambiguous');
+    access.inputs.set(ambiguous.id, ambiguous);
+    access.onstatechange?.();
+    expect(selectedTrailsPortId()).toBeNull();
+    expect(replacement.onmidimessage).toBeNull();
+    expect(ambiguous.onmidimessage).toBeNull();
+  });
+
+  it('never requests MIDI automatically in a browser, even with a remembered rig entry', async () => {
+    const { store, first, request } = await setup();
+    store.setTrails({ deviceId: first.id });
+    setNativeAvailableForTests(false);
+    expect(await restoreNativeTrails()).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
 });
 
 /** Collect every frame the device layer fans out, decoded the way the module

@@ -12,6 +12,8 @@
 //      click handler, never from a module factory: loading a saved patch that
 //      happens to contain a `trails` must not raise a permission prompt.
 //      Returns false and never throws.
+//      Desktop is the explicit exception: restoreNativeTrails uses Electron's
+//      pre-granted access for the input saved in local hardware setup.
 //   3. `trailsMidiVersion`      — a status signal a surface can subscribe to.
 //   4. `createMidiInputClaim`   — the ONE legal way to own `onmidimessage`.
 //   5. `installSimulatedTrails()` — an in-memory double that drives the REAL
@@ -24,6 +26,8 @@
 // exact cost after the fact; this is the corrected shape from the start.)
 
 import { writable } from 'svelte/store';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
+import { nativeAvailable } from '$lib/platform/native';
 import {
   requestMidiAccess,
   midiOutcomeMessage,
@@ -103,6 +107,22 @@ let accessKind: 'idle' | 'unsupported' | 'denied' | 'no-prompt' | 'granted' = 'i
 let accessMessage = '';
 let connectInFlight = false;
 let attachedNames: string[] = [];
+let attachedInputs: TrailsInput[] = [];
+let unsubRig: (() => void) | null = null;
+const disconnectSubscribers = new Set<() => void>();
+
+function replaceAttachedInputs(next: TrailsInput[]): void {
+  if (attachedInputs.some((p) => !next.includes(p))) {
+    for (const reset of disconnectSubscribers) reset();
+  }
+  attachedInputs = next;
+}
+
+/** Release held musical gates when a source disappears or the pick changes. */
+export function subscribeTrailsDisconnect(reset: () => void): () => void {
+  disconnectSubscribers.add(reset);
+  return () => { disconnectSubscribers.delete(reset); };
+}
 
 /** Every module instance that wants raw frames. A `Set` of handlers rather than
  *  one slot: four `trails` nodes in a rack all read the same physical device,
@@ -120,6 +140,34 @@ export function trailsAvailable(): boolean {
 function isTrailsPort(p: { name?: string | null; state?: string }): boolean {
   if (p.state === 'disconnected') return false;
   return TRAILS_PORT_PATTERN.test(p.name ?? '');
+}
+
+/** Live inputs for the desktop picker; reading the roster never requests MIDI. */
+export function listTrailsPorts(): { inputId: string; name: string }[] {
+  return [...(access?.inputs.values() ?? [])].filter(isTrailsPort)
+    .map((p) => ({ inputId: p.id, name: p.name ?? p.id }));
+}
+
+export function trailsHasAccess(): boolean {
+  return access !== null;
+}
+
+/** Exact id first; accept an id change only when the saved name is unique. */
+export function selectedTrailsPortId(): string | null {
+  const b = rigBindings().getTrails();
+  if (!b) return null;
+  const ports = listTrailsPorts();
+  if (ports.some((p) => p.inputId === b.deviceId)) return b.deviceId;
+  const byName = b.deviceName ? ports.filter((p) => p.name === b.deviceName) : [];
+  return byName.length === 1 ? byName[0]!.inputId : null;
+}
+
+/** Electron pre-grants MIDI. Browser patch loads must still never prompt. */
+export async function restoreNativeTrails(): Promise<boolean> {
+  if (!nativeAvailable()) return false;
+  await rigBindings().whenReady();
+  if (!rigBindings().getTrails()) return false;
+  return connectTrails();
 }
 
 /** Names of the live Trails input ports the granted access can see. Empty
@@ -147,12 +195,16 @@ function onFrame(ev: MidiEventLike): void {
 
 function resolvePorts(): void {
   if (!access) {
+    replaceAttachedInputs([]);
     attachedNames = [];
     inputClaim.detach();
     bump();
     return;
   }
-  const matched = [...access.inputs.values()].filter(isTrailsPort);
+  const selected = nativeAvailable() ? selectedTrailsPortId() : null;
+  const matched = [...access.inputs.values()].filter((p) =>
+    isTrailsPort(p) && (!nativeAvailable() || p.id === selected));
+  replaceAttachedInputs(matched);
   // `attachOnly` releases every port THIS claim holds that is not in the new
   // list and leaves anybody else's slots strictly alone.
   inputClaim.attachOnly(matched, onFrame);
@@ -184,6 +236,16 @@ export function trailsStatus(): TrailsStatus {
     };
   }
   if (portNames.length === 0) {
+    if (nativeAvailable()) {
+      const selected = rigBindings().getTrails();
+      return {
+        kind: 'no-port',
+        message: selected
+          ? `The selected TRAILS input (${selected.deviceName || selected.deviceId}) is not connected. Reconnect it or choose another input in hardware setup.`
+          : 'Choose a TRAILS input in desktop hardware setup to connect it automatically on each launch.',
+        portNames,
+      };
+    }
     return {
       kind: 'no-port',
       message:
@@ -221,10 +283,7 @@ export async function connectTrails(request?: TrailsRequestFn): Promise<boolean>
   if (request) {
     connectInFlight = true;
     try {
-      access = await request();
-      accessKind = 'granted';
-      access.onstatechange = () => resolvePorts();
-      resolvePorts();
+      adoptAccess(await request());
     } catch {
       accessKind = 'denied';
       accessMessage = 'Permission denied';
@@ -270,11 +329,12 @@ export async function connectTrails(request?: TrailsRequestFn): Promise<boolean>
   return trailsStatus().kind === 'bound';
 }
 
-function adoptAccess(a: MIDIAccessLike): void {
+function adoptAccess(a: MIDIAccessLike | TrailsAccessLike): void {
   access = a as unknown as TrailsAccessLike;
   accessKind = 'granted';
   accessMessage = '';
   access.onstatechange = () => resolvePorts();
+  if (!unsubRig) unsubRig = rigBindings().subscribe(() => resolvePorts());
   resolvePorts();
 }
 
@@ -523,6 +583,7 @@ export async function installSimulatedTrails(
       return boundInputs().some((i) => typeof i.onmidimessage === 'function');
     },
     uninstall() {
+      replaceAttachedInputs([]);
       inputClaim.detach();
       if (access === simAccess) {
         access.onstatechange = null;
@@ -537,8 +598,12 @@ export async function installSimulatedTrails(
 
 /** Drop every binding + subscriber. Unit-test hygiene only. */
 export function __resetTrailsForTest(): void {
+  unsubRig?.();
+  unsubRig = null;
   inputClaim.detach();
   subscribers.clear();
+  disconnectSubscribers.clear();
+  attachedInputs = [];
   if (access) access.onstatechange = null;
   access = null;
   accessKind = 'idle';

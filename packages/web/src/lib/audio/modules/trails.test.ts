@@ -448,6 +448,23 @@ describe('trails factory: the simulated device drives the outputs', () => {
     expect(h.inputs.size).toBe(0);
   });
 
+  it('releases held gates and poly notes when the input is disconnected', async () => {
+    const h = await build();
+    sim.noteTouch(1, 60, 67);
+    expect(lastValue(h, trailsGatePortId(1))).toBe(1);
+    expect(polyLaneValue(h, trailsPolyPortId(1), TRAILS_POLY_LANE.x, 'gate')).toBe(1);
+    sim.uninstall();
+    for (const ch of TRAILS_CHANNELS) {
+      expect(lastValue(h, trailsGatePortId(ch))).toBe(0);
+      expect(lastValue(h, trailsTrigPortId(ch))).toBe(0);
+      for (const axis of ['x', 'y'] as const) {
+        expect(polyLaneValue(h, trailsPolyPortId(ch), TRAILS_POLY_LANE[axis], 'gate')).toBe(0);
+      }
+    }
+    expect(lastValue(h, TRAILS_CLOCK_PORT_ID)).toBe(0);
+    expect((h.read?.('state') as TrailsState).channels[0]!.gate).toBe(false);
+  });
+
   it('a touch writes the pad coordinate to that channel\'s X and Y jacks', async () => {
     const h = await build();
     sim.touch(3, 0.75, 0.25);

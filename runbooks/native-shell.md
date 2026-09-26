@@ -25,6 +25,15 @@ Every fresh launch opens the hardware splash, including when a rig was saved.
 Review the restored selections and choose **Enter rack**. If the app is already
 running, another launch focuses that instance instead of interrupting it.
 
+For **TRAILS**, connect the hardware over USB, choose **enable midi** in its
+hardware-setup row, then select its input. The selection is saved on this
+computer and reconnects on subsequent launches, renderer reloads, and when a
+TRAILS module loads in the rack. It is never stored in the shared patch. A
+missing device keeps its saved selection and reconnects when plugged back in;
+choose **none** to stop automatic connection. If an id changes, recovery by name
+requires exactly one matching input. When a device disconnects or the selection
+changes, held gates and poly notes release; axis CV keeps its last position.
+
 Choose **File → Exit** in the desktop toolbar or native File menu to close the
 app, its output windows, and its supervised helpers. macOS **Quit** / **⌘Q**
 also works. Helpers started separately remain under their original owner's
