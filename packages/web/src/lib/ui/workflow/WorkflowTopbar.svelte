@@ -6,7 +6,7 @@
   // the portable performance .ptperf(.zip) export/import, the raw-JSON
   // envelope export/import, the SkinSwitcher theme picker, the AspectToggle
   // output-aspect pill, Canvas.clearPatch, and the existing sign-in/account
-  // link. NO new behavior lives in this component.
+  // link. Desktop Exit uses the shared native capability seam.
   //
   // TOPBAR PARITY. This is now the ONLY topbar — the second shell's
   // full-width bar (5-slot preset strip + actions cluster) was deleted with
@@ -14,7 +14,7 @@
   // `Clear` and `AspectToggle` were ported in the earlier PR of that sequence;
   // `Save set` / `Load set` and the per-slot `Load into…` / `Clear slot` rows
   // were ported in the one that deleted it. Clear is the ONLY destructive
-  // action in the menu and sits LAST, below its own danger divider — never
+  // patch action in the menu and sits below its own danger divider — never
   // adjacent to Quicksave.
   //
   // The slot bar's four affordances map onto four menu sections:
@@ -59,6 +59,7 @@
   import { readCameraDeviceId } from './workflow-cameras';
   import CameraSurface from './CameraSurface.svelte';
   import type { ModuleNode } from '$lib/graph/types';
+  import { nativeAvailable, exitNative } from '$lib/platform/native';
 
   interface Props {
     appVersion: string;
@@ -187,6 +188,14 @@
    *  'loadinto' | 'clearslot' | 'rawjson' | 'theme' | null). */
   let section = $state<string | null>(null);
   let triggerEl: HTMLButtonElement | null = $state(null);
+  let desktop = $state(false);
+  let exitError = $state('');
+
+  async function exitDesktop() {
+    exitError = '';
+    try { await exitNative(); }
+    catch (err) { exitError = err instanceof Error ? err.message : String(err); }
+  }
 
   function toggleMenu(id: MenuId) {
     openMenu = openMenu === id ? null : id;
@@ -210,6 +219,7 @@
   }
 
   onMount(() => {
+    desktop = nativeAvailable();
     function onDocPointerDown(e: PointerEvent) {
       if (openMenu === null) return;
       // STICKY assets picker (owner spec): an open submenu stays open
@@ -520,7 +530,7 @@
           <a class="row link" role="menuitem" href="/dashboard" data-testid="workflow-file-signin">Sign in</a>
         {/if}
 
-        <!-- DANGER ZONE, last and visually separated. Clear is the one
+        <!-- DANGER ZONE, visually separated. Clear is the one
              DESTRUCTIVE action in this menu, so it deliberately does NOT sit
              next to Quicksave/Quickload where a slip costs you the rack.
              Behaviour is byte-for-byte the old `Clear` button
@@ -535,9 +545,17 @@
           onclick={() => fire(onClear)}
           title="Clear the rack — deletes every module and cable. Pinned workflow singletons (clock / audio I/O) survive; their cables do not."
         >Clear rack</button>
+        {#if desktop}
+          <div class="divider"></div>
+          <button class="row" role="menuitem" data-testid="workflow-file-exit"
+            onclick={() => fire(exitDesktop)} title="Exit desktop mode and close its windows"
+          >Exit</button>
+        {/if}
       </div>
     {/if}
   </div>
+
+  {#if exitError}<span role="alert">{exitError}</span>{/if}
 
   <!-- Toolbar slots, in the owner's left→right order: P3 placeholders,
        then the LIVE P2 surfaces (clock / DIN / audio I/O), then the P4

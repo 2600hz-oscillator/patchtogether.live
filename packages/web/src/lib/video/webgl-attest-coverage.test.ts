@@ -33,7 +33,8 @@
 // missed file is a hard red, never a silent skip.
 
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -300,12 +301,30 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
         `${p} is fully @collab/@capacity-gated but counted as attestable`,
       ).toBe(false);
     }
-    // The attestable set is non-empty, and no heavy spec is fully
-    // @collab/@capacity-gated today — stated as a PROPERTY of the excluded set
-    // rather than as an identity between two counts.
+    // The standalone TOYBOX multiplayer test runs in the collab lane; the
+    // local GPU pass's grep-invert removes it even without a describe wrapper.
     expect(attestable.length, 'the attestable heavy set is empty').toBeGreaterThan(0);
-    expect(excluded, `heavy specs excluded as fully gated: ${excluded.join(', ')}`).toEqual([]);
+    expect(excluded).toEqual(['e2e/tests/toybox-multiplayer.spec.ts']);
     expect(attestable.length).toBeLessThanOrEqual(all.length);
+  });
+
+  it.each([
+    ["test('@collab multiplayer', () => {});", true],
+    ["test('@capacity load', () => {});", true],
+    ["test('@collab multiplayer', () => {});\ntest('local render', () => {});", false],
+    ["test.describe('@collab peers', () => {\n  test('render', () => {});\n});", true],
+    ["test.describe('@collab peers', () => {});\ntest('local render', () => {});", false],
+    ["test.describe('local render', () => {\n  test('@collab peers', () => {});\n});", false],
+    ["// @collab\ntest('local render', () => {});", false],
+  ])('recognizes fully gated declarations without hiding local tests: %s', (source, gated) => {
+    const dir = mkdtempSync(join(tmpdir(), 'webgl-gating-'));
+    try {
+      const path = join(dir, 'fixture.spec.ts');
+      writeFileSync(path, source);
+      expect(isFullyCollabCapacityGated(path)).toBe(gated);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('(5) NO node-env *.test.ts AND no e2e/tests/** file leaked into the basis', () => {

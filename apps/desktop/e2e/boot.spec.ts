@@ -21,6 +21,7 @@ import { test, expect, _electron } from '@playwright/test';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { enterRack } from './enter-rack';
 
 const APP_DIR = path.resolve(__dirname, '..');
 const WEB_ROOT = process.env.PT_DESKTOP_WEB_ROOT
@@ -41,11 +42,7 @@ test('shell boots, /rack paints, audio runs gesture-free, zero errors', async ()
     );
   }
 
-  // Two-stage launch (native-shell pre-flight): a FRESH machine opens /preflight
-  // for first-run setup; only a CONFIGURED rig boots straight to the rack. This
-  // boot proof is about the RACK path (paint + gesture-free audio), so seed a
-  // present-but-empty rig record on disk → isFirstRun() is false → /rack. The
-  // first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  // A saved rig still reviews hardware before entering the rack.
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-boot-'));
   fs.writeFileSync(path.join(userDataDir, 'rig-bindings.json'), '{}');
   const electronApp = await _electron.launch({
@@ -75,6 +72,7 @@ test('shell boots, /rack paints, audio runs gesture-free, zero errors', async ()
 
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(String(err)));
+    await enterRack(page);
 
     // 1+2: the shell served /rack from its loopback server and the rack painted.
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });

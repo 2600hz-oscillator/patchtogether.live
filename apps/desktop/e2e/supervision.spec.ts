@@ -26,6 +26,7 @@ import { test, expect, _electron, type ElectronApplication, type Page } from '@p
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { enterRack } from './enter-rack';
 import WebSocket from 'ws';
 
 const APP_DIR = path.resolve(__dirname, '..');
@@ -66,10 +67,7 @@ async function launchShell(): Promise<{
   const es9Port = 19210 + 2 * (portSlot % 40);
   const vstPort = 19310 + 2 * (portSlot % 40);
   portSlot += 1;
-  // Two-stage launch (native-shell pre-flight): a fresh machine opens /preflight
-  // for first-run setup. This supervision spec waits for /rack, so seed a
-  // present-but-empty rig record → isFirstRun() is false → boot /rack. The
-  // first-run → /preflight path is covered by preflight-helpers.spec.ts.
+  // Retain a saved rig; every launch still starts at the hardware splash.
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-shell-sup-'));
   fs.writeFileSync(path.join(userDataDir, 'rig-bindings.json'), '{}');
   const app = await _electron.launch({
@@ -101,6 +99,7 @@ async function launchShell(): Promise<{
   app.process().stdout?.on('data', (d: Buffer) => console.log(`[main] ${String(d).trimEnd()}`));
   app.process().stderr?.on('data', (d: Buffer) => console.error(`[main] ${String(d).trimEnd()}`));
   const page = await app.firstWindow();
+  await enterRack(page);
   await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/rack/, { timeout: BOOT_MS });
   return { app, page, es9Port, vstPort };
 }

@@ -76,7 +76,10 @@ root workspace) so web CI installs and the shared lockfile stay untouched. Elect
 is pinned exact.
 
 - `main.ts` — Chromium flag set applied before ready, one fullscreen window, native
-  menus (Quit is native-only, by owner ruling — the preload exposes no `quit()`).
+  menus. File → Exit is available both natively and in the desktop toolbar;
+  macOS also retains its standard app-menu Quit. The toolbar uses `app.quit`
+  through the command bridge, restricted to the main window's top-level frame.
+  This supersedes the earlier native-menu-only restriction at the owner's request.
   Two flags are load-bearing: `--disable-features=MidiMacUmp` (without it SysEx
   reports send success while transmitting nothing on recent Chromium/macOS) and
   `autoplay-policy=no-user-gesture-required` (an AudioContext that reaches
@@ -120,8 +123,10 @@ is pinned exact.
 Forcing the setup screen is split across the two processes, and each half answers a
 different question:
 
-1. **main** decides first run vs configured — `store.isFirstRun()` picks the
-   initial route, and `preflight.done` swaps the same window to `/rack`.
+1. **main** always opens `/preflight` on a fresh launch, with saved hardware
+   selections restored. Enter rack sends `preflight.done` and swaps the same
+   window to `/rack`. Launching a second process while the app is already running
+   still focuses the existing instance, preserving its active performance.
 2. **the renderer** decides whether a *configured* rig is still intact:
    `evaluateRigRelaunch()` runs when `/rack` mounts and bounces back to
    `/preflight` when a bound camera, display fingerprint, or configured helper is

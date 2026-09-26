@@ -5,11 +5,10 @@
 // The desktop shell loads this same `packages/web` build unmodified and exposes
 // a single context-bridge global (`window.ptNative`, apps/desktop/src/preload.ts).
 // The web app must never import Electron; this module is the whole seam, and it
-// is deliberately tiny: a boolean, probed defensively, with a test override.
+// contains the defensive capability probe and native command helpers.
 //
-// WHY THE WEB SIDE NEEDS TO KNOW AT ALL. Exactly one thing so far, and it is a
-// correctness question, not a cosmetic one: WHO OWNS DISPLAY PLACEMENT. In the
-// browser the patch owns it — projector bindings ride the shared Y.Doc and
+// The capability selects display ownership and exposes desktop File → Exit.
+// In the browser the patch owns display placement — projector bindings ride the shared Y.Doc and
 // Canvas reopens them on load. In the shell the SHELL owns it — its display map
 // is local, per-machine, and belongs to the operator's rig rather than to the
 // document. Both being live at once means an old patch reopens legacy popups
@@ -27,6 +26,7 @@
 interface NativeBridgeLike {
   nativeAvailable?: () => boolean;
   shellVersion?: () => string;
+  command?: (op: string) => Promise<{ ok: boolean; error?: { message?: string } }>;
 }
 
 interface NativeHost {
@@ -59,6 +59,16 @@ export function nativeShellVersion(): string | null {
   } catch {
     return null;
   }
+}
+
+/** Desktop File ▸ Exit; ordinary browsers never receive a quit affordance. */
+export async function exitNative(): Promise<void> {
+  const bridge = (globalThis as unknown as NativeHost).ptNative;
+  if (!nativeAvailable() || typeof bridge?.command !== 'function') {
+    throw new Error('Desktop Exit is unavailable in this browser.');
+  }
+  const reply = await bridge.command('app.quit');
+  if (!reply.ok) throw new Error(reply.error?.message ?? 'Could not exit desktop mode.');
 }
 
 /** Force the answer (tests only). Pass `null` to go back to probing. */

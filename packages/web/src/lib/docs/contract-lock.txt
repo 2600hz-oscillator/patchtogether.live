@@ -1094,6 +1094,8 @@ es9 param out8_ref 0..1 discrete default=0
 es9 family es9-connect kind=other prefix=es9-connect
 es9 family es9-disconnect kind=other prefix=es9-disconnect
 fader meta domain=video
+fader in dryWet cv param=dryWet cvScale=linear
+fader in fader cv param=fader cvScale=linear
 fader in in_a video
 fader in in_b video
 fader in return video

@@ -92,6 +92,8 @@ export const faderDef: VideoModuleDef = {
     { id: 'in_b',   type: 'video' },
     // SEND/RETURN loop: SEND out the A/B mix, process it externally, bring it back.
     { id: 'return', type: 'video' },
+    { id: 'fader', label: 'A/B CV', type: 'cv', paramTarget: 'fader', cvScale: { mode: 'linear' } },
+    { id: 'dryWet', label: 'Dry/Wet CV', type: 'cv', paramTarget: 'dryWet', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out',  type: 'video' }, // main mix (canonical surface)
@@ -203,6 +205,8 @@ export const faderDef: VideoModuleDef = {
   docs: {
     explanation: "A two-source video mixer with a built-in send/return FX loop, made of two stacked crossfaders. The first fader crossfades IN A and IN B into a mix that is also copied out the SEND jack (patch it through external video FX and return it); the second fader then blends that dry mix against the wet RETURN into the main OUT. Each fader has its own transition-shape dropdown so the crossfade can be a uniform fade or a wipe/dissolve/star/checkerboard sweep, and the whole thing renders as two GPU passes (pass 1 = A/B mix = SEND, pass 2 = dry/wet = OUT).",
     inputs: {
+      fader: "CV modulation of the A/B fade, centered on the manual A/B slider. Effective position = slider + CV × 0.5, clamped to 0..1. With the slider at 0.5, a bipolar -1..+1 signal sweeps fully from A to B. Changes both SEND and the dry mix feeding OUT. Unplugging restores the manual slider position.",
+      dryWet: "CV modulation of the dry/wet blend, centered on the manual Dry/Wet slider. Effective position = slider + CV × 0.5, clamped to 0..1. Set the slider to 0.5 for a full bipolar dry-to-wet sweep. Changes OUT only; SEND remains the A/B mix. Unplugging restores the manual slider position.",
       in_a: "The A video source — what shows when the A/B fader is at 0. Left unpatched it reads as opaque black, so an unpatched A with the fader toward A gives a black frame.",
       in_b: "The B video source — what shows when the A/B fader is at 1. Left unpatched it reads as opaque black.",
       return: "The wet RETURN of the send/return loop: bring the processed video back in here after sending the A/B mix out SEND through external FX. It becomes the wet side of the dry/wet fader. Unpatched it reads as opaque black, so raising DRY/WET toward WET with nothing returned fades to black.",

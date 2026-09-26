@@ -17,12 +17,8 @@
 // the consumer this contract exists for is P5's pre-flight status row, whose
 // failure mode is a RED ROW — an outcome to render, not an exception to catch.
 //
-// quit() is GONE. It was exposed here with zero consumers anywhere in the
-// repo, in direct contradiction of the owner ruling recorded in main.ts's own
-// header ("Quit lives in the native menu only; the web UI never grows a quit
-// affordance"). Restricting it to the main frame would have preserved a
-// privileged verb the product is not allowed to have; deleting it removes the
-// only state-changing verb on the bridge outright.
+// Desktop File ▸ Exit uses command('app.quit'), with a main-window/top-frame
+// check in main. There is no separate quit channel or unvalidated quit API.
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PtEvent, PtResult } from './bridge-protocol';

@@ -2,9 +2,8 @@
 //
 // Boots the built web bundle from a loopback static server (COOP/COEP intact),
 // applies the device/continuity flag set, and opens ONE fullscreen window on
-// /rack. Native menus own Quit (owner ruling: Quit lives in the native menu
-// only — and the preload no longer exposes a quit() either) and File ▸ Load
-// Patch…
+// /preflight on every launch. File ▸ Exit is available in the native menu and
+// the desktop renderer's File menu through the validated command bridge.
 //
 // TRUST BOUNDARY: security.ts. This shell pre-grants camera, mic, MIDI/SysEx,
 // USB/HID/serial and screen capture with no prompts — that is the product, not
@@ -144,8 +143,7 @@ function startSupervisors(win: BrowserWindow, bridge: PtBridge): void {
 function installMenu(win: BrowserWindow): void {
   const isMac = process.platform === 'darwin';
   const template: Electron.MenuItemConstructorOptions[] = [
-    // App menu — Quit lives HERE and only here (native-only Quit; the web UI
-    // never grows a quit affordance).
+    // Keep the platform-standard macOS Quit shortcut as well as File ▸ Exit.
     ...(isMac
       ? [{ label: app.name, submenu: [{ role: 'about' as const }, { type: 'separator' as const }, { role: 'quit' as const }] }]
       : []),
@@ -167,7 +165,8 @@ function installMenu(win: BrowserWindow): void {
             }
           },
         },
-        ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }]),
+        { type: 'separator' },
+        { label: 'Exit', role: 'quit' },
       ],
     },
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
@@ -229,16 +228,25 @@ async function boot(): Promise<void> {
   installWindowGuards(win.webContents, shellOrigin);
 
   // Per-machine device bindings live OFF the Y.Doc, in a plain JSON file under
-  // userData that survives relaunch (rig-store.ts). Loaded here, synchronously,
-  // so the boot route below can ask whether a rig is already configured.
+  // userData that survives relaunch (rig-store.ts). The splash restores these
+  // selections on every launch; persistence never bypasses hardware review.
   const store = new RigStore(path.join(app.getPath('userData'), 'rig-bindings.json'));
 
   // ONE ipc entry point for every renderer command (bridge.ts): sender
   // validation is written once instead of once per verb — the shape that let
   // `pt:quit` and `pt:helper-status` both ship with no senderFrame check.
-  // Note there is no quit op: Quit is native-menu-only (see this file's
-  // header), and the preload no longer exposes one.
   const bridge = new PtBridge(shellOrigin);
+  bridge.register('app.quit', (_payload, { event }) => {
+    // Only the main window's top-level File menu may exit, never an output
+    // popup or iframe admitted by the generic same-origin bridge policy.
+    if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+      throw new PtHandlerError('denied', 'only the main window may exit the app');
+    }
+    // Reply before teardown closes the renderer. Normal app.quit() preserves
+    // window close hooks and supervised-helper shutdown.
+    setImmediate(() => app.quit());
+    return {};
+  });
   bridge.register('helpers.status', () => ({
     current: supervisors.map((s) => s.status()),
     history: supervisors.flatMap((s) => s.history),
@@ -282,13 +290,9 @@ async function boot(): Promise<void> {
   // real dual-monitor hardware), and every other http(s) url is handed to the
   // user's browser instead of a preload-carrying Electron window.
 
-  // Two-stage launch: a machine with no configured rig (the store file is
-  // absent/empty) opens the pre-flight device picker; an already-configured
-  // machine boots straight to the rack. `preflight.done` (above) performs the
-  // swap. A bound-but-missing device bouncing back to /preflight is the web
-  // side's job — the shell only gates first-run vs configured.
-  const initialRoute = store.isFirstRun() ? '/preflight' : '/rack';
-  await win.loadURL(`${shellOrigin}${initialRoute}`);
+  // Review hardware on every fresh launch, with saved bindings preselected.
+  // Only the operator's Enter rack action advances this window to /rack.
+  await win.loadURL(`${shellOrigin}/preflight`);
 
   app.on('window-all-closed', () => {
     void server.close();
