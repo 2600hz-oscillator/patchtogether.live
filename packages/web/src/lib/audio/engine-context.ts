@@ -9,7 +9,7 @@ import type { PatchEngine } from './engine';
 export interface EngineContext {
   /** Returns the current PatchEngine, or null if not yet booted. */
   get(): PatchEngine | null;
-  /** Boot on an explicit module action (for example Record on a fresh rack). */
+  /** Boot/resume and reconcile the current rack before a module action reads its runtime. */
   ensure?(): Promise<PatchEngine>;
 }
 

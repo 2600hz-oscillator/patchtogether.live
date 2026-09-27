@@ -683,7 +683,14 @@
 
   // Provide the engine to descendant module-card components (motorized faders
   // use this to read live AudioParam values).
-  provideEngineContext(() => engine, ensureEngine);
+  provideEngineContext(() => engine, async () => {
+    const ready = await ensureEngine();
+    // Record can be the first engine action. The engine exists before async
+    // factories and their cables do; reading capture taps earlier silently
+    // starts a video-only take. Drain reconciliation before handing it over.
+    await reconciler?.reconcile();
+    return ready;
+  });
   // Provide the multiplayer provider too, so cards can write per-module
   // presence into Y.Awareness (e.g., CAMERA publishes "this user has CAMERA
   // active here" without sending pixels — see camera-presence.ts).

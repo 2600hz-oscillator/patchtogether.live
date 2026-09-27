@@ -103,8 +103,7 @@ export type { RecorderState, RecorderboxQuality, RecorderboxManifest };
 
 /** What a runtime can do, as the surfaces need to know it. `checked` separates
  *  "cannot record" from "have not asked yet" — the RECORD control is disabled
- *  only once the probe has actually answered, so a slow probe never paints a
- *  dead-looking switch on a machine that can encode. */
+ *  until the probe has answered, so Record cannot race encoder detection. */
 export interface RecorderboxSupport {
   canRecord: boolean;
   opfs: boolean;
@@ -127,7 +126,7 @@ export const UNCHECKED_SUPPORT: RecorderboxSupport = {
  * software runners — so it ANDs the config check with a real encode-and-flush
  * smoke test. That is the right probe and it takes an unknown number of frames,
  * which means a faceplate's resting picture has TWO legal states (probe pending
- * → no fault lamp, RECORD enabled; probe answered → possibly a fault lamp and a
+ * → no fault lamp, RECORD disabled; probe answered → possibly a fault lamp and a
  * disabled RECORD) and a pixel baseline would pin whichever one the runner
  * happened to be in. That is a coin-flip on the runner's mood, not a
  * regression gate.
@@ -393,7 +392,7 @@ export interface StartTakeHost {
   readonly nodeId: string;
   /** The page's PatchEngine, or undefined before it exists. */
   engine(): PatchEngine | null | undefined;
-  /** Explicit Record may be the first engine action in a fresh native rack. */
+  /** Ensure the engine and current rack are ready, even during an existing boot. */
   ensureEngine?(): Promise<PatchEngine>;
   /**
    * IS THE MODULE STILL ARMED? Re-read after every await.
@@ -494,7 +493,7 @@ export async function startRecorderboxTake(host: StartTakeHost): Promise<boolean
 
     // Resolve the gesture-bound destination first. Booting may load worklets,
     // so awaiting it before the picker can expire browser user activation.
-    const patchEngine = host.engine() ?? await host.ensureEngine?.();
+    const patchEngine = host.ensureEngine ? await host.ensureEngine() : host.engine();
     if (!host.stillArmed()) return false;
     const ve = videoEngineOf(patchEngine);
     if (!ve) throw new Error('The video engine is not ready.');

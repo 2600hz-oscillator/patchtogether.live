@@ -12,7 +12,7 @@ const WEB_ROOT = process.env.PT_DESKTOP_WEB_ROOT
 // This exercises real encoders, OPFS and writable handles, but deliberately
 // does not claim coverage of the OS-native chooser or an external folder.
 // Those still need a separate native-dialog check.
-for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh native rack and saves playable ${aspect} video`, async () => {
+for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh native rack and saves playable ${aspect} video and stereo audio`, async ({}, testInfo) => {
   if (!fs.existsSync(path.join(WEB_ROOT, 'fallback.html'))) {
     throw new Error('Build the isolated desktop bundle with task desktop:build:web first.');
   }
@@ -48,6 +48,10 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
           id: 'recording-source', type: 'shapes', domain: 'video',
           position: { x: 400, y: 80 }, params: { shape: 0, zoom: 1 },
         };
+        w.__patch.nodes['recording-tone'] = {
+          id: 'recording-tone', type: 'analogVco', domain: 'audio',
+          position: { x: 600, y: 80 }, params: {},
+        };
         for (const [id, edge] of Object.entries(w.__patch.edges)) {
           if (edge.target?.nodeId === 'workflow-recorderbox' && edge.target.portId === 'in') {
             delete w.__patch.edges[id];
@@ -58,6 +62,13 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
           target: { nodeId: 'workflow-recorderbox', portId: 'in' },
           sourceType: 'mono-video', targetType: 'video',
         } as never;
+        for (const portId of ['audio_l', 'audio_r']) {
+          w.__patch.edges[`recording-${portId}`] = {
+            id: `recording-${portId}`, source: { nodeId: 'recording-tone', portId: 'sine' },
+            target: { nodeId: 'workflow-recorderbox', portId },
+            sourceType: 'audio', targetType: 'audio',
+          } as never;
+        }
       });
     });
     const node = page.locator('.svelte-flow__node[data-id="workflow-recorderbox"]');
@@ -98,6 +109,12 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
       for await (const handle of dir.values()) if ((await handle.getFile()).size > 1000) return true;
       return false;
     }), { timeout: 30_000, message: 'the finalized recording reached its destination' }).toBe(true);
+    const savedBytes = await page.evaluate(async () => {
+      const dir = (window as unknown as { __recordingDestination: FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemFileHandle> } }).__recordingDestination;
+      for await (const handle of dir.values()) return Array.from(new Uint8Array(await (await handle.getFile()).arrayBuffer()));
+      throw new Error('No saved take');
+    });
+    await testInfo.attach('recorded-take', { body: Buffer.from(savedBytes), contentType: 'video/mp4' });
     const decoded = await page.evaluate(async () => {
       const dir = (window as unknown as { __recordingDestination: FileSystemDirectoryHandle & {
         values(): AsyncIterable<FileSystemFileHandle>;
@@ -127,12 +144,25 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
           sum += y; sumSq += y * y;
         }
         const n = px.length / 4;
-        return { duration: video.duration, width: video.videoWidth, height: video.videoHeight,
+        const audioContext = new AudioContext();
+        let audioRms: number[];
+        try {
+          const audio = await audioContext.decodeAudioData(await file.arrayBuffer());
+          audioRms = Array.from({ length: audio.numberOfChannels }, (_, channel) => {
+            const samples = audio.getChannelData(channel);
+            let energy = 0;
+            for (const sample of samples) energy += sample * sample;
+            return Math.sqrt(energy / samples.length);
+          });
+        } finally { await audioContext.close(); }
+        return { audioRms, duration: video.duration, width: video.videoWidth, height: video.videoHeight,
           variance: sumSq / n - (sum / n) ** 2 };
       } finally {
         video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url);
       }
     });
+    expect(decoded.audioRms).toHaveLength(2);
+    for (const rms of decoded.audioRms) expect(rms, 'both recorded audio channels carry the patched oscillator').toBeGreaterThan(0.01);
     expect(decoded.duration).toBeGreaterThan(0.5);
     expect(decoded.width).toBe(aspect === '4:3' ? 1024 : 1366);
     expect(decoded.height).toBe(768);

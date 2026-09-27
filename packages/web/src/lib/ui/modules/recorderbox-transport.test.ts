@@ -22,7 +22,7 @@
 //     here. The pure policy half is already covered next door in
 //     `recorderbox-present-policy.test.ts`.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   FOLDER_HINT_NO_PICKER,
   UNCHECKED_SUPPORT,
@@ -218,6 +218,37 @@ describe('a failed start never leaves an armed switch over no recording', () => 
       expect(recorderboxRecording(patch.nodes[id] ?? null)).toBe(false);
       expect(nodeRecorder.failureFor(id)).toContain('capture source unavailable');
     } finally {
+      delete patch.nodes[id];
+      nodeRecorder.sweep(Object.keys(patch.nodes));
+    }
+  });
+});
+
+
+describe('recording waits for a reconciled rack', () => {
+  for (const existing of [false, true]) it(`awaits readiness with ${existing ? 'an existing' : 'no'} engine and honors cancellation`, async () => {
+    const id = `recorder-ready-${existing}`;
+    patch.nodes[id] = { ...nodeWith({ recording: true }), id };
+    let ready!: (engine: PatchEngine) => void;
+    const readiness = new Promise<PatchEngine>((resolve) => { ready = resolve; });
+    const getDomain = vi.fn();
+    const engine = { getDomain } as unknown as PatchEngine;
+    const ensureEngine = vi.fn(() => readiness);
+    try {
+      const start = startRecorderboxTake({
+        nodeId: id, engine: () => existing ? engine : null, ensureEngine,
+        stillArmed: () => recorderboxRecording(patch.nodes[id] ?? null),
+        setFolderHint: () => {},
+      });
+      await vi.waitFor(() => expect(ensureEngine).toHaveBeenCalledOnce());
+      expect(getDomain).not.toHaveBeenCalled();
+      patch.nodes[id].data!.recording = false;
+      ready(engine);
+      await expect(start).resolves.toBe(false);
+      expect(getDomain).not.toHaveBeenCalled();
+      expect(nodeRecorder.failureFor(id)).toBeNull();
+    } finally {
+      ready(engine);
       delete patch.nodes[id];
       nodeRecorder.sweep(Object.keys(patch.nodes));
     }

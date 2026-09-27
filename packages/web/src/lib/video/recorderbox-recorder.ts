@@ -815,7 +815,14 @@ export class RecorderboxRecorder {
     this.chunkAudioFrames += frames;
     // Tap into the rolling overlap window (the next chunk prepends this tail).
     this.audioRing?.pushChunk({ data: init.data, frames });
-    await src.add(new AudioSample({ ...init, timestamp }));
+    const sample = new AudioSample({ ...init, timestamp });
+    try {
+      await src.add(sample);
+    } finally {
+      // AudioSampleSource borrows the sample. Release our copy after encoder
+      // backpressure settles, including rejection; GC is not a resource owner.
+      sample.close();
+    }
   }
 
   /**
