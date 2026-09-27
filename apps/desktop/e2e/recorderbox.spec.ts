@@ -12,7 +12,8 @@ const WEB_ROOT = process.env.PT_DESKTOP_WEB_ROOT
 // This exercises real encoders, OPFS and writable handles, but deliberately
 // does not claim coverage of the OS-native chooser or an external folder.
 // Those still need a separate native-dialog check.
-for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh native rack and saves playable ${aspect} video and stereo audio`, async ({}, testInfo) => {
+for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh native rack and saves playable ${aspect} video and stereo audio`, async () => {
+  const testInfo = test.info();
   if (!fs.existsSync(path.join(WEB_ROOT, 'fallback.html'))) {
     throw new Error('Build the isolated desktop bundle with task desktop:build:web first.');
   }
@@ -105,13 +106,21 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
     await expect(record).toHaveText(/STOP/);
     await expect(dock.getByTestId('recorderbox-face-error')).toHaveCount(0);
     await expect(dock.getByTestId('recorderbox-face-rec-led')).toHaveAttribute('data-lit', '1');
+    // A take belongs to the node, not this dock. Reopening during capture
+    // must neither interrupt it nor offer its live scratch file as recovery.
+    await dock.getByTestId('faceplate-close').click();
+    await expect(dock).toHaveCount(0);
+    await node.getByTestId('shell-open-dock').click();
+    await expect(record).toHaveText(/STOP/);
     await page.waitForFunction(() => Number(document.querySelector('[data-testid="recorderbox-face-rec-led"]')?.getAttribute('title')?.match(/recording for (\d+):(\d+)/)?.[2] ?? 0) >= 1, undefined, { timeout: 15_000 });
+    await expect(dock.getByTestId('recorderbox-face-recover')).toHaveCount(0);
     await record.click();
     await expect.poll(() => page.evaluate(async () => {
       const dir = (window as unknown as { __recordingDestination: FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemFileHandle> } }).__recordingDestination;
       for await (const handle of dir.values()) if ((await handle.getFile()).size > 1000) return true;
       return false;
     }), { timeout: 30_000, message: 'the finalized recording reached its destination' }).toBe(true);
+    await expect(dock.getByTestId('recorderbox-face-recover')).toHaveCount(0);
     const savedBytes = await page.evaluate(async () => {
       const dir = (window as unknown as { __recordingDestination: FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemFileHandle> } }).__recordingDestination;
       for await (const handle of dir.values()) return Array.from(new Uint8Array(await (await handle.getFile()).arrayBuffer()));

@@ -131,6 +131,7 @@
   // ── Registry reads. NOT component state: the recording outlives this mount.
   let live = $derived(nodeRecorder.view(nodeId));
   let recState = $derived(live?.state ?? 'idle');
+  let hasLiveTake = $derived(live !== null);
   let failure = $derived(nodeRecorder.failureFor(nodeId));
   let elapsed = $derived(live?.elapsed ?? 0);
   let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
@@ -161,9 +162,28 @@
     });
   });
 
+  let recoveryScanVersion = 0;
   async function rescan(): Promise<void> {
-    recoverable = await scanRecoverableTakes(nodeId);
+    const version = ++recoveryScanVersion;
+    const id = nodeId;
+    const candidates = await scanRecoverableTakes(id);
+    if (version === recoveryScanVersion && !nodeRecorder.view(id)) {
+      recoverable = candidates;
+    }
   }
+
+  $effect(() => {
+    void nodeId;
+    // Mounting a dock during capture/finalization must not offer its live
+    // scratch file for recovery. Refresh only after the node releases the take,
+    // and invalidate any older IndexedDB read when that lifetime changes.
+    if (hasLiveTake) {
+      recoverable = [];
+    } else {
+      untrack(() => { void rescan(); });
+    }
+    return () => { ++recoveryScanVersion; };
+  });
 
   $effect(() => {
     void nodeId;
@@ -171,7 +191,6 @@
       void probeRecorderboxSupport(VIDEO_RES.width, VIDEO_RES.height).then((s) => {
         support = s;
       });
-      void rescan();
     });
   });
 
