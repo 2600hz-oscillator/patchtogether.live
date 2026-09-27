@@ -78,6 +78,9 @@ test('TRAILS selection survives a real process relaunch and connects without ano
     try {
       const page = await first.firstWindow();
       await page.addInitScript({ content: script });
+      // firstWindow only guarantees a BrowserWindow exists. A reload during
+      // its initial loadURL races that navigation and fails with ERR_ABORTED.
+      await expect(page.getByTestId('preflight-panel')).toBeVisible({ timeout: BOOT_MS });
       await page.reload();
       await expect(page.getByTestId('preflight-panel')).toBeVisible({ timeout: BOOT_MS });
       await page.getByTestId('preflight-trails-connect').click();
@@ -89,6 +92,9 @@ test('TRAILS selection survives a real process relaunch and connects without ano
     try {
       const page = await second.firstWindow();
       await page.addInitScript({ content: script });
+      // firstWindow only guarantees a BrowserWindow exists. A reload during
+      // its initial loadURL races that navigation and fails with ERR_ABORTED.
+      await expect(page.getByTestId('preflight-panel')).toBeVisible({ timeout: BOOT_MS });
       await page.reload();
       await expect(page.getByTestId('preflight-trails-select')).toHaveValue(input.id, { timeout: BOOT_MS });
       await expect(page.getByTestId('preflight-trails-presence')).toHaveAttribute('data-state', 'ok');

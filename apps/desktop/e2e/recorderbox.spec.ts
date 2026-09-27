@@ -23,10 +23,13 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
       PT_DESKTOP_WINDOWED: '1', PT_HELPERS: 'off' },
   });
   const diagnostics: string[] = [];
+  await app.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
   app.process().stderr?.on('data', d => diagnostics.push(String(d)));
   try {
     const page = await app.firstWindow();
     page.on('pageerror', e => diagnostics.push(String(e)));
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) diagnostics.push(`Navigated: ${frame.url()}`); });
+    page.on('crash', () => diagnostics.push('Renderer crashed'));
     page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') diagnostics.push(m.text()); });
     await enterRack(page);
     await page.waitForFunction(() => !!(window as unknown as { __patch?: unknown }).__patch);
@@ -169,6 +172,13 @@ for (const aspect of ['4:3', '16:9']) test(`RECORDERBOX starts from a fresh nati
     expect(decoded.variance, 'the recorded picture contains the patched source, not a blank frame').toBeGreaterThan(15);
   } finally {
     console.log('Recorder diagnostics:', diagnostics.join('\n'));
+    if (testInfo.status !== testInfo.expectedStatus) {
+      const trace = testInfo.outputPath('native-recording-trace.zip');
+      await app.context().tracing.stop({ path: trace });
+      await testInfo.attach('native-recording-trace', { path: trace, contentType: 'application/zip' });
+    } else {
+      await app.context().tracing.stop();
+    }
     await app.close();
   }
 });
