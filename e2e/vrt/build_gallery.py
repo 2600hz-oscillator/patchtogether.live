@@ -101,11 +101,11 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# The two face tiers every STRICT_FACES module must pin, and the optional one.
+# The two face tiers every STRICT_FACES module must pin, plus optional states.
 # `workflow-shell-faces.spec.ts` writes `face-<type>-<tier>.png`;
 # `workflow-rear-card.spec.ts` writes `rear-<type>.png`.
 REQUIRED_FACE_TIERS: Tuple[str, str] = ("compact", "dock")
-OPTIONAL_FACE_TIERS: Tuple[str] = ("rear",)
+OPTIONAL_FACE_TIERS: Tuple[str, ...] = ("rear", "error")
 
 
 # Per-module blurb. Drives the alt text + card subtitle.
@@ -547,9 +547,8 @@ def render_ui_v2(
     gapped: Dict[str, List[str]] = {}
     for module in strict_faces:
         tiers: List[str] = list(REQUIRED_FACE_TIERS)
-        # The rear card only exists for a handful of modules; showing an empty
-        # row for the other fourteen would be fourteen false alarms, so it is
-        # rendered only when a baseline exists somewhere.
+        # Rear cards and error states only exist for some modules. Optional
+        # rows render only when a baseline exists; their absence is not a gap.
         for opt in OPTIONAL_FACE_TIERS:
             if (module, opt) in by_face:
                 tiers.append(opt)
