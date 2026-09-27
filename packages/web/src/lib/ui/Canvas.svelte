@@ -683,7 +683,7 @@
 
   // Provide the engine to descendant module-card components (motorized faders
   // use this to read live AudioParam values).
-  provideEngineContext(() => engine);
+  provideEngineContext(() => engine, ensureEngine);
   // Provide the multiplayer provider too, so cards can write per-module
   // presence into Y.Awareness (e.g., CAMERA publishes "this user has CAMERA
   // active here" without sending pixels — see camera-presence.ts).
@@ -4251,7 +4251,6 @@
     if (perfZipBusy) return;
     perfZipBusy = true;
     try {
-      const input = await buildPerformanceZipInput(stateOnly);
       // STREAM into the file the user names (Chromium: native Save dialog;
       // elsewhere: a name prompt + download, which has no stream target and
       // still materialises). Streaming is what keeps a big save from
@@ -4260,7 +4259,7 @@
       // the main thread in one 4-second stretch that would freeze the video
       // outputs. A save must never even temporarily disrupt output.
       let written = 0;
-      const outcome = await savePerformanceZipStreaming(input, {
+      const outcome = await savePerformanceZipStreaming(() => buildPerformanceZipInput(stateOnly), {
         ...(stateOnly ? { suggestedName: 'performance-state.ptperf.zip' } : {}),
         onProgress: (n) => {
           written = n;

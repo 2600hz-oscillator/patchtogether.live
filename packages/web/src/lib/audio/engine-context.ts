@@ -9,12 +9,17 @@ import type { PatchEngine } from './engine';
 export interface EngineContext {
   /** Returns the current PatchEngine, or null if not yet booted. */
   get(): PatchEngine | null;
+  /** Boot on an explicit module action (for example Record on a fresh rack). */
+  ensure?(): Promise<PatchEngine>;
 }
 
 const KEY = Symbol('engine-context');
 
-export function provideEngineContext(getter: () => PatchEngine | null): void {
-  setContext<EngineContext>(KEY, { get: getter });
+export function provideEngineContext(
+  getter: () => PatchEngine | null,
+  ensure?: () => Promise<PatchEngine>,
+): void {
+  setContext<EngineContext>(KEY, { get: getter, ensure });
 }
 
 export function useEngine(): EngineContext {

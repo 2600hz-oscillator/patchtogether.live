@@ -95,9 +95,9 @@ export async function savePerformanceZip(bytes: Uint8Array, deps: SaveDeps = {})
         suggestedName: suggested,
         types: [{ description: 'Performance bundle', accept: { 'application/zip': ['.zip'] } }],
       });
-    } catch {
-      // AbortError (dialog dismissed) or any other rejection → treat as cancel.
-      return 'cancelled';
+    } catch (error) {
+      if (isPickerCancelled(error)) return 'cancelled';
+      throw error;
     }
     const writable = await (handle as unknown as {
       createWritable: () => Promise<{ write: (d: BufferSource) => Promise<void>; close: () => Promise<void> }>;
@@ -144,6 +144,8 @@ export interface StreamSaveDeps extends SaveDeps {
 
 /**
  * Build the performance `.zip` DIRECTLY INTO the file the user picks.
+ * Pass an input factory from UI handlers so the picker runs within the user
+ * gesture, before potentially slow media collection. Cancelling skips that work.
  *
  * Returns 'saved', or 'cancelled' when the user dismissed the dialog/prompt OR
  * aborted mid-write. A cancelled write leaves no half-file behind: the swap
@@ -157,7 +159,7 @@ export interface StreamSaveDeps extends SaveDeps {
  * machines live — and absent elsewhere.
  */
 export async function savePerformanceZipStreaming(
-  input: PerformanceZipBundle,
+  input: PerformanceZipBundle | (() => Promise<PerformanceZipBundle>),
   deps: StreamSaveDeps = {},
 ): Promise<ZipSaveOutcome> {
   const suggested = deps.suggestedName ?? DEFAULT_PERF_ZIP_NAME;
@@ -172,10 +174,13 @@ export async function savePerformanceZipStreaming(
     // No stream target exists — build the buffer and hand it to the fallback.
     // `onProgress` still fires once with the final size, so a caller reporting
     // "saved N KB" is not silently wrong on Firefox/Safari.
-    const bytes = buildPerformanceZip(input);
-    const outcome = await savePerformanceZip(bytes, deps);
-    if (outcome === 'saved') deps.onProgress?.(bytes.length);
-    return outcome;
+    const prompt = deps.prompt ?? ((m: string, d: string) => typeof window !== 'undefined' ? window.prompt(m, d) : d);
+    const chosen = prompt('Save performance as:', suggested);
+    if (chosen === null) return 'cancelled';
+    const bytes = buildPerformanceZip(typeof input === 'function' ? await input() : input);
+    (deps.download ?? defaultDownload)(bytes, ensureZipName(chosen));
+    deps.onProgress?.(bytes.length);
+    return 'saved';
   }
 
   let handle: SaveHandleLike;
@@ -184,8 +189,9 @@ export async function savePerformanceZipStreaming(
       suggestedName: suggested,
       types: [{ description: 'Performance bundle', accept: { 'application/zip': ['.zip'] } }],
     })) as unknown as SaveHandleLike;
-  } catch {
-    return 'cancelled'; // AbortError (dialog dismissed) or any other rejection
+  } catch (error) {
+    if (isPickerCancelled(error)) return 'cancelled';
+    throw error;
   }
 
   // Was the target already carrying data? Only a target that was EMPTY when we
@@ -199,7 +205,11 @@ export async function savePerformanceZipStreaming(
 
   const writable = await handle.createWritable();
   try {
-    await streamPerformanceZip(input, writable, {
+    // Pick synchronously from the menu gesture, BEFORE awaiting media/MIDI
+    // collection. A long preparation otherwise expires user activation and
+    // Chromium refuses the dialog with SecurityError.
+    const bundle = typeof input === 'function' ? await input() : input;
+    await streamPerformanceZip(bundle, writable, {
       signal: deps.signal,
       onProgress: deps.onProgress,
     });
@@ -209,6 +219,10 @@ export async function savePerformanceZipStreaming(
     if (e instanceof PerformanceZipAborted) return 'cancelled';
     throw e;
   }
+}
+
+function isPickerCancelled(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 /** Roll back a failed/cancelled streaming write. Best-effort throughout: a

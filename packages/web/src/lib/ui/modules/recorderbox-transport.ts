@@ -298,13 +298,17 @@ export async function changeRecorderboxFolder(nodeId: string): Promise<string | 
   const live = nodeRecorder.view(nodeId);
   const state = live?.state ?? 'idle';
   if (state === 'recording' || state === 'finalizing') return null;
-  const picked = await promptSaveFolder();
-  if (picked === 'cancel') return FOLDER_HINT_ROOT_BLOCKED;
-  if (picked == null) return FOLDER_HINT_NO_PICKER;
-  if (!(await ensureHandleWritePermission(picked))) return FOLDER_HINT_DENIED;
-  // On the NODE, so a collapse or an LRU eviction cannot forget it (#1583).
-  nodeRecorder.rememberFolder(nodeId, picked);
-  return null;
+  try {
+    const picked = await promptSaveFolder();
+    if (picked === 'cancel') return FOLDER_HINT_ROOT_BLOCKED;
+    if (picked == null) return FOLDER_HINT_NO_PICKER;
+    if (!(await ensureHandleWritePermission(picked))) return FOLDER_HINT_DENIED;
+    // On the NODE, so a collapse or an LRU eviction cannot forget it (#1583).
+    nodeRecorder.rememberFolder(nodeId, picked);
+    return null;
+  } catch (error) {
+    return `Could not select a recording folder. ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 // ── Crash recovery ──────────────────────────────────────────────────────────
@@ -389,6 +393,8 @@ export interface StartTakeHost {
   readonly nodeId: string;
   /** The page's PatchEngine, or undefined before it exists. */
   engine(): PatchEngine | null | undefined;
+  /** Explicit Record may be the first engine action in a fresh native rack. */
+  ensureEngine?(): Promise<PatchEngine>;
   /**
    * IS THE MODULE STILL ARMED? Re-read after every await.
    *
@@ -434,14 +440,8 @@ export async function startRecorderboxTake(host: StartTakeHost): Promise<boolean
   const { nodeId } = host;
   if (STARTING.has(nodeId)) return false;
 
-  const patchEngine = host.engine();
-  const ve = videoEngineOf(patchEngine);
-  if (!ve) {
-    setRecorderboxData(nodeId, 'recording', false);
-    return false;
-  }
-
   STARTING.add(nodeId);
+  nodeRecorder.clearFailure(nodeId);
   try {
     // ── PRESENTATION-SAFE folder resolution ──
     // While in element-fullscreen, opening ANY modal (the folder picker, a
@@ -491,6 +491,13 @@ export async function startRecorderboxTake(host: StartTakeHost): Promise<boolean
       }
     }
     if (!host.stillArmed()) return false;
+
+    // Resolve the gesture-bound destination first. Booting may load worklets,
+    // so awaiting it before the picker can expire browser user activation.
+    const patchEngine = host.engine() ?? await host.ensureEngine?.();
+    if (!host.stillArmed()) return false;
+    const ve = videoEngineOf(patchEngine);
+    if (!ve) throw new Error('The video engine is not ready.');
 
     const ew = ve.canvas.width || VIDEO_RES.width;
     const eh = ve.canvas.height || VIDEO_RES.height;
@@ -546,6 +553,12 @@ export async function startRecorderboxTake(host: StartTakeHost): Promise<boolean
     });
     if (!started) setRecorderboxData(nodeId, 'recording', false);
     return started;
+  } catch (error) {
+    // An async setup failure must not leave RECORD armed over no take, or be
+    // discarded as an unhandled rejection from the surface's effect.
+    nodeRecorder.reportFailure(nodeId, 'start', error);
+    setRecorderboxData(nodeId, 'recording', false);
+    return false;
   } finally {
     STARTING.delete(nodeId);
   }

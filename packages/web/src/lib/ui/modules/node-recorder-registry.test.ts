@@ -216,6 +216,26 @@ describe('a recording outlives the card that started it', () => {
     expect(h.registry.isRecording('n1')).toBe(false);
   });
 
+  it('keeps SAVING visible and deduplicates stop until the destination is committed', async () => {
+    const h = harness();
+    await h.registry.start('n1', startArgs(h.engine));
+    let finish!: (name: string) => void;
+    const save = new Promise<string>(resolve => { finish = resolve; });
+    h.recorders[0].stop = vi.fn(() => save);
+    const first = h.registry.stop('n1');
+    const second = h.registry.stop('n1');
+    expect(h.registry.view('n1')?.state).toBe('finalizing');
+    expect(h.registry.isRecording('n1')).toBe(true);
+    expect(h.recorders[0].stop).toHaveBeenCalledTimes(1);
+    await h.registry.start('n1', startArgs(h.engine));
+    expect(h.recorders).toHaveLength(1);
+    finish('take.mp4');
+    expect(await first).toBe('take.mp4');
+    expect(await second).toBe('take.mp4');
+    expect(h.registry.view('n1')).toBeNull();
+    expect(h.leases.released).toEqual(['n1']);
+  });
+
   it('the pump stops when the recording does — no leak past stop', async () => {
     const h = harness();
     await h.registry.start('n1', startArgs(h.engine));
@@ -234,7 +254,7 @@ describe('a recording outlives the card that started it', () => {
     expect(h.recorders[0].calls.filter((c) => c === 'abandon')).toEqual([]);
   });
 
-  it('a failed start leaves nothing behind', async () => {
+  it('a failed start releases the lease and retains the reason for the surface', async () => {
     const h = harness();
     const deps: Partial<RegistryDeps> = {
       makeRecorder: () => ({ async start() { throw new Error('no encoder'); } }) as never,
@@ -245,6 +265,7 @@ describe('a recording outlives the card that started it', () => {
     const ok = await reg.start('n1', startArgs(h.engine));
     expect(ok).toBe(false);
     expect(reg.isRecording('n1')).toBe(false);
+    expect(reg.failureFor('n1')).toBe('Recording could not start. no encoder');
     expect(h.leases.released, 'the lease taken for the attempt is given back').toEqual(['n1']);
   });
 });
@@ -452,5 +473,44 @@ describe('the destination folder belongs to the NODE (#1583)', () => {
   it('an unknown node reads as null rather than throwing', () => {
     const h = harness();
     expect(h.registry.folderFor('never-seen')).toBeNull();
+  });
+});
+
+
+describe('recording failures remain visible on node lifetime', () => {
+  it('a successful retry clears a stale error without clearing another node', async () => {
+    const h = harness();
+    h.registry.reportFailure('n1', 'start', new Error('encoder unavailable'));
+    h.registry.reportFailure('n2', 'start', new Error('disk unavailable'));
+    await h.registry.start('n1', startArgs(h.engine));
+    expect(h.registry.failureFor('n1')).toBeNull();
+    expect(h.registry.failureFor('n2')).toContain('disk unavailable');
+  });
+
+  it('a failed delivery reports recovery rather than silently returning to idle', async () => {
+    const h = harness();
+    await h.registry.start('n1', startArgs(h.engine));
+    vi.spyOn(h.recorders[0], 'stop').mockResolvedValue(null as never);
+    expect(await h.registry.stop('n1')).toBeNull();
+    expect(h.registry.failureFor('n1')).toContain('Check recovery before closing the app.');
+    expect(h.recorders[0].calls).not.toContain('abandon');
+  });
+
+  it('a thrown save error retains its reason and does not discard the take', async () => {
+    const h = harness();
+    await h.registry.start('n1', startArgs(h.engine));
+    vi.spyOn(h.recorders[0], 'stop').mockRejectedValue(new Error('write permission denied'));
+    expect(await h.registry.stop('n1')).toBeNull();
+    expect(h.registry.failureFor('n1')).toContain('write permission denied');
+    expect(h.recorders[0].calls).not.toContain('abandon');
+  });
+
+  it('only deleting the node clears its error', () => {
+    const h = harness();
+    h.registry.reportFailure('n1', 'start', new Error('encoder unavailable'));
+    h.registry.sweep(['n1']);
+    expect(h.registry.failureFor('n1')).toContain('encoder unavailable');
+    h.registry.sweep([]);
+    expect(h.registry.failureFor('n1')).toBeNull();
   });
 });

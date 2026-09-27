@@ -32,9 +32,9 @@ describe('promptSaveFolder — pick the destination FOLDER once (Tweak 1 + 3)', 
     expect(await promptSaveFolder({ picker, hasPicker: () => true })).toBe('cancel');
   });
 
-  it('returns "cancel" on any other rejection too (fail safe → revert toggle)', async () => {
+  it('surfaces a real folder error instead of claiming cancellation', async () => {
     const picker = vi.fn(async () => { throw new Error('weird'); });
-    expect(await promptSaveFolder({ picker, hasPicker: () => true })).toBe('cancel');
+    await expect(promptSaveFolder({ picker, hasPicker: () => true })).rejects.toThrow('weird');
   });
 
   it('returns null on a no-directory-picker browser (Firefox/Safari → download)', async () => {
@@ -104,10 +104,9 @@ describe('promptSaveDestination — prompt at recording START', () => {
     expect(dest).toBe('cancel');
   });
 
-  it('returns "cancel" on any other picker rejection too (fail safe)', async () => {
+  it('surfaces a real save-picker error instead of claiming cancellation', async () => {
     const picker = vi.fn(async () => { throw new Error('weird'); });
-    const dest = await promptSaveDestination('x', { picker, hasPicker: () => true });
-    expect(dest).toBe('cancel');
+    await expect(promptSaveDestination('x', { picker, hasPicker: () => true })).rejects.toThrow('weird');
   });
 
   it('returns null on a no-picker browser (Firefox/Safari → download path)', async () => {

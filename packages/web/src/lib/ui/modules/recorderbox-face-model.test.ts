@@ -373,15 +373,15 @@ describe('recorderbox face — the controls that must NOT become generic cells',
     expect(/disabled=\{busy\}/.test(select![0]), 'SIZE must be disabled mid-take').toBe(true);
   });
 
-  it('RECORD is disabled ONLY once the probe has ANSWERED', () => {
-    // `disabled={support.checked && !support.canRecord}` — not
-    // `disabled={!support.canRecord}`. The difference is a slow probe painting a
-    // dead-looking switch on a machine that can encode perfectly well.
+  it('RECORD waits for capability and finalization while STOP remains available', () => {
+    // An enabled switch whose handler refuses every press is misleading.
+    // Wait for the probe before START; capability changes must never block
+    // STOP. Finalization owns the take until the destination write completes.
     for (const { name, path } of SURFACES.slice(0, 2)) {
       const src = read(path);
       expect(
-        /disabled=\{support\.checked && !support\.canRecord\}/.test(src),
-        `${name}: RECORD must gate on checked AND canRecord`,
+        /disabled=\{recState === 'finalizing' \|\| \(!recording && !support\.canRecord\)\}/.test(src),
+        `${name}: RECORD must wait for support/finalization without disabling STOP`,
       ).toBe(true);
     }
   });
