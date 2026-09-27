@@ -75,12 +75,17 @@ for (const stateOnly of [false, true]) {
           for (const id of Object.keys(w.__patch.nodes)) delete w.__patch.nodes[id];
         });
         await w.__perfZip.load(bytes);
-        return { name: w.__suggestedName, size: file.size, patch: JSON.parse(JSON.stringify(w.__patch)) };
+        return { name: w.__suggestedName, size: file.size };
       });
       expect(result.name).toBe(stateOnly ? 'performance-state.ptperf.zip' : 'performance.ptperf.zip');
       expect(result.size).toBeGreaterThan(100);
-      expect(result.patch.nodes).toEqual(before.nodes);
-      expect(result.patch.edges).toEqual(before.edges);
+      // Loading also schedules module initialization (CLIPPLAYER's empty
+      // automation map, for example). Compare after that observable state
+      // settles, not in the same microtask that applied the envelope.
+      await expect.poll(() => page.evaluate(() => {
+        const p = (window as unknown as { __patch: { nodes: unknown; edges: unknown } }).__patch;
+        return JSON.parse(JSON.stringify({ nodes: p.nodes, edges: p.edges }));
+      })).toEqual({ nodes: before.nodes, edges: before.edges });
       await page.evaluate(() => {
         (window as unknown as { showSaveFilePicker(): Promise<FileSystemFileHandle> }).showSaveFilePicker = async () => {
           throw new DOMException('Save permission refused by the test', 'NotAllowedError');
