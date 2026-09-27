@@ -132,6 +132,17 @@ async function spawnCameraChain(page: Page): Promise<void> {
       },
     ],
   );
+  // DOM mounting can finish before the async video factories. Wait for their
+  // actual output textures before driving the paused renderer's first frame.
+  await page.waitForFunction(({ camera, output }) => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => {
+        outputTexture: (id: string) => WebGLTexture | null;
+      } };
+    };
+    const ve = w.__engine().getDomain('video');
+    return !!ve.outputTexture(camera) && !!ve.outputTexture(output);
+  }, { camera: CAM, output: OUT }, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
 }
 
 test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned source', () => {
@@ -289,4 +300,82 @@ test.describe('CAMERA under the DEFAULT shell — promoted lane, node-owned sour
   // Node-source ownership on the shell users get is
   // covered by the tests above and by workflow-shell-video's per-row
   // card-absence assertions.
+});
+
+// Compare sampled output pixels against the SAME rendered source, so this
+// checks both axes independently without a driver-specific image golden.
+test('CAMERA Flip Y and Mirror independently transform the downstream image @webgl-smoke', async ({ page, errorWatch }) => {
+  test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
+  await installRenderSmokeHooks(page);
+  await page.addInitScript(() => {
+    (globalThis as unknown as { __camerainputTestFrame?: boolean }).__camerainputTestFrame = true;
+  });
+  await stubMediaDevices(page);
+  await page.goto('/rack');
+  await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  await spawnCameraChain(page);
+  const lane = page.locator(`.svelte-flow__node[data-id="${CAM}"]`);
+  await lane.getByTestId('shell-open-dock').click();
+  const dock = page.getByTestId('dock-full-view');
+  await expect(dock).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+  const flipY = dock.getByTestId('control-flipY');
+  const mirror = dock.getByTestId('control-mirror');
+  await expect(flipY).toHaveAttribute('aria-checked', 'false');
+  await expect(mirror).toHaveAttribute('aria-checked', 'true');
+
+  async function pixels(): Promise<number[][][]> {
+    assertRenderStats(await stepAndReadStats(page, { nodeId: OUT, steps: FIXED_STEPS }), FIXED_STEPS);
+    return page.evaluate((id) => {
+      const w = globalThis as unknown as {
+        __engine: () => { getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          res: { width: number; height: number };
+          outputTexture: (id: string) => WebGLTexture | null;
+        } };
+      };
+      const ve = w.__engine().getDomain('video');
+      const gl = ve.gl;
+      const { width, height } = ve.res;
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, ve.outputTexture(id), 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error('camera downstream framebuffer is incomplete');
+      }
+      const rgba = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fb);
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('camera pixel read failed');
+      // Sample the centers of the source's 8×6 colored squares. Avoid edges
+      // where interpolation can differ by one pixel between GPU drivers.
+      return Array.from({ length: 6 }, (_, y) => Array.from({ length: 8 }, (_, x) => {
+        const i = (Math.floor((y + 0.5) * height / 6) * width + Math.floor((x + 0.5) * width / 8)) * 4;
+        return Array.from(rgba.slice(i, i + 3));
+      }));
+    }, OUT);
+  }
+
+  // No flipY saved in the spawned patch: its new default preserves the image.
+  const original = await pixels();
+  expect(new Set(original.flat().map((rgb) => rgb.join(','))).size, 'asymmetric colored source, not an idle/blank frame').toBeGreaterThanOrEqual(4);
+  const reversedY = [...original].reverse();
+  expect(reversedY, 'the fixture must distinguish vertical orientation').not.toEqual(original);
+
+  await flipY.click();
+  await expect(flipY).toHaveAttribute('aria-checked', 'true');
+  expect(await pixels(), 'Y flip reverses rows only').toEqual(reversedY);
+
+  await mirror.click();
+  await expect(mirror).toHaveAttribute('aria-checked', 'false');
+  expect(await pixels(), 'both toggles compose independently').toEqual(reversedY.map((row) => [...row].reverse()));
+
+  await flipY.click();
+  await expect(flipY).toHaveAttribute('aria-checked', 'false');
+  expect(await pixels(), 'clearing Y preserves the X change').toEqual(original.map((row) => [...row].reverse()));
+
+  await mirror.click();
+  await expect(mirror).toHaveAttribute('aria-checked', 'true');
+  expect(await pixels(), 'clearing both changes restores the original output').toEqual(original);
+  await dock.screenshot({ path: test.info().outputPath('camera-flip-y.png') });
 });

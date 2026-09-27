@@ -699,6 +699,28 @@ test.describe('VRT: P1 curated faces (?shell=1) — compact lane tile + dock ful
         maxDiffPixels: DOCK_MAX_DIFF,
       });
 
+      if (type === 'recorderbox') {
+        // Idle pixels cannot prove that a failed Record is visible or readable.
+        // Drive a real transport failure; only the OS picker is replaced.
+        await page.evaluate(() => {
+          (window as unknown as { showDirectoryPicker(): Promise<FileSystemDirectoryHandle> })
+            .showDirectoryPicker = async () => {
+              throw new DOMException('Folder access was denied. Choose another recording folder.', 'NotAllowedError');
+            };
+        });
+        await faceplate.getByTestId('recorderbox-face-record').click();
+        await expect(faceplate.getByTestId('recorderbox-face-error')).toContainText('Folder access was denied');
+        await expect(faceplate.getByTestId('recorderbox-face-record')).toHaveText(/RECORD/);
+        await expect(page.getByTestId('recorderbox-tile-error')).toBeVisible();
+        await awaitCaptureBoxSettled(faceplate, 'face-recorderbox-error');
+        const failed = await readFoldGeometry(page);
+        expect(failed.hiddenX).toBe(0);
+        expect(failed.hiddenY).toBe(0);
+        await expect(faceplate).toHaveScreenshot('face-recorderbox-error.png', {
+          maxDiffPixels: DOCK_MAX_DIFF,
+        });
+      }
+
       expect(
         errors.filter((e) => !/getUserMedia|audio/i.test(e)),
         `pageerrors: ${errors.join(' | ')}`,

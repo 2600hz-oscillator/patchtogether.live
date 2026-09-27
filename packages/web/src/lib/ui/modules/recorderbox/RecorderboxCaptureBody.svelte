@@ -131,6 +131,8 @@
   // ── Registry reads. NOT component state: the recording outlives this mount.
   let live = $derived(nodeRecorder.view(nodeId));
   let recState = $derived(live?.state ?? 'idle');
+  let hasLiveTake = $derived(live !== null);
+  let failure = $derived(nodeRecorder.failureFor(nodeId));
   let elapsed = $derived(live?.elapsed ?? 0);
   let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
   let saveFolder = $derived(nodeRecorder.folderFor(nodeId));
@@ -154,14 +156,34 @@
       recording: () => recording,
       canRecord: () => support.canRecord,
       engine: () => engineCtx.get(),
+      ensureEngine: engineCtx.ensure,
       stillArmed: () => recorderboxRecording(recorderboxNode(nodeId)),
       setFolderHint: (h) => { folderHint = h; },
     });
   });
 
+  let recoveryScanVersion = 0;
   async function rescan(): Promise<void> {
-    recoverable = await scanRecoverableTakes(nodeId);
+    const version = ++recoveryScanVersion;
+    const id = nodeId;
+    const candidates = await scanRecoverableTakes(id);
+    if (version === recoveryScanVersion && !nodeRecorder.view(id)) {
+      recoverable = candidates;
+    }
   }
+
+  $effect(() => {
+    void nodeId;
+    // Mounting a dock during capture/finalization must not offer its live
+    // scratch file for recovery. Refresh only after the node releases the take,
+    // and invalidate any older IndexedDB read when that lifetime changes.
+    if (hasLiveTake) {
+      recoverable = [];
+    } else {
+      untrack(() => { void rescan(); });
+    }
+    return () => { ++recoveryScanVersion; };
+  });
 
   $effect(() => {
     void nodeId;
@@ -169,12 +191,11 @@
       void probeRecorderboxSupport(VIDEO_RES.width, VIDEO_RES.height).then((s) => {
         support = s;
       });
-      void rescan();
     });
   });
 
   function toggleRecord(): void {
-    if (!support.canRecord) return;
+    if (recState === 'finalizing' || (!recording && !support.canRecord)) return;
     setRecorderboxData(nodeId, 'recording', !recording);
   }
 
@@ -360,6 +381,10 @@
     {/if}
   </div>
 
+  {#if failure}
+    <p class="hint" role="alert" data-testid="recorderbox-face-error">{failure}</p>
+  {/if}
+
   <div class="controls">
     <!-- ⚠ THE TYPED FIELD IS AN `<input type="text">`, NOT A `ShellEntryCell`.
          That cell kind forbids clamping, and the shipped save path SANITIZES
@@ -432,7 +457,7 @@
       type="button"
       class="rec-btn nodrag"
       class:on={recording}
-      disabled={support.checked && !support.canRecord}
+      disabled={recState === 'finalizing' || (!recording && !support.canRecord)}
       onclick={toggleRecord}
       data-testid="recorderbox-face-record"
       data-recording={recording}

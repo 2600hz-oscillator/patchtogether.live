@@ -619,6 +619,9 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     'scope:ch1Range',
     'scope:ch2Range',
     'scope:mode',
+    // CAMERA Flip Y is a persisted orientation: the shader reads its level
+    // every frame, and the gate input is level-sensitive rather than a trigger.
+    'cameraInput:flipY',
     // B3NTB0X, 2026-08-19. The two kaleidoscope FOLDS, and they became visible
     // to this gate the same way cloudseed's enables did: their `curve` was
     // corrected `linear` → `discrete` when the face landed, because the shader

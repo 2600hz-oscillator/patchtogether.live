@@ -138,6 +138,7 @@ interface Entry {
   state: RecorderState;
   elapsed: number;
   lastSavedChunk: string | null;
+  stopPromise?: Promise<string | null>;
 }
 
 /** Injectable seams (tests replace these; production uses the real ones). */
@@ -172,6 +173,9 @@ const defaultDeps: RegistryDeps = {
 
 export class NodeRecorderRegistry {
   #entries = new Map<string, Entry>();
+  // Local diagnostics must survive closing the dock, just like the take and
+  // folder. Never sync filesystem/encoder errors to other rack participants.
+  #failures = new Map<string, string>();
   /** The node's chosen destination FOLDER. Keyed by node and kept OUTSIDE
    *  `#entries` on purpose: an entry exists only for the span of one live
    *  recording, but the whole point of remembering a folder is that it spans
@@ -217,6 +221,24 @@ export class NodeRecorderRegistry {
     this.#bump();
   }
 
+  failureFor(nodeId: string): string | null {
+    void this.#version;
+    return this.#failures.get(nodeId) ?? null;
+  }
+
+  clearFailure(nodeId: string): void {
+    if (this.#failures.delete(nodeId)) this.#bump();
+  }
+
+  reportFailure(nodeId: string, phase: 'start' | 'save', cause?: unknown): void {
+    const detail = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : '';
+    const message = phase === 'start'
+      ? 'Recording could not start.'
+      : 'Recording could not be saved. Check recovery before closing the app.';
+    this.#failures.set(nodeId, detail ? `${message} ${detail}` : message);
+    this.#bump();
+  }
+
   /** Is this node recording right now? Survives card unmount by construction. */
   isRecording(nodeId: string): boolean {
     void this.#version;
@@ -233,6 +255,7 @@ export class NodeRecorderRegistry {
    */
   async start(nodeId: string, args: StartRecordingArgs): Promise<boolean> {
     if (this.#entries.has(nodeId)) return true;
+    this.clearFailure(nodeId);
 
     const canvas = this.#deps.makeCanvas(args.width, args.height);
     const recorder = this.#deps.makeRecorder({
@@ -274,10 +297,10 @@ export class NodeRecorderRegistry {
 
     try {
       await recorder.start();
-    } catch {
+    } catch (error) {
       releaseLease();
       this.#entries.delete(nodeId);
-      this.#bump();
+      this.reportFailure(nodeId, 'start', error);
       return false;
     }
 
@@ -320,14 +343,26 @@ export class NodeRecorderRegistry {
   async stop(nodeId: string): Promise<string | null> {
     const entry = this.#entries.get(nodeId);
     if (!entry) return null;
-    this.#entries.delete(nodeId);
+    if (entry.stopPromise) return entry.stopPromise;
+    entry.state = 'finalizing';
     this.#teardown(entry);
     this.#bump();
-    try {
-      return await entry.recorder.stop();
-    } catch {
-      return null;
-    }
+    // Keep the entry visible until the destination write completes. Removing
+    // it now hides SAVING and exposes this in-flight take as crash recovery.
+    entry.stopPromise = (async () => {
+      try {
+        const saved = await entry.recorder.stop();
+        if (!saved && this.#entries.get(nodeId) === entry) this.reportFailure(nodeId, 'save');
+        return saved;
+      } catch (error) {
+        if (this.#entries.get(nodeId) === entry) this.reportFailure(nodeId, 'save', error);
+        return null;
+      } finally {
+        if (this.#entries.get(nodeId) === entry) this.#entries.delete(nodeId);
+        this.#bump();
+      }
+    })();
+    return entry.stopPromise;
   }
 
   /**
@@ -356,6 +391,11 @@ export class NodeRecorderRegistry {
       this.#folders.delete(nodeId);
       changed = true;
     }
+    for (const nodeId of this.#failures.keys()) {
+      if (live.has(nodeId)) continue;
+      this.#failures.delete(nodeId);
+      changed = true;
+    }
     if (changed) this.#bump();
   }
 
@@ -363,6 +403,8 @@ export class NodeRecorderRegistry {
   #teardown(entry: Entry): void {
     entry.stopPump();
     entry.releaseLease();
+    entry.stopPump = () => {};
+    entry.releaseLease = () => {};
   }
 
   #bump(): void {

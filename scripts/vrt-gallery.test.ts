@@ -411,19 +411,19 @@ describe('vrt gallery — the UI v2 tab is driven from the LIVE STRICT_FACES', (
     }
   });
 
-  it('a face NOT on the ratchet claims no UI v2 slot — it is an ORPHAN', () => {
+  it.each(['dock', 'error'])('a %s face NOT on the ratchet claims no UI v2 slot — it is an ORPHAN', (tier) => {
     // The direction a hand-copied list can never fail in: a demoted module
     // leaves its baselines behind, and they must not keep rendering as curated.
     const tree = fixtureTree([
       ...coveredFaceScenes(),
-      [FACES_SPEC, 'face-notaface-dock'],
+      [FACES_SPEC, `face-notaface-${tier}`],
     ]);
     try {
       const faces = tinyFacesSource();
       const built = build(tree, { strictFaces: faces });
       expect(built.coverage.uiV2.strictFaces).toEqual(['adsr']);
       expect(built.coverage.orphanFaceScenes).toEqual([
-        `${FACES_SPEC}/face-notaface-dock`,
+        `${FACES_SPEC}/face-notaface-${tier}`,
       ]);
       expect(built.coverage.byCategory['ui-v2'].sort()).toEqual([
         `${FACES_SPEC}/face-adsr-compact`,
@@ -469,6 +469,25 @@ describe('vrt gallery — NEGATIVE CONTROL on the instrument', () => {
       expect(countMissingTiles(built.html)).toBe(0);
       expect(built.coverage.uiV2.fullParity).toEqual(['adsr']);
       expect(built.coverage.uiV2.gapped).toEqual({});
+      rmSync(built.outDir, { recursive: true, force: true });
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('an error-state baseline joins its promoted face without becoming a required tier', () => {
+    const tree = fixtureTree([...coveredFaceScenes(), [FACES_SPEC, 'face-adsr-error']]);
+    try {
+      const built = build(tree, { strictFaces: faces });
+      expect(built.coverage.orphanFaceScenes).toEqual([]);
+      expect(built.coverage.byCategory['ui-v2'].sort()).toEqual([
+        `${FACES_SPEC}/face-adsr-compact`,
+        `${FACES_SPEC}/face-adsr-dock`,
+        `${FACES_SPEC}/face-adsr-error`,
+      ]);
+      expect(built.html).toContain('error <em>(optional)</em>');
+      expect(countMissingTiles(built.html)).toBe(0);
+      expect(built.coverage.uiV2.fullParity).toEqual(['adsr']);
       rmSync(built.outDir, { recursive: true, force: true });
     } finally {
       rmSync(tree, { recursive: true, force: true });

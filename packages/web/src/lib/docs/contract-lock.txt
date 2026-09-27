@@ -354,11 +354,13 @@ buggles param rate 0..1 linear default=0.4
 buggles param smoothness 0..1 linear default=0.5
 cadillac meta domain=meta maxInstances=1
 cameraInput meta domain=video maxInstances=4
+cameraInput in flipY gate param=flipY edge=gate
 cameraInput in gain cv param=gain cvScale=linear
 cameraInput in mirror gate param=mirror edge=gate
 cameraInput out out video
 cameraInput param enabled 0..1 discrete default=1
 cameraInput param fillMode 0..1 discrete default=1
+cameraInput param flipY 0..1 discrete default=0
 cameraInput param gain 0..2 linear default=1
 cameraInput param mirror 0..1 discrete default=1
 cartesian meta domain=audio

@@ -43,9 +43,9 @@ export type SaveFolder = FileSystemDirectoryHandle | null | 'cancel';
  * Prompt for the destination FOLDER at the START of recording (the Record toggle
  * is the user gesture). This is picked ONCE; subsequent records + every rolling
  * chunk write into it silently. Feature-detects showDirectoryPicker; on a
- * no-picker browser returns null so the caller falls back to <a download>. Any
- * picker rejection (incl. the user's AbortError dismissal) → 'cancel' so the
- * caller reverts the Record toggle.
+ * no-picker browser returns null so the caller falls back to <a download>. A user
+ * AbortError dismissal returns 'cancel'; other failures reach the caller so
+ * it can explain the error and revert the Record toggle.
  *
  * `picker`/`hasPicker` are injectable for tests; default to the real globals.
  */
@@ -58,9 +58,9 @@ export async function promptSaveFolder(
     deps.picker ?? (globalThis as unknown as { showDirectoryPicker: DirPicker }).showDirectoryPicker;
   try {
     return await picker({ id: 'recorderbox', mode: 'readwrite' });
-  } catch {
-    // AbortError (dismiss) or any other rejection → treat as cancel.
-    return 'cancel';
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') return 'cancel';
+    throw error;
   }
 }
 
@@ -112,9 +112,8 @@ export type SaveDestination = FileSystemFileHandle | null | 'cancel';
 /**
  * Prompt for the save destination at the START of recording. Feature-detects
  * showSaveFilePicker; on a no-picker browser returns null so the caller records
- * to OPFS and downloads at stop. Any picker rejection (incl. the user's
- * AbortError dismissal) → 'cancel' so the caller reverts the Record toggle
- * rather than starting a recording with nowhere to land.
+ * to OPFS and downloads at stop. A user's
+ * AbortError dismissal returns 'cancel'; other failures reach the caller.
  *
  * `picker`/`hasPicker` are injectable for tests; default to the real globals.
  */
@@ -132,9 +131,9 @@ export async function promptSaveDestination(
       suggestedName: safeName,
       types: [{ description: 'MPEG-4 video', accept: { 'video/mp4': ['.mp4'] } }],
     });
-  } catch {
-    // AbortError (dismiss) or any other rejection → treat as cancel.
-    return 'cancel';
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') return 'cancel';
+    throw error;
   }
 }
 

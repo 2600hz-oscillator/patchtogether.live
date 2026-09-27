@@ -342,3 +342,48 @@ describe('savePerformanceZipStreaming — the whole save path', () => {
     expect(seen[seen.length - 1]).toBe(bytesOf(state.chunks).length);
   });
 });
+
+
+describe('save gesture and errors', () => {
+  it('picks before collecting slow media and does not collect on cancel', async () => {
+    const { handle, state } = makeHandle();
+    const order: string[] = [];
+    const collect = vi.fn(async () => { order.push('collect'); return realInput(); });
+    const picker = vi.fn<ZipSavePicker>(async () => {
+      order.push('pick');
+      return handle as unknown as FileSystemFileHandle;
+    });
+    expect(await savePerformanceZipStreaming(collect, { picker })).toBe('saved');
+    expect(order).toEqual(['pick', 'collect']);
+    expect(parsePerformanceZip(bytesOf(state.chunks)).media).toHaveLength(1);
+    collect.mockClear();
+    const cancel: ZipSavePicker = async () => { throw new DOMException('Cancelled', 'AbortError'); };
+    expect(await savePerformanceZipStreaming(collect, { picker: cancel })).toBe('cancelled');
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  it('reports permission/activation errors instead of claiming the user cancelled', async () => {
+    const picker: ZipSavePicker = async () => { throw new DOMException('User gesture expired', 'SecurityError'); };
+    await expect(savePerformanceZip(BYTES, { picker })).rejects.toThrow('User gesture expired');
+    await expect(savePerformanceZipStreaming(async () => realInput(), { picker })).rejects.toThrow('User gesture expired');
+  });
+
+  it('rolls back a new empty target if media collection fails', async () => {
+    const { handle, state } = makeHandle();
+    const collect = async () => { throw new Error('Cannot read clip media'); };
+    await expect(savePerformanceZipStreaming(collect, {
+      picker: async () => handle as unknown as FileSystemFileHandle,
+    })).rejects.toThrow('Cannot read clip media');
+    expect(state.aborted).toBe(true);
+    expect(state.removed).toBe(true);
+    expect(state.closed).toBe(false);
+  });
+
+  it('asks the fallback filename before collection and skips work on cancel', async () => {
+    const collect = vi.fn(async () => realInput());
+    expect(await savePerformanceZipStreaming(collect, {
+      picker: null, prompt: () => null,
+    })).toBe('cancelled');
+    expect(collect).not.toHaveBeenCalled();
+  });
+});

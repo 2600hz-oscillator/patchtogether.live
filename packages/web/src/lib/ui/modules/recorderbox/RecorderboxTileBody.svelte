@@ -96,6 +96,7 @@
   });
   let live = $derived(nodeRecorder.view(nodeId));
   let recState = $derived(live?.state ?? 'idle');
+  let failure = $derived(nodeRecorder.failureFor(nodeId));
   let elapsed = $derived(live?.elapsed ?? 0);
   let lastSavedChunk = $derived<string | null>(live?.lastSavedChunk ?? null);
 
@@ -120,13 +121,14 @@
       recording: () => recording,
       canRecord: () => support.canRecord,
       engine: () => engineCtx.get(),
+      ensureEngine: engineCtx.ensure,
       stillArmed: () => recorderboxRecording(recorderboxNode(nodeId)),
       setFolderHint: (h) => { folderHint = h; },
     });
   });
 
   function toggleRecord(): void {
-    if (!support.canRecord) return;
+    if (recState === 'finalizing' || (!recording && !support.canRecord)) return;
     setRecorderboxData(nodeId, 'recording', !recording);
   }
 
@@ -144,17 +146,27 @@
 </script>
 
 <div class="tile-recorderbox" data-testid="recorderbox-tile-body">
-  <StatusLed
-    caption="REC"
-    lit={recState === 'recording' || recState === 'finalizing'}
-    detail={recDetail}
-    testid="recorderbox-tile-rec-led"
-  />
+  {#if failure}
+    <StatusLed
+      caption="ERROR"
+      lit={true}
+      tone="warn"
+      detail={failure}
+      testid="recorderbox-tile-error"
+    />
+  {:else}
+    <StatusLed
+      caption="REC"
+      lit={recState === 'recording' || recState === 'finalizing'}
+      detail={recDetail}
+      testid="recorderbox-tile-rec-led"
+    />
+  {/if}
   <button
     type="button"
     class="rec-btn nodrag"
     class:on={recording}
-    disabled={support.checked && !support.canRecord}
+    disabled={recState === 'finalizing' || (!recording && !support.canRecord)}
     onclick={toggleRecord}
     data-testid="recorderbox-tile-record"
     data-recording={recording}

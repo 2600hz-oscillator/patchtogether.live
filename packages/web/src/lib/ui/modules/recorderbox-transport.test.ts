@@ -22,7 +22,7 @@
 //     here. The pure policy half is already covered next door in
 //     `recorderbox-present-policy.test.ts`.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   FOLDER_HINT_NO_PICKER,
   UNCHECKED_SUPPORT,
@@ -34,10 +34,14 @@ import {
   recorderboxQuality,
   recorderboxRecording,
   scanRecoverableTakes,
+  startRecorderboxTake,
   transportAction,
   type TransportAction,
 } from './recorderbox-transport';
 import type { ModuleNode } from '$lib/graph/types';
+import type { PatchEngine } from '$lib/audio/engine';
+import { patch } from '$lib/graph/store';
+import { nodeRecorder } from './node-recorder-registry.svelte';
 
 const nodeWith = (data: Record<string, unknown>): ModuleNode =>
   ({ id: 'r1', type: 'recorderbox', params: {}, data }) as unknown as ModuleNode;
@@ -166,5 +170,87 @@ describe('the capability and recovery probes ANSWER in a node environment', () =
     // The seam owns the hint strings so the card and the faceplate cannot give
     // two different accounts of the same refusal.
     await expect(changeRecorderboxFolder('r1')).resolves.toBe(FOLDER_HINT_NO_PICKER);
+  });
+});
+
+
+describe('a failed start never leaves an armed switch over no recording', () => {
+  it('reports a missing engine and disarms the request', async () => {
+    const id = 'recorder-start-no-engine';
+    patch.nodes[id] = { ...nodeWith({ recording: true }), id };
+    try {
+      const started = await startRecorderboxTake({
+        nodeId: id,
+        engine: () => null,
+        stillArmed: () => recorderboxRecording(patch.nodes[id] ?? null),
+        setFolderHint: () => {},
+      });
+      expect(started).toBe(false);
+      expect(recorderboxRecording(patch.nodes[id] ?? null)).toBe(false);
+      expect(nodeRecorder.failureFor(id)).toContain('video engine is not ready');
+    } finally {
+      delete patch.nodes[id];
+      nodeRecorder.clearFailure(id);
+    }
+  });
+
+  it('catches an async setup failure after folder resolution and reports the cause', async () => {
+    const id = 'recorder-start-audio-error';
+    patch.nodes[id] = { ...nodeWith({ recording: true }), id };
+    nodeRecorder.rememberFolder(id, {
+      queryPermission: async () => 'granted',
+      getFileHandle: async () => { throw new Error('file does not exist'); },
+    } as unknown as FileSystemDirectoryHandle);
+    const engine = {
+      getDomain: () => ({ canvas: { width: 640, height: 480 } }),
+      read: (_node: ModuleNode, key: string) => {
+        if (key === 'audioCapture') return Promise.resolve(null);
+        throw new Error('capture source unavailable');
+      },
+    } as unknown as PatchEngine;
+    try {
+      await expect(startRecorderboxTake({
+        nodeId: id,
+        engine: () => engine,
+        stillArmed: () => recorderboxRecording(patch.nodes[id] ?? null),
+        setFolderHint: () => {},
+      })).resolves.toBe(false);
+      expect(recorderboxRecording(patch.nodes[id] ?? null)).toBe(false);
+      expect(nodeRecorder.failureFor(id)).toContain('capture source unavailable');
+    } finally {
+      delete patch.nodes[id];
+      nodeRecorder.sweep(Object.keys(patch.nodes));
+    }
+  });
+});
+
+
+describe('recording waits for a reconciled rack', () => {
+  for (const existing of [false, true]) it(`awaits readiness with ${existing ? 'an existing' : 'no'} engine and honors cancellation`, async () => {
+    const id = `recorder-ready-${existing}`;
+    patch.nodes[id] = { ...nodeWith({ recording: true }), id };
+    let ready!: (engine: PatchEngine) => void;
+    const readiness = new Promise<PatchEngine>((resolve) => { ready = resolve; });
+    const getDomain = vi.fn();
+    const engine = { getDomain } as unknown as PatchEngine;
+    const ensureEngine = vi.fn(() => readiness);
+    try {
+      const start = startRecorderboxTake({
+        nodeId: id, engine: () => existing ? engine : null, ensureEngine,
+        stillArmed: () => recorderboxRecording(patch.nodes[id] ?? null),
+        setFolderHint: () => {},
+      });
+      await vi.waitFor(() => expect(ensureEngine).toHaveBeenCalledOnce());
+      expect(getDomain).not.toHaveBeenCalled();
+      patch.nodes[id].data!.recording = false;
+      ready(engine);
+      await expect(start).resolves.toBe(false);
+      expect(getDomain).not.toHaveBeenCalled();
+      expect(nodeRecorder.failureFor(id)).toBeNull();
+    } finally {
+      ready(engine);
+      delete patch.nodes[id];
+      nodeRecorder.sweep(Object.keys(patch.nodes));
+    }
   });
 });

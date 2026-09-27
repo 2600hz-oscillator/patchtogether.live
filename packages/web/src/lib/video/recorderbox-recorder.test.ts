@@ -547,3 +547,43 @@ describe('CFR frame() — even-grid PTS (the OSX slow-mo fix)', () => {
     expect(seen.size).toBe(adds.length);
   });
 });
+
+
+describe('captured audio sample ownership', () => {
+  for (const rejected of [false, true]) it(`closes a sample after a ${rejected ? 'rejected' : 'successful'} encoder write, never while pending`, async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    let close: ReturnType<typeof vi.spyOn> | undefined;
+    const failure = new Error('encoder failed');
+    const rec = new RecorderboxRecorder({
+      nodeId: 'sample-owner', canvas: {} as HTMLCanvasElement, audioTrack: null,
+      filename: 'sample', width: 320, height: 240, saveBytes: async () => {},
+    });
+    const internal = rec as unknown as {
+      currentAudioSource: AudioSampleSourceLike;
+      captureSampleRate: number;
+      writeAudioToChunk(init: {
+        data: Float32Array; format: 'f32-planar'; sampleRate: number;
+        numberOfChannels: number; timestamp: number;
+      }): Promise<void>;
+    };
+    internal.captureSampleRate = 48_000;
+    internal.currentAudioSource = {
+      async add(sample) {
+        close = vi.spyOn(sample, 'close');
+        await pending;
+        if (rejected) throw failure;
+      },
+    };
+    const write = internal.writeAudioToChunk({
+      data: new Float32Array(256), format: 'f32-planar', sampleRate: 48_000,
+      numberOfChannels: 2, timestamp: 0,
+    });
+    expect(close).toBeDefined();
+    expect(close).not.toHaveBeenCalled();
+    finish();
+    if (rejected) await expect(write).rejects.toBe(failure);
+    else await write;
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});
