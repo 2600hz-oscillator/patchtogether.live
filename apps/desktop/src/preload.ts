@@ -48,6 +48,13 @@ export interface HelperStatusSnapshot {
   history: HelperStatus[];
 }
 
+/** What File ▸ Load Patch… pushes: the bytes of a pick main could read, or the
+ *  read error for one it could not — shown by the renderer in the same place
+ *  a bad patch is reported, never a modal over a performance. */
+export type LoadPatchRequest =
+  | { name: string; bytes: Uint8Array; error?: undefined }
+  | { name: string; bytes?: undefined; error: string };
+
 export interface PtCommandOptions {
   /**
    * Caller-chosen correlation id, so the call can be cancelled by name.
@@ -76,7 +83,10 @@ export interface PtNative {
   /** Envelope version — a renderer built against a different shell can say so
    *  instead of failing in op-shaped pieces. */
   bridgeVersion: () => number;
-  onLoadPatchRequested: (cb: (filePath: string) => void) => void;
+  /** File ▸ Load Patch…: main ran the picker and READ the file (a sandboxed
+   *  renderer can name no path). Delivered over the event envelope as topic
+   *  'patch.load'; returns an unsubscribe. */
+  onLoadPatchRequested: (cb: (request: LoadPatchRequest) => void) => () => void;
   /** Generic command seam. Phases add ops; this signature does not change. */
   command: <R = unknown>(
     op: string,
@@ -149,9 +159,7 @@ const ptNative: PtNative = {
   nativeAvailable: () => true,
   shellVersion: () => process.env.npm_package_version ?? '0.1.0',
   bridgeVersion: () => PT_BRIDGE_VERSION,
-  onLoadPatchRequested: (cb) => {
-    ipcRenderer.on('pt:load-patch-requested', (_event, filePath: string) => cb(filePath));
-  },
+  onLoadPatchRequested: (cb) => onEvent('patch.load', (p) => cb(p as LoadPatchRequest)),
   command,
   cancel,
   onEvent,

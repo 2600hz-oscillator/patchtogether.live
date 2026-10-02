@@ -9,7 +9,13 @@
 // browser behaviour exactly as it was.
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { nativeAvailable, nativeShellVersion, setNativeAvailableForTests, exitNative } from './native';
+import {
+  nativeAvailable,
+  nativeShellVersion,
+  setNativeAvailableForTests,
+  exitNative,
+  subscribeNativeLoadPatch,
+} from './native';
 
 const host = globalThis as unknown as { ptNative?: unknown };
 
@@ -37,6 +43,92 @@ describe('desktop Exit', () => {
     host.ptNative = { nativeAvailable: () => true,
       command: async () => ({ ok: false, error: { message: 'only the main window may exit the app' } }) };
     await expect(exitNative()).rejects.toThrow('only the main window');
+  });
+});
+
+describe('desktop File ▸ Load Patch…', () => {
+  type Deliver = (request: unknown) => void;
+  const PK = [0x50, 0x4b, 0x03, 0x04];
+
+  /** A bridge whose load seam captures the renderer's listener. */
+  function bridge(opts: { native?: boolean; reply?: unknown } = {}) {
+    const seam = { deliver: null as Deliver | null };
+    const off = vi.fn();
+    const onLoadPatchRequested = vi.fn((cb: Deliver) => {
+      seam.deliver = cb;
+      return off;
+    });
+    const command = vi.fn().mockResolvedValue(opts.reply ?? { ok: true, result: {} });
+    host.ptNative = { nativeAvailable: () => opts.native ?? true, command, onLoadPatchRequested };
+    return { seam, off, command, onLoadPatchRequested };
+  }
+
+  it('hands the shell-read bytes to the loader as a File of the same name', async () => {
+    const b = bridge();
+    const onFile = vi.fn();
+    const onError = vi.fn();
+    const unsubscribe = subscribeNativeLoadPatch({ onFile, onError });
+    // The shell enables the menu item on exactly this announcement.
+    expect(b.command).toHaveBeenCalledExactlyOnceWith('patch.loader', { ready: true });
+    b.seam.deliver!({ name: 'set-a.ptperf.zip', bytes: new Uint8Array(PK) });
+    expect(onFile).toHaveBeenCalledOnce();
+    const file = onFile.mock.calls[0]![0] as File;
+    expect(file).toBeInstanceOf(File);
+    expect(file.name).toBe('set-a.ptperf.zip');
+    expect(Array.from(new Uint8Array(await file.arrayBuffer()))).toEqual(PK);
+    expect(onError).not.toHaveBeenCalled();
+    // Unsubscribing withdraws the loader so the item greys out again.
+    unsubscribe();
+    expect(b.off).toHaveBeenCalledOnce();
+    expect(b.command).toHaveBeenLastCalledWith('patch.loader', { ready: false });
+  });
+
+  it('reports a read error from the shell where a bad load is reported', () => {
+    const b = bridge();
+    const onFile = vi.fn();
+    const onError = vi.fn();
+    subscribeNativeLoadPatch({ onFile, onError });
+    b.seam.deliver!({ name: 'gone.ptperf.zip', error: 'ENOENT: no such file' });
+    expect(onFile).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledExactlyOnceWith('gone.ptperf.zip: ENOENT: no such file');
+  });
+
+  it('a request this build cannot read is an error, never a silent drop', () => {
+    const b = bridge();
+    const onFile = vi.fn();
+    const onError = vi.fn();
+    subscribeNativeLoadPatch({ onFile, onError });
+    for (const bad of [null, 'set.ptperf.zip', { name: 'x.ptperf.zip' }, { name: 'x.ptperf.zip', bytes: 'PK' }]) {
+      b.seam.deliver!(bad);
+    }
+    expect(onFile).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(4);
+    expect(onError.mock.calls[3]![0]).toMatch(/x\.ptperf\.zip: .*cannot read/);
+  });
+
+  it('registers nothing in a browser', () => {
+    const b = bridge({ native: false });
+    const onFile = vi.fn();
+    const unsubscribe = subscribeNativeLoadPatch({ onFile, onError: vi.fn() });
+    expect(b.onLoadPatchRequested).not.toHaveBeenCalled();
+    expect(b.command).not.toHaveBeenCalled();
+    expect(() => unsubscribe()).not.toThrow();
+    expect(onFile).not.toHaveBeenCalled();
+  });
+
+  it('registers nothing on a shell without the load seam', () => {
+    const command = vi.fn();
+    host.ptNative = { nativeAvailable: () => true, command };
+    subscribeNativeLoadPatch({ onFile: vi.fn(), onError: vi.fn() });
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it('a loader the shell refuses is said out loud', async () => {
+    bridge({ reply: { ok: false, error: { message: 'only the main window may own the patch loader' } } });
+    const onError = vi.fn();
+    subscribeNativeLoadPatch({ onFile: vi.fn(), onError });
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+    expect(onError.mock.calls[0]![0]).toMatch(/Load Patch.*unavailable.*only the main window/);
   });
 });
 

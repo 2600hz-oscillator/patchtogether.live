@@ -260,7 +260,7 @@
     readPresentBindingsFromUpdate,
     type PresentBinding,
   } from '$lib/ui/modules/present-bindings';
-  import { nativeAvailable } from '$lib/platform/native';
+  import { nativeAvailable, subscribeNativeLoadPatch } from '$lib/platform/native';
   import { getElectraAutoReconnect } from '$lib/ui/modules/electra-auto-reconnect';
   import { ELECTRA_CONTROL_TYPE } from '$lib/graph/electra-control';
   import { nodeRecorder } from '$lib/ui/modules/node-recorder-registry.svelte';
@@ -4553,12 +4553,15 @@
     }
   }
 
-  async function loadPerformanceZip(): Promise<void> {
+  /** File ▸ Load (topbar) and, under the shell, File ▸ Load Patch… — the
+   *  native menu hands in the File it already picked and read; the browser
+   *  path picks one here. One loader, one busy guard, one error banner. */
+  async function loadPerformanceZip(picked?: File): Promise<void> {
     error = null;
     if (perfZipBusy) return;
     perfZipBusy = true;
     try {
-      const file = await pickPerformanceZipFile();
+      const file = picked ?? await pickPerformanceZipFile();
       if (!file) { trace('load performance .zip cancelled'); return; }
       const ab = await file.arrayBuffer();
       await loadPerformanceZipBytes(new Uint8Array(ab));
@@ -4593,6 +4596,20 @@
       input.click();
     });
   }
+
+  // Desktop File ▸ Load Patch… (⌘O): the shell picks + reads the file and
+  // pushes the bytes; they enter the SAME loader as the topbar's File ▸ Load.
+  // Subscribed for this Canvas's lifetime, which is exactly when the shell
+  // enables the menu item (platform/native.ts). A browser registers nothing.
+  onMount(() =>
+    subscribeNativeLoadPatch({
+      onFile: (file) => { void loadPerformanceZip(file); },
+      onError: (message) => {
+        error = `Load performance failed: ${message}`;
+        trace(`load patch (desktop menu) failed: ${message}`);
+      },
+    }),
+  );
 
   // ---------------- Preset SLOT bar + portable SET (top-left menu bar) ----------------
   //
