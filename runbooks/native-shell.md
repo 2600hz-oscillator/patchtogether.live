@@ -48,6 +48,14 @@ app, its output windows, and its supervised helpers. macOS **Quit** / **⌘Q**
 also works. Helpers started separately remain under their original owner's
 control. Browser sessions do not show Exit.
 
+**File → Load Patch…** (**⌘O** / **Ctrl+O**) in the native menu opens the
+system picker for a `.ptperf.zip` and loads it through the same loader as the
+toolbar's File → Load — the shell reads the file itself and hands the rack the
+bytes; the renderer never sees a path. The item is greyed out until the rack is
+open (on the hardware splash there is nothing to load into). A pick the shell
+cannot read, or one that is not a performance, is reported in the rack's
+load-error banner, where a bad toolbar load is reported too.
+
 `desktop:build:web` sets `PT_DESKTOP_BUILD=1`, which switches
 `packages/web/svelte.config.js` to **adapter-static** (Cloudflare stays the default
 for real deploys), and bakes `VITE_E2E_HOOKS=1`. That makes it the **Tier-A test
@@ -213,7 +221,7 @@ underruns.
 
 Boot the app → zero prompts beyond the expected TCC → pre-flight shows every helper
 row → bind four cameras → rack plays → present the outputs from the rack → SysEx
-device round-trip (PTZ/Electra) → load a patch mid-performance (no blink, no
-silence) → recorderbox record and Save (no audible dip) → sleep/wake, still
-running → unplug a display, outputs re-place → quit clean, then confirm no orphan
-helper processes are still running.
+device round-trip (PTZ/Electra) → load a patch mid-performance from the native
+**File → Load Patch…** (⌘O) menu (no blink, no silence) → recorderbox record and
+Save (no audible dip) → sleep/wake, still running → unplug a display, outputs
+re-place → quit clean, then confirm no orphan helper processes are still running.

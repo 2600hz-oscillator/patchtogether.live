@@ -4,6 +4,9 @@
 // applies the device/continuity flag set, and opens ONE fullscreen window on
 // /preflight on every launch. File ▸ Exit is available in the native menu and
 // the desktop renderer's File menu through the validated command bridge.
+// File ▸ Load Patch… is main-owned end to end: main runs the picker, reads the
+// bytes (the sandboxed renderer can name no path) and pushes them over the
+// event envelope; the rack feeds them to the topbar's own performance loader.
 //
 // TRUST BOUNDARY: security.ts. This shell pre-grants camera, mic, MIDI/SysEx,
 // USB/HID/serial and screen capture with no prompts — that is the product, not
@@ -141,7 +144,51 @@ function startSupervisors(win: BrowserWindow, bridge: PtBridge): void {
   }
 }
 
-function installMenu(win: BrowserWindow): void {
+// ---- File ▸ Load Patch… ------------------------------------------------------
+// The renderer never names a path: main runs the picker, reads the file, and
+// pushes `{name, bytes}` (or `{name, error}`) as a 'patch.load' event. The item
+// is enabled only while a rack has announced a loader through the
+// `patch.loader` op — on the splash, or mid-navigation, there is no consumer,
+// so the item is grey and a raced click is a no-op rather than a lost pick.
+
+const LOAD_PATCH_MENU_ID = 'load-patch';
+let patchLoaderReady = false;
+
+function setPatchLoaderReady(ready: boolean): void {
+  patchLoaderReady = ready;
+  const item = Menu.getApplicationMenu()?.getMenuItemById(LOAD_PATCH_MENU_ID);
+  if (item) item.enabled = ready;
+}
+
+async function loadPatchFromMenu(win: BrowserWindow, bridge: PtBridge): Promise<void> {
+  if (!patchLoaderReady || win.isDestroyed()) return;
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Load Patch',
+    properties: ['openFile'],
+    // Only what the rack's loader accepts: the portable performance zip.
+    filters: [{ name: 'patchtogether performance (.ptperf.zip)', extensions: ['zip'] }],
+  });
+  const file = result.filePaths[0];
+  if (result.canceled || !file) return;
+  const name = path.basename(file);
+  let payload: { name: string; bytes: Uint8Array } | { name: string; error: string };
+  try {
+    // A fresh exact-length copy: a Buffer may be a view over Node's shared
+    // pool, and structured clone ships a view's WHOLE backing store.
+    payload = { name, bytes: new Uint8Array(await fs.promises.readFile(file)) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[shell] load patch: cannot read ${file}: ${message}`);
+    payload = { name, error: message };
+  }
+  if (!patchLoaderReady || win.isDestroyed()) {
+    console.error(`[shell] load patch: the rack went away while reading ${name}; pick again`);
+    return;
+  }
+  bridge.emit(win.webContents, 'patch.load', payload);
+}
+
+function installMenu(win: BrowserWindow, bridge: PtBridge): void {
   const isMac = process.platform === 'darwin';
   const template: Electron.MenuItemConstructorOptions[] = [
     // Keep the platform-standard macOS Quit shortcut as well as File ▸ Exit.
@@ -152,18 +199,12 @@ function installMenu(win: BrowserWindow): void {
       label: 'File',
       submenu: [
         {
+          id: LOAD_PATCH_MENU_ID,
           label: 'Load Patch…',
           accelerator: 'CmdOrCtrl+O',
-          click: async () => {
-            const result = await dialog.showOpenDialog(win, {
-              title: 'Load Patch',
-              properties: ['openFile'],
-              filters: [{ name: 'patchtogether patches', extensions: ['json', 'zip'] }],
-            });
-            const file = result.filePaths[0];
-            if (!result.canceled && file) {
-              win.webContents.send('pt:load-patch-requested', file);
-            }
+          enabled: patchLoaderReady,
+          click: () => {
+            void loadPatchFromMenu(win, bridge);
           },
         },
         { type: 'separator' },
@@ -225,7 +266,6 @@ async function boot(): Promise<void> {
   });
   mainWindow = win;
 
-  installMenu(win);
   installWindowGuards(win.webContents, shellOrigin);
 
   // Per-machine device bindings live OFF the Y.Doc, in a plain JSON file under
@@ -279,8 +319,29 @@ async function boot(): Promise<void> {
     if (!win.isDestroyed()) await win.loadURL(`${shellOrigin}/rack`);
     return {};
   });
+  // The rack announces its performance loader on mount and withdraws it on
+  // unmount; File ▸ Load Patch… is enabled exactly in between. Main-window
+  // top frame only, like app.quit: a popup never owns the menu.
+  bridge.register('patch.loader', (payload, { event }) => {
+    if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+      throw new PtHandlerError('denied', 'only the main window may own the patch loader');
+    }
+    const ready = (payload as { ready?: unknown } | null)?.ready;
+    if (typeof ready !== 'boolean') {
+      throw new PtHandlerError('bad-request', 'patch.loader payload must be { ready: boolean }');
+    }
+    setPatchLoaderReady(ready);
+    return {};
+  });
 
   bridge.install();
+  installMenu(win, bridge);
+
+  // A document that announced a loader is leaving: its listener goes with it.
+  // The next rack announces again; until then the item is grey.
+  win.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) setPatchLoaderReady(false);
+  });
 
   startSupervisors(win, bridge);
 
@@ -288,6 +349,7 @@ async function boot(): Promise<void> {
   // server live in main and are untouched (brief P3 task 4).
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error(`[shell] renderer gone (${details.reason}) — reloading`);
+    setPatchLoaderReady(false);
     if (!win.isDestroyed()) win.webContents.reload();
   });
 
