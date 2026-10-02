@@ -29,6 +29,9 @@ export interface RenderStats {
   nonZeroFrac: number;
   variance: number;
   mean: number;
+  /** Only when `bands` was requested: the mean of (r+g+b)/3 over every 4th
+   *  pixel of each horizontal band of the picture, listed TOP → BOTTOM. */
+  bandMeans?: number[];
 }
 
 /** Install the determinism hooks BEFORE the app boots (call before page.goto):
@@ -45,12 +48,15 @@ export async function installRenderSmokeHooks(page: Page, frozenTimeSec = 2.0): 
 
 /** Drive the video engine `steps` frames SYNCHRONOUSLY (one evaluate, no yield),
  *  then read `nodeId`'s output texture (optionally a named output `portId`) once
- *  and return luma stats + the exact engine frame-count delta + GL errors. */
+ *  and return luma stats + the exact engine frame-count delta + GL errors.
+ *  `bands` (optional) additionally folds the SAME readback into per-band means
+ *  (`RenderStats.bandMeans`, top → bottom) for a module whose law is banded
+ *  down the picture; omitted, nothing about the result changes. */
 export async function stepAndReadStats(
   page: Page,
-  opts: { nodeId: string; portId?: string; steps: number },
+  opts: { nodeId: string; portId?: string; steps: number; bands?: number },
 ): Promise<RenderStats> {
-  return page.evaluate(({ nodeId, portId, steps }) => {
+  return page.evaluate(({ nodeId, portId, steps, bands }) => {
     const w = globalThis as unknown as {
       __engine: () => {
         getDomain: (d: string) => {
@@ -94,7 +100,31 @@ export async function stepAndReadStats(
     }
     const mean = n ? sum / n : 0;
     const variance = n ? sumSq / n - mean * mean : 0;
-    return { framesDelta, fbComplete: complete, glErrors, nonZeroFrac: n ? nonZero / n : 0, variance, mean };
+    const stats: RenderStats = { framesDelta, fbComplete: complete, glErrors, nonZeroFrac: n ? nonZero / n : 0, variance, mean };
+    if (bands !== undefined && bands > 0) {
+      // ⚠ gl.readPixels row 0 is the BOTTOM of the picture (GL's origin is the
+      // bottom-left corner), so band 0 — the TOP band — is the LAST rows of the
+      // buffer. Rather than reverse the buffer, derive each row's position from
+      // the top exactly as a fragment shader does from vUv (rowFromTop =
+      // 1 − uv.y, uv.y = (row + 0.5) / H) and bucket it with floor(rowFromTop ·
+      // bands), clamped: the same band assignment a banded module makes per
+      // pixel, so a band here IS that band on the picture.
+      const sums = new Float64Array(bands);
+      const counts = new Uint32Array(bands);
+      for (let r = 0; r < H; r++) {
+        const rowFromTop = 1 - (r + 0.5) / H;
+        let k = Math.floor(rowFromTop * bands);
+        if (k < 0) k = 0; else if (k > bands - 1) k = bands - 1;
+        const row = r * W * 4;
+        for (let x = 0; x < W; x += 4) {
+          const i = row + x * 4;
+          sums[k] += (px[i]! + px[i + 1]! + px[i + 2]!) / 3;
+          counts[k]++;
+        }
+      }
+      stats.bandMeans = Array.from(sums, (s, k) => (counts[k] ? s / counts[k]! : 0));
+    }
+    return stats;
   }, opts);
 }
 
