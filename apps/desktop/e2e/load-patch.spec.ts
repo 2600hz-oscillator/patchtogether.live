@@ -32,12 +32,15 @@ const WEB_ROOT = process.env.PT_DESKTOP_WEB_ROOT
   : path.resolve(APP_DIR, '../../packages/web/build');
 const FIXTURE = path.resolve(APP_DIR, '../../e2e/fixtures/cold-load-patch.ptperf.zip');
 const FIXTURE_NODES = ['out', 'scp', 'vco'];
-const FIXTURE_EDGES = ['e1', 'e2', 'e3'];
+// The fixture's wiring by endpoint, not by edge id: the loader may canonicalize
+// an id (its double-patched R leg comes back as `e-scp-ch1_out-out-R`), and
+// what the performer needs is the cables, not their names.
+const FIXTURE_CABLES = ['vco.sine>scp.ch1', 'scp.ch1_out>out.L', 'scp.ch1_out>out.R'];
 const BOOT_MS = 60_000;
 
-interface PatchIds {
+interface PatchShape {
   nodes: string[];
-  edges: string[];
+  cables: string[];
 }
 
 type Pick = { canceled: boolean; filePaths: string[] };
@@ -67,10 +70,16 @@ async function loadPatchEnabled(app: ElectronApplication): Promise<boolean | nul
   return app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('load-patch')?.enabled ?? null);
 }
 
-async function patchIds(page: Page): Promise<PatchIds> {
+async function patchShape(page: Page): Promise<PatchShape> {
   return page.evaluate(() => {
-    const w = window as unknown as { __patch: { nodes: Record<string, unknown>; edges: Record<string, unknown> } };
-    return { nodes: Object.keys(w.__patch.nodes).sort(), edges: Object.keys(w.__patch.edges).sort() };
+    interface End { nodeId: string; portId: string }
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, unknown>; edges: Record<string, { source: End; target: End }> };
+    };
+    const cables = Object.values(w.__patch.edges).map(
+      (e) => `${e.source.nodeId}.${e.source.portId}>${e.target.nodeId}.${e.target.portId}`,
+    );
+    return { nodes: Object.keys(w.__patch.nodes).sort(), cables: cables.sort() };
   });
 }
 
@@ -122,27 +131,27 @@ test('File ▸ Load Patch… loads the picked performance through the rack loade
     await page.waitForFunction(() => !!(window as unknown as { __patch?: unknown }).__patch, undefined, { timeout: BOOT_MS });
     await expect.poll(() => loadPatchEnabled(app), { message: 'enabled once the rack mounted', timeout: BOOT_MS }).toBe(true);
 
-    const before = await patchIds(page);
+    const before = await patchShape(page);
     expect(before.nodes, 'the fresh rack is not already the fixture').not.toEqual(expect.arrayContaining(FIXTURE_NODES));
     await clickLoadPatch(app);
     await expect.poll(() => pickerCalls(app)).toBe(1);
-    await expect.poll(() => patchIds(page), { timeout: 30_000 }).toEqual(
+    await expect.poll(() => patchShape(page), { timeout: 30_000 }).toEqual(
       expect.objectContaining({
         nodes: expect.arrayContaining(FIXTURE_NODES),
-        edges: expect.arrayContaining(FIXTURE_EDGES),
+        cables: expect.arrayContaining(FIXTURE_CABLES),
       }),
     );
     for (const id of FIXTURE_NODES) {
       await expect(page.locator(`.svelte-flow__node[data-id="${id}"]`)).toBeVisible({ timeout: 30_000 });
     }
     await expect(page.getByTestId('load-error')).toHaveCount(0);
-    const loaded = await patchIds(page);
+    const loaded = await patchShape(page);
 
     // 3. Cancel: the picker was consulted (positive control) and nothing moved.
     await setNextPick(app, { canceled: true, filePaths: [] });
     await clickLoadPatch(app);
     await expect.poll(() => pickerCalls(app)).toBe(2);
-    expect(await patchIds(page)).toEqual(loaded);
+    expect(await patchShape(page)).toEqual(loaded);
     await expect(page.getByTestId('load-error')).toHaveCount(0);
 
     // 4a. Main cannot read the pick: the error crosses to the rack's banner.
@@ -150,13 +159,13 @@ test('File ▸ Load Patch… loads the picked performance through the rack loade
     await clickLoadPatch(app);
     await expect(page.getByTestId('load-error')).toHaveText(/Load performance failed: .*EISDIR/, { timeout: 30_000 });
     expect(mainErrors.join('')).toMatch(/\[shell\] load patch: cannot read/);
-    expect(await patchIds(page), 'a failed read leaves the rack as it was').toEqual(loaded);
+    expect(await patchShape(page), 'a failed read leaves the rack as it was').toEqual(loaded);
 
     // 4b. Main reads it fine; the loader rejects it — same banner, its message.
     await setNextPick(app, { canceled: false, filePaths: [notAPatch] });
     await clickLoadPatch(app);
     await expect(page.getByTestId('load-error')).toHaveText(/Load performance failed: Performance zip is corrupt/, { timeout: 30_000 });
-    expect(await patchIds(page), 'a rejected pick leaves the rack as it was').toEqual(loaded);
+    expect(await patchShape(page), 'a rejected pick leaves the rack as it was').toEqual(loaded);
 
     // Neither failure wedged the loader: the fixture loads again and the
     // banner clears.
@@ -172,8 +181,8 @@ test('File ▸ Load Patch… loads the picked performance through the rack loade
     });
     await setNextPick(app, { canceled: false, filePaths: [FIXTURE] });
     await clickLoadPatch(app);
-    await expect.poll(() => patchIds(page), { timeout: 30_000 }).toEqual(
-      expect.objectContaining({ nodes: expect.arrayContaining(FIXTURE_NODES) }),
+    await expect.poll(() => patchShape(page), { timeout: 30_000 }).toEqual(
+      expect.objectContaining({ nodes: expect.arrayContaining(FIXTURE_NODES), cables: expect.arrayContaining(FIXTURE_CABLES) }),
     );
     await expect(page.getByTestId('load-error')).toHaveCount(0);
     expect(await pickerCalls(app)).toBe(5);
