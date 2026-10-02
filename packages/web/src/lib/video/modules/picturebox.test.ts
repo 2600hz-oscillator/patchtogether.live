@@ -130,6 +130,21 @@ describe('pictureboxDef.factory — 7-slot asset selection', () => {
     expect(ex.activeSlot()).toBe(5);
   });
 
+  it("read('extras') hands back the SAME function identities on every read (the node-extras-registry fingerprint contract)", () => {
+    // The registry fingerprints a handle by the identity of its functions; a
+    // member rebuilt per read re-ran produce on every graph snapshot — slot 0
+    // cleared and the image re-decoded on every knob tick anywhere in the
+    // rack (the picturebox flicker, 2026-10-02).
+    const h = spawn();
+    const first = Object.entries(extrasOf(h)).filter(([, v]) => typeof v === 'function');
+    const second = Object.entries(extrasOf(h)).filter(([, v]) => typeof v === 'function');
+    expect(first.length, 'the handle exposes functions to fingerprint').toBeGreaterThan(0);
+    expect(second.map(([k]) => k)).toEqual(first.map(([k]) => k));
+    for (let i = 0; i < first.length; i++) {
+      expect(second[i]![1], `extras.${first[i]![0]} is the same closure on both reads`).toBe(first[i]![1]);
+    }
+  });
+
   it('a black-key asset_pitch on the gate edge is IGNORED (keep current)', () => {
     const h = spawn();
     const ex = extrasOf(h);

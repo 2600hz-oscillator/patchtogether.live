@@ -24,6 +24,8 @@ import {
   type NodeExtrasOps,
 } from './node-extras-registry';
 import type { ModuleNode } from '$lib/graph/types';
+import { pictureboxDef } from '$lib/video/modules/picturebox';
+import type { VideoEngineContext } from '$lib/video/engine';
 
 function node(id: string, type: string, data: Record<string, unknown> = {}): ModuleNode {
   return {
@@ -128,6 +130,25 @@ function recorder(h: Harness, type: string, opts: { pump?: boolean } = {}): Extr
  *  the methods rather than the wrapper. */
 function fakeHandle(): { setThing: () => void; readThing: () => void } {
   return { setThing: () => {}, readThing: () => {} };
+}
+
+/** The REAL picturebox factory over a no-op GL (every method a no-op returning
+ *  `{}`, every enum 0). The registry only ever reads its `extras`, and a stub
+ *  handle over stable methods cannot see a handle whose members are rebuilt per
+ *  read — which is exactly what re-ran produce on every graph snapshot. */
+function realPictureboxHandle(): { read?: (key: string) => unknown } {
+  const gl = new Proxy(
+    {},
+    { get: (_t, k) => (typeof k === 'string' && /^[A-Z][A-Z0-9_]*$/.test(k) ? 0 : () => ({})) },
+  ) as unknown as WebGL2RenderingContext;
+  const ctx: VideoEngineContext = {
+    gl,
+    res: { width: 1024, height: 768 },
+    compileFragment: () => ({}) as WebGLProgram,
+    createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+    drawFullscreenQuad: () => undefined,
+  };
+  return pictureboxDef.factory(ctx, node('b', 'picturebox'));
 }
 
 /** An engine fake whose per-node HANDLE is controllable — a new handle is how
@@ -239,6 +260,31 @@ describe('node-extras-registry — the LIFETIME rules', () => {
     // ...and the POSITIVE half: a genuinely new handle still re-produces.
     eng.set('b', fakeHandle());
     reg.sync(nodes, eng);
+    expect(h.runs).toHaveLength(2);
+  });
+
+  it('the REAL picturebox handle fingerprints stably across syncs, and a re-materialized one does not', () => {
+    // The sibling case above models picturebox with a stub whose methods are
+    // stable by construction, so it stayed green while the real handle rebuilt
+    // five of its members per read and re-ran produce on every graph change
+    // (slot 0 cleared, image re-decoded, per knob tick: the picturebox
+    // flicker, 2026-10-02). Drive the registry with the factory's own handle.
+    const h = harness();
+    const reg = createNodeExtrasRegistry([recorder(h, 'picturebox')], h.ops);
+    let current = realPictureboxHandle();
+    const engine: ExtrasEngine = {
+      read: (n, key) => (n.id === 'b' ? (current.read?.(key) ?? null) : null),
+      readParam: () => undefined,
+    };
+    const nodes = [node('b', 'picturebox', { sig: 'v1' })];
+    reg.sync(nodes, engine);
+    reg.sync(nodes, engine);
+    reg.sync(nodes, engine);
+    expect(h.runs, 'three syncs over one unchanged node = one produce').toEqual([['b', 'v1']]);
+    // The POSITIVE half, on the same engine object: a second factory instance
+    // is a genuinely new handle and must re-push.
+    current = realPictureboxHandle();
+    reg.sync(nodes, engine);
     expect(h.runs).toHaveLength(2);
   });
 

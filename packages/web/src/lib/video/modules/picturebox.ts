@@ -490,6 +490,21 @@ export const pictureboxDef: VideoModuleDef = {
       return true;
     }
 
+    // ONE object for the node's life: node-extras-registry fingerprints the
+    // handle by these functions' identities (a per-read literal re-ran produce
+    // on every graph snapshot — the picturebox flicker, 2026-10-02).
+    const extras: PictureboxHandleExtras = {
+      setImage,
+      setFilename: (name) => { filename = name; },
+      filename: () => filename,
+      setAssetAtSlot: uploadToSlot,
+      slotHasAsset: (i) => i >= 0 && i < ASSET_SLOTS && slotLoaded[i] === true,
+      selectSlot,
+      activeSlot: () => activeSlot,
+      setAnimatedImage: (frames) => setAnimatedFrames(activeSlot, frames),
+      setAnimatedAtSlot: setAnimatedFrames,
+    };
+
     const surface: VideoNodeSurface = {
       fbo,
       texture,
@@ -549,20 +564,7 @@ export const pictureboxDef: VideoModuleDef = {
         // Current animated-gif frame index of the ACTIVE slot (or -1 when the
         // active slot isn't animating). Test/observability hook.
         if (key === 'activeAnimFrame') return slotAnim[activeSlot]?.lastIndex ?? -1;
-        if (key === 'extras') {
-          const extras: PictureboxHandleExtras = {
-            setImage,
-            setFilename: (name) => { filename = name; },
-            filename: () => filename,
-            setAssetAtSlot: uploadToSlot,
-            slotHasAsset: (i) => i >= 0 && i < ASSET_SLOTS && slotLoaded[i] === true,
-            selectSlot,
-            activeSlot: () => activeSlot,
-            setAnimatedImage: (frames) => setAnimatedFrames(activeSlot, frames),
-            setAnimatedAtSlot: setAnimatedFrames,
-          };
-          return extras;
-        }
+        if (key === 'extras') return extras;
         return undefined;
       },
       dispose() { surface.dispose(); },
