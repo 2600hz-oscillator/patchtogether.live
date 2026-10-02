@@ -30,7 +30,8 @@ import type { HelperStatus } from './supervisor';
 // throws at load and takes the whole bridge with it. So the two runtime
 // literals are duplicated here on purpose. They are NOT free to drift:
 // bridge.ts carries a compile-time equality assertion against the canonical
-// definitions, so a rename in one place reddens `task typecheck` in the other.
+// definitions, so a rename in one place reddens `task typecheck` in the other
+// (that task names apps/desktop's tsc by hand; `--workspaces` never reaches it).
 // Types above are `import type` and erase to nothing.
 export const PT_PRELOAD_BRIDGE_VERSION = 1;
 export const PT_PRELOAD_CHANNELS = {

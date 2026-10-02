@@ -160,6 +160,8 @@ record.
 ## Tests
 
 ```sh
+flox activate -- task typecheck                         # includes apps/desktop's tsc (both tsconfigs)
+flox activate -- task test:desktop                      # rig-store node:test against a fresh tsc build
 flox activate -- task desktop:e2e                       # the whole desktop harness
 flox activate -- task desktop:e2e:one -- supervision    # one spec by filter
 ```
@@ -172,10 +174,18 @@ That file is a webgl-attest toolchain pin (`scripts/webgl-attest-lib.ts` hashes 
 because it pins `@playwright/test` — the renderer/engine version). Any dependency
 added there moves the content hash and demands a real-GPU re-attest.
 
-The lane anchor is `Taskfile.yml`'s `desktop:e2e` task: Playwright's `testDir`
-globs `apps/desktop/e2e/`, so a new spec joins the lane without editing anything,
-but renaming `boot.spec.ts` reddens `scripts/package-workspace-membership.test.ts`.
+What CI runs is the shell's `tsc` (inside `task typecheck`) and the rig-store
+node:test suite (`task test:desktop`, inside `task test`) — both in the existing
+typecheck and unit jobs, over `task desktop:deps`: an `npm ci --ignore-scripts` of
+the package's own lockfile that never fetches the Electron binary (Electron 44's
+npm package has no install script; the first `electron .` downloads the binary
+lazily, and nothing in these lanes loads it). The membership gate
+`scripts/package-workspace-membership.test.ts` holds
+`apps/desktop/src/rig-store.test.cjs` as the package's wired test entry, so
+dropping that line from `Taskfile.yml` reddens the unit lane.
 
+The Playwright harness is `task desktop:e2e`, local only: Playwright's `testDir`
+globs `apps/desktop/e2e/`, so a new spec joins it without editing anything.
 **There is no desktop job in `.github/workflows/ci.yml`.** Wiring one is a change
 to a required check: it needs owner wall-time sign-off first, and the umbrella's
 `needs:` and failing `if` must name the job identically — enforced by

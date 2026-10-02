@@ -2,10 +2,11 @@
 //
 // Runs against the COMPILED output — `npm run build` (tsc → dist/) first, then
 //   node --test src/rig-store.test.cjs
-// It is a .cjs file so it is NOT swept into the tsc build (tsconfig include is
-// `src/**/*.ts`) and needs nothing installed. The membership gate's wired test
-// entry stays apps/desktop/e2e/boot.spec.ts; this is an additional local unit
-// lane for the store's persistence contract.
+// `task test:desktop` does exactly that inside the required unit lane
+// (`task test`), and scripts/package-workspace-membership.test.ts holds THIS
+// file as apps/desktop's wired test entry. It is a .cjs file so it is NOT swept
+// into the tsc build (tsconfig include is `src/**/*.ts`) and needs nothing
+// installed beyond that build.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

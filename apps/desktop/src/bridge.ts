@@ -25,7 +25,8 @@ import { ipcSenderAllowed } from './security';
 
 // The sandboxed preload cannot `require` a relative module, so it re-declares
 // the version and the channel names. This assertion is the seam that keeps the
-// two copies honest: drift on either side is a typecheck failure, not a
+// two copies honest: drift on either side reddens `task typecheck` (which names
+// this package's tsc explicitly — apps/desktop is not a workspace), not a
 // silently dead IPC channel discovered on stage. Both imports are TYPE-only —
 // nothing here loads preload.js into main.
 type PreloadChannels = typeof import('./preload')['PT_PRELOAD_CHANNELS'];
