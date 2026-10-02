@@ -1,43 +1,55 @@
 // EDGEFADER — a two-source video crossfader that fades THROUGH THE EDGES.
 //
 // ── SIGNAL FLOW
-//   in_a, in_b ──▶ [Sobel + threshold + dilate on BOTH, packed] ──▶ edge atlas
-//                                                                      │
-//   in_a, in_b, atlas, fader, melt ──▶ [cascading edge-led composite] ──▶ out
+//   in_a, in_b ──▶ [Sobel + threshold + separable dilate on BOTH, packed] ──▶ atlas
+//   in_a, in_b ──▶ [copy + mip chain] ──▶ soft A / soft B (the progressive blur)
+//   in_a, in_b, atlas, soft, fader, melt ──▶ [cascading edge-led composite] ──▶ out
 //
 //   * Both sources get the EDGES operator (same Rec. 601 luma, Sobel kernel,
-//     normalisation, THRESHOLD gate and THICKNESS dilation) at half engine
-//     resolution, packed into ONE atlas: R = A's edges, G = B's edges,
-//     B = where the two COINCIDE — the regions of A and B whose edges sit in
-//     the same place, which is where the fade is anchored.
-//   * The FADER (0 = only A, 1 = only B) drives a CASCADE down the frame:
-//     five 20 % bands, each fading over its own window of the fader's travel,
-//     the next band starting when the previous is half done. Within a band
-//     edged pixels fade first (coincident edges first of all), a pixel just
-//     INSIDE an edge (centre-ward of it) leads one just OUTSIDE, and flat
+//     normalisation, THRESHOLD gate and THICKNESS dilation, at full engine
+//     resolution) packed into ONE atlas: R = A's edges, G = B's edges, and the
+//     atlas's mip chain gives the coarse edge DENSITY of each — the regions of
+//     A and B that carry edges in the same place are where the fade anchors.
+//   * The FADER (0 = only A, 1 = only B) drives a CASCADE down the frame: five
+//     20 % bands, each fading over its own window of the fader's travel, the
+//     next band starting when the previous is half done (interpolated between
+//     band centres so there is no seam). Within a band edged pixels fade first
+//     (coincident edges first of all), similar regions lead flat ones, a pixel
+//     just INSIDE an edge (centre-ward of it) leads one just OUTSIDE, and flat
 //     regions follow — the fade ripples down the edges, top to bottom.
-//   * The operator is a mid-fade BLUR of the edged regions, or — with MELT
-//     engaged by the toggle OR its gate — a per-column liquid slide with
-//     droplet heads that carry each melting band down into the band below
-//     (DOOM-style screen melt, value-noise smoothed; see the PR body for the
-//     prior art).
+//   * The operator is a mid-fade BLUR of the edged regions (a mip read of the
+//     soft layers at a radius that peaks mid-way), or — with MELT engaged by
+//     the toggle OR its gate — a per-column liquid slide with droplet tongues
+//     that carry each melting band down into the band below.
 //
-// ── ARCHITECTURE: three passes, STATELESS
-//   pass 1 SOBEL     (atlas res) → R/G = isEdge(A)/isEdge(B); the Sobel step is
-//                                  one ENGINE texel, so THRESHOLD keeps EDGES'
-//                                  luma-step meaning exactly.
-//   pass 2 DILATE    (atlas res) → max over a (2r+1)² window per channel,
-//                                  B = min(R, G) (coincidence). r comes from
-//                                  THICKNESS through `dilateRadius`.
-//   pass 3 COMPOSITE (engine res) → the per-pixel cascade/lead/blur-or-melt law.
+// ── PRIOR ART (melt) — cited here once, in prose, never in an identifier:
+//   id Software's 1993 screen melt (f_wipe.c: per-column random start, columns
+//   accelerate downward, the new screen fills the vacated rows); the
+//   gl-transitions port of that melt (Zeh Fernando, MIT) — the stateless
+//   per-bar form sampled as `from(uv + phase)` vs `to(uv)`; gl-transitions
+//   Dreamy (wobble amplitude ∝ progress so the endpoints stay exact); The Book
+//   of Shaders ch. 11 value noise (what replaces the random walk between
+//   columns); Inigo Quilez's 2-D SDFs (the droplet = a segment stalk ∪ a
+//   circle head). Full list with URLs in the PR body.
+//
+// ── ARCHITECTURE: six passes, STATELESS
+//   copy A, copy B        (engine res) → soft layers; mip chains regenerated
+//                                        every frame.
+//   SOBEL                 (engine res) → R/G = isEdge(A)/isEdge(B).
+//   DILATE H, DILATE V    (engine res) → max over a (2r+1) run per axis (max
+//                                        over a square is exactly separable),
+//                                        r = round(thickness) − 1 (EDGES' law).
+//   COMPOSITE             (engine res) → the per-pixel cascade/lead/blur-or-
+//                                        melt law.
 //   Every term is a function of (A, B, fader, params, pixel) — no clock, no
 //   previous frame, no Math.random — so a pinned engine renders the same frame
 //   on every step and the module needs no `freeze`. The whole law lives in
-//   edgefader-core.ts (pure, unit-pinned); the GLSL below is its line-for-line
-//   port with the constants interpolated from the SAME exports.
+//   edgefader-core.ts (pure, unit-pinned); the GLSL below is its port with the
+//   constants interpolated from the SAME exports.
 //
-// Unpatched inputs sample an opaque-black 1×1 texture (the FADER precedent), so
-// with nothing patched the output is black (see EXEMPT_OUTPUT_EMIT_MODULES).
+// Unpatched inputs sample an opaque-black 1×1 texture (the FADER precedent)
+// and contribute NO edges (the Sobel pass is gated per input), so with
+// nothing patched the output is black.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -49,31 +61,50 @@ import {
 } from './edges';
 import {
   EDGEFADER_BANDS,
-  EDGEFADER_EDGE_SCALE,
-  EDGEFADER_DILATE_MAX_R,
   EDGEFADER_LOCAL_FRACTION,
   EDGEFADER_LEAD_EDGE,
   EDGEFADER_LEAD_COINCIDENCE,
+  EDGEFADER_LEAD_SIMILARITY,
   EDGEFADER_LEAD_INSIDE,
   EDGEFADER_BLUR_MAX_PX,
   EDGEFADER_RAY_TAPS_PX,
-  EDGEFADER_BLUR_TAPS,
-  EDGEFADER_MELT_COLS,
+  EDGEFADER_COARSE_PX,
+  EDGEFADER_MELT_NOISE_COARSE,
+  EDGEFADER_MELT_NOISE_FINE,
+  EDGEFADER_MELT_LEN_LANES,
   EDGEFADER_MELT_DELAY_MAX,
+  EDGEFADER_MELT_EDGE_BIAS,
   EDGEFADER_DRIP_MAX_UV,
   EDGEFADER_DRIP_MIN_FRAC,
   EDGEFADER_WOBBLE_UV,
   EDGEFADER_FRONT_SOFT_UV,
-  EDGEFADER_HEAD_ROUND,
+  EDGEFADER_DROP_LANES,
+  EDGEFADER_DROP_PROB,
+  EDGEFADER_DROP_R_MIN,
+  EDGEFADER_DROP_R_MAX,
+  EDGEFADER_DROP_JITTER,
+  EDGEFADER_DROP_LEN_MAX,
+  EDGEFADER_DROP_STALK,
+  EDGEFADER_SEEDS,
   cascadeProgress,
   dilateRadius,
 } from './edgefader-core';
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+/** A number as a GLSL float literal (always carries a decimal point). */
 const f = (x: number): string => {
   const s = String(x);
   return s.includes('.') || s.includes('e') ? s : `${s}.0`;
 };
+
+// ─────────────────────────── pass 0: COPY (soft layers) ─────────────────────
+
+const COPY_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uTex;
+void main() { outColor = vec4(texture(uTex, vUv).rgb, 1.0); }`;
 
 // ─────────────────────────── pass 1: SOBEL ──────────────────────────────────
 
@@ -87,7 +118,7 @@ uniform sampler2D uTexA;
 uniform sampler2D uTexB;
 uniform float uHasA;
 uniform float uHasB;
-uniform vec2  uTexel;       // 1/ENGINE res — one INPUT texel (the EDGES step)
+uniform vec2  uTexel;       // 1/engine res — one texel step (the EDGES step)
 uniform float uThreshold;
 
 const float LUMA_R = ${EDGES_LUMA_WEIGHTS[0]};
@@ -117,10 +148,10 @@ float sobelMag(sampler2D t, vec2 uv) {
 void main() {
   float ea = (uHasA > 0.5 && sobelMag(uTexA, vUv) >= uThreshold) ? 1.0 : 0.0;
   float eb = (uHasB > 0.5 && sobelMag(uTexB, vUv) >= uThreshold) ? 1.0 : 0.0;
-  outColor = vec4(ea, eb, min(ea, eb), 1.0);
+  outColor = vec4(ea, eb, 0.0, 1.0);
 }`;
 
-// ─────────────────────────── pass 2: DILATE ─────────────────────────────────
+// ─────────────────────────── pass 2: DILATE (separable) ─────────────────────
 
 const DILATE_FRAG_SRC = `#version 300 es
 precision highp float;
@@ -129,34 +160,28 @@ in vec2 vUv;
 out vec4 outColor;
 
 uniform sampler2D uEdges;
-uniform vec2 uAtlasTexel;   // 1/atlas res — one atlas texel
-uniform int  uRadius;       // 0..MAX_R atlas texels (dilateRadius(thickness))
+uniform vec2 uStep;         // one texel along the pass axis ((1/W, 0) or (0, 1/H))
+uniform int  uRadius;       // 0..MAX_R texels (dilateRadius(thickness))
 
-const int MAX_R = ${EDGEFADER_DILATE_MAX_R};
+const int MAX_R = ${EDGES_MAX_THICKNESS - 1};
 
 void main() {
   float a = 0.0;
   float b = 0.0;
-  for (int dy = -MAX_R; dy <= MAX_R; dy++) {
-    if (dy < -uRadius || dy > uRadius) continue;
-    for (int dx = -MAX_R; dx <= MAX_R; dx++) {
-      if (dx < -uRadius || dx > uRadius) continue;
-      vec2 e = texture(uEdges, vUv + uAtlasTexel * vec2(float(dx), float(dy))).rg;
-      a = max(a, e.r);
-      b = max(b, e.g);
-    }
+  for (int d = -MAX_R; d <= MAX_R; d++) {
+    if (d < -uRadius || d > uRadius) continue;
+    vec2 e = texture(uEdges, vUv + uStep * float(d)).rg;
+    a = max(a, e.r);
+    b = max(b, e.g);
   }
-  outColor = vec4(a, b, min(a, b), 1.0);
+  outColor = vec4(a, b, 0.0, 1.0);
 }`;
 
 // ─────────────────────────── pass 3: COMPOSITE ──────────────────────────────
 
 const RAY_TAPS_GLSL = EDGEFADER_RAY_TAPS_PX.map((t) => `
-  toward = max(toward, wEdgeAt((pPx + d * ${f(t)}) / uRes));
-  away   = max(away,   wEdgeAt((pPx - d * ${f(t)}) / uRes));`).join('');
-
-const BLUR_TAPS_GLSL = EDGEFADER_BLUR_TAPS.map(([ox, oy, wt]) =>
-  `  acc += ${f(wt)} * texture(t, uv + vec2(${f(ox)}, ${f(oy)}) * s).rgb;`).join('\n');
+    toward = max(toward, wEdgeAt((pPx + d * ${f(t)}) / uRes));
+    away   = max(away,   wEdgeAt((pPx - d * ${f(t)}) / uRes));`).join('');
 
 const COMPOSITE_FRAG_SRC = `#version 300 es
 precision highp float;
@@ -166,7 +191,9 @@ out vec4 outColor;
 
 uniform sampler2D uTexA;
 uniform sampler2D uTexB;
-uniform sampler2D uAtlas;   // R = dilated edge(A), G = dilated edge(B), B = min(R, G)
+uniform sampler2D uSoftA;   // copy of A with a mip chain (the progressive blur)
+uniform sampler2D uSoftB;
+uniform sampler2D uAtlas;   // R = dilated edge(A), G = dilated edge(B); mip chain = densities
 uniform vec2  uRes;         // engine px
 uniform float uT;           // fader 0..1
 uniform float uMelt;        // >= 0.5 → MELT
@@ -175,15 +202,36 @@ const float N          = ${f(EDGEFADER_BANDS)};
 const float RHO        = ${f(EDGEFADER_LOCAL_FRACTION)};
 const float LEAD_EDGE  = ${f(EDGEFADER_LEAD_EDGE)};
 const float LEAD_COINC = ${f(EDGEFADER_LEAD_COINCIDENCE)};
+const float LEAD_SIM   = ${f(EDGEFADER_LEAD_SIMILARITY)};
 const float LEAD_IN    = ${f(EDGEFADER_LEAD_INSIDE)};
 const float BLUR_MAX   = ${f(EDGEFADER_BLUR_MAX_PX)};
-const float COLS       = ${f(EDGEFADER_MELT_COLS)};
+const float COARSE_LOD = ${f(Math.log2(EDGEFADER_COARSE_PX))};
+const float NOISE_C    = ${f(EDGEFADER_MELT_NOISE_COARSE)};
+const float NOISE_F    = ${f(EDGEFADER_MELT_NOISE_FINE)};
+const float LEN_LANES  = ${f(EDGEFADER_MELT_LEN_LANES)};
 const float DELAY_MAX  = ${f(EDGEFADER_MELT_DELAY_MAX)};
+const float EDGE_BIAS  = ${f(EDGEFADER_MELT_EDGE_BIAS)};
 const float DRIP_MAX   = ${f(EDGEFADER_DRIP_MAX_UV)};
 const float DRIP_MIN   = ${f(EDGEFADER_DRIP_MIN_FRAC)};
 const float WOBBLE     = ${f(EDGEFADER_WOBBLE_UV)};
 const float FRONT_SOFT = ${f(EDGEFADER_FRONT_SOFT_UV)};
-const float HEAD_ROUND = ${f(EDGEFADER_HEAD_ROUND)};
+const float LANES      = ${f(EDGEFADER_DROP_LANES)};
+const float DROP_PROB  = ${f(EDGEFADER_DROP_PROB)};
+const float DROP_R_MIN = ${f(EDGEFADER_DROP_R_MIN)};
+const float DROP_R_MAX = ${f(EDGEFADER_DROP_R_MAX)};
+const float DROP_JIT   = ${f(EDGEFADER_DROP_JITTER)};
+const float DROP_LEN   = ${f(EDGEFADER_DROP_LEN_MAX)};
+const float DROP_STALK = ${f(EDGEFADER_DROP_STALK)};
+const int SEED_DELAY_C = ${EDGEFADER_SEEDS.delayCoarse};
+const int SEED_DELAY_F = ${EDGEFADER_SEEDS.delayFine};
+const int SEED_LEN     = ${EDGEFADER_SEEDS.len};
+const int SEED_WOBBLE  = ${EDGEFADER_SEEDS.wobble};
+const int SEED_HAS     = ${EDGEFADER_SEEDS.dropHas};
+const int SEED_X       = ${EDGEFADER_SEEDS.dropX};
+const int SEED_R       = ${EDGEFADER_SEEDS.dropR};
+const int SEED_DLEN    = ${EDGEFADER_SEEDS.dropLen};
+const float TAU = 6.2831853;
+const float PI = 3.14159265;
 
 float clamp01(float x) { return clamp(x, 0.0, 1.0); }
 
@@ -210,78 +258,131 @@ float valueNoise(float x, int seed) {
   return mix(meltHash(int(i), seed), meltHash(int(i) + 1, seed), u);
 }
 
-// bandProgress — band k's own progress at fader t.
+// sdSegment — iq's distance to a segment a→b.
+float sdSegment(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float bb = dot(ba, ba);
+  float h = bb <= 1e-12 ? 0.0 : clamp01(dot(pa, ba) / bb);
+  return length(pa - ba * h);
+}
+
+// ── the cascade ──
 float bandProgress(float t, float k) {
   float start = k / (N + 1.0);
   return clamp01((t - start) * (N + 1.0) * 0.5);
 }
-
-// leadFor — normalised lead in [0,1].
-float leadFor(float wEdge, float wCoinc, float inside, float nearEdge) {
-  float raw = wEdge * (LEAD_EDGE + LEAD_COINC * wCoinc) + LEAD_IN * inside * nearEdge;
-  float span = LEAD_EDGE + LEAD_COINC + 2.0 * LEAD_IN;
-  return clamp01((raw + LEAD_IN) / span);
+float rowStart(float rowFromTop) {
+  float kf = rowFromTop * N - 0.5;
+  float c = clamp(kf, 0.0, N - 1.0);
+  return c / (N + 1.0);
+}
+float rowProgress(float t, float rowFromTop) {
+  return clamp01((t - rowStart(rowFromTop)) * (N + 1.0) * 0.5);
 }
 
-// localProgress — the pixel's own progress from its band's progress + lead.
-float localProgress(float pBand, float leadN) {
+// ── lead / local progress ──
+float similarity(float densA, float densB) {
+  float lo = min(densA, densB);
+  float hi = max(densA, densB);
+  if (hi <= 1e-6) return 0.0;
+  return (lo / hi) * sqrt(lo);
+}
+float leadFor(float wEdge, float wCoinc, float wSim, float inside, float nearEdge) {
+  float raw = wEdge * (LEAD_EDGE + LEAD_COINC * wCoinc) + LEAD_SIM * wSim + LEAD_IN * max(inside, 0.0) * nearEdge;
+  float span = LEAD_EDGE + LEAD_COINC + LEAD_SIM + LEAD_IN;
+  return clamp01(raw / span);
+}
+float localProgress(float pRow, float leadN) {
   float delay = 1.0 - clamp01(leadN);
-  return clamp01((clamp01(pBand) - delay * (1.0 - RHO)) / RHO);
+  return clamp01((clamp01(pRow) - delay * (1.0 - RHO)) / RHO);
 }
-
-float blurRadiusPx(float pLocal, float wEdge) {
+float blurRadiusPx(float pLocal, float wRegion) {
   float p = clamp01(pLocal);
-  return BLUR_MAX * clamp01(wEdge) * 4.0 * p * (1.0 - p);
+  return BLUR_MAX * clamp01(wRegion) * 4.0 * p * (1.0 - p);
 }
-
 float wEdgeAt(vec2 uv) {
-  vec2 e = texture(uAtlas, uv).rg;
+  vec2 e = textureLod(uAtlas, uv, 0.0).rg;
   return max(e.r, e.g);
 }
-
-// The 13-tap disc blur (EDGEFADER_BLUR_TAPS); r < 0.5 px is the plain sample.
-vec3 blurTex(sampler2D t, vec2 uv, float rPx) {
-  if (rPx < 0.5) return texture(t, uv).rgb;
-  vec2 s = rPx / uRes;
-  vec3 acc = vec3(0.0);
-${BLUR_TAPS_GLSL}
-  return acc;
+// The progressive blur: the soft layer's mip chain read at log2(radius) px,
+// faded in from the sharp sample over the first px (continuous at r = 0).
+vec3 softSample(sampler2D sharp, sampler2D soft, vec2 uv, float rPx) {
+  vec3 s = texture(sharp, uv).rgb;
+  if (rPx <= 0.0) return s;
+  float lod = log2(max(rPx, 1.0));
+  vec3 b = textureLod(soft, uv, lod).rgb;
+  return mix(s, b, softStep(0.0, 1.0, rPx));
 }
 
-// meltColumn — one column's drip extent (uv, downward) for band k.
-float meltExtent(int col, int k, float pBand) {
-  float delay = DELAY_MAX * valueNoise(float(col) * 0.25, 11 + k);
-  float lenFrac = DRIP_MIN + (1.0 - DRIP_MIN) * valueNoise(float(col) * 0.125 + 5.0, 23 + k);
-  float u = clamp01((clamp01(pBand) - delay) / (1.0 - delay));
-  return DRIP_MAX * lenFrac * u * u;
+// ── melt geometry ──
+float meltDelayNoise(float x01, int k) {
+  return 0.7 * valueNoise(x01 * NOISE_C, SEED_DELAY_C + k) + 0.3 * valueNoise(x01 * NOISE_F, SEED_DELAY_F + k);
 }
-
-// dripFront — the union of three rounded column tips at x.
-float dripFront(float x01, int k, float pBand) {
-  float colF = x01 * COLS;
-  int col = int(floor(colF));
-  float fx = colF - floor(colF);
-  float dOwn = abs(fx - 0.5);
-  float dLeft = fx + 0.5;
-  float dRight = 1.5 - fx;
-  float tOwn = max(0.0, meltExtent(col, k, pBand) * (1.0 - HEAD_ROUND * dOwn * dOwn));
-  float tLeft = max(0.0, meltExtent(col - 1, k, pBand) * (1.0 - HEAD_ROUND * dLeft * dLeft));
-  float tRight = max(0.0, meltExtent(col + 1, k, pBand) * (1.0 - HEAD_ROUND * dRight * dRight));
-  return max(tOwn, max(tLeft, tRight));
+float meltColumnDensity(float x01, int k) {
+  vec2 e = textureLod(uAtlas, vec2(x01, 1.0 - (float(k) + 0.5) / N), COARSE_LOD).rg;
+  return max(e.r, e.g);
 }
-
-// meltLayer — extent, content (1 below the front), source row, x wobble.
-vec4 meltLayer(float x01, float rowFromTop, int k, float pBand) {
-  float extent = dripFront(x01, k, pBand);
+float meltColumnProgress(float x01, int k, float pBand, float edgeDensity) {
+  float delay = DELAY_MAX * meltDelayNoise(x01, k) * (1.0 - EDGE_BIAS * clamp01(edgeDensity));
+  return clamp01((clamp01(pBand) - delay) / (1.0 - DELAY_MAX));
+}
+float meltEase(float p) {
+  float u = clamp01(p);
+  return u * u * (2.0 - u);
+}
+float meltSlide(float x01, int k, float p) {
+  float lenFrac = DRIP_MIN + (1.0 - DRIP_MIN) * valueNoise(x01 * LEN_LANES, SEED_LEN + k);
+  return DRIP_MAX * lenFrac * meltEase(p);
+}
+float meltWobble(float x01, float rowFromTop, int k, float p, float pBand) {
+  float phase = meltHash(int(floor(x01 * NOISE_F)), SEED_WOBBLE + k) * TAU;
+  return WOBBLE * clamp01(p) * sin(TAU * (3.0 * rowFromTop) + phase + 6.0 * clamp01(pBand));
+}
+float dropLaneCentre(float x01) {
+  return (floor(x01 * LANES) + 0.5) / LANES;
+}
+// dropLane → (has, cx, r, len)
+vec4 dropLane(float x01, int k, float pLane) {
+  int lane = int(floor(x01 * LANES));
+  float c = (float(lane) + 0.5) / LANES;
+  float has = meltHash(lane, SEED_HAS + k) < DROP_PROB ? 1.0 : 0.0;
+  float cx = c + (meltHash(lane, SEED_X + k) - 0.5) * DROP_JIT / LANES;
+  float r = DROP_R_MIN + (DROP_R_MAX - DROP_R_MIN) * meltHash(lane, SEED_R + k);
+  float len = DROP_LEN * sin(PI * clamp01(pLane)) * (0.5 + 0.5 * meltHash(lane, SEED_DLEN + k));
+  return vec4(has, cx, r, len);
+}
+// dropDistance — signed distance to the lane's droplet; +1e9 when none.
+float dropDistance(float x01, float rowFromTop, float aspect, vec4 lane, float top) {
+  if (lane.x < 0.5 || lane.w <= 0.0) return 1e9;
+  vec2 q = vec2((x01 - lane.y) * aspect, rowFromTop);
+  float yc = top + lane.w - lane.z;
+  float stalk = sdSegment(q, vec2(0.0, top - lane.z), vec2(0.0, yc)) - DROP_STALK * lane.z;
+  float head = length(q - vec2(0.0, yc)) - lane.z;
+  return min(stalk, head);
+}
+// meltLayer → (cover, srcRowFromTop, xShift, slide)
+vec4 meltLayer(float x01, float rowFromTop, int k, float pBand, float aspect) {
+  float p = meltColumnProgress(x01, k, pBand, meltColumnDensity(x01, k));
+  float slide = meltSlide(x01, k, p);
   float bandTop = float(k) / N;
+  float bandBottom = (float(k) + 1.0) / N;
   float dy = rowFromTop - bandTop;
-  float soft = min(FRONT_SOFT, extent * 0.5);
-  float content = softStep(extent - soft, extent + soft, dy);
-  int col = int(floor(x01 * COLS));
-  float phase = meltHash(col, 41 + k) * 6.2831853;
-  float amount = extent / DRIP_MAX;
-  float xShift = WOBBLE * sin(rowFromTop * 31.0 + phase) * amount;
-  return vec4(extent, content, rowFromTop - extent, xShift);
+  float soft = min(FRONT_SOFT, slide * 0.5);
+  float inContent = softStep(slide - soft, slide + soft, dy)
+    * (1.0 - softStep(bandBottom + slide - soft, bandBottom + slide + soft, rowFromTop));
+  float lcx = dropLaneCentre(x01);
+  float pLane = meltColumnProgress(lcx, k, pBand, meltColumnDensity(lcx, k));
+  vec4 lane = dropLane(x01, k, pLane);
+  float top = bandBottom + meltSlide(lane.y, k, meltColumnProgress(lane.y, k, pBand, meltColumnDensity(lane.y, k)));
+  float sd = dropDistance(x01, rowFromTop, aspect, lane, top);
+  float inDrop = sd >= 1e8 ? 0.0 : 1.0 - softStep(-FRONT_SOFT * 0.5, FRONT_SOFT * 0.5, sd);
+  float cover = max(inContent, inDrop);
+  float srcContent = rowFromTop - slide;
+  float srcDrop = bandBottom - 0.5 * lane.z - max(0.0, rowFromTop - top) * 0.5;
+  float src = inDrop > inContent ? srcDrop : srcContent;
+  float srcRowFromTop = clamp(src, bandTop, bandBottom);
+  return vec4(cover, srcRowFromTop, meltWobble(x01, rowFromTop, k, p, pBand), slide);
 }
 
 // A sampled at (x01, rowFromTop) — rowFromTop is 1 - uv.y.
@@ -294,11 +395,13 @@ void main() {
   float rowFromTop = 1.0 - uv.y;
   float x01 = uv.x;
   int k = int(clamp(floor(rowFromTop * N), 0.0, N - 1.0));
-  float pBand = bandProgress(uT, float(k));
 
-  vec3 at = texture(uAtlas, uv).rgb;
+  // The edge field at this pixel (texel-aligned atlas reads).
+  vec2 at = textureLod(uAtlas, uv, 0.0).rg;
   float wEdge = max(at.r, at.g);
-  float wCoinc = at.b;
+  float wCoinc = min(at.r, at.g);
+  vec2 dens = textureLod(uAtlas, uv, COARSE_LOD).rg;
+  float wSim = similarity(dens.r, dens.g);
 
   // inside / outside along the ray to screen centre (px space, so the taps
   // are the same length on both axes).
@@ -313,36 +416,35 @@ void main() {
   float inside = away - toward;
   float nearEdge = max(toward, away);
 
-  float leadN = leadFor(wEdge, wCoinc, inside, nearEdge);
-  float pLocal = localProgress(pBand, leadN);
+  float pRow = rowProgress(uT, rowFromTop);
+  float leadN = leadFor(wEdge, wCoinc, wSim, inside, nearEdge);
+  float pLocal = localProgress(pRow, leadN);
   float blend = softStep(0.0, 1.0, pLocal);
   vec3 bAt = texture(uTexB, uv).rgb;
 
   if (uMelt < 0.5) {
-    float r = blurRadiusPx(pLocal, wEdge);
-    vec3 a = blurTex(uTexA, uv, r);
-    vec3 b = blurTex(uTexB, uv, r);
+    float r = blurRadiusPx(pLocal, max(wEdge, wSim));
+    vec3 a = softSample(uTexA, uSoftA, uv, r);
+    vec3 b = softSample(uTexB, uSoftB, uv, r);
     outColor = vec4(mix(a, b, blend), 1.0);
     return;
   }
 
   // MELT — the band's own slide, then any drip arriving from the band above.
-  vec4 own = meltLayer(x01, rowFromTop, k, pBand);
-  vec3 aOwn = texAAt(x01 + own.w, own.z);
+  float aspect = uRes.x / uRes.y;
+  float pBand = bandProgress(uT, float(k));
+  vec4 own = meltLayer(x01, rowFromTop, k, pBand, aspect);
+  vec3 aOwn = texAAt(x01 + own.z, own.y);
   vec3 slid = mix(aOwn, bAt, blend);
-  vec3 col = mix(bAt, slid, own.y);
+  vec3 col = mix(bAt, slid, own.x);
   if (k > 0) {
     float pAbove = bandProgress(uT, float(k - 1));
-    vec4 above = meltLayer(x01, rowFromTop, k - 1, pAbove);
-    float reach = above.x;
-    if (reach > 0.0) {
-      float dy = rowFromTop - float(k) / N;
-      float soft = min(FRONT_SOFT, reach * 0.5);
-      float inDrip = 1.0 - softStep(reach - soft, reach + soft, dy);
-      vec3 aDrip = texAAt(x01 + above.w, above.z);
+    vec4 above = meltLayer(x01, rowFromTop, k - 1, pAbove, aspect);
+    if (above.x > 0.0) {
+      vec3 aDrip = texAAt(x01 + above.z, above.y);
       float blendAbove = softStep(0.0, 1.0, localProgress(pAbove, leadN));
       vec3 dripped = mix(aDrip, bAt, blendAbove);
-      col = mix(col, dripped, inDrip);
+      col = mix(col, dripped, above.x);
     }
   }
   outColor = vec4(col, 1.0);
@@ -360,7 +462,8 @@ export interface EdgefaderParams {
 
 export const EDGEFADER_DEFAULTS: EdgefaderParams = {
   // Mirrors FADER: at rest in the middle so a bipolar CV sweeps the whole
-  // travel, and a freshly patched pair shows the cascade half-way.
+  // travel. With sources patched the resting picture is the cascade half-way
+  // (top two bands B, the middle band mid-fade, the bottom two A).
   fader: 0.5,
   threshold: EDGES_DEFAULTS.threshold,
   thickness: EDGES_DEFAULTS.thickness,
@@ -370,7 +473,8 @@ export const EDGEFADER_DEFAULTS: EdgefaderParams = {
 
 const PARAM_IDS: ReadonlySet<string> = new Set(Object.keys(EDGEFADER_DEFAULTS));
 
-/** Is MELT in effect for these params? The latched toggle OR the held gate. */
+/** Is MELT in effect for these params? The latched toggle OR the held gate —
+ *  a bare level test, evaluated fresh on every frame. */
 export function edgefaderMeltActive(p: Pick<EdgefaderParams, 'melt' | 'meltGate'>): boolean {
   return p.melt >= 0.5 || p.meltGate >= 0.5;
 }
@@ -447,10 +551,10 @@ export const edgefaderDef: VideoModuleDef = {
   },
 
   docs: {
-    explanation: "edgefader is a two-source video crossfader that fades THROUGH the edges of the two pictures instead of dissolving them uniformly. It runs the EDGES operator (Rec. 601 luma, 3x3 Sobel, THRESH gate, THICK dilation) on both IN A and IN B every frame and packs the two masks into one atlas, together with where they COINCIDE — the regions of A and B whose edges sit in the same place. The A/B fader (0 = only A, 1 = only B, exact at both ends) then drives a cascade down the frame: the picture is cut into five 20% bands and each band fades over its own window of the fader's travel, the next band starting when the one above is half done, so by the time the top band is fully across the second is where the first was when the second began, and so on to the bottom. Inside a band the fade is led by the edges: pixels on an edge go first, pixels where A's and B's edges coincide go first of all, a pixel just inside an edge (closer to the centre of the screen than the edge) leads one just outside it, and flat regions follow — the fade ripples down the edges. The operator is a blur that peaks mid-fade (the edged regions go soft, then the incoming picture's edges sharpen in). MELT, a latching toggle OR'd with a gate jack, swaps the blur for a liquid screen melt: each band's content slides down column by column with per-column timing and drip lengths smoothed across neighbouring columns, rounded droplet heads at the drip fronts, a sinusoidal horizontal wobble, and the drips carry the melting band down into the band below before dissolving. The whole law is stateless — a pure function of the two inputs, the fader and the two detector settings — so it renders identically on every frame for a given input. Patch two sources into IN A / IN B, put the fader at either end to see one picture, sweep it to fade; raise THRESH to anchor the fade on fewer, stronger contours, raise THICK to widen the region each contour leads.",
+    explanation: "edgefader is a two-source video crossfader that fades THROUGH the edges of the two pictures instead of dissolving them uniformly. It runs the EDGES operator (Rec. 601 luma, 3x3 Sobel, THRESH gate, THICK dilation) on both IN A and IN B every frame and packs the two masks into one atlas, together with the coarse edge density of each — the regions of A and B that carry edges in the same place are where the fade anchors. The A/B fader (0 = only A, 1 = only B, exact at both ends) drives a cascade down the frame: the picture is cut into five 20% bands and each band fades over its own window of the fader's travel, the next band starting when the one above is half done, so by the time the top band is fully across the second is where the first was when the second began, and so on to the bottom (the band law is interpolated between band centres so there is no seam). Inside a band the fade is led by the edges: pixels on an edge go first, pixels where A's and B's edges coincide go first of all, a region where both pictures carry a similar amount of edge leads a flat one, a pixel just inside an edge (closer to the centre of the screen than the edge) leads one just outside it, and flat regions follow — the fade ripples down the edges. The operator is a blur that peaks mid-fade (the edged regions go soft, then the incoming picture's edges sharpen in). MELT, a latching toggle OR'd with a gate jack, swaps the blur for a liquid screen melt: each band's content slides down column by column with a per-column start delay and drip length drawn from a smooth value noise (columns with more edges start first), rounded droplet tongues hang from the slid content, a sinusoidal horizontal wobble grows with the slide, and the drips carry the melting band down into the band below before dissolving. The whole law is stateless — a pure function of the two inputs, the fader and the two detector settings, with no clock, random source or history — so it renders identically on every frame for a given input, and turning the fader back runs the same cascade in reverse (bottom band first). At the resting fader (0.5) the top two bands show B, the middle band is mid-fade and the bottom two show A. Patch two sources into IN A / IN B, put the fader at either end to see one picture, sweep it to fade; raise THRESH to anchor the fade on fewer, stronger contours, raise THICK to widen the region each contour leads.",
     inputs: {
-      in_a: "The A video source — what shows when the A/B fader is at 0, and the picture whose edges are detected as A's edge mask. Left unpatched it reads as opaque black, so an unpatched A with the fader toward A gives a black frame.",
-      in_b: "The B video source — what shows when the A/B fader is at 1, and the picture whose edges are detected as B's edge mask. Left unpatched it reads as opaque black.",
+      in_a: "The A video source — what shows when the A/B fader is at 0, and the picture whose edges are detected as A's edge mask. Left unpatched it reads as opaque black with no edges, so an unpatched A with the fader toward A gives a black frame.",
+      in_b: "The B video source — what shows when the A/B fader is at 1, and the picture whose edges are detected as B's edge mask. Left unpatched it reads as opaque black with no edges.",
       fader: "CV modulation of the A/B fade, centred on the manual A/B slider. Effective position = slider + CV x 0.5, clamped to 0..1. With the slider at 0.5 a bipolar -1..+1 signal sweeps fully from A to B. Unplugging restores the manual slider position.",
       threshold: "CV input that modulates Thresh — raising it via CV keeps only the strongest gradients as edges (fewer anchor regions), lowering it lets faint edges lead the fade. Linear-scaled into the 0..1 control range.",
       thickness: "CV input that modulates Thick — drives the dilation of both edge masks in pixels, i.e. how wide a region around each contour leads the fade. Linear-scaled into the 1..8 px control range and clamped so it cannot blow up the dilation loop.",
@@ -460,20 +564,22 @@ export const edgefaderDef: VideoModuleDef = {
       out: "The crossfaded picture: exactly IN A with the fader at 0, exactly IN B at 1, and between them the edge-led cascade (blur, or melt when MELT is engaged). With nothing patched into either input this is black.",
     },
     controls: {
-      fader: "The A<->B crossfade position: 0 shows only IN A, 1 shows only IN B. In between, the fader's travel is split into five overlapping windows, one per 20% band of the picture from the top down (each band starts when the band above is half done), and within each band the edged regions fade first. Clamped to 0..1.",
+      fader: "The A<->B crossfade position: 0 shows only IN A, 1 shows only IN B. In between, the fader's travel is split into five overlapping windows, one per 20% band of the picture from the top down (each band starts when the band above is half done), and within each band the edged regions fade first. At the 0.5 default the top two bands show B, the middle band is mid-fade and the bottom two show A. Clamped to 0..1.",
       threshold: "Thresh sets the normalised gradient magnitude (in luma-step units) at or above which a pixel counts as an edge in BOTH pictures. 0 = every pixel is an edge, so the whole frame fades as one edged region; 1 = almost nothing is, so the fade degrades to a plain delayed crossfade; default 0.2 catches salient contours without low-contrast texture noise.",
-      thickness: "Thick is the width in pixels (1..8 px, default 2) of the region around each detected contour that counts as edged and leads the fade — both masks are dilated by it, and a wider mask also makes more of A's and B's edges coincide.",
-      melt: "MELT (0/1, default 0): swaps the blur fade for the liquid screen melt — bands slide down in dripping columns with droplet heads that fall into the band below. Latched by the toggle; the melt gate additionally forces it while that gate is high. The fader's endpoints stay exact in either mode.",
+      thickness: "Thick is the width in pixels (1..8 px, default 2) of the region around each detected contour that counts as edged and leads the fade — both masks are dilated by it (the same radius law as EDGES), and a wider mask also makes more of A's and B's edges coincide.",
+      melt: "MELT (0/1, default 0): a toggle you switch on and leave on — it swaps the blur fade for the liquid screen melt, where bands slide down in dripping columns with droplet tongues that fall into the band below. The melt gate additionally forces it while that gate is high. The fader's endpoints stay exact in either mode.",
       meltGate: "Melt Gate (0..1, default 0): hidden synthetic param the melt-gate CV bridge writes each frame with the gate LEVEL; while it is HIGH (>= 0.5) the melt is forced (OR-combined with the MELT toggle, so the per-frame level never stomps the toggle's latched state). Exposed only as the melt gate jack, not as a knob.",
     },
   },
 
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
+    const copyProgram = ctx.compileFragment(COPY_FRAG_SRC);
     const sobelProgram = ctx.compileFragment(SOBEL_FRAG_SRC);
     const dilateProgram = ctx.compileFragment(DILATE_FRAG_SRC);
     const compositeProgram = ctx.compileFragment(COMPOSITE_FRAG_SRC);
 
+    const uCopy = { tex: gl.getUniformLocation(copyProgram, 'uTex') };
     const uS = {
       texA: gl.getUniformLocation(sobelProgram, 'uTexA'),
       texB: gl.getUniformLocation(sobelProgram, 'uTexB'),
@@ -484,20 +590,28 @@ export const edgefaderDef: VideoModuleDef = {
     };
     const uD = {
       edges: gl.getUniformLocation(dilateProgram, 'uEdges'),
-      atlasTexel: gl.getUniformLocation(dilateProgram, 'uAtlasTexel'),
+      step: gl.getUniformLocation(dilateProgram, 'uStep'),
       radius: gl.getUniformLocation(dilateProgram, 'uRadius'),
     };
     const uC = {
       texA: gl.getUniformLocation(compositeProgram, 'uTexA'),
       texB: gl.getUniformLocation(compositeProgram, 'uTexB'),
+      softA: gl.getUniformLocation(compositeProgram, 'uSoftA'),
+      softB: gl.getUniformLocation(compositeProgram, 'uSoftB'),
       atlas: gl.getUniformLocation(compositeProgram, 'uAtlas'),
       res: gl.getUniformLocation(compositeProgram, 'uRes'),
       t: gl.getUniformLocation(compositeProgram, 'uT'),
       melt: gl.getUniformLocation(compositeProgram, 'uMelt'),
     };
 
-    // Output surface (engine res, managed → auto-resizes on the aspect switch).
-    const out = ctx.createFbo();
+    // Every FBO is engine-managed (engine res, auto-resized on the aspect
+    // switch) — nothing here is hand-sized, so no resize hook is needed.
+    const out = ctx.createFbo();     // the canonical OUT
+    const softA = ctx.createFbo();   // copy of A + mip chain
+    const softB = ctx.createFbo();   // copy of B + mip chain
+    const sobel = ctx.createFbo();   // R/G = raw edges
+    const dilH = ctx.createFbo();    // horizontally dilated
+    const atlas = ctx.createFbo();   // fully dilated + mip chain (densities)
 
     // Opaque-black 1×1 for any unpatched input (the FADER precedent).
     const emptyTex = gl.createTexture();
@@ -509,37 +623,6 @@ export const edgefaderDef: VideoModuleDef = {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    // The two atlas FBOs (sobel → edgeFbo, dilate → atlasFbo), owned here at
-    // EDGE_SCALE × engine res, LINEAR so the composite reads soft weights.
-    // Unmanaged by the engine's registry, so `resize()` below reallocates them.
-    interface OwnedFbo { fbo: WebGLFramebuffer; texture: WebGLTexture }
-    function allocAtlas(w: number, h: number): OwnedFbo {
-      const fbo = gl.createFramebuffer();
-      const texture = gl.createTexture();
-      if (!fbo || !texture) throw new Error('EDGEFADER: createFramebuffer/Texture failed (atlas)');
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      return { fbo, texture };
-    }
-    function freeAtlas(a: OwnedFbo): void {
-      gl.deleteFramebuffer(a.fbo);
-      gl.deleteTexture(a.texture);
-    }
-    const atlasSize = (w: number, h: number): [number, number] => [
-      Math.max(1, Math.round(w * EDGEFADER_EDGE_SCALE)),
-      Math.max(1, Math.round(h * EDGEFADER_EDGE_SCALE)),
-    ];
-    let [aw, ah] = atlasSize(ctx.res.width, ctx.res.height);
-    let edgeFbo = allocAtlas(aw, ah);
-    let atlasFbo = allocAtlas(aw, ah);
-
     // F-F1 (keyer-framework §11): the reconciler pushes params only on CHANGE,
     // so read node.params at spawn or a persisted fader/threshold/thickness/melt
     // silently resets on patch reload until touched.
@@ -550,6 +633,16 @@ export const edgefaderDef: VideoModuleDef = {
     }
     const params: EdgefaderParams = { ...EDGEFADER_DEFAULTS, ...(filtered as Partial<EdgefaderParams>) };
 
+    /** Rebuild a texture's mip chain and keep its mip filter on — the engine's
+     *  aspect-switch re-spec resets level 0 and nothing else, so this is
+     *  (re)done every frame rather than once. */
+    function refreshMips(g: WebGL2RenderingContext, tex: WebGLTexture): void {
+      g.bindTexture(g.TEXTURE_2D, tex);
+      g.generateMipmap(g.TEXTURE_2D);
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR_MIPMAP_LINEAR);
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
+    }
+
     const surface: VideoNodeSurface = {
       fbo: out.fbo,
       texture: out.texture,
@@ -557,49 +650,69 @@ export const edgefaderDef: VideoModuleDef = {
         const g = frame.gl;
         const W = ctx.res.width;
         const H = ctx.res.height;
-        const aTex = frame.getInputTexture(node.id, 'in_a');
-        const bTex = frame.getInputTexture(node.id, 'in_b');
+        const aTex = frame.getInputTexture(node.id, 'in_a') ?? emptyTex;
+        const bTex = frame.getInputTexture(node.id, 'in_b') ?? emptyTex;
+        const hasA = aTex !== emptyTex;
+        const hasB = bTex !== emptyTex;
 
-        // Pass 1 — SOBEL at atlas res.
-        g.bindFramebuffer(g.FRAMEBUFFER, edgeFbo.fbo);
-        g.viewport(0, 0, aw, ah);
-        g.useProgram(sobelProgram);
-        g.activeTexture(g.TEXTURE0);
-        g.bindTexture(g.TEXTURE_2D, aTex ?? emptyTex);
-        g.uniform1i(uS.texA, 0);
-        g.activeTexture(g.TEXTURE1);
-        g.bindTexture(g.TEXTURE_2D, bTex ?? emptyTex);
-        g.uniform1i(uS.texB, 1);
-        g.uniform1f(uS.hasA, aTex ? 1 : 0);
-        g.uniform1f(uS.hasB, bTex ? 1 : 0);
+        const fullscreen = (program: WebGLProgram, fbo: WebGLFramebuffer): void => {
+          g.bindFramebuffer(g.FRAMEBUFFER, fbo);
+          g.viewport(0, 0, W, H);
+          g.useProgram(program);
+        };
+        const bind = (unit: number, tex: WebGLTexture, loc: WebGLUniformLocation | null): void => {
+          g.activeTexture(g.TEXTURE0 + unit);
+          g.bindTexture(g.TEXTURE_2D, tex);
+          g.uniform1i(loc, unit);
+        };
+
+        // Pass 0 — the soft layers (copies of A and B with mip chains).
+        fullscreen(copyProgram, softA.fbo);
+        bind(0, aTex, uCopy.tex);
+        ctx.drawFullscreenQuad();
+        fullscreen(copyProgram, softB.fbo);
+        bind(0, bTex, uCopy.tex);
+        ctx.drawFullscreenQuad();
+
+        // Pass 1 — SOBEL on both inputs, gated per input.
+        fullscreen(sobelProgram, sobel.fbo);
+        bind(0, aTex, uS.texA);
+        bind(1, bTex, uS.texB);
+        g.uniform1f(uS.hasA, hasA ? 1 : 0);
+        g.uniform1f(uS.hasB, hasB ? 1 : 0);
         g.uniform2f(uS.texel, 1 / W, 1 / H);
         g.uniform1f(uS.threshold, clamp01(params.threshold));
         ctx.drawFullscreenQuad();
 
-        // Pass 2 — DILATE at atlas res.
-        g.bindFramebuffer(g.FRAMEBUFFER, atlasFbo.fbo);
-        g.viewport(0, 0, aw, ah);
-        g.useProgram(dilateProgram);
-        g.activeTexture(g.TEXTURE0);
-        g.bindTexture(g.TEXTURE_2D, edgeFbo.texture);
-        g.uniform1i(uD.edges, 0);
-        g.uniform2f(uD.atlasTexel, 1 / aw, 1 / ah);
-        g.uniform1i(uD.radius, dilateRadius(params.thickness));
+        // Pass 2 — separable DILATE (H then V) by EDGES' radius law.
+        const radius = dilateRadius(params.thickness);
+        fullscreen(dilateProgram, dilH.fbo);
+        bind(0, sobel.texture, uD.edges);
+        g.uniform2f(uD.step, 1 / W, 0);
+        g.uniform1i(uD.radius, radius);
+        ctx.drawFullscreenQuad();
+        fullscreen(dilateProgram, atlas.fbo);
+        bind(0, dilH.texture, uD.edges);
+        g.uniform2f(uD.step, 0, 1 / H);
+        g.uniform1i(uD.radius, radius);
         ctx.drawFullscreenQuad();
 
-        // Pass 3 — COMPOSITE at engine res.
-        g.bindFramebuffer(g.FRAMEBUFFER, out.fbo);
-        g.viewport(0, 0, W, H);
-        g.useProgram(compositeProgram);
+        // Mip chains: the blur radii of the soft layers and the coarse edge
+        // densities of the atlas. (Unbind the FBO first — a texture is never
+        // mip-generated while it is the bound colour attachment.)
+        g.bindFramebuffer(g.FRAMEBUFFER, null);
         g.activeTexture(g.TEXTURE0);
-        g.bindTexture(g.TEXTURE_2D, aTex ?? emptyTex);
-        g.uniform1i(uC.texA, 0);
-        g.activeTexture(g.TEXTURE1);
-        g.bindTexture(g.TEXTURE_2D, bTex ?? emptyTex);
-        g.uniform1i(uC.texB, 1);
-        g.activeTexture(g.TEXTURE2);
-        g.bindTexture(g.TEXTURE_2D, atlasFbo.texture);
-        g.uniform1i(uC.atlas, 2);
+        refreshMips(g, softA.texture);
+        refreshMips(g, softB.texture);
+        refreshMips(g, atlas.texture);
+
+        // Pass 3 — COMPOSITE.
+        fullscreen(compositeProgram, out.fbo);
+        bind(0, aTex, uC.texA);
+        bind(1, bTex, uC.texB);
+        bind(2, softA.texture, uC.softA);
+        bind(3, softB.texture, uC.softB);
+        bind(4, atlas.texture, uC.atlas);
         g.uniform2f(uC.res, W, H);
         g.uniform1f(uC.t, clamp01(params.fader));
         g.uniform1f(uC.melt, edgefaderMeltActive(params) ? 1 : 0);
@@ -607,22 +720,13 @@ export const edgefaderDef: VideoModuleDef = {
 
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },
-      resize(width, height) {
-        const [w, h] = atlasSize(width, height);
-        if (w === aw && h === ah) return;
-        freeAtlas(edgeFbo);
-        freeAtlas(atlasFbo);
-        aw = w;
-        ah = h;
-        edgeFbo = allocAtlas(aw, ah);
-        atlasFbo = allocAtlas(aw, ah);
-      },
       dispose() {
-        gl.deleteFramebuffer(out.fbo);
-        gl.deleteTexture(out.texture);
-        freeAtlas(edgeFbo);
-        freeAtlas(atlasFbo);
+        for (const r of [out, softA, softB, sobel, dilH, atlas]) {
+          gl.deleteFramebuffer(r.fbo);
+          gl.deleteTexture(r.texture);
+        }
         gl.deleteTexture(emptyTex);
+        gl.deleteProgram(copyProgram);
         gl.deleteProgram(sobelProgram);
         gl.deleteProgram(dilateProgram);
         gl.deleteProgram(compositeProgram);

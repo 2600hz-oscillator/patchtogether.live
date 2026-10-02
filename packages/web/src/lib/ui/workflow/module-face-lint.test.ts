@@ -1470,6 +1470,16 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
     // control could not be used — and would write to the Y.Doc on every
     // press/release pair.
     'clipplayer:restrictRange',
+    // EDGEFADER `melt`, 2026-10-01. The 0/1 MELT switch resting at 0 —
+    // LATCHING, classified AT THE READ SITE: `edgefaderMeltActive` reads
+    // `params.melt >= 0.5 || params.meltGate >= 0.5` fresh on EVERY frame in
+    // `draw()`, a bare level test with no edge detector anywhere in the
+    // module. ⚠ AND THE MOMENTARY BEHAVIOUR ALREADY EXISTS SEPARATELY, which is
+    // what makes the latching reading certain: the `melt_gate` jack writes the
+    // synthetic `meltGate` LEVEL per frame and is OR'd with the toggle (the
+    // FRAMETABLE FREEZE-pattern), so "melt while I hold it" is the cable's
+    // job and the button's whole point is to latch where the gate does not.
+    'edgefader:melt',
   ]);
 
   it('no ACKNOWLEDGED_LATCHING param is DOCUMENTED as momentary (the cross-check)', () => {

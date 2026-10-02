@@ -718,6 +718,8 @@ export const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
 export const PINNED_MODULE_EXEMPT_KEYS: readonly string[] = Object.freeze([
   'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'cvBuddyMini',
   'es9',
+  'archivist', 'audioIn', 'blood', 'bluebox', 'cvBuddy', 'cvBuddyMini',
+  'es9',
   'fader', 'featurecv', 'flipper', 'gamepad', 'illogic', 'joystick',
   'marbles', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'milkdrop', 'modtris',
   'moog911a', 'moog956', 'moog962', 'moog992', 'moog993', 'numpadPlus',

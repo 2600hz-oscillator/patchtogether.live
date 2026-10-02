@@ -2446,6 +2446,26 @@ export const FACES = [
       + 'ARGUMENT WEAKENS — the picture then tracks whatever the upstream is doing, which for an '
       + 'animated source is a different frame every capture.',
   },
+  // ── EDGEFADER (2026-10-01) — the edge-led crossfader, born faced ──────────
+  {
+    type: 'edgefader',
+    pages: 1,
+    videoFaceWhy:
+      'a VIDEO module, so it must boot into the video zone rather than a mixer channel column — '
+      + 'without this field bootWithFace waits out the full 90 s test timeout for a column '
+      + 'membership a video node never acquires. Both scenes also carry a live picture: the '
+      + 'compact tile paints a VideoTileThumb through hasVideoSurface, and the dock body is the '
+      + "module's own fullViewBody extension (the OUT crossfade preview plus its SCREEN switch). "
+      + 'The freeze write is a NO-OP on this def (no `freeze` param) and deliberately so: every '
+      + 'pass is a pure function of (in_a, in_b, fader, thresh, thick, melt) with no clock, no '
+      + 'RNG and no accumulator — the melt geometry comes from an INTEGER hash of the lane '
+      + 'index, not from time. With nothing patched into either input both edge masks are '
+      + 'empty and the composite blends black with black, so the picture is a constant black '
+      + 'however many draws land. At the resting fader (0.5) the cascade would show the top two '
+      + 'bands as B, the middle band half-way and the bottom two as A — invisible here because '
+      + 'both sources are black. ⚠ PATCH A SOURCE AND THAT ARGUMENT WEAKENS — the picture then '
+      + 'tracks the upstream frame.',
+  },
   // ── BATCH 21 · CELLSHADE ──────────────────────────────────────────────────
   {
     type: 'cellshade',

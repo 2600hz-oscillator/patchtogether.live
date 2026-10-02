@@ -89,6 +89,10 @@ export const WEBGL_LEAKER_SPECS = [
   // Multi-input mix / viz WebGL specs not in the heavy globs.
   'quadralogical-assign.spec.ts',
   'fader-cv.spec.ts',
+  // EDGEFADER (2026-10-01): DRS per-band readPixels off the module's own FBO on
+  // the sharded matrix (the filename matches no heavy glob on purpose — see
+  // e2e/webgl-heavy-globs.ts: a heavy name deletes PR coverage).
+  'edgefader.spec.ts',
   // synesthesia-composite.spec.ts deleted in the GPU-attest rebuild — its band
   // claims are covered deterministically by synesthesia-dsp.test.ts, and its
   // live a_in path by synesthesia-video-mode.spec.ts + the per-port behavioral

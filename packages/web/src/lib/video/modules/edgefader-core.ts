@@ -1,31 +1,47 @@
-// EDGEFADER — the pure transition core (no DOM, no GL). The GLSL composite in
-// edgefader.ts is a line-for-line port of the functions here (constants copied,
-// never re-derived), so the software-renderer GPU is NOT the source of truth —
-// this core is, and edgefader-core.test.ts pins it bit-for-bit.
+// EDGEFADER — the pure transition core (no DOM, no GL). The GLSL in
+// edgefader.ts is a port of the functions here (constants interpolated from
+// these exports, never re-typed), so the software-renderer GPU is NOT the
+// source of truth — this core is, and edgefader-core.test.ts pins it.
 //
 // WHAT THE TRANSITION IS. Two video frames A and B, one fader t ∈ [0,1]. The
 // frame is cut into EDGEFADER_BANDS horizontal bands (band 0 at the TOP). Each
 // band fades A→B over its own window of the fader's travel, and the windows
 // CASCADE down the screen: band k starts when band k−1 is half done, and band
 // k−1 finishes exactly when band k reaches the level band k−1 had when band k
-// started. Within a band the fade is not uniform: pixels on an EDGE (Sobel +
-// threshold + dilate, the EDGES operator) go first, pixels where A's edges and
-// B's edges COINCIDE go first of all, and a pixel just INSIDE an edge (centre-
-// ward of it) leads a pixel just OUTSIDE it — so the fade ripples down the
-// edges. The visual operator is a BLUR that peaks mid-fade (edged regions go
+// started (the band-centre law `bandProgress`; between centres the start is
+// interpolated row by row — `rowProgress` — so there is no seam at a band
+// boundary). Within a band the fade is not uniform: pixels on an EDGE (the
+// EDGES operator: Sobel + threshold + dilate, run on BOTH frames) go first,
+// pixels where A's edges and B's edges COINCIDE go first of all, pixels in a
+// REGION where both frames carry a similar amount of edge (the coarse
+// similarity term — "the regions most like each other in where their edges
+// are") lead their flat neighbours, and a pixel just INSIDE an edge (centre-
+// ward of it) leads one just OUTSIDE it — so the fade ripples down the edges.
+// The visual operator is a BLUR that peaks mid-fade (the edged regions go
 // soft, then the incoming frame's edges sharpen in) or, with MELT engaged, a
-// per-column downward slide with liquid drip lengths and droplet heads that
-// carry the melting band down into the band below (DOOM-style screen melt,
-// smoothed across columns with value noise so it is liquid rather than striped).
+// per-column downward slide with liquid drip lengths and sparse droplet
+// tongues that carry the melting band down into the band below (the classic
+// 1993 screen melt — per-column random start + accelerating slide — made
+// stateless with value noise in place of its random walk; the drips follow the
+// gl-transitions port of that melt and the droplets are iq-style 2-D SDF
+// silhouettes; the PR body carries the citations).
 //
 // Endpoints are EXACT for every pixel and every mode: t ≤ 0 → A, t ≥ 1 → B.
 //
 // DETERMINISM. Nothing here reads a clock, a previous frame or Math.random:
 // every term is a function of (t, pixel position, the two edge masks, params).
-// Per-column randomness comes from an INTEGER hash (`meltHash`, 32-bit
+// Per-lane randomness comes from an INTEGER hash (`meltHash`, 32-bit
 // multiply/xorshift) so the CPU mirror and the float32 GPU agree bit-for-bit —
 // the sin-based hash fader-transitions uses is deterministic per renderer but
 // NOT across renderers once its argument exceeds a few thousand.
+//
+// WHERE THE PORT IS NOT LINE-FOR-LINE, stated here so nobody "fixes" it:
+//   * the GPU approximates `boxMean` (the progressive blur) with a trilinear
+//     read of a mip chain at LOD log2(radius) — a box of ~2^LOD px — and the
+//     coarse edge DENSITY with a LOD read of the atlas (EDGEFADER_COARSE_PX
+//     cells). The mirror uses true box means over the same window sizes.
+//     Every test on those terms is therefore a floor or an ordering, never a
+//     pixel equality.
 
 import { edgesPixel, EDGES_MAX_THICKNESS } from './edges';
 
@@ -33,13 +49,6 @@ import { edgesPixel, EDGES_MAX_THICKNESS } from './edges';
 
 /** Horizontal bands the fade cascades through, top to bottom. */
 export const EDGEFADER_BANDS = 5;
-
-/** The edge atlas renders at engine-res × this. Thickness (px) maps to a
- *  dilation radius in ATLAS texels through `dilateRadius`. */
-export const EDGEFADER_EDGE_SCALE = 0.5;
-
-/** Compile-time bound of the dilate window (atlas texels). */
-export const EDGEFADER_DILATE_MAX_R = 4;
 
 /** ρ — the fraction of its band's window a single pixel's own fade occupies.
  *  A pixel with lead 1 fades during the FIRST ρ of the window, a pixel with
@@ -50,6 +59,7 @@ export const EDGEFADER_LOCAL_FRACTION = 0.5;
 /** Lead contributions (see `leadFor`). */
 export const EDGEFADER_LEAD_EDGE = 0.5;
 export const EDGEFADER_LEAD_COINCIDENCE = 0.3;
+export const EDGEFADER_LEAD_SIMILARITY = 0.3;
 export const EDGEFADER_LEAD_INSIDE = 0.25;
 
 /** Peak blur radius (engine px) on a fully-edged pixel at mid-fade. */
@@ -58,31 +68,54 @@ export const EDGEFADER_BLUR_MAX_PX = 24;
 /** Inside/outside ray taps (engine px) toward and away from screen centre. */
 export const EDGEFADER_RAY_TAPS_PX: readonly number[] = [4, 8, 14, 22];
 
-/** Blur kernel: 13 fixed offsets on the unit disc (scaled by the radius) and
- *  their weights (sum to 1). Centre, an inner ring at 0.5, an outer ring at 1. */
-const R2 = Math.SQRT1_2;
-export const EDGEFADER_BLUR_TAPS: ReadonlyArray<readonly [number, number, number]> = [
-  [0, 0, 0.2],
-  [0.5, 0, 0.1], [-0.5, 0, 0.1], [0, 0.5, 0.1], [0, -0.5, 0.1],
-  [1, 0, 0.05], [-1, 0, 0.05], [0, 1, 0.05], [0, -1, 0.05],
-  [R2, R2, 0.05], [-R2, R2, 0.05], [R2, -R2, 0.05], [-R2, -R2, 0.05],
-];
+/** The coarse edge-density cell: a square of this many engine px on a side
+ *  (the GPU reads the atlas mip at log2 of this). */
+export const EDGEFADER_COARSE_PX = 32;
 
-/** Melt: columns across the frame that carry their own drip. */
-export const EDGEFADER_MELT_COLS = 96;
-/** Melt: the latest a column may start dripping, as a fraction of the band window. */
+/** Melt: value-noise lanes across the width for the per-column start delay
+ *  (coarse keeps the front liquid, fine gives the classic jaggedness). */
+export const EDGEFADER_MELT_NOISE_COARSE = 12;
+export const EDGEFADER_MELT_NOISE_FINE = 48;
+/** Melt: value-noise lanes across the width for the drip length. */
+export const EDGEFADER_MELT_LEN_LANES = 8;
+/** Melt: the latest a column may start, as a fraction of the band window. */
 export const EDGEFADER_MELT_DELAY_MAX = 0.35;
-/** Melt: the longest drip, in uv (fraction of frame height). Capped below one
- *  band height so a drip reaches at most the bottom of the NEXT band. */
-export const EDGEFADER_DRIP_MAX_UV = 0.18;
-/** Melt: the shortest drip relative to the longest. */
+/** Melt: how much a column's coarse edge density pulls its start earlier. */
+export const EDGEFADER_MELT_EDGE_BIAS = 0.6;
+/** Melt: the longest slide, in uv (fraction of frame height). */
+export const EDGEFADER_DRIP_MAX_UV = 0.12;
+/** Melt: the shortest slide relative to the longest. */
 export const EDGEFADER_DRIP_MIN_FRAC = 0.55;
 /** Melt: horizontal liquid wobble of the sliding content, in uv. */
-export const EDGEFADER_WOBBLE_UV = 0.006;
+export const EDGEFADER_WOBBLE_UV = 0.004;
 /** Melt: the drip front's softness, in uv (a wet edge, not a hard cut). */
-export const EDGEFADER_FRONT_SOFT_UV = 0.012;
-/** Melt: how far the droplet head rounds the front across neighbouring columns. */
-export const EDGEFADER_HEAD_ROUND = 0.35;
+export const EDGEFADER_FRONT_SOFT_UV = 0.01;
+/** Melt droplets: lanes across the width, each carrying at most one drop. */
+export const EDGEFADER_DROP_LANES = 24;
+/** Melt droplets: the chance a lane carries a drop. */
+export const EDGEFADER_DROP_PROB = 0.5;
+/** Melt droplets: head radius range (uv, aspect-corrected). */
+export const EDGEFADER_DROP_R_MIN = 0.012;
+export const EDGEFADER_DROP_R_MAX = 0.02;
+/** Melt droplets: lateral jitter of the drop inside its lane (lane widths). */
+export const EDGEFADER_DROP_JITTER = 0.2;
+/** Melt droplets: the longest tongue below the slid content (uv). DRIP_MAX +
+ *  this stays below one band height, so nothing ever reaches band k+2. */
+export const EDGEFADER_DROP_LEN_MAX = 0.06;
+/** Melt droplets: stalk radius as a fraction of the head radius. */
+export const EDGEFADER_DROP_STALK = 0.35;
+
+// Hash seeds (one per noise field), offset by the band index at the call site.
+export const EDGEFADER_SEEDS = {
+  delayCoarse: 11,
+  delayFine: 17,
+  len: 23,
+  wobble: 41,
+  dropHas: 53,
+  dropX: 59,
+  dropR: 67,
+  dropLen: 71,
+} as const;
 
 // ─────────────────────────── small math (GLSL-equivalent) ───────────────────
 
@@ -114,6 +147,17 @@ export function valueNoise(x: number, seed: number): number {
   return meltHash(i, seed) * (1 - u) + meltHash(i + 1, seed) * u;
 }
 
+/** Distance from `p` to the segment a→b (iq's sdSegment). */
+export function sdSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const pax = px - ax;
+  const pay = py - ay;
+  const bax = bx - ax;
+  const bay = by - ay;
+  const bb = bax * bax + bay * bay;
+  const h = bb <= 1e-12 ? 0 : clamp01((pax * bax + pay * bay) / bb);
+  return Math.hypot(pax - bax * h, pay - bay * h);
+}
+
 // ─────────────────────────── the cascade ────────────────────────────────────
 
 /** Stagger between consecutive band starts, as a fraction of fader travel. */
@@ -134,7 +178,7 @@ export function bandWindow(k: number, n: number = EDGEFADER_BANDS): { start: num
 }
 
 /** Band k's own progress at fader t: 0 before its window opens, 1 after it
- *  closes, linear in between. */
+ *  closes, linear in between. The BAND-CENTRE law. */
 export function bandProgress(t: number, k: number, n: number = EDGEFADER_BANDS): number {
   const start = k / (n + 1);
   return clamp01((t - start) * (n + 1) * 0.5);
@@ -153,6 +197,21 @@ export function bandOf(rowFromTop: number, n: number = EDGEFADER_BANDS): number 
   return k < 0 ? 0 : k > n - 1 ? n - 1 : k;
 }
 
+/** The window START for a ROW: the band law interpolated between band
+ *  centres, so a row at the centre of band k starts exactly at band k's start
+ *  and no two adjacent rows ever differ by a whole stagger. Rows above the top
+ *  band's centre start with it; rows below the bottom band's centre with it. */
+export function rowStart(rowFromTop: number, n: number = EDGEFADER_BANDS): number {
+  const kf = rowFromTop * n - 0.5;
+  const c = kf < 0 ? 0 : kf > n - 1 ? n - 1 : kf;
+  return c / (n + 1);
+}
+
+/** A row's progress at fader t (the seam-free form of `bandProgress`). */
+export function rowProgress(t: number, rowFromTop: number, n: number = EDGEFADER_BANDS): number {
+  return clamp01((t - rowStart(rowFromTop, n)) * (n + 1) * 0.5);
+}
+
 // ─────────────────────────── per-pixel lead / local progress ────────────────
 
 /** A pixel's edge field, read off the atlas (every term ∈ [0,1] except
@@ -160,9 +219,11 @@ export function bandOf(rowFromTop: number, n: number = EDGEFADER_BANDS): number 
 export interface EdgeField {
   /** max(edgeA, edgeB) — this pixel sits on an edge of either frame. */
   wEdge: number;
-  /** min(edgeA, edgeB) — A's edge and B's edge COINCIDE here (the "regions
-   *  most like each other in where their edges are"). */
+  /** min(edgeA, edgeB) — A's edge and B's edge COINCIDE here. */
   wCoinc: number;
+  /** The coarse similarity: both frames carry a similar amount of edge in the
+   *  cell around this pixel (see `similarity`). */
+  wSim: number;
   /** +1 = an edge lies on the pixel's border-ward side (the pixel is INSIDE
    *  it, centre-ward); −1 = an edge lies between the pixel and the centre
    *  (OUTSIDE); 0 = neither / both. */
@@ -173,35 +234,48 @@ export interface EdgeField {
   nearEdge: number;
 }
 
+/** The coarse "regions most like each other" term from the two frames' edge
+ *  DENSITIES over a cell: 1 when both carry the same, dense edge content, 0
+ *  when either has none. */
+export function similarity(densA: number, densB: number): number {
+  const lo = Math.min(densA, densB);
+  const hi = Math.max(densA, densB);
+  if (hi <= 1e-6) return 0;
+  return (lo / hi) * Math.sqrt(lo);
+}
+
 /**
- * Normalised LEAD ∈ [0,1] — how early within its band's window this pixel
- * fades. Ordering, by construction: coincident edge > plain edge > inside-
- * near-edge > flat (far from edges) > outside-near-edge.
+ * Normalised LEAD ∈ [0,1] — how early within its row's window this pixel
+ * fades. Ordering, by construction: coincident edge > plain edge; a similar
+ * region leads a flat one; inside-near-edge leads flat; outside-near-edge
+ * equals flat (nothing ever lags the background, so no ghost outline of A is
+ * the last thing standing in a band).
  */
 export function leadFor(f: EdgeField): number {
   const raw = f.wEdge * (EDGEFADER_LEAD_EDGE + EDGEFADER_LEAD_COINCIDENCE * f.wCoinc)
-    + EDGEFADER_LEAD_INSIDE * f.inside * f.nearEdge;
-  const span = EDGEFADER_LEAD_EDGE + EDGEFADER_LEAD_COINCIDENCE + 2 * EDGEFADER_LEAD_INSIDE;
-  return clamp01((raw + EDGEFADER_LEAD_INSIDE) / span);
+    + EDGEFADER_LEAD_SIMILARITY * f.wSim
+    + EDGEFADER_LEAD_INSIDE * Math.max(f.inside, 0) * f.nearEdge;
+  const span = EDGEFADER_LEAD_EDGE + EDGEFADER_LEAD_COINCIDENCE + EDGEFADER_LEAD_SIMILARITY + EDGEFADER_LEAD_INSIDE;
+  return clamp01(raw / span);
 }
 
 /**
- * The pixel's OWN progress given its band's progress and its lead. A pixel
- * with lead 1 runs through its fade over the first ρ of the band window; lead
- * 0 over the last ρ. pBand = 0 → 0 and pBand = 1 → 1 for EVERY lead, which is
- * what keeps the fader's endpoints exact.
+ * The pixel's OWN progress given its row's progress and its lead. A pixel
+ * with lead 1 runs through its fade over the first ρ of the window; lead 0
+ * over the last ρ. p = 0 → 0 and p = 1 → 1 for EVERY lead, which is what
+ * keeps the fader's endpoints exact.
  */
-export function localProgress(pBand: number, leadN: number): number {
+export function localProgress(pRow: number, leadN: number): number {
   const delay = 1 - clamp01(leadN);
   const rho = EDGEFADER_LOCAL_FRACTION;
-  return clamp01((clamp01(pBand) - delay * (1 - rho)) / rho);
+  return clamp01((clamp01(pRow) - delay * (1 - rho)) / rho);
 }
 
 /** Blur radius (engine px): a bump that is 0 at both ends of the pixel's
- *  fade and peaks mid-way, scaled by how edged the pixel is. */
-export function blurRadiusPx(pLocal: number, wEdge: number): number {
+ *  fade and peaks mid-way, scaled by how edged/similar the region is. */
+export function blurRadiusPx(pLocal: number, wRegion: number): number {
   const p = clamp01(pLocal);
-  return EDGEFADER_BLUR_MAX_PX * clamp01(wEdge) * 4 * p * (1 - p);
+  return EDGEFADER_BLUR_MAX_PX * clamp01(wRegion) * 4 * p * (1 - p);
 }
 
 /** A→B blend weight from the pixel's own progress (0 = A, 1 = B). */
@@ -209,12 +283,9 @@ export function blendWeight(pLocal: number): number {
   return softStep(0, 1, pLocal);
 }
 
-/** Dilation radius in ATLAS texels for a thickness in engine px — the one
- *  place the EDGES px meaning is rescaled to the atlas. */
+/** The dilation radius in px for a thickness — EDGES' own law, copied. */
 export function dilateRadius(thicknessPx: number): number {
-  const t = Math.max(1, Math.min(EDGES_MAX_THICKNESS, thicknessPx));
-  const r = Math.round((t - 1) * EDGEFADER_EDGE_SCALE);
-  return r < 0 ? 0 : r > EDGEFADER_DILATE_MAX_R ? EDGEFADER_DILATE_MAX_R : r;
+  return Math.max(0, Math.min(EDGES_MAX_THICKNESS - 1, Math.round(thicknessPx) - 1));
 }
 
 /**
@@ -247,66 +318,89 @@ export function insideScore(
 
 // ─────────────────────────── melt geometry ──────────────────────────────────
 
-/** One column's drip for band k at that band's progress. `extent` is how far
- *  (uv, downward) the band's content has slid; `delay` is where in the band
- *  window the column started. */
-export function meltColumn(col: number, k: number, pBand: number): { delay: number; extent: number } {
-  const delay = EDGEFADER_MELT_DELAY_MAX * valueNoise(col * 0.25, 11 + k);
-  const lenFrac = EDGEFADER_DRIP_MIN_FRAC + (1 - EDGEFADER_DRIP_MIN_FRAC) * valueNoise(col * 0.125 + 5, 23 + k);
-  // Ease-in: a drip accelerates as it falls (DOOM's columns gain speed each
-  // tick), and it reaches full length exactly at the end of the band window.
-  const u = clamp01((clamp01(pBand) - delay) / (1 - delay));
-  const extent = EDGEFADER_DRIP_MAX_UV * lenFrac * u * u;
-  return { delay, extent };
+/** The per-column start-delay noise, [0,1): two octaves of value noise. */
+export function meltDelayNoise(x01: number, k: number): number {
+  return 0.7 * valueNoise(x01 * EDGEFADER_MELT_NOISE_COARSE, EDGEFADER_SEEDS.delayCoarse + k)
+    + 0.3 * valueNoise(x01 * EDGEFADER_MELT_NOISE_FINE, EDGEFADER_SEEDS.delayFine + k);
 }
 
-/** The drip FRONT at horizontal position x01 for band k: the column's own
- *  extent rounded against its two neighbours, so a long column next to short
- *  ones reads as a droplet head rather than a bar. */
-export function dripFront(x01: number, k: number, pBand: number): number {
-  const colF = x01 * EDGEFADER_MELT_COLS;
-  const col = Math.floor(colF);
-  const fx = colF - col; // 0..1 across the column
-  // Distance (in columns) from this x to each column's centre; a column's tip
-  // reaches sideways with a parabolic falloff, and the front is the union of
-  // the three rounded tips — a long column between short ones is a droplet.
-  const dOwn = Math.abs(fx - 0.5);
-  const dLeft = fx + 0.5;
-  const dRight = 1.5 - fx;
-  const tip = (c: number, d: number): number =>
-    Math.max(0, meltColumn(c, k, pBand).extent * (1 - EDGEFADER_HEAD_ROUND * d * d));
-  return Math.max(tip(col, dOwn), Math.max(tip(col - 1, dLeft), tip(col + 1, dRight)));
+/** A column's progress through its own slide: 0 until its delay has passed,
+ *  1 by the time the band window closes. `edgeDensity` (0..1, the coarse
+ *  density of edges in this column of the band) pulls the start EARLIER, so
+ *  edged columns melt first — the ripple-down-the-edges rule in melt mode. */
+export function meltColumnProgress(x01: number, k: number, pBand: number, edgeDensity: number): number {
+  const delay = EDGEFADER_MELT_DELAY_MAX * meltDelayNoise(x01, k) * (1 - EDGEFADER_MELT_EDGE_BIAS * clamp01(edgeDensity));
+  return clamp01((clamp01(pBand) - delay) / (1 - EDGEFADER_MELT_DELAY_MAX));
 }
 
-/** Where one layer of the melt reads the OUTGOING frame from, and how much of
- *  the vacated space above the front shows the incoming frame. */
-export interface MeltLayer {
-  /** How far (uv, downward) this band's content has slid at this x. */
-  extent: number;
-  /** 1 = this row is below the drip front (slid content is here), 0 = above
-   *  it (vacated — the incoming frame shows); soft across the front. */
-  content: number;
-  /** Row (from top, uv) the outgoing frame is sampled from — always ≤ the
-   *  pixel's own row: content only ever slides DOWN. */
-  srcRowFromTop: number;
-  /** Horizontal liquid wobble of the sample (uv). */
-  xShift: number;
+/** Ease-in: a drip accelerates as it falls (the classic melt's columns gain
+ *  speed every tick), zero initial slope, unit final slope. */
+export function meltEase(p: number): number {
+  const u = clamp01(p);
+  return u * u * (2 - u);
 }
 
-export function meltLayer(x01: number, rowFromTop: number, k: number, pBand: number, n: number = EDGEFADER_BANDS): MeltLayer {
-  const extent = dripFront(x01, k, pBand);
-  const bandTop = k / n;
-  const dy = rowFromTop - bandTop;
-  const soft = Math.min(EDGEFADER_FRONT_SOFT_UV, extent * 0.5);
-  const content = softStep(extent - soft, extent + soft, dy);
-  const col = Math.floor(x01 * EDGEFADER_MELT_COLS);
-  const phase = meltHash(col, 41 + k) * 6.2831853;
-  const amount = extent / EDGEFADER_DRIP_MAX_UV;
-  const xShift = EDGEFADER_WOBBLE_UV * Math.sin(rowFromTop * 31 + phase) * amount;
-  return { extent, content, srcRowFromTop: rowFromTop - extent, xShift };
+/** How far (uv, downward) band k's content has slid at x for a column
+ *  progress p. */
+export function meltSlide(x01: number, k: number, p: number): number {
+  const lenFrac = EDGEFADER_DRIP_MIN_FRAC
+    + (1 - EDGEFADER_DRIP_MIN_FRAC) * valueNoise(x01 * EDGEFADER_MELT_LEN_LANES, EDGEFADER_SEEDS.len + k);
+  return EDGEFADER_DRIP_MAX_UV * lenFrac * meltEase(p);
 }
 
-// ─────────────────────────── the full per-pixel composite (CPU mirror) ──────
+/** Horizontal liquid wobble of the sliding content (uv): amplitude grows with
+ *  the column's progress (zero at rest) and its phase advances with the band's
+ *  progress, never with a clock (gl-transitions Dreamy). */
+export function meltWobble(x01: number, rowFromTop: number, k: number, p: number, pBand: number): number {
+  const phase = meltHash(Math.floor(x01 * EDGEFADER_MELT_NOISE_FINE), EDGEFADER_SEEDS.wobble + k) * 6.2831853;
+  return EDGEFADER_WOBBLE_UV * clamp01(p) * Math.sin(6.2831853 * (3 * rowFromTop) + phase + 6 * clamp01(pBand));
+}
+
+/** The x of the pixel's droplet lane centre. */
+export function dropLaneCentre(x01: number): number {
+  return (Math.floor(x01 * EDGEFADER_DROP_LANES) + 0.5) / EDGEFADER_DROP_LANES;
+}
+
+/** One droplet lane of band k: whether it carries a drop and its geometry. */
+export interface DropLane {
+  has: boolean;
+  /** Drop centre x (uv). */
+  cx: number;
+  /** Head radius (uv, aspect-corrected units). */
+  r: number;
+  /** Tongue length below the slid content (uv). 0 at the band window's ends. */
+  len: number;
+}
+
+/** `pLane` is the column progress read at the lane's centre, so the whole
+ *  drop moves as one body. */
+export function dropLane(x01: number, k: number, pLane: number): DropLane {
+  const lane = Math.floor(x01 * EDGEFADER_DROP_LANES);
+  const c = (lane + 0.5) / EDGEFADER_DROP_LANES;
+  const has = meltHash(lane, EDGEFADER_SEEDS.dropHas + k) < EDGEFADER_DROP_PROB;
+  const cx = c + (meltHash(lane, EDGEFADER_SEEDS.dropX + k) - 0.5) * EDGEFADER_DROP_JITTER / EDGEFADER_DROP_LANES;
+  const r = EDGEFADER_DROP_R_MIN + (EDGEFADER_DROP_R_MAX - EDGEFADER_DROP_R_MIN) * meltHash(lane, EDGEFADER_SEEDS.dropR + k);
+  const len = EDGEFADER_DROP_LEN_MAX * Math.sin(Math.PI * clamp01(pLane)) * (0.5 + 0.5 * meltHash(lane, EDGEFADER_SEEDS.dropLen + k));
+  return { has, cx, r, len };
+}
+
+/**
+ * Signed distance (uv, aspect-corrected) from the pixel to band k's droplet
+ * in the pixel's lane, where `top` is the depth (rowFromTop) of the slid
+ * content's bottom edge at the drop's own x. Negative = inside the drop;
+ * +Infinity when the lane carries none.
+ */
+export function dropDistance(x01: number, rowFromTop: number, aspect: number, lane: DropLane, top: number): number {
+  if (!lane.has || lane.len <= 0) return Infinity;
+  const qx = (x01 - lane.cx) * aspect;
+  const qy = rowFromTop;
+  const yc = top + lane.len - lane.r;
+  const stalk = sdSegment(qx, qy, 0, top - lane.r, 0, yc) - EDGEFADER_DROP_STALK * lane.r;
+  const head = Math.hypot(qx, qy - yc) - lane.r;
+  return Math.min(stalk, head);
+}
+
+// ─────────────────────────── the mirror atlas ───────────────────────────────
 
 export interface EdgefaderParams {
   threshold: number;
@@ -315,16 +409,35 @@ export interface EdgefaderParams {
 }
 
 export interface MirrorOptions {
-  /** Ray taps in GRID px (the engine uses EDGEFADER_RAY_TAPS_PX; a small test
-   *  grid passes smaller taps). */
+  /** Ray taps in px (the engine uses EDGEFADER_RAY_TAPS_PX; a small test grid
+   *  passes smaller taps). */
   rayTapsPx?: readonly number[];
-  /** Peak blur radius in GRID px (default EDGEFADER_BLUR_MAX_PX). */
+  /** Peak blur radius in px (default EDGEFADER_BLUR_MAX_PX). */
   blurMaxPx?: number;
   /** Bands (default EDGEFADER_BANDS). */
   bands?: number;
 }
 
-/** Edge-clamped bilinear read of a row-major luma grid at a fractional px. */
+/** The mirror's atlas: per-texel dilated masks and the coarse densities, on
+ *  the grid's own resolution (= the engine's full-res atlas). */
+export interface EdgeAtlas {
+  w: number;
+  h: number;
+  edgeA: Float32Array;
+  edgeB: Float32Array;
+  /** Coarse density of edgeA / edgeB over the cell around each texel. */
+  densA: Float32Array;
+  densB: Float32Array;
+}
+
+/** Edge-clamped read of a row-major grid at an integer texel. */
+export function texelAt(w: number, h: number, g: ArrayLike<number>, x: number, y: number): number {
+  const cx = x < 0 ? 0 : x > w - 1 ? w - 1 : x;
+  const cy = y < 0 ? 0 : y > h - 1 ? h - 1 : y;
+  return g[cy * w + cx]!;
+}
+
+/** Edge-clamped bilinear read of a row-major grid at a fractional texel. */
 export function sampleGrid(w: number, h: number, grid: ArrayLike<number>, x: number, y: number): number {
   const cx = Math.max(0, Math.min(w - 1, x));
   const cy = Math.max(0, Math.min(h - 1, y));
@@ -339,52 +452,194 @@ export function sampleGrid(w: number, h: number, grid: ArrayLike<number>, x: num
   return a * (1 - fy) + b * fy;
 }
 
-/** The disc blur over a luma grid (bilinear taps). r = 0 → the plain sample. */
-export function blurGrid(w: number, h: number, grid: ArrayLike<number>, x: number, y: number, rPx: number): number {
-  if (rPx < 0.5) return sampleGrid(w, h, grid, x, y);
+/** True box mean of a grid over the (2r+1)² window centred on (x, y), with
+ *  edge clamping. r = 0 → the texel itself. */
+export function boxMean(w: number, h: number, grid: ArrayLike<number>, x: number, y: number, r: number): number {
+  const ri = Math.max(0, Math.round(r));
   let acc = 0;
-  for (const [ox, oy, wt] of EDGEFADER_BLUR_TAPS) acc += wt * sampleGrid(w, h, grid, x + ox * rPx, y + oy * rPx);
-  return acc;
+  let n = 0;
+  for (let dy = -ri; dy <= ri; dy++) {
+    for (let dx = -ri; dx <= ri; dx++) {
+      acc += texelAt(w, h, grid, x + dx, y + dy);
+      n++;
+    }
+  }
+  return acc / n;
 }
 
 /**
- * The per-pixel EdgeField of a synthetic A/B pair on a grid — the mirror's
- * "atlas" (1 grid texel = 1 atlas texel; the engine's half-res atlas is the
- * same math subsampled, then bilinearly read).
+ * Build the mirror's atlas for a synthetic A/B pair: `edgesPixel` (the
+ * verified EDGES mirror) on both luma grids with the module's thickness →
+ * dilate law, then the coarse densities (box means over the coarse cell).
+ * `hasA`/`hasB` false = that input is unpatched: no edges at all (the
+ * engine's uHasA/uHasB gate).
  */
-export function edgeFieldAt(
+export function buildEdgeAtlas(
   w: number,
   h: number,
   lumaA: ArrayLike<number>,
   lumaB: ArrayLike<number>,
-  x: number,
-  y: number,
   threshold: number,
   thicknessPx: number,
+  opts: { coarsePx?: number; hasA?: boolean; hasB?: boolean } = {},
+): EdgeAtlas {
+  const n = w * h;
+  const edgeA = new Float32Array(n);
+  const edgeB = new Float32Array(n);
+  const hasA = opts.hasA ?? true;
+  const hasB = opts.hasB ?? true;
+  // edgesPixel's dilation reads round(thickness) − 1 — the same `dilateRadius`
+  // the GPU dilate passes are driven by, so the two agree by construction.
+  const thick = dilateRadius(thicknessPx) + 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      edgeA[i] = hasA ? edgesPixel(w, h, lumaA, x, y, threshold, thick) : 0;
+      edgeB[i] = hasB ? edgesPixel(w, h, lumaB, x, y, threshold, thick) : 0;
+    }
+  }
+  const densA = new Float32Array(n);
+  const densB = new Float32Array(n);
+  const half = Math.max(0, Math.round((opts.coarsePx ?? EDGEFADER_COARSE_PX) / 2));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      densA[i] = boxMean(w, h, edgeA, x, y, half);
+      densB[i] = boxMean(w, h, edgeB, x, y, half);
+    }
+  }
+  return { w, h, edgeA, edgeB, densA, densB };
+}
+
+/** The per-pixel EdgeField read off a mirror atlas. */
+export function edgeFieldAt(
+  atlas: EdgeAtlas,
+  x: number,
+  y: number,
   rayTapsPx: readonly number[] = EDGEFADER_RAY_TAPS_PX,
 ): EdgeField {
-  // Thickness in engine px → dilation radius in atlas texels, then back to the
-  // px thickness `edgesPixel` expects at the atlas resolution (radius + 1).
-  const atlasThickness = dilateRadius(thicknessPx) + 1;
-  const edgeA = (px: number, py: number): number =>
-    edgesPixel(w, h, lumaA, Math.round(px), Math.round(py), threshold, atlasThickness);
-  const edgeB = (px: number, py: number): number =>
-    edgesPixel(w, h, lumaB, Math.round(px), Math.round(py), threshold, atlasThickness);
-  const eA = edgeA(x, y);
-  const eB = edgeB(x, y);
-  const wEdgeAt = (px: number, py: number): number => Math.max(edgeA(px, py), edgeB(px, py));
+  const { w, h } = atlas;
+  const eA = texelAt(w, h, atlas.edgeA, x, y);
+  const eB = texelAt(w, h, atlas.edgeB, x, y);
+  const wEdgeAt = (px: number, py: number): number => {
+    const ix = Math.round(px);
+    const iy = Math.round(py);
+    return Math.max(texelAt(w, h, atlas.edgeA, ix, iy), texelAt(w, h, atlas.edgeB, ix, iy));
+  };
   const { inside, nearEdge } = insideScore(wEdgeAt, x, y, (w - 1) / 2, (h - 1) / 2, rayTapsPx);
-  return { wEdge: Math.max(eA, eB), wCoinc: Math.min(eA, eB), inside, nearEdge };
+  return {
+    wEdge: Math.max(eA, eB),
+    wCoinc: Math.min(eA, eB),
+    wSim: similarity(texelAt(w, h, atlas.densA, x, y), texelAt(w, h, atlas.densB, x, y)),
+    inside,
+    nearEdge,
+  };
+}
+
+/** Everything the composite decides for one pixel before it samples a frame —
+ *  exposed so the tests can read the law directly. */
+export interface PixelLaw {
+  band: number;
+  pRow: number;
+  leadN: number;
+  pLocal: number;
+  blend: number;
+  blurPx: number;
+}
+
+export function pixelLaw(
+  t: number,
+  rowFromTop: number,
+  field: EdgeField,
+  n: number = EDGEFADER_BANDS,
+  blurMaxPx: number = EDGEFADER_BLUR_MAX_PX,
+): PixelLaw {
+  const band = bandOf(rowFromTop, n);
+  const pRow = rowProgress(t, rowFromTop, n);
+  const leadN = leadFor(field);
+  const pLocal = localProgress(pRow, leadN);
+  const wRegion = Math.max(field.wEdge, field.wSim);
+  return {
+    band,
+    pRow,
+    leadN,
+    pLocal,
+    blend: blendWeight(pLocal),
+    blurPx: blurRadiusPx(pLocal, wRegion) * (blurMaxPx / EDGEFADER_BLUR_MAX_PX),
+  };
+}
+
+/** The coarse edge density of band k's column at x (what biases a column's
+ *  melt start) — the atlas density read at the band's centre row. */
+export function meltColumnDensity(atlas: EdgeAtlas, x01: number, k: number, n: number = EDGEFADER_BANDS): number {
+  const x = Math.min(atlas.w - 1, Math.max(0, Math.round(x01 * atlas.w - 0.5)));
+  const y = Math.min(atlas.h - 1, Math.max(0, Math.round(((k + 0.5) / n) * atlas.h - 0.5)));
+  const i = y * atlas.w + x;
+  return Math.max(atlas.densA[i]!, atlas.densB[i]!);
+}
+
+/** One melt layer — band k's slid content as seen from a pixel at (x01,
+ *  rowFromTop): where the outgoing frame is read from, and how much of the
+ *  pixel it covers. */
+export interface MeltLayer {
+  /** Column progress through its slide. */
+  p: number;
+  /** How far (uv, downward) band k's content has slid at this x. */
+  slide: number;
+  /** 1 = the pixel is covered by the slid content (or its droplet), 0 = not;
+   *  soft across the fronts. */
+  cover: number;
+  /** Row (from top, uv) the outgoing frame is sampled from — always ≤ the
+   *  pixel's own row (content only slides DOWN) and always inside band k. */
+  srcRowFromTop: number;
+  /** Horizontal liquid wobble of the sample (uv). */
+  xShift: number;
+}
+
+export function meltLayer(
+  atlas: EdgeAtlas,
+  x01: number,
+  rowFromTop: number,
+  k: number,
+  pBand: number,
+  aspect: number,
+  n: number = EDGEFADER_BANDS,
+): MeltLayer {
+  const p = meltColumnProgress(x01, k, pBand, meltColumnDensity(atlas, x01, k, n));
+  const slide = meltSlide(x01, k, p);
+  const bandTop = k / n;
+  const bandBottom = (k + 1) / n;
+  const dy = rowFromTop - bandTop;
+  // Below the vacated top of the band and above the slid bottom edge: the
+  // content itself.
+  const soft = Math.min(EDGEFADER_FRONT_SOFT_UV, slide * 0.5);
+  const inContent = softStep(slide - soft, slide + soft, dy)
+    * (1 - softStep(bandBottom + slide - soft, bandBottom + slide + soft, rowFromTop));
+  // The droplet tongue hanging from the slid bottom edge, evaluated at the
+  // drop's own x so the whole drop moves as one body.
+  const lcx = dropLaneCentre(x01);
+  const pLane = meltColumnProgress(lcx, k, pBand, meltColumnDensity(atlas, lcx, k, n));
+  const lane = dropLane(x01, k, pLane);
+  const top = bandBottom + meltSlide(lane.cx, k, meltColumnProgress(lane.cx, k, pBand, meltColumnDensity(atlas, lane.cx, k, n)));
+  const sd = dropDistance(x01, rowFromTop, aspect, lane, top);
+  const inDrop = sd === Infinity ? 0 : 1 - softStep(-EDGEFADER_FRONT_SOFT_UV * 0.5, EDGEFADER_FRONT_SOFT_UV * 0.5, sd);
+  const cover = Math.max(inContent, inDrop);
+  // The content is read from where it came from; a drop below the slid edge
+  // reads the band's bottom rows, pulled down the tongue (a lens).
+  const srcContent = rowFromTop - slide;
+  const srcDrop = bandBottom - 0.5 * lane.r - Math.max(0, rowFromTop - top) * 0.5;
+  const src = inDrop > inContent ? srcDrop : srcContent;
+  const srcRowFromTop = Math.min(bandBottom, Math.max(bandTop, src));
+  return { p, slide, cover, srcRowFromTop, xShift: meltWobble(x01, rowFromTop, k, p, pBand) };
 }
 
 /**
- * The full composite for ONE output pixel of a synthetic A/B pair: the exact
- * CPU mirror of the COMPOSITE pass. `x`, `y` index the grid (y = 0 is the TOP
+ * The full composite for ONE output pixel of a synthetic A/B pair: the CPU
+ * mirror of the COMPOSITE pass. `x`, `y` index the grid (y = 0 is the TOP
  * row, matching `rowFromTop`). Returns the output luma.
  */
 export function edgefaderPixel(
-  w: number,
-  h: number,
+  atlas: EdgeAtlas,
   lumaA: ArrayLike<number>,
   lumaB: ArrayLike<number>,
   x: number,
@@ -393,46 +648,38 @@ export function edgefaderPixel(
   params: EdgefaderParams,
   opts: MirrorOptions = {},
 ): number {
+  const { w, h } = atlas;
   const n = opts.bands ?? EDGEFADER_BANDS;
-  const blurMax = opts.blurMaxPx ?? EDGEFADER_BLUR_MAX_PX;
   const rowFromTop = (y + 0.5) / h;
   const x01 = (x + 0.5) / w;
-  const k = bandOf(rowFromTop, n);
-  const pBand = bandProgress(t, k, n);
-  const field = edgeFieldAt(w, h, lumaA, lumaB, x, y, params.threshold, params.thickness, opts.rayTapsPx);
-  const leadN = leadFor(field);
-  const pLocal = localProgress(pBand, leadN);
-  const blend = blendWeight(pLocal);
+  const field = edgeFieldAt(atlas, x, y, opts.rayTapsPx);
+  const law = pixelLaw(t, rowFromTop, field, n, opts.blurMaxPx);
 
   if (!params.melt) {
-    const r = blurRadiusPx(pLocal, field.wEdge) * (blurMax / EDGEFADER_BLUR_MAX_PX);
-    const a = blurGrid(w, h, lumaA, x, y, r);
-    const b = blurGrid(w, h, lumaB, x, y, r);
-    return a + (b - a) * blend;
+    const a = boxMean(w, h, lumaA, x, y, law.blurPx);
+    const b = boxMean(w, h, lumaB, x, y, law.blurPx);
+    return a + (b - a) * law.blend;
   }
 
   // MELT — the band's own slide, then any drip arriving from the band above.
-  const bAt = sampleGrid(w, h, lumaB, x, y);
-  const own = meltLayer(x01, rowFromTop, k, pBand, n);
+  const aspect = w / h;
+  const k = law.band;
+  const bAt = texelAt(w, h, lumaB, x, y);
+  const pBand = bandProgress(t, k, n);
+  const own = meltLayer(atlas, x01, rowFromTop, k, pBand, aspect, n);
   const aOwn = sampleGrid(w, h, lumaA, (x01 + own.xShift) * w - 0.5, own.srcRowFromTop * h - 0.5);
-  const slid = aOwn + (bAt - aOwn) * blend;          // the slid content, fading to B
-  let out = bAt + (slid - bAt) * own.content;        // above the front: vacated → B
+  const slid = aOwn + (bAt - aOwn) * law.blend;      // the slid content, fading to B
+  let out = bAt + (slid - bAt) * own.cover;           // uncovered → B (vacated)
 
   if (k > 0) {
     const pAbove = bandProgress(t, k - 1, n);
-    const above = meltLayer(x01, rowFromTop, k - 1, pAbove, n);
-    // The band above's content slid down by its extent, so its bottom rows now
-    // sit in the top `extent` of THIS band: a row within that reach shows the
-    // dripping content (sampled from where it came from, inside the band above).
-    const reach = above.extent;
-    if (reach > 0) {
-      const dy = rowFromTop - k / n;
-      const soft = Math.min(EDGEFADER_FRONT_SOFT_UV, reach * 0.5);
-      const inDrip = 1 - softStep(reach - soft, reach + soft, dy);
+    const above = meltLayer(atlas, x01, rowFromTop, k - 1, pAbove, aspect, n);
+    if (above.cover > 0) {
       const aDrip = sampleGrid(w, h, lumaA, (x01 + above.xShift) * w - 0.5, above.srcRowFromTop * h - 0.5);
-      const blendAbove = blendWeight(localProgress(pAbove, leadN));
+      // The drip fades with the band it came from, read at THIS pixel's field.
+      const blendAbove = blendWeight(localProgress(pAbove, law.leadN));
       const dripped = aDrip + (bAt - aDrip) * blendAbove;
-      out = out + (dripped - out) * inDrip;
+      out = out + (dripped - out) * above.cover;
     }
   }
   return out;

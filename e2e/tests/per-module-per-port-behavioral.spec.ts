@@ -597,6 +597,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    RE-ENABLE: a real-GPU CI lane or a reduced-capture behavioral path.
   chroma: VIDEO_SINK_SWIFTSHADER_NOTE,
   fader: VIDEO_SINK_SWIFTSHADER_NOTE,
+  edgefader: VIDEO_SINK_SWIFTSHADER_NOTE,
   feedback: VIDEO_SINK_SWIFTSHADER_NOTE,
   freezeframe: VIDEO_SINK_SWIFTSHADER_NOTE,
   mappy: VIDEO_SINK_SWIFTSHADER_NOTE,
