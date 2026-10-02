@@ -72,8 +72,9 @@ without a shell rebuild (ADR-011 Decision 2).
 ## The shell process
 
 `apps/desktop` is a **standalone npm package** (own lockfile, deliberately not a
-root workspace) so web CI installs and the shared lockfile stay untouched. Electron
-is pinned exact.
+root workspace) so web CI installs and the shared lockfile stay untouched; the
+typecheck and unit lanes install it separately from its own lockfile
+(`task desktop:deps`, no Electron binary). Electron is pinned exact.
 
 - `main.ts` — Chromium flag set applied before ready, one fullscreen window, native
   menus. File → Exit is available both natively and in the desktop toolbar;
@@ -172,6 +173,8 @@ Stated so a reader does not infer them from the sections above:
   device) still has no non-gesture recovery path.
 - **The `desktop-e2e` CI job** — the required-subset spec exists and runs as a
   local task; the workflow job is unwired and needs owner wall-time sign-off.
+  (The shell's `tsc` and the rig-store unit test already run in CI, inside the
+  existing typecheck and unit lanes — see the runbook's Tests section.)
 - **Continuity hardening** (off-main save paths, worker recorderbox capture) and
   **distribution** (Developer ID signing, notarization, DMG).
 

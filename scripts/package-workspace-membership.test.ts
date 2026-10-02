@@ -87,15 +87,17 @@ const INDEPENDENT_PACKAGES: readonly IndependentPackage[] = [
     why:
       'Electron native shell (main + preload + loopback server) for the native-shell program. ' +
       'Nothing in the web graph imports it and no web build/deploy depends on it; its `electron` ' +
-      'devDependency postinstalls a ~100 MB platform binary and it carries its own @playwright/test, ' +
-      "neither of which ci.yml's ~/.npm cache covers — workspace membership would charge every CI " +
-      'job in the repo for a package only the desktop lane uses (the packages/present-shell ' +
-      'precedent, one entry up). Its tests are the Playwright boot/supervision harness run by ' +
-      '`task desktop:e2e` (local lane today; the CI job lands later with its own owner sign-off ' +
-      'checkpoint per the 2026-09-03 GATING-light answer) — see testsWiredIn.',
+      'devDependency pulls a ~100 MB platform binary on first run and it carries its own ' +
+      "@playwright/test, neither of which ci.yml's ~/.npm cache covers — workspace membership " +
+      'would charge every CI job in the repo for a package only the desktop lanes use (the ' +
+      'packages/present-shell precedent, one entry up). Its tsc runs inside `task typecheck` and ' +
+      'its rig-store node:test suite inside `task test` (test:desktop), both over the binary-free ' +
+      '`--ignore-scripts` install of its own lockfile (desktop:deps). The Playwright ' +
+      'boot/supervision harness stays `task desktop:e2e`, local only — its CI job needs the ' +
+      "owner's wall-time sign-off (the 2026-09-03 GATING-light answer) — see testsWiredIn.",
     testsWiredIn: {
       laneFile: 'Taskfile.yml',
-      namesTestEntry: 'apps/desktop/e2e/boot.spec.ts',
+      namesTestEntry: 'apps/desktop/src/rig-store.test.cjs',
     },
   },
 ];

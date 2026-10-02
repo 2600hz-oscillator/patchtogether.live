@@ -307,13 +307,17 @@ tasks:
 
   # ---------------- Type check / lint ----------------
   typecheck:
-    desc: Type-check every workspace
+    desc: Type-check every workspace + the standalone apps/desktop shell
     # docs:ensure first: svelte-check must resolve the GENERATED (gitignored)
     # module-docs.generated.ts import in module-manifest.ts / Canvas.svelte,
     # which doesn't exist on a fresh checkout.
-    deps: [docs:ensure]
+    # desktop:deps: apps/desktop is NOT a workspace (own lockfile — see that
+    # task), so `--workspaces` never reaches it. Its tsc is named below or it
+    # runs nowhere; bridge.ts's preload-drift assertion gates on that line.
+    deps: [docs:ensure, desktop:deps]
     cmds:
       - npm run typecheck --workspaces --if-present
+      - npm run typecheck --prefix apps/desktop
 
   lint:
     desc: Lint TS/Svelte (ESLint) + shell (ShellCheck). The real gate — see #1504.
@@ -371,14 +375,15 @@ tasks:
     # generation is now the explicit `task test:emit-manifest` target, which
     # every lane that READS the manifest declares as a dep.
     #
-    # test:present-shell is NOT reached by any `-w` / `--workspaces` form:
-    # present-shell is deliberately not an npm workspace, so it has to be named
-    # here or it is in no lane at all (#1496).
+    # test:present-shell and test:desktop are NOT reached by any `-w` /
+    # `--workspaces` form: neither package is an npm workspace (on purpose), so
+    # each has to be named here or it is in no lane at all (#1496).
     cmds:
       - npm test -w {{.DSP}}
       - npm test -w {{.SERVER}}
       - npm test -w {{.WEB}}
       - task: test:present-shell
+      - task: test:desktop
       - task: test:scripts
 
   test:present-shell:
@@ -400,6 +405,20 @@ tasks:
     # unit lane rather than silently un-testing the package again.
     cmds:
       - node --test packages/present-shell/parse-features.test.cjs
+
+  test:desktop:
+    desc: Run apps/desktop's node:test suite (the rig store) against a fresh tsc build — the package is deliberately NOT an npm workspace
+    # Same shape, same reason as test:present-shell (#1496): a package outside
+    # root `workspaces` is in no lane unless a task names its tests.
+    # rig-store.test.cjs requires tsc's OUTPUT (dist/rig-store.js, gitignored),
+    # so the package compiles first. rig-store.ts imports only node:fs and
+    # node:path, so nothing here loads `electron` and no binary is ever fetched.
+    # scripts/package-workspace-membership.test.ts asserts THIS file still names
+    # the entry point below; the Playwright harness stays desktop:e2e (local).
+    deps: [desktop:deps]
+    cmds:
+      - npm run build --prefix apps/desktop
+      - node --test apps/desktop/src/rig-store.test.cjs
 
   test:one:
     desc: |
@@ -1615,10 +1634,40 @@ tasks:
       - bash scripts/helpers.sh status all
 
   desktop:install:
-    desc: Install apps/desktop deps (standalone package — run once per checkout).
+    desc: Install apps/desktop deps for RUNNING the shell (standalone package — once per checkout). The first `electron .` then fetches the Electron binary; the typecheck/unit lanes go through desktop:deps instead and never do.
     dir: apps/desktop
     cmds:
       - npm install
+
+  desktop:deps:
+    desc: |
+      Install apps/desktop's devDependencies for the typecheck + unit lanes —
+      electron's bundled electron.d.ts, @types/*, typescript, @playwright/test
+      (the e2e tsconfig) — and NOT the Electron binary. Standalone lockfile, so
+      neither `task install` nor CI's node_modules cache covers the package;
+      measured 0.95 s with a warm npm cache, 2.6 s with an empty one. electron
+      44.1.1 has no lifecycle script (its ~100 MB zip is fetched lazily by the
+      first `electron .`, index.js → install.js) and tsc reads only
+      electron.d.ts; --ignore-scripts keeps the lane free of ANY package script
+      whatever a future pin does. `npm ci` on a fresh tree (CI, new checkout);
+      incremental `npm install` when node_modules already exists, so a
+      developer's downloaded binary is never deleted. The lockfile-hash stamp
+      makes a repeat run a no-op — the dsp:build `status:` idiom.
+    dir: apps/desktop
+    vars:
+      LOCK_HASH:
+        sh: '{ sha256sum 2>/dev/null || shasum -a 256; } < package-lock.json | cut -d" " -f1'
+    status:
+      - test "$(cat node_modules/.pt-lockhash 2>/dev/null)" = "{{.LOCK_HASH}}"
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -d node_modules ]; then
+          npm install --ignore-scripts --no-audit --no-fund
+        else
+          npm ci --ignore-scripts --no-audit --no-fund
+        fi
+        echo "{{.LOCK_HASH}}" > node_modules/.pt-lockhash
 
   desktop:build:web:
     desc: |
@@ -1643,12 +1692,13 @@ tasks:
       running gesture-free, zero pageerrors/extra windows. The CI job comes
       later with its own owner sign-off checkpoint. Needs desktop:install +
       desktop:build:web once first.
-    # LANE ANCHOR for scripts/package-workspace-membership.test.ts:
-    # apps/desktop is deliberately NOT an npm workspace (see the gate's
-    # INDEPENDENT_PACKAGES entry), and THIS task is the lane that runs its
-    # tests. Canonical entry: apps/desktop/e2e/boot.spec.ts — playwright.config
-    # testDir ./e2e globs it plus every sibling spec, so new specs join the
-    # lane without editing this file; renaming the boot spec reddens the gate.
+    # LOCAL ONLY — not the membership-gate anchor: apps/desktop is deliberately
+    # NOT an npm workspace (see the gate's INDEPENDENT_PACKAGES entry) and
+    # scripts/package-workspace-membership.test.ts wires it through
+    # test:desktop + `task typecheck`, the required lanes that do run in CI.
+    # No ci.yml job runs THIS harness without the owner's wall-time sign-off.
+    # playwright.config testDir ./e2e globs boot.spec.ts plus every sibling
+    # spec, so new specs join the harness without editing this file.
     dir: apps/desktop
     cmds:
       - npm run e2e
