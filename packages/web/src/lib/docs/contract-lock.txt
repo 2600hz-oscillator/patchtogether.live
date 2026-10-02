@@ -993,6 +993,19 @@ dx7 family dx7-op-detail kind=other prefix=dx7-op-detail
 dx7 family dx7-operator-map kind=cell prefix=dx7-op-tile
 dx7 family dx7-preset-select kind=other prefix=dx7-preset-select
 dx7 family dx7-syx-input kind=other prefix=dx7-syx-input
+edgefader meta domain=video
+edgefader in fader cv param=fader cvScale=linear
+edgefader in in_a video
+edgefader in in_b video
+edgefader in melt_gate gate param=meltGate edge=gate
+edgefader in thickness cv param=thickness cvScale=linear
+edgefader in threshold cv param=threshold cvScale=linear
+edgefader out out video
+edgefader param fader 0..1 linear default=0.5
+edgefader param melt 0..1 discrete default=0
+edgefader param meltGate 0..1 linear default=0
+edgefader param thickness 1..8 linear default=2 unit=px
+edgefader param threshold 0..1 linear default=0.2
 edges meta domain=video
 edges in in video
 edges in thickness cv param=thickness cvScale=linear
