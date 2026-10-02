@@ -51,6 +51,8 @@ import {
 } from './push2-sysex';
 import type { Push2LedSpec } from './push2-map';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
+import { nativeAvailable } from '$lib/platform/native';
 
 // Singleton state
 let access: MidiFullAccessLike | null = null;
@@ -287,11 +289,30 @@ export function bind(inputId: string, outputId: string): boolean {
   return true;
 }
 
-/** Auto-bind the first enumerated Push 2 pair, if any. Returns the bound pair. */
+/**
+ * PURE: which pair the auto-bind takes. The desktop pick (the rig store's
+ * `push.deviceId`, an INPUT port id written by the hardware splash) wins when it
+ * is in the roster; otherwise the first enumerated pair, which is the browser's
+ * only rule — a rig pick that is not present (unplugged, or a different Push)
+ * falls back rather than binding nothing.
+ */
+export function preferredPush2Port(ports: readonly Push2Port[], rigInputId: string | null): Push2Port | null {
+  if (ports.length === 0) return null;
+  if (rigInputId) {
+    const picked = ports.find((p) => p.inputId === rigInputId);
+    if (picked) return picked;
+  }
+  return ports[0];
+}
+
+/** Auto-bind a Push 2 pair, if any: under the native shell the operator's
+ *  splash pick first (the web binds in the rack and has no pick), else the
+ *  first enumerated. Returns the bound pair. */
 export function autoBind(): Push2Port | null {
   const ports = enumeratePush2Ports();
-  if (ports.length === 0) return null;
-  const p = ports[0];
+  const rigInputId = nativeAvailable() ? rigBindings().getPush()?.deviceId ?? null : null;
+  const p = preferredPush2Port(ports, rigInputId);
+  if (!p) return null;
   return bind(p.inputId, p.outputId) ? p : null;
 }
 
@@ -475,6 +496,14 @@ export async function installSimulatedPush2(): Promise<SimulatedPush2> {
     ledAt: (addr) => (unit.lastSent.has(addr) ? unit.lastSent.get(addr)! : null),
   };
   return simInstalled;
+}
+
+/** Inject a fake access directly (unit tests of the roster/bind path — the
+ *  launchpad-device `__test_setAccess` shape). Pass null to clear. */
+export function __test_setPush2Access(fake: MidiFullAccessLike | null): void {
+  access = fake;
+  connectStarted = !!fake;
+  connectFailed = false;
 }
 
 /** Reset ALL singleton state — test isolation between cases. */

@@ -203,15 +203,16 @@
   // Owner rule: force setup only on FIRST RUN (the shell main-process decides
   // that) or a MISSING BOUND DEVICE. This is the missing-device half — when the
   // rack mounts, if a device the operator already bound is now gone (a camera
-  // absent from enumerateDevices, a display fingerprint unresolvable, an es9/ptz
-  // helper down), bounce to /preflight so they can re-bind. Lives in the ROUTE,
-  // not Canvas (another agent owns Canvas's auto-route work).
+  // absent from enumerateDevices, the pt-ptz helper behind a picked PT-PTZ port
+  // down), bounce to /preflight so they can re-bind. Lives in the ROUTE, not
+  // Canvas (another agent owns Canvas's auto-route work).
   //
   // ⚠ SOUND BY CONSTRUCTION: `evaluateRigRelaunch` short-circuits an UNBOUND rig
-  // (touching no device API, never prompting) and bounces only on a POSITIVE
-  // absence — so the ~hundreds of ordinary /rack e2e specs, whose rig is empty,
-  // are unaffected. Fire-and-forget after the store's first load; a bounce
-  // simply navigates away and this component tears down.
+  // (touching no device API, never prompting), consumes the splash's one-shot
+  // Enter-rack skip first, and bounces only on a POSITIVE absence — so the
+  // ~hundreds of ordinary /rack e2e specs, whose rig is empty, are unaffected.
+  // Fire-and-forget after the store's first load; a bounce simply navigates
+  // away and this component tears down.
   //
   // ⚠ NATIVE SHELL ONLY (owner ruling 2026-09-15). A plain browser has no
   // rig-setup page: every device binds IN THE RACK and a stale camera/display

@@ -3,13 +3,22 @@
 // dance), NOT the User port, and never an IAC / virtual bus. Covers the three host
 // name shapes (macOS role words, Windows numbered interfaces, Linux ALSA sub-
 // devices). No Web MIDI, no hardware — the selection logic is fully pure.
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   pushPortRole,
   isPush2PortName,
   hasSecondaryInterfaceMarker,
   selectPush2Ports,
+  autoBind,
+  isBound,
+  preferredPush2Port,
+  __test_resetPush2,
+  __test_setPush2Access,
 } from './push2-device.svelte';
+import { RigBindingStore, emptyRigBindings, setRigBindingsForTests } from '$lib/graph/device-slot-bindings';
+import { setNativeAvailableForTests } from '$lib/platform/native';
+import type { MidiInputLike } from '$lib/audio/modules/midi-cv-buddy';
+import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 
 const ref = (id: string, name: string) => ({ id, name });
 
@@ -102,5 +111,86 @@ describe('selectPush2Ports — binds the LIVE port', () => {
 
   it('no Push present → no pairs', () => {
     expect(selectPush2Ports([ref('a', 'IAC Driver Bus 1')], [ref('b', 'Scarlett 2i2')])).toHaveLength(0);
+  });
+});
+
+// ── THE DESKTOP PICK (hardware splash → rig store → autoBind) ───────────────
+//
+// The splash's Push 2 row writes `rig.push.deviceId` (the LIVE pair's INPUT
+// id). Under the native shell `autoBind` binds THAT pair when it is present
+// and falls back to the first enumerated pair otherwise; the browser (no
+// splash, no pick) keeps its one rule. Driven through a fake access so the
+// roster + bind path runs, not just the pure chooser.
+describe('Push 2 — the desktop pick', () => {
+  const pair = (inputId: string, outputId: string, name = 'Ableton Push 2 Live Port') => ({ inputId, outputId, name });
+
+  function twoPushes() {
+    const input = (id: string): MidiInputLike =>
+      ({ id, name: 'Ableton Push 2 Live Port', manufacturer: 'Ableton AG', state: 'connected', onmidimessage: null }) as unknown as MidiInputLike;
+    const output = (id: string): MidiOutputLike =>
+      ({ id, name: 'Ableton Push 2 Live Port', manufacturer: 'Ableton AG', state: 'connected', send: () => {} }) as unknown as MidiOutputLike;
+    const inA = input('inA');
+    const inB = input('inB');
+    __test_setPush2Access({
+      inputs: new Map([[inA.id, inA], [inB.id, inB]]),
+      outputs: new Map([['outA', output('outA')], ['outB', output('outB')]]),
+      onstatechange: null,
+    });
+    return { inA, inB };
+  }
+
+  async function shellRig() {
+    const store = new RigBindingStore({ load: emptyRigBindings, save: () => {}, subscribe: () => () => {} });
+    setRigBindingsForTests(store);
+    setNativeAvailableForTests(true);
+    await store.whenReady();
+    return store;
+  }
+
+  afterEach(() => {
+    __test_resetPush2();
+    setRigBindingsForTests(null);
+    setNativeAvailableForTests(null);
+  });
+
+  it('preferredPush2Port — pick present → the pick; pick absent / none → the first pair; empty → null', () => {
+    const ports = [pair('inA', 'outA'), pair('inB', 'outB')];
+    expect(preferredPush2Port(ports, 'inB')).toEqual(pair('inB', 'outB'));
+    expect(preferredPush2Port(ports, 'inA')).toEqual(pair('inA', 'outA'));
+    expect(preferredPush2Port(ports, 'unplugged')).toEqual(pair('inA', 'outA'));
+    expect(preferredPush2Port(ports, null)).toEqual(pair('inA', 'outA'));
+    expect(preferredPush2Port([], 'inA')).toBeNull();
+  });
+
+  it('under the shell autoBind binds the PICKED pair (the second one — the browser rule would take the first)', async () => {
+    const store = await shellRig();
+    const { inA, inB } = twoPushes();
+    store.setPush({ deviceId: 'inB' });
+    expect(autoBind()).toEqual(pair('inB', 'outB'));
+    expect(isBound()).toBe(true);
+    expect(typeof inB.onmidimessage, 'the pick holds the handler').toBe('function');
+    expect(inA.onmidimessage, 'the unpicked unit is left alone').toBeNull();
+  });
+
+  it('under the shell an ABSENT pick falls back to the first pair, and no pick at all is the first pair', async () => {
+    const store = await shellRig();
+    const { inA } = twoPushes();
+    store.setPush({ deviceId: 'on-another-machine' });
+    expect(autoBind()).toEqual(pair('inA', 'outA'));
+    expect(typeof inA.onmidimessage).toBe('function');
+    __test_resetPush2();
+    const again = twoPushes();
+    store.setPush(null);
+    expect(autoBind()).toEqual(pair('inA', 'outA'));
+    expect(typeof again.inA.onmidimessage).toBe('function');
+  });
+
+  it('NEGATIVE CONTROL — in the browser the pick is NOT consulted: the first pair binds even with a rig pick present', async () => {
+    const store = await shellRig();
+    setNativeAvailableForTests(false);
+    const { inB } = twoPushes();
+    store.setPush({ deviceId: 'inB' });
+    expect(autoBind()).toEqual(pair('inA', 'outA'));
+    expect(inB.onmidimessage).toBeNull();
   });
 });

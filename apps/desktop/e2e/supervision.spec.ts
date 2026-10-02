@@ -3,7 +3,7 @@
 // paths — the same seam a packaged shell resolves Resources/helpers through):
 //
 //   1. supervisor boots stubs to 'running'; status surfaced via
-//      ptNative.helperStatus (get + subscribe); missing binary = 'stopped'
+//      ptNative.helperStatus (get + subscribe); missing binary = 'unavailable'
 //      with detail, no spawn spam.
 //   2. origin allowlist on the SUPERVISED sockets: disallowed Origin → 403,
 //      loopback/patchtogether origins → protocol reply (mirrors BridgeKit's
@@ -86,8 +86,9 @@ async function launchShell(): Promise<{
       PT_HELPER_VST_BIN: process.execPath,
       PT_HELPER_VST_ARGS: `${path.join(STUBS, 'vst-stub.js')} --port ${vstPort} --park-ms 20000`,
       PT_HELPER_VST_PORT: String(vstPort),
-      // No PTZ stub — its row must read 'stopped: binary not found', proving
-      // a missing helper degrades to a status row, not spawn churn.
+      // No PTZ stub — its row must read 'unavailable: binary not found',
+      // proving a missing helper degrades to a status row, not spawn churn
+      // (and not `stopped`: that state is "positively down" to the rig guard).
       PT_HELPER_PTZ_BIN: '/nonexistent/pt-ptz',
       PT_HELPER_BACKOFF_BASE_MS: '200',
       // Keep the attempt counter intact across a whole test.
@@ -234,7 +235,7 @@ test('supervisor boots stubs to running; status via ptNative; missing binary deg
     await waitForState(page, 'vst', 'running');
 
     const ptz = (await history(page, 'ptz')).at(-1);
-    expect(ptz?.state).toBe('stopped');
+    expect(ptz?.state).toBe('unavailable');
     expect(ptz?.detail).toContain('binary not found');
 
     // Clean first boots: starting → running, no restart noise.

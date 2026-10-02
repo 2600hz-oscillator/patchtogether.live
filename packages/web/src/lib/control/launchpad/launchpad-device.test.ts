@@ -208,3 +208,87 @@ describe('bindUnit — swapping L↔R inputs keeps BOTH inputs live (real-hardwa
     expect(rEv, 'inA press dispatched as unit R').toBeTruthy();
   });
 });
+
+// ── THE DESKTOP PICK (hardware splash → rig store → roster ranking) ─────────
+//
+// The splash's Launchpad row writes `rig.launchpad = { deviceId: <input id>,
+// mode }` — a unit plus the consumer it is reserved for. Under the native
+// shell `enumerateLaunchpadPorts(mode)` ranks that unit FIRST for its own
+// consumer (so `ports[0]` binders honour it) and LAST for any other consumer
+// (so a second unit is preferred, and a lone unit is still reachable). The
+// browser, which has no splash, keeps pure device order; so does any caller
+// that passes no mode — the pairing-by-index contract above is untouched.
+import { afterEach } from 'vitest';
+import { rankLaunchpadPortsForRig, type LaunchpadPort } from './launchpad-device.svelte';
+import { RigBindingStore, emptyRigBindings, setRigBindingsForTests } from '$lib/graph/device-slot-bindings';
+import { setNativeAvailableForTests } from '$lib/platform/native';
+
+describe('enumerateLaunchpadPorts — the desktop pick', () => {
+  const A: LaunchpadPort = { inputId: 'inA', outputId: 'outA', name: 'LPMiniMK3 MIDI In' };
+  const B: LaunchpadPort = { inputId: 'inB', outputId: 'outB', name: 'LPMiniMK3 MIDI In' };
+  const C: LaunchpadPort = { inputId: 'inC', outputId: 'outC', name: 'LPMiniMK3 MIDI In' };
+
+  function twoUnits(): void {
+    __test_setAccess(
+      fakeAccess(
+        [fakeInput('inA', 'LPMiniMK3 MIDI In'), fakeInput('inB', 'LPMiniMK3 MIDI In')],
+        [fakeOutput('outA', 'LPMiniMK3 MIDI Out'), fakeOutput('outB', 'LPMiniMK3 MIDI Out')],
+      ),
+    );
+  }
+
+  async function shellRig() {
+    const store = new RigBindingStore({ load: emptyRigBindings, save: () => {}, subscribe: () => () => {} });
+    setRigBindingsForTests(store);
+    setNativeAvailableForTests(true);
+    await store.whenReady();
+    return store;
+  }
+
+  afterEach(() => {
+    __test_resetLaunchpad();
+    setRigBindingsForTests(null);
+    setNativeAvailableForTests(null);
+  });
+
+  it('rankLaunchpadPortsForRig — own mode first, other mode last, absent/no pick = device order', () => {
+    const ports = [A, B, C];
+    expect(rankLaunchpadPortsForRig(ports, { deviceId: 'inB', mode: 'tetris' }, 'tetris')).toEqual([B, A, C]);
+    expect(rankLaunchpadPortsForRig(ports, { deviceId: 'inA', mode: 'launchcontrol' }, 'tetris')).toEqual([B, C, A]);
+    expect(rankLaunchpadPortsForRig(ports, { deviceId: 'unplugged', mode: 'tetris' }, 'tetris')).toEqual([A, B, C]);
+    expect(rankLaunchpadPortsForRig(ports, null, 'out-to-launch')).toEqual([A, B, C]);
+    // a lone reserved unit is still reachable by a different consumer
+    expect(rankLaunchpadPortsForRig([A], { deviceId: 'inA', mode: 'out-to-launch' }, 'tetris')).toEqual([A]);
+    // pure: the input is never mutated
+    expect(ports).toEqual([A, B, C]);
+  });
+
+  it('under the shell the clip launcher sees its reserved unit FIRST and SEQTRIS sees it LAST', async () => {
+    const store = await shellRig();
+    twoUnits();
+    store.setLaunchpad({ deviceId: 'inB', mode: 'launchcontrol' });
+    expect(enumerateLaunchpadPorts('launchcontrol').map((p) => p.inputId)).toEqual(['inB', 'inA']);
+    expect(enumerateLaunchpadPorts('tetris').map((p) => p.inputId)).toEqual(['inA', 'inB']);
+    expect(enumerateLaunchpadPorts('out-to-launch').map((p) => p.inputId)).toEqual(['inA', 'inB']);
+    // the mode select on the splash re-reserves the same unit
+    store.setLaunchpad({ deviceId: 'inB', mode: 'tetris' });
+    expect(enumerateLaunchpadPorts('tetris').map((p) => p.inputId)).toEqual(['inB', 'inA']);
+    expect(enumerateLaunchpadPorts('launchcontrol').map((p) => p.inputId)).toEqual(['inA', 'inB']);
+  });
+
+  it('under the shell with no pick, and for every caller that passes no mode, the roster is device order', async () => {
+    const store = await shellRig();
+    twoUnits();
+    expect(enumerateLaunchpadPorts('launchcontrol').map((p) => p.inputId)).toEqual(['inA', 'inB']);
+    store.setLaunchpad({ deviceId: 'inB', mode: 'launchcontrol' });
+    expect(enumerateLaunchpadPorts().map((p) => p.inputId), 'no mode = no ranking').toEqual(['inA', 'inB']);
+  });
+
+  it('NEGATIVE CONTROL — in the browser the pick is NOT consulted', async () => {
+    const store = await shellRig();
+    setNativeAvailableForTests(false);
+    twoUnits();
+    store.setLaunchpad({ deviceId: 'inB', mode: 'launchcontrol' });
+    expect(enumerateLaunchpadPorts('launchcontrol').map((p) => p.inputId)).toEqual(['inA', 'inB']);
+  });
+});

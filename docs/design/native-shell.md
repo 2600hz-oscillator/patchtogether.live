@@ -117,7 +117,10 @@ typecheck and unit lanes install it separately from its own lockfile
   version and channel names; a compile-time equality assertion in `bridge.ts` keeps
   the two copies from drifting.
 - `supervisor.ts` — one per helper, `stopped → starting → running →
-  restarting(backoff+jitter) → crash-looped`, plus a terminal `foreign-listener`.
+  restarting(backoff+jitter) → crash-looped`, plus a terminal `foreign-listener`
+  and `unavailable` (no binary at the configured path — a status row, and
+  deliberately not `stopped`: the relaunch guard reads `stopped` as "positively
+  down" and `unavailable` as indeterminate).
   **Health is process alive AND hello accepted AND the port is ours.** The third
   clause is not theoretical: a probe that resolved on any non-binary frame reported
   `running` for a child that had already exited, while the renderer talked to a
@@ -138,18 +141,35 @@ different question:
    still focuses the existing instance, preserving its active performance.
 2. **the renderer** decides whether a *configured* rig is still intact:
    `evaluateRigRelaunch()` runs when `/rack` mounts and bounces back to
-   `/preflight` when a bound camera, display fingerprint, or configured helper is
-   positively absent.
+   `/preflight` when a bound camera is positively absent, or when the pt-ptz
+   helper behind a picked PT-PTZ port is positively down (`stopped`,
+   `crash-looped`, `foreign-listener`).
 
 **Bounce only on a positive absence.** `enumerateDevices` before a grant returns
-redacted entries, `getScreenDetails()` off a gesture rejects, and a plain browser
-has no supervisor at all — each is *indeterminate*, and the rule is "keep the
-rack". This is also what keeps the guard off the hundreds of ordinary `/rack`
-specs: an unbound rig gathers no evidence and can never prompt.
+redacted entries, a plain browser has no supervisor at all, and a helper whose
+binary was never built reports `unavailable` — each is *indeterminate*, and the
+rule is "keep the rack". This is also what keeps the guard off the hundreds of
+ordinary `/rack` specs: an unbound rig gathers no evidence and can never prompt.
+
+**Every control on the splash has a reader, and only a readable pick can arm the
+guard.** Displays are not on the splash (the shell opens no output windows — see
+"Not built"; an output written by the rack's own present path is applied by
+nobody under the shell, so the guard has no display leg). The ES-9 section is a
+status row with no control: the es9 module connects to its bridge from the rack,
+and the former output-push policy select wrote a key nothing read. The picks that
+remain are consumed in the device layer: cameras (`node-camera-source`), Push 2
+(`push2-device` `autoBind`), Launchpad (`launchpad-device` roster ranking by the
+reserved mode), PTZ (`ptz-midi` `@auto` resolution), LinnStrument, TRAILS, and the
+gamepad (`gamepad` poll slot resolution).
+
+**Enter rack never bounces straight back.** The splash arms a one-shot skip in
+`sessionStorage` (it survives the same-window `/preflight` → `/rack` swap and
+dies with the window); the next `/rack` mount consumes it and keeps the rack.
+A later reload or relaunch runs the guard again.
 
 `/preflight` is an ordinary web route, not a shell-native panel, and it reuses the
-app's own enumeration (screen identity, the camera pattern, and controller MIDI
-rosters). The route is desktop-only; browsers connect devices from the rack.
+app's own enumeration (the camera pattern and controller MIDI rosters). The route
+is desktop-only; browsers connect devices from the rack.
 
 TRAILS has a saved input selection in the per-machine rig record. Desktop setup
 and the module runtime restore it after the store hydrates, without another
@@ -165,7 +185,9 @@ Browser TRAILS retains its gesture-triggered, name-matched connection behavior.
 Stated so a reader does not infer them from the sections above:
 
 - **Output windows and the display map** — `main.ts` creates no output
-  `BrowserWindow`s and holds no display map. The earlier probe passed
+  `BrowserWindow`s and holds no display map, and the hardware splash offers no
+  display rows (a pick there would be applied by nobody; present outputs from
+  the rack). The earlier probe passed
   same-origin opener→popup DOM access, painting, and advancing frames on one
   display. Cross-display blitting still awaits a recorded hardware result from
   [`task desktop:spike`](../../apps/desktop/SPIKE-OPENER-DISPLAY.md). The harness
@@ -191,10 +213,11 @@ Stated so a reader does not infer them from the sections above:
 Crossfade semantics and the renderer-crash guarantee for output windows are
 stated with their costs in [ADR-011](../adr/011-rig-lifetime-versus-patch-lifetime.md)
 (Decision 4 and Consequences) — do not restate or weaken them here. Open on this
-doc's own ground: signing sign-off, which blocks distribution; the ES-9
-push-policy caller (hardware verification outstanding); and whether collab is in
-v1 — if it is, the relay re-auth path must stop navigating the renderer away
-first.
+doc's own ground: signing sign-off, which blocks distribution; whether the ES-9
+helper should ever auto-connect under the shell (the splash's former push-policy
+select had no caller and was removed; a control returns only with a reader, and
+hardware verification is outstanding either way); and whether collab is in v1 —
+if it is, the relay re-auth path must stop navigating the renderer away first.
 
 DOOM is excluded by name from every phase of this program and nothing proceeds
 without explicit owner approval.

@@ -18,6 +18,8 @@
 // on any binding/port change.
 
 import { writable } from 'svelte/store';
+import { rigBindings } from '$lib/graph/device-slot-bindings';
+import { nativeAvailable } from '$lib/platform/native';
 import {
   MIDI_PROMPT_TIMEOUT_MS,
   midiOutcomeMessage,
@@ -96,6 +98,7 @@ function bump(): void {
 let access: PtzMidiAccessLike | null = null;
 let accessKind: 'idle' | 'unsupported' | 'denied' | 'no-prompt' | 'granted' = 'idle';
 let connectInFlight = false;
+let unsubRig: (() => void) | null = null;
 
 function isPtzName(name: string | null | undefined): boolean {
   return (name ?? '').toUpperCase().startsWith(PTZ_PORT_PREFIX);
@@ -103,6 +106,22 @@ function isPtzName(name: string | null | undefined): boolean {
 
 function isLive(p: MidiPortLike): boolean {
   return p.state !== 'disconnected';
+}
+
+/**
+ * PURE: the port NAME an `@auto` binding (selector null) takes from the live
+ * PT-PTZ names. The desktop pick — the rig store's `ptz.deviceId`, a port name
+ * written by the hardware splash — wins when it is live; otherwise the first
+ * PT-PTZ name in roster order, the browser's only rule (the web has no pick).
+ */
+export function preferredPtzAutoPort(liveNames: readonly string[], rigName: string | null): string | null {
+  if (rigName && liveNames.includes(rigName)) return rigName;
+  return liveNames.find((n) => isPtzName(n)) ?? null;
+}
+
+/** The desktop pick, or null in the browser / when nothing is picked. */
+function rigPtzName(): string | null {
+  return nativeAvailable() ? rigBindings().getPtz()?.deviceId ?? null : null;
 }
 
 export function listPtzOutputNames(): string[] {
@@ -195,8 +214,16 @@ class BindingImpl {
       );
       return;
     }
-    const match = (p: MidiPortLike): boolean =>
-      isLive(p) && (this.selector === null ? isPtzName(p.name) : (p.name ?? '') === this.selector);
+    // `@auto` resolves the desktop pick first (preferredPtzAutoPort), then the
+    // first PT-PTZ pair; an explicit selector is exact, as before.
+    const wantName =
+      this.selector === null
+        ? preferredPtzAutoPort(
+            [...access.outputs.values()].filter((o) => isLive(o) && isPtzName(o.name)).map((o) => o.name ?? ''),
+            rigPtzName(),
+          )
+        : this.selector;
+    const match = (p: MidiPortLike): boolean => isLive(p) && wantName !== null && (p.name ?? '') === wantName;
     const out = [...access.outputs.values()].find(match) ?? null;
     const inp = [...access.inputs.values()].find((i) => match(i as MidiPortLike)) ?? null;
     // A re-resolve that lands on the SAME pair while a handshake is done (or
@@ -370,6 +397,9 @@ export function connectPtzMidi(request?: PtzRequestFn): Promise<void> {
       access = a;
       accessKind = 'granted';
       a.onstatechange = () => resolveAll();
+      // A later desktop pick re-resolves every `@auto` binding, the TRAILS /
+      // LinnStrument shape (one subscription per access lifetime).
+      if (!unsubRig) unsubRig = rigBindings().subscribe(() => resolveAll());
       resolveAll();
     })
     .catch(() => {
@@ -385,6 +415,8 @@ export function __resetPtzMidiForTest(): void {
   bindings.clear();
   inputBindings.clear();
   inputClaim.detach();
+  unsubRig?.();
+  unsubRig = null;
   if (access) access.onstatechange = null;
   access = null;
   accessKind = 'idle';

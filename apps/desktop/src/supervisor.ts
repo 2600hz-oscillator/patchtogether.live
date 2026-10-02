@@ -4,6 +4,9 @@
 // State machine (build-brief P3):
 //   stopped → starting → running → restarting(backoff+jitter) → crash-looped
 //                              ↘ foreign-listener (terminal)
+//   unavailable (no binary to spawn — a status row, never a verdict about
+//                the rig; the renderer's relaunch guard reads it as
+//                indeterminate, like a plain browser's missing supervisor)
 //
 // Health = process alive AND hello accepted AND THE PORT IS OURS.
 //
@@ -62,7 +65,13 @@ export type HelperState =
   /** Something answered on this helper's port that we did not spawn. Terminal:
    *  reported with the holding pid/command, never killed, never restarted into
    *  a port we cannot have. */
-  | 'foreign-listener';
+  | 'foreign-listener'
+  /** No binary at the configured path (never built, a fresh checkout, a
+   *  platform without it). Distinct from `stopped` on purpose: a helper that
+   *  was never there is not "positively absent" hardware, and the rig
+   *  relaunch guard (packages/web rig-relaunch-guard.ts) must not bounce a
+   *  configured PTZ pick on it. */
+  | 'unavailable';
 
 /** Control-plane protocol the shell speaks. Helpers already put this on the
  *  wire (es9 + vst, stubs and real bridges alike); until this change nothing
@@ -105,7 +114,7 @@ export interface HelperStatus {
 
 export interface HelperSpec {
   id: string;
-  /** Absolute binary path, or null = unavailable (stays 'stopped' with detail). */
+  /** Absolute binary path, or null = unavailable (reports 'unavailable' with detail). */
   binary: string | null;
   args: string[];
   /** WebSocket port for the hello health probe; null = process-alive only. */
@@ -315,7 +324,7 @@ export class HelperSupervisor {
     this.stopping = false;
     this.terminal = false;
     if (!this.spec.binary || !fs.existsSync(this.spec.binary)) {
-      this.transition('stopped', `binary not found: ${this.spec.binary ?? '(unset)'}`);
+      this.transition('unavailable', `binary not found: ${this.spec.binary ?? '(unset)'}`);
       return;
     }
     this.spawnOnce();

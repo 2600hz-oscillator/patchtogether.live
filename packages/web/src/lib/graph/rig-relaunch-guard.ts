@@ -2,56 +2,70 @@
 //
 // Owner rule (native-shell plan): force the pre-flight setup screen only on a
 // FIRST RUN or when a device the operator ALREADY BOUND has gone missing. The
-// shell's main process decides first-run vs configured (rig-store.ts →
-// initialRoute in main.ts); THIS module is the second half — the renderer check
-// that runs when `/rack` mounts and bounces back to `/preflight` when a bound
-// device is no longer present:
+// shell's main process opens /preflight on every launch (main.ts); THIS module
+// is the second half — the renderer check that runs when `/rack` mounts and
+// bounces back to `/preflight` when a bound device is no longer present:
 //
 //   * a bound CAMERA whose deviceId AND label are absent from enumerateDevices,
-//   * a bound DISPLAY whose fingerprint no longer resolves against the live
-//     screen set (screen-identity.resolveScreens), or
-//   * an ES-9 / PTZ helper the rig configured that the supervisor reports down.
+//   * a PTZ port the operator picked whose pt-ptz helper the supervisor reports
+//     DOWN (the helper mints the PT-PTZ virtual MIDI ports, so a dead helper
+//     means the picked port is gone).
+//
+// What it deliberately does NOT reason over, because nothing under the shell
+// consumes the binding and a bounce would land on a splash that cannot fix it:
+//
+//   * DISPLAYS — `main.ts` creates no output windows and holds no display map
+//     (docs/design/native-shell.md "Not built"); the rack's own present path
+//     still writes `outputs` so a browser rig survives File→New, but under the
+//     shell that record is applied by nobody, so it is not a "bound device".
+//   * ES-9 — the es9 module connects to its bridge from the rack on its own;
+//     the splash carries only the helper's status row, not a binding.
 //
 // ── SOUNDNESS: BOUNCE ONLY ON A POSITIVE ABSENCE ────────────────────────────
 //
 // The planner NEVER bounces on missing evidence. `enumerateDevices` before a
-// permission grant returns redacted entries; `getScreenDetails()` off a user
-// gesture rejects; a plain browser has no helper supervisor at all. Each of
-// those is INDETERMINATE (`null`, or a redacted list), and the rule is "keep
-// the rack" — a false bounce would strand the operator on /preflight for a
-// device that is actually fine. A bounce fires only when the live evidence is
-// real AND positively lacks the bound device. That is what keeps the guard off
-// the ~hundreds of ordinary /rack e2e specs: an UNBOUND rig gathers no evidence
-// (evaluateRigRelaunch short-circuits) and can never prompt or bounce.
+// permission grant returns redacted entries; a plain browser has no helper
+// supervisor at all; a helper whose binary was never built reports
+// `unavailable`. Each of those is INDETERMINATE (`null`, a redacted list, or
+// the `unavailable` state), and the rule is "keep the rack" — a false bounce
+// would strand the operator on /preflight for a device that is actually fine,
+// and a bounce the splash cannot cure is a /preflight ↔ /rack loop. A bounce
+// fires only when the live evidence is real AND positively lacks the bound
+// device. That is what keeps the guard off the ~hundreds of ordinary /rack e2e
+// specs: an UNBOUND rig gathers no evidence (evaluateRigRelaunch
+// short-circuits) and can never prompt or bounce.
+//
+// ── ENTER RACK NEVER BOUNCES STRAIGHT BACK ──────────────────────────────────
+//
+// The splash's Enter rack arms a one-shot skip (`armRelaunchGuardSkip`, in
+// sessionStorage, which survives the shell's same-window /preflight → /rack
+// swap and dies with the window). The next `/rack` mount consumes it and keeps
+// the rack whatever the evidence says — the operator has JUST reviewed the
+// hardware. A later reload or relaunch runs the guard again.
 //
 // ── ⚠ NATIVE SHELL ONLY (owner ruling 2026-09-15) ───────────────────────────
 //
 // `/preflight` is a shell feature — there is nothing to bounce TO in a plain
 // browser, where every device binds in the rack (the slot pickers, the
 // audio-out picker, the CONNECT cells). The guard shipped in #2374 ran in the
-// browser as well, and a camera or display the operator had bound FROM THE
-// RACK that was absent at the next mount bounced dev to /preflight, whose
-// "enter rack" re-ran the same guard on the same store and bounced straight
-// back (rack/+page.svelte). Worse, the bounce tore Canvas down under the
-// eager-boot reconcile pass of a restored video rack, so every remaining node
-// and edge logged "no engine registered for domain" (Canvas.svelte onDestroy
-// disposes the engine; engine.ts dispose() clears the domain map). So
+// browser as well, and a camera the operator had bound FROM THE RACK that was
+// absent at the next mount bounced dev to /preflight, whose "enter rack" re-ran
+// the same guard on the same store and bounced straight back
+// (rack/+page.svelte). Worse, the bounce tore Canvas down under the eager-boot
+// reconcile pass of a restored video rack, so every remaining node and edge
+// logged "no engine registered for domain" (Canvas.svelte onDestroy disposes
+// the engine; engine.ts dispose() clears the domain map). So
 // `evaluateRigRelaunch` is a NO-OP outside the shell: no evidence is gathered,
 // no device API is touched, `{ bounce: false }` is returned. The pure planner
 // below is unchanged; the shell's Tier-A harness and the shell-stubbed e2e
 // still exercise the bounce.
 //
 // PURE planner + thin impure gatherers, the device-slots.ts convention: every
-// decision is a unit test against plain fixtures; only the three enumerators
-// touch the browser, each guarded so an import chain never throws.
+// decision is a unit test against plain fixtures; only the enumerators touch
+// the browser, each guarded so an import chain never throws.
 
 import { nativeAvailable } from '$lib/platform/native';
-import { describeScreen, resolveScreens, type ScreenDescriptor } from '$lib/ui/modules/screen-identity';
-import {
-  CAMERA_SLOT_NAMES,
-  OUTPUT_SLOT_NAMES,
-  type OutputSlotName,
-} from './device-slots';
+import { CAMERA_SLOT_NAMES } from './device-slots';
 import type { RigBindings } from './device-slot-bindings';
 
 /** A live camera device, from `enumerateDevices()` filtered to videoinput. */
@@ -60,21 +74,12 @@ export interface LiveVideoInput {
   label: string;
 }
 
-/** A live display, id-tagged for a stable option key (assignScreenIds). */
-export interface LiveScreen {
-  id: string;
-  descriptor: ScreenDescriptor;
-}
-
 /** Everything the planner reasons over. A `null` field is INDETERMINATE — the
  *  evidence could not be gathered — and the planner treats it as "keep", never
  *  as "missing". */
 export interface RigPresenceEvidence {
   /** Live video inputs, or null when enumeration is unavailable. */
   videoInputs: LiveVideoInput[] | null;
-  /** Live screen fingerprints, or null when the Window Management API is
-   *  unavailable / not granted (no gesture on a route mount). */
-  screens: ScreenDescriptor[] | null;
   /** Helper id → state (shell only), or null in a plain browser. */
   helpers: Record<string, string> | null;
 }
@@ -89,7 +94,11 @@ export interface RelaunchDecision {
 
 /** Helper states that mean the helper is NOT going to answer — the supervisor
  *  is not mid-restart, it is down. `starting` / `restarting` are transient and
- *  do NOT bounce (a relaunch races the supervisor's own boot). */
+ *  do NOT bounce (a relaunch races the supervisor's own boot). `unavailable`
+ *  (no binary at the configured path, apps/desktop supervisor.ts) is NOT here
+ *  either: a helper that was never built is indeterminate about the rig, and
+ *  the splash cannot build it — bouncing on it is the loop this guard exists
+ *  to avoid. */
 const DOWN_HELPER_STATES: ReadonlySet<string> = new Set([
   'stopped',
   'crash-looped',
@@ -129,33 +138,12 @@ export function planRelaunchBounce(
     }
   }
 
-  // ── DISPLAYS ───────────────────────────────────────────────────────────
-  // Resolution is over the SET (screen-identity.resolveScreens): each live
-  // screen is claimed once, so an unresolvable saved output lands on -1.
-  if (ev.screens) {
-    const boundSlots = OUTPUT_SLOT_NAMES.filter((s) => bindings.outputs[s]);
-    if (boundSlots.length > 0) {
-      const saved = boundSlots.map((s) => bindings.outputs[s as OutputSlotName]!.screen);
-      const matched = resolveScreens(saved, ev.screens);
-      boundSlots.forEach((s, i) => {
-        if (matched[i] === -1) {
-          reasons.push(`display ${s} (${saved[i].label || 'unnamed'}) is not connected`);
-        }
-      });
-    }
-  }
-
-  // ── HELPERS (shell only) ─────────────────────────────────────────────────
-  // A helper is a "bound device" only when the operator configured its class:
-  // es9 config present, or a PTZ device picked (the pt-ptz helper is what mints
-  // the PT-PTZ virtual MIDI ports, so a down helper means the port is gone).
-  if (ev.helpers) {
-    if (bindings.es9 && isHelperDown(ev.helpers, 'es9')) {
-      reasons.push(`ES-9 helper is ${ev.helpers['es9']}`);
-    }
-    if (bindings.ptz && isHelperDown(ev.helpers, 'ptz')) {
-      reasons.push(`PTZ helper is ${ev.helpers['ptz']}`);
-    }
+  // ── PTZ HELPER (shell only) ──────────────────────────────────────────────
+  // The helper is a "bound device" only when the operator picked a PT-PTZ
+  // port on the splash — a positive binding with a consumer (audio/ptz-midi.ts
+  // resolves the pick), never a policy string.
+  if (ev.helpers && bindings.ptz && isHelperDown(ev.helpers, 'ptz')) {
+    reasons.push(`PTZ helper is ${ev.helpers['ptz']}`);
   }
 
   return { bounce: reasons.length > 0, reason: reasons.length ? reasons.join('; ') : null };
@@ -164,6 +152,41 @@ export function planRelaunchBounce(
 function isHelperDown(helpers: Record<string, string>, id: string): boolean {
   const st = helpers[id];
   return st !== undefined && DOWN_HELPER_STATES.has(st);
+}
+
+// ── THE ONE-SHOT SKIP (Enter rack) ──────────────────────────────────────────
+
+/** sessionStorage key: per-window, survives the shell's same-window
+ *  /preflight → /rack swap and a client `goto`, never a relaunch. */
+export const RELAUNCH_GUARD_SKIP_KEY = 'pt:relaunch-guard:skip-once';
+
+function sessionStore(): Storage | null {
+  try {
+    return (globalThis as unknown as { sessionStorage?: Storage }).sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Arm the skip. Called by the splash's Enter rack, right before the hand-off. */
+export function armRelaunchGuardSkip(): void {
+  try {
+    sessionStore()?.setItem(RELAUNCH_GUARD_SKIP_KEY, '1');
+  } catch {
+    /* private mode / partial window — the guard simply runs */
+  }
+}
+
+/** Consume the skip: true exactly once per arming. */
+export function consumeRelaunchGuardSkip(): boolean {
+  try {
+    const ss = sessionStore();
+    if (!ss || ss.getItem(RELAUNCH_GUARD_SKIP_KEY) === null) return false;
+    ss.removeItem(RELAUNCH_GUARD_SKIP_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ── IMPURE EVIDENCE GATHERERS ────────────────────────────────────────────────
@@ -179,29 +202,6 @@ export async function enumerateVideoInputs(): Promise<LiveVideoInput[] | null> {
     return all
       .filter((d) => d.kind === 'videoinput')
       .map((d) => ({ deviceId: d.deviceId, label: d.label }));
-  } catch {
-    return null;
-  }
-}
-
-/** Live displays via the Window Management API, id-tagged. Returns null when the
- *  API is unavailable OR the call rejects (no gesture / permission not granted)
- *  — an indeterminate the planner treats as "keep". Never prompts on its own on
- *  a route mount: without transient activation getScreenDetails() rejects rather
- *  than showing UI. */
-export async function enumerateLiveScreens(): Promise<LiveScreen[] | null> {
-  try {
-    const w = globalThis as unknown as {
-      getScreenDetails?: () => Promise<{ screens?: unknown[] }>;
-    };
-    if (typeof w.getScreenDetails !== 'function') return null;
-    const details = await w.getScreenDetails();
-    const list = (details.screens ?? []) as Parameters<typeof describeScreen>[0][];
-    const descriptors = list.map(describeScreen);
-    // Lazy import of assignScreenIds to keep the id derivation next to describe.
-    const { assignScreenIds } = await import('$lib/ui/modules/screen-identity');
-    const ids = assignScreenIds(descriptors);
-    return descriptors.map((descriptor, i) => ({ id: ids[i], descriptor }));
   } catch {
     return null;
   }
@@ -234,27 +234,25 @@ export async function gatherHelperStates(): Promise<Record<string, string> | nul
  * Gather exactly the evidence the bound rig requires, then decide.
  *
  * ⚠ SHORT-CIRCUITS ON AN UNBOUND CLASS. Only a bound camera triggers an
- * enumerate; only a bound display triggers a getScreenDetails (which is why an
- * ordinary /rack boot never prompts for window-management); only a configured
- * es9/ptz triggers a helpers.status. An empty rig gathers nothing and returns
- * `{ bounce: false }` — the state every non-preflight e2e spec is in.
+ * enumerate; only a picked PTZ port triggers a helpers.status. An empty rig
+ * gathers nothing and returns `{ bounce: false }` — the state every
+ * non-preflight e2e spec is in. The Enter-rack skip is consumed FIRST, on
+ * every shell mount, so an armed skip can never outlive the mount it was
+ * armed for.
  */
 export async function evaluateRigRelaunch(bindings: RigBindings): Promise<RelaunchDecision> {
   // A plain browser has no /preflight to bounce to (see the header): keep the
   // rack, and touch no device API on the way out.
   if (!nativeAvailable()) return { bounce: false, reason: null };
+  if (consumeRelaunchGuardSkip()) return { bounce: false, reason: null };
   const needCameras = CAMERA_SLOT_NAMES.some((s) => bindings.cameras[s]);
-  const needScreens = OUTPUT_SLOT_NAMES.some((s) => bindings.outputs[s]);
-  const needHelpers = !!(bindings.es9 || bindings.ptz);
-  if (!needCameras && !needScreens && !needHelpers) {
+  const needHelpers = !!bindings.ptz;
+  if (!needCameras && !needHelpers) {
     return { bounce: false, reason: null };
   }
-  const [videoInputs, screens, helpers] = await Promise.all([
+  const [videoInputs, helpers] = await Promise.all([
     needCameras ? enumerateVideoInputs() : Promise.resolve(null),
-    needScreens
-      ? enumerateLiveScreens().then((ls) => (ls ? ls.map((s) => s.descriptor) : null))
-      : Promise.resolve(null),
     needHelpers ? gatherHelperStates() : Promise.resolve(null),
   ]);
-  return planRelaunchBounce(bindings, { videoInputs, screens, helpers });
+  return planRelaunchBounce(bindings, { videoInputs, helpers });
 }

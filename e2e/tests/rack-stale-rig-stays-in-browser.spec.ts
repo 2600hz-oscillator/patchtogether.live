@@ -1,8 +1,9 @@
 // THE OWNER'S DEV SCENARIO (2026-09-15), pinned as a regression: a PLAIN
-// BROWSER (no `window.ptNative`) whose per-machine rig store already holds an
-// ES-9 binding, a CAMERA binding and a DISPLAY binding — and none of those
-// devices is present (the es9-bridge socket on ws://127.0.0.1:9209 is refused,
-// the camera is unplugged, the monitor is gone). Loading `/rack` must:
+// BROWSER (no `window.ptNative`) whose per-machine rig store already holds a
+// PTZ pick, a CAMERA binding and a DISPLAY binding — and none of those devices
+// is present (the es9-bridge socket on ws://127.0.0.1:9209 is refused, the
+// camera is unplugged, the monitor is gone, no pt-ptz helper runs). Loading
+// `/rack` must:
 //
 //   1. MOUNT and STAY on /rack for the whole spec — never a navigation to
 //      /preflight (the relaunch guard is a native-shell feature; a browser has
@@ -119,7 +120,10 @@ function containsRun(writes: number[][], seq: number[][]): boolean {
   return false;
 }
 
-/** The stale rig the owner's browser had on disk: every class bound, none present. */
+/** The stale rig the owner's browser had on disk: every class bound, none
+ *  present. (The ES-9 output-push key the original scenario carried had no
+ *  reader and is no longer part of the record; the PTZ pick is the helper-
+ *  backed binding that remains.) */
 const STALE_RIG = {
   cameras: { cam1: { deviceId: 'gone-cam', deviceLabel: 'Unplugged Studio Cam' } },
   outputs: {
@@ -127,7 +131,7 @@ const STALE_RIG = {
       screen: { label: 'DELL U2720Q', isInternal: false, width: 3840, height: 2160, dpr: 2, left: 3024, top: 0 },
     },
   },
-  es9: { pushPolicy: 'auto' },
+  ptz: { deviceId: 'PT-PTZ-CAM1' },
 };
 
 interface ConsoleLine {
@@ -347,7 +351,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     await disposeFakeCameras(page);
   });
 
-  test('stale ES-9 + camera + display bindings, bridge refused: /rack mounts, never leaves, and every in-rack binding surface still works — across a reload', async ({
+  test('stale PTZ + camera + display bindings, bridge refused: /rack mounts, never leaves, and every in-rack binding surface still works — across a reload', async ({
     page,
   }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 5);
@@ -391,7 +395,7 @@ test.describe('a plain browser keeps the rack with a stale rig store (the owner\
     // ── 1. LOAD /rack: it mounts and stays ─────────────────────────────────
     await page.goto('/rack');
     await mountRack(page);
-    expect((await rig(page)).es9, 'the stale ES-9 binding is really in the store').toEqual({ pushPolicy: 'auto' });
+    expect((await rig(page)).ptz, 'the stale PTZ pick is really in the store').toEqual({ deviceId: 'PT-PTZ-CAM1' });
 
     // ── 2. AUDIO after a gesture ───────────────────────────────────────────
     await bootAudioByGesture(page);

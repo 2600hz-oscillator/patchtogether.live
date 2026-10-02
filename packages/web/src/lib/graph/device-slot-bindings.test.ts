@@ -56,6 +56,11 @@ describe('normalizeRigBindings', () => {
       es9: { pushPolicy: 'always' },
       bogus: 42,
     });
+    // `es9` had no reader (the es9 module connects from the rack on its own)
+    // and is no longer part of the record: an old on-disk value is dropped
+    // like `bogus`, so it can never arm the relaunch guard again.
+    expect((out as unknown as Record<string, unknown>).es9).toBeUndefined();
+    expect(Object.keys(out)).not.toContain('es9');
     expect(out.cameras.cam1).toEqual({ deviceId: 'd1', deviceLabel: 'FaceTime' });
     expect((out.cameras as Record<string, unknown>).camX).toBeUndefined(); // not a real slot
     expect(out.outputs.output2?.screen.label).toBe('DELL U2720Q');
@@ -66,7 +71,17 @@ describe('normalizeRigBindings', () => {
     expect(out.ptz?.deviceId).toBe('ptz1');
     expect(out.gamepad).toEqual({ id: 'Xbox Wireless Controller', index: 0 });
     expect(out.linnstrument).toEqual({ deviceId: 'linn-in' });
-    expect(out.es9?.pushPolicy).toBe('always');
+  });
+
+  it('push / launchpad / ptz / gamepad picks are honest: an unset row is ABSENT, never a truthy placeholder', () => {
+    // The H1 class: a row whose every choice wrote a truthy object could never
+    // be un-configured. Each of these roles is either a string-id record or
+    // nothing at all.
+    for (const role of ['push', 'launchpad', 'ptz', 'gamepad'] as const) {
+      expect(normalizeRigBindings({ [role]: {} })[role]).toBeUndefined();
+      expect(normalizeRigBindings({ [role]: null })[role]).toBeUndefined();
+      expect(normalizeRigBindings({ [role]: 'auto' })[role]).toBeUndefined();
+    }
   });
 
   it('trails: round-trips the selected input and optional name; drops malformed fields', () => {

@@ -37,6 +37,12 @@ import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
 import { createMidiInputClaim } from '$lib/midi/input-attach';
 import {
+  rigBindings,
+  type LaunchpadBinding,
+  type LaunchpadMode,
+} from '$lib/graph/device-slot-bindings';
+import { nativeAvailable } from '$lib/platform/native';
+import {
   LP_CELLS,
   LP_WIDTH,
   LP_HEIGHT,
@@ -266,8 +272,46 @@ export function hasSecondaryInterfaceMarker(name: string | null | undefined): bo
  * one the user presses — see startPairing.)
  *
  * Returns [] when no access / no Launchpad ports. Reads the access maps only.
+ *
+ * `mode` names the CONSUMER asking (the clip launcher, SEQTRIS, an OUT TO
+ * LAUNCH monitor). Under the native shell the operator's splash pick — a
+ * Launchpad plus the mode it is reserved for — is ranked by
+ * `rankLaunchpadPortsForRig`; without a mode (or in the browser, which has no
+ * pick) the list is pure device order, so every `ports[i]` pairing claim above
+ * holds unchanged.
  */
-export function enumerateLaunchpadPorts(): LaunchpadPort[] {
+export function enumerateLaunchpadPorts(mode?: LaunchpadMode): LaunchpadPort[] {
+  const ports = enumerateLaunchpadPortsInDeviceOrder();
+  if (mode === undefined || !nativeAvailable()) return ports;
+  return rankLaunchpadPortsForRig(ports, rigBindings().getLaunchpad(), mode);
+}
+
+/**
+ * PURE: order a roster for one consumer against the desktop pick.
+ *
+ *   · the picked unit is in the roster AND reserved for THIS mode → it goes
+ *     FIRST, so a consumer that binds `ports[0]` (startSingle, the pairing
+ *     candidates, a sole-port auto-bind) honours the pick;
+ *   · the picked unit is reserved for ANOTHER mode → it goes LAST, so with two
+ *     units a different consumer leaves the reserved one alone, and with one
+ *     unit it is still reachable (never a silent "no device");
+ *   · no pick, or the pick is absent (unplugged, another machine's id) →
+ *     device order, the browser's only rule.
+ */
+export function rankLaunchpadPortsForRig(
+  ports: readonly LaunchpadPort[],
+  rig: LaunchpadBinding | null,
+  mode: LaunchpadMode,
+): LaunchpadPort[] {
+  if (!rig) return [...ports];
+  const i = ports.findIndex((p) => p.inputId === rig.deviceId);
+  if (i < 0) return [...ports];
+  const picked = ports[i]!;
+  const rest = ports.filter((_, k) => k !== i);
+  return rig.mode === mode ? [picked, ...rest] : [...rest, picked];
+}
+
+function enumerateLaunchpadPortsInDeviceOrder(): LaunchpadPort[] {
   if (!access) return [];
   let ins: MidiInputLike[] = [];
   for (const inp of access.inputs.values()) {

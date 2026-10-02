@@ -2,32 +2,37 @@
   // Pre-flight (Stage-1) rig setup — one row per device class. Each row shows
   // LIVE presence and a single control that writes the per-machine rig store
   // (device-slot-bindings.ts). Device access is reused from the app's own code
-  // (screen-identity, the camera enumerate/getUserMedia pattern, the push2 /
-  // launchpad / ptz-midi rosters); this screen never reinvents enumeration.
+  // (the camera enumerate/getUserMedia pattern, the push2 / launchpad /
+  // ptz-midi rosters); this screen never reinvents enumeration.
+  //
+  // ⚠ EVERY CONTROL HERE HAS A READER IN THE RACK. A pick the rack ignores is
+  // a lie on a screen titled "rig setup", and a binding nothing applies must
+  // never arm the relaunch guard (rig-relaunch-guard.ts). So: no display rows
+  // (the shell opens no output windows — present from the rack, where the
+  // browser's own display handling lives), and no ES-9 policy control (the
+  // es9 module connects to its bridge from the rack; only the helper's status
+  // row remains). Cameras → node-camera-source, Push 2 → push2-device autoBind,
+  // Launchpad → launchpad-device roster ranking, PTZ → ptz-midi auto binding,
+  // LinnStrument / TRAILS → their device layers, gamepad → the gamepad poll.
   //
   // ⚠ SHELL-ONLY. `+page.ts` redirects a plain browser to /rack before this
   // component mounts (owner ruling 2026-09-15: the web binds every device in
   // the rack). Under the shell the store round-trips through the `bindings.*`
   // bridge ops (electron-store on disk) and "enter rack" hands off through
   // `preflight.done`; the localStorage backend and the `goto('/rack')` fallback
-  // below only ever run under a test double of the bridge.
+  // below only ever run under a test double of the bridge. Enter rack arms a
+  // ONE-SHOT skip of the relaunch guard, so the splash can never bounce
+  // straight back to itself (the guard still runs on a later reload/relaunch).
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { nativeAvailable } from '$lib/platform/native';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import { rigBindings, type LaunchpadMode } from '$lib/graph/device-slot-bindings';
+  import { CAMERA_SLOT_NAMES, type CameraSlotName } from '$lib/graph/device-slots';
   import {
-    CAMERA_SLOT_NAMES,
-    OUTPUT_SLOT_NAMES,
-    type CameraSlotName,
-    type OutputSlotName,
-  } from '$lib/graph/device-slots';
-  import { screenKey } from '$lib/ui/modules/screen-identity';
-  import {
+    armRelaunchGuardSkip,
     enumerateVideoInputs,
-    enumerateLiveScreens,
     type LiveVideoInput,
-    type LiveScreen,
   } from '$lib/graph/rig-relaunch-guard';
   import * as push2 from '$lib/control/push2/push2-device.svelte';
   import * as launchpad from '$lib/control/launchpad/launchpad-device.svelte';
@@ -57,44 +62,10 @@
   const shell = nativeAvailable();
   const store = rigBindings();
   const LAUNCHPAD_MODES: LaunchpadMode[] = ['tetris', 'launchcontrol', 'out-to-launch'];
-  const ES9_POLICIES = ['auto', 'always', 'off'];
 
   // The rig snapshot, reactive: the store swaps the ref on every mutation, so a
   // plain re-read in the subscription re-renders the selects.
   let rig = $state(store.snapshot());
-
-  // ── DISPLAYS ────────────────────────────────────────────────────────────
-  let screens = $state<LiveScreen[]>([]);
-  let screensDetected = $state(false);
-  let screenError = $state<string | null>(null);
-  async function detectDisplays(): Promise<void> {
-    screenError = null;
-    const live = await enumerateLiveScreens();
-    if (live === null) {
-      screenError = shell ? 'no displays reported' : 'this browser cannot enumerate displays';
-      screens = [];
-    } else {
-      screens = live;
-    }
-    screensDetected = true;
-  }
-  function screenIdFor(slot: OutputSlotName): string {
-    const bound = rig.outputs[slot]?.screen;
-    if (!bound) return '';
-    const key = screenKey(bound);
-    return screens.find((s) => screenKey(s.descriptor) === key)?.id ?? '';
-  }
-  function displayMissing(slot: OutputSlotName): boolean {
-    return !!rig.outputs[slot] && screensDetected && screenIdFor(slot) === '';
-  }
-  function pickDisplay(slot: OutputSlotName, id: string): void {
-    if (id === '' || id === '__missing__') {
-      if (id === '') store.setOutput(slot, null);
-      return;
-    }
-    const hit = screens.find((s) => s.id === id);
-    if (hit) store.setOutput(slot, { screen: hit.descriptor });
-  }
 
   // ── CAMERAS ─────────────────────────────────────────────────────────────
   let cameras = $state<LiveVideoInput[]>([]);
@@ -142,7 +113,8 @@
     store.setCamera(slot, { deviceId, deviceLabel: hit?.label || undefined });
   }
 
-  // ── HELPERS (ES-9 + PTZ) — shell only ─────────────────────────────────────
+  // ── HELPERS (ES-9 + PTZ) — shell only. STATUS rows: they read the
+  // supervisor and write nothing. ───────────────────────────────────────────
   interface HS {
     id: string;
     state: string;
@@ -176,9 +148,6 @@
     }
   }
   let unsubHelpers: (() => void) | null = null;
-  function setEs9Policy(pushPolicy: string): void {
-    store.setEs9({ pushPolicy });
-  }
 
   // ── PUSH 2 ────────────────────────────────────────────────────────────────
   let push2Ports = $derived.by(() => {
@@ -368,6 +337,9 @@
   async function enterRack(): Promise<void> {
     if (entering) return;
     entering = true;
+    // The operator has just reviewed the hardware: the next /rack mount keeps
+    // the rack whatever the guard's evidence says (one shot, this window only).
+    armRelaunchGuardSkip();
     const nat = ptNative();
     if (shell && nat?.command) {
       try {
@@ -380,9 +352,11 @@
     await goto('/rack');
   }
 
-  // helper state → lamp bucket (ok / down / wait / idle)
+  // helper state → lamp bucket (ok / down / wait / idle). `unavailable` (no
+  // binary on this machine, supervisor.ts) is idle, not down: nothing is
+  // failing, there is simply nothing to run — the detail text says which.
   function lamp(state: string | undefined): 'ok' | 'down' | 'wait' | 'idle' {
-    if (!state) return 'idle';
+    if (!state || state === 'unavailable') return 'idle';
     if (state === 'running') return 'ok';
     if (state === 'stopped' || state === 'crash-looped' || state === 'foreign-listener') return 'down';
     return 'wait';
@@ -399,49 +373,6 @@
       it survives a File→New, a reload, and a relaunch.
     </p>
   </header>
-
-  <!-- DISPLAYS -->
-  <section class="group" data-testid="preflight-section-displays">
-    <div class="group-head">
-      <h2>displays</h2>
-      <button class="ghost" data-testid="preflight-displays-detect" onclick={detectDisplays}>
-        detect displays
-      </button>
-    </div>
-    {#if screenError}<p class="err" data-testid="preflight-displays-error">{screenError}</p>{/if}
-    {#each OUTPUT_SLOT_NAMES as slot (slot)}
-      {@const bound = screenIdFor(slot) !== ''}
-      {@const missing = displayMissing(slot)}
-      <div class="row" data-testid="preflight-output-row" data-slot={slot}>
-        <span class="label">{slot}</span>
-        <span
-          class="lamp"
-          data-testid="preflight-output-presence"
-          data-slot={slot}
-          data-state={missing ? 'down' : bound ? 'ok' : 'idle'}
-        >
-          {missing ? 'not connected' : bound ? 'connected' : screensDetected ? 'unbound' : 'not scanned'}
-        </span>
-        <select
-          class="control"
-          data-testid="preflight-output-select"
-          data-slot={slot}
-          value={missing ? '__missing__' : screenIdFor(slot)}
-          onchange={(e) => pickDisplay(slot, e.currentTarget.value)}
-        >
-          <option value="">— none —</option>
-          {#if missing}
-            <option value="__missing__" disabled
-              >bound: {rig.outputs[slot]?.screen.label || 'display'} (not connected)</option
-            >
-          {/if}
-          {#each screens as s (s.id)}
-            <option value={s.id}>{s.descriptor.label || 'unnamed display'} · {s.descriptor.width}×{s.descriptor.height}</option>
-          {/each}
-        </select>
-      </div>
-    {/each}
-  </section>
 
   <!-- CAMERAS -->
   <section class="group" data-testid="preflight-section-cameras">
@@ -506,18 +437,6 @@
         {#if helperCmdFailed && helperCmdRetryable}
           <button class="ghost" data-testid="preflight-es9-retry" onclick={refreshHelpers}>retry</button>
         {/if}
-      </div>
-      <div class="row">
-        <span class="label">output push</span>
-        <span class="lamp" data-state={rig.es9 ? 'ok' : 'idle'}>{rig.es9 ? 'configured' : 'default'}</span>
-        <select
-          class="control"
-          data-testid="preflight-es9-config"
-          value={rig.es9?.pushPolicy ?? 'auto'}
-          onchange={(e) => setEs9Policy(e.currentTarget.value)}
-        >
-          {#each ES9_POLICIES as p (p)}<option value={p}>{p}</option>{/each}
-        </select>
       </div>
     {/if}
   </section>

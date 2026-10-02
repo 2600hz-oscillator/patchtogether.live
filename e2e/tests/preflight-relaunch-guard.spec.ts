@@ -85,10 +85,14 @@ test.describe('PRE-FLIGHT relaunch guard — bound-device-missing bounce', () =>
     errorWatch.assertClean();
   });
 
-  test('a bound DISPLAY that is gone bounces /rack back to /preflight', async ({ page, errorWatch }) => {
+  test('a bound DISPLAY that is gone does NOT bounce — the shell applies no display binding, so it is not a bound device', async ({ page, errorWatch }) => {
     test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 2);
     await clearRigStoreOnce(page);
     await installFakeShell(page);
+    // The rack's own present path still writes `outputs` (a browser rig
+    // survives File→New on it); under the shell nobody applies it, and the
+    // splash has no display row to re-bind it — a bounce here would be the
+    // /preflight ↔ /rack loop with no way out.
     await seedRigStore(page, {
       cameras: {},
       outputs: {
@@ -109,8 +113,66 @@ test.describe('PRE-FLIGHT relaunch guard — bound-device-missing bounce', () =>
     await installFakeScreens(page, [
       { label: 'Built-in Retina', isInternal: true, width: 3024, height: 1964, devicePixelRatio: 2 },
     ]);
+    const navigations: string[] = [];
+    page.on('framenavigated', (f) => {
+      if (f === page.mainFrame()) navigations.push(f.url());
+    });
 
-    await page.goto('/rack?seed=none');
+    // `/rack` (the seeded boot the plain-browser leg below also uses): the
+    // device-slot ensure that proves "the rack finished booting" runs on it.
+    await page.goto('/rack');
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    // The guard's window is the mount; the device-slot ensure runs AFTER it.
+    await expect
+      .poll(
+        () => page.evaluate(() => !!(globalThis as unknown as { __patch?: { nodes: Record<string, unknown> } }).__patch?.nodes['slot:cam1']),
+        { message: 'the rack finished its own boot after the guard had its chance', timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
+      )
+      .toBe(true);
+    await expect(page.getByTestId('preflight-panel')).toHaveCount(0);
+    expect(navigations.filter((u) => /\/preflight/.test(u)), `never navigated to /preflight — ${navigations.join(' → ')}`).toEqual([]);
+    errorWatch.assertClean();
+  });
+
+  test('ENTER RACK NEVER BOUNCES STRAIGHT BACK: a stale camera rig entered from the splash lands on /rack and stays; a RELOAD runs the guard again', async ({
+    page,
+    errorWatch,
+  }) => {
+    test.setTimeout(SLOW_BOOT_TEST_TIMEOUT_MS * 3);
+    await clearRigStoreOnce(page);
+    await installFakeShell(page);
+    // The exact rig the first leg bounces on: cam1 bound to a camera this
+    // machine does not have, with a REAL device list that lacks it.
+    await seedRigStore(page, { cameras: { cam1: { deviceId: 'gone', deviceLabel: 'Old Cam' } }, outputs: {} });
+    await installFakeCameras(page, [{ deviceId: 'other', label: 'Some Other Cam' }]);
+    const navigations: string[] = [];
+    page.on('framenavigated', (f) => {
+      if (f === page.mainFrame()) navigations.push(f.url());
+    });
+
+    await page.goto('/preflight');
+    await waitPreflight(page);
+    // The operator reviews the hardware, leaves the stale pick, and enters.
+    // (The splash's own load is several main-frame navigations — the load plus
+    // the router's replaceState hops — so the count starts at the click.)
+    const atEnter = navigations.length;
+    await page.getByTestId('preflight-enter').click();
+    await page.waitForURL(/\/rack(\?|$)/, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
+    await expect
+      .poll(
+        () => page.evaluate(() => !!(globalThis as unknown as { __patch?: { nodes: Record<string, unknown> } }).__patch?.nodes['slot:cam1']),
+        { message: 'the rack finished its own boot after the guard had its chance', timeout: SLOW_BOOT_TEST_TIMEOUT_MS },
+      )
+      .toBe(true);
+    await expect(page.getByTestId('preflight-panel')).toHaveCount(0);
+    const afterEnter = navigations.slice(atEnter).filter((u) => /\/preflight/.test(u));
+    expect(afterEnter, `never a bounce back after Enter rack: ${navigations.join(' → ')}`).toEqual([]);
+
+    // The one-shot skip is spent: a reload of the same stale rig is a fresh
+    // mount, and the guard runs — proving the first leg was a SKIP, not a
+    // guard that stopped working.
+    await page.reload();
     await page.waitForURL(/\/preflight(\?|$)/, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     await waitPreflight(page);
     errorWatch.assertClean();
@@ -176,7 +238,7 @@ test.describe('PRE-FLIGHT relaunch guard — a PLAIN browser never bounces', () 
     await disposeFakeCameras(page);
   });
 
-  test('gone camera + gone display + an ES-9 binding: /rack mounts and stays', async ({
+  test('gone camera + gone display + a PTZ pick: /rack mounts and stays', async ({
     page,
     errorWatch,
   }) => {
@@ -190,7 +252,7 @@ test.describe('PRE-FLIGHT relaunch guard — a PLAIN browser never bounces', () 
           screen: { label: 'DELL U2720Q', isInternal: false, width: 3840, height: 2160, dpr: 2, left: 3024, top: 0 },
         },
       },
-      es9: { pushPolicy: 'auto' },
+      ptz: { deviceId: 'PT-PTZ-CAM1' },
     });
     // The live lists are REAL and usable and lack both devices — the exact
     // evidence the shell guard calls "positively absent".
@@ -231,7 +293,7 @@ test.describe('PRE-FLIGHT relaunch guard — a PLAIN browser never bounces', () 
     // is re-picked in the rack, never bounced to a setup page.)
     const rig = await readRig(page);
     expect((rig.cameras as Record<string, { deviceLabel?: string }>)?.cam1?.deviceLabel).toBe('Old Cam');
-    expect(rig.es9).toEqual({ pushPolicy: 'auto' });
+    expect(rig.ptz).toEqual({ deviceId: 'PT-PTZ-CAM1' });
     errorWatch.assertClean();
   });
 });
