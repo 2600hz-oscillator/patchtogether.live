@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "da43c9832898e56ba80bd68cd371b4b9b1ae04f0aed5e3fb1e4fceb7c1c7c924",
-  "attestedAt": "2026-10-02T18:26:35.048Z",
+  "webglContentHash": "16eda3cccf12266e87fa0aca0adbb81d31bb6d4a0b3328125f86d94563ac59bc",
+  "attestedAt": "2026-10-02T20:17:22.437Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "49d9472a673d1f4b2d62bb13f36b5552d2f3abc2",
+  "gitHeadAtAttest": "1c40bf4d34cef4c94f45e38e877641ee6b1c22d6",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 2.3,
+    "maxForeignCpu": 2.4,
     "thresholdCpu": 25,
-    "load1": 1.849609375,
+    "load1": 1.4765625,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:61242",
+    "url": "http://127.0.0.1:52015",
     "mode": "dev",
-    "root": "/Users/2600hz/Documents/workspace/wt-edgefader",
-    "commit": "49d9472a673d1f4b2d62bb13f36b5552d2f3abc2"
+    "root": "/Users/2600hz/Documents/workspace/wt-pbflicker",
+    "commit": "1c40bf4d34cef4c94f45e38e877641ee6b1c22d6"
   },
   "repeatEach": 1,
   "suites": {
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 237
+  "durationSec": 229
 }

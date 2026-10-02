@@ -274,17 +274,14 @@ export const RETRY_ATTEMPTS = 50;
  * was RE-MATERIALIZED (patch load, undo/redo, engine rebuild) — which must
  * re-push even though `node.data` did not change.
  *
- * ⚠ NOT the object's own identity, and that distinction is load-bearing.
- * `read(id, 'extras')` is not required to return the same object twice, and
- * PICTUREBOX does not: `picturebox.ts` builds a FRESH extras literal on every
- * read. An object-identity comparison therefore reads "new handle" every single
- * sync, and the producer re-decodes every base64 asset on every graph change —
- * caught by the "only for the node that moved" unit test below, which is the
- * whole reason that test compares the run LIST and not just a count.
- *
- * The METHODS are stable: they are the factory's own closures, so a fresh
- * literal wrapping them fingerprints identically and a genuinely new handle
- * does not. Cheap — these objects have a handful of keys.
+ * ⚠ NOT the object's own identity: `read(id, 'extras')` may return a fresh
+ * wrapper, so the fingerprint is the IDENTITY OF THE METHODS — a contract on
+ * the module that every exposed function is the same closure on every read.
+ * A member rebuilt per read reads as a new handle on every sync and re-runs
+ * the producer on every graph change (measured on picturebox: slot 0 cleared
+ * and the image re-decoded per knob tick, 2026-10-02 — the real factory's
+ * handle is driven through three syncs in the test below because a stub over
+ * stable methods cannot see this). Cheap — a handful of keys.
  */
 function handleFingerprint(extras: unknown): unknown[] {
   if (!extras || typeof extras !== 'object') return [extras];
