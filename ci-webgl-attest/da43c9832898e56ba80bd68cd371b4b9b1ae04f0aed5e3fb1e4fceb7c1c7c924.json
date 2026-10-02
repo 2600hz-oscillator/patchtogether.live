@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "3a25d2a52c30e2657dc319a22f5c2353ebbb5262c1c07daaf1305665e7aadd1f",
-  "attestedAt": "2026-09-27T03:58:17.722Z",
+  "webglContentHash": "da43c9832898e56ba80bd68cd371b4b9b1ae04f0aed5e3fb1e4fceb7c1c7c924",
+  "attestedAt": "2026-10-02T18:26:35.048Z",
   "attestedBy": "patchtogether-maintainer",
-  "gitHeadAtAttest": "d0818462022e57e3b16a06885827a1dc79060908",
+  "gitHeadAtAttest": "49d9472a673d1f4b2d62bb13f36b5552d2f3abc2",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "machineClass": "local-trusted-gpu-workstation",
   "preflight": {
     "samples": 7,
     "windowMs": 10204,
-    "maxForeignCpu": 4.8,
+    "maxForeignCpu": 2.3,
     "thresholdCpu": 25,
-    "load1": 1.8125,
+    "load1": 1.849609375,
     "cores": 10
   },
   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
   "appServer": {
-    "url": "http://127.0.0.1:64582",
+    "url": "http://127.0.0.1:61242",
     "mode": "dev",
-    "root": "/Users/2600hz/.codex/worktrees/recorderbox-desktop/inet.modular",
-    "commit": "c7e38cad2267c73450bdc7a0f1b0af0b09a26dc0"
+    "root": "/Users/2600hz/Documents/workspace/wt-edgefader",
+    "commit": "49d9472a673d1f4b2d62bb13f36b5552d2f3abc2"
   },
   "repeatEach": 1,
   "suites": {
@@ -41,8 +41,8 @@
       "flakyDetails": []
     },
     "B-leakers": {
-      "specFiles": 5,
-      "passed": 10,
+      "specFiles": 6,
+      "passed": 14,
       "failed": 0,
       "flaky": 0,
       "skipped": 0,
@@ -57,5 +57,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 230
+  "durationSec": 237
 }
