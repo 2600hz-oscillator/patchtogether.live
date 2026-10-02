@@ -80,6 +80,14 @@ is pinned exact.
   macOS also retains its standard app-menu Quit. The toolbar uses `app.quit`
   through the command bridge, restricted to the main window's top-level frame.
   This supersedes the earlier native-menu-only restriction at the owner's request.
+  File → Load Patch… (⌘O) is main-owned end to end: main runs the picker, reads
+  the bytes (a sandboxed renderer can name no path) and pushes `{name, bytes}` —
+  or `{name, error}` for a pick it could not read — as a `patch.load` event; the
+  rack turns that into a `File` for the toolbar's own performance loader, so
+  there is one loader and one error banner. The item is enabled only while a
+  rack has announced its loader through the `patch.loader` op (announced on
+  Canvas mount, withdrawn on unmount and on any main-frame navigation), so a
+  pick can never be dropped on the splash.
   Two flags are load-bearing: `--disable-features=MidiMacUmp` (without it SysEx
   reports send success while transmitting nothing on recent Chromium/macOS) and
   `autoplay-policy=no-user-gesture-required` (an AudioContext that reaches

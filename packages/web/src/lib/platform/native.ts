@@ -26,7 +26,10 @@
 interface NativeBridgeLike {
   nativeAvailable?: () => boolean;
   shellVersion?: () => string;
-  command?: (op: string) => Promise<{ ok: boolean; error?: { message?: string } }>;
+  command?: (op: string, payload?: unknown) => Promise<{ ok: boolean; error?: { message?: string } }>;
+  /** Desktop File ▸ Load Patch…: `{ name, bytes }` for a pick main could
+   *  read, `{ name, error }` for one it could not. Returns an unsubscribe. */
+  onLoadPatchRequested?: (cb: (request: unknown) => void) => () => void;
 }
 
 interface NativeHost {
@@ -69,6 +72,75 @@ export async function exitNative(): Promise<void> {
   }
   const reply = await bridge.command('app.quit');
   if (!reply.ok) throw new Error(reply.error?.message ?? 'Could not exit desktop mode.');
+}
+
+export interface NativeLoadPatchHandlers {
+  /** The picked file, named as it is on disk, for the SAME loader the topbar's
+   *  File ▸ Load hands its picked file to. */
+  onFile: (file: File) => void;
+  /** The shell could not read the pick, refused the loader, or sent a request
+   *  this build cannot read. Shown where a bad topbar load is shown. */
+  onError: (message: string) => void;
+}
+
+/**
+ * Desktop File ▸ Load Patch… (⌘O / Ctrl+O).
+ *
+ * The shell runs the picker AND reads the file — the sandboxed renderer can
+ * never name a path — then pushes the bytes over the event envelope. This
+ * turns them into a `File` for the ordinary performance loader and tells the
+ * shell a loader is listening (`patch.loader`), which is exactly when the menu
+ * item is enabled; the returned unsubscribe tells it the loader is gone. A
+ * browser, or a bridge without the seam, registers nothing and gets a no-op.
+ */
+export function subscribeNativeLoadPatch(handlers: NativeLoadPatchHandlers): () => void {
+  const bridge = (globalThis as unknown as NativeHost).ptNative;
+  if (
+    !nativeAvailable() ||
+    typeof bridge?.onLoadPatchRequested !== 'function' ||
+    typeof bridge.command !== 'function'
+  ) {
+    return () => {};
+  }
+  const command = bridge.command;
+  const off = bridge.onLoadPatchRequested((raw) => {
+    const req = (typeof raw === 'object' && raw !== null ? raw : {}) as {
+      name?: unknown;
+      bytes?: unknown;
+      error?: unknown;
+    };
+    const name = typeof req.name === 'string' && req.name !== '' ? req.name : 'patch.ptperf.zip';
+    if (typeof req.error === 'string') {
+      handlers.onError(`${name}: ${req.error}`);
+      return;
+    }
+    const bytes = req.bytes;
+    if (bytes instanceof Uint8Array || bytes instanceof ArrayBuffer) {
+      handlers.onFile(new File([bytes as BlobPart], name, { type: 'application/zip' }));
+      return;
+    }
+    handlers.onError(`${name}: the shell sent a load request this build cannot read`);
+  });
+  const announce = (ready: boolean): void => {
+    command('patch.loader', { ready })
+      .then((reply) => {
+        if (ready && !reply.ok) {
+          handlers.onError(
+            `File ▸ Load Patch… is unavailable: ${reply.error?.message ?? 'the shell refused the loader'}`,
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        if (ready) {
+          handlers.onError(`File ▸ Load Patch… is unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
+  };
+  announce(true);
+  return () => {
+    off();
+    announce(false);
+  };
 }
 
 /** Force the answer (tests only). Pass `null` to go back to probing. */
