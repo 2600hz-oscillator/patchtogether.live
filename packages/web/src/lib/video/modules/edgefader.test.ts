@@ -203,6 +203,13 @@ describe('edgefaderDef — docs', () => {
     }
   });
 
+  it('names the revised law: the three-quarter unit part of each band, and the inside/outside ripple anchored on A\'s edges', () => {
+    const explanation = docs?.explanation ?? '';
+    expect(explanation).toContain('three quarters');
+    expect(explanation).toContain("A's edges");
+    expect(explanation).toContain('bottom quarter');
+  });
+
   it('documents EVERY input, and nothing that is not an input', () => {
     const ids = edgefaderDef.inputs.map((p) => p.id);
     for (const id of ids) expect(docs?.inputs?.[id]?.length ?? 0, id).toBeGreaterThan(30);

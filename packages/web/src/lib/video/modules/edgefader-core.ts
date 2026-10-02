@@ -8,9 +8,10 @@
 // band fades A→B over its own window of the fader's travel, and the windows
 // CASCADE down the screen: band k starts when band k−1 is half done, and band
 // k−1 finishes exactly when band k reaches the level band k−1 had when band k
-// started (the band-centre law `bandProgress`; between centres the start is
-// interpolated row by row — `rowProgress` — so there is no seam at a band
-// boundary). Within a band the fade is not uniform: pixels on an EDGE (the
+// started (the band-centre law `bandProgress`; the top three quarters of each
+// band start as a unit and its bottom quarter ramps to the next band's start
+// — `rowStart` — so the regions stay visible and a band boundary is a
+// hand-over, not a seam). Within a band the fade is not uniform: pixels on an EDGE (the
 // EDGES operator: Sobel + threshold + dilate, run on BOTH frames) go first,
 // pixels where A's edges and B's edges COINCIDE go first of all, pixels in a
 // REGION where both frames carry a similar amount of edge (the coarse

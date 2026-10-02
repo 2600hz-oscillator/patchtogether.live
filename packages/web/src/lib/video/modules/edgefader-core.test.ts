@@ -1,9 +1,10 @@
 // EDGEFADER core — the pure transition law (no GL). This file pins the CPU
 // mirror in edgefader-core.ts, which the GLSL in edgefader.ts ports with the
 // constants interpolated from the SAME exports: the cascade (the owner's two
-// sentences, checked on the band-centre law for every adjacent pair), the
-// per-pixel lead ordering, the exact endpoints in both modes, the melt
-// geometry (integer-hash determinism, drip reach), and the full composite on
+// sentences, checked on the band-centre law for every adjacent pair, and the
+// unit-and-ramp row law that carries it between bands), the per-pixel lead
+// ordering, the exact endpoints in both modes, the melt geometry (integer-hash
+// determinism, drip reach, source-row blending), and the full composite on
 // 160×120 synthetic A/B pairs. The design's "25 %" became 20 % — five bands —
 // and the tests read the band count from EDGEFADER_BANDS, never a typed 5.
 //
@@ -11,8 +12,11 @@
 // the engine's uv.y orientation (rowFromTop = 1 − uv.y is the house top-left
 // convention; the e2e sees it), the GPU's mip approximations of `boxMean` and
 // of the coarse density (every test on those terms is a floor or an ordering,
-// never a pixel equality — the core header says why), the pass plumbing
-// (FBOs, uniforms, the unpatched-input texture), and SwiftShader cost.
+// never a pixel equality — the core header says why), the GPU's mip-based
+// PROXIMITY (the blur footprint is an LOD read of the atlas where the mirror
+// takes a 16-px box, so the footprint tests are floors on the near field and
+// zeros in the far field, never a cutoff), the pass plumbing (FBOs, uniforms,
+// the unpatched-input texture), and SwiftShader cost.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -27,6 +31,9 @@ import {
   EDGEFADER_BLUR_MAX_PX,
   EDGEFADER_RAY_TAPS_PX,
   EDGEFADER_COARSE_PX,
+  EDGEFADER_BLUR_PROX_PX,
+  EDGEFADER_BLUR_PROX_FULL,
+  EDGEFADER_BAND_UNIT_FRACTION,
   EDGEFADER_MELT_DELAY_MAX,
   EDGEFADER_DRIP_MAX_UV,
   EDGEFADER_DRIP_MIN_FRAC,
@@ -38,6 +45,7 @@ import {
   EDGEFADER_DROP_JITTER,
   EDGEFADER_DROP_LEN_MAX,
   EDGEFADER_DROP_STALK,
+  EDGEFADER_HASH_MUL,
   EDGEFADER_SEEDS,
   clamp01,
   softStep,
@@ -53,6 +61,7 @@ import {
   rowStart,
   rowProgress,
   similarity,
+  blurWeight,
   leadFor,
   localProgress,
   blurRadiusPx,
@@ -74,6 +83,7 @@ import {
   edgeFieldAt,
   pixelLaw,
   meltLayer,
+  meltBlend,
   edgefaderPixel,
   type EdgeField,
   type EdgeAtlas,
@@ -89,7 +99,7 @@ const T_GRID: number[] = Array.from({ length: 121 }, (_, i) => i / 120);
 const P_GRID: number[] = Array.from({ length: 101 }, (_, i) => i / 100);
 
 const field = (over: Partial<EdgeField> = {}): EdgeField => ({
-  wEdge: 0, wCoinc: 0, wSim: 0, inside: 0, nearEdge: 0, ...over,
+  wEdge: 0, wCoinc: 0, wSim: 0, wProx: 0, inside: 0, nearEdge: 0, ...over,
 });
 
 // ─────────────────────────── the synthetic grids ────────────────────────────
@@ -149,7 +159,11 @@ const circleShifted = (): Pair => pair('circle/shifted', () => [
   circleGrid(CIRCLE.cx, CIRCLE.cy, CIRCLE.r),
   circleGrid(CIRCLE.cx, CIRCLE.cy + 12, CIRCLE.r),
 ]);
-const checkerChecker = (): Pair => pair('checker/checker', () => [checkerQuadrantGrid(0), checkerQuadrantGrid(8)]);
+/** The same checker in both frames: every edge in the quadrant COINCIDES. */
+const checkerSame = (): Pair => pair('checker/same', () => [checkerQuadrantGrid(0), checkerQuadrantGrid(0)]);
+/** The checker against itself shifted half a cell: the same amount of edge in
+ *  the same region, none of it in the same place. */
+const checkerShifted = (): Pair => pair('checker/shifted', () => [checkerQuadrantGrid(0), checkerQuadrantGrid(8)]);
 /** Mid-level grids whose global [min, max] is NOT [0, 1], for the bounds test. */
 const levels = (): Pair => pair('levels', () => [circleGrid(CIRCLE.cx, CIRCLE.cy, CIRCLE.r, 0.85, 0.25), stripesGrid(16, 0.35, 0.65)]);
 const circleUnpatched = (): Pair => pair('circle/unpatched', () => {
@@ -301,19 +315,80 @@ describe('edgefader-core — cascade (the owner\'s two sentences on the band-cen
     }
   });
 
-  it('rowStart is monotone in the row and adjacent rows (1/120 apart) differ by less than a tenth of a stagger — no seam', () => {
-    for (let y = 1; y < H; y++) {
-      const d = rowStart(rowFromTopOf(y)) - rowStart(rowFromTopOf(y - 1));
-      expect(d, `row ${y}: non-decreasing`).toBeGreaterThanOrEqual(0);
-      expect(d, `row ${y}: far smaller than a stagger`).toBeLessThan(STAGGER / 10);
+  it('rowStart equals k/(N+1) EXACTLY over the unit part of every band (rows at 0.1 / 0.4 / 0.7 of the band, and every grid row above the ramp) — the band-centre law holds there as a law of the whole region', () => {
+    expect(EDGEFADER_BAND_UNIT_FRACTION).toBe(0.75);
+    for (let k = 0; k < N; k++) {
+      for (const fr of [0, 0.1, 0.4, 0.7]) {
+        expect(rowStart((k + fr) / N), `band ${k} at ${fr} of its height`).toBe(bandWindow(k).start);
+      }
+    }
+    let unitRows = 0;
+    for (let y = 0; y < H; y++) {
+      const r = rowFromTopOf(y);
+      const k = bandOf(r);
+      const fr = r * N - k;
+      if (fr < EDGEFADER_BAND_UNIT_FRACTION - 1e-9) {
+        expect(rowStart(r), `row ${y} (band ${k}, ${fr.toFixed(3)} of its height)`).toBe(bandWindow(k).start);
+        unitRows++;
+      }
+    }
+    // 18 of every 24 rows (three quarters of each band) start as a unit.
+    expect(unitRows).toBe(Math.round(H * EDGEFADER_BAND_UNIT_FRACTION));
+  });
+
+  it('rowStart ramps the bottom quarter of each band to the next band\'s start: 0 to row 0.15, 1/12 at 0.175, 1/6 from 0.2 through 0.35, 1/4 at 0.375, 1/3 from 0.4 (the numeric smoke)', () => {
+    expect(rowStart(0.15)).toBeCloseTo(0, 12);
+    expect(rowStart(0.175)).toBeCloseTo(1 / 12, 12);
+    expect(rowStart(0.2)).toBeCloseTo(1 / 6, 12);
+    expect(rowStart(0.35)).toBeCloseTo(1 / 6, 12);
+    expect(rowStart(0.375)).toBeCloseTo(1 / 4, 12);
+    expect(rowStart(0.4)).toBeCloseTo(1 / 3, 12);
+    // Inside a ramp the start is strictly between the two bands' starts.
+    for (let k = 0; k < N - 1; k++) {
+      for (const fr of [0.8, 0.9, 0.95]) {
+        const s = rowStart((k + fr) / N);
+        expect(s, `band ${k} at ${fr}: past its own start`).toBeGreaterThan(bandWindow(k).start);
+        expect(s, `band ${k} at ${fr}: short of the next band's`).toBeLessThan(bandWindow(k + 1).start);
+      }
     }
   });
 
-  it('rows above the top band\'s centre start with it and rows below the bottom band\'s centre start with it', () => {
+  it('rowStart is monotone in the row and continuous: adjacent rows (1/120 apart) differ by at most the ramp\'s peak slope × one row — a quarter of a stagger — so no row pair ever jumps by a whole stagger', () => {
+    // The bottom (1 − UNIT_FRACTION) of a band ramps one stagger with
+    // softStep, whose slope peaks at 1.5 (its midpoint); one row advances the
+    // ramp by 1/rowsPerRamp of its span. The bound is tight: the grid has a
+    // row pair straddling the midpoint, measured at 0.2477 of a stagger.
+    const rowsPerRamp = (H / N) * (1 - EDGEFADER_BAND_UNIT_FRACTION);
+    const bound = STAGGER * 1.5 / rowsPerRamp;
+    expect(rowsPerRamp).toBe(6);
+    expect(bound).toBeCloseTo(STAGGER / 4, 12);
+    let maxD = 0;
+    for (let y = 1; y < H; y++) {
+      const d = rowStart(rowFromTopOf(y)) - rowStart(rowFromTopOf(y - 1));
+      expect(d, `row ${y}: non-decreasing`).toBeGreaterThanOrEqual(0);
+      expect(d, `row ${y}: within the ramp's peak slope`).toBeLessThanOrEqual(bound + 1e-12);
+      maxD = Math.max(maxD, d);
+    }
+    expect(maxD, 'the ramp is really used').toBeGreaterThan(bound * 0.9);
+    expect(maxD).toBeLessThan(STAGGER / 2);
+    // The band line itself is not a step: the rows either side of it are a
+    // hair apart (the ramp has all but finished by its last row).
+    for (let k = 1; k < N; k++) {
+      const yBelow = Math.round((k / N) * H);
+      expect(bandOf(rowFromTopOf(yBelow))).toBe(k);
+      expect(bandOf(rowFromTopOf(yBelow - 1))).toBe(k - 1);
+      expect(rowStart(rowFromTopOf(yBelow)) - rowStart(rowFromTopOf(yBelow - 1)), `band line ${k}`).toBeLessThan(bound / 10);
+    }
+  });
+
+  it('rows in the first band\'s unit part start at 0, and the bottom band\'s ramp is clamped to its own start (it has no band to hand over to)', () => {
     expect(rowStart(0)).toBe(bandWindow(0).start);
-    expect(rowStart(0.5 / N - 1e-6)).toBe(bandWindow(0).start);
-    expect(rowStart(1)).toBeCloseTo(bandWindow(N - 1).start, 12);
-    expect(rowStart((N - 0.5) / N + 1e-6)).toBeCloseTo(bandWindow(N - 1).start, 12);
+    expect(rowStart(0.5 / N)).toBe(0);
+    expect(rowStart((EDGEFADER_BAND_UNIT_FRACTION - 1e-6) / N)).toBe(0);
+    expect(rowStart(1)).toBe(bandWindow(N - 1).start);
+    expect(rowStart((N - 0.5) / N)).toBe(bandWindow(N - 1).start);
+    expect(rowStart((N - 0.05) / N), 'the last band\'s bottom quarter does not ramp').toBe(bandWindow(N - 1).start);
+    expect(rowStart(1.5), 'below the frame clamps to the last band').toBe(bandWindow(N - 1).start);
   });
 
   it('rowProgress(0, row) = 0 and rowProgress(1, row) = 1 for every row, and it is monotone in t', () => {
@@ -362,10 +437,13 @@ describe('edgefader-core — lead law (coincident > edge; similar > flat; inside
     expect(leadFor(field({ wCoinc: 1 }))).toBe(0);
     // The inside term is scaled by proximity: inside with nothing near is flat.
     expect(leadFor(field({ inside: 1, nearEdge: 0 }))).toBe(0);
+    // The proximity field is the blur's, not the lead's.
+    expect(leadFor(field({ wProx: 1 }))).toBe(0);
+    expect(leadFor(field({ wEdge: 1, wProx: 1 }))).toBe(edge);
   });
 
   it('leadN ∈ [0, 1] at both extremes of the field', () => {
-    expect(leadFor(field({ wEdge: 1, wCoinc: 1, wSim: 1, inside: 1, nearEdge: 1 }))).toBe(1);
+    expect(leadFor(field({ wEdge: 1, wCoinc: 1, wSim: 1, wProx: 1, inside: 1, nearEdge: 1 }))).toBe(1);
     expect(leadFor(field())).toBe(0);
     expect(leadFor(field({ wEdge: 1, wCoinc: 1, wSim: 1, inside: -1, nearEdge: 1 }))).toBeLessThanOrEqual(1);
   });
@@ -401,7 +479,7 @@ describe('edgefader-core — lead law (coincident > edge; similar > flat; inside
     }
   });
 
-  it('blurRadiusPx is 0 at pLocal 0 and 1, peaks at 0.5 (= BLUR_MAX × wRegion) and scales with wRegion', () => {
+  it('blurRadiusPx is 0 at pLocal 0 and 1, peaks at 0.5 (= BLUR_MAX × wBlur) and scales with wBlur', () => {
     for (const w of [0, 0.25, 1]) {
       expect(Math.abs(blurRadiusPx(0, w)), `w=${w} at 0`).toBe(0);
       expect(Math.abs(blurRadiusPx(1, w)), `w=${w} at 1`).toBe(0);
@@ -410,7 +488,7 @@ describe('edgefader-core — lead law (coincident > edge; similar > flat; inside
     }
     expect(blurRadiusPx(0.3, 1)).toBeGreaterThan(blurRadiusPx(0.3, 0.5));
     expect(blurRadiusPx(0.3, 0.5)).toBeGreaterThan(blurRadiusPx(0.3, 0));
-    expect(blurRadiusPx(0.5, 2), 'wRegion is clamped to 1').toBe(EDGEFADER_BLUR_MAX_PX);
+    expect(blurRadiusPx(0.5, 2), 'wBlur is clamped to 1').toBe(EDGEFADER_BLUR_MAX_PX);
   });
 
   it('blendWeight: 0 → A, 1 → B, 0.5 → half, monotone', () => {
@@ -420,14 +498,39 @@ describe('edgefader-core — lead law (coincident > edge; similar > flat; inside
     for (let i = 1; i < P_GRID.length; i++) expect(blendWeight(P_GRID[i]!)).toBeGreaterThanOrEqual(blendWeight(P_GRID[i - 1]!));
   });
 
-  it('similarity(0, x) = 0, similarity(x, x) = √x, symmetric, and both-dense beats one-dense', () => {
-    for (const x of [0, 0.1, 0.5, 1]) {
-      expect(similarity(0, x), `(0, ${x})`).toBe(0);
-      expect(similarity(x, 0), `(${x}, 0)`).toBe(0);
-      expect(similarity(x, x), `(${x}, ${x})`).toBeCloseTo(Math.sqrt(x), 12);
+  it('similarity(densA, densB, densC) is the share of the cell\'s edge that COINCIDES: (0,0,0) = 0, (x,x,x) = 1, (x,x,0) = 0, symmetric in A/B, clamped', () => {
+    expect(similarity(0, 0, 0), 'no edge at all → 0, not NaN').toBe(0);
+    for (const x of [1e-3, 0.1, 0.5, 1]) {
+      expect(similarity(x, x, x), `(${x},${x},${x}) every edge shared`).toBe(1);
+      expect(similarity(x, x, 0), `(${x},${x},0) edges in different places`).toBe(0);
+      expect(similarity(x, 0, 0), `(${x},0,0) only A has edges`).toBe(0);
+      expect(similarity(0, x, 0), `(0,${x},0) only B has edges`).toBe(0);
     }
-    expect(similarity(0.2, 0.7)).toBeCloseTo(similarity(0.7, 0.2), 12);
-    expect(similarity(0.7, 0.7)).toBeGreaterThan(similarity(0.2, 0.7));
+    expect(similarity(0.4, 0.2, 0.1), 'the shared share of the DENSER frame').toBeCloseTo(0.25, 12);
+    expect(similarity(0.2, 0.4, 0.1)).toBeCloseTo(similarity(0.4, 0.2, 0.1), 12);
+    expect(similarity(0.2, 0.7, 0.14)).toBeCloseTo(similarity(0.7, 0.2, 0.14), 12);
+    expect(similarity(0.2, 0.3, 0.3), 'all of the denser frame\'s edge shared → 1').toBe(1);
+    expect(similarity(0.2, 0.3, 0.9), 'clamped above').toBe(1);
+    expect(similarity(0.2, 0.3, -1), 'clamped below').toBe(0);
+    expect(similarity(0.5, 0.5, 0.4), 'more shared edge at a fixed total → more similar').toBeGreaterThan(similarity(0.5, 0.5, 0.2));
+  });
+
+  it('blurWeight(wProx, wSim) saturates once the proximity cell carries PROX_FULL of edge, is the softStep below it, and takes the (clamped) similarity as a floor', () => {
+    expect(EDGEFADER_BLUR_PROX_FULL).toBe(0.25);
+    expect(EDGEFADER_BLUR_PROX_PX).toBe(16);
+    expect(blurWeight(0, 0)).toBe(0);
+    expect(blurWeight(EDGEFADER_BLUR_PROX_FULL, 0), 'saturates at PROX_FULL').toBe(1);
+    expect(blurWeight(1, 0)).toBe(1);
+    expect(blurWeight(EDGEFADER_BLUR_PROX_FULL / 2, 0)).toBeCloseTo(0.5, 12);
+    expect(blurWeight(EDGEFADER_BLUR_PROX_FULL * 0.2, 0)).toBeCloseTo(softStep(0, 1, 0.2), 12);
+    expect(blurWeight(0, 0.3), 'a similar region blurs by its similarity').toBe(0.3);
+    expect(blurWeight(0, 1)).toBe(1);
+    expect(blurWeight(0, 2), 'wSim is clamped').toBe(1);
+    expect(blurWeight(EDGEFADER_BLUR_PROX_FULL * 0.2, 0.9), 'the larger of the two').toBe(0.9);
+    for (let i = 1; i < P_GRID.length; i++) {
+      expect(blurWeight(P_GRID[i]! * EDGEFADER_BLUR_PROX_FULL, 0)).toBeGreaterThanOrEqual(blurWeight(P_GRID[i - 1]! * EDGEFADER_BLUR_PROX_FULL, 0));
+      expect(blurWeight(0.1, P_GRID[i]!)).toBeGreaterThanOrEqual(blurWeight(0.1, P_GRID[i - 1]!));
+    }
   });
 
   it('dilateRadius is EDGES\' round(T) − 1 law (edges.ts edgesPixel), capped at EDGES_MAX_THICKNESS − 1', () => {
@@ -440,17 +543,25 @@ describe('edgefader-core — lead law (coincident > edge; similar > flat; inside
     expect(EDGES_MAX_THICKNESS).toBe(8);
   });
 
-  it('pixelLaw composes the law: band, row progress, lead, local progress, blend, blur (scaled by the blur cap)', () => {
-    const f = field({ wEdge: 1, wSim: 0.4 });
+  it('pixelLaw composes the law: band, row progress, lead, local progress, blend, blur from the PROXIMITY field (scaled by the blur cap)', () => {
+    const f = field({ wEdge: 1, wSim: 0.4, wProx: 0.1 });
     const law = pixelLaw(0.33, rowFromTopOf(40), f);
     expect(law.band).toBe(bandOf(rowFromTopOf(40)));
     expect(law.pRow).toBe(rowProgress(0.33, rowFromTopOf(40)));
     expect(law.leadN).toBe(leadFor(f));
     expect(law.pLocal).toBe(localProgress(law.pRow, law.leadN));
     expect(law.blend).toBe(blendWeight(law.pLocal));
-    expect(law.blurPx).toBeCloseTo(blurRadiusPx(law.pLocal, 1), 12);
+    expect(law.pLocal).toBeGreaterThan(0);
+    expect(law.blurPx).toBeCloseTo(blurRadiusPx(law.pLocal, blurWeight(0.1, 0.4)), 12);
+    expect(law.blurPx).toBeGreaterThan(0);
     expect(pixelLaw(0.33, rowFromTopOf(40), f, N, 0).blurPx, 'blurMaxPx 0 → no blur').toBe(0);
     expect(pixelLaw(0.33, rowFromTopOf(40), f, N, 12).blurPx).toBeCloseTo(law.blurPx / 2, 12);
+    // The thin mask alone does not blur: the radius follows the proximity field.
+    const maskOnly = pixelLaw(0.33, rowFromTopOf(40), field({ wEdge: 1 }));
+    expect(maskOnly.pLocal, 'the pixel IS mid-fade').toBeGreaterThan(0);
+    expect(maskOnly.blurPx).toBe(0);
+    expect(pixelLaw(0.33, rowFromTopOf(40), field({ wEdge: 1, wProx: EDGEFADER_BLUR_PROX_FULL })).blurPx)
+      .toBeCloseTo(blurRadiusPx(maskOnly.pLocal, 1), 12);
   });
 });
 
@@ -547,6 +658,8 @@ describe('edgefader-core — melt geometry', () => {
       }
     }
     expect(checked).toBeGreaterThan(3000);
+    // The emulation's multipliers ARE the exported ones (the GLSL interpolates them).
+    expect(EDGEFADER_HASH_MUL).toEqual([374761393, 668265263, 1274126177]);
   });
 
   it('valueNoise equals meltHash at integer x and is continuous between lattice points', () => {
@@ -628,6 +741,7 @@ describe('edgefader-core — melt geometry', () => {
   });
 
   it('meltWobble is 0 at p = 0 and |·| ≤ WOBBLE_UV everywhere', () => {
+    expect(EDGEFADER_WOBBLE_UV).toBe(0.01);
     for (let i = 0; i <= 100; i++) {
       const x = i / 100;
       expect(Math.abs(meltWobble(x, 0.3, 1, 0, 0.5)), `x=${x} at rest`).toBe(0);
@@ -647,7 +761,7 @@ describe('edgefader-core — melt geometry', () => {
     expect(dropLaneCentre(1.01 / EDGEFADER_DROP_LANES)).toBeCloseTo(1.5 / EDGEFADER_DROP_LANES, 12);
   });
 
-  it('dropLane: cx inside its lane, r within [R_MIN, R_MAX], len 0 at the window\'s ends and > 0 mid-way, and some lanes carry a drop', () => {
+  it('dropLane: cx inside its lane, r within [R_MIN, R_MAX], len EXACTLY 0 at both ends of the window (the no-drop sentinel) and > 0 mid-way, and some lanes carry a drop', () => {
     let withDrop = 0;
     for (let k = 0; k < N; k++) {
       for (let lane = 0; lane < EDGEFADER_DROP_LANES; lane++) {
@@ -659,11 +773,18 @@ describe('edgefader-core — melt geometry', () => {
         expect(d.r).toBeLessThanOrEqual(EDGEFADER_DROP_R_MAX);
         expect(d.len, 'mid-way the tongue is out').toBeGreaterThan(0);
         expect(d.len).toBeLessThanOrEqual(EDGEFADER_DROP_LEN_MAX);
-        expect(Math.abs(dropLane(x, k, 0).len), 'no tongue before the window').toBe(0);
-        expect(dropLane(x, k, 1).len, 'no tongue once the window closes').toBeCloseTo(0, 12);
+        // A 4p(1−p) bump, not sin(πp): exactly 0 at both ends, so the sentinel
+        // `len <= 1e-6` agrees on both sides of the mirror.
+        expect(dropLane(x, k, 0).len, 'no tongue before the window').toBe(0);
+        expect(dropLane(x, k, 1).len, 'no tongue once the window closes').toBe(0);
+        expect(dropLane(x, k, 1.3).len).toBe(0);
         // The same lane reads the same drop from anywhere inside it.
         expect(dropLane((lane + 0.9) / EDGEFADER_DROP_LANES, k, 0.5)).toEqual(d);
-        if (d.has) withDrop++;
+        if (d.has) {
+          withDrop++;
+          expect(dropDistance(d.cx, 0.3 + d.len, ASPECT, dropLane(x, k, 0), 0.3), 'no drop at the window\'s start').toBe(Infinity);
+          expect(dropDistance(d.cx, 0.3 + d.len, ASPECT, dropLane(x, k, 1), 0.3), 'no drop once the window closes').toBe(Infinity);
+        }
       }
     }
     expect(withDrop, 'some lanes carry a drop').toBeGreaterThan(0);
@@ -694,6 +815,8 @@ describe('edgefader-core — melt geometry', () => {
     expect(dropDistance(d.cx + 0.2, yc, ASPECT, d, top), 'far to the side').toBeGreaterThan(0);
     expect(dropDistance(x, yc, ASPECT, { ...d, has: false }, top)).toBe(Infinity);
     expect(dropDistance(x, yc, ASPECT, { ...d, len: 0 }, top)).toBe(Infinity);
+    expect(dropDistance(x, yc, ASPECT, { ...d, len: 1e-6 }, top), 'the sentinel is len ≤ 1e-6').toBe(Infinity);
+    expect(dropDistance(x, yc, ASPECT, { ...d, len: 2e-6 }, top)).not.toBe(Infinity);
   });
 
   it('the constant invariant: DRIP_MAX_UV + DROP_LEN_MAX (+ both soft fronts) stays below one band height, so nothing reaches band k+2', () => {
@@ -807,7 +930,7 @@ describe('edgefader-core — edgefaderPixel on synthetic 160×120 pairs', () => 
     }
   });
 
-  it('(b) a pair with NO edges is a plain delayed crossfade: rows uniform, never outside [A, B], strictly between mid-way, upper rows ahead', () => {
+  it('(b) a pair with NO edges is a plain delayed crossfade: rows uniform, the lead-0 law, never outside [A, B], upper rows ahead; mid-way the rows are B / hand-over / A by the row law', () => {
     const p = flatFlat();
     // The grids are Float32Array: read the stored levels back rather than the
     // double literals they were built from.
@@ -829,13 +952,29 @@ describe('edgefader-core — edgefaderPixel on synthetic 160×120 pairs', () => 
         expect(melt, `melt t=${t} row ${y} ≤ B`).toBeLessThanOrEqual(B + 1e-12);
       }
     }
-    // Mid-way: the top is B, the bottom is A and the band in between is strictly between.
+    // Mid-way: the top is B, the bottom is A, and the row law sorts every row
+    // into three classes — a closed window (B exactly), a lead-0 fade that has
+    // not begun (A exactly) and, strictly between, the HAND-OVER rows: band
+    // 1's bottom quarter, where rowStart ramps from 1/6 to 1/3. (Band 2's
+    // unit part starts at 1/3 and so is exactly at its lead-0 threshold here.)
     expect(px(p, 40, 0, 0.5, BLUR)).toBe(B);
     expect(px(p, 40, H - 1, 0.5, BLUR)).toBe(A);
-    for (let x = 0; x < W; x += 5) {
-      const v = px(p, x, 48, 0.5, BLUR);
-      expect(v, `(${x},48) strictly between at t=0.5`).toBeGreaterThan(A);
-      expect(v).toBeLessThan(B);
+    const between: number[] = [];
+    for (let y = 0; y < H; y++) {
+      const pLocal = localProgress(rowProgress(0.5, rowFromTopOf(y)), 0);
+      const v = px(p, 40, y, 0.5, BLUR);
+      if (pLocal >= 1) expect(v, `row ${y} is done`).toBe(B);
+      else if (pLocal <= 0) expect(v, `row ${y} has not begun`).toBe(A);
+      else {
+        expect(v, `row ${y} strictly between at t=0.5`).toBeGreaterThan(A);
+        expect(v).toBeLessThan(B);
+        between.push(y);
+      }
+    }
+    expect(between.length, 'the hand-over rows exist').toBeGreaterThan(0);
+    for (const y of between) {
+      expect(bandOf(rowFromTopOf(y)), `row ${y} is in band 1`).toBe(1);
+      expect(rowFromTopOf(y) * N - 1, `row ${y} is in band 1's bottom quarter`).toBeGreaterThan(EDGEFADER_BAND_UNIT_FRACTION);
     }
     let strictlyBetweenMelt = 0;
     for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 4) {
@@ -903,12 +1042,13 @@ describe('edgefader-core — edgefaderPixel on synthetic 160×120 pairs', () => 
     expect(pixelLaw(0.5, rowFromTopOf(topEdgeY + 6), inside).leadN).toBeCloseTo(EDGEFADER_LEAD_INSIDE / LEAD_SPAN, 12);
   });
 
-  it('(e) inside leads outside in the OUTPUT on a same-row pair across the left edge (only the lead differs)', () => {
-    // The brief's same-column pair straddles two rows, and the row-interpolated
-    // start gives the UPPER (outside) pixel the earlier window BY DESIGN — a
-    // same-column output comparison would measure the row law, not the inside
-    // law. So the output is compared across the LEFT contour, where both pixels
-    // share a row (and so a pRow) and only their lead differs.
+  it('(e) inside leads outside in the OUTPUT on a same-row pair across A\'s left edge, B flat (only the lead differs) — lead alone and through the proximity blur', () => {
+    // The brief's same-column pair straddles two rows, and the row law gives
+    // the UPPER (outside) pixel the earlier window BY DESIGN — a same-column
+    // output comparison would measure the row law, not the inside law. So the
+    // output is compared across the LEFT contour, where both pixels share a
+    // row (and so a pRow) and only their lead differs. B is flat so the
+    // fraction toward B is read off a single B level.
     const p = circleFlat();
     const y = CIRCLE.cy;
     const leftEdgeX = CIRCLE.cx - CIRCLE.r; // 50
@@ -920,14 +1060,54 @@ describe('edgefader-core — edgefaderPixel on synthetic 160×120 pairs', () => 
     expect(outside.inside).toBe(-1);
     expect(leadFor(inside)).toBeGreaterThan(leadFor(outside));
     const t = rowStart(rowFromTopOf(y)) + 0.6 / ((N + 1) * 0.5); // pRow 0.6 on this row
-    const fIn = fractionTowardB(px(p, insideX, y, t, BLUR), p.a[y * W + insideX]!, p.b[y * W + insideX]!);
-    const fOut = fractionTowardB(px(p, outsideX, y, t, BLUR), p.a[y * W + outsideX]!, p.b[y * W + outsideX]!);
+    const fractions = (opts: { blurMaxPx?: number }): [number, number] => [
+      fractionTowardB(px(p, insideX, y, t, BLUR, opts), p.a[y * W + insideX]!, p.b[y * W + insideX]!),
+      fractionTowardB(px(p, outsideX, y, t, BLUR, opts), p.a[y * W + outsideX]!, p.b[y * W + outsideX]!),
+    ];
+    // Lead alone (blur off): the fractions ARE the two blends.
+    const [fIn0, fOut0] = fractions({ blurMaxPx: 0 });
+    expect(fIn0).toBeCloseTo(pixelLaw(t, rowFromTopOf(y), inside).blend, 12);
+    expect(fOut0).toBeCloseTo(pixelLaw(t, rowFromTopOf(y), outside).blend, 12);
+    expect(fIn0, `inside ${fIn0} is further toward B than outside ${fOut0}`).toBeGreaterThan(fOut0);
+    expect(fOut0, 'the outside pixel has started too (it is not lagging the background)').toBeGreaterThan(0);
+    // The full composite: both pixels sit in the proximity footprint (the
+    // blur softens them both), and the ordering survives it.
+    expect(inside.wProx).toBeGreaterThan(0);
+    expect(outside.wProx).toBeGreaterThan(0);
+    const [fIn, fOut] = fractions({});
     expect(fIn, `inside ${fIn} is further toward B than outside ${fOut}`).toBeGreaterThan(fOut);
-    expect(fOut, 'the outside pixel has started too (it is not lagging the background)').toBeGreaterThan(0);
+    expect(fOut).toBeGreaterThan(0);
     expect(fIn).toBeLessThan(1);
   });
 
-  it('(f) coincidence leads: on the shared edge of identical circles wCoinc is 1 and leadN beats the same pixel against a circle shifted 12 px down (wCoinc 0)', () => {
+  it('(e) the ray reads A\'s edges ONLY: with B = stripes the inside/nearEdge of both pairs are exactly what B = flat gives — including the pixel where a stripe edge of B lies on the ray and an either-frame ray would cancel to 0', () => {
+    const flat = circleFlat();
+    const stripes = circleStripes();
+    const sameRow = [[CIRCLE.cx - CIRCLE.r + 6, CIRCLE.cy], [CIRCLE.cx - CIRCLE.r - 6, CIRCLE.cy]] as const;
+    const sameCol = [[CIRCLE.cx, CIRCLE.cy - CIRCLE.r + 6], [CIRCLE.cx, CIRCLE.cy - CIRCLE.r - 6]] as const;
+    for (const [x, y] of [...sameRow, ...sameCol]) {
+      const fF = edgeFieldAt(flat.atlas, x, y);
+      const fS = edgeFieldAt(stripes.atlas, x, y);
+      expect(Math.abs(fF.inside), `(${x},${y}) is a decided inside/outside pixel`).toBe(1);
+      expect(fS.inside, `(${x},${y}) inside is unchanged by B`).toBe(fF.inside);
+      expect(fS.nearEdge, `(${x},${y}) nearEdge is unchanged by B`).toBe(fF.nearEdge);
+      expect(fS.wSim, `(${x},${y}) B's edges still reach the similarity term`).toBeGreaterThan(fF.wSim);
+    }
+    // The instrument's power: on the same-column OUTSIDE pixel the stripes'
+    // edges sit within the taps on the ray (a B-only read sees one), so a ray
+    // over both masks would read A's edge cancelled to 0; the field reads −1.
+    const [ox, oy] = sameCol[1];
+    const cx = (W - 1) / 2;
+    const cy = (H - 1) / 2;
+    const readB = (sx: number, sy: number): number => sampleGrid(W, H, stripes.atlas.edgeB, sx, sy);
+    const readEither = (sx: number, sy: number): number => Math.max(sampleGrid(W, H, stripes.atlas.edgeA, sx, sy), readB(sx, sy));
+    expect(insideScore(readB, ox, oy, cx, cy).nearEdge, 'a stripe edge of B is on the ray').toBe(1);
+    expect(insideScore(readEither, ox, oy, cx, cy).inside, 'an either-frame ray would read 0 here').toBe(0);
+    expect(edgeFieldAt(stripes.atlas, ox, oy).inside, 'the A-only ray reads OUTSIDE').toBe(-1);
+    expect(edgeFieldAt(stripes.atlas, ox, oy).nearEdge).toBe(1);
+  });
+
+  it('(f) coincidence leads: on the shared edge of identical circles wCoinc and wSim are 1, and leadN beats the same pixel against a circle shifted 12 px down (both 0) by exactly the two terms', () => {
     const idPair = circleCircle();
     const shPair = circleShifted();
     const x = CIRCLE.cx;
@@ -938,23 +1118,40 @@ describe('edgefader-core — edgefaderPixel on synthetic 160×120 pairs', () => 
     expect(sh.wEdge, 'A\'s edge is the same in both pairs').toBe(1);
     expect(id.wCoinc).toBe(1);
     expect(sh.wCoinc, 'B\'s contour is 12 px away — beyond the dilation').toBe(0);
+    expect(id.wSim, 'every edge in the cell is shared → similarity 1').toBe(1);
+    expect(sh.wSim, 'no edge in the cell is shared → 0').toBe(0);
     expect(leadFor(id)).toBeGreaterThan(leadFor(sh));
-    // The gap is at least the whole coincidence term: wSim can only be lower
-    // against the shifted B, and an outside-leaning inside term contributes 0.
-    expect(leadFor(id) - leadFor(sh)).toBeGreaterThanOrEqual(EDGEFADER_LEAD_COINCIDENCE / LEAD_SPAN - 1e-12);
+    // The ray reads A only, so the inside term is the same in both pairs and
+    // the gap is exactly the coincidence term plus the similarity term.
+    expect(id.inside).toBe(sh.inside);
+    expect(id.nearEdge).toBe(sh.nearEdge);
+    expect(leadFor(id) - leadFor(sh)).toBeCloseTo((EDGEFADER_LEAD_COINCIDENCE + EDGEFADER_LEAD_SIMILARITY) / LEAD_SPAN, 12);
+    // Against stripes some of the cell's edges coincide: strictly between.
+    const st = edgeFieldAt(circleStripes().atlas, x, y);
+    expect(st.wSim).toBeGreaterThan(0);
+    expect(st.wSim).toBeLessThan(1);
   });
 
-  it('(g) similarity leads: a flat pixel inside a region where BOTH frames carry edges has wSim > 0 and a higher leadN than a flat pixel outside it', () => {
-    const p = checkerChecker();
-    const inside = edgeFieldAt(p.atlas, 35, 27);
-    const outside = edgeFieldAt(p.atlas, 140, 100);
+  it('(g) similarity leads: a flat pixel inside a region whose edges COINCIDE (the same checker in both frames) has wSim 1 and a higher leadN than a flat pixel outside it; the checker shifted half a cell is far less similar', () => {
+    const same = checkerSame();
+    const inside = edgeFieldAt(same.atlas, 35, 27);
+    const outside = edgeFieldAt(same.atlas, 140, 100);
     expect(inside.wEdge, 'the chosen pixel is flat in both frames').toBe(0);
     expect(inside.wCoinc).toBe(0);
-    expect(inside.wSim, 'both frames carry a similar amount of edge around it').toBeGreaterThan(0);
-    expect(outside.wSim).toBe(0);
+    expect(inside.wSim, 'every edge in its cell is shared by both frames').toBe(1);
     expect(outside, 'the outside pixel is flat and far from everything').toEqual(field());
     expect(leadFor(inside)).toBeGreaterThan(leadFor(outside));
-    expect(leadFor(inside)).toBeGreaterThanOrEqual(EDGEFADER_LEAD_SIMILARITY * inside.wSim / LEAD_SPAN - 1e-12);
+    expect(leadFor(inside)).toBeGreaterThan(0.5 * EDGEFADER_LEAD_SIMILARITY / LEAD_SPAN);
+    // The ray sees checker edges both ways here (inside 0), so the lead IS the similarity term.
+    expect(inside.inside).toBe(0);
+    expect(leadFor(inside)).toBeCloseTo(EDGEFADER_LEAD_SIMILARITY * inside.wSim / LEAD_SPAN, 12);
+    // The same amount of edge in the same region but in different places is
+    // what "similar" must NOT reward: the shifted checker scores well under 1.
+    const sh = edgeFieldAt(checkerShifted().atlas, 35, 27);
+    expect(sh.wEdge).toBe(0);
+    expect(sh.wSim, 'only the crossings coincide').toBeGreaterThan(0);
+    expect(sh.wSim).toBeLessThan(0.5);
+    expect(sh.wSim).toBeLessThan(inside.wSim);
     expect(EDGEFADER_COARSE_PX).toBe(32);
   });
 
@@ -1016,12 +1213,97 @@ describe('edgefader-core — edgefaderPixel on synthetic 160×120 pairs', () => 
     }
     expect(edgesA, 'A\'s own edges are still there').toBeGreaterThan(0);
   });
+
+  it('(j) the blur follows the PROXIMITY field, not the thin mask: with a rim pixel mid-fade, pixels up to 8 px either side of the stroke (wEdge 0) blur, the rim blurs at the full radius, and a pixel 30 px away does not', () => {
+    const p = circleFlat();
+    const y = CIRCLE.cy;
+    const rimX = CIRCLE.cx - CIRCLE.r; // 50
+    // The dilated left contour on this row is the 5-px stroke x ∈ [48, 52].
+    for (let x = 44; x <= 56; x++) expect(p.atlas.edgeA[y * W + x], `edgeA at x=${x}`).toBe(x >= 48 && x <= 52 ? 1 : 0);
+    const rim = edgeFieldAt(p.atlas, rimX, y);
+    expect(rim.wEdge).toBe(1);
+    expect(rim.wProx, 'a 5-px stroke saturates the 16-px proximity cell').toBeGreaterThanOrEqual(EDGEFADER_BLUR_PROX_FULL);
+    // The pRow at which the rim pixel's own fade is half-way (from the local
+    // progress law), then the t that puts its row there.
+    const rho = EDGEFADER_LOCAL_FRACTION;
+    const pRowMid = 0.5 * rho + (1 - leadFor(rim)) * (1 - rho);
+    const t = rowStart(rowFromTopOf(y)) + pRowMid / ((N + 1) * 0.5);
+    const rimLaw = pixelLaw(t, rowFromTopOf(y), rim);
+    expect(rimLaw.pLocal).toBeCloseTo(0.5, 12);
+    expect(rimLaw.blurPx, 'the rim blurs at the full radius').toBeCloseTo(EDGEFADER_BLUR_MAX_PX, 9);
+    for (let d = 1; d <= 8; d++) {
+      for (const [side, x] of [['outside', 48 - d], ['inside', 52 + d]] as const) {
+        const f = edgeFieldAt(p.atlas, x, y);
+        expect(f.wEdge, `${side} ${d} px: not on the mask`).toBe(0);
+        expect(f.wProx, `${side} ${d} px: in the proximity footprint`).toBeGreaterThan(0);
+        const law = pixelLaw(t, rowFromTopOf(y), f);
+        expect(law.pLocal, `${side} ${d} px: its own fade is under way`).toBeGreaterThan(0);
+        expect(law.blurPx, `${side} ${d} px blurs`).toBeGreaterThan(0);
+      }
+    }
+    for (const x of [rimX - 30, CIRCLE.cx]) {
+      const f = edgeFieldAt(p.atlas, x, y);
+      expect(f.wProx, `x=${x} is outside the footprint`).toBe(0);
+      expect(f.wSim).toBe(0);
+      expect(pixelLaw(t, rowFromTopOf(y), f).blurPx, `x=${x} does not blur`).toBe(0);
+    }
+  });
+
+  it('(k) melt: the output is continuous across the band lines of a flat column — slid content is blended by its SOURCE row, so one content row carries one blend wherever it lands', () => {
+    // The disc's centre column: everything slid across the 23/24, 47/48 and
+    // 71/72 lines is the disc's flat interior (or the flat outside above it),
+    // so any step at the line would be the law's. Across 95/96 the content
+    // slid down IS the disc's bottom rim, so no claim is made there. The
+    // residual is the lead's ray comb (a 5-px stroke can sit between the 8-
+    // and 14-px taps, stepping the source lead between adjacent source rows);
+    // a whole-band seam would be the blend difference of two band windows.
+    const p = circleFlat();
+    const x = CIRCLE.cx;
+    const BOUND = 0.25;
+    let worst = 0;
+    for (const line of [23, 47, 71]) {
+      expect(bandOf(rowFromTopOf(line + 1)) - bandOf(rowFromTopOf(line)), `rows ${line}/${line + 1} straddle a band line`).toBe(1);
+      for (const t of T_GRID) {
+        const d = Math.abs(px(p, x, line, t, MELT) - px(p, x, line + 1, t, MELT));
+        expect(d, `rows ${line}/${line + 1} at t=${t}`).toBeLessThan(BOUND);
+        worst = Math.max(worst, d);
+      }
+    }
+    expect(worst, 'the column really melts across the lines (the pair is not trivially equal)').toBeGreaterThan(0.05);
+    // The seam that the source law removes: at t = 0.4 the band-2 window has
+    // not reached its lead-0 rows, so a DESTINATION-row blend at row 48 would
+    // be 0 while row 47's own content is well into its fade.
+    expect(localProgress(rowProgress(0.4, rowFromTopOf(48)), 0)).toBe(0);
+    expect(meltBlend(p.atlas, 0.4, x01Of(x), meltLayer(p.atlas, x01Of(x), rowFromTopOf(47), 1, bandProgress(0.4, 1), ASPECT).srcRowFromTop)).toBeGreaterThan(0.3);
+  });
+
+  it('(k) meltBlend IS blendWeight(localProgress(rowProgress(t, srcRow), leadFor(field at the source px))) — the source law, bit for bit', () => {
+    const p = circleFlat();
+    for (const [x01, row, t] of [[0.5, 0.3, 0.4], [0.33, 0.39, 0.5], [0.71, 0.55, 0.6], [0.5, 0.25, 0.3], [0.02, 0.61, 0.7]] as const) {
+      const sx = Math.min(W - 1, Math.max(0, Math.round(x01 * W - 0.5)));
+      const sy = Math.min(H - 1, Math.max(0, Math.round(row * H - 0.5)));
+      const expected = blendWeight(localProgress(rowProgress(t, row), leadFor(edgeFieldAt(p.atlas, sx, sy))));
+      expect(meltBlend(p.atlas, t, x01, row), `(${x01}, ${row}) at t=${t}`).toBe(expected);
+    }
+    expect(meltBlend(p.atlas, 0, 0.5, 0.3)).toBe(0);
+    expect(meltBlend(p.atlas, 1, 0.5, 0.3)).toBe(1);
+    // The source position is clamped onto the grid.
+    expect(meltBlend(p.atlas, 0.5, -0.2, 1.4)).toBe(meltBlend(p.atlas, 0.5, 0, 1.4));
+  });
 });
 
 // ─────────────────────────── the GLSL constants guard ───────────────────────
 
 describe('edgefader.ts — the GLSL takes its constants from the exports, never re-typed', () => {
   const src = readFileSync(fileURLToPath(new URL('./edgefader.ts', import.meta.url)), 'utf8');
+  /** The template literal of one shader source, by its const name. */
+  const shader = (name: string): string => {
+    const start = src.indexOf(`const ${name} = \``);
+    expect(start, `${name} is declared`).toBeGreaterThanOrEqual(0);
+    const end = src.indexOf('`;', start);
+    expect(end, `${name} is closed`).toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
 
   it('the band count N is interpolated from EDGEFADER_BANDS and never typed as a literal', () => {
     const decls = [...src.matchAll(/const float N\s*=\s*([^;]+);/g)].map((m) => m[1]!.trim());
@@ -1029,9 +1311,34 @@ describe('edgefader.ts — the GLSL takes its constants from the exports, never 
     expect(src).not.toMatch(/const float N\s*=\s*\d/);
   });
 
-  it('the only typed float literals in the shaders are the math constants TAU and PI', () => {
-    const typed = [...src.matchAll(/const float (\w+)\s*=\s*[0-9]/g)].map((m) => m[1]!).sort();
-    expect(typed).toEqual(['PI', 'TAU']);
+  it('no typed numeric literal survives in the shaders: every float / int / uint constant (TAU included) is interpolated from an export', () => {
+    expect([...src.matchAll(/const float (\w+)\s*=\s*[0-9]/g)].map((m) => m[1]!)).toEqual([]);
     expect(src).not.toMatch(/const int \w+\s*=\s*[0-9]/);
+    expect(src).not.toMatch(/const uint \w+\s*=\s*[0-9]/);
+    expect(src).toMatch(/const float TAU\s*=\s*\$\{f\(EDGEFADER_TAU\)\}/);
+    expect(src).toMatch(/const float UNIT_FRAC\s*=\s*\$\{f\(EDGEFADER_BAND_UNIT_FRACTION\)\}/);
+    expect(src).toMatch(/const float PROX_FULL\s*=\s*\$\{f\(EDGEFADER_BLUR_PROX_FULL\)\}/);
+    expect(src).toMatch(/const float PROX_LOD\s*=\s*\$\{f\(Math\.log2\(EDGEFADER_BLUR_PROX_PX\)\)\}/);
+    expect(src).toMatch(/const float COARSE_LOD\s*=\s*\$\{f\(Math\.log2\(EDGEFADER_COARSE_PX\)\)\}/);
+  });
+
+  it('the integer hash: highp int in the COMPOSITE and DILATE sources, the multipliers derived from EDGEFADER_HASH_MUL as uint literals', () => {
+    for (const name of ['COMPOSITE_FRAG_SRC', 'DILATE_FRAG_SRC']) {
+      expect(shader(name), `${name} declares highp int`).toContain('precision highp int;');
+    }
+    expect(src).toContain('const uint HASH_M0 = ${EDGEFADER_HASH_MUL[0]}u;');
+    expect(src).toContain('const uint HASH_M1 = ${EDGEFADER_HASH_MUL[1]}u;');
+    expect(src).toContain('const uint HASH_M2 = ${EDGEFADER_HASH_MUL[2]}u;');
+    for (const m of EDGEFADER_HASH_MUL) {
+      expect(Number.isInteger(m) && m > 0 && m < 2 ** 32, `${m} is a uint`).toBe(true);
+    }
+  });
+
+  it('the ray taps read A\'s edges only (edgeAAt, the atlas R channel), interpolated from EDGEFADER_RAY_TAPS_PX', () => {
+    expect(src).toMatch(/float edgeAAt\(vec2 uv\)\s*\{\s*return textureLod\(uAtlas, uv, 0\.0\)\.r;/);
+    expect(src).toContain('const RAY_TAPS_GLSL = EDGEFADER_RAY_TAPS_PX.map(');
+    expect(src).toMatch(/toward = max\(toward, edgeAAt\(/);
+    expect(src).toMatch(/away\s*=\s*max\(away,\s*edgeAAt\(/);
+    expect(shader('COMPOSITE_FRAG_SRC')).toContain('${RAY_TAPS_GLSL}');
   });
 });
