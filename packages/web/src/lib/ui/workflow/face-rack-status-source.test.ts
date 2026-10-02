@@ -772,6 +772,7 @@ const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
   // value in a text node.
   tempest: { role: 'picture', why: 'the vector-well render — rim ring, pit ring, radial lanes and the player claw — plus its SCREEN switch. A SOURCE with no video input, so the retained watch mark is what stops SCREEN OFF muting the well for everything downstream (#2015).' },
   fader: { role: 'picture', why: 'the main OUT mix preview and its SCREEN switch. ⚠ This module has TWO outputs — `out` and the `send` feeding an external FX loop — so the retained watch mark protects an output the switch does not even show, and a loop the player is mixing against (#2015).' },
+  edgefader: { role: 'picture', why: 'the edge-led crossfader\'s live OUT preview canvas and its SCREEN switch (a copy of FaderOutputBody: same previewCollapsed key, same overlay). Stateless — three passes that are a pure function of (in_a, in_b, fader, thresh, thick, melt) — so SCREEN OFF costs it nothing but the OUTPUT, which is what the retained watch mark protects (#2015). The body is a 2-D canvas blit, never a WebGL context, so it is outside the attest basis.' },
 
   // ── BATCH 22 · GROUP 3 — the screens ──────────────────────────────────────
   //

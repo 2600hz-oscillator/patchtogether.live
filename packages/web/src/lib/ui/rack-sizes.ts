@@ -182,6 +182,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   destructor: { size: '1u', hp: 2 }, // 180×360px — 4 knobs in one row
   blood: { size: '2u', hp: 2 }, // BLOOD — DOOM-class Build-engine game (matches doom)
   doom: { size: '2u', hp: 2 }, // 377×360px
+  edgefader: { size: '1u', hp: 2 }, // 180×360px — A/B + MELT + THRESH/THICK faders in one row
   edges: { size: '1u', hp: 2 }, // 180×360px — 2 faders one row beside handles
   feedback: { size: '3u', hp: 2 }, // 411×320px
   frametable: { size: '3u', hp: 2 }, // ~288×~490px — mode selector + 176×132 preview + CHAOS/LIVE + FREEZE/SAVE + MORPH/SPREAD + (SMOOTH: 2 X-Y pads + shape knobs / CHAOS: shimmer+shape / MORPH: none)

@@ -358,6 +358,9 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'cellshade',
   'chromakey',
   'edges',
+  // EDGEFADER (2026-10-01): born strict — every port, every param (the hidden
+  // meltGate landing pad included) documented from day one.
+  'edgefader',
   'colorizer',
   'luma',
   'lumakey',

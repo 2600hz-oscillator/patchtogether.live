@@ -257,6 +257,7 @@ const SUBJECTS: readonly Subject[] = [
   // `toHaveCount(0)` leg is correct for them too.
   { type: 'tempest', prefix: 'tempest', domain: 'video', why: 'the geometry well\'s preview. One of the two G2b faces that cost an attest for their `options` rosters — its named SHAPE selector is resolved from the def, so the picture is where you confirm the selection did something.' },
   { type: 'fader', prefix: 'fader', domain: 'video', why: 'the A/B transition mixer\'s main OUT preview. ⚠ The strongest watch-mark case in the roster: it has TWO outputs — `out` and the `send` feeding an external FX loop — so a lapsed mark stalls an output the switch does not even show.' },
+  { type: 'edgefader', prefix: 'edgefader', domain: 'video', why: 'the edge-led crossfader\'s OUT preview (a copy of FaderOutputBody: same key, same overlay, same watch-mark handling). Stateless, so SCREEN OFF costs nothing but the OUTPUT the retained mark protects.' },
 
   // ── THE CONSOLIDATION ROWS — batch-22 G3, scoreboard, and the two the ─────
   // ── absorb brought in without them ────────────────────────────────────────

@@ -3205,6 +3205,14 @@ export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
   // even show, and can empty the wet path the player is mixing against.
   'tempest',
   'fader',
+  // EDGEFADER (2026-10-01): the two-source crossfader that fades THROUGH the
+  // edges — born faced. One unlabelled band of four cells (A/B, MELT, THRESH,
+  // THICK); the three continuous params are DECLARED faders (the FADER and
+  // EDGES precedents, whose operators it composes), MELT infers to a toggle and
+  // is ACKNOWLEDGED_LATCHING (read as a level in draw(), OR'd with its gate).
+  // SCREEN arrives through its own fullViewBody extension; stateless, so the
+  // mark protects the OUTPUT only.
+  'edgefader',
 
   // ── BATCH 22 · GROUP 3 — THE SCREENS ──────────────────────────────────────
   //
