@@ -727,6 +727,34 @@ export const edgefaderDef: VideoModuleDef = {
           g.uniform1i(loc, unit);
         };
 
+        // ── THE CHEAP CASES FIRST — and they are the cases every fleet spec
+        // and both VRT scenes actually render. With NOTHING patched the law
+        // blends black with black; at either END of the fader every pixel's
+        // blend is exactly 0 or 1 and its blur radius 0 — so the composite IS
+        // the single source. Spending six full-res passes and three mip
+        // rebuilds on those frames is what starved SwiftShader's main thread
+        // (a live engine at ~5 fps makes a 192 px tile click take 30 s) and
+        // timed out the dock VRT scene; a clear or one copy is what they cost
+        // now. The copy is the same texel-centre fetch the composite's
+        // endpoint would make, so the endpoint exactness the tests pin is
+        // unchanged — it is just reached in one pass.
+        const t = clamp01(params.fader);
+        if (!hasA && !hasB) {
+          g.bindFramebuffer(g.FRAMEBUFFER, out.fbo);
+          g.viewport(0, 0, W, H);
+          g.clearColor(0, 0, 0, 1);
+          g.clear(g.COLOR_BUFFER_BIT);
+          g.bindFramebuffer(g.FRAMEBUFFER, null);
+          return;
+        }
+        if (t <= 0 || t >= 1) {
+          fullscreen(copyProgram, out.fbo);
+          bind(0, t <= 0 ? aTex : bTex, uCopy.tex);
+          ctx.drawFullscreenQuad();
+          g.bindFramebuffer(g.FRAMEBUFFER, null);
+          return;
+        }
+
         // Pass 0 — the soft layers (copies of A and B with mip chains).
         fullscreen(copyProgram, softA.fbo);
         bind(0, aTex, uCopy.tex);
@@ -766,8 +794,14 @@ export const edgefaderDef: VideoModuleDef = {
         // mip-generated while it is the bound colour attachment.)
         g.bindFramebuffer(g.FRAMEBUFFER, null);
         g.activeTexture(g.TEXTURE0);
-        refreshMips(g, softA.texture);
-        refreshMips(g, softB.texture);
+        const melt = edgefaderMeltActive(params);
+        // The melt reads the soft layers at level 0 only (sharp copies), so
+        // their chains are rebuilt for the blur alone; the atlas chain feeds
+        // both modes (coarse densities, proximity, the melt's column density).
+        if (!melt) {
+          refreshMips(g, softA.texture);
+          refreshMips(g, softB.texture);
+        }
         refreshMips(g, atlas.texture);
 
         // Pass 3 — COMPOSITE. It reads A and B through the soft layers' exact
@@ -778,8 +812,8 @@ export const edgefaderDef: VideoModuleDef = {
         bind(1, softB.texture, uC.softB);
         bind(2, atlas.texture, uC.atlas);
         g.uniform2f(uC.res, W, H);
-        g.uniform1f(uC.t, clamp01(params.fader));
-        g.uniform1f(uC.melt, edgefaderMeltActive(params) ? 1 : 0);
+        g.uniform1f(uC.t, t);
+        g.uniform1f(uC.melt, melt ? 1 : 0);
         ctx.drawFullscreenQuad();
 
         g.bindFramebuffer(g.FRAMEBUFFER, null);
