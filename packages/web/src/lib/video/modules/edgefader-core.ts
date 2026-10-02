@@ -37,11 +37,15 @@
 //
 // WHERE THE PORT IS NOT LINE-FOR-LINE, stated here so nobody "fixes" it:
 //   * the GPU approximates `boxMean` (the progressive blur) with a trilinear
-//     read of a mip chain at LOD log2(radius) — a box of ~2^LOD px — and the
-//     coarse edge DENSITY with a LOD read of the atlas (EDGEFADER_COARSE_PX
-//     cells). The mirror uses true box means over the same window sizes.
-//     Every test on those terms is therefore a floor or an ordering, never a
-//     pixel equality.
+//     read of a mip chain at LOD log2(radius) — a box of ~radius px on a side
+//     — and the coarse edge DENSITIES / the blur PROXIMITY with LOD reads of
+//     the atlas (EDGEFADER_COARSE_PX / EDGEFADER_BLUR_PROX_PX cells). The
+//     mirror uses true box means of about the same width (radius/2 either way
+//     of the pixel). Every test on those terms is therefore a floor or an
+//     ordering, never a pixel equality.
+//   * the GPU's ray taps read the atlas BILINEARLY at fractional px; the mirror
+//     reads its atlas bilinearly too (`sampleGrid`), but on a grid whose px are
+//     the test's px, so `inside`/`nearEdge` agree in sign, not to the bit.
 
 import { edgesPixel, EDGES_MAX_THICKNESS } from './edges';
 
@@ -72,6 +76,21 @@ export const EDGEFADER_RAY_TAPS_PX: readonly number[] = [4, 8, 14, 22];
  *  (the GPU reads the atlas mip at log2 of this). */
 export const EDGEFADER_COARSE_PX = 32;
 
+/** The blur PROXIMITY cell: how far from a stroke the progressive blur
+ *  reaches (engine px; the GPU reads the atlas mip at log2 of this). A thin
+ *  stroke only turns grey under a blur — it is the region AROUND it that
+ *  visibly softens — so the blur weight comes from this wider field while the
+ *  lead keeps reading the thin mask. */
+export const EDGEFADER_BLUR_PROX_PX = 16;
+/** The proximity density at which the blur weight saturates (a 4 px stroke
+ *  in a 16 px cell is 0.25). */
+export const EDGEFADER_BLUR_PROX_FULL = 0.25;
+
+/** Fraction of each band, from its top, that starts its window AS A UNIT; the
+ *  rest of the band ramps to the next band's start so the boundary is not a
+ *  seam (see `rowStart`). */
+export const EDGEFADER_BAND_UNIT_FRACTION = 0.75;
+
 /** Melt: value-noise lanes across the width for the per-column start delay
  *  (coarse keeps the front liquid, fine gives the classic jaggedness). */
 export const EDGEFADER_MELT_NOISE_COARSE = 12;
@@ -87,7 +106,21 @@ export const EDGEFADER_DRIP_MAX_UV = 0.12;
 /** Melt: the shortest slide relative to the longest. */
 export const EDGEFADER_DRIP_MIN_FRAC = 0.55;
 /** Melt: horizontal liquid wobble of the sliding content, in uv. */
-export const EDGEFADER_WOBBLE_UV = 0.004;
+export const EDGEFADER_WOBBLE_UV = 0.01;
+/** Melt: wobble cycles down the frame, and how far its phase advances over a
+ *  band's window (radians). */
+export const EDGEFADER_WOBBLE_FREQ = 3;
+export const EDGEFADER_WOBBLE_RATE = 6;
+/** Melt: the two value-noise octave weights of the start-delay field. */
+export const EDGEFADER_MELT_OCTAVES: readonly [number, number] = [0.7, 0.3];
+/** A hair added before every lattice `floor` of a lane index, on BOTH sides,
+ *  so a column centre that lands exactly on a lattice point in double never
+ *  sits one float32 ulp either side of it on the GPU. */
+export const EDGEFADER_LANE_BIAS = 1e-4;
+/** 2π, exported so the GLSL interpolates the same literal. */
+export const EDGEFADER_TAU = 6.2831853;
+/** The integer hash: (i·M0 + seed·M1) → xorshift 13 → ·M2 → xorshift 16. */
+export const EDGEFADER_HASH_MUL: readonly [number, number, number] = [374761393, 668265263, 1274126177];
 /** Melt: the drip front's softness, in uv (a wet edge, not a hard cut). */
 export const EDGEFADER_FRONT_SOFT_UV = 0.01;
 /** Melt droplets: lanes across the width, each carrying at most one drop. */
@@ -133,8 +166,8 @@ export function softStep(e0: number, e1: number, x: number): number {
 /** 32-bit integer hash → [0,1). Bit-exact between JS (imul / >>>) and GLSL
  *  ES 3.0 uint arithmetic, which is what makes the melt geometry a true mirror. */
 export function meltHash(i: number, seed: number): number {
-  let h = (Math.imul(i | 0, 374761393) + Math.imul(seed | 0, 668265263)) >>> 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  let h = (Math.imul(i | 0, EDGEFADER_HASH_MUL[0]) + Math.imul(seed | 0, EDGEFADER_HASH_MUL[1])) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), EDGEFADER_HASH_MUL[2]) >>> 0;
   h = (h ^ (h >>> 16)) >>> 0;
   return (h & 0xffffff) / 16777216;
 }
@@ -197,14 +230,18 @@ export function bandOf(rowFromTop: number, n: number = EDGEFADER_BANDS): number 
   return k < 0 ? 0 : k > n - 1 ? n - 1 : k;
 }
 
-/** The window START for a ROW: the band law interpolated between band
- *  centres, so a row at the centre of band k starts exactly at band k's start
- *  and no two adjacent rows ever differ by a whole stagger. Rows above the top
- *  band's centre start with it; rows below the bottom band's centre with it. */
+/** The window START for a ROW: the top EDGEFADER_BAND_UNIT_FRACTION of each
+ *  band starts with the band (the five regions stay visible as regions), and
+ *  the rest of the band ramps smoothly to the next band's start, so a band
+ *  boundary is a soft hand-over rather than a seam. The band-centre law
+ *  `bandProgress` holds exactly over the unit part of every band. */
 export function rowStart(rowFromTop: number, n: number = EDGEFADER_BANDS): number {
-  const kf = rowFromTop * n - 0.5;
-  const c = kf < 0 ? 0 : kf > n - 1 ? n - 1 : kf;
-  return c / (n + 1);
+  const scaled = rowFromTop * n;
+  const k = Math.floor(scaled);
+  const fr = scaled - k;
+  const c = k + softStep(EDGEFADER_BAND_UNIT_FRACTION, 1, fr);
+  const cc = c < 0 ? 0 : c > n - 1 ? n - 1 : c;
+  return cc / (n + 1);
 }
 
 /** A row's progress at fader t (the seam-free form of `bandProgress`). */
@@ -221,9 +258,12 @@ export interface EdgeField {
   wEdge: number;
   /** min(edgeA, edgeB) — A's edge and B's edge COINCIDE here. */
   wCoinc: number;
-  /** The coarse similarity: both frames carry a similar amount of edge in the
-   *  cell around this pixel (see `similarity`). */
+  /** The coarse similarity: the share of the cell's edges that COINCIDE —
+   *  where A's and B's edges sit in the same places (see `similarity`). */
   wSim: number;
+  /** Edge proximity: the density of either frame's edges in the wider
+   *  EDGEFADER_BLUR_PROX_PX cell — what the blur footprint follows. */
+  wProx: number;
   /** +1 = an edge lies on the pixel's border-ward side (the pixel is INSIDE
    *  it, centre-ward); −1 = an edge lies between the pixel and the centre
    *  (OUTSIDE); 0 = neither / both. */
@@ -234,14 +274,21 @@ export interface EdgeField {
   nearEdge: number;
 }
 
-/** The coarse "regions most like each other" term from the two frames' edge
- *  DENSITIES over a cell: 1 when both carry the same, dense edge content, 0
- *  when either has none. */
-export function similarity(densA: number, densB: number): number {
-  const lo = Math.min(densA, densB);
+/** The coarse "regions most like each other in where their edges are" term:
+ *  of all the edge in the cell (either frame), the share that COINCIDES —
+ *  1 when every edge in the cell is shared by both frames, 0 when none is.
+ *  THICK sets the tolerance, because the masks it compares are the dilated
+ *  ones. */
+export function similarity(densA: number, densB: number, densCoinc: number): number {
   const hi = Math.max(densA, densB);
   if (hi <= 1e-6) return 0;
-  return (lo / hi) * Math.sqrt(lo);
+  return clamp01(densCoinc / hi);
+}
+
+/** The blur weight for a pixel: saturates once the proximity cell carries a
+ *  stroke's worth of edge, or when the region's edges coincide. */
+export function blurWeight(wProx: number, wSim: number): number {
+  return Math.max(softStep(0, EDGEFADER_BLUR_PROX_FULL, wProx), clamp01(wSim));
 }
 
 /**
@@ -272,10 +319,10 @@ export function localProgress(pRow: number, leadN: number): number {
 }
 
 /** Blur radius (engine px): a bump that is 0 at both ends of the pixel's
- *  fade and peaks mid-way, scaled by how edged/similar the region is. */
-export function blurRadiusPx(pLocal: number, wRegion: number): number {
+ *  fade and peaks mid-way, scaled by the blur weight (`blurWeight`). */
+export function blurRadiusPx(pLocal: number, wBlur: number): number {
   const p = clamp01(pLocal);
-  return EDGEFADER_BLUR_MAX_PX * clamp01(wRegion) * 4 * p * (1 - p);
+  return EDGEFADER_BLUR_MAX_PX * clamp01(wBlur) * 4 * p * (1 - p);
 }
 
 /** A→B blend weight from the pixel's own progress (0 = A, 1 = B). */
@@ -320,8 +367,8 @@ export function insideScore(
 
 /** The per-column start-delay noise, [0,1): two octaves of value noise. */
 export function meltDelayNoise(x01: number, k: number): number {
-  return 0.7 * valueNoise(x01 * EDGEFADER_MELT_NOISE_COARSE, EDGEFADER_SEEDS.delayCoarse + k)
-    + 0.3 * valueNoise(x01 * EDGEFADER_MELT_NOISE_FINE, EDGEFADER_SEEDS.delayFine + k);
+  return EDGEFADER_MELT_OCTAVES[0] * valueNoise(x01 * EDGEFADER_MELT_NOISE_COARSE, EDGEFADER_SEEDS.delayCoarse + k)
+    + EDGEFADER_MELT_OCTAVES[1] * valueNoise(x01 * EDGEFADER_MELT_NOISE_FINE, EDGEFADER_SEEDS.delayFine + k);
 }
 
 /** A column's progress through its own slide: 0 until its delay has passed,
@@ -352,13 +399,14 @@ export function meltSlide(x01: number, k: number, p: number): number {
  *  the column's progress (zero at rest) and its phase advances with the band's
  *  progress, never with a clock (gl-transitions Dreamy). */
 export function meltWobble(x01: number, rowFromTop: number, k: number, p: number, pBand: number): number {
-  const phase = meltHash(Math.floor(x01 * EDGEFADER_MELT_NOISE_FINE), EDGEFADER_SEEDS.wobble + k) * 6.2831853;
-  return EDGEFADER_WOBBLE_UV * clamp01(p) * Math.sin(6.2831853 * (3 * rowFromTop) + phase + 6 * clamp01(pBand));
+  const phase = meltHash(Math.floor(x01 * EDGEFADER_MELT_NOISE_FINE + EDGEFADER_LANE_BIAS), EDGEFADER_SEEDS.wobble + k) * EDGEFADER_TAU;
+  return EDGEFADER_WOBBLE_UV * clamp01(p)
+    * Math.sin(EDGEFADER_TAU * (EDGEFADER_WOBBLE_FREQ * rowFromTop) + phase + EDGEFADER_WOBBLE_RATE * clamp01(pBand));
 }
 
 /** The x of the pixel's droplet lane centre. */
 export function dropLaneCentre(x01: number): number {
-  return (Math.floor(x01 * EDGEFADER_DROP_LANES) + 0.5) / EDGEFADER_DROP_LANES;
+  return (Math.floor(x01 * EDGEFADER_DROP_LANES + EDGEFADER_LANE_BIAS) + 0.5) / EDGEFADER_DROP_LANES;
 }
 
 /** One droplet lane of band k: whether it carries a drop and its geometry. */
@@ -375,12 +423,15 @@ export interface DropLane {
 /** `pLane` is the column progress read at the lane's centre, so the whole
  *  drop moves as one body. */
 export function dropLane(x01: number, k: number, pLane: number): DropLane {
-  const lane = Math.floor(x01 * EDGEFADER_DROP_LANES);
+  const lane = Math.floor(x01 * EDGEFADER_DROP_LANES + EDGEFADER_LANE_BIAS);
   const c = (lane + 0.5) / EDGEFADER_DROP_LANES;
   const has = meltHash(lane, EDGEFADER_SEEDS.dropHas + k) < EDGEFADER_DROP_PROB;
   const cx = c + (meltHash(lane, EDGEFADER_SEEDS.dropX + k) - 0.5) * EDGEFADER_DROP_JITTER / EDGEFADER_DROP_LANES;
   const r = EDGEFADER_DROP_R_MIN + (EDGEFADER_DROP_R_MAX - EDGEFADER_DROP_R_MIN) * meltHash(lane, EDGEFADER_SEEDS.dropR + k);
-  const len = EDGEFADER_DROP_LEN_MAX * Math.sin(Math.PI * clamp01(pLane)) * (0.5 + 0.5 * meltHash(lane, EDGEFADER_SEEDS.dropLen + k));
+  // A polynomial bump, not sin(πp): it is EXACTLY 0 at both ends in float32
+  // and in double, so the no-drop sentinel below agrees on both sides.
+  const pl = clamp01(pLane);
+  const len = EDGEFADER_DROP_LEN_MAX * 4 * pl * (1 - pl) * (0.5 + 0.5 * meltHash(lane, EDGEFADER_SEEDS.dropLen + k));
   return { has, cx, r, len };
 }
 
@@ -391,7 +442,7 @@ export function dropLane(x01: number, k: number, pLane: number): DropLane {
  * +Infinity when the lane carries none.
  */
 export function dropDistance(x01: number, rowFromTop: number, aspect: number, lane: DropLane, top: number): number {
-  if (!lane.has || lane.len <= 0) return Infinity;
+  if (!lane.has || lane.len <= 1e-6) return Infinity;
   const qx = (x01 - lane.cx) * aspect;
   const qy = rowFromTop;
   const yc = top + lane.len - lane.r;
@@ -418,16 +469,22 @@ export interface MirrorOptions {
   bands?: number;
 }
 
-/** The mirror's atlas: per-texel dilated masks and the coarse densities, on
- *  the grid's own resolution (= the engine's full-res atlas). */
+/** The mirror's atlas: per-texel dilated masks, their coincidence, and the
+ *  coarse densities, on the grid's own resolution (= the engine's full-res
+ *  atlas: R = edgeA, G = edgeB, B = coinc; the mip chain = the densities). */
 export interface EdgeAtlas {
   w: number;
   h: number;
   edgeA: Float32Array;
   edgeB: Float32Array;
-  /** Coarse density of edgeA / edgeB over the cell around each texel. */
+  /** min(edgeA, edgeB) — where the two dilated masks overlap. */
+  coinc: Float32Array;
+  /** Coarse density (EDGEFADER_COARSE_PX cell) of edgeA / edgeB / coinc. */
   densA: Float32Array;
   densB: Float32Array;
+  densC: Float32Array;
+  /** Density of max(edgeA, edgeB) over the EDGEFADER_BLUR_PROX_PX cell. */
+  prox: Float32Array;
 }
 
 /** Edge-clamped read of a row-major grid at an integer texel. */
@@ -481,11 +538,13 @@ export function buildEdgeAtlas(
   lumaB: ArrayLike<number>,
   threshold: number,
   thicknessPx: number,
-  opts: { coarsePx?: number; hasA?: boolean; hasB?: boolean } = {},
+  opts: { coarsePx?: number; proxPx?: number; hasA?: boolean; hasB?: boolean } = {},
 ): EdgeAtlas {
   const n = w * h;
   const edgeA = new Float32Array(n);
   const edgeB = new Float32Array(n);
+  const coinc = new Float32Array(n);
+  const edgeAny = new Float32Array(n);
   const hasA = opts.hasA ?? true;
   const hasB = opts.hasB ?? true;
   // edgesPixel's dilation reads round(thickness) − 1 — the same `dilateRadius`
@@ -496,19 +555,26 @@ export function buildEdgeAtlas(
       const i = y * w + x;
       edgeA[i] = hasA ? edgesPixel(w, h, lumaA, x, y, threshold, thick) : 0;
       edgeB[i] = hasB ? edgesPixel(w, h, lumaB, x, y, threshold, thick) : 0;
+      coinc[i] = Math.min(edgeA[i]!, edgeB[i]!);
+      edgeAny[i] = Math.max(edgeA[i]!, edgeB[i]!);
     }
   }
   const densA = new Float32Array(n);
   const densB = new Float32Array(n);
+  const densC = new Float32Array(n);
+  const prox = new Float32Array(n);
   const half = Math.max(0, Math.round((opts.coarsePx ?? EDGEFADER_COARSE_PX) / 2));
+  const proxHalf = Math.max(0, Math.round((opts.proxPx ?? EDGEFADER_BLUR_PROX_PX) / 2));
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
       densA[i] = boxMean(w, h, edgeA, x, y, half);
       densB[i] = boxMean(w, h, edgeB, x, y, half);
+      densC[i] = boxMean(w, h, coinc, x, y, half);
+      prox[i] = boxMean(w, h, edgeAny, x, y, proxHalf);
     }
   }
-  return { w, h, edgeA, edgeB, densA, densB };
+  return { w, h, edgeA, edgeB, coinc, densA, densB, densC, prox };
 }
 
 /** The per-pixel EdgeField read off a mirror atlas. */
@@ -521,16 +587,16 @@ export function edgeFieldAt(
   const { w, h } = atlas;
   const eA = texelAt(w, h, atlas.edgeA, x, y);
   const eB = texelAt(w, h, atlas.edgeB, x, y);
-  const wEdgeAt = (px: number, py: number): number => {
-    const ix = Math.round(px);
-    const iy = Math.round(py);
-    return Math.max(texelAt(w, h, atlas.edgeA, ix, iy), texelAt(w, h, atlas.edgeB, ix, iy));
-  };
-  const { inside, nearEdge } = insideScore(wEdgeAt, x, y, (w - 1) / 2, (h - 1) / 2, rayTapsPx);
+  // The ray reads the OUTGOING frame's edges only (A's): "inside an edge" is
+  // about the content being faded, and B's edges would otherwise own the term
+  // wherever B is busy. Bilinear, like the GPU's atlas read.
+  const edgeAAt = (px: number, py: number): number => sampleGrid(w, h, atlas.edgeA, px, py);
+  const { inside, nearEdge } = insideScore(edgeAAt, x, y, (w - 1) / 2, (h - 1) / 2, rayTapsPx);
   return {
     wEdge: Math.max(eA, eB),
-    wCoinc: Math.min(eA, eB),
-    wSim: similarity(texelAt(w, h, atlas.densA, x, y), texelAt(w, h, atlas.densB, x, y)),
+    wCoinc: texelAt(w, h, atlas.coinc, x, y),
+    wSim: similarity(texelAt(w, h, atlas.densA, x, y), texelAt(w, h, atlas.densB, x, y), texelAt(w, h, atlas.densC, x, y)),
+    wProx: texelAt(w, h, atlas.prox, x, y),
     inside,
     nearEdge,
   };
@@ -558,14 +624,13 @@ export function pixelLaw(
   const pRow = rowProgress(t, rowFromTop, n);
   const leadN = leadFor(field);
   const pLocal = localProgress(pRow, leadN);
-  const wRegion = Math.max(field.wEdge, field.wSim);
   return {
     band,
     pRow,
     leadN,
     pLocal,
     blend: blendWeight(pLocal),
-    blurPx: blurRadiusPx(pLocal, wRegion) * (blurMaxPx / EDGEFADER_BLUR_MAX_PX),
+    blurPx: blurRadiusPx(pLocal, blurWeight(field.wProx, field.wSim)) * (blurMaxPx / EDGEFADER_BLUR_MAX_PX),
   };
 }
 
@@ -656,19 +721,23 @@ export function edgefaderPixel(
   const law = pixelLaw(t, rowFromTop, field, n, opts.blurMaxPx);
 
   if (!params.melt) {
-    const a = boxMean(w, h, lumaA, x, y, law.blurPx);
-    const b = boxMean(w, h, lumaB, x, y, law.blurPx);
+    // A (2r+1)-wide box is about twice the GPU's ~r-px mip cell: use r/2.
+    const a = boxMean(w, h, lumaA, x, y, law.blurPx / 2);
+    const b = boxMean(w, h, lumaB, x, y, law.blurPx / 2);
     return a + (b - a) * law.blend;
   }
 
   // MELT — the band's own slide, then any drip arriving from the band above.
+  // Slid content is blended by the law of its SOURCE row and the field at its
+  // SOURCE position, so one content row carries one blend wherever it has
+  // slid to (no seam at the band line, no ghost of A's mask at its old place).
   const aspect = w / h;
   const k = law.band;
   const bAt = texelAt(w, h, lumaB, x, y);
   const pBand = bandProgress(t, k, n);
   const own = meltLayer(atlas, x01, rowFromTop, k, pBand, aspect, n);
   const aOwn = sampleGrid(w, h, lumaA, (x01 + own.xShift) * w - 0.5, own.srcRowFromTop * h - 0.5);
-  const slid = aOwn + (bAt - aOwn) * law.blend;      // the slid content, fading to B
+  const slid = aOwn + (bAt - aOwn) * meltBlend(atlas, t, x01 + own.xShift, own.srcRowFromTop, n, opts.rayTapsPx);
   let out = bAt + (slid - bAt) * own.cover;           // uncovered → B (vacated)
 
   if (k > 0) {
@@ -676,11 +745,26 @@ export function edgefaderPixel(
     const above = meltLayer(atlas, x01, rowFromTop, k - 1, pAbove, aspect, n);
     if (above.cover > 0) {
       const aDrip = sampleGrid(w, h, lumaA, (x01 + above.xShift) * w - 0.5, above.srcRowFromTop * h - 0.5);
-      // The drip fades with the band it came from, read at THIS pixel's field.
-      const blendAbove = blendWeight(localProgress(pAbove, law.leadN));
-      const dripped = aDrip + (bAt - aDrip) * blendAbove;
+      const dripped = aDrip + (bAt - aDrip) * meltBlend(atlas, t, x01 + above.xShift, above.srcRowFromTop, n, opts.rayTapsPx);
       out = out + (dripped - out) * above.cover;
     }
   }
   return out;
+}
+
+/** The A→B blend of a slid sample: the row law and the lead of the SOURCE
+ *  position (x01, rowFromTop in uv), never the destination's. */
+export function meltBlend(
+  atlas: EdgeAtlas,
+  t: number,
+  srcX01: number,
+  srcRowFromTop: number,
+  n: number = EDGEFADER_BANDS,
+  rayTapsPx: readonly number[] = EDGEFADER_RAY_TAPS_PX,
+): number {
+  const { w, h } = atlas;
+  const sx = Math.min(w - 1, Math.max(0, Math.round(srcX01 * w - 0.5)));
+  const sy = Math.min(h - 1, Math.max(0, Math.round(srcRowFromTop * h - 0.5)));
+  const field = edgeFieldAt(atlas, sx, sy, rayTapsPx);
+  return blendWeight(localProgress(rowProgress(t, srcRowFromTop, n), leadFor(field)));
 }
