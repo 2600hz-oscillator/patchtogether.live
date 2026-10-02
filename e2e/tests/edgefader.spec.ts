@@ -16,9 +16,9 @@
 //      band-centre law, EXACT ([1, 1, 0.5, 0, 0]; [0.5, 0, 0, 0, 0] at 1/6) —
 //      and the picture's per-band fraction toward B, which is an ORDERING plus
 //      FLOORS (top band ≥ 0.9, bottom band ≤ 0.03, non-increasing top → bottom)
-//      because a ROW's window start is interpolated between band centres (no
-//      seam), so one band's rows sit at different stages at one fader value and
-//      a band is "fully B" only once the band below it has passed its centre.
+//      because the bottom quarter of every band ramps its window start to the
+//      next band's (a hand-over, not a seam), so a band's lowest rows lag its
+//      unit part and a band is "fully B" only once the band below it is through.
 //   b. CV ROUTES THE THREE INPUTS. One real +0.5 CV (DEPOLARIZER at depth 0
 //      through UNITYSCALEMATHEMATIK's attenuverter) fanned into the fader,
 //      threshold and thickness jacks: readParam shows the linear cv-scale law
@@ -67,12 +67,14 @@ const MIN_CONTRAST = 4;
 const STRIPS_PER_BAND = 4;
 /** MELT floors over the strips of the mid-cascade bands, in levels: the
  *  summed |Δ| and the largest single-strip |Δ| between melt and blur at fader
- *  0.5. Measured 125 and 61 on the real chain (a slid band's lower strips
- *  swap the circle for the black above it; the half-way band's vacated top
- *  strip shows the incoming stripes), so these sit at ~¼ of the measurement:
- *  floors on a deterministic frame, with room for renderer filtering. */
-const MELT_STRIP_SUM_MIN = 30;
-const MELT_STRIP_MAX_MIN = 15;
+ *  0.5. Measured 200 and 103 on the real chain under the band-unit law (the
+ *  half-way band's vacated top strip shows the incoming stripes in place of
+ *  the circle; the fully slid band's lowest strip reads B, sourced from its
+ *  unit part, where the blur still ramps), so these sit at ~¼ of the
+ *  measurement: floors on a deterministic frame, with room for renderer
+ *  filtering. */
+const MELT_STRIP_SUM_MIN = 50;
+const MELT_STRIP_MAX_MIN = 25;
 
 /** Per-test budget, scaled by the number of PROBES the test makes — a probe
  *  is two synchronous steps of the six-pass engine-res pipeline plus one
@@ -432,10 +434,10 @@ test.describe('EDGEFADER — two real sources → edge-led cascade → engine FB
     // already faded to B, so it is B in both modes. Band 4's window has not
     // opened (progress 0) and band 3's drip has zero length at progress 0, so
     // it is A in both modes. Bands 1–3 are mid-cascade: band 1 has fully slid
-    // (its lower rows show what was above them, its top rows the incoming
-    // frame), band 2 is half-way and vacates its top rows while its content
-    // slides, and band 3 receives band 2's drip — those are where a slide
-    // differs from a blur.
+    // (every row it still shows was sourced from its unit part, so it reads B
+    // where the blur's bottom quarter still ramps), band 2 is half-way and
+    // vacates its top rows while its content slides, and band 3 receives
+    // band 2's drip — those are where a slide differs from a blur.
     const delta = melt.map((m, i) => m - blur[i]!);
     const edgeStrips = delta.filter((_, i) => stripBand(i) === 0 || stripBand(i) === bands - 1);
     expect(
