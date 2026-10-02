@@ -272,9 +272,10 @@ export async function disposeFakeCameras(page: Page): Promise<void> {
 export type FakeHelperMode = 'ok' | 'fail';
 
 export interface FakeShellOptions {
-  /** How `helpers.status` answers: 'ok' → es9 running / ptz stopped (binary not
-   *  found); 'fail' → a RETRYABLE error envelope (the shape the pre-flight retry
-   *  affordance keys off). Default 'ok'. */
+  /** How `helpers.status` answers: 'ok' → es9 running / ptz unavailable (binary
+   *  not found — the supervisor's own state for a helper that was never built,
+   *  apps/desktop/src/supervisor.ts); 'fail' → a RETRYABLE error envelope (the
+   *  shape the pre-flight retry affordance keys off). Default 'ok'. */
   helpers?: FakeHelperMode;
 }
 
@@ -296,7 +297,7 @@ export async function installFakeShell(page: Page, opts: FakeShellOptions = {}):
         result: {
           current: [
             { id: 'es9', state: 'running', pid: 4242, port: 9209, attempt: 0, delayMs: null, detail: null, ts: 1 },
-            { id: 'ptz', state: 'stopped', pid: null, port: null, attempt: 0, delayMs: null, detail: 'binary not found', ts: 1 },
+            { id: 'ptz', state: 'unavailable', pid: null, port: null, attempt: 0, delayMs: null, detail: 'binary not found', ts: 1 },
           ],
           history: [],
         },

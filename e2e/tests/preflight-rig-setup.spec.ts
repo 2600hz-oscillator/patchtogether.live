@@ -12,7 +12,9 @@
 // swap), and the PLAIN-BROWSER leg at the bottom proves the redirect.
 //
 // Covered here (the shell's rows + the launch swap + pre-flight persistence):
-//   * displays  → getScreenDetails double → setOutput
+//   * NO display rows — the shell opens no output windows, so a display pick on
+//                 the splash would be applied by nobody (outputs are presented
+//                 from the rack); the splash must not offer one
 //   * cameras   → enumerateDevices/getUserMedia double → setCamera (+ the grant
 //                 gesture that de-redacts labels)
 //   * push2 / launchpad / ptz → the shared WebMIDI double (installMidiDeviceMock),
@@ -50,7 +52,6 @@ const SCREENS: FakeScreen[] = [
   { label: 'Built-in Retina', isInternal: true, width: 3024, height: 1964, devicePixelRatio: 2 },
   { label: 'DELL U2720Q', width: 3840, height: 2160, devicePixelRatio: 2, left: 3024 },
 ];
-const DELL_OPTION = 'DELL U2720Q · 3840×2160';
 
 const CAMERAS = [
   { deviceId: 'cam-a', label: 'Studio Cam A' },
@@ -93,26 +94,18 @@ test.describe('STAGE-1 pre-flight — per-slot rig setup', () => {
     await disposeFakeCameras(page);
   });
 
-  test('DISPLAYS: detect lists screens; picking one writes setOutput', async ({ page, errorWatch }) => {
+  test('DISPLAYS: the splash offers NO display rows — two live screens are detectable, and nothing here can bind one', async ({ page, errorWatch }) => {
     await gotoPreflight(page);
-    const row = page.getByTestId('preflight-output-select').and(page.locator('[data-slot="output1"]'));
-
-    // Before detect, no live screens are listed (only "none").
-    await expect(row.locator('option')).toHaveCount(1);
-    await page.getByTestId('preflight-displays-detect').click();
-    // The Window-Management double resolves both screens.
-    await expect(row.locator('option')).toHaveCount(3);
-
-    await row.selectOption({ label: DELL_OPTION });
-    await expect
-      .poll(async () => ((await readRig(page)).outputs as Record<string, { screen?: { label?: string } }>)?.output1?.screen?.label, {
-        message: 'picking a display writes rigBindings().setOutput(output1, {screen})',
-      })
-      .toBe('DELL U2720Q');
-    // Presence reflects the live resolution.
-    await expect(
-      page.getByTestId('preflight-output-presence').and(page.locator('[data-slot="output1"]')),
-    ).toHaveAttribute('data-state', 'ok');
+    // The Window-Management double really resolves two screens (the positive
+    // control that this is a removed ROW, not an empty roster)…
+    expect(await page.evaluate(async () => (await (window as unknown as { getScreenDetails(): Promise<{ screens: unknown[] }> }).getScreenDetails()).screens.length)).toBe(2);
+    // …and the splash has no section, select or detect button for them: the
+    // shell opens no output windows, so a pick would be applied by nobody and
+    // would only ever have armed the relaunch guard.
+    await expect(page.getByTestId('preflight-section-displays')).toHaveCount(0);
+    await expect(page.getByTestId('preflight-output-select')).toHaveCount(0);
+    await expect(page.getByTestId('preflight-displays-detect')).toHaveCount(0);
+    expect((await readRig(page)).outputs).toEqual({});
     errorWatch.assertClean();
   });
 

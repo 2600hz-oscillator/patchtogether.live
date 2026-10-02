@@ -77,8 +77,9 @@ function resolveHelperBinary(id: string, unpackagedRel: string): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'helpers', path.basename(unpackagedRel))
     : path.resolve(__dirname, '../../..', unpackagedRel);
-  // A missing path is fine: the supervisor reports 'stopped' with the detail
-  // instead of spawning — the pre-flight status row shows exactly that.
+  // A missing path is fine: the supervisor reports 'unavailable' with the
+  // detail instead of spawning — the pre-flight status row shows exactly that,
+  // and the rig relaunch guard treats it as indeterminate (never a bounce).
 }
 
 function helperSpecs(): HelperSpec[] {
@@ -257,14 +258,20 @@ async function boot(): Promise<void> {
   // The record is OPAQUE JSON here: get/return it verbatim, and validate only
   // that a set payload is a plain object.
   bridge.register('bindings.get', () => store.get());
-  bridge.register('bindings.set', (payload) => {
+  bridge.register('bindings.set', (payload, { event }) => {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
       throw new PtHandlerError('bad-request', 'bindings.set payload must be a plain object');
     }
     store.set(payload as Record<string, unknown>);
-    // Tell the window(s) the rig changed so a re-apply pass runs — the web
-    // bridgeBackend subscribes to exactly this topic and re-normalizes it.
-    if (!win.isDestroyed()) bridge.emit(win.webContents, 'bindings.changed', payload);
+    // Tell every OTHER window the rig changed so a re-apply pass runs — the web
+    // bridgeBackend subscribes to exactly this topic and re-normalizes it. The
+    // writer is never echoed: its store already holds the record, and the
+    // backend contract (device-slot-bindings.ts `subscribe`) is "external
+    // changes only".
+    for (const other of BrowserWindow.getAllWindows()) {
+      if (other.isDestroyed() || other.webContents === event.sender) continue;
+      bridge.emit(other.webContents, 'bindings.changed', payload);
+    }
     return {};
   });
   // Pre-flight completion swaps the SAME window from /preflight to /rack.

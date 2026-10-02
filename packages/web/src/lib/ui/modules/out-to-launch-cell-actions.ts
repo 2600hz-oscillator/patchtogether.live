@@ -132,7 +132,9 @@ export interface OutToLaunchGestureSeam {
 const LIVE_SEAM: OutToLaunchGestureSeam = {
   midiAvailable,
   connect: deviceConnect,
-  enumerate: enumerateLaunchpadPorts,
+  // The desktop pick reserved for OUT TO LAUNCH heads the roster the body
+  // renders (device order otherwise) — launchpad-device.ts rankLaunchpadPortsForRig.
+  enumerate: () => enumerateLaunchpadPorts('out-to-launch'),
 };
 
 /**

@@ -53,7 +53,36 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { ModuleFace, ParamDef, ParamOption } from '$lib/graph/types';
 import { patch as livePatch } from '$lib/graph/store';
 import { mutateNode } from '$lib/graph/mutate';
-import { resolveGamepadSlot, type ConnectedPad } from '$lib/graph/device-rebind';
+import { resolveGamepadSlot, type ConnectedPad, type GamepadRebind } from '$lib/graph/device-rebind';
+import { rigBindings, type GamepadBinding } from '$lib/graph/device-slot-bindings';
+import { nativeAvailable } from '$lib/platform/native';
+
+/**
+ * PURE: which `navigator.getGamepads()` slot a node reads when the machine
+ * also carries a desktop pick (the rig store's `gamepad`, written by the
+ * hardware splash: a `gamepad.id` model string plus the slot it was last seen
+ * at).
+ *
+ *   1. the NODE's own remembered pad, when it is connected (`id-at-slot` /
+ *      `id-elsewhere` from `resolveGamepadSlot`) — a patch that positively
+ *      names its controller keeps it, so a two-pad rack stays a two-pad rack;
+ *   2. else the RIG pick, by identity (its id at its remembered slot, then
+ *      that id anywhere) — the operator's choice beats a blind slot read;
+ *   3. else the node's slot-only / none answer, exactly as the browser does.
+ */
+export function resolveGamepadSlotWithRig(
+  saved: { readonly slot: number; readonly id?: string | null },
+  rig: GamepadBinding | null,
+  pads: readonly ConnectedPad[],
+): GamepadRebind {
+  const own = resolveGamepadSlot(saved, pads);
+  if (own.matchedBy === 'id-at-slot' || own.matchedBy === 'id-elsewhere') return own;
+  if (rig) {
+    const picked = resolveGamepadSlot({ slot: rig.index ?? -1, id: rig.id }, pads);
+    if (picked.matchedBy === 'id-at-slot' || picked.matchedBy === 'id-elsewhere') return picked;
+  }
+  return own;
+}
 
 /** Stick deadzone. Xbox sticks (especially older ones) have notable
  *  drift; 0.08 swallows that without losing much usable range. After
@@ -1348,7 +1377,10 @@ export const gamepadDef: AudioModuleDef = {
       // `resolveGamepadSlot` prefers the remembered `gamepad.id` AT the
       // remembered slot, then that id anywhere, and only then falls back to the
       // raw slot — which is the pre-existing behaviour, and is what a patch with
-      // no saved id still gets.
+      // no saved id still gets. Under the native shell the operator's splash
+      // pick sits between the two (resolveGamepadSlotWithRig): identity from
+      // the rig store beats a blind slot read, never a pad the node itself
+      // remembers and can see.
       const connected: ConnectedPad[] = [];
       if (pads) {
         for (let i = 0; i < pads.length; i++) {
@@ -1357,7 +1389,8 @@ export const gamepadDef: AudioModuleDef = {
         }
       }
       const savedSlot = readPadIndex();
-      const bound = resolveGamepadSlot({ slot: savedSlot, id: readSavedPadId() }, connected);
+      const rigPick = nativeAvailable() ? rigBindings().getGamepad() : null;
+      const bound = resolveGamepadSlotWithRig({ slot: savedSlot, id: readSavedPadId() }, rigPick, connected);
       const slot = bound.slot ?? savedSlot;
       const pad = pads ? pads[slot] : null;
       if (pad) rememberPadId(pad.id);

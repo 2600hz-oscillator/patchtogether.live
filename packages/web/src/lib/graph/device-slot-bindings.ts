@@ -16,8 +16,12 @@
 //
 // ── THE SHAPE ───────────────────────────────────────────────────────────────
 // One per-machine record, keyed on the stable slot vocabulary (`cam1..cam4`,
-// `output1..output4`) plus the singleton rig roles (`audioOut`, `es9`, `push`,
-// `launchpad`, `ptz`). Two backends behind one interface: the native shell
+// `output1..output4`) plus the singleton rig roles (`audioOut`, `push`,
+// `launchpad`, `ptz`, `gamepad`, `linnstrument`, `trails`). Every role has a
+// READER in the device layer that applies the pick — a key nothing reads is
+// not a binding (the ES-9 `pushPolicy` was one, and is gone: the es9 module
+// connects to its bridge from the rack on its own). Two backends behind one
+// interface: the native shell
 // persists in electron-store (via the `bindings.*` bridge ops); the browser
 // falls back to `localStorage`. Reads are SYNCHRONOUS against an in-memory
 // cache so the Canvas graph sync effect can consult a binding on a render tick;
@@ -68,16 +72,15 @@ export interface LaunchpadBinding {
   mode: LaunchpadMode;
 }
 
+/** The Push 2 LIVE-port pick — the INPUT port id of the pair the device layer
+ *  binds (control/push2/push2-device.svelte.ts `autoBind`). */
 export interface Push2Binding {
   deviceId: string;
 }
 
-/** ES-9 config. Kept loose here; Part-3's pre-flight refines the fields (e.g.
- *  the output-mode push policy, es9OutputModePush). */
-export interface Es9Binding {
-  pushPolicy?: string;
-}
-
+/** The PT-PTZ virtual port pick — the port NAME (the pt-ptz helper names its
+ *  pairs `PT-PTZ-<SHORT>`; ids rotate, names are stable), which the auto
+ *  binding in audio/ptz-midi.ts resolves first. */
 export interface PtzBinding {
   deviceId: string;
 }
@@ -115,7 +118,6 @@ export interface RigBindings {
   cameras: Partial<Record<CameraSlotName, CameraBinding>>;
   outputs: Partial<Record<OutputSlotName, OutputBinding>>;
   audioOut?: AudioOutBinding;
-  es9?: Es9Binding;
   push?: Push2Binding;
   launchpad?: LaunchpadBinding;
   ptz?: PtzBinding;
@@ -190,10 +192,8 @@ export function normalizeRigBindings(raw: unknown): RigBindings {
     const gp = r.gamepad as GamepadBinding;
     out.gamepad = typeof gp.index === 'number' ? { id: gp.id, index: gp.index } : { id: gp.id };
   }
-  if (r.es9 && typeof r.es9 === 'object') {
-    const pushPolicy = (r.es9 as Es9Binding).pushPolicy;
-    out.es9 = typeof pushPolicy === 'string' ? { pushPolicy } : {};
-  }
+  // A record written by an older splash may still carry `es9: { pushPolicy }`;
+  // it had no reader and is dropped here like any other unknown key.
   return out;
 }
 
@@ -358,9 +358,6 @@ export class RigBindingStore {
   getLaunchpad(): LaunchpadBinding | null {
     return this.cache.launchpad ?? null;
   }
-  getEs9(): Es9Binding | null {
-    return this.cache.es9 ?? null;
-  }
   getPtz(): PtzBinding | null {
     return this.cache.ptz ?? null;
   }
@@ -402,12 +399,6 @@ export class RigBindingStore {
     this.mutate((c) => {
       if (binding) c.launchpad = binding;
       else delete c.launchpad;
-    });
-  }
-  setEs9(binding: Es9Binding | null): void {
-    this.mutate((c) => {
-      if (binding) c.es9 = binding;
-      else delete c.es9;
     });
   }
   setPtz(binding: PtzBinding | null): void {
@@ -467,7 +458,6 @@ function cloneRig(b: RigBindings): RigBindings {
     cameras: { ...b.cameras },
     outputs: { ...b.outputs },
     audioOut: b.audioOut ? { ...b.audioOut } : undefined,
-    es9: b.es9 ? { ...b.es9 } : undefined,
     push: b.push ? { ...b.push } : undefined,
     launchpad: b.launchpad ? { ...b.launchpad } : undefined,
     ptz: b.ptz ? { ...b.ptz } : undefined,

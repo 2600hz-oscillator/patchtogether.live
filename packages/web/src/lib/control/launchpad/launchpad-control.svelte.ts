@@ -957,7 +957,9 @@ function readPersistedPort(key: string): { inputId: string; outputId: string } |
 export async function startPairing(onPaired?: () => void): Promise<boolean> {
   const ok = await deviceConnect();
   if (!ok) return false;
-  const ports = enumerateLaunchpadPorts();
+  // The desktop pick reserved for the clip launcher ranks first (device order
+  // otherwise) — launchpad-device.ts rankLaunchpadPortsForRig.
+  const ports = enumerateLaunchpadPorts('launchcontrol');
   if (ports.length < 2) {
     // Only one Launchpad → can't pair an L/R. (Owner uses two units.)
     return false;
@@ -1062,7 +1064,9 @@ export function cancelPairing(): void {
 export async function startSingle(onBound?: () => void): Promise<boolean> {
   const ok = await deviceConnect();
   if (!ok) return false;
-  const ports = enumerateLaunchpadPorts();
+  // `ports[0]` is the desktop pick when the splash reserved a unit for the
+  // clip launcher, else the first enumerated (launchpad-device.ts).
+  const ports = enumerateLaunchpadPorts('launchcontrol');
   if (ports.length < 1) return false; // single mode needs ONE device (vs pair's two)
   const a = ports[0];
   const okL = bindUnit('L', a.inputId, a.outputId);

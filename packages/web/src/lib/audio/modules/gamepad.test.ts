@@ -39,6 +39,7 @@ import {
   shapeOutputValue,
   isGamepadMapping,
   GAMEPAD_PRESETS,
+  resolveGamepadSlotWithRig,
   type GamepadData,
   type GamepadMapping,
   type RemapBindings,
@@ -1212,5 +1213,54 @@ describe('VKB Gladiator EVO R (measured hardware)', () => {
     applyMapping(data, preset.mapping);
     expect(() => applyMapping(data, preset.mapping)).not.toThrow();
     expect(bindingForOutput('ax', data.bindings)).toEqual({ kind: 'axis', index: 5 });
+  });
+});
+
+// ── THE DESKTOP PICK (hardware splash → rig store → the poll's slot) ────────
+//
+// The splash's gamepad row writes `rig.gamepad = { id, index? }`. The poll
+// (`pollPad`) resolves its slot through `resolveGamepadSlotWithRig`: a pad the
+// NODE itself remembers and can see wins (a two-pad rack keeps both), else the
+// RIG pick by identity, else the slot-only / none answer the browser has
+// always given. Pure, so every order is a fixture.
+describe('resolveGamepadSlotWithRig — the desktop pick sits between identity and a blind slot', () => {
+  const pad = (slot: number, id: string) => ({ slot, id });
+  const PS = '054c-05c4-Wireless Controller';
+  const XB = '045e-02fd-Xbox Wireless Controller';
+
+  it('1. a node that remembers a connected pad keeps it, whatever the rig says', () => {
+    const pads = [pad(0, XB), pad(1, PS)];
+    expect(resolveGamepadSlotWithRig({ slot: 1, id: PS }, { id: XB, index: 0 }, pads)).toEqual({ slot: 1, matchedBy: 'id-at-slot' });
+    expect(resolveGamepadSlotWithRig({ slot: 0, id: PS }, { id: XB, index: 0 }, pads)).toEqual({ slot: 1, matchedBy: 'id-elsewhere' });
+  });
+
+  it('2. ⚠ THE PICK BEATS A BLIND SLOT: a fresh node (no remembered id) reads the picked pad, wherever it landed', () => {
+    const pads = [pad(0, XB), pad(1, PS)];
+    // padIndex defaults to 0, which holds the Xbox pad; the operator picked the PS pad.
+    expect(resolveGamepadSlotWithRig({ slot: 0 }, { id: PS, index: 1 }, pads)).toEqual({ slot: 1, matchedBy: 'id-at-slot' });
+    // …and the pick is followed by IDENTITY when the pads came up in another order.
+    expect(resolveGamepadSlotWithRig({ slot: 0 }, { id: PS, index: 0 }, pads)).toEqual({ slot: 1, matchedBy: 'id-elsewhere' });
+    // a pick with no remembered index still resolves by id
+    expect(resolveGamepadSlotWithRig({ slot: 0 }, { id: PS }, pads)).toEqual({ slot: 1, matchedBy: 'id-elsewhere' });
+  });
+
+  it('2b. a node whose remembered pad is GONE falls through to the pick, not to the raw slot', () => {
+    const pads = [pad(0, XB), pad(1, PS)];
+    expect(resolveGamepadSlotWithRig({ slot: 0, id: 'a-pad-from-another-machine' }, { id: PS, index: 1 }, pads))
+      .toEqual({ slot: 1, matchedBy: 'id-at-slot' });
+  });
+
+  it("3. no pick, or a pick that is not connected → exactly today's slot-only / none answers", () => {
+    const pads = [pad(0, XB), pad(1, PS)];
+    expect(resolveGamepadSlotWithRig({ slot: 1 }, null, pads)).toEqual({ slot: 1, matchedBy: 'slot-only' });
+    expect(resolveGamepadSlotWithRig({ slot: 1 }, { id: 'unplugged', index: 3 }, pads)).toEqual({ slot: 1, matchedBy: 'slot-only' });
+    expect(resolveGamepadSlotWithRig({ slot: 0, id: PS }, { id: PS, index: 0 }, [])).toEqual({ slot: null, matchedBy: 'none' });
+  });
+
+  it('NEGATIVE CONTROL — without the rig leg the fresh node reads the WRONG pad (the bug the pick fixes)', () => {
+    const pads = [pad(0, XB), pad(1, PS)];
+    const naive = resolveGamepadSlotWithRig({ slot: 0 }, null, pads);
+    expect(naive).toEqual({ slot: 0, matchedBy: 'slot-only' });
+    expect(pads.find((p) => p.slot === naive.slot)!.id).toBe(XB);
   });
 });

@@ -290,7 +290,9 @@ export function acquireSeqtrisLaunchpad(
         /* mod.connect never throws, but a seam might */
       }
       if (released) return;
-      ports = mod.enumerateLaunchpadPorts();
+      // The desktop pick reserved for SEQTRIS is listed first (device order
+      // otherwise) — launchpad-device.ts rankLaunchpadPortsForRig.
+      ports = mod.enumerateLaunchpadPorts('tetris');
       if (owner === nodeId) kind = 'bound';
       else kind = ports.length > 0 ? 'idle' : 'no-device';
     },

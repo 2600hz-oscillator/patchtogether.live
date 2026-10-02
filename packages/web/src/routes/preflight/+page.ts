@@ -1,6 +1,6 @@
 // The pre-flight (Stage-1) rig-setup screen the native shell loads before the
-// rack on a first run (apps/desktop/src/main.ts). Fully client-rendered — it
-// probes hardware (displays, cameras, WebMIDI) and the ptNative bridge, none of
+// rack on every launch (apps/desktop/src/main.ts). Fully client-rendered — it
+// probes hardware (cameras, WebMIDI, gamepads) and the ptNative bridge, none of
 // which exist under SSR. SPA-fallback served, exactly like /rack.
 //
 // ⚠ SHELL-ONLY (owner ruling 2026-09-15). In a plain browser this route never
@@ -12,11 +12,16 @@
 // page component mounts, so nothing of this screen paints on the web. The
 // shell (`window.ptNative` present) keeps the page exactly as it is.
 //
-// The full per-slot setup panel: a row per device class (displays, cameras,
-// ES-9, Push 2, Launchpad, PTZ, gamepad, LinnStrument), each showing live
-// presence and one control that writes the per-machine rig store
-// (device-slot-bindings.ts). It also wires the launch swap end-to-end (Enter
-// rack → `preflight.done`).
+// The per-slot setup panel: a row per device class the rack actually READS
+// from the rig store (cameras, Push 2, Launchpad, PTZ, LinnStrument, TRAILS,
+// gamepad), each showing live presence and one control that writes the
+// per-machine record (device-slot-bindings.ts), plus the ES-9 and PTZ helper
+// STATUS rows (read-only). Displays are deliberately absent: the shell opens no
+// output windows (docs/design/native-shell.md "Not built"), so a display pick
+// here would be applied by nobody — outputs are presented from the rack. It
+// also wires the launch swap end-to-end (Enter rack → `preflight.done`, with
+// a one-shot skip of the relaunch guard so the splash never bounces straight
+// back to itself).
 import { redirect } from '@sveltejs/kit';
 import { nativeAvailable } from '$lib/platform/native';
 

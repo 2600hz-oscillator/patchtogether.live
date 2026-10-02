@@ -25,6 +25,15 @@ Every fresh launch opens the hardware splash, including when a rig was saved.
 Review the restored selections and choose **Enter rack**. If the app is already
 running, another launch focuses that instance instead of interrupting it.
 
+The splash binds what the rack reads: cameras, Push 2, Launchpad (plus the mode
+it is reserved for), the PT-PTZ port, LinnStrument, TRAILS and the gamepad. It
+has no display rows — the shell opens no output windows, so present outputs from
+the rack — and the ES-9 section is a status row only. A helper row reading
+`unavailable — binary not found` means that helper was never built on this
+machine (`task helpers:build`); it is a status, never a lock: Enter rack always
+lands on the rack, and the rack bounces back to the splash only when a bound
+camera or the helper behind a picked PT-PTZ port is positively gone.
+
 For **TRAILS**, connect the hardware over USB, choose **enable midi** in its
 hardware-setup row, then select its input. The selection is saved on this
 computer and reconnects on subsequent launches, renderer reloads, and when a
@@ -203,8 +212,8 @@ signed-build TCC, Gatekeeper, real USB/display hotplug, real ES-9, device-callba
 underruns.
 
 Boot the app → zero prompts beyond the expected TCC → pre-flight shows every helper
-row → bind four cameras and displays → rack plays → SysEx device round-trip
-(PTZ/Electra) → load a patch mid-performance (no blink, no silence) → recorderbox
-record and Save (no audible dip) → sleep/wake, still running → unplug a display,
-outputs re-place → quit clean, then confirm no orphan helper processes are still
-running.
+row → bind four cameras → rack plays → present the outputs from the rack → SysEx
+device round-trip (PTZ/Electra) → load a patch mid-performance (no blink, no
+silence) → recorderbox record and Save (no audible dip) → sleep/wake, still
+running → unplug a display, outputs re-place → quit clean, then confirm no orphan
+helper processes are still running.
