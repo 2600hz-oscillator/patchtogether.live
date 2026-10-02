@@ -118,7 +118,9 @@ test.describe('PRE-FLIGHT relaunch guard — bound-device-missing bounce', () =>
       if (f === page.mainFrame()) navigations.push(f.url());
     });
 
-    await page.goto('/rack?seed=none');
+    // `/rack` (the seeded boot the plain-browser leg below also uses): the
+    // device-slot ensure that proves "the rack finished booting" runs on it.
+    await page.goto('/rack');
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     // The guard's window is the mount; the device-slot ensure runs AFTER it.
     await expect
@@ -151,6 +153,9 @@ test.describe('PRE-FLIGHT relaunch guard — bound-device-missing bounce', () =>
     await page.goto('/preflight');
     await waitPreflight(page);
     // The operator reviews the hardware, leaves the stale pick, and enters.
+    // (The splash's own load is several main-frame navigations — the load plus
+    // the router's replaceState hops — so the count starts at the click.)
+    const atEnter = navigations.length;
     await page.getByTestId('preflight-enter').click();
     await page.waitForURL(/\/rack(\?|$)/, { timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
     await expect(page.getByTestId('workflow-topbar')).toBeVisible({ timeout: SLOW_BOOT_TEST_TIMEOUT_MS });
@@ -161,8 +166,8 @@ test.describe('PRE-FLIGHT relaunch guard — bound-device-missing bounce', () =>
       )
       .toBe(true);
     await expect(page.getByTestId('preflight-panel')).toHaveCount(0);
-    const afterEnter = navigations.filter((u) => /\/preflight/.test(u));
-    expect(afterEnter, `only the splash itself — never a bounce back: ${navigations.join(' → ')}`).toHaveLength(1);
+    const afterEnter = navigations.slice(atEnter).filter((u) => /\/preflight/.test(u));
+    expect(afterEnter, `never a bounce back after Enter rack: ${navigations.join(' → ')}`).toEqual([]);
 
     // The one-shot skip is spent: a reload of the same stale rig is a fresh
     // mount, and the guard runs — proving the first leg was a SKIP, not a
