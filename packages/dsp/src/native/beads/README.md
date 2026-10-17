@@ -46,7 +46,9 @@ Browser adaptations:
   transitions and limiters are retained.
 
 `src/beads.test.ts` runs the shipping worklet and compiled WASM, not a DSP mirror.
-It covers source-byte integrity, sample rates, silent versus absent inputs,
+It compiles an isolated temporary WASM fixture with the shipping builder, so a
+clean unit-test checkout does not depend on prebuilt dist files. It covers
+source-byte integrity, dry/wet pitch across sample rates, anti-aliasing, silent versus absent inputs,
 stereo separation, wet grains, freeze release, seed pulses/levels and control
 sensitivity. Browser tests additionally exercise the real factory and cables,
 which those native tests cannot see. VRT checks appearance, not audio correctness;

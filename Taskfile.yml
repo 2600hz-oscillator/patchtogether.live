@@ -367,7 +367,9 @@ tasks:
     # — and `task ci` would then run them twice. See chore/build-perf PR.
     #
     # dsp's `test` target runs the pure-lib unit suite (e.g. cube-dsp.test.ts);
-    # it has its own vitest.config.ts (node env, no AudioContext/WASM). Older
+    # it has its own vitest.config.ts (node env, no AudioContext). Beads tests
+    # compile the native source into a temporary WASM fixture with the shipping
+    # builder; the unit lane does not depend on a prebuilt DSP dist. Older
     # DSP-lib tests still live under web/ via relative import — both run.
     #
     # NO side effects on the working tree (#1526). This used to emit

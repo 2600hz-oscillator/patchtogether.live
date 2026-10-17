@@ -1,11 +1,17 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { BEADS_CONTROLS } from "./lib/beads-contract";
 import type { BeadsProcessor } from "./beads";
 
 let Processor: typeof BeadsProcessor;
 let wasm: WebAssembly.Module;
+let fixture: string | undefined;
+afterAll(() => { if (fixture) rmSync(fixture, { recursive: true, force: true }); });
 beforeAll(async () => {
   Object.assign(globalThis, {
     sampleRate: 48000,
@@ -13,8 +19,15 @@ beforeAll(async () => {
     registerProcessor: () => {},
   });
   Processor = (await import("./beads")).BeadsProcessor;
-  wasm = new WebAssembly.Module(readFileSync(new URL("../dist/beads.wasm", import.meta.url)));
-});
+  // The unit lane runs before DSP build on a clean CI checkout. Compile the
+  // shipping sources with the shipping builder into an isolated fixture:
+  // never depend on stale local dist bytes or silently skip the real DSP.
+  fixture = mkdtempSync(join(tmpdir(), "beads-test-"));
+  const binary = join(fixture, "beads.wasm");
+  execFileSync(process.execPath, [fileURLToPath(new URL("../scripts/build-beads.mjs", import.meta.url)), binary],
+    { timeout: 60000, stdio: "pipe" });
+  wasm = new WebAssembly.Module(readFileSync(binary));
+}, 65000);
 
 class Rack {
   readonly processor: BeadsProcessor;
@@ -60,7 +73,7 @@ describe("Beads official firmware host", () => {
     expect(WebAssembly.Module.imports(wasm)).toEqual([]);
   });
 
-  it.each([44100, 48000, 96000])("preserves native quality clocks at a %i Hz device rate", rate => {
+  it.each([44100, 48000, 96000])("preserves dry pitch across quality modes at a %i Hz device rate", rate => {
     for (const quality of [0, 1, 2, 3]) {
       const rack = new Rack(rate, { source: 1, blend: 0, reverb: 0, quality });
       rack.render(0.2, sine(rate));
@@ -69,6 +82,31 @@ describe("Beads official firmware host", () => {
       expect(frequency(l!, rate)).toBeCloseTo(440, -1);
       expect(difference(l!, r!)).toBeLessThan(1e-6);
     }
+  });
+
+  it.each([44100, 48000, 96000])("preserves wet grain pitch at a %i Hz device rate", rate => {
+    for (const quality of [0, 1, 2, 3]) {
+      const rack = new Rack(rate, { source: 1, blend: 1, reverb: 0, quality,
+        density: 0.1, time: 0.15, size: 0.7 });
+      rack.render(5, sine(rate));
+      const wet = rack.render(0.5, sine(rate))[0]!;
+      expect(rms(wet), `quality ${quality}`).toBeGreaterThan(0.005);
+      // Grain envelopes and tape wow perturb crossings; a wrong native clock
+      // (24/32/48 kHz) shifts pitch far outside this narrow musical tolerance.
+      expect(frequency(wet, rate), `quality ${quality}`).toBeGreaterThan(410);
+      expect(frequency(wet, rate), `quality ${quality}`).toBeLessThan(470);
+    }
+  });
+
+  it("filters above-native-Nyquist input instead of folding it into the audible band", () => {
+    const level = (hz: number) => {
+      const rack = new Rack(96000, { source: 1, blend: 0, reverb: 0 });
+      rack.render(0.2, sine(96000, hz));
+      return rms(rack.render(0.4, sine(96000, hz))[0]!);
+    };
+    const audible = level(2000);
+    expect(audible).toBeGreaterThan(0.05);
+    expect(level(30000)).toBeLessThan(audible * 0.01);
   });
 
   it("keeps distinct stereo dry channels and does not normal a connected silent R", () => {
