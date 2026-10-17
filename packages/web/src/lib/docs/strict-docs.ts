@@ -24,6 +24,7 @@
 // un-promote for real, remove the docs, not the name.
 
 export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
+  'beads',
   // ES-9 native-bridge I/O module (2026-07-10): born strict — every jack,
   // class selector and reference toggle documented from day one (the counts
   // are derived from es9Def, never typed here).

@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process';
 import { join, basename, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as esbuildBuild } from 'esbuild';
+import { buildBeads } from './build-beads.mjs';
 import { buildWorkletForModule } from './build-worklet.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -93,7 +94,12 @@ async function buildTs(filePath) {
   const name = basename(filePath, '.ts');
   if (onlyName && onlyName !== name) return null;
   const source = await readFile(filePath, 'utf8');
-  const sha = shortSha(source);
+  // Native bytes and the shared ABI participate in the Beads audio fingerprint.
+  const sha = name === 'beads'
+    ? shortSha(Buffer.concat([Buffer.from(source),
+        await readFile(join(DIST_DIR, 'beads.wasm')),
+        await readFile(join(SRC_DIR, 'lib/beads-contract.ts'))]))
+    : shortSha(source);
   await esbuildBuild({
     entryPoints: [filePath],
     outfile: join(DIST_DIR, `${name}.js`),
@@ -109,6 +115,7 @@ async function buildTs(filePath) {
 }
 
 async function main() {
+  if (!onlyName || onlyName === 'beads') buildBeads();
   const entries = await readdir(SRC_DIR);
   const dspFiles = entries.filter((f) => f.endsWith('.dsp')).map((f) => join(SRC_DIR, f));
   // Remove old outputs from builds that mistakenly bundled tests/declarations.

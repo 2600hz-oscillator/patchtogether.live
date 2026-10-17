@@ -246,6 +246,41 @@ backdraft param tubeDecay 0..0.5 linear default=0.025 unit=s
 backdraft param tvGate 0..1 linear default=0
 backdraft param tvMode 0..3 discrete default=0
 backdraft param zoom 0.4..1.6 linear default=1
+beads meta domain=audio
+beads in blend_cv cv param=blend cvScale=linear
+beads in density_cv cv cvScale=passthrough
+beads in feedback_cv cv param=feedback cvScale=linear
+beads in freeze_gate gate edge=gate
+beads in in_l audio
+beads in in_r audio
+beads in pitch pitch
+beads in pitch_cv cv cvScale=passthrough
+beads in reverb_cv cv param=reverb cvScale=linear
+beads in seed gate edge=gate
+beads in shape_cv cv cvScale=passthrough
+beads in size_cv cv cvScale=passthrough
+beads in time_cv cv cvScale=passthrough
+beads out out_l audio
+beads out out_r audio
+beads param blend 0..1 linear default=0.5
+beads param density 0..1 linear default=0.25
+beads param feedback 0..1 linear default=0
+beads param freeze 0..1 discrete default=0
+beads param mono 0..1 discrete default=0
+beads param pitch -24..24 linear default=0 unit=st
+beads param pitch_random -1..1 linear default=0
+beads param quality 0..3 discrete default=3
+beads param reverb 0..1 linear default=0.15
+beads param seed 0..2 discrete default=2
+beads param shape 0..1 linear default=0.5
+beads param shape_random -1..1 linear default=0
+beads param size 0..1 linear default=0.65
+beads param size_random -1..1 linear default=0
+beads param source 0..2 discrete default=0
+beads param time 0..1 linear default=0.25
+beads param time_random -1..1 linear default=0
+beads stereo in_l+in_r
+beads stereo out_l+out_r
 bentbox meta domain=video
 bentbox in bloom_cv cv param=bloom cvScale=linear
 bentbox in chroma_instability_cv cv param=chroma_instability cvScale=linear

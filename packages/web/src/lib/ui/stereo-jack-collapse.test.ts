@@ -246,6 +246,7 @@ const GOLDEN_COLLAPSED_LABELS = `
 archivist output:audio_l+audio_r=AUDIO
 audioIn output:audio_l_out+audio_r_out=AUDIO
 audioOut input:L+R=IN
+beads input:in_l+in_r=IN output:out_l+out_r=OUT
 blood output:audio_l+audio_r=AUDIO
 charlottesEchos input:L+R=IN output:L+R=OUT
 clipplayer output:audio1L+audio1R=AUDIO1 output:audio2L+audio2R=AUDIO2 output:audio3L+audio3R=AUDIO3 output:audio4L+audio4R=AUDIO4 output:audio5L+audio5R=AUDIO5 output:audio6L+audio6R=AUDIO6 output:audio7L+audio7R=AUDIO7 output:audio8L+audio8R=AUDIO8

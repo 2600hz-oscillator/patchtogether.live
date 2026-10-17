@@ -503,6 +503,8 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // native/beads/bridge.cc reads both as levels on every processing block.
+    'beads:freeze', 'beads:mono',
     // SAMSLOOP `poly`, 2026-08-23. MONO (0) vs POLY (1) — whether a trigger
     // arriving while the module is already sounding RESTARTS the single voice or
     // takes another one.

@@ -85,6 +85,7 @@ interface Sut {
 }
 
 const SUTS: readonly Sut[] = [
+  { type: 'beads', inL: 'in_l', outL: 'out_l', outR: 'out_r', openPath: { source: 1, blend: 0 }, mechanism: 'WASM worklet normal; no presence-defeating factory pin' },
   { type: 'clouds',          inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'ConstantSource pinned to worklet input 1' },
   { type: 'shimmershine',    inL: 'in_l',  outL: 'out_l', outR: 'out_r', mechanism: 'ConstantSource pinned to worklet input 1' },
   { type: 'charlottesEchos', inL: 'L',     outL: 'L',     outR: 'R',     mechanism: 'ConstantSource pinned to worklet input 1' },

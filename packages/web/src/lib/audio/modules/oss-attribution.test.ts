@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest';
 import '$lib/audio/modules';
 import { listModuleDefs } from '$lib/audio/module-registry';
 
+import { beadsDef } from './beads';
 import { cloudsDef } from './clouds';
 import { ringsDef } from './rings';
 import { marblesDef } from './marbles';
@@ -45,6 +46,7 @@ interface AttributionExpectation {
 // Authors verified against the corresponding source header comment — each
 // cites the upstream repo + the original copyright line.
 const EXPECTED_ATTRIBUTIONS: AttributionExpectation[] = [
+  { type: 'beads', def: beadsDef, author: 'Émilie Gillet' },
   { type: 'clouds',          def: cloudsDef,          author: 'Émilie Gillet' },
   { type: 'rings',           def: ringsDef,           author: 'Émilie Gillet' },
   { type: 'marbles',         def: marblesDef,         author: 'Émilie Gillet' },

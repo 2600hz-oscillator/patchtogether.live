@@ -238,9 +238,13 @@ test.describe('workflow camera manager (P4)', () => {
   test('cap + persistence: ＋ stops at cameraInput.maxInstances, ✕ frees a slot with stable ordinals, and mapped cameras round-trip quicksave→reload→quickload still cardless', async ({
     page,
   }) => {
-    // Two full page boots (reload) + 4 hosted cards — DOM-only, no video
-    // engine render needed.
+    // This leg observes graph/DOM persistence, not pixels. On loaded
+    // SwiftShader shards, unnecessary continuous rendering starved the real
+    // menu clicks until the test cap (CI 39046147135). Use the same paused
+    // engine harness as the real-chain leg; addInitScript also covers reload.
+    // The real-chain leg above still explicitly steps and verifies its output.
     test.setTimeout(90_000);
+    await installRenderSmokeHooks(page);
     await gotoWorkflow(page);
 
     // Map cameras up to the def cap (4 — shared with canvas CAMERA cards,
