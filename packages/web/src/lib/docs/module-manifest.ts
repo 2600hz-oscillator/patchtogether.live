@@ -30,6 +30,7 @@
 // resolves all paths at build time.
 import { explainInputPort, explainOutputPort, type ExplainPort } from './io-explain';
 import { MODULE_DOCS } from './module-docs.generated';
+import { BEADS_PARAMS } from '../../../../dsp/src/lib/beads-contract';
 import type { ModuleDocs } from '$lib/graph/types';
 // Plain data (no engine import): the LinnStrument's expression-jack ids are
 // DERIVED from the same lane cap the def spreads, so the doc page cannot
@@ -1303,6 +1304,10 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     // `const CHANNELS = […]` that lives OUTSIDE the def's braces.
     stereoPairs: parseStereoPairs(src, fullSrc),
   };
+
+  // Beads shares its ABI control schema with the native worklet. Import only
+  // that pure data: the factory's WASM/worklet assets cannot run in SSR.
+  if (out.type === 'beads') out.params = BEADS_PARAMS;
 
   // Inputs are computed (e.g. `inputs: INPUTS` or `inputs: buildInputs()`)
   // when the literal-array extractor returns nothing — fall back to the

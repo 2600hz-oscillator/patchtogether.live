@@ -216,6 +216,7 @@ export const FACES = [
   // cleanly even without the audio freeze, so — unlike analogVco and
   // macrooscillator — it is not a witness for it.
   { type: 'clouds', pages: 3 },
+  { type: 'beads', pages: 3 },
   // FACE BATCH 4 (2026-08-10) — the three-tap noise source, and the FIRST
   // ZERO-BAND entry in this roster. Not a mistake and not a truncation: the
   // module has ONE param, `face.hero.control` promotes it, and `heroFacePlan`

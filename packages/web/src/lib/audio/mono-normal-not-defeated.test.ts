@@ -109,6 +109,7 @@ const E2E_SPEC = fileURLToPath(
 // originals; see the header. The list itself is the truth.)
 
 const KNOWN_MONO_NORMALS: readonly string[] = [
+  'beads.ts:input:1',
   'charlottes-echos.ts:input:1',
   'clip-recorder.ts:channel:1',         // clip capture tap: R channel ← L channel (recorderbox-capture's rule)
   'clouds.ts:input:1',

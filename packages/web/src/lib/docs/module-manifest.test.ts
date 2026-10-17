@@ -86,6 +86,15 @@ describe('buildModuleManifest', () => {
     ).toEqual([]);
   });
 
+  it('Beads documents every shared worklet control with its actual range and default', () => {
+    const def = getAllModuleSpecs().find(x => x.type === 'beads')!;
+    const doc = m.modules.find(x => x.type === 'beads')!;
+    expect(def.params.length).toBeGreaterThan(0);
+    const fields = (p: { id: string; min?: number | null; max?: number | null; defaultValue?: number | null; curve?: string }) =>
+      [p.id, p.min, p.max, p.defaultValue, p.curve];
+    expect(doc.params.map(fields)).toEqual(def.params.map(fields));
+  });
+
   it('score has the expected inputs / outputs / params (spot check vs registry)', () => {
     const seq = m.modules.find((x) => x.type === 'score');
     expect(seq).toBeDefined();
