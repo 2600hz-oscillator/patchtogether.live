@@ -1299,15 +1299,13 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     maxInstances: grabNum('maxInstances'),
     inputs: parsePortList(extractArray(src, 'inputs')),
     outputs: parsePortList(extractArray(src, 'outputs')),
-    params: parseParamList(extractArray(src, 'params')),
+    // Beads shares a pure-data ABI schema with the native worklet. The
+    // factory's WASM/worklet assets cannot be imported during SSR.
+    params: grabStr('type') === 'beads' ? BEADS_PARAMS : parseParamList(extractArray(src, 'params')),
     // `fullSrc`, not `src`: a COMPUTED declaration spreads a module-level
     // `const CHANNELS = […]` that lives OUTSIDE the def's braces.
     stereoPairs: parseStereoPairs(src, fullSrc),
   };
-
-  // Beads shares its ABI control schema with the native worklet. Import only
-  // that pure data: the factory's WASM/worklet assets cannot run in SSR.
-  if (out.type === 'beads') out.params = BEADS_PARAMS;
 
   // Inputs are computed (e.g. `inputs: INPUTS` or `inputs: buildInputs()`)
   // when the literal-array extractor returns nothing — fall back to the
