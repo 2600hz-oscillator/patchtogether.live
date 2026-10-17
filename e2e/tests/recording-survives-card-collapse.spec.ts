@@ -53,6 +53,22 @@ import { spawnPatch } from './_helpers';
 
 test.setTimeout(150_000);
 
+/**
+ * Keep the live renderer and real H.264 capture pump, at 160×120. These
+ * assertions measure node lifetime and continued capture, not spatial detail.
+ * Full-size ACIDWARP + GL readback + encoding starved a real collapse click
+ * for 96 s on CI 39046147135. Reducing pixels removes that unrelated cost;
+ * pausing the renderer would instead remove the live input we need to record.
+ */
+async function setCaptureResolution(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __engine(): { getDomain(d: string): { setResolution(width: number, height: number): boolean } };
+    };
+    w.__engine().getDomain('video').setResolution(160, 120);
+  });
+}
+
 /** Does this runtime ACTUALLY encode H.264 — i.e. does a real encode emit chunks? */
 async function h264EncodeSupported(page: Page): Promise<boolean> {
   return page.evaluate(async () => {
@@ -170,6 +186,7 @@ test('a recording keeps GROWING while its card is collapsed', async ({ page }) =
     ],
     { mountTimeout: 40_000 },
   );
+  await setCaptureResolution(page);
 
   // Record to the download fallback — no directory picker, no modal.
   await page.evaluate(() => {
@@ -268,6 +285,7 @@ test('NEGATIVE CONTROL: deleting the node DOES end its recording', async ({ page
     ],
     { mountTimeout: 40_000 },
   );
+  await setCaptureResolution(page);
   await page.evaluate(() => {
     (globalThis as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker = undefined;
   });
