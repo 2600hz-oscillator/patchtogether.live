@@ -29,6 +29,8 @@ export const phasesDef: AudioModuleDef = {
   domain: 'audio',
   label: 'phases',
   category: 'modulation',
+  size: '2u',
+  hp: 2,
   inputs: [
     { id: 'trigger', label: 'Trigger', type: 'gate', edge: 'trigger' },
     { id: 'phase_trigger', label: 'Phase Trigger', type: 'gate', edge: 'trigger' },

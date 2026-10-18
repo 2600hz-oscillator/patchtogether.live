@@ -171,7 +171,7 @@
 </script>
 
 <div class="phases-editor-wrap nodrag nowheel" class:compact bind:this={root}>
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex (The SVG application is the focus-return target after vertex deletion; its phase buttons and vertex sliders own keyboard editing.) -->
   <svg
     class="phases-grid" bind:this={svg} viewBox={compact ? PHASES_COMPACT_VIEWBOX : PHASES_VIEWBOX} role="application" tabindex="0"
     aria-label={`Phases envelope, ${vertices.length - 1} of ${PHASES_MAX_PHASES} phases. Click the curve to add a vertex; drag vertically; click a phase background to select its shape; right-click a vertex to delete it.`}
@@ -204,7 +204,7 @@
     {/if}
     {#each paths as d, index (vertices[index]!.x)}
       <path class="envelope-line" {d} />
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions (The transparent curve stroke is a spatial pointer hit target; semantic phase buttons and vertex sliders are separate SVG elements.) -->
       <path class="curve-hit" {d} data-testid={`phases-curve-${nodeId}-${index}`} onpointerdown={addVertex} />
     {/each}
     {#each vertices as vertex, index (vertex.x)}

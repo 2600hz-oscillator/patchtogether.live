@@ -203,6 +203,10 @@ const FACE_FIELDS: Readonly<Record<string, FaceFieldRule>> = {
     role: 'none',
     why: 'The id of a bespoke shell-extension module. A registry key, never painted. ⚠ What the extension itself draws is the canvas blind spot named in this file\'s header.',
   },
+  tileBodyHeight: {
+    role: 'none',
+    why: 'A pixel-height reservation for the tile editor. Geometry only; the number is never painted as text.',
+  },
   paramCells: {
     role: 'none',
     why: 'Which PRIMITIVE renders a param (grid / color / fader). A widget choice; the primitive owns its own caption and its own readout policy.',
