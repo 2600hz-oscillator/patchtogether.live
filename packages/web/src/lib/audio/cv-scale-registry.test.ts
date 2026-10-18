@@ -14,6 +14,11 @@ import { buildCvCurve, sampleCvCurve, scaleCv } from '$lib/audio/cv-scale';
 // full-musical-range mapping. New entries here MUST be justified in
 // docs/adr/004-cv-range-convention.md.
 const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
+  // Phases reads raw normalized CV at worklet input 4 and maps 0..1 to
+  // 0.05..30 seconds per sample. Presence OVERRIDES (never sums with) the
+  // manual knob, including patched zero; AudioParam scaling would defeat
+  // that contract. See ADR-004's Phases addendum and phases.spec.ts.
+  phases: ['length_cv'],
   // polarizer/depolarizer: 1-in/1-out CV-math UTILITIES — `in` is the
   // signal being transformed directly (out = f(in): polarizer 2·in−1, depolarizer
   // in/2+0.5), NOT a knob modulator routed onto an AudioParam (the

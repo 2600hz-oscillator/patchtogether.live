@@ -792,6 +792,14 @@ export interface ModuleFace {
    */
   extension?: string;
   /**
+   * CSS-pixel height reserved for the extension's tileBody before lane controls
+   * are fitted. Omitted = no reservation. Must be finite, nonnegative and no
+   * taller than the lane body, and requires an extension exporting tileBody.
+   * Positive reservations currently require a glyph-free audio/meta face;
+   * combined editor/glyph geometry needs its own measured fit. Dock unaffected.
+   */
+  tileBodyHeight?: number;
+  /**
    * DECLARED render primitive for a param cell, keyed by param id.
    *
    * The primitives that CANNOT be inferred. `'toggle'` is derived from the

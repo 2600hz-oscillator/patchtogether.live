@@ -36,6 +36,9 @@ export const FACES = [
   { type: 'tidyVco', pages: 5 },
   { type: 'kickdrum', pages: 5 },
   { type: 'adsr', pages: 1 },
+  // PHASES rests on its untriggered horizontal SVG envelope. The shared
+  // audio freeze pins the real playhead; edited states live in vrt-phases.
+  { type: 'phases', pages: 1 },
   { type: 'vca', pages: 1 },
   { type: 'lfo', pages: 1 },
   { type: 'cloudseed', pages: 8 },

@@ -445,6 +445,19 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'SLEWSWITCH: drive in1/in2 + step_clock from SEQUENCER; outs slew between inputs',
   },
 
+  // Phases intentionally spawns with a flat zero-volt envelope. Seed a
+  // rising/falling curve and loop it so the output sweep observes real motion;
+  // phases.spec.ts separately proves the silent default and external triggers.
+  phases: {
+    params: { length: 0.2, loop: 1 },
+    data: { vertices: [
+      { x: 0, y: 0, shape: 0 },
+      { x: 0.5, y: 1, shape: 0.5 },
+      { x: 1, y: 0, shape: 1 },
+    ] },
+    note: 'PHASES: loop an edited envelope; the untouched default is intentionally silent',
+  },
+
   // ───── ADSR — needs a gate to fire env ─────
   adsr: {
     upstream: () => ({

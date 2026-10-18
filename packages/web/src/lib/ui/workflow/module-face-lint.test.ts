@@ -64,9 +64,10 @@ import { COLOUROFMAGIC_OVER_PARAMS } from '$lib/video/modules/colourofmagic';
 // disagree about what "total" means.
 import { bandFocusIsInert, bandFocusIsTotal } from './band-focus-model';
 import type { FaceBandFocus } from '$lib/graph/types';
-import { laneBodyPlan, laneGlyphFor } from './module-shell-model';
+import { LANE_BODY_H, laneBodyPlan, laneGlyphFor } from './module-shell-model';
 import { bodyPaintedParamIds, looksLikeSwitch, type DeclaringDefLike } from './shell-control-kind';
 import { panelCellKeys, shellCellFor } from './shell-cells';
+import { loadShellExtension } from './shell-extensions';
 import { GRID_MAX_CELLS } from '$lib/ui/controls/param-grid-model';
 import {
   PACKED_RGB_MAX,
@@ -503,6 +504,8 @@ describe('module-face lint — MOMENTARY pads (face.momentary)', () => {
    *  an id here ONLY after confirming against the module's DSP/card that the
    *  control latches; a press-pad goes on `face.momentary` instead. */
   const ACKNOWLEDGED_LATCHING = new Set<string>([
+    // Persistent envelope modes, including edge-toggled Loop and Reverse.
+    'phases:loop', 'phases:polarity', 'phases:reverse',
     // native/beads/bridge.cc reads both as levels on every processing block.
     'beads:freeze', 'beads:mono',
     // SAMSLOOP `poly`, 2026-08-23. MONO (0) vs POLY (1) — whether a trigger
@@ -2449,6 +2452,59 @@ describe('module-face lint — DECLARED param cells (face.paramCells) + PANEL ti
   });
 });
 
+function tileBodyHeightProblems(def: FaceDef, hasTileBody: boolean): string[] {
+  const height = def.face?.tileBodyHeight;
+  if (height === undefined) return [];
+  const problems: string[] = [];
+  if (!Number.isFinite(height) || height < 0 || height > LANE_BODY_H) {
+    problems.push(`${def.type}: face.tileBodyHeight must be finite and within 0..${LANE_BODY_H}px`);
+  }
+  if (!def.face?.extension || !hasTileBody) {
+    problems.push(`${def.type}: face.tileBodyHeight requires an extension exporting tileBody`);
+  }
+  if (height > 0 && laneGlyphFor(def) !== 'none') {
+    problems.push(`${def.type}: positive tileBodyHeight requires a glyph-free lane until combined glyph/editor fit is measured`);
+  }
+  return problems;
+}
+
+describe('module-face lint — tile body height reservation', () => {
+  it('every reservation names a finite height and a real tileBody extension', async () => {
+    const reserving = allDefs().filter((def) => def.face?.tileBodyHeight !== undefined);
+    expect(reserving.length, 'the live adopter must exercise this check').toBeGreaterThan(0);
+    const problems: string[] = [];
+    for (const def of reserving) {
+      const ext = def.face?.extension ? await loadShellExtension(def.face.extension) : null;
+      problems.push(...tileBodyHeightProblems(def, typeof ext?.tileBody === 'function'));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('rejects missing bodies and invalid heights while leaving omitted reservations alone', () => {
+    const fixture: FaceDef = {
+      type: 'reserved-editor-fixture',
+      face: { order: [], extension: 'editor', tileBodyHeight: 52 },
+    };
+    expect(tileBodyHeightProblems(fixture, true)).toEqual([]);
+    expect(tileBodyHeightProblems(fixture, false)).toHaveLength(1);
+    expect(tileBodyHeightProblems({ ...fixture, face: { ...fixture.face!, extension: undefined } }, true))
+      .toHaveLength(1);
+    for (const tileBodyHeight of [-1, Infinity, -Infinity, NaN, LANE_BODY_H + 1]) {
+      expect(tileBodyHeightProblems({ ...fixture, face: { ...fixture.face!, tileBodyHeight } }, true))
+        .toHaveLength(1);
+    }
+    expect(tileBodyHeightProblems({ ...fixture, face: { order: [], tileBodyHeight: 0 } }, false))
+      .toHaveLength(1);
+    expect(tileBodyHeightProblems({ ...fixture, face: { order: [] } }, false)).toEqual([]);
+    expect(tileBodyHeightProblems({ ...fixture, face: { ...fixture.face!, glyph: 'scope' } }, true))
+      .toHaveLength(1);
+    expect(tileBodyHeightProblems({ ...fixture, domain: 'video', face: { ...fixture.face!, glyph: 'none' } }, true))
+      .toHaveLength(1);
+    expect(tileBodyHeightProblems({ ...fixture, face: { ...fixture.face!, glyph: 'scope', tileBodyHeight: 0 } }, true))
+      .toEqual([]);
+  });
+});
+
 describe('module-face lint — LANE tier caps ↔ lane fit plan (authored intent === render)', () => {
   // The mismatch this closes, in BOTH lane tiers:
   //   * FACE_TIER_CAPS.compact promised 3 while laneBodyPlan rendered 2 next to
@@ -2481,7 +2537,7 @@ describe('module-face lint — LANE tier caps ↔ lane fit plan (authored intent
         const face = curatedFace(def, tier);
         if (!face) continue;
         const laneGlyph = laneGlyphFor(def);
-        const rendered = laneBodyPlan(face.cellHeights, laneGlyph, tier).cellCount;
+        const rendered = laneBodyPlan(face.cellHeights, laneGlyph, tier, undefined, face.tileBodyHeight).cellCount;
         if (rendered !== face.controls.length) {
           drift.push(
             `${def.type}: ${tier} selects ${face.controls.length} control(s) but the tile ` +

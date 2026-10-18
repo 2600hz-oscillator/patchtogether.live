@@ -405,7 +405,10 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/vrt-shard-out
           mkdir -p /tmp/vrt-shard-out
-          git status --porcelain -- e2e/vrt/__screenshots__ | awk '{print $2}' | while read -r f; do
+          # Enumerate files in NEW snapshot directories too. Default status
+          # collapses an untracked directory to one row, which the -f check
+          # below skips (Phases capture 39150709377 rendered seven, staged two).
+          git status --porcelain --untracked-files=all -- e2e/vrt/__screenshots__ | awk '{print $2}' | while read -r f; do
             [ -f "$f" ] || continue
             mkdir -p "/tmp/vrt-shard-out/$(dirname "$f")"
             cp "$f" "/tmp/vrt-shard-out/$f"

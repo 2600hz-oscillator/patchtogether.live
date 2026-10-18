@@ -58,7 +58,7 @@
     controlType: 'button',
     get moduleId() { return moduleId; },
     get paramId() { return paramId; },
-    onGate: (high) => { if (high) onchange(toggledValue(value)); },
+    onGate: (high) => { if (high) flip(); },
   });
 
   // Motorized live value (a CV-driven toggle), else the prop.
@@ -80,7 +80,8 @@
 
   let on = $derived(isToggleOn(liveValue));
 
-  function flip() { onchange(toggledValue(value)); }
+  // Toggle the state the player sees, including a mode changed by a gate.
+  function flip() { onchange(toggledValue(readLive?.() ?? value)); }
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
   }

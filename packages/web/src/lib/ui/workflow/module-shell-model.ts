@@ -688,8 +688,13 @@ export function laneBodyPlan(
   glyph: LaneGlyph,
   tier: FaceTier,
   uniformCellH: number = PLATE_ROW_H,
+  tileBodyHeight: number = 0,
 ): LaneBodyPlan {
   const hasGlyph = glyph !== 'none';
+  // Positive reservations are currently authored only on glyph-free faces;
+  // module-face-lint refuses a picture/trace until its combined fit is measured.
+  const reservedH = Number.isFinite(tileBodyHeight) ? Math.max(0, tileBodyHeight) : 0;
+  const bodyBudgetH = Math.max(0, LANE_BODY_H - reservedH);
   // The historic form — a COUNT of cells that are all the same height — is kept
   // because it is what most callers mean and it is exactly what this function
   // used to take. It is synthesized into the list form so there is ONE code
@@ -704,11 +709,23 @@ export function laneBodyPlan(
       : cells;
   const controlCount = typeof cells === 'number' ? cells : cells.length;
   const rowMax = hasGlyph ? LANE_ROW_MAX_CELLS_WITH_GLYPH : LANE_ROW_MAX_CELLS;
+  // The height list describes small plate cells. A medium row knob is up to
+  // 15px taller (Phases measures 57px in compact versus 43px in full). Reserve
+  // that growth for knob-sized cells when an extension constrains the body;
+  // tall fader/pad cells retain their own measured height.
+  const rowGrowthH = 15;
+  let rowCount = Math.min(controlCount, rowMax);
+  if (reservedH > 0) {
+    const tooTall = cellHeights.slice(0, rowCount).findIndex((height) =>
+      Math.max(PLATE_ROW_H, height) + (height <= LANE_KNOB_READOUT_H ? rowGrowthH : 0) > bodyBudgetH);
+    if (tooTall >= 0) rowCount = tooTall;
+  }
+  const rowGlyph = hasGlyph && (reservedH === 0 || PLATE_PICTURE_RESERVE_H <= bodyBudgetH);
   if (tier === 'mini') {
     return {
       layout: 'row',
-      cellCount: Math.min(controlCount, 1),
-      glyph: hasGlyph,
+      cellCount: Math.min(rowCount, 1),
+      glyph: rowGlyph,
       knobSize: 'md',
       rowTracks: [],
     };
@@ -720,8 +737,8 @@ export function laneBodyPlan(
     // spare, which is why the compact tile was correct while the plate was not.
     return {
       layout: 'row',
-      cellCount: Math.min(controlCount, rowMax),
-      glyph: hasGlyph,
+      cellCount: rowCount,
+      glyph: rowGlyph,
       knobSize: 'md',
       rowTracks: [],
     };
@@ -749,13 +766,13 @@ export function laneBodyPlan(
   // to 2 cells + the live picture, which is exactly what its own `compact` tile
   // has painted all along. Every control stays reachable in the dock.
   if (glyph === 'picture') {
-    const budget = LANE_BODY_H - PLATE_PICTURE_RESERVE_H;
+    const budget = bodyBudgetH - PLATE_PICTURE_RESERVE_H;
     const pictureRows = plateRowTracksWithin(cellHeights, budget);
     if (!pictureRows.length) {
       return {
         layout: 'row',
-        cellCount: Math.min(controlCount, rowMax),
-        glyph: true,
+        cellCount: rowCount,
+        glyph: rowGlyph,
         knobSize: 'md',
         rowTracks: [],
       };
@@ -781,13 +798,16 @@ export function laneBodyPlan(
   // and evicts them from faces whose tall cell was in the LAST row and could
   // never have overlapped anything (measured: 4 of the 11 readout-bearing
   // faces). Per-row tracks charge the height to the row that incurs it.
-  const rowTracks = plateRowTracks(cellHeights);
+  const rowTracks = reservedH > 0
+    ? plateRowTracksWithin(cellHeights, bodyBudgetH)
+    : plateRowTracks(cellHeights);
   const cellCount = Math.min(controlCount, PLATE_COLS * rowTracks.length);
   const usedTracks = rowTracks.slice(0, Math.ceil(cellCount / PLATE_COLS));
   return {
     layout: 'plate',
     cellCount,
-    glyph: hasGlyph && plateGlyphFitsRows(usedTracks),
+    glyph: hasGlyph && plateGlyphFitsRows(usedTracks)
+      && plateRowsHeight(usedTracks) + PLATE_PICTURE_RESERVE_H <= bodyBudgetH,
     knobSize: 'sm',
     rowTracks: usedTracks,
   };

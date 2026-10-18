@@ -114,6 +114,17 @@ CV is summed with the trim knob in JS and mapped into the camera's
 handshake-reported mechanical range before leaving as sysex; an AudioParam
 landing pad would make the summed value unreadable with no card mounted.
 
+## Phases Length override, 2026-10-18 addendum
+
+The Phases owner requirement is an absolute, presence-sensitive Length CV
+override: normalized 0..1 maps linearly to 0.05..30 seconds, even when the
+patched signal is zero. Unpatching restores the latest manual Length value.
+The worklet reads raw input 4 per sample and applies that mapping in
+`phasesLengthFromCv`; no AudioParam sum or `cvScale` node participates.
+`phases.length_cv` is therefore enrolled in `PASSTHROUGH_BY_DESIGN`.
+The DSP/worklet tests and `e2e/tests/phases.spec.ts` cover both CV extremes,
+patched zero, unplug restoration, and unchanged normalized playback position.
+
 ## References
 
 - `packages/web/src/lib/graph/types.ts:498-540` — `CvScaleHint`

@@ -35,10 +35,9 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Card-file basenames that are allowed to contain un-wired Knob/Fader
- *  instances, with the count expected and the reason. Empty today: every
- *  XY/joystick exception is a custom pad, NOT a Knob/Fader, so none of them
- *  match the scan. Listed here only as the documented seam for future
- *  exemptions. */
+ *  instances, with the count expected and the reason. Data editors below
+ *  write structured node data, not a ParamDef. XY/joystick exceptions use
+ *  custom pads and do not match the Knob/Fader scan. */
 const ALLOWED_UNWIRED: Record<string, { count: number; reason: string }> = {
   // A CLASS THE ALLOWLIST DID NOT ANTICIPATE, so it is spelled out rather than
   // squeezed into "XY pad": this Fader edits `node.data.wsBands[i][field]`, not
@@ -61,6 +60,14 @@ const ALLOWED_UNWIRED: Record<string, { count: number; reason: string }> = {
     reason:
       'per-band filterbank editor writes node.data.wsBands, not a ParamDef — ' +
       'MIDI Learn has no paramId to bind; same limitation as the card it replaces',
+  },
+  // Same data-editor class: a phase's shape belongs to its left vertex in
+  // node.data.vertices, addressed by x through the Yjs edit actions. It is
+  // not a scalar ParamDef, and inventing a paramId would advertise a MIDI
+  // binding that the runtime cannot honour. Playback knobs remain assignable.
+  'phases/PhasesEditor.svelte': {
+    count: 1,
+    reason: 'per-phase Shape edits node.data.vertices through Yjs actions, not a ParamDef; per-vertex MIDI addressing is not implemented',
   },
 };
 
@@ -267,12 +274,12 @@ describe('MIDI Learn wiring audit (static scan of every module card)', () => {
     expect(
       offenders,
       `Un-wired MIDI controls found. Every Knob/Fader must pass moduleId={id} + ` +
-        `paramId="...". Add an ALLOWED_UNWIRED entry only for genuine XY/joystick ` +
-        `pads with justification.\n` + offenders.join('\n'),
+        `paramId="...". Add an ALLOWED_UNWIRED entry only for XY/joystick pads or data editors without a ParamDef, ` +
+        `with justification.\n` + offenders.join('\n'),
     ).toEqual([]);
   });
 
-  it('enforces the joystick / XY-pad exception allowlist (no stale entries)', () => {
+  it('enforces the explicit control exception allowlist (no stale entries)', () => {
     // Each allowlisted card must still exist AND still have exactly the
     // expected number of un-wired controls — so an exemption can't silently
     // cover a newly-added un-wired knob, and removing a pad cleans up here.

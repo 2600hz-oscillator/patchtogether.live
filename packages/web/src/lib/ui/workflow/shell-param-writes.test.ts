@@ -40,6 +40,8 @@ describe('SHELL_PARAM_WRITES — the macro-write registry', () => {
       'cloudseed.preset_index',
       'mappy.showGrid',
       'mappy.surfaceCount',
+      'phases.loop',
+      'phases.reverse',
     ]);
   });
 
