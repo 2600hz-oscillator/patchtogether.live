@@ -348,7 +348,9 @@
   // a max, because only a cell with a row BENEATH it can collide — see
   // `plateRowTracks`.
   let lanePlan = $derived(
-    view === 'lane' ? laneBodyPlan(face?.cellHeights ?? [], laneGlyph, effTier) : null,
+    view === 'lane'
+      ? laneBodyPlan(face?.cellHeights ?? [], laneGlyph, effTier, undefined, face?.tileBodyHeight)
+      : null,
   );
 
   // Whether the glyph cell RENDERS in the current view/tier — the dock hero

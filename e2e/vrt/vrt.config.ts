@@ -121,6 +121,7 @@ const FULL_MATCH = [
   'vrt-tidy-vco.spec.ts',
   'vrt-karplus-tomtom-states.spec.ts',
   'vrt-posterbox-states.spec.ts',
+  'vrt-phases.spec.ts',
   'vrt-colourofmagic.spec.ts',
   'cellshade-composite.spec.ts',
   'mirrorpool-composite.spec.ts',

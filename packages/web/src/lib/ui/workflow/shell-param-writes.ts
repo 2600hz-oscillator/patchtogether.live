@@ -26,6 +26,7 @@
 
 import { applyCloudseedPreset } from '$lib/ui/modules/cloudseed-preset-actions';
 import { setShowGrid, setSurfaceCountTo } from '$lib/ui/modules/mappy-edit';
+import { setPhasesMode } from '$lib/ui/modules/phases/phases-actions';
 import { patch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { createSettleCommit } from './settle-commit';
@@ -75,6 +76,12 @@ const cloudseedPresetCommit = createSettleCommit<number>(
  * each entry has to be worth reading about.
  */
 export const SHELL_PARAM_WRITES: Readonly<Record<string, Readonly<Record<string, ShellParamWriter>>>> = {
+  // Live gate toggles do not rewrite saved params. Deliver an explicit manual
+  // mode even when it repeats the stored number and the reconciler dedupes it.
+  phases: {
+    loop: (nodeId, value) => setPhasesMode(nodeId, 'loop', value),
+    reverse: (nodeId, value) => setPhasesMode(nodeId, 'reverse', value),
+  },
   cloudseed: {
     // The whole-space recall. Rounded because the writer indexes a roster and
     // the dial's `discrete` snap is a display concern, not a guarantee about

@@ -758,6 +758,7 @@
 // disagreement is unrepresentable rather than merely untested, and the
 // hand-typed count is gone. `contract-lock.txt` is byte-identical across it.
 export const STRICT_FACES: ReadonlySet<string> = new Set<string>([
+  'phases',
   'beads',
   // P1 batch 1 — first 6 module faces
   'adsr',

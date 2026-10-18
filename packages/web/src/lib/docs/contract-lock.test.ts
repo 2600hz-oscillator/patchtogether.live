@@ -133,6 +133,16 @@ describe('contract-signature — canonical + change-detecting', () => {
     expect(sig(redefaulted)).not.toBe(sig(base));
   });
 
+  it('keeps a lane editor height reservation outside the module I/O contract', () => {
+    const reserved = {
+      ...base,
+      face: { order: ['amount'], extension: 'editor', tileBodyHeight: 52 },
+    };
+    expect(sig(reserved)).toBe(sig(base));
+    expect(sig({ ...reserved, face: { ...reserved.face, tileBodyHeight: 64 } })).toBe(sig(base));
+    expect(FACE_FIELDS_NOT_IN_LOCK.tileBodyHeight.coveredBy).toContain('module-shell-model');
+  });
+
   // ⚠ TWO SIDEBAR-DETECTION TESTS USED TO SIT HERE — the #1468 regression pair
   // that proved a `face.sidebar` block appearing, vanishing, being relabelled,
   // reordered, rebound or losing an entry all moved the golden. `face.sidebar`

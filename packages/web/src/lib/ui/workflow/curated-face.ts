@@ -278,12 +278,13 @@ export function faceTierCap(
   tier: FaceTier,
   glyph: LaneGlyph,
   cells: number | readonly number[] = PLATE_ROW_H,
+  tileBodyHeight: number = 0,
 ): number {
   if (tier === 'dock') return FACE_TIER_CAPS.dock;
   const plan =
     typeof cells === 'number'
-      ? laneBodyPlan(LANE_PLATE_MAX_CELLS, glyph, tier, cells)
-      : laneBodyPlan(cells, glyph, tier);
+      ? laneBodyPlan(LANE_PLATE_MAX_CELLS, glyph, tier, cells, tileBodyHeight)
+      : laneBodyPlan(cells, glyph, tier, PLATE_ROW_H, tileBodyHeight);
   return plan.cellCount;
 }
 
@@ -367,6 +368,8 @@ export interface CuratedFace {
    * derivation is how the planner and the renderer disagreed in the first place.
    */
   cellHeights: number[];
+  /** Extension height excluded from the lane cell budget; omitted means zero. */
+  tileBodyHeight?: number;
 }
 
 /** Minimal def shape the selector reads — works for AudioModuleDef,
@@ -530,7 +533,7 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
   // half alone sized every video face as glyph-LESS while the shell rendered it
   // glyph-BEARING, so `curatedFace` selected three compact cells and the tile
   // painted two. `laneGlyphFor` is the one derivation the shell reads too.
-  const cap = faceTierCap(tier, laneGlyphFor(def), cellHeights);
+  const cap = faceTierCap(tier, laneGlyphFor(def), cellHeights, face.tileBodyHeight);
   // PF-22 — the DOCK renders the hero picture, so it keeps the whole order; a
   // LANE cannot paint a 280px panel in a 46px column, so the picture does not
   // consume a lane rank. See `laneOrder`. `foldedOrder` applies at EVERY tier:
@@ -561,6 +564,7 @@ export function curatedFace(def: FaceDefLike, tier: FaceTier): CuratedFace | nul
     glyph,
     cellHeights,
   };
+  if (face.tileBodyHeight !== undefined) out.tileBodyHeight = face.tileBodyHeight;
   if (tier === 'dock' && face.pages && face.pages.length) {
     out.pages = face.pages.map((p) => resolvePage(p, def));
   }

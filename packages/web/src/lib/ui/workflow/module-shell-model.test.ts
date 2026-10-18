@@ -191,6 +191,44 @@ describe('roleLineForDef — the migrated header role line', () => {
 });
 
 describe('laneBodyPlan — the fixed-tile no-clip guarantee', () => {
+  it('reserves an editor before admitting compact cells or whole full-tier rows', () => {
+    const cells = [PLATE_ROW_H, PLATE_ROW_H, PLATE_ROW_H, PLATE_ROW_H];
+    expect(laneBodyPlan(cells, 'none', 'compact', undefined, 52)).toMatchObject({
+      layout: 'row', cellCount: 3, knobSize: 'md',
+    });
+    expect(laneBodyPlan(cells, 'none', 'full', undefined, 52)).toEqual({
+      layout: 'plate', cellCount: 3, glyph: false, knobSize: 'sm', rowTracks: [PLATE_ROW_H],
+    });
+    expect(laneBodyPlan(cells, 'none', 'full').cellCount, 'without the editor both rows fit').toBe(4);
+    expect(laneBodyPlan(cells, 'trace', 'full', undefined, 52).glyph,
+      'a trace cannot spend height already reserved for the editor').toBe(false);
+  });
+
+  it('refuses a row that cannot fit after the reservation, including medium knob growth', () => {
+    const cells = [PLATE_ROW_H, PLATE_ROW_H, PLATE_ROW_H, PLATE_ROW_H];
+    expect(laneBodyPlan(cells, 'none', 'compact', undefined, LANE_BODY_H - 56).cellCount).toBe(0);
+    expect(laneBodyPlan(cells, 'none', 'compact', undefined, LANE_BODY_H - 57).cellCount).toBe(3);
+    for (const reserve of [LANE_BODY_H - PLATE_ROW_H + 1, LANE_BODY_H, LANE_BODY_H + 20]) {
+      expect(laneBodyPlan(cells, 'none', 'full', undefined, reserve)).toMatchObject({
+        cellCount: 0, rowTracks: [],
+      });
+    }
+    expect(laneBodyPlan([LANE_CELL_H.fader, 42, 42, 42], 'none', 'full', undefined, 52))
+      .toMatchObject({ cellCount: 0, rowTracks: [] });
+    expect(laneBodyPlan([LANE_CELL_H.fader], 'none', 'compact', undefined, 52).cellCount).toBe(0);
+  });
+
+  it('omitting a reservation preserves every existing plan exactly', () => {
+    for (const tier of ['mini', 'compact', 'full'] as const) {
+      for (const glyph of ['none', 'trace', 'picture'] as const) {
+        for (const cells of [[], [42], [42, 57, 42, 42, 96, 42], [96, 96, 96, 96]]) {
+          expect(laneBodyPlan(cells, glyph, tier, undefined, 0))
+            .toEqual(laneBodyPlan(cells, glyph, tier));
+        }
+      }
+    }
+  });
+
   it('mini: one hero cell + the glyph', () => {
     expect(laneBodyPlan(8, 'trace', 'mini')).toEqual({ layout: 'row', cellCount: 1, glyph: true, knobSize: 'md', rowTracks: [] });
     expect(laneBodyPlan(0, 'trace', 'mini')).toEqual({ layout: 'row', cellCount: 0, glyph: true, knobSize: 'md', rowTracks: [] });

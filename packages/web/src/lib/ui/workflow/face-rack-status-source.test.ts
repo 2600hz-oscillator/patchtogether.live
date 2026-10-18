@@ -148,6 +148,10 @@ interface BodyRule {
 }
 
 const EXTENSION_BODY_ROLES: Readonly<Record<string, BodyRule>> = {
+  phases: {
+    role: 'control-grid',
+    why: 'The SVG envelope is the control surface: insert vertices on the curve, drag their levels, select a phase and change its own shape, or delete an interior vertex. The same editor mounts in the lane and dock. Meaning lives in accessible names, painted text is limited to control captions and the vertex menu, and the blue playhead is a visual read of the factory-owned audio runtime. The body creates no playback clock or persistent state.',
+  },
   // ── PICTURES — a live preview canvas, plus the switches that steer it.
   // Everything each of these paints as TEXT is a control caption on its own
   // button (SCREEN, MONITOR, a resize grip). What their canvases draw is the

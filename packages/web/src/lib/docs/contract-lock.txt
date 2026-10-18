@@ -2655,6 +2655,17 @@ pentemelodica param v5_wave 0..1 linear default=0
 pentemelodica param wetdry 0..1 linear default=1
 pentemelodica stereo out_l+out_r
 pentemelodica family pentemelodica-voices kind=cell prefix=pentemelodica-voice
+phases meta domain=audio
+phases in length_cv cv
+phases in loop gate edge=trigger
+phases in phase_trigger gate edge=trigger
+phases in reverse gate edge=trigger
+phases in trigger gate edge=trigger
+phases out phase_cv cv
+phases param length 0.05..30 log default=0.05 unit=s
+phases param loop 0..1 discrete default=0
+phases param polarity 0..1 discrete default=0
+phases param reverse 0..1 discrete default=0
 picturebox meta domain=video maxInstances=8
 picturebox in asset_gate gate param=asset_gate edge=trigger
 picturebox in asset_pitch pitch param=asset_pitch

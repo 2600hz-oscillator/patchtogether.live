@@ -331,6 +331,26 @@ describe('FACE_TIER_CAPS ladder', () => {
 });
 
 describe('faceTierCap — the cap RECONCILED with the lane fit plan', () => {
+  it('carries an editor reservation from the def into the cap and render plan while dock keeps every control', () => {
+    const ids = ['length', 'loop', 'polarity', 'reverse'];
+    const def: FaceDefLike = {
+      params: ids.map((id) => ({ id, label: id })),
+      face: { order: ids, glyph: 'none', extension: 'editor', tileBodyHeight: 52 },
+    };
+    for (const [tier, count] of [['mini', 1], ['compact', 3], ['full', 3], ['dock', 4]] as const) {
+      const face = curatedFace(def, tier)!;
+      expect(face.tileBodyHeight).toBe(52);
+      expect(face.controls.map((c) => c.key), tier).toEqual(ids.slice(0, count));
+      if (tier !== 'dock') {
+        expect(laneBodyPlan(face.cellHeights, laneGlyphFor(def), tier, undefined, face.tileBodyHeight).cellCount)
+          .toBe(count);
+      }
+    }
+    const without = { ...def, face: { ...def.face!, tileBodyHeight: undefined } };
+    expect(curatedFace(without, 'full')!.controls).toHaveLength(ids.length);
+    expect(curatedFace(without, 'full')).not.toHaveProperty('tileBodyHeight');
+  });
+
   // The authored-intent mismatch this closes, in both lane tiers:
   // FACE_TIER_CAPS.compact = 3 while laneBodyPlan renders only 2 next to a
   // glyph (six faces documented a 3-control compact tile the shell could never

@@ -63,6 +63,13 @@ export interface AudioDomainNodeHandle {
    */
   readParam(paramId: string): number | undefined;
   /**
+   * Optional complete, DSP-reported parameter value, including module-owned
+   * overrides or latched gate modes. Returning a number takes priority over
+   * the engine's knob cache and modulation taps; undefined keeps the ordinary
+   * cached read path. Only modules that report the resolved value opt in.
+   */
+  readEffectiveParam?(paramId: string): number | undefined;
+  /**
    * Optional: arbitrary per-module data read (e.g., scope's latest waveform
    * snapshot, meter peak values). Modules that need to expose internal state
    * to their UI implement this; others omit it.
@@ -788,9 +795,10 @@ export class AudioEngine implements DomainEngine {
     this.knobValues.set(this.knobKey(nodeId, paramId), value);
   }
 
-  /** Read the live AudioParam value for motorized fader rendering.
-   *  Returns intrinsic + sample of any connected modulators (via the
-   *  per-param AnalyserNode tap), so faders visually track LFOs/envelopes.
+  /** Read the effective parameter value for motorized control rendering.
+   *  A module's readEffectiveParam can report its complete DSP-resolved value.
+   *  Otherwise returns intrinsic + sample of any connected modulators (via
+   *  the per-param AnalyserNode tap), so faders visually track LFOs/envelopes.
    *
    *  Intrinsic source = the JS-side `knobValues` cache, NOT the handle's
    *  AudioParam.value. For Faust AudioWorkletNodes, AudioParam.value does
@@ -810,8 +818,11 @@ export class AudioEngine implements DomainEngine {
    *  (defensive; every materialized node seeds the cache for all its params),
    *  so non-Faust handles whose .value IS live keep working too. */
   readParam(nodeId: string, paramId: string): number | undefined {
+    const handle = this.nodes.get(nodeId);
+    const effective = handle?.readEffectiveParam?.(paramId);
+    if (effective !== undefined) return effective;
     const cached = this.knobValues.get(this.knobKey(nodeId, paramId));
-    const intrinsic = cached ?? this.nodes.get(nodeId)?.readParam(paramId);
+    const intrinsic = cached ?? handle?.readParam(paramId);
     if (intrinsic === undefined) return undefined;
     const tap = this.paramTaps.get(this.paramTapKey(nodeId, paramId));
     if (!tap) return intrinsic;
