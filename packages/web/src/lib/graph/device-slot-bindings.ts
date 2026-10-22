@@ -94,7 +94,8 @@ export interface LinnstrumentBinding {
   deviceId: string;
 }
 
-/** Desktop TRAILS input; the name is a fallback only when it is unambiguous. */
+/** TRAILS input pick. Only the legacy desktop default uses a name fallback;
+ *  per-module picks require an exact device id to keep identical units apart. */
 export interface TrailsBinding {
   deviceId: string;
   deviceName?: string;
@@ -124,6 +125,8 @@ export interface RigBindings {
   gamepad?: GamepadBinding;
   linnstrument?: LinnstrumentBinding;
   trails?: TrailsBinding;
+  /** Optional per-module overrides, local to this computer. */
+  trailsNodes?: Record<string, TrailsBinding>;
 }
 
 /** Engine liveness follows local hardware bindings, never stale node.data. */
@@ -187,6 +190,15 @@ export function normalizeRigBindings(raw: unknown): RigBindings {
     const b = r.trails as TrailsBinding;
     out.trails = { deviceId: b.deviceId };
     if (typeof b.deviceName === 'string') out.trails.deviceName = b.deviceName;
+  }
+  if (r.trailsNodes && typeof r.trailsNodes === 'object' && !Array.isArray(r.trailsNodes)) {
+    out.trailsNodes = Object.fromEntries(Object.entries(r.trailsNodes)
+      .filter(([, b]) => b && typeof b === 'object' && typeof (b as TrailsBinding).deviceId === 'string')
+      .map(([id, raw]) => {
+        const b = raw as TrailsBinding;
+        return [id, { deviceId: b.deviceId,
+          ...(typeof b.deviceName === 'string' ? { deviceName: b.deviceName } : {}) }];
+      }));
   }
   if (r.gamepad && typeof (r.gamepad as GamepadBinding).id === 'string') {
     const gp = r.gamepad as GamepadBinding;
@@ -367,8 +379,8 @@ export class RigBindingStore {
   getLinnstrument(): LinnstrumentBinding | null {
     return this.cache.linnstrument ?? null;
   }
-  getTrails(): TrailsBinding | null {
-    return this.cache.trails ?? null;
+  getTrails(nodeId?: string): TrailsBinding | null {
+    return nodeId ? this.cache.trailsNodes?.[nodeId] ?? null : this.cache.trails ?? null;
   }
 
   setCamera(slot: CameraSlotName, binding: CameraBinding | null): void {
@@ -420,9 +432,15 @@ export class RigBindingStore {
     });
   }
 
-  setTrails(binding: TrailsBinding | null): void {
+  setTrails(binding: TrailsBinding | null, nodeId?: string): void {
     this.mutate((c) => {
-      if (binding) c.trails = binding;
+      if (nodeId) {
+        const nodes = { ...c.trailsNodes };
+        if (binding) nodes[nodeId] = { ...binding };
+        else delete nodes[nodeId];
+        if (Object.keys(nodes).length) c.trailsNodes = nodes;
+        else delete c.trailsNodes;
+      } else if (binding) c.trails = binding;
       else delete c.trails;
     });
   }
@@ -464,6 +482,9 @@ function cloneRig(b: RigBindings): RigBindings {
     gamepad: b.gamepad ? { ...b.gamepad } : undefined,
     linnstrument: b.linnstrument ? { ...b.linnstrument } : undefined,
     trails: b.trails ? { ...b.trails } : undefined,
+    trailsNodes: b.trailsNodes ? Object.fromEntries(
+      Object.entries(b.trailsNodes).map(([id, binding]) => [id, { ...binding }]),
+    ) : undefined,
   };
 }
 

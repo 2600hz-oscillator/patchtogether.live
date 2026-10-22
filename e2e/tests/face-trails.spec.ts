@@ -138,20 +138,22 @@ async function installSim(page: Page): Promise<boolean> {
   });
 }
 
-/** Put a finger on the pad. Coordinates are the pad's own 0..1. */
-async function simTouch(page: Page, ch: number, x: number, y: number): Promise<void> {
-  await page.evaluate(
+/** Keep a continuous CC touch alive until the test releases it. */
+async function simTouch(page: Page, ch: number, x: number, y: number): Promise<number> {
+  return page.evaluate(
     ({ ch, x, y }) => {
       const w = globalThis as unknown as {
         __trailsSim?: {
-          gateOn(c: number): void;
           touch(c: number, x: number, y: number): void;
           send(bytes: number[]): void;
         };
       };
       if (!w.__trailsSim) throw new Error('__trailsSim missing — install the simulated Trails first');
-      w.__trailsSim.gateOn(ch);
-      w.__trailsSim.touch(ch, x, y);
+      const send = () => w.__trailsSim!.touch(ch, x, y);
+      send();
+      // USB stimulus cadence, not a renderer wait. A lone CC frame should
+      // expire; the old synthetic note-on hid that behind sticky note mode.
+      return window.setInterval(send, 20);
     },
     { ch, x, y },
   );
@@ -474,7 +476,7 @@ test('@trails the FACE does not disturb the audio path — a touch still opens a
 
   // (2) The real connect path, then a real 14-bit CC touch on the wire.
   expect(await installSim(page), 'simulated Trails installed (needs VITE_E2E_HOOKS)').toBe(true);
-  await simTouch(page, 1, 0.9, 0.5);
+  const touchTimer = await simTouch(page, 1, 0.9, 0.5);
 
   // (3) THE AUDIBLE ASSERTION. x1 ≈ 0.9 is the VCA's gain now.
   //     ⚠ `peak`, matching the `untilPeak` target — the exit condition must
@@ -549,6 +551,12 @@ test('@trails the FACE does not disturb the audio path — a touch still opens a
       message: 'the LANE TILE mirror must paint it too',
     })
     .toBeGreaterThan(0);
+
+  // Stop the source and observe contact expiry on both mirrors. The page
+  // fixture also disposes the interval if an earlier assertion aborts the test.
+  await page.evaluate((timer) => clearInterval(timer), touchTimer);
+  await expect.poll(() => chromatic(`trails-face-pad-${NODE}`)).toBe(0);
+  await expect.poll(() => chromatic(`trails-tile-pad-${NODE}`)).toBe(0);
 
   errorWatch.assertClean();
 });

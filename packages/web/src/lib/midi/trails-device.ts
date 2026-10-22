@@ -1,5 +1,5 @@
-// THE BELA TRAILS DEVICE LAYER — one Web MIDI binding for the whole app, fanned
-// out to every `trails` module in the rack.
+// THE BELA TRAILS DEVICE LAYER — shared Web MIDI access, with local per-module
+// input selections so separate Trails instruments can run independently.
 //
 // Trails' USB-C port is class-compliant USB-MIDI (Bela's own firmware updater
 // is a Chrome WebMIDI page), so no helper app and no native bridge is involved:
@@ -106,29 +106,29 @@ let access: TrailsAccessLike | null = null;
 let accessKind: 'idle' | 'unsupported' | 'denied' | 'no-prompt' | 'granted' = 'idle';
 let accessMessage = '';
 let connectInFlight = false;
-let attachedNames: string[] = [];
 let attachedInputs: TrailsInput[] = [];
+let routes = new Map<string, TrailsInput[]>();
+const handlers = new Map<TrailsInput, (ev: MidiEventLike) => void>();
 let unsubRig: (() => void) | null = null;
-const disconnectSubscribers = new Set<() => void>();
+const disconnectSubscribers = new Map<() => void, string>();
 
-function replaceAttachedInputs(next: TrailsInput[]): void {
-  if (attachedInputs.some((p) => !next.includes(p))) {
-    for (const reset of disconnectSubscribers) reset();
+/** Release only the instances whose input disappeared or selection changed. */
+function replaceRoutes(next: Map<string, TrailsInput[]>): void {
+  for (const [reset, key] of disconnectSubscribers) {
+    if ((routes.get(key) ?? []).some((p) => !(next.get(key) ?? []).includes(p))) reset();
   }
-  attachedInputs = next;
+  routes = next;
 }
 
-/** Release held musical gates when a source disappears or the pick changes. */
-export function subscribeTrailsDisconnect(reset: () => void): () => void {
-  disconnectSubscribers.add(reset);
-  return () => { disconnectSubscribers.delete(reset); };
+export function subscribeTrailsDisconnect(reset: () => void, nodeId = ''): () => void {
+  disconnectSubscribers.set(reset, nodeId);
+  resolvePorts();
+  return () => { disconnectSubscribers.delete(reset); resolvePorts(); };
 }
 
-/** Every module instance that wants raw frames. A `Set` of handlers rather than
- *  one slot: four `trails` nodes in a rack all read the same physical device,
- *  and `onmidimessage` is a SINGLE slot, so per-module claims would evict each
- *  other (the PT-PTZ two-module lesson). */
-const subscribers = new Set<(ev: MidiEventLike) => void>();
+/** One claim owns each MIDI port; subscribers route by module id so modules
+ *  can share a device or select separate instruments without evicting handlers. */
+const subscribers = new Map<(ev: MidiEventLike) => void, string>();
 
 const inputClaim: MidiInputClaim = createMidiInputClaim('trails');
 
@@ -142,7 +142,7 @@ function isTrailsPort(p: { name?: string | null; state?: string }): boolean {
   return TRAILS_PORT_PATTERN.test(p.name ?? '');
 }
 
-/** Live inputs for the desktop picker; reading the roster never requests MIDI. */
+/** Live inputs for module and desktop pickers; reading the roster never requests MIDI. */
 export function listTrailsPorts(): { inputId: string; name: string }[] {
   return [...(access?.inputs.values() ?? [])].filter(isTrailsPort)
     .map((p) => ({ inputId: p.id, name: p.name ?? p.id }));
@@ -152,21 +152,25 @@ export function trailsHasAccess(): boolean {
   return access !== null;
 }
 
-/** Exact id first; accept an id change only when the saved name is unique. */
-export function selectedTrailsPortId(): string | null {
-  const b = rigBindings().getTrails();
+/** Instance picks use exact ids. The legacy desktop default also accepts a
+ *  unique-name match when its id changes. */
+export function selectedTrailsPortId(nodeId?: string): string | null {
+  const b = rigBindings().getTrails(nodeId);
   if (!b) return null;
   const ports = listTrailsPorts();
   if (ports.some((p) => p.inputId === b.deviceId)) return b.deviceId;
+  // Per-instance picks fail closed. With two identically named devices, a
+  // unique remaining name after unplugging one is the OTHER instrument.
+  if (nodeId) return null;
   const byName = b.deviceName ? ports.filter((p) => p.name === b.deviceName) : [];
   return byName.length === 1 ? byName[0]!.inputId : null;
 }
 
 /** Electron pre-grants MIDI. Browser patch loads must still never prompt. */
-export async function restoreNativeTrails(): Promise<boolean> {
+export async function restoreNativeTrails(nodeId?: string): Promise<boolean> {
   if (!nativeAvailable()) return false;
   await rigBindings().whenReady();
-  if (!rigBindings().getTrails()) return false;
+  if (!rigBindings().getTrails(nodeId) && !rigBindings().getTrails()) return false;
   return connectTrails();
 }
 
@@ -181,10 +185,10 @@ export function listTrailsPortNames(): string[] {
   ].sort();
 }
 
-/** Dispatch one frame to every subscribed module. Kept as a named function so
- *  the claim installs ONE stable reference and re-resolves are free. */
-function onFrame(ev: MidiEventLike): void {
-  for (const fn of subscribers) {
+/** Dispatch a frame only to the instances listening to its input. */
+function onFrame(input: TrailsInput, ev: MidiEventLike): void {
+  for (const [fn, key] of subscribers) {
+    if (!routes.get(key)?.includes(input)) continue;
     try {
       fn(ev);
     } catch (err) {
@@ -193,28 +197,49 @@ function onFrame(ev: MidiEventLike): void {
   }
 }
 
+function inputsFor(nodeId = ''): TrailsInput[] {
+  if (!access) return [];
+  const own = nodeId ? rigBindings().getTrails(nodeId) : null;
+  const selected = own ? selectedTrailsPortId(nodeId)
+    : nativeAvailable() ? selectedTrailsPortId() : null;
+  return [...access.inputs.values()].filter((p) =>
+    isTrailsPort(p) && ((!own && !nativeAvailable()) || p.id === selected));
+}
+
 function resolvePorts(): void {
-  if (!access) {
-    replaceAttachedInputs([]);
-    attachedNames = [];
-    inputClaim.detach();
-    bump();
-    return;
+  const keys = new Set(['', ...subscribers.values(), ...disconnectSubscribers.values()]);
+  const next = new Map([...keys].map((key) => [key, inputsFor(key)]));
+  replaceRoutes(next);
+  const matched = [...new Set([...next.values()].flat())];
+  for (const input of attachedInputs) {
+    if (!matched.includes(input)) {
+      inputClaim.detachFrom(input);
+      handlers.delete(input);
+    }
   }
-  const selected = nativeAvailable() ? selectedTrailsPortId() : null;
-  const matched = [...access.inputs.values()].filter((p) =>
-    isTrailsPort(p) && (!nativeAvailable() || p.id === selected));
-  replaceAttachedInputs(matched);
-  // `attachOnly` releases every port THIS claim holds that is not in the new
-  // list and leaves anybody else's slots strictly alone.
-  inputClaim.attachOnly(matched, onFrame);
-  attachedNames = matched.map((i) => i.name ?? i.id);
+  for (const input of matched) {
+    let handler = handlers.get(input);
+    if (!handler) {
+      handler = (ev) => onFrame(input, ev);
+      handlers.set(input, handler);
+    }
+    inputClaim.attach(input, handler);
+  }
+  attachedInputs = matched;
   bump();
 }
 
+/** An instance override. Clearing it restores the existing browser/all or
+ *  desktop/hardware-setup default; device ids never enter the shared patch. */
+export function selectTrailsInput(nodeId: string, inputId: string): void {
+  const port = listTrailsPorts().find((p) => p.inputId === inputId);
+  if (inputId && !port) return;
+  rigBindings().setTrails(port ? { deviceId: port.inputId, deviceName: port.name } : null, nodeId);
+}
+
 /** The current binding state — a PURE read, safe to call from a `$derived`. */
-export function trailsStatus(): TrailsStatus {
-  const portNames = [...new Set(attachedNames)].sort();
+export function trailsStatus(nodeId?: string): TrailsStatus {
+  const portNames = [...new Set(inputsFor(nodeId).map((p) => p.name ?? p.id))].sort();
   if (accessKind === 'unsupported') {
     return { kind: 'unsupported', message: midiOutcomeMessage({ kind: 'unsupported' }), portNames };
   }
@@ -236,6 +261,11 @@ export function trailsStatus(): TrailsStatus {
     };
   }
   if (portNames.length === 0) {
+    const own = nodeId ? rigBindings().getTrails(nodeId) : null;
+    if (own) return {
+      kind: 'no-port', portNames,
+      message: `The selected TRAILS input (${own.deviceName || own.deviceId}) is not connected. Reconnect it or choose another input on this module.`,
+    };
     if (nativeAvailable()) {
       const selected = rigBindings().getTrails();
       return {
@@ -276,7 +306,7 @@ export function trailsStatus(): TrailsStatus {
 export async function connectTrails(request?: TrailsRequestFn): Promise<boolean> {
   if (access) {
     resolvePorts();
-    return trailsStatus().kind === 'bound';
+    return attachedInputs.length > 0;
   }
   if (connectInFlight) return false;
 
@@ -291,7 +321,7 @@ export async function connectTrails(request?: TrailsRequestFn): Promise<boolean>
     } finally {
       connectInFlight = false;
     }
-    return trailsStatus().kind === 'bound';
+    return attachedInputs.length > 0;
   }
 
   if (!trailsAvailable()) {
@@ -326,7 +356,7 @@ export async function connectTrails(request?: TrailsRequestFn): Promise<boolean>
   } finally {
     connectInFlight = false;
   }
-  return trailsStatus().kind === 'bound';
+  return attachedInputs.length > 0;
 }
 
 function adoptAccess(a: MIDIAccessLike | TrailsAccessLike): void {
@@ -345,10 +375,12 @@ function adoptAccess(a: MIDIAccessLike | TrailsAccessLike): void {
  * prompts nothing, because the frames only start once somebody has pressed
  * CONNECT. Returns an unsubscribe function for `dispose()`.
  */
-export function subscribeTrailsMidi(fn: (ev: MidiEventLike) => void): () => void {
-  subscribers.add(fn);
+export function subscribeTrailsMidi(fn: (ev: MidiEventLike) => void, nodeId = ''): () => void {
+  subscribers.set(fn, nodeId);
+  resolvePorts();
   return () => {
     subscribers.delete(fn);
+    resolvePorts();
   };
 }
 
@@ -583,14 +615,15 @@ export async function installSimulatedTrails(
       return boundInputs().some((i) => typeof i.onmidimessage === 'function');
     },
     uninstall() {
-      replaceAttachedInputs([]);
+      replaceRoutes(new Map());
       inputClaim.detach();
       if (access === simAccess) {
         access.onstatechange = null;
         access = null;
         accessKind = 'idle';
       }
-      attachedNames = [];
+      attachedInputs = [];
+      handlers.clear();
       bump();
     },
   };
@@ -609,5 +642,6 @@ export function __resetTrailsForTest(): void {
   accessKind = 'idle';
   accessMessage = '';
   connectInFlight = false;
-  attachedNames = [];
+  routes.clear();
+  handlers.clear();
 }

@@ -62,7 +62,7 @@
 
   let status = $derived.by<TrailsStatus | null>(() => {
     void midiV;
-    return trailsApi(nodeId)?.status() ?? trailsStatus();
+    return trailsApi(nodeId)?.status() ?? trailsStatus(nodeId);
   });
   let lamp = $derived(trailsLamp(status));
 </script>

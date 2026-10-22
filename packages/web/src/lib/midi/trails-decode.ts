@@ -98,14 +98,11 @@ export interface TrailsAxisRef {
 /**
  * MIDI channel (0-based wire nibble) → which axis it carries.
  *
- * ⚠ HARDWARE-VERIFY ITEM #2. The manual says "each of the 8 axes transmits on
- * its own MIDI channel (1–8)" without printing the assignment table, so the
- * ORDER below is the natural reading — channel-major, X before Y — and not a
- * quoted fact. Wire channel 0 (printed "1") is channel 1's X, wire channel 1 is
- * channel 1's Y, and so on through wire channel 7 = channel 4's Y.
- *
- * A monitor session that shows a different order is a one-line edit to this
- * table; nothing downstream re-derives it.
+ * Default assignment confirmed by Bela's manual v1.0.7.r1 (5 October 2026):
+ * https://learn.bela.io/trails-manual/#midi-mapping
+ * MIDI 1/2 → Trails 1 X/Y, 3/4 → 2, 5/6 → 3, 7/8 → 4.
+ * Firmware allows custom mappings; this decoder uses the documented defaults.
+ * A gesture on MIDI 5/6 therefore drives x3/y3/g3, not channel 1's jacks.
  */
 export const TRAILS_AXIS_MAP: readonly TrailsAxisRef[] = Array.from(
   { length: TRAILS_CHANNEL_COUNT * 2 },
@@ -132,7 +129,7 @@ export const TRAILS_AXIS_MAP: readonly TrailsAxisRef[] = Array.from(
  *      Otherwise it sends high-resolution MIDI CC." Notes are an ALTERNATIVE
  *      ENCODING OF THE SAME TWO AXES, quantised to a scale — not a separate
  *      articulation stream. In the device's ordinary mode no note is ever sent,
- *      so `sawNote` stays false forever and every gate comes from HERE.
+ *      so contact follows CC activity on each axis.
  *
  * So this timeout is not a fallback any more — in the default mode it is the
  * only contact signal there is, and it can only ever say one thing: "the axis
@@ -365,9 +362,8 @@ export type TrailsEvent =
    * message is two facts, exactly as one CC message is: where the axis IS
    * (`axis`) and whether it is sounding (`gate`). A note carries a third that a
    * CC simply does not have — WHICH PITCH — and that is the only thing this
-   * event adds. It rides the same branch, in the same order, and CC mode never
-   * produces one, which is what makes the poly outputs silent in CC mode by
-   * construction rather than by a mode flag someone has to remember to check.
+   * event adds. CC cannot strike a poly note; returning an axis to CC emits
+   * releases for any notes still held on that axis, keeping its poly lane silent.
    *
    * PER AXIS, not per channel, because the poly bus is per-axis: one Trails
    * channel's X and Y are two independent voices on two lanes. The `gate` event
@@ -528,11 +524,11 @@ interface ChannelState {
    * without setting this flag and would need the alternative rule.
    */
   releasedSinceTrigger: boolean;
-  /** Has this channel EVER produced a note? Once true the activity path is
-   *  permanently off for it — see TRAILS_ACTIVITY_GATE_TIMEOUT_MS. */
-  sawNote: boolean;
-  /** Arrival time of the most recent axis message. */
-  lastAxisMs: number;
+  /** Current encoding per axis. Pitch quantisation can change independently
+   *  on X and Y; receiving notes once must not disable later CC contact. */
+  noteMode: { x: boolean; y: boolean };
+  /** Arrival time of the most recent CC activity on each axis. */
+  lastAxisMs: { x: number; y: number };
   gateHigh: boolean;
 }
 
@@ -542,8 +538,8 @@ function newChannelState(): ChannelState {
     lsb: { x: 0, y: 0 },
     held: { x: new Set<number>(), y: new Set<number>() },
     releasedSinceTrigger: false,
-    sawNote: false,
-    lastAxisMs: Number.NEGATIVE_INFINITY,
+    noteMode: { x: false, y: false },
+    lastAxisMs: { x: Number.NEGATIVE_INFINITY, y: Number.NEGATIVE_INFINITY },
     gateHigh: false,
   };
 }
@@ -609,8 +605,18 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
     });
   }
 
+  function hasNoteMode(s: ChannelState): boolean {
+    return s.noteMode.x || s.noteMode.y;
+  }
+
+  function contactHigh(s: ChannelState, nowMs: number): boolean {
+    return s.held.x.size > 0 || s.held.y.size > 0
+      || (!s.noteMode.x && nowMs - s.lastAxisMs.x < activityTimeoutMs)
+      || (!s.noteMode.y && nowMs - s.lastAxisMs.y < activityTimeoutMs);
+  }
+
   function raiseActivityGate(s: ChannelState, channel: TrailsChannel, out: TrailsEvent[]): void {
-    if (s.sawNote || s.gateHigh) return;
+    if (s.gateHigh) return;
     s.gateHigh = true;
     out.push({ kind: 'gate', channel, high: true, source: 'activity' });
     // ⚠ CC MODE'S ONLY ARTICULATION, and it is thin on purpose. The device
@@ -647,7 +653,7 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       // A channel that has ever sent CC is a channel with a gesture on it,
       // which is the population a playhead restart is about.
       for (const [channel, s] of channels) {
-        if (!s.sawNote && s.lastAxisMs > Number.NEGATIVE_INFINITY) targets.push(channel);
+        if (!hasNoteMode(s) && Math.max(s.lastAxisMs.x, s.lastAxisMs.y) > Number.NEGATIVE_INFINITY) targets.push(channel);
       }
       targets.sort((a, b) => a - b);
       // ⚠ AND NO FALLBACK HERE. With nothing recorded on any channel there is
@@ -664,13 +670,14 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
 
     for (const channel of targets) {
       const s = stateFor(channel);
-      if (s.sawNote) continue;
+      if (hasNoteMode(s)) continue;
       s.gateHigh = true;
       // A restart IS activity. Without this the gate the restart just raised
       // could be dropped by the very next `tick()` — `lastAxisMs` would still
       // be whenever the CC stream last spoke, or −Infinity on a channel that
       // has never streamed at all.
-      s.lastAxisMs = nowMs;
+      s.lastAxisMs.x = nowMs;
+      s.lastAxisMs.y = nowMs;
       out.push({ kind: 'gate', channel, high: true, source: 'loop' });
       // The manual, verbatim: "The GATE output produces a TRIGGER whenever the
       // gesture returns to the start of its loop". So a restart articulates in
@@ -716,7 +723,16 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       } else {
         return out; // some other CC on a Trails channel — not ours
       }
-      s.lastAxisMs = nowMs;
+      // CC takes ownership of THIS axis again. Release any poly notes the
+      // device left held when quantisation changed; the other axis may still
+      // be playing notes and must keep its own gate and pitch.
+      for (const note of s.held[ref.axis]) {
+        out.push({ kind: 'note', channel: ref.channel, axis: ref.axis,
+          note, on: false, sounding: false });
+      }
+      s.held[ref.axis].clear();
+      s.noteMode[ref.axis] = false;
+      s.lastAxisMs[ref.axis] = nowMs;
       emitAxis(ref, s, out);
       raiseActivityGate(s, ref.channel, out);
       return out;
@@ -741,7 +757,7 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       // is still no edge, note-off while high is the falling edge that was lost.
       const wasHigh = s.gateHigh;
       const wasSounding = s.held.x.size > 0 || s.held.y.size > 0;
-      s.sawNote = true;
+      s.noteMode[ref.axis] = true;
       if (isOn) s.held[ref.axis].add(note);
       else s.held[ref.axis].delete(note);
       // A release ARMS the next step. See `releasedSinceTrigger`.
@@ -772,10 +788,6 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
         const value14 = trailsNoteToValue14(note, noteRange);
         s.msb[ref.axis] = (value14 >> 7) & 0x7f;
         s.lsb[ref.axis] = value14 & 0x7f;
-        // Bookkeeping only while `sawNote` is true (both the activity timeout
-        // and the loop-restart selector skip note channels), but kept honest so
-        // a future change to that rule does not inherit a stale timestamp.
-        s.lastAxisMs = nowMs;
         // ⚠ AXIS BEFORE GATE. Both land at the same audio time, on independent
         // ConstantSources, so this cannot race — but pitch-then-gate is the
         // order a downstream envelope + VCO wants stated, and stating it costs
@@ -800,7 +812,7 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
       // note set silently did — drops the gate mid-gesture. This is also the
       // same question the CC-mode activity path answers, computed the same way,
       // which is what keeps one parser rather than two.
-      const high = s.held.x.size > 0 || s.held.y.size > 0;
+      const high = contactHigh(s, nowMs);
       s.gateHigh = high;
       if (high !== wasHigh) {
         out.push({ kind: 'gate', channel: ref.channel, high, source: 'note' });
@@ -821,8 +833,8 @@ export function createTrailsDecoder(opts: TrailsDecoderOptions = {}): TrailsDeco
   function tick(nowMs: number): TrailsEvent[] {
     const out: TrailsEvent[] = [];
     for (const [channel, s] of channels) {
-      if (s.sawNote || !s.gateHigh) continue;
-      if (nowMs - s.lastAxisMs >= activityTimeoutMs) {
+      if (!s.gateHigh) continue;
+      if (!contactHigh(s, nowMs)) {
         s.gateHigh = false;
         out.push({ kind: 'gate', channel, high: false, source: 'activity' });
       }

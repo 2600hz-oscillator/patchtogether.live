@@ -137,7 +137,7 @@ async function trailsState(page: Page, nodeId: string) {
  * builder rather than two so the two specs cannot drift into testing different
  * racks and blaming the module for the difference.
  */
-async function buildChain(page: Page, opts: { vcaCvFrom?: 'x1' | 'g1' } = {}): Promise<void> {
+async function buildChain(page: Page, opts: { vcaCvFrom?: 'x1' | 'g1' | 'g3' } = {}): Promise<void> {
   const cvFrom = opts.vcaCvFrom ?? 'x1';
   await spawnPatch(
     page,
@@ -168,7 +168,7 @@ async function buildChain(page: Page, opts: { vcaCvFrom?: 'x1' | 'g1' } = {}): P
         id: 'e-cv',
         from: { nodeId: 'tr', portId: cvFrom },
         to: { nodeId: 'vca', portId: 'cv' },
-        sourceType: cvFrom === 'g1' ? 'gate' : 'cv',
+        sourceType: cvFrom.startsWith('g') ? 'gate' : 'cv',
         targetType: 'cv',
       },
       {
@@ -1148,5 +1148,107 @@ test('@trails CONNECT with no Trails plugged in EXPLAINS the no rather than goin
   expect(state?.status.kind).toBe('no-port');
   expect(state?.status.portNames, 'a foreign port must not be adopted').toEqual([]);
 
+  errorWatch.assertClean();
+});
+
+
+// The owner's live wire capture was CC15 on MIDI channels 5/6 (Trails 3),
+// while the patch used channel 1 jacks. Exercise those raw bytes, then leave
+// note mode in the SAME module instance: the earlier tests boot once per mode
+// and cannot see the decoder permanently disabling CC contact after a note.
+test('@trails channel 3 CV and audible contact survive repeated note/CC mode switches', async ({
+  page, rack, errorWatch,
+}) => {
+  void rack;
+  await buildChain(page, { vcaCvFrom: 'g3' });
+  expect(await installSim(page)).toBe(true);
+  const idle = await readScopePeakOverWindow(page, 'scp', SILENCE_WINDOW_MS);
+  expect(idle.polls, describeScopeWindow(idle)).toBeGreaterThan(0);
+  expect(idle.peak, describeScopeWindow(idle)).toBeLessThan(AUDIBLE_FLOOR);
+
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await page.evaluate(() => {
+      const sim = (globalThis as unknown as { __trailsSim: TrailsSim }).__trailsSim;
+      sim.noteTouch(3, 72, 79);
+    });
+    const note = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, { untilPeak: AUDIBLE_FLOOR });
+    expect(note.peak, `note contact: ${describeScopeWindow(note)}`).toBeGreaterThan(AUDIBLE_FLOOR);
+    await page.evaluate(() => {
+      (globalThis as unknown as { __trailsSim: TrailsSim }).__trailsSim.noteRelease(3, 72, 79);
+    });
+    const released = await sampleScopeRms(page, 'scp', 25, 20);
+    expect(released.samples, JSON.stringify(released)).toBeGreaterThan(0);
+    expect(released.lo, JSON.stringify(released)).toBeLessThan(AUDIBLE_FLOOR);
+
+    // A continuous USB stream, not gateOn(): that helper sends a NOTE and
+    // would mask the activity gate being disabled. The interval is the device
+    // stimulus, not a renderer wait; the observable audio determines success.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __trailsSim: TrailsSim; __trailsCcStream?: number };
+      const send = () => {
+        w.__trailsSim.send([0xb4, 15, 118]);
+        w.__trailsSim.send([0xb5, 15, 8]);
+      };
+      send();
+      w.__trailsCcStream = window.setInterval(send, 20);
+    });
+    try {
+      const cc = await readScopePeakOverWindow(page, 'scp', AUDIBLE_CAP_MS, { untilPeak: AUDIBLE_FLOOR });
+      expect(cc.peak, `CC contact after notes: ${describeScopeWindow(cc)}`).toBeGreaterThan(AUDIBLE_FLOOR);
+      const state = await trailsState(page, 'tr');
+      expect(state?.channels[2]?.x).toBeCloseTo(118 / 128, 2);
+      expect(state?.channels[2]?.y).toBeCloseTo(8 / 128, 2);
+      expect(state?.channels[2]?.gate).toBe(true);
+      expect(state?.channels[0]).toMatchObject({ x: 0, y: 0, gate: false });
+    } finally {
+      await page.evaluate(() => {
+        const w = globalThis as unknown as { __trailsCcStream?: number };
+        clearInterval(w.__trailsCcStream);
+      });
+    }
+    const stopped = await sampleScopeRms(page, 'scp', 25, 20);
+    expect(stopped.samples, JSON.stringify(stopped)).toBeGreaterThan(0);
+    expect(stopped.lo, `CC contact must expire: ${JSON.stringify(stopped)}`).toBeLessThan(AUDIBLE_FLOOR);
+  }
+  errorWatch.assertClean();
+});
+
+
+test('@trails raw USB channels 5/6 move the channel 3 CV jacks and leave channel 1 silent', async ({
+  page, rack, errorWatch,
+}) => {
+  void rack;
+  const ports = ['x1', 'y1', 'x3', 'y3'];
+  await spawnPatch(page, [
+    { id: 'tr', type: 'trails', position: { x: 60, y: 60 }, domain: 'audio' },
+    ...ports.map((port, i) => ({
+      id: port, type: 'scope', position: { x: 360 + i * 200, y: 60 }, domain: 'audio' as const,
+    })),
+  ], ports.map((port) => ({
+    id: `probe-${port}`, from: { nodeId: 'tr', portId: port },
+    to: { nodeId: port, portId: 'ch1' }, sourceType: 'cv' as const, targetType: 'audio' as const,
+  })));
+  expect(await installSim(page)).toBe(true);
+
+  for (const [x, y] of [[118, 96], [16, 8]]) {
+    await page.evaluate(({ x, y }) => {
+      const sim = (globalThis as unknown as { __trailsSim: TrailsSim }).__trailsSim;
+      sim.send([0xb4, 15, x!]);
+      sim.send([0xb5, 15, y!]);
+    }, { x, y });
+    for (const [port, coarse] of [['x3', x], ['y3', y]] as const) {
+      const measured = await sampleScopeRms(page, port, 25, 20);
+      expect(measured.samples, JSON.stringify(measured)).toBeGreaterThan(0);
+      // First move rises from zero; second falls. Hold last CV after activity
+      // expires, and read the audio jack rather than the pad mirror's state.
+      const value = x === 118 ? measured.hi : measured.lo;
+      expect(value, `${port}: ${JSON.stringify(measured)}`).toBeCloseTo((coarse! << 7) / 16383, 3);
+    }
+  }
+  for (const port of ['x1', 'y1']) {
+    const wrongChannel = await readScopePeakOverWindow(page, port, SILENCE_WINDOW_MS);
+    expect(wrongChannel.polls, describeScopeWindow(wrongChannel)).toBeGreaterThan(0);
+    expect(wrongChannel.peak, `${port}: ${describeScopeWindow(wrongChannel)}`).toBeLessThan(1e-6);
+  }
   errorWatch.assertClean();
 });

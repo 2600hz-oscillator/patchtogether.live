@@ -448,6 +448,21 @@ describe('trails factory: the simulated device drives the outputs', () => {
     expect(h.inputs.size).toBe(0);
   });
 
+  it('returning to CC releases poly lanes while CV and contact keep working', async () => {
+    const h = await build();
+    sim.noteTouch(3, 72, 79);
+    sim.send([0xb4, 15, 118]);
+    expect(polyLaneValue(h, 'poly3', TRAILS_POLY_LANE.x, 'gate')).toBe(0);
+    expect(polyLaneValue(h, 'poly3', TRAILS_POLY_LANE.y, 'gate')).toBe(1);
+    sim.send([0xb5, 15, 8]);
+    expect(polyLaneValue(h, 'poly3', TRAILS_POLY_LANE.y, 'gate')).toBe(0);
+    expect(lastValue(h, 'x3')).toBeCloseTo(118 / 128, 2);
+    expect(lastValue(h, 'y3')).toBeCloseTo(8 / 128, 2);
+    expect(lastValue(h, 'g3')).toBe(1);
+    expect(eventsOn(h, 'x1')).toHaveLength(0);
+    expect(eventsOn(h, 'g1')).toHaveLength(0);
+  });
+
   it('releases held gates and poly notes when the input is disconnected', async () => {
     const h = await build();
     sim.noteTouch(1, 60, 67);
@@ -683,10 +698,9 @@ describe('trails factory: the state the pad mirror paints', () => {
 
   it('a falling gate clears the trail so the next touch reads as a NEW stroke', async () => {
     handle = await trailsDef.factory!(makeMockCtx(), makeNode());
-    sim.gateOn(1);
-    sim.touch(1, 0.2, 0.2);
+    sim.noteTouch(1, 60, 67);
     expect(state(handle).channels[0]!.trail.length).toBeGreaterThan(0);
-    sim.gateOff(1);
+    sim.noteRelease(1, 60, 67);
     expect(state(handle).channels[0]!.trail).toHaveLength(0);
   });
 
