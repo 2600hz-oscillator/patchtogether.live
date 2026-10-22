@@ -20,6 +20,8 @@ import {
   restoreNativeTrails,
   selectedTrailsPortId,
   listTrailsPorts,
+  selectTrailsInput,
+  subscribeTrailsDisconnect,
 } from './trails-device';
 import { RigBindingStore, emptyRigBindings, setRigBindingsForTests } from '$lib/graph/device-slot-bindings';
 import { setNativeAvailableForTests } from '$lib/platform/native';
@@ -281,5 +283,81 @@ describe('trails-device: the simulated device drives the REAL decode path', () =
     stop();
     expect(events).toHaveLength(0);
     expect(trailsStatus().kind).toBe('idle');
+  });
+});
+
+describe('per-instance Trails routing', () => {
+  it.each([false, true])('isolates identical-named inputs, survives unplug and restores picks (native=%s)', async (native) => {
+    const store = new RigBindingStore({ load: emptyRigBindings, save: () => {}, subscribe: () => () => {} });
+    setRigBindingsForTests(store);
+    setNativeAvailableForTests(native);
+    await store.whenReady();
+    const a: MidiInputLike = { id: 'usb-a', name: 'Bela Trails', state: 'connected', onmidimessage: null };
+    const b: MidiInputLike = { id: 'usb-b', name: 'Bela Trails', state: 'connected', onmidimessage: null };
+    const access = { inputs: new Map([[a.id, a], [b.id, b]]), onstatechange: null as (() => void) | null };
+    const receiveA = vi.fn(), receiveB = vi.fn();
+    const resetA = vi.fn(), resetB = vi.fn();
+    const offA = subscribeTrailsMidi(receiveA, 'module-a');
+    subscribeTrailsMidi(receiveB, 'module-b');
+    subscribeTrailsDisconnect(resetA, 'module-a');
+    subscribeTrailsDisconnect(resetB, 'module-b');
+    await connectTrails(async () => access);
+    selectTrailsInput('module-a', a.id);
+    selectTrailsInput('module-b', b.id);
+    resetA.mockClear(); resetB.mockClear();
+    const frame: MidiEventLike = { data: Uint8Array.from([0xb4, 15, 118]), timeStamp: 0 };
+    a.onmidimessage?.(frame);
+    expect(receiveA).toHaveBeenCalledExactlyOnceWith(frame);
+    expect(receiveB).not.toHaveBeenCalled();
+    b.onmidimessage?.(frame);
+    expect(receiveA).toHaveBeenCalledTimes(1);
+    expect(receiveB).toHaveBeenCalledExactlyOnceWith(frame);
+
+    // Losing A must never adopt the only remaining identically named B.
+    a.state = 'disconnected';
+    access.onstatechange?.();
+    expect(resetA).toHaveBeenCalledTimes(1);
+    expect(resetB).not.toHaveBeenCalled();
+    expect(trailsStatus('module-a').kind).toBe('no-port');
+    expect(trailsStatus('module-b').kind).toBe('bound');
+    expect(selectedTrailsPortId('module-a')).toBeNull();
+    b.onmidimessage?.(frame);
+    expect(receiveA).toHaveBeenCalledTimes(1);
+    expect(receiveB).toHaveBeenCalledTimes(2);
+
+    a.state = 'connected';
+    access.onstatechange?.();
+    expect(selectedTrailsPortId('module-a')).toBe(a.id);
+    a.onmidimessage?.(frame);
+    expect(receiveA).toHaveBeenCalledTimes(2);
+    expect(receiveB).toHaveBeenCalledTimes(2);
+    expect(store.getTrails('module-a')?.deviceId).toBe(a.id);
+
+    // Switching a live instance resets only its decoder; disposing it leaves B alive.
+    selectTrailsInput('module-a', b.id);
+    expect(resetA).toHaveBeenCalledTimes(2);
+    expect(resetB).not.toHaveBeenCalled();
+    offA();
+    b.onmidimessage?.(frame);
+    expect(receiveA).toHaveBeenCalledTimes(2);
+    expect(receiveB).toHaveBeenCalledTimes(3);
+  });
+
+  it('restores a native instance override without requiring a global hardware pick', async () => {
+    const store = new RigBindingStore({
+      load: () => ({ ...emptyRigBindings(), trailsNodes: { tr: { deviceId: 'usb' } } }),
+      save: () => {}, subscribe: () => () => {},
+    });
+    setRigBindingsForTests(store);
+    setNativeAvailableForTests(true);
+    await store.whenReady();
+    const input: MidiInputLike = { id: 'usb', name: 'Trails', state: 'connected', onmidimessage: null };
+    vi.stubGlobal('navigator', { requestMIDIAccess: async () => ({ inputs: new Map([[input.id, input]]), onstatechange: null }) });
+    const receive = vi.fn();
+    subscribeTrailsMidi(receive, 'tr');
+    expect(await restoreNativeTrails('tr')).toBe(true);
+    expect(trailsStatus('tr').kind).toBe('bound');
+    input.onmidimessage?.({ data: Uint8Array.from([0xfa]), timeStamp: 0 });
+    expect(receive).toHaveBeenCalledTimes(1);
   });
 });

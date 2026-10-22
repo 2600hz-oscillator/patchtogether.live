@@ -266,3 +266,35 @@ describe('bridgeBackend', () => {
     expect(await be.load()).toEqual(emptyRigBindings());
   });
 });
+
+describe('per-module Trails bindings', () => {
+  it('persists independent choices without replacing the desktop default', async () => {
+    const backend = memBackend();
+    const store = new RigBindingStore(backend);
+    await store.whenReady();
+    store.setTrails({ deviceId: 'default' });
+    store.setTrails({ deviceId: 'a', deviceName: 'Trails' }, 'node-a');
+    const before = store.snapshot();
+    store.setTrails({ deviceId: 'b', deviceName: 'Trails' }, 'node-b');
+    expect(before.trailsNodes).toEqual({ 'node-a': { deviceId: 'a', deviceName: 'Trails' } });
+    const restored = new RigBindingStore(memBackend(JSON.parse(JSON.stringify(backend.saved.at(-1)))));
+    await restored.whenReady();
+    expect(restored.getTrails()?.deviceId).toBe('default');
+    expect(restored.getTrails('node-a')?.deviceId).toBe('a');
+    expect(restored.getTrails('node-b')?.deviceId).toBe('b');
+    restored.setTrails(null, 'node-a');
+    expect(restored.getTrails('node-a')).toBeNull();
+    expect(restored.getTrails('node-b')?.deviceId).toBe('b');
+    expect(restored.getTrails()?.deviceId).toBe('default');
+    store.dispose(); restored.dispose();
+  });
+
+  it('drops malformed entries and copies only known fields', () => {
+    expect(normalizeRigBindings({ trailsNodes: {
+      a: { deviceId: 'a', deviceName: 'Trails', extra: 1 },
+      b: { deviceId: 'b', deviceName: 42 },
+      broken: { deviceId: 42 }, empty: null,
+    } }).trailsNodes).toEqual({ a: { deviceId: 'a', deviceName: 'Trails' }, b: { deviceId: 'b' } });
+    expect(normalizeRigBindings({ trailsNodes: [] }).trailsNodes).toBeUndefined();
+  });
+});

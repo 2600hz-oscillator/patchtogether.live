@@ -200,12 +200,13 @@ describe('trails-decode: gates', () => {
     expect(d.tick(9999)).toHaveLength(0);
   });
 
-  it('once a channel has EVER sent a note, the activity timeout never touches it', () => {
+  it('a held note is not cut short by the activity timeout', () => {
     const d = createTrailsDecoder();
     d.handle([CC_STATUS_CH1, CC_MSB, 0x40], 0); // activity gate up
-    d.handle([0x90, 60, 100], 1); // …and now the device proves it sends notes
     // No spurious edge on the handover: the note said HIGH and it was HIGH.
-    expect(gates(d.handle([CC_STATUS_CH1, CC_MSB, 0x41], 2))).toHaveLength(0);
+    expect(gates(d.handle([0x90, 60, 100], 1))).toHaveLength(0);
+    // Y may still stream CC without changing X's note ownership.
+    expect(gates(d.handle([0xb1, CC_MSB, 0x41], 2))).toHaveLength(0);
     // …and a long silence does NOT drop a note-held gate.
     expect(d.tick(60_000)).toHaveLength(0);
   });
@@ -1031,5 +1032,73 @@ describe('trails-decode: encoders feed the real decoder', () => {
       }
       expect(last).toBeCloseTo(want, 4);
     }
+  });
+});
+
+
+describe('trails-decode: switching between notes and continuous CV', () => {
+  it('restores contact, timeout and loop articulation after returning to CC', () => {
+    const d = createTrailsDecoder();
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const at = cycle * 1000;
+      d.handle([0x94, 72, 127], at);
+      d.handle([0x95, 79, 127], at);
+      d.handle([0x94, 72, 0], at + 1);
+      d.handle([0x95, 79, 0], at + 1);
+      // Real hardware capture: coarse-only CC15 on MIDI channels 5/6.
+      const x = d.handle([0xb4, 15, 118], at + 2);
+      const y = d.handle([0xb5, 15, 8], at + 2);
+      expect(axes(x)[0]).toMatchObject({ channel: 3, axis: 'x' });
+      expect(axes(y)[0]).toMatchObject({ channel: 3, axis: 'y' });
+      expect(gates(x)).toEqual([{ kind: 'gate', channel: 3, high: true, source: 'activity' }]);
+      expect(x.filter((e) => e.kind === 'trigger')).toEqual([
+        { kind: 'trigger', channel: 3, source: 'contact' },
+      ]);
+      expect(gates(d.tick(at + 2 + TRAILS_ACTIVITY_GATE_TIMEOUT_MS))).toEqual([
+        { kind: 'gate', channel: 3, high: false, source: 'activity' },
+      ]);
+      expect(gates(d.handle([0xfa], at + 200))).toEqual([
+        { kind: 'gate', channel: 3, high: true, source: 'loop' },
+      ]);
+      d.tick(at + 400);
+    }
+  });
+
+  it('releases only the returning axis poly notes and keeps the other axis held', () => {
+    const d = createTrailsDecoder();
+    d.handle([0x90, 60, 127], 0);
+    d.handle([0x91, 67, 127], 0);
+    const back = d.handle([0xb0, 15, 100], 1);
+    expect(back.filter((e) => e.kind === 'note')).toEqual([
+      { kind: 'note', channel: 1, axis: 'x', note: 60, on: false, sounding: false },
+    ]);
+    expect(gates(back), 'contact stays high while either axis sounds').toEqual([]);
+    expect(d.tick(1000), 'a held Y note cannot expire with X activity').toEqual([]);
+    expect(gates(d.handle([0x91, 67, 0], 1001))).toEqual([
+      { kind: 'gate', channel: 1, high: false, source: 'note' },
+    ]);
+    expect(gates(d.handle([0xb0, 15, 110], 1002))).toEqual([
+      { kind: 'gate', channel: 1, high: true, source: 'activity' },
+    ]);
+  });
+
+  it('keeps a mixed CC/note channel high until BOTH sources are idle', () => {
+    const d = createTrailsDecoder();
+    d.handle([0xb0, 15, 100], 0);
+    d.handle([0x91, 67, 127], 1);
+    expect(gates(d.handle([0x91, 67, 0], 2))).toEqual([]);
+    expect(gates(d.tick(TRAILS_ACTIVITY_GATE_TIMEOUT_MS))).toEqual([
+      { kind: 'gate', channel: 1, high: false, source: 'activity' },
+    ]);
+  });
+
+  it('unrelated CCs do not steal note ownership', () => {
+    const d = createTrailsDecoder();
+    d.handle([0x90, 60, 127], 0);
+    expect(d.handle([0xb0, 1, 100], 1)).toEqual([]);
+    expect(d.tick(1000)).toEqual([]);
+    expect(gates(d.handle([0x90, 60, 0], 1001))).toEqual([
+      { kind: 'gate', channel: 1, high: false, source: 'note' },
+    ]);
   });
 });

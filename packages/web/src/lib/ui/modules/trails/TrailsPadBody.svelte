@@ -77,8 +77,10 @@
     type TrailsState,
   } from '$lib/audio/modules/trails';
   import type { TrailsMonitorSnapshot } from '$lib/midi/trails-monitor';
-  import { trailsMidiVersion, trailsStatus, type TrailsStatus } from '$lib/midi/trails-device';
+  import { listTrailsPorts, selectTrailsInput, trailsMidiVersion, trailsStatus, type TrailsStatus } from '$lib/midi/trails-device';
   import { trailsApi, trailsResetMonitor } from '../trails-cell-actions';
+  import { rigBindings } from '$lib/graph/device-slot-bindings';
+  import { nativeAvailable } from '$lib/platform/native';
   import TrailsPadMirror from './TrailsPadMirror.svelte';
   import {
     TRAILS_MON_IDLE_TEXT,
@@ -113,9 +115,13 @@
   let status = $derived.by<TrailsStatus | null>(() => {
     void midiV;
     void revision;
-    return trailsApi(nodeId)?.status() ?? trailsStatus();
+    return trailsApi(nodeId)?.status() ?? trailsStatus(nodeId);
   });
   let lamp = $derived(trailsLamp(status));
+  let ports = $derived.by(() => { void midiV; return listTrailsPorts(); });
+  let binding = $derived.by(() => { void midiV; return rigBindings().getTrails(nodeId); });
+  let missingInput = $derived(binding && !ports.some((p) => p.inputId === binding?.deviceId));
+
 
   // ── The MIDI monitor ──────────────────────────────────────────────────────
   //
@@ -204,6 +210,29 @@
      from the 2026-08-17 ruling. A column's max-content is the MAX of its rows,
      not their sum. -->
 <div class="trails-body" data-testid="trails-face-body-{nodeId}">
+  {#if ports.length > 1 || binding}
+    <label class="input-picker">
+      INPUT
+      <select
+        aria-label="Trails MIDI input"
+        data-testid="trails-input-{nodeId}"
+        value={binding?.deviceId ?? ''}
+        title={binding?.deviceId ?? 'Default Trails input'}
+        onchange={(event) => selectTrailsInput(nodeId, event.currentTarget.value)}
+      >
+        <option value="">{nativeAvailable() ? 'Hardware setup' : 'All Trails'}</option>
+        {#if missingInput && binding}
+          <option value={binding.deviceId} disabled>{binding.deviceName ?? binding.deviceId} (disconnected)</option>
+        {/if}
+        {#each ports as port (port.inputId)}
+          <option value={port.inputId}>
+            {port.name}{ports.filter((p) => p.name === port.name).length > 1 ? ' · ' + port.inputId : ''}
+          </option>
+        {/each}
+      </select>
+    </label>
+  {/if}
+
   <TrailsPadMirror {nodeId} width={DOCK_MIRROR_W} testidPrefix="trails-face" />
 
   {#if !TRAILS_BAR_TRANSMITS_MIDI}
@@ -274,6 +303,18 @@
     border: 1px solid var(--border, #333);
     border-radius: 3px;
     background: var(--panel, #1b1b1b);
+  }
+  .input-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-self: stretch;
+    font-size: 9px;
+  }
+  .input-picker select {
+    width: 100%;
+    max-width: 220px;
+    font-size: 10px;
   }
   .bar-note {
     margin: 0;
